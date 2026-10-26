@@ -119,12 +119,23 @@ public final class LspManager {
         synchronized (MANAGERS) {
             all = java.util.List.copyOf(MANAGERS);
         }
-        all.forEach(m -> m.shutdownServer(serverId));
+        all.forEach(m -> {
+            m.shutdownServer(serverId);
+            m.onInstallHold.accept(serverId, true);
+        });
     }
 
-    /** Lets {@code serverId} start again after its install. */
+    /**
+     * Lets {@code serverId} start again after its install, and tells every window, whose documents on it were left
+     * with no server: only the window that ran the install re-applied its tool support (fourth review CF1).
+     */
     public static void releaseAfterInstall(String serverId) {
         HELD_FOR_INSTALL.remove(serverId);
+        java.util.List<LspManager> all;
+        synchronized (MANAGERS) {
+            all = java.util.List.copyOf(MANAGERS);
+        }
+        all.forEach(m -> m.onInstallHold.accept(serverId, false));
     }
 
     private volatile Map<String, LanguageServerSession> sharedServers = SHARED_SERVERS;
@@ -147,6 +158,13 @@ public final class LspManager {
 
     public void setOnSharedServerEnded(java.util.function.BiConsumer<String, Path> handler) {
         onSharedServerEnded = handler == null ? (serverId, root) -> {} : handler;
+    }
+
+    /** Told (on the FX thread) when an install stops a server in every window ({@code true}) and when it is done. */
+    private volatile java.util.function.BiConsumer<String, Boolean> onInstallHold = (serverId, held) -> {};
+
+    public void setOnInstallHold(java.util.function.BiConsumer<String, Boolean> handler) {
+        onInstallHold = handler == null ? (serverId, held) -> {} : handler;
     }
 
     /** Lets {@code other} share this manager's servers, as two windows do (tests only). */
@@ -556,6 +574,15 @@ public final class LspManager {
     /** The workspace root of the session serving {@code file}, or null when none does. */
     public @Nullable Path sessionRoot(Path file) {
         LanguageServerSession s = sessionFor(file);
+        return s == null ? null : s.root();
+    }
+
+    /**
+     * The workspace root of the jdtls session {@code file} belongs to: its own, else the deepest whose root holds
+     * it, as for a {@code build.gradle} no Java server edits. Null when no jdtls serves its folder.
+     */
+    public @Nullable Path javaSessionRoot(@Nullable Path file) {
+        LanguageServerSession s = javaSessionFor(file);
         return s == null ? null : s.root();
     }
 

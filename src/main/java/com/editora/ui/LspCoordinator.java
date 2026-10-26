@@ -509,6 +509,7 @@ final class LspCoordinator {
         };
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setOnSharedServerEnded(this::sharedServerEnded);
+        lspManager.setOnInstallHold(this::installHold);
         lspManager.setWindowFocused(() -> {
             javafx.stage.Window w = host.window();
             return w != null && w.isFocused();
@@ -920,6 +921,39 @@ final class LspCoordinator {
             syncBuffer(b);
         });
         updateStatusBar();
+    }
+
+    /**
+     * An install stopped {@code serverId} in every window while its folder is swapped ({@code held}), or is done.
+     * Held, this window's documents on it go inactive and the status says why; released, they reopen on a fresh
+     * server. The window that ran the install re-applies its tool support first, so this runs after it, and a
+     * document that is already open again is left alone (fourth review CF1).
+     */
+    private void installHold(String serverId, boolean held) {
+        if (!ops.lspFeatureEnabled() || !serverEnabled(serverId)) {
+            return;
+        }
+        if (held) {
+            host.forEachBuffer(b -> {
+                if (serverId.equals(serverIdForBuffer(b))) {
+                    b.setLspActive(false);
+                    clearDiagnostics(lspPath(b));
+                }
+            });
+            host.setStatus(tr("status.lsp.heldForInstall", serverProgram(serverId)));
+            updateStatusBar();
+            return;
+        }
+        Platform.runLater(() -> {
+            host.forEachBuffer(b -> {
+                Path p = lspPath(b);
+                if (p != null && serverId.equals(serverIdForBuffer(b)) && !lspManager.isManaged(p)) {
+                    deferredLsp.remove(b);
+                    syncBuffer(b);
+                }
+            });
+            updateStatusBar();
+        });
     }
 
     /** The crash-history key of one server on one root; a remote root by its URI, which names its host. */
@@ -3128,23 +3162,30 @@ final class LspCoordinator {
         if (!ops.lspFeatureEnabled()) {
             return;
         }
+        String source = statusSource(serverId, root);
         if (serverId != null && root != null) {
-            statusRoot.put(serverId, root); // whose import the next narrated line is about
+            if ("Launching".equalsIgnoreCase(type)) {
+                saidReady.remove(source); // a new process: its ready line is owed again
+            }
             if ("ProjectStatus".equalsIgnoreCase(type) && "OK".equalsIgnoreCase(message)) {
                 // that folder imported: its earlier failure no longer stands (third review CT3)
-                importFailed.remove(importKey(serverId, root));
-                importWarned.remove(importKey(serverId, root));
+                String key = importKey(serverId, root);
+                boolean was = importFailed.remove(key) | importWarned.remove(key) | warnedAtReady.remove(key);
+                if (was && saidReady.contains(source)) {
+                    // a fixed build file re-imported cleanly: say so, or "Updating…" was the last word (CF4)
+                    host.setStatus(tr("status.lsp.ready", statusServerName(serverId, root)));
+                }
             }
         }
         if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
             // lemminx-maven answers initialize long before it can answer a request: its ready line waits for
             // the "Maven initialization done" progress end (Maven review C18).
             for (var status : mavenReadyGate.onStatus(type, message)) {
-                narrateServerStatus(serverId, status.type(), status.message());
+                narrateServerStatus(source, status.type(), status.message());
             }
             return;
         }
-        narrateServerStatus(serverId, type, message);
+        narrateServerStatus(source, type, message);
         if ("ProjectStatus".equalsIgnoreCase(type)
                 && "OK".equalsIgnoreCase(message)
                 && (serverId == null || LspServerRegistry.JAVA_SERVER_ID.equals(serverId))) {
@@ -3266,11 +3307,45 @@ final class LspCoordinator {
     /** Projects that imported with build problems (a missing dependency): ready, but said so. */
     private final java.util.Set<String> importWarned = new java.util.HashSet<>();
 
+    /** Of those, the ones whose ready line said so: a later clean import of the folder says ready again (CF4). */
+    private final java.util.Set<String> warnedAtReady = new java.util.HashSet<>();
+
     /** The project reason last said for each failed import, so a re-published error is not said again. */
     private final Map<String, String> saidImportReason = new java.util.HashMap<>();
 
-    /** The folder of the session each server last spoke from, which the narrated lines that follow are about. */
-    private final Map<String, Path> statusRoot = new java.util.HashMap<>();
+    /**
+     * The server and folder behind each narrated source. Each folder of a server is narrated on its own: in a window
+     * of two Java projects their progress interleaved in one stream, and the failed one's verdict gave way to the
+     * other's "Loaded and ready" (fourth review CF2).
+     */
+    private record StatusSource(String serverId, Path root) {}
+
+    private final Map<String, StatusSource> statusSources = new java.util.HashMap<>();
+
+    /** The sources whose ready line was said since their server last launched. */
+    private final java.util.Set<String> saidReady = new java.util.HashSet<>();
+
+    /** The narrator's id for {@code serverId}'s statuses from {@code root}: the server id alone when no folder. */
+    private @Nullable String statusSource(@Nullable String serverId, @Nullable Path root) {
+        if (serverId == null || root == null) {
+            return serverId;
+        }
+        Path r = root.toAbsolutePath().normalize();
+        String key = serverId + '\u0000' + r;
+        statusSources.putIfAbsent(key, new StatusSource(serverId, r));
+        return key;
+    }
+
+    /** The server's program name, and the project's folder when the window narrates more than one of its folders. */
+    private String statusServerName(String serverId, @Nullable Path root) {
+        String name = serverProgram(serverId);
+        long folders = statusSources.values().stream()
+                .filter(src -> src.serverId().equals(serverId))
+                .count();
+        return root == null || folders < 2 || root.getFileName() == null
+                ? name
+                : tr("status.lsp.serverInFolder", name, root.getFileName().toString());
+    }
 
     private static String importKey(@Nullable String serverId, @Nullable Path root) {
         return serverId + "\u0000" + (root == null ? "" : root.toAbsolutePath().normalize());
@@ -3309,17 +3384,24 @@ final class LspCoordinator {
 
     private void showStatusLine(com.editora.lsp.ServerStatusNarrator.@Nullable Line line) {
         if (line != null) {
-            String server = line.serverId() == null ? "LSP" : serverProgram(line.serverId());
-            Path root = line.serverId() == null ? null : statusRoot.get(line.serverId());
-            String key = importKey(line.serverId(), root);
+            StatusSource source = line.serverId() == null ? null : statusSources.get(line.serverId());
+            String serverId = source != null ? source.serverId() : line.serverId();
+            Path root = source != null ? source.root() : null;
+            String server = serverId == null ? "LSP" : statusServerName(serverId, root);
+            String key = importKey(serverId, root);
+            if (line.ready() && line.serverId() != null) {
+                saidReady.add(line.serverId());
+            }
             if (line.problem()) {
                 // jdtls says WARNING both for an import that threw (a Gradle build that does not run: it logs the
                 // exception) and for one that worked with build problems (a missing Maven artifact: nothing
                 // logged). Only the first is "did not import" (re-review CN2, third review CT2).
-                String logged = lspManager.lastServerError(line.serverId(), root);
+                String logged = serverId == null ? null : lspManager.lastServerError(serverId, root);
                 if (logged == null) {
                     importWarned.add(key);
-                    host.setStatus(tr("status.lsp.importProblem", server));
+                    if (saidReady.contains(line.serverId())) {
+                        host.setStatus(tr("status.lsp.importProblem", server)); // a later edit broke the build
+                    } // else said once, by the ready line: mid-import it came twice in two wordings (CF4)
                 } else {
                     importFailed.add(key);
                     String reason = projectReason(root);
@@ -3331,6 +3413,7 @@ final class LspCoordinator {
             } else if (line.ready() && importFailed.contains(key)) {
                 host.setError(tr("status.lsp.readyImportFailed", server)); // not "Loaded and ready" over it
             } else if (line.ready() && importWarned.remove(key)) {
+                warnedAtReady.add(key);
                 host.setStatus(tr("status.lsp.readyWithProblems", server));
             } else {
                 host.setStatus(
@@ -3356,6 +3439,7 @@ final class LspCoordinator {
         failingServers.clear();
         importFailed.clear();
         importWarned.clear();
+        warnedAtReady.clear();
         statusNarrator.forget(null);
         lspManager.restartAll(); // a Java server shared with another window restarts for both
         clearAllDiagnostics();
@@ -3376,6 +3460,20 @@ final class LspCoordinator {
             lspManager.projectStyleChanged(buffer.getPath()); // .editorconfig, a formatter profile, the build (AN5)
         }
         Path path = buffer == null ? null : lspPath(buffer);
+        if (path != null
+                && path.getFileName() != null
+                && JAVA_BUILD_FILES.contains(path.getFileName().toString())) {
+            Path root = lspManager.javaSessionRoot(path);
+            if (root != null && importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))) {
+                // The build file of a project that did not import was saved, presumably fixed: import it again,
+                // as a saved pom.xml re-syncs a project that did (fourth review CT1).
+                importWarned.clear();
+                warnedAtReady.clear();
+                warnedAtReady.clear();
+                restartJavaServer(path);
+                host.setStatus(tr("status.lsp.projectReimporting"));
+            }
+        }
         if (buffer != null && path != null && lspManager.isManaged(path)) {
             // Flush the current open-document state first. savedText may be an older snapshot when the user
             // continued typing during I/O; includeText still describes the bytes that actually reached disk.
@@ -4625,11 +4723,14 @@ final class LspCoordinator {
     void reloadProject() {
         EditorBuffer b = host.activeBuffer(); // a pom.xml tab counts, whichever server (if any) edits it
         Path path = b == null ? null : lspPath(b);
-        Path root = path == null ? null : lspManager.sessionRoot(path);
+        // The Java project's root, also from a build-file tab no Java server edits: by that tab's own server it was
+        // no root at all, so the failure was missed and the project not imported again (fourth review CT1).
+        Path root = path == null ? null : lspManager.javaSessionRoot(path);
         boolean failed = importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))
                 | importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, null)); // said by no known folder
         importFailed.clear(); // the import runs again: its outcome is said afresh
         importWarned.clear();
+        warnedAtReady.clear();
         if (path == null) {
             host.setStatus(tr("status.lsp.unavailable"));
             return;
@@ -4681,6 +4782,7 @@ final class LspCoordinator {
         announcedProjectProblems.clear();
         importFailed.clear(); // the fresh import says its own outcome (third review CT3)
         importWarned.clear();
+        warnedAtReady.clear();
         java.util.List<EditorBuffer> java = javaBuffersOf(path);
         clearProjectProblems(); // the dead server's "project:1" entries would stay for good
         lspManager.cleanJavaWorkspace(path, deleted -> {

@@ -188,12 +188,15 @@ public final class ServerStatusNarrator {
         return false;
     }
 
-    /** Forgets everything said by {@code serverId}, or by every server when it is null. */
+    /**
+     * Forgets everything said by {@code serverId}, or by every server when it is null. A caller that narrates each
+     * of a server's folders on its own passes {@code serverId + '\u0000' + folder} as the id: those go too.
+     */
     public void forget(@Nullable String serverId) {
         if (serverId == null) {
             states.clear();
         } else {
-            states.remove(serverId);
+            states.keySet().removeIf(k -> k.equals(serverId) || k.startsWith(serverId + '\u0000'));
         }
     }
 
