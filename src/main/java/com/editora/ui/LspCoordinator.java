@@ -3186,6 +3186,7 @@ final class LspCoordinator {
             return;
         }
         narrateServerStatus(source, type, message);
+        refreshImportNotes(); // an OK import, or a cleared failure
         if ("ProjectStatus".equalsIgnoreCase(type)
                 && "OK".equalsIgnoreCase(message)
                 && (serverId == null || LspServerRegistry.JAVA_SERVER_ID.equals(serverId))) {
@@ -3382,7 +3383,29 @@ final class LspCoordinator {
         return null;
     }
 
+    /**
+     * Each Java file's problem counter says when its project did not import, instead of counting what an unimported
+     * project's server reports for it (fifth review CV1).
+     */
+    private void refreshImportNotes() {
+        host.forEachBuffer(b -> {
+            Path p = lspPath(b);
+            if (p == null || !LspServerRegistry.JAVA_SERVER_ID.equals(serverIdForBuffer(b))) {
+                return;
+            }
+            Path root = lspManager.javaSessionRoot(p);
+            boolean failed = importFailed.contains(importKey(LspServerRegistry.JAVA_SERVER_ID, root))
+                    || importFailed.contains(importKey(LspServerRegistry.JAVA_SERVER_ID, null));
+            b.problemCounter().setNote(failed ? tr("editor.problemCounter.notImported") : null);
+        });
+    }
+
     private void showStatusLine(com.editora.lsp.ServerStatusNarrator.@Nullable Line line) {
+        showStatusLineOnly(line);
+        refreshImportNotes();
+    }
+
+    private void showStatusLineOnly(com.editora.lsp.ServerStatusNarrator.@Nullable Line line) {
         if (line != null) {
             StatusSource source = line.serverId() == null ? null : statusSources.get(line.serverId());
             String serverId = source != null ? source.serverId() : line.serverId();
@@ -3438,6 +3461,7 @@ final class LspCoordinator {
         startBlocked.clear();
         failingServers.clear();
         importFailed.clear();
+        refreshImportNotes();
         importWarned.clear();
         warnedAtReady.clear();
         statusNarrator.forget(null);
@@ -3761,11 +3785,14 @@ final class LspCoordinator {
                 return;
             }
             buffer.sendLspChange(); // the server must have the text the caret is in
-            lspManager.codeActions(path, line, column, line, column, all -> answer.accept(bulbKind(all)));
+            lspManager.codeActions(path, line, column, line, column, BULB_KINDS, all -> answer.accept(bulbKind(all)));
         });
+        // the counter's own file, whichever editor group is active: its arrows moved another file's caret (AV2)
         buffer.problemCounter()
                 .setActions(
-                        () -> ops.executeCommand("tool.problems"), () -> gotoProblem(false), () -> gotoProblem(true));
+                        () -> ops.executeCommand("tool.problems"),
+                        () -> gotoProblem(buffer, false),
+                        () -> gotoProblem(buffer, true));
         buffer.setLspPasteImportsRequester((sl, sc, el, ec, text, stillValid) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
@@ -4746,6 +4773,7 @@ final class LspCoordinator {
         boolean failed = importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))
                 | importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, null)); // said by no known folder
         importFailed.clear(); // the import runs again: its outcome is said afresh
+        refreshImportNotes();
         importWarned.clear();
         warnedAtReady.clear();
         if (path == null) {
@@ -4798,6 +4826,7 @@ final class LspCoordinator {
         builtAfterImport.clear(); // the fresh import builds again
         announcedProjectProblems.clear();
         importFailed.clear(); // the fresh import says its own outcome (third review CT3)
+        refreshImportNotes();
         importWarned.clear();
         warnedAtReady.clear();
         java.util.List<EditorBuffer> java = javaBuffersOf(path);
@@ -6069,18 +6098,41 @@ final class LspCoordinator {
         });
     }
 
-    /** The lightbulb for {@code actions}: {@code fix} with a quick fix among them, {@code assist} with a quick action. */
+    /** What the lightbulb asks for: quick fixes and quick assists, not jdtls's generators and refactorings (AV7). */
+    static final List<String> BULB_KINDS = List.of("quickfix", "quickassist");
+
+    /**
+     * The lightbulb for {@code actions}: {@code fix} with a quick fix for an error among them, {@code assist} with
+     * another quick fix (a warning's suppressions, fifth review AV6) or a quick action. jdtls's "Add Javadoc
+     * comment", offered at every position inside a type, lights nothing: the bulb was on 27 lines of 30 (AV1).
+     */
     static @Nullable String bulbKind(List<LspManager.CodeActionItem> actions) {
         boolean assist = false;
         for (LspManager.CodeActionItem a : actions) {
             var group = com.editora.lsp.CodeActionKinds.group(a.kind());
             if (group == com.editora.lsp.CodeActionKinds.Group.FIX) {
-                return "fix";
+                if (fixesAnError(a)) {
+                    return "fix";
+                }
+                assist = true;
             }
             assist |= group == com.editora.lsp.CodeActionKinds.Group.ASSIST
-                    && !com.editora.lsp.CodeActionKinds.isJavaGeneratorAssist(a);
+                    && !com.editora.lsp.CodeActionKinds.isJavaGeneratorAssist(a)
+                    && !a.title().startsWith("Add Javadoc comment");
         }
         return assist ? "assist" : null;
+    }
+
+    /** Whether a quick fix answers an error: by the diagnostics it names, and when it names none, it counts. */
+    private static boolean fixesAnError(LspManager.CodeActionItem a) {
+        if (!(a.raw() instanceof org.eclipse.lsp4j.CodeAction action)
+                || action.getDiagnostics() == null
+                || action.getDiagnostics().isEmpty()) {
+            return true;
+        }
+        return action.getDiagnostics().stream()
+                .anyMatch(
+                        d -> d.getSeverity() == null || d.getSeverity() == org.eclipse.lsp4j.DiagnosticSeverity.Error);
     }
 
     /** An action's title without the "…" of a row that asks more: "Applied: Move 'Strings'" (BT7). */
@@ -6107,7 +6159,14 @@ final class LspCoordinator {
      * no errors. Before this a diagnostic could only be read with the mouse or in the Problems window.
      */
     void gotoProblem(boolean forward) {
-        EditorBuffer b = host.activeBuffer();
+        gotoProblem(host.activeBuffer(), forward);
+    }
+
+    /** As {@link #gotoProblem(boolean)} in {@code b}, which takes the focus first (its counter's arrows). */
+    void gotoProblem(@Nullable EditorBuffer b, boolean forward) {
+        if (b != null && b != host.activeBuffer()) {
+            b.getFocusedArea().requestFocus();
+        }
         Path path = b == null ? null : lspPath(b);
         if (b == null || path == null) {
             host.setStatus(tr("status.lsp.noProblems"));

@@ -1683,6 +1683,8 @@ public final class FoldManager {
             StackPane slot = new StackPane(marker);
             slot.setCursor(Cursor.HAND);
             LazyTooltip.install(slot, bulbTooltip::get, null, 300);
+            slot.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON); // it was announced as nothing (EV4)
+            slot.setAccessibleText(bulbTooltip.get());
             ownPointer(slot);
             final int bulbIdx = idx;
             slot.setOnMouseClicked(e -> {
@@ -1901,8 +1903,11 @@ public final class FoldManager {
     /** The lightbulb glyph (Material "lightbulb"), colored by {@code .bulb-marker} and {@code kind}. */
     private static Node bulbMarker(String kind) {
         SVGPath svg = new SVGPath();
-        svg.setContent("M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 "
-                + "5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z");
+        String bulb = "M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 "
+                + "5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z";
+        // the fix bulb has a "!" cut out of it, as IntelliJ's quick-fix bulb does: not told apart by colour alone (EV4)
+        svg.setContent("fix".equals(kind) ? bulb + "M11 5h2v5.5h-2zM11 11.5h2v2h-2z" : bulb);
+        svg.setFillRule(javafx.scene.shape.FillRule.EVEN_ODD);
         svg.getStyleClass().addAll("bulb-marker", kind);
         svg.setScaleX(0.55);
         svg.setScaleY(0.55);

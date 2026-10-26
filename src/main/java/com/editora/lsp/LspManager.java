@@ -4332,6 +4332,21 @@ public final class LspManager {
      */
     public void codeActions(
             Path file, int startLine, int startChar, int endLine, int endChar, Consumer<List<CodeActionItem>> cb) {
+        codeActions(file, startLine, startChar, endLine, endChar, null, cb);
+    }
+
+    /**
+     * As above, asking only for actions of the {@code only} kinds (null: all): the gutter lightbulb wants quick fixes
+     * and quick assists, and every rest computed jdtls's generators and refactorings too (fifth review AV7).
+     */
+    public void codeActions(
+            Path file,
+            int startLine,
+            int startChar,
+            int endLine,
+            int endChar,
+            @Nullable List<String> only,
+            Consumer<List<CodeActionItem>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(List.of()));
@@ -4342,7 +4357,7 @@ public final class LspManager {
         EditBasis basis = editBasis(s);
         Map<Path, String> expected = basis.documents();
         long sentAt = basis.sentAtMillis();
-        s.codeAction(uri(file), range, context).whenComplete((result, error) -> {
+        s.codeAction(uri(file), range, context, only).whenComplete((result, error) -> {
             List<CodeActionItem> items = new ArrayList<>();
             if (error == null && result != null) {
                 for (var either : result) {

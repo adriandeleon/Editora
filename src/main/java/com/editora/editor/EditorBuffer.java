@@ -908,7 +908,7 @@ public class EditorBuffer implements TabContent {
 
     /** The code-action lightbulb on the caret line (the coordinator gives it its probe). */
     private final CodeActionBulb bulb = new CodeActionBulb(
-            () -> focusedArea,
+            focusedView.getReadOnlyProperty(),
             () -> lspActive && lspCodeActionsAvailable && !largeFile && isEditable(),
             this::docVersion,
             this::refreshGutterLine);
@@ -1125,8 +1125,8 @@ public class EditorBuffer implements TabContent {
         folds.setBookmarkHooks(bookmarks::isBookmarked);
         folds.setBulbHooks(
                 bulb::kindAt,
-                line -> lspCodeActionsAction.run(), // the bulb is on the caret line: Alt+Enter's list there
-                () -> tr("fix".equals(bulb.kind()) ? "editor.bulb.fix" : "editor.bulb.assist"));
+                line -> bulb.click(line, lspCodeActionsAction), // Alt+Enter's list on the bulb's line
+                bulb::tooltip);
         folds.setSplitViews(() -> focusedArea, () -> area2);
         // Personal-Notes markers are drawn inline at each note's start by noteOverlay (no gutter slot): a change
         // to the note set repaints the overlay, never the gutter (the overlay follows edits on its own).
@@ -4115,6 +4115,7 @@ public class EditorBuffer implements TabContent {
     }
 
     public void setLspActive(boolean on) {
+        boolean was = lspActive;
         // Large-file mode disables LSP just like syntax highlighting and the minimap: a 5–50 MB document
         // would flood the FX thread with a full-text didOpen and tens/hundreds of thousands of diagnostics
         // to map + render (the Problems tree, minimap + scrollbar stripes), freezing the editor. largeFile
@@ -4127,7 +4128,7 @@ public class EditorBuffer implements TabContent {
         // The minimap stripes only draw while LSP is active for this file, regardless of any stale list.
         minimap.setDiagnosticsEnabled(this.lspActive);
         if (!this.lspActive) {
-            problemCounter.show(java.util.List.of());
+            problemCounter.reset();
             if (lspOverlay != null) {
                 lspOverlay.setDiagnostics(java.util.List.of());
             }
@@ -4137,6 +4138,9 @@ public class EditorBuffer implements TabContent {
             }
         }
         updateDiagnosticStripe();
+        if (!was && lspActive) {
+            problemCounter.reset(); // opened on a server: nothing checked yet (fifth review CV1)
+        }
         problemCounter.update();
         bulb.schedule();
     }
@@ -4150,7 +4154,9 @@ public class EditorBuffer implements TabContent {
         if (lspActive || lspOverlay != null) {
             lspOverlay().setDiagnostics(diagnostics);
         }
-        problemCounter.show(lspActive ? diagnostics : java.util.List.of());
+        if (lspActive) {
+            problemCounter.show(diagnostics);
+        }
         bulb.schedule(); // a problem that arrived on the caret line may bring a fix
         minimap.setDiagnostics(diagnostics);
         if (lspActive || diagnosticStripe != null) {

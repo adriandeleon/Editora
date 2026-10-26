@@ -174,4 +174,119 @@ class LspBulbFxTest {
         fx.layout();
         assertNull(FxTestSupport.callOnFx(() -> b.getArea().getScene().lookup(".problem-counter")), "the setting");
     }
+
+    /**
+     * jdtls's "Add Javadoc comment" (offered everywhere in a type) lights nothing, and a warning's fixes (its
+     * suppressions) light the amber bulb, not the red one (fifth review AV1, AV6).
+     */
+    @Test
+    void javadocAssistsLightNothingAndAWarningsFixesAreAnAssist() {
+        assertNull(LspCoordinator.bulbKind(List.of(item("Add Javadoc comment", "quickassist"))));
+        var warning = new org.eclipse.lsp4j.Diagnostic(
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(1, 0), new org.eclipse.lsp4j.Position(1, 3)),
+                "deprecated");
+        warning.setSeverity(org.eclipse.lsp4j.DiagnosticSeverity.Warning);
+        CodeAction suppress = new CodeAction("Add @SuppressWarnings");
+        suppress.setKind("quickfix");
+        suppress.setDiagnostics(List.of(warning));
+        assertEquals(
+                "assist",
+                LspCoordinator.bulbKind(List.of(new com.editora.lsp.LspManager.CodeActionItem(
+                        "Add @SuppressWarnings", "quickfix", false, suppress))));
+        var error = new org.eclipse.lsp4j.Diagnostic(warning.getRange(), "bad");
+        error.setSeverity(org.eclipse.lsp4j.DiagnosticSeverity.Error);
+        CodeAction fix = new CodeAction("Change type");
+        fix.setKind("quickfix");
+        fix.setDiagnostics(List.of(error));
+        assertEquals(
+                "fix",
+                LspCoordinator.bulbKind(
+                        List.of(new com.editora.lsp.LspManager.CodeActionItem("Change type", "quickfix", false, fix))));
+    }
+
+    /** The bulb asks only for quick fixes and quick assists (fifth review AV7). */
+    @Test
+    void theBulbAsksOnlyForQuickFixesAndAssists() throws Exception {
+        EditorBuffer b = open();
+        fx.server().codeActionResponse = List.of(action("Remove 'x'", "quickfix"));
+        fx.caret(b, 2, 12);
+        int before = fx.server().codeActions.size();
+        probe(b);
+        var params = fx.server().codeActions.get(fx.server().codeActions.size() - 1);
+        assertTrue(fx.server().codeActions.size() > before);
+        assertEquals(List.of("quickfix", "quickassist"), params.getContext().getOnly());
+    }
+
+    /** An edit on the bulb's line takes it away until the next answer: it was for other text (fifth review AV5). */
+    @Test
+    void editingTheBulbsLineTakesItAway() throws Exception {
+        EditorBuffer b = open();
+        fx.server().codeActionResponse = List.of(action("Remove 'x'", "quickfix"));
+        fx.caret(b, 2, 12);
+        probe(b);
+        assertEquals(2, FxTestSupport.callOnFx(() -> b.codeActionBulb().line()).intValue());
+        FxTestSupport.runOnFx(() -> b.getArea().insertText(b.getArea().getCaretPosition(), "y"));
+        assertEquals(-1, FxTestSupport.callOnFx(() -> b.codeActionBulb().line()).intValue());
+    }
+
+    /**
+     * The counter shows "Analyzing…" until the server has published the file's problems, not a green check, and
+     * names a project that did not import (fifth review CV1).
+     */
+    @Test
+    void theCounterSaysAnalyzingUntilTheServerHasLooked() throws Exception {
+        EditorBuffer b = FxTestSupport.callOnFx(EditorBuffer::new);
+        java.nio.file.Path file = java.nio.file.Files.writeString(root.resolve("B.java"), SOURCE);
+        FxTestSupport.runOnFx(() -> {
+            b.setPath(file);
+            b.setContent(SOURCE);
+            fx.show(b);
+            b.setLspActive(true);
+        });
+        fx.layout();
+        javafx.scene.Node counter =
+                FxTestSupport.callOnFx(() -> b.problemCounter().counter());
+        assertNotNull(counter);
+        assertEquals(
+                com.editora.i18n.Messages.tr("editor.problemCounter.analyzing"),
+                FxTestSupport.callOnFx(() -> ((javafx.scene.layout.HBox) counter)
+                        .getChildren()
+                        .get(0)
+                        .getAccessibleText()));
+        assertNull(
+                FxTestSupport.callOnFx(() -> counter.lookup(".problem-counter-ok")), "no check before it has looked");
+
+        FxTestSupport.runOnFx(
+                () -> b.problemCounter().setNote(com.editora.i18n.Messages.tr("editor.problemCounter.notImported")));
+        assertEquals(
+                com.editora.i18n.Messages.tr("editor.problemCounter.notImported"),
+                FxTestSupport.callOnFx(() -> ((javafx.scene.layout.HBox) counter)
+                        .getChildren()
+                        .get(0)
+                        .getAccessibleText()));
+        FxTestSupport.runOnFx(() -> {
+            b.problemCounter().setNote(null);
+            b.setLspDiagnostics(List.of());
+        });
+        assertNotNull(FxTestSupport.callOnFx(() -> counter.lookup(".problem-counter-ok")), "checked, and clean");
+    }
+
+    /** The counter's arrows move the caret in their own file, not the active one (fifth review AV2). */
+    @Test
+    void theCountersArrowsActOnTheirOwnFile() throws Exception {
+        EditorBuffer first = open();
+        var error = new LspDiagnostic(2, 8, 2, 11, LspDiagnostic.Severity.ERROR, "bad", null, "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(first.getPath(), List.of(error)));
+        fx.caret(first, 0, 0);
+        EditorBuffer second = fx.open("C.java", "class C {}\n");
+        assertTrue(FxTestSupport.callOnFx(() -> fx.host.activeBuffer() == second));
+        javafx.scene.Node counter =
+                FxTestSupport.callOnFx(() -> first.problemCounter().counter());
+        FxTestSupport.runOnFx(() -> ((javafx.scene.control.Button) counter.lookup(".problem-counter-next")).fire());
+        assertEquals(
+                2,
+                FxTestSupport.callOnFx(() -> first.getArea().getCurrentParagraph())
+                        .intValue(),
+                "its own file");
+    }
 }

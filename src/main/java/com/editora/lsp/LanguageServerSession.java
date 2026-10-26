@@ -1659,11 +1659,22 @@ final class LanguageServerSession implements LanguageClient {
      *  overlapping it as context (quick fixes key off them) → the actions, or empty (#670). */
     CompletableFuture<List<Either<org.eclipse.lsp4j.Command, org.eclipse.lsp4j.CodeAction>>> codeAction(
             String uri, org.eclipse.lsp4j.Range range, List<org.eclipse.lsp4j.Diagnostic> diagnostics) {
+        return codeAction(uri, range, diagnostics, null);
+    }
+
+    /** As above, asking only for the {@code only} kinds (null: whatever the server offers). */
+    CompletableFuture<List<Either<org.eclipse.lsp4j.Command, org.eclipse.lsp4j.CodeAction>>> codeAction(
+            String uri,
+            org.eclipse.lsp4j.Range range,
+            List<org.eclipse.lsp4j.Diagnostic> diagnostics,
+            @Nullable List<String> only) {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
         var context = new org.eclipse.lsp4j.CodeActionContext(diagnostics == null ? List.of() : diagnostics);
-        if (TypeScriptServer.SERVER_ID.equals(serverId)) {
+        if (only != null) {
+            context.setOnly(only);
+        } else if (TypeScriptServer.SERVER_ID.equals(serverId)) {
             // typescript-language-server offers its source actions (fix all, add missing imports, organize)
             // only when they are asked for by kind (Node review B5).
             context.setOnly(TypeScriptServer.CODE_ACTION_KINDS);

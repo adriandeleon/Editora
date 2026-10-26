@@ -13,6 +13,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.shape.SVGPath;
 
 import com.editora.text.LspDiagnostic;
+import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -30,14 +31,30 @@ final class ProblemCounter extends HBox {
     private static final String UP_PATH = "M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z";
     private static final String DOWN_PATH = "M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z";
 
+    /** Material "hourglass_empty": not checked yet. */
+    private static final String PENDING_PATH =
+            "M6 2v6h.01L6 8.01 10 12l-4 4 .01.01H6V22h12v-5.99h-.01L18 16l-4-4 4-3.99"
+                    + "-.01-.01H18V2H6zm10 14.5V20H8v-3.5l4-4 4 4zm-4-5-4-4V4h8v3.5l-4 4z";
+
+    /** Below this width of the code pane the counter hides: it would cover the first line's text (fifth review AV9). */
+    static final double MIN_PANE_WIDTH = 520;
+
     private final Label errors = new Label();
     private final Label warnings = new Label();
     private final Node ok = glyph(CHECK_PATH, "problem-counter-ok");
     private final HBox counts = new HBox(6);
     private final Button previous = arrow(UP_PATH, "problem-counter-previous");
     private final Button next = arrow(DOWN_PATH, "problem-counter-next");
+    private final Node pendingGlyph = glyph(PENDING_PATH, "problem-counter-pending");
     private int errorCount = -1;
     private int warningCount = -1;
+    /** Why the counts are not known (not checked yet, the project did not import), or null when they are. */
+    private @Nullable String pending;
+
+    private java.util.function.Function<String, @Nullable String> chords = id -> null;
+    private boolean roomy = true;
+    private final javafx.beans.value.ChangeListener<Number> paneWidth = (o, was, now) -> fit(now.doubleValue());
+    private @Nullable Region pane;
 
     ProblemCounter(Runnable open, Runnable onPrevious, Runnable onNext) {
         super(2);
@@ -58,14 +75,65 @@ final class ProblemCounter extends HBox {
         LazyTooltip.install(counts, this::summary);
         previous.setOnAction(e -> onPrevious.run());
         next.setOnAction(e -> onNext.run());
-        LazyTooltip.install(previous, () -> tr("editor.problemCounter.previous"));
-        LazyTooltip.install(next, () -> tr("editor.problemCounter.next"));
+        LazyTooltip.install(previous, () -> withChord(tr("editor.problemCounter.previous"), "lsp.previousProblem"));
+        LazyTooltip.install(next, () -> withChord(tr("editor.problemCounter.next"), "lsp.nextProblem"));
+        previous.setAccessibleText(tr("editor.problemCounter.previous")); // a screen reader named two bare buttons
+        next.setAccessibleText(tr("editor.problemCounter.next"));
         getChildren().setAll(counts, previous, next);
-        show(List.of());
+        // the row it sits in is put into the code pane after this: follow it there and hide in a narrow pane
+        parentProperty().addListener((o, was, row) -> {
+            if (row != null) {
+                row.parentProperty().addListener((o2, w2, codePane) -> watch(codePane));
+                watch(row.getParent());
+            }
+        });
+        show(List.of(), null);
     }
 
-    /** Counts {@code diagnostics}' errors and warnings; the arrows go only when there is somewhere to go. */
-    void show(List<LspDiagnostic> diagnostics) {
+    /** The active keymap's chords for command ids, for the tooltips; set by the window. */
+    void setChords(java.util.function.Function<String, @Nullable String> chords) {
+        this.chords = chords == null ? id -> null : chords;
+    }
+
+    private String withChord(String text, String commandId) {
+        String chord = chords.apply(commandId);
+        return chord == null || chord.isBlank() ? text : text + " (" + chord + ")";
+    }
+
+    private void watch(javafx.scene.@Nullable Parent codePane) {
+        if (pane != null) {
+            pane.widthProperty().removeListener(paneWidth);
+        }
+        pane = codePane instanceof Region r ? r : null;
+        if (pane != null) {
+            pane.widthProperty().addListener(paneWidth);
+            fit(pane.getWidth());
+        }
+    }
+
+    private void fit(double width) {
+        roomy = width <= 0 || width >= MIN_PANE_WIDTH;
+        setVisible(roomy);
+    }
+
+    /**
+     * Counts {@code diagnostics}' errors and warnings; the arrows go only when there is somewhere to go. With a
+     * {@code pendingReason} the counts are not known: an hourglass and the reason instead of a check, which said "no
+     * problems" before the server had looked (fifth review CV1).
+     */
+    void show(List<LspDiagnostic> diagnostics, @Nullable String pendingReason) {
+        pending = pendingReason;
+        if (pendingReason != null) {
+            errorCount = -1;
+            warningCount = -1;
+            counts.getChildren().setAll(pendingGlyph);
+            counts.setAccessibleText(pendingReason);
+            previous.setVisible(false);
+            previous.setManaged(false);
+            next.setVisible(false);
+            next.setManaged(false);
+            return;
+        }
         int e = 0;
         int w = 0;
         for (LspDiagnostic d : diagnostics) {
@@ -111,6 +179,10 @@ final class ProblemCounter extends HBox {
 
     /** What the counts say, for a tooltip and a screen reader. */
     String summary() {
+        String why = pending;
+        if (why != null) {
+            return why;
+        }
         return errors() + warnings() == 0
                 ? tr("editor.problemCounter.none")
                 : tr("editor.problemCounter.summary", errors(), warnings());
