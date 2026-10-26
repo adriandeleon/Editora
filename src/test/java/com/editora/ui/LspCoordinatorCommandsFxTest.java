@@ -1804,7 +1804,7 @@ class LspCoordinatorCommandsFxTest {
         assertFalse(fx.host.lastError().contains("(WARNING)"), "jdtls's raw word is not shown");
 
         fx.run(() -> fx.coordinator.onServerStatus("java", "ServiceReady", "ServiceReady"));
-        awaitError(tr("status.lsp.readyImportFailed", "jdtls"));
+        awaitStatus(tr("status.lsp.readyNotImported", "jdtls")); // said, not counted as a second error (CP3)
     }
 
     /**
@@ -1840,8 +1840,8 @@ class LspCoordinatorCommandsFxTest {
         // another folder's import is not this one's failure, and with two folders each is named (fourth review CF2)
         awaitStatus(tr("status.lsp.ready", tr("status.lsp.serverInFolder", "jdtls", "other-project")));
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
-        awaitError(tr(
-                "status.lsp.readyImportFailed",
+        awaitStatus(tr(
+                "status.lsp.readyNotImported",
                 tr("status.lsp.serverInFolder", "jdtls", root.getFileName().toString())));
 
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "OK"));
@@ -1849,6 +1849,39 @@ class LspCoordinatorCommandsFxTest {
         assertFalse(
                 tr("status.lsp.projectReimporting").equals(fx.host.lastStatus()),
                 "it imported since: the failure no longer stands, so Reload is a plain reload");
+    }
+
+    /**
+     * One failed import is one error, in the project's own words: jdtls's WARNING comes a moment before the project's
+     * error with the real cause, and the outer exception, the project's echo and the ready line each counted (ninth
+     * review CP3).
+     */
+    @Test
+    void aFailedImportIsOneErrorWithItsRealCause() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        LspTestHooks.logError(
+                fx.manager, b.getPath(), "Could not fetch model of type 'Map' using connection to Gradle");
+        fx.host.errors.clear();
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING"));
+        var cause = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.ERROR,
+                "The supplied phased action failed with an exception.\nBuild file 'build.gradle' line: 3\n"
+                        + "Could not find method thisIsNotAConfiguration() for arguments [x]",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(cause)));
+        awaitError(tr(
+                "status.lsp.importProblemWhy",
+                "jdtls",
+                "Could not find method thisIsNotAConfiguration() for arguments [x]"));
+        Thread.sleep(800);
+        fx.settle();
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        assertEquals(1, fx.host.errors.size(), fx.host.errors.toString());
     }
 
     @Test

@@ -115,6 +115,9 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
 
     public List<TextEdit> onTypeFormattingResponse = List.of();
     public List<Location> definitionResponse = List.of();
+    /** When set, answers each definition request by its position, ahead of {@link #definitionResponse}. */
+    public volatile java.util.function.Function<DefinitionParams, List<Location>> definitionHandler;
+
     public List<Location> implementationResponse = List.of();
     public List<Location> typeDefinitionResponse = List.of();
     public List<Location> declarationResponse = List.of();
@@ -355,6 +358,9 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
             DefinitionParams params) {
         definitions.add(params);
+        if (definitionHandler != null && !failEverything) {
+            return CompletableFuture.completedFuture(Either.forLeft(definitionHandler.apply(params)));
+        }
         if (definitionLinksResponse != null && !failEverything) {
             return CompletableFuture.completedFuture(Either.forRight(definitionLinksResponse));
         }
@@ -527,6 +533,10 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public final List<org.eclipse.lsp4j.TypeHierarchyItem> subtypeRequests = new ArrayList<>();
     public List<org.eclipse.lsp4j.TypeHierarchyItem> typeHierarchyResponse = List.of();
     public List<org.eclipse.lsp4j.TypeHierarchyItem> supertypesResponse = List.of();
+    /** Per type name, ahead of {@link #supertypesResponse}: a hierarchy several levels deep. */
+    public final java.util.Map<String, List<org.eclipse.lsp4j.TypeHierarchyItem>> supertypesByName =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     public List<org.eclipse.lsp4j.TypeHierarchyItem> subtypesResponse = List.of();
 
     @Override
@@ -540,7 +550,11 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public CompletableFuture<List<org.eclipse.lsp4j.TypeHierarchyItem>> typeHierarchySupertypes(
             org.eclipse.lsp4j.TypeHierarchySupertypesParams params) {
         supertypeRequests.add(params.getItem());
-        return failEverything ? failed() : CompletableFuture.completedFuture(supertypesResponse);
+        List<org.eclipse.lsp4j.TypeHierarchyItem> byName =
+                supertypesByName.get(params.getItem().getName());
+        return failEverything
+                ? failed()
+                : CompletableFuture.completedFuture(byName != null ? byName : supertypesResponse);
     }
 
     @Override

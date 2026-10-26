@@ -26,9 +26,9 @@ public record MemberSpan(
         };
     }
 
-    /** Whether this is an anonymous class ({@code new Runnable() {...}}). */
+    /** Whether this is an anonymous class ({@code new Runnable() {...}}, or an enum constant's body {@code {...}}). */
     public boolean isAnonymous() {
-        return isType() && name.startsWith("new ");
+        return isType() && (name.startsWith("new ") || name.equals("{...}"));
     }
 
     /** Whether this is a method or a constructor. */

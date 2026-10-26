@@ -2611,7 +2611,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** The moves of the drag under way whose Java edit failed to apply: not the user's choice (BR4). */
     private final int[] editFailed = {0};
 
-    /** Whether a drag-move or its Undo Move is under way; another drop waits for it to end (BR4). */
+    /** Whether a drag-move or its Undo Move is under way; another drop is refused until it ends (BR4). */
     private boolean moving;
 
     /**

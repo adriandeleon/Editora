@@ -1293,10 +1293,12 @@ final class LspCoordinator {
                             "status.lsp.projectProblem",
                             project == null ? PathDisplay.fileName(file) : PathDisplay.fileName(project),
                             d.message());
-                    if (d.severity() == LspDiagnostic.Severity.ERROR) {
+                    boolean failedImport = project != null
+                            && importFailed.contains(importKey(LspServerRegistry.JAVA_SERVER_ID, project));
+                    if (d.severity() == LspDiagnostic.Severity.ERROR && !failedImport) {
                         host.setError(text);
                     } else {
-                        host.setStatus(text);
+                        host.setStatus(text); // the import's own error already said it (ninth review CP3)
                     }
                     break;
                 }
@@ -3488,14 +3490,31 @@ final class LspCoordinator {
                     } // else said once, by the ready line: mid-import it came twice in two wordings (CF4)
                 } else {
                     importFailed.add(key);
-                    String reason = projectReason(root);
-                    host.setError(tr(
-                            "status.lsp.importProblemWhy",
-                            server,
-                            (reason != null ? reason : logged).replaceFirst("[.\\s]+$", "")));
+                    // the project's diagnostic, with the real cause, comes a moment after jdtls's WARNING: wait for
+                    // it, and say the failure once ("Could not find method …", not "Could not fetch model …") (CP3)
+                    Runnable say = () -> {
+                        String reason = projectReason(root);
+                        if (reason != null && reason.equals(saidImportReason.get(key))) {
+                            return; // the diagnostic said it already
+                        }
+                        if (reason != null) {
+                            saidImportReason.put(key, reason);
+                        }
+                        host.setError(tr(
+                                "status.lsp.importProblemWhy",
+                                server,
+                                (reason != null ? reason : logged).replaceFirst("[.\\s]+$", "")));
+                    };
+                    if (projectReason(root) != null) {
+                        say.run();
+                    } else {
+                        var wait = new javafx.animation.PauseTransition(javafx.util.Duration.millis(600));
+                        wait.setOnFinished(e -> say.run());
+                        wait.play();
+                    }
                 }
             } else if (line.ready() && importFailed.contains(key)) {
-                host.setError(tr("status.lsp.readyImportFailed", server)); // not "Loaded and ready" over it
+                host.setStatus(tr("status.lsp.readyNotImported", server)); // not "Loaded and ready"; said as error
             } else if (line.ready() && importWarned.remove(key)) {
                 warnedAtReady.add(key);
                 host.setStatus(tr("status.lsp.readyWithProblems", server));
@@ -3563,9 +3582,9 @@ final class LspCoordinator {
             lspManager.changeDocument(path, buffer.getContent());
             lspManager.saveDocument(path, savedText);
             lspManager.pullDiagnostics(path); // no-op for push-only servers
-            if ((projectWideProblems || otherOpenJavaFile(path))
+            if ((projectWideProblems || lspManager.otherJavaDocumentOpen(path))
                     && LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))) {
-                pendingProjectRecheck = path;
+                pendingProjectRecheck.add(path); // one build per session, saves in two projects both checked
                 projectRecheck.playFromStart();
             }
         } else if (path != null && path.toString().endsWith(".java") && lspManager.hasJavaSession(path)) {
@@ -3730,7 +3749,7 @@ final class LspCoordinator {
     }
 
     /** The file whose save asked for {@link #projectRecheck}; the build goes to its project's server. */
-    private @Nullable Path pendingProjectRecheck;
+    private final java.util.Set<Path> pendingProjectRecheck = new java.util.LinkedHashSet<>();
 
     /**
      * While Problems shows the whole project, or another file of the project is open, a Java save is followed by an
@@ -3741,29 +3760,19 @@ final class LspCoordinator {
      */
     private final javafx.animation.PauseTransition projectRecheck = projectRecheck();
 
-    /** Whether a Java file other than {@code saved}, served by its jdtls, is open in this window. */
-    private boolean otherOpenJavaFile(Path saved) {
-        boolean[] found = {false};
-        host.forEachBuffer(b -> {
-            Path other = b.getPath();
-            if (!found[0]
-                    && other != null
-                    && !other.equals(saved)
-                    && other.toString().endsWith(".java")
-                    && lspManager.sameJavaSession(saved, other)) {
-                found[0] = true;
-            }
-        });
-        return found[0];
-    }
-
     private javafx.animation.PauseTransition projectRecheck() {
         var recheck = new javafx.animation.PauseTransition(javafx.util.Duration.millis(1200));
         recheck.setOnFinished(e -> {
-            Path path = pendingProjectRecheck;
-            pendingProjectRecheck = null;
-            if (path != null && (projectWideProblems || otherOpenJavaFile(path)) && ops.lspFeatureEnabled()) {
-                lspManager.buildJavaWorkspace(path, false, outcome -> {});
+            List<Path> saved = List.copyOf(pendingProjectRecheck);
+            pendingProjectRecheck.clear();
+            List<Path> built = new java.util.ArrayList<>();
+            for (Path path : saved) {
+                if (built.stream().noneMatch(b -> lspManager.sameJavaSession(b, path))
+                        && (projectWideProblems || lspManager.otherJavaDocumentOpen(path))
+                        && ops.lspFeatureEnabled()) {
+                    built.add(path);
+                    lspManager.buildJavaWorkspace(path, false, outcome -> {});
+                }
             }
         });
         return recheck;
@@ -5679,10 +5688,11 @@ final class LspCoordinator {
 
     /**
      * Go to Super Method ({@code lsp.gotoSuperMethod}, IntelliJ's Ctrl+U): what the member at the caret overrides, as
-     * IntelliJ finds it (eighth review BQ1, BQ2, BR2). The member is the innermost method, constructor or type whose
-     * whole range (its annotations and Javadoc too) holds the caret, an anonymous class's method included; in a lambda
-     * it is the lambda's functional interface method; a constructor goes to the super constructor it calls; a type to
-     * its supertypes. Works the same in a library tab.
+     * IntelliJ finds it. The member is the innermost method, constructor or type whose whole range (its annotations and
+     * Javadoc too) holds the caret, an anonymous class's method included, also in a field or an enum constant; in a
+     * lambda, in a method or a field, it is the lambda's functional interface method; a constructor goes to the super
+     * constructor it calls, through {@code this(...)} too; a type to its supertypes. A static or private method has none.
+     * jdtls's {@code findLinks} answers first; the type hierarchy adds the branches it misses (eighth and ninth reviews).
      */
     void gotoSuperMethod() {
         NavOrigin origin = navOrigin();
@@ -5706,33 +5716,140 @@ final class LspCoordinator {
         SuperAsk ask = new SuperAsk(
                 path, origin.libraryUri(), () -> navigationRequestCurrent(b, origin.ownPath(), version, generation));
         lspManager.memberSpans(path, null, origin.libraryUri(), members -> {
-            if (!ask.current().getAsBoolean()) {
-                return;
-            }
-            List<com.editora.lsp.MemberSpan> chain = com.editora.lsp.JavaMembers.enclosing(members, line);
-            if (chain.isEmpty()) {
-                superMethods(ask, line, column);
-                return;
-            }
-            com.editora.lsp.MemberSpan member = chain.get(chain.size() - 1);
-            com.editora.lsp.MemberSpan type =
-                    member.isType() ? member : chain.size() > 1 ? chain.get(chain.size() - 2) : null;
-            if (member.isType()) {
-                superTypes(ask, member);
-                return;
-            }
-            int arrow = com.editora.lsp.JavaMembers.lambdaArrow(text, offsetOf(text, member.startLine()), caret);
-            if (arrow >= 0) { // a lambda's super method is its functional interface's method, as in IntelliJ
-                definitionAsSuper(ask, text, arrow);
-            } else if (member.kind().equals("constructor")) {
-                superConstructor(ask, text, member, type);
-            } else if (type == null || type.isAnonymous()) {
-                superMethods(ask, member.nameLine(), member.nameColumn()); // jdtls knows an anonymous class's supers
-            } else {
-                new SuperWalk(ask, member.name(), () -> superMethods(ask, member.nameLine(), member.nameColumn()))
-                        .start(type);
+            if (ask.current().getAsBoolean()) {
+                superAt(ask, text, line, column, caret, members);
             }
         });
+    }
+
+    private void superAt(
+            SuperAsk ask, String text, int line, int column, int caret, List<com.editora.lsp.MemberSpan> members) {
+        List<com.editora.lsp.MemberSpan> chain = com.editora.lsp.JavaMembers.enclosing(members, line);
+        int at = chain.size() - 1;
+        while (at >= 0 && !chain.get(at).isType() && !chain.get(at).isCallable()) {
+            at--;
+        }
+        if (at < 0) {
+            superMethods(ask, line, column, List.of());
+            return;
+        }
+        com.editora.lsp.MemberSpan member = chain.get(at);
+        com.editora.lsp.MemberSpan inner = chain.get(chain.size() - 1); // a field or constant around the caret
+        com.editora.lsp.MemberSpan scope = member.isCallable() ? member : inner != member ? inner : null;
+        int arrow = scope == null
+                ? -1
+                : com.editora.lsp.JavaMembers.lambdaArrow(text, offsetOf(text, scope.startLine()), caret);
+        if (arrow >= 0) { // a lambda's super method is its functional interface's method, as in IntelliJ
+            definitionAsSuper(ask, text, arrow);
+            return;
+        }
+        if (member.isType() && scope == null) {
+            // in no member of the type: a static or instance initializer, which jdtls leaves out of the outline; an
+            // anonymous class's method or a lambda there is found in the text (ninth review BQ2)
+            int[] anonymous =
+                    com.editora.lsp.JavaMembers.anonymousMethod(text, offsetOf(text, member.startLine()), caret);
+            int lambda = com.editora.lsp.JavaMembers.lambdaArrow(text, offsetOf(text, member.nameLine()), caret);
+            if (anonymous != null && anonymous[1] > lambda) {
+                int[] name = lineColumn(text, anonymous[1]);
+                superMethods(ask, name[0], name[1], List.of());
+                return;
+            }
+            if (lambda >= 0 && caret > offsetOf(text, member.nameLine() + 1)) {
+                definitionAsSuper(ask, text, lambda);
+                return;
+            }
+        }
+        if (member.isType() && member.name().equals("{...}") && at > 0) {
+            // an enum constant's own body: its class is the enum's, as IntelliJ goes there
+            com.editora.lsp.MemberSpan constant = chain.get(at - 1);
+            for (int i = at - 1; i >= 0; i--) {
+                if (chain.get(i).isType()) {
+                    openTarget(
+                            ask.path(),
+                            new LspManager.Target(
+                                    ask.libraryUri() == null ? ask.path() : null,
+                                    chain.get(i).nameLine(),
+                                    chain.get(i).nameColumn(),
+                                    ask.libraryUri()));
+                    return;
+                }
+            }
+            superTypes(ask, constant);
+            return;
+        }
+        if (member.isType()) {
+            superTypes(ask, member);
+            return;
+        }
+        com.editora.lsp.MemberSpan type = null;
+        for (int i = at - 1; i >= 0 && type == null; i--) {
+            type = chain.get(i).isType() ? chain.get(i) : null;
+        }
+        int[] anonymous = ask.libraryUri() == null
+                ? null
+                : com.editora.lsp.JavaMembers.anonymousMethod(text, offsetOf(text, member.startLine()), caret);
+        if (anonymous != null) {
+            // a class file's outline has no anonymous classes: the method is found in the text (ninth review BP2)
+            int[] name = lineColumn(text, anonymous[1]);
+            superMethods(ask, name[0], name[1], List.of());
+            return;
+        }
+        if (member.kind().equals("constructor")) {
+            superConstructor(ask, text, member, type, chain, new java.util.HashSet<>());
+            return;
+        }
+        java.util.Set<String> modifiers = com.editora.lsp.JavaMembers.modifiers(
+                text, offsetOf(text, member.startLine()), offsetOf(text, member.nameLine()) + member.nameColumn());
+        if (modifiers.contains("static") || modifiers.contains("private")) {
+            host.setStatus(tr("status.lsp.noSuperMethod")); // neither overrides anything (ninth review DP1)
+            return;
+        }
+        superMethodsOf(ask, member, type);
+    }
+
+    /**
+     * A method's super methods: jdtls's {@code findLinks} first, which is exact for a class's method; the type hierarchy
+     * then finds the branches it misses (an interface's methods, a second interface, an anonymous class written with
+     * {@code <>} or extending a project class). A class's method findLinks finds nothing for overrides nothing.
+     */
+    private void superMethodsOf(
+            SuperAsk ask, com.editora.lsp.MemberSpan method, com.editora.lsp.@Nullable MemberSpan type) {
+        javafx.animation.PauseTransition slow = new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
+        slow.setOnFinished(e -> {
+            if (ask.current().getAsBoolean()) {
+                host.setStatus(tr("status.lsp.superMethodSearching")); // a deep hierarchy takes a moment (BP5)
+            }
+        });
+        slow.play();
+        lspManager.superMethodAt(
+                ask.path(),
+                ask.libraryUri(),
+                method.nameLine(),
+                method.nameColumn(),
+                linked -> {
+                    if (!ask.current().getAsBoolean()) {
+                        slow.stop();
+                        return;
+                    }
+                    if (type == null || !(type.kind().equals("interface") || type.isAnonymous() || !linked.isEmpty())) {
+                        slow.stop();
+                        openOneOrPick(ask, labelled(linked), "picker.superMethod.title", "status.lsp.noSuperMethod");
+                        return;
+                    }
+                    new SuperWalk(ask, method.name(), found -> {
+                                slow.stop();
+                                openOneOrPick(
+                                        ask,
+                                        found.isEmpty() ? labelled(linked) : found,
+                                        "picker.superMethod.title",
+                                        "status.lsp.noSuperMethod");
+                            })
+                            .start(type);
+                },
+                why -> {
+                    slow.stop();
+                    navigationFailed(ask, why);
+                });
     }
 
     /** One Go to Super Method request: the anchor file, the library tab's URI (or null), and whether it still counts. */
@@ -5764,8 +5881,8 @@ final class LspCoordinator {
         return new int[] {line, offset - start};
     }
 
-    /** jdtls's {@code java/findLinks} at a method's name: one target, or none. */
-    private void superMethods(SuperAsk ask, int line, int column) {
+    /** jdtls's {@code java/findLinks} at a method's name: its one answer, else {@code otherwise}. */
+    private void superMethods(SuperAsk ask, int line, int column, List<SuperTarget> otherwise) {
         lspManager.superMethodAt(
                 ask.path(),
                 ask.libraryUri(),
@@ -5773,7 +5890,11 @@ final class LspCoordinator {
                 column,
                 targets -> {
                     if (ask.current().getAsBoolean()) {
-                        openOneOrPick(ask, labelled(targets), "picker.superMethod.title", "status.lsp.noSuperMethod");
+                        openOneOrPick(
+                                ask,
+                                targets.isEmpty() ? otherwise : labelled(targets),
+                                "picker.superMethod.title",
+                                "status.lsp.noSuperMethod");
                     }
                 },
                 why -> navigationFailed(ask, why));
@@ -5805,21 +5926,55 @@ final class LspCoordinator {
     }
 
     /**
-     * A constructor's super constructor: the one its {@code super(...)} calls, else the superclass's no-argument
-     * constructor, else the superclass itself, as IntelliJ does.
+     * A constructor's super constructor: the one its {@code super(...)} calls; through a {@code this(...)} call, the one
+     * the chained constructor reaches (ninth review BP3); else the superclass's no-argument constructor, else the
+     * superclass itself, as IntelliJ does.
      */
     private void superConstructor(
-            SuperAsk ask, String text, com.editora.lsp.MemberSpan ctor, com.editora.lsp.@Nullable MemberSpan type) {
-        int call = com.editora.lsp.JavaMembers.superCall(
-                text, offsetOf(text, ctor.startLine()), offsetOf(text, ctor.endLine() + 1));
+            SuperAsk ask,
+            String text,
+            com.editora.lsp.MemberSpan ctor,
+            com.editora.lsp.@Nullable MemberSpan type,
+            List<com.editora.lsp.MemberSpan> chain,
+            java.util.Set<Integer> seen) {
+        int from = offsetOf(text, ctor.startLine());
+        int to = offsetOf(text, ctor.endLine() + 1);
+        int call = com.editora.lsp.JavaMembers.superCall(text, from, to);
         if (call >= 0) {
             definitionAsSuper(ask, text, call);
+            return;
+        }
+        int chained = com.editora.lsp.JavaMembers.thisCall(text, from, to);
+        if (chained >= 0 && type != null && seen.add(ctor.nameLine())) {
+            int[] at = lineColumn(text, chained);
+            lspManager.definitionAt(ask.path(), ask.libraryUri(), at[0], at[1], targets -> {
+                if (!ask.current().getAsBoolean()) {
+                    return;
+                }
+                com.editora.lsp.MemberSpan next = targets.isEmpty()
+                        ? null
+                        : type.children().stream()
+                                .filter(m -> m.kind().equals("constructor")
+                                        && m.nameLine() == targets.get(0).line())
+                                .findFirst()
+                                .orElse(null);
+                if (next == null) {
+                    implicitSuperConstructor(ask, type);
+                } else {
+                    superConstructor(ask, text, next, type, chain, seen);
+                }
+            });
             return;
         }
         if (type == null) {
             host.setStatus(tr("status.lsp.noSuperMethod"));
             return;
         }
+        implicitSuperConstructor(ask, type);
+    }
+
+    /** The superclass's no-argument constructor, else the superclass itself (none for {@code Object}). */
+    private void implicitSuperConstructor(SuperAsk ask, com.editora.lsp.MemberSpan type) {
         lspManager.prepareTypeHierarchyAt(ask.path(), ask.libraryUri(), type.nameLine(), type.nameColumn(), roots -> {
             if (!ask.current().getAsBoolean()) {
                 return;
@@ -5845,7 +6000,7 @@ final class LspCoordinator {
                         return;
                     }
                     com.editora.lsp.MemberSpan declared =
-                            com.editora.lsp.JavaMembers.typeAt(members, superclass.line());
+                            com.editora.lsp.JavaMembers.typeAt(members, superclass.line(), superclass.name());
                     com.editora.lsp.MemberSpan noArgs = declared == null
                             ? null
                             : declared.children().stream()
@@ -5864,24 +6019,29 @@ final class LspCoordinator {
     }
 
     /**
-     * The methods a named type's method overrides, found up its type hierarchy: on each branch the nearest supertype
-     * that declares the same method (IntelliJ's direct super methods), the superclass's branch first. jdtls's
-     * {@code findLinks} skips an interface's methods and gives one of several (eighth review BR2); it is still asked
-     * when the walk finds nothing.
+     * The methods a method overrides, found up its type's hierarchy: on each branch the nearest supertype that declares
+     * an override-equivalent method (the same name and parameter types, a type variable matching any), the superclass's
+     * branch first. A hit in a type that another hit's type extends is dropped, as IntelliJ merges them (ninth review
+     * EP3). An anonymous class starts from the type it instantiates. Library outlines are cached for the session, and
+     * {@code Object} is read only for its own methods' names (BP5).
      */
     private final class SuperWalk {
         private static final int MAX_DEPTH = 8;
+        private static final java.util.Set<String> OBJECT_METHODS =
+                java.util.Set.of("equals", "hashCode", "toString", "clone", "finalize");
         private final SuperAsk ask;
         private final String method;
-        private final Runnable fallback;
+        private final java.util.function.Consumer<List<SuperTarget>> done;
         private final java.util.TreeMap<String, SuperTarget> found = new java.util.TreeMap<>();
+        private final Map<String, String> foundIn = new java.util.HashMap<>();
         private final java.util.Set<String> seen = new java.util.HashSet<>();
+        private final java.util.Set<String> covered = new java.util.HashSet<>();
         private int pending;
 
-        SuperWalk(SuperAsk ask, String method, Runnable fallback) {
+        SuperWalk(SuperAsk ask, String method, java.util.function.Consumer<List<SuperTarget>> done) {
             this.ask = ask;
             this.method = method;
-            this.fallback = fallback;
+            this.done = done;
         }
 
         void start(com.editora.lsp.MemberSpan type) {
@@ -5889,31 +6049,51 @@ final class LspCoordinator {
             lspManager.prepareTypeHierarchyAt(
                     ask.path(), ask.libraryUri(), type.nameLine(), type.nameColumn(), roots -> {
                         if (!roots.isEmpty()) {
-                            expand(roots.get(0), "", 0);
+                            if (type.isAnonymous()) {
+                                visit(roots.get(0), "a", 1, false); // jdtls answers with the instantiated type itself
+                            } else {
+                                expand(roots.get(0), "", 0, false);
+                            }
                         }
-                        done();
+                        finish();
                     });
         }
 
-        private void expand(LspManager.HierarchyNode node, String order, int depth) {
+        private void expand(LspManager.HierarchyNode node, String order, int depth, boolean coveredBranch) {
             pending++;
             lspManager.typeHierarchyChildren(ask.path(), node.raw(), true, supers -> {
                 List<LspManager.HierarchyNode> sorted = superclassFirst(supers);
                 for (int i = 0; i < sorted.size(); i++) {
-                    visit(sorted.get(i), order + (char) ('a' + Math.min(i, 25)), depth + 1);
+                    visit(sorted.get(i), order + (char) ('a' + Math.min(i, 25)), depth + 1, coveredBranch);
                 }
-                done();
+                finish();
             });
         }
 
-        private void visit(LspManager.HierarchyNode type, String order, int depth) {
-            String key = (type.file() != null ? type.file().toString() : type.libraryUri()) + ":" + type.line();
+        private String key(LspManager.HierarchyNode type) {
+            return (type.file() != null ? type.file().toString() : type.libraryUri()) + ":" + type.line();
+        }
+
+        private void visit(LspManager.HierarchyNode type, String order, int depth, boolean coveredBranch) {
+            String key = key(type);
+            if (coveredBranch) {
+                // above a hit: a method found here is one the hit overrides; only its ancestors are marked
+                if (covered.add(key) && depth <= MAX_DEPTH) {
+                    expand(type, order, depth, true);
+                }
+                return;
+            }
             if (depth > MAX_DEPTH || !seen.add(key)) {
                 return;
             }
+            if (type.name().equals("Object")
+                    && !OBJECT_METHODS.contains(com.editora.lsp.JavaMembers.methodName(method))) {
+                return; // Object declares none of this name: its outline is not read
+            }
             pending++;
             lspManager.memberSpans(ask.path(), type.file(), type.libraryUri(), members -> {
-                com.editora.lsp.MemberSpan declared = com.editora.lsp.JavaMembers.typeAt(members, type.line());
+                com.editora.lsp.MemberSpan declared =
+                        com.editora.lsp.JavaMembers.typeAt(members, type.line(), type.name());
                 List<com.editora.lsp.MemberSpan> hits = declared == null
                         ? List.of()
                         : com.editora.lsp.JavaMembers.overridden(declared.children(), method);
@@ -5925,23 +6105,24 @@ final class LspCoordinator {
                                     new LspManager.Target(
                                             type.file(), hit.nameLine(), hit.nameColumn(), type.libraryUri()),
                                     type.name() + "." + com.editora.lsp.JavaMembers.methodName(hit.name())));
+                    foundIn.put(order + i, key);
                 }
-                if (hits.isEmpty()) {
-                    expand(type, order, depth);
-                }
-                done();
+                expand(type, order, depth, !hits.isEmpty());
+                finish();
             });
         }
 
-        private void done() {
+        private void finish() {
             if (--pending > 0 || !ask.current().getAsBoolean()) {
                 return;
             }
-            if (found.isEmpty()) {
-                fallback.run();
-            } else {
-                openOneOrPick(ask, List.copyOf(found.values()), "picker.superMethod.title", "status.lsp.noSuperMethod");
-            }
+            List<SuperTarget> out = new java.util.ArrayList<>();
+            found.forEach((order, target) -> {
+                if (!covered.contains(foundIn.get(order))) {
+                    out.add(target);
+                }
+            });
+            done.accept(out);
         }
     }
 
@@ -5995,6 +6176,7 @@ final class LspCoordinator {
             return;
         }
         if (targets.size() == 1) {
+            host.setStatus("");
             openTarget(ask.path(), targets.get(0).target());
             return;
         }

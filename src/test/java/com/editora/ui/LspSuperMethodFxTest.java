@@ -196,6 +196,7 @@ class LspSuperMethodFxTest {
                 List.of(new TypeHierarchyItem("Named", SymbolKind.Interface, uri, range(0, 0, 1), range(0, 10, 15)));
         fx.server().supertypesResponse = List.of(new TypeHierarchyItem(
                 "Shape", SymbolKind.Interface, shape.toUri().toString(), range(0, 0, 1), range(0, 10, 15)));
+        fx.server().supertypesByName.put("Shape", List.of());
         fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString("[]"); // findLinks: nothing
         fx.caret(b, 2, 10);
         fx.run(() -> fx.coordinator.gotoSuperMethod());
@@ -290,6 +291,118 @@ class LspSuperMethodFxTest {
         fx.settle();
 
         assertEquals(List.of(new LspCoordinatorFixture.Jump(task, 0, 10)), fx.ops.jumps);
+    }
+
+    /** A static or private method overrides nothing: no jump to a same-named one (ninth review DP1). */
+    @Test
+    void aStaticMethodHasNoSuperMethod() throws Exception {
+        String source = "class A extends Base {\n    static void util() {\n        int x = 1;\n    }\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        DocumentSymbol a = member("A", SymbolKind.Class, 0, 4, 0, 6);
+        a.getChildren().add(member("util()", SymbolKind.Method, 1, 3, 1, 16));
+        fx.server().documentSymbolResponse = List.of(Either.forRight(a));
+        List<String> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        fx.server().rawHandler = raw -> {
+            asked.add(raw.method());
+            return com.google.gson.JsonParser.parseString("[]");
+        };
+        fx.caret(b, 2, 10);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(tr("status.lsp.noSuperMethod"), fx.host.lastStatus());
+        assertTrue(asked.isEmpty(), "not asked: " + asked);
+    }
+
+    /** A lambda held by a field goes to its functional interface's method (ninth review DP2). */
+    @Test
+    void aFieldsLambdaGoesToItsFunctionalMethod() throws Exception {
+        Path task = Files.writeString(root.resolve("Task.java"), "interface Task {\n    void run();\n}\n");
+        String source = "class A {\n    final Task t = () -> {\n        System.out.println();\n    };\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        DocumentSymbol a = member("A", SymbolKind.Class, 0, 4, 0, 6);
+        a.getChildren().add(member("t", SymbolKind.Field, 1, 3, 1, 15));
+        fx.server().documentSymbolResponse = List.of(Either.forRight(a));
+        fx.server().definitionResponse =
+                List.of(new org.eclipse.lsp4j.Location(task.toUri().toString(), range(1, 9, 12)));
+        fx.caret(b, 2, 12);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        Position asked =
+                fx.server().definitions.get(fx.server().definitions.size() - 1).getPosition();
+        assertEquals(new Position(1, source.split("\n")[1].indexOf("->")), asked, "at the arrow");
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(task, 1, 9)), fx.ops.jumps);
+    }
+
+    /** A constructor chained with this(...) goes on to the super constructor the chain reaches (ninth review BP3). */
+    @Test
+    void aChainedConstructorFollowsThisToSuper() throws Exception {
+        Path base = Files.writeString(root.resolve("Base.java"), "class Base {\n    Base(int x) {}\n}\n");
+        String source = "class A extends Base {\n    A() {\n        this(1);\n    }\n    A(int x) {\n"
+                + "        super(x);\n    }\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        DocumentSymbol a = member("A", SymbolKind.Class, 0, 7, 0, 6);
+        a.getChildren().add(member("A()", SymbolKind.Constructor, 1, 3, 1, 4));
+        a.getChildren().add(member("A(int)", SymbolKind.Constructor, 4, 6, 4, 4));
+        fx.server().documentSymbolResponse = List.of(Either.forRight(a));
+        String self = root.resolve("A.java").toUri().toString();
+        fx.server().definitionHandler = params -> params.getPosition().getLine() == 2
+                ? List.of(new org.eclipse.lsp4j.Location(self, range(4, 4, 5))) // this(1) → A(int)
+                : List.of(new org.eclipse.lsp4j.Location(base.toUri().toString(), range(1, 4, 8))); // super(x)
+        fx.caret(b, 2, 9);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(base, 1, 4)), fx.ops.jumps);
+    }
+
+    /**
+     * Of two super methods where one's type extends the other's, the more specific one alone: Sub.label goes to
+     * Named.label, not Priced.label too (ninth review EP3).
+     */
+    @Test
+    void aSuperMethodAnotherOverridesIsDropped() throws Exception {
+        Path priced = Files.writeString(root.resolve("Priced.java"), "interface Priced {\n    String label();\n}\n");
+        Path named = Files.writeString(
+                root.resolve("Named.java"), "interface Named extends Priced {\n    String label();\n}\n");
+        Path base = Files.writeString(root.resolve("Base.java"), "abstract class Base implements Priced {\n}\n");
+        String source =
+                "class Sub extends Base implements Named {\n    public String label() {\n        return \"s\";\n"
+                        + "    }\n}\n";
+        EditorBuffer b = fx.open("Sub.java", source);
+        DocumentSymbol sub = member("Sub", SymbolKind.Class, 0, 4, 0, 6);
+        sub.getChildren().add(member("label()", SymbolKind.Method, 1, 3, 1, 18));
+        fx.server().documentSymbolResponse = List.of(Either.forRight(sub));
+        for (Path type : List.of(priced, named)) {
+            DocumentSymbol t =
+                    member(type.getFileName().toString().replace(".java", ""), SymbolKind.Interface, 0, 2, 0, 10);
+            t.getChildren().add(member("label()", SymbolKind.Method, 1, 1, 1, 11));
+            fx.server().documentSymbolByUri.put(com.editora.lsp.LspTestHooks.uri(type), List.of(Either.forRight(t)));
+        }
+        fx.server()
+                .documentSymbolByUri
+                .put(
+                        com.editora.lsp.LspTestHooks.uri(base),
+                        List.of(Either.forRight(member("Base", SymbolKind.Class, 0, 1, 0, 15))));
+        java.util.function.BiFunction<String, Path, TypeHierarchyItem> item = (name, file) -> new TypeHierarchyItem(
+                name,
+                name.equals("Base") || name.equals("Sub") ? SymbolKind.Class : SymbolKind.Interface,
+                file.toUri().toString(),
+                range(0, 0, 1),
+                range(0, 10, 15));
+        fx.server().typeHierarchyResponse = List.of(item.apply("Sub", root.resolve("Sub.java")));
+        fx.server().supertypesByName.put("Sub", List.of(item.apply("Named", named), item.apply("Base", base)));
+        fx.server().supertypesByName.put("Base", List.of(item.apply("Priced", priced)));
+        fx.server().supertypesByName.put("Named", List.of(item.apply("Priced", priced)));
+        fx.server().supertypesByName.put("Priced", List.of());
+        fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString("[{\"uri\":\"" + priced.toUri()
+                + "\",\"range\":{\"start\":{\"line\":1,\"character\":11},\"end\":{\"line\":1,\"character\":16}}}]");
+        fx.caret(b, 2, 10);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(named, 1, 11)), fx.ops.jumps, "Named.label alone");
     }
 
     @Test
