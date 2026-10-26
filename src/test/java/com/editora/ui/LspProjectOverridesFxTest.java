@@ -286,6 +286,8 @@ class LspProjectOverridesFxTest {
         Map<String, Object> settings =
                 (Map<String, Object>) com.editora.lsp.FakeLanguageServer.last(fakes.get(0).configurations)
                         .getSettings();
-        assertEquals(Map.of("onType", Map.of("enabled", false)), ((Map<?, ?>) settings.get("java")).get("format"));
+        // beside the project's profile: none here, so the empty one, jdtls's defaults (fifth review DV2)
+        assertEquals(
+                Map.of("enabled", false), ((Map<?, ?>) ((Map<?, ?>) settings.get("java")).get("format")).get("onType"));
     }
 }
