@@ -5972,6 +5972,25 @@ public final class LspManager {
         boolean renameWithoutEdits(Path from, Path to, boolean answered);
     }
 
+    private static final java.util.regex.Pattern PACKAGE_LINE =
+            java.util.regex.Pattern.compile("^\\s*package\\s+([\\w.]+)\\s*;", java.util.regex.Pattern.MULTILINE);
+
+    /** Whether {@code file}'s {@code package} line is what the folder {@code into} implies: it ends with the package. */
+    static boolean packageFits(Path file, Path into) {
+        String text;
+        try (var in = Files.newInputStream(file)) {
+            text = new String(in.readNBytes(16_384), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException | RuntimeException e) {
+            return false;
+        }
+        var m = PACKAGE_LINE.matcher(text);
+        if (!m.find()) {
+            return false; // the default package: whether the folder is a source root is not known here
+        }
+        Path tail = Path.of(m.group(1).replace('.', '/'));
+        return into.toAbsolutePath().normalize().endsWith(tail);
+    }
+
     /** Whether {@code dir} is a folder with a {@code .java} file in it, at any depth. */
     private static boolean holdsJava(Path dir) {
         if (!Files.isDirectory(dir)) {
@@ -5987,8 +6006,8 @@ public final class LspManager {
     /** As {@link #willRenameFile(Path, Path, Consumer)}, asking {@code fallback} when jdtls has no edit for it. */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
         LanguageServerSession s = javaSessionFor(from);
-        boolean java = from.toString().endsWith(".java") || holdsJava(from);
-        if (s == null || !java) {
+        // No Java server for the folder: nothing to ask, and no folder walked on the UI thread (fifth review BV5)
+        if (s == null || !(from.toString().endsWith(".java") || holdsJava(from))) {
             Platform.runLater(() -> proceed.accept(true));
             return;
         }
@@ -6000,9 +6019,13 @@ public final class LspManager {
             s.didChangeWatchedFiles(
                     eventsUnderRoot(List.of(new WatchedFile(into, WatchedKind.CREATED)), s.root(), s.uris()));
         }
+        // A .java file moved to another folder whose package line does not fit it: the case where an empty answer
+        // means jdtls left it wrong. Moved main → test in the same package, or back by Undo Move, nothing is wrong
+        // (fifth review BV4).
         boolean moved = into != null
                 && !into.equals(from.getParent())
-                && from.toString().endsWith(".java");
+                && from.toString().endsWith(".java")
+                && !packageFits(from, into);
         EditBasis expected = editBasis(s);
         s.willRenameFiles(s.uris().toWire(uri(from)), s.uris().toWire(uri(to)))
                 .whenComplete((edit, e) -> Platform.runLater(() -> {

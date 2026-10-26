@@ -2496,6 +2496,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             planned.add(new Move(src, targetDir.resolve(src.getFileName())));
         }
         int alreadySkipped = skipped;
+        refused[0] = 0;
         renameParticipant.beginMove();
         moveThrough(planned, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             int moved = done.size();
@@ -2504,11 +2505,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 markLocalChange();
                 refreshAfterChange();
             }
-            int notMoved = alreadySkipped + failed;
+            int notMoved = alreadySkipped + failed - refused[0];
             onStatus.accept(
-                    notMoved == 0
-                            ? tr("project.moved", moved, targetDir.getFileName())
-                            : tr("project.movedSome", moved, notMoved));
+                    moved == 0 && refused[0] > 0 && notMoved == 0
+                            ? tr("project.moveCancelled") // "No" to moving without edits is no conflict (BV3)
+                            : notMoved == 0
+                                    ? tr("project.moved", moved, targetDir.getFileName())
+                                    : tr("project.movedSome", moved, notMoved));
             renameParticipant.endMove(false);
         });
     }
@@ -2534,6 +2537,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         renameParticipant.willRename(m.from(), m.to(), ok -> {
             if (!ok) {
                 failed[0]++;
+                refused[0]++;
             } else {
                 try {
                     Files.move(m.from(), m.to());
@@ -2545,9 +2549,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     failed[0]++;
                 }
             }
-            moveThrough(moves, i + 1, done, failed, finish);
+            // On the next pulse: the participant records what this move did once this callback returns, and the
+            // last move's finish ends the drag. Run inline, the drag ended before its last file's edit was
+            // recorded, and undoing it left that file in the wrong package (fifth review BV1).
+            javafx.application.Platform.runLater(() -> moveThrough(moves, i + 1, done, failed, finish));
         });
     }
+
+    /** The moves of the drag under way that the participant refused (the user said not to move without edits). */
+    private final int[] refused = {0};
 
     /** Whether there is a drag-move to take back (the tree menu offers "Undo Move" while there is). */
     boolean canUndoMove() {
@@ -2581,6 +2591,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         }
         int alreadyStuck = stuck;
+        refused[0] = 0;
         renameParticipant.beginMove();
         moveThrough(back, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             if (!done.isEmpty()) {

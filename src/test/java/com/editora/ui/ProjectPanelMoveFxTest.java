@@ -87,6 +87,14 @@ class ProjectPanelMoveFxTest {
     private static void move(ProjectPanel panel, List<Path> sources, Path target) throws Exception {
         FxTestSupport.runOnFx(
                 () -> FxTestSupport.call(panel, "moveInto", new Class<?>[] {List.class, Path.class}, sources, target));
+        settle();
+    }
+
+    /** Lets a drag's later moves run: each one follows on the next pulse (fifth review BV1). */
+    private static void settle() throws Exception {
+        for (int i = 0; i < 12; i++) {
+            FxTestSupport.drainFx();
+        }
     }
 
     /**
@@ -148,6 +156,7 @@ class ProjectPanelMoveFxTest {
         p.renames().clear();
 
         FxTestSupport.runOnFx(p.panel()::undoLastMove);
+        settle();
 
         assertEquals("a", Files.readString(root.resolve("a.txt")));
         assertEquals("b", Files.readString(root.resolve("b.txt")));
@@ -170,6 +179,7 @@ class ProjectPanelMoveFxTest {
         Files.writeString(root.resolve("a.txt"), "written since the move");
 
         FxTestSupport.runOnFx(p.panel()::undoLastMove);
+        settle();
 
         assertEquals("written since the move", Files.readString(root.resolve("a.txt")));
         assertEquals("moved", Files.readString(sub.resolve("a.txt")), "the moved file stays where it is");
@@ -204,8 +214,48 @@ class ProjectPanelMoveFxTest {
 
         asked.clear();
         FxTestSupport.runOnFx(p.panel()::undoLastMove);
+        settle();
         assertEquals(
                 List.of(new Rename(sub.resolve("A.java"), root.resolve("A.java"))), asked, "asked on the way back too");
         assertTrue(Files.exists(root.resolve("A.java")));
+    }
+
+    /**
+     * The drag ends only after the participant's callback for its last move has returned: the participant records
+     * what a move did when that callback returns, and a drag that ended first lost its last file's edit, so undoing
+     * it left that file in the wrong package (fifth review BV1).
+     */
+    @Test
+    void aDragEndsAfterTheLastMovesCallbackHasReturned(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("A.java"), "package x;");
+        Files.writeString(root.resolve("B.java"), "package x;");
+        Path sub = Files.createDirectory(root.resolve("sub"));
+        Panel p = panel(root);
+        List<String> events = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> p.panel().setRenameParticipant(new ProjectPanel.RenameParticipant() {
+            @Override
+            public void willRename(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
+                proceed.accept(true);
+                events.add("recorded " + from.getFileName());
+            }
+
+            @Override
+            public void beginMove() {
+                events.add("begin");
+            }
+
+            @Override
+            public void endMove(boolean undo) {
+                events.add("end " + undo);
+            }
+        }));
+
+        move(p.panel(), List.of(root.resolve("A.java"), root.resolve("B.java")), sub);
+
+        assertEquals(List.of("begin", "recorded A.java", "recorded B.java", "end false"), events);
+        events.clear();
+        FxTestSupport.runOnFx(p.panel()::undoLastMove);
+        settle();
+        assertEquals(List.of("begin", "recorded B.java", "recorded A.java", "end true"), events);
     }
 }

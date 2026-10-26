@@ -499,8 +499,11 @@ class ProjectPanelCellsFxTest {
                 ContextMenu menu = r.menu(r.item(r.beta), false, false);
                 ProjectPanelRig.entry(menu.getItems(), "project.menu.undoMove").fire();
                 assertTrue(Files.exists(r.alpha) && !Files.exists(moved), "Undo Move puts it back");
-                assertEquals(tr("project.moveUndone", 1), r.status.get(r.status.size() - 1));
             });
+            // the undo's last step follows on the next pulse, after the participant has seen the move (BV1)
+            r.await(
+                    "the undo's status",
+                    () -> !r.status.isEmpty() && tr("project.moveUndone", 1).equals(r.status.get(r.status.size() - 1)));
         }
     }
 

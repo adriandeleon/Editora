@@ -7462,12 +7462,17 @@ final class LspCoordinator {
                 ok -> {
                     proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
                     AppliedEdit edit = lastApplied;
-                    if (ok
-                            && edit != null
-                            && edit != previous
-                            && !java.nio.file.Files.exists(from)
-                            && java.nio.file.Files.exists(to)) {
+                    boolean moved = ok && !java.nio.file.Files.exists(from) && java.nio.file.Files.exists(to);
+                    if (moved && edit != null && edit != previous) {
                         treeRenamed(edit, from, to);
+                    } else if (moved && moveGroup != null) {
+                        // moved with no edit (not Java, or nothing to change): still part of the drag, so undoing
+                        // the drag as one refactoring takes it back too (fifth review BV1)
+                        moveGroup.add(new AppliedEdit(
+                                java.util.List.of(),
+                                java.util.List.of(new com.editora.lsp.WorkspaceEditMapper.FileRename(from, to, false)),
+                                java.util.List.of()));
+                        moveGroupWhole &= !java.nio.file.Files.isDirectory(to);
                     }
                 },
                 this::renameWithoutEdits);
@@ -7489,6 +7494,7 @@ final class LspCoordinator {
                 moveGroup = new java.util.ArrayList<>();
                 moveGroupWhole = true;
                 moveWithoutEdits.clear();
+                moveWithoutEditsAnswer = null;
             }
 
             @Override
@@ -7534,9 +7540,11 @@ final class LspCoordinator {
             treeMoveEdit = lastApplied;
         }
         if (!moveWithoutEdits.isEmpty()) {
-            host.setError(tr("status.lsp.moveWithoutPackageEdit", String.join(", ", moveWithoutEdits)));
+            host.setError(tr(
+                    "status.lsp.moveWithoutPackageEdit", String.join(", ", moveWithoutEdits), moveWithoutEdits.size()));
             moveWithoutEdits.clear();
         }
+        moveWithoutEditsAnswer = null;
     }
 
     /** One edit made of several, in order: a file edited twice keeps its first text, a later move renames it. */
@@ -7577,12 +7585,25 @@ final class LspCoordinator {
             if (moveGroup != null) {
                 moveWithoutEdits.add(name);
             } else {
-                host.setError(tr("status.lsp.moveWithoutPackageEdit", name));
+                host.setError(tr("status.lsp.moveWithoutPackageEdit", name, 1));
             }
             return true;
         }
-        return confirmRenameWithoutEdits.test(tr("dialog.lsp.renameWithoutEdits.body", name));
+        Boolean asked = moveWithoutEditsAnswer;
+        if (moveGroup != null && asked != null) {
+            return asked; // asked once for the whole drag (fifth review BV3)
+        }
+        boolean rename = java.util.Objects.equals(from.getParent(), to.getParent());
+        boolean answer = confirmRenameWithoutEdits.test(
+                tr(rename ? "dialog.lsp.renameWithoutEdits.renameBody" : "dialog.lsp.renameWithoutEdits.body", name));
+        if (moveGroup != null) {
+            moveWithoutEditsAnswer = answer;
+        }
+        return answer;
     }
+
+    /** The answer the user gave about moving without edits during the drag under way, or null when not asked. */
+    private @Nullable Boolean moveWithoutEditsAnswer;
 
     /** Asks whether to rename a file jdtls could not edit for; a field so a test can answer. */
     java.util.function.Predicate<String> confirmRenameWithoutEdits = this::askRenameWithoutEdits;
