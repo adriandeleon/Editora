@@ -63,6 +63,7 @@ public final class MessageLog {
         if (message == null || message.isBlank()) {
             return;
         }
+        boolean repeat = false;
         for (java.util.Iterator<Entry> it = entries.descendingIterator(); it.hasNext(); ) {
             Entry earlier = it.next();
             if (epochMillis - earlier.epochMillis() >= REPEAT_MILLIS) {
@@ -70,12 +71,14 @@ public final class MessageLog {
             }
             if (earlier.text().equals(message) && earlier.severity() == severity) {
                 // the same message said again at once, re-shown over a later status ("Opened …" between the two
-                // start refusals, ninth review DQ3): one entry, one unread
-                return;
+                // start refusals, ninth review DQ3): it moves to the top, one entry and one unread
+                it.remove();
+                repeat = true;
+                break;
             }
         }
         entries.addLast(new Entry(epochMillis, message, severity));
-        if (severity == Severity.ERROR) {
+        if (severity == Severity.ERROR && !repeat) {
             unreadErrors++;
         }
         while (entries.size() > MAX_ENTRIES) {
