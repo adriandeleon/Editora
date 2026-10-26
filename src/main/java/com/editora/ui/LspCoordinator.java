@@ -513,7 +513,17 @@ final class LspCoordinator {
             javafx.stage.Window w = host.window();
             return w != null && w.isFocused();
         });
-        lspManager.setOnServerStatus(this::onServerStatus);
+        lspManager.setOnServerStatus(new LspManager.ServerStatusListener() {
+            @Override
+            public void status(String serverId, String type, String message) {
+                onServerStatus(serverId, null, type, message);
+            }
+
+            @Override
+            public void status(String serverId, @Nullable Path root, String type, String message) {
+                onServerStatus(serverId, root, type, message);
+            }
+        });
         lspManager.setPythonInterpreterResolver(pythonInterpreters::pythonPathForServerRoot); // review B1
         // A server root the Project panel's watcher does not cover gets a watcher of its own (review B7).
         lspManager.setWatchSessionRoots(root -> {
@@ -1249,6 +1259,21 @@ final class LspCoordinator {
             problems.put(key, listed);
         } else {
             problems.remove(key);
+        }
+        if (projectLevel) {
+            // The project's error comes after jdtls said the import failed: say the reason again in its words
+            // ("Could not find method …", not the Gradle wrapper's "Could not fetch model") (third review CT7).
+            Path project = java.nio.file.Files.isDirectory(file) ? file : file.getParent();
+            String reason = project == null ? null : projectReason(project);
+            String failedKey = importKey(LspServerRegistry.JAVA_SERVER_ID, project);
+            if (reason != null
+                    && importFailed.contains(failedKey)
+                    && !reason.equals(saidImportReason.put(failedKey, reason))) { // once, not per publish
+                host.setError(tr(
+                        "status.lsp.importProblemWhy",
+                        serverProgram(LspServerRegistry.JAVA_SERVER_ID),
+                        reason.replaceFirst("[.\\s]+$", "")));
+            }
         }
         refreshProblems();
     }
@@ -3095,8 +3120,21 @@ final class LspCoordinator {
      * message is prefixed with that server's name — it used to read "Java LSP:" whichever server sent it.
      */
     void onServerStatus(@Nullable String serverId, String type, String message) {
+        onServerStatus(serverId, null, type, message);
+    }
+
+    /** As above, from the session on {@code root} (null when unknown). */
+    void onServerStatus(@Nullable String serverId, @Nullable Path root, String type, String message) {
         if (!ops.lspFeatureEnabled()) {
             return;
+        }
+        if (serverId != null && root != null) {
+            statusRoot.put(serverId, root); // whose import the next narrated line is about
+            if ("ProjectStatus".equalsIgnoreCase(type) && "OK".equalsIgnoreCase(message)) {
+                // that folder imported: its earlier failure no longer stands (third review CT3)
+                importFailed.remove(importKey(serverId, root));
+                importWarned.remove(importKey(serverId, root));
+            }
         }
         if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
             // lemminx-maven answers initialize long before it can answer a request: its ready line waits for
@@ -3219,32 +3257,80 @@ final class LspCoordinator {
         return settle;
     }
 
-    /** Servers whose project did not import since the last restart, reload or clean: never "ready" over that. */
+    /**
+     * Projects (server and folder) that did not import since the last restart, reload or clean: never "ready" over
+     * that. Keyed by folder: in a window of several projects one failed import marked every other ready line.
+     */
     private final java.util.Set<String> importFailed = new java.util.HashSet<>();
 
-    /** Servers whose project imported with build problems (a missing dependency): ready, but said so. */
+    /** Projects that imported with build problems (a missing dependency): ready, but said so. */
     private final java.util.Set<String> importWarned = new java.util.HashSet<>();
+
+    /** The project reason last said for each failed import, so a re-published error is not said again. */
+    private final Map<String, String> saidImportReason = new java.util.HashMap<>();
+
+    /** The folder of the session each server last spoke from, which the narrated lines that follow are about. */
+    private final Map<String, Path> statusRoot = new java.util.HashMap<>();
+
+    private static String importKey(@Nullable String serverId, @Nullable Path root) {
+        return serverId + "\u0000" + (root == null ? "" : root.toAbsolutePath().normalize());
+    }
+
+    /**
+     * Why {@code root}'s import failed, in the project's own words: the last line of the error jdtls put on the
+     * project (a Gradle build's "Could not find method …"), which beats the generic wrapper its log says first
+     * (third review CT7). Null when there is none yet.
+     */
+    private @Nullable String projectReason(@Nullable Path root) {
+        if (root == null) {
+            return null;
+        }
+        Path r = root.toAbsolutePath().normalize();
+        for (Map.Entry<Path, List<LspDiagnostic>> e : problems.entrySet()) {
+            Path p = e.getKey().toAbsolutePath().normalize();
+            if (!LspManager.projectLevel(p) || !(p.equals(r) || r.equals(p.getParent()))) {
+                continue;
+            }
+            for (LspDiagnostic d : e.getValue()) {
+                if (d.severity() == LspDiagnostic.Severity.ERROR) {
+                    List<String> lines = d.message()
+                            .lines()
+                            .map(String::strip)
+                            .filter(l -> !l.isEmpty())
+                            .toList();
+                    if (!lines.isEmpty()) {
+                        return lines.get(lines.size() - 1);
+                    }
+                }
+            }
+        }
+        return null;
+    }
 
     private void showStatusLine(com.editora.lsp.ServerStatusNarrator.@Nullable Line line) {
         if (line != null) {
             String server = line.serverId() == null ? "LSP" : serverProgram(line.serverId());
-            String id = String.valueOf(line.serverId());
+            Path root = line.serverId() == null ? null : statusRoot.get(line.serverId());
+            String key = importKey(line.serverId(), root);
             if (line.problem()) {
                 // jdtls says WARNING both for an import that threw (a Gradle build that does not run: it logs the
                 // exception) and for one that worked with build problems (a missing Maven artifact: nothing
-                // logged). Only the first is "did not import" (re-review CN2, third review CT2); its reason is in
-                // the log only, so it is said here.
-                String reason = lspManager.lastServerError(line.serverId());
-                if (reason == null) {
-                    importWarned.add(id);
+                // logged). Only the first is "did not import" (re-review CN2, third review CT2).
+                String logged = lspManager.lastServerError(line.serverId(), root);
+                if (logged == null) {
+                    importWarned.add(key);
                     host.setStatus(tr("status.lsp.importProblem", server));
                 } else {
-                    importFailed.add(id);
-                    host.setError(tr("status.lsp.importProblemWhy", server, reason.replaceFirst("[.\\s]+$", "")));
+                    importFailed.add(key);
+                    String reason = projectReason(root);
+                    host.setError(tr(
+                            "status.lsp.importProblemWhy",
+                            server,
+                            (reason != null ? reason : logged).replaceFirst("[.\\s]+$", "")));
                 }
-            } else if (line.ready() && importFailed.contains(id)) {
+            } else if (line.ready() && importFailed.contains(key)) {
                 host.setError(tr("status.lsp.readyImportFailed", server)); // not "Loaded and ready" over it
-            } else if (line.ready() && importWarned.remove(id)) {
+            } else if (line.ready() && importWarned.remove(key)) {
                 host.setStatus(tr("status.lsp.readyWithProblems", server));
             } else {
                 host.setStatus(
@@ -4537,11 +4623,13 @@ final class LspCoordinator {
      * notification, so the only observable result is fresh diagnostics arriving.
      */
     void reloadProject() {
-        boolean failed = importFailed.remove(LspServerRegistry.JAVA_SERVER_ID);
-        importFailed.clear(); // the import runs again: its outcome is said afresh
-        importWarned.clear();
         EditorBuffer b = host.activeBuffer(); // a pom.xml tab counts, whichever server (if any) edits it
         Path path = b == null ? null : lspPath(b);
+        Path root = path == null ? null : lspManager.sessionRoot(path);
+        boolean failed = importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))
+                | importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, null)); // said by no known folder
+        importFailed.clear(); // the import runs again: its outcome is said afresh
+        importWarned.clear();
         if (path == null) {
             host.setStatus(tr("status.lsp.unavailable"));
             return;

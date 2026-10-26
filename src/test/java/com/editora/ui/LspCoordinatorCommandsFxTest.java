@@ -1765,6 +1765,65 @@ class LspCoordinatorCommandsFxTest {
         awaitError(tr("status.lsp.readyImportFailed", "jdtls"));
     }
 
+    /**
+     * A failed import is said in the project's own words when jdtls put an error on the project, belongs to that
+     * project's folder only, and an OK import of that folder clears it (third review CT3, CT7).
+     */
+    @Test
+    void aFailedImportIsTheFoldersOwnAndSaysTheProjectsReason() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        LspTestHooks.logError(
+                fx.manager, b.getPath(), "Could not fetch model of type 'Map' using connection to Gradle");
+        var cause = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.ERROR,
+                "The supplied phased action failed with an exception.\nBuild file 'build.gradle' line: 3\n"
+                        + "Could not find method thisIsNotAConfiguration() for arguments [x]",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(cause)));
+        Path other = root.resolve("other-project");
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING"));
+        awaitError(tr(
+                "status.lsp.importProblemWhy",
+                "jdtls",
+                "Could not find method thisIsNotAConfiguration() for arguments [x]"));
+
+        fx.run(() -> fx.coordinator.onServerStatus("java", other, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.ready", "jdtls")); // another folder's import is not this one's failure
+
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "OK"));
+        fx.run(() -> fx.coordinator.reloadProject());
+        assertFalse(
+                tr("status.lsp.projectReimporting").equals(fx.host.lastStatus()),
+                "it imported since: the failure no longer stands, so Reload is a plain reload");
+    }
+
+    @Test
+    void theProjectsReasonIsSaidWhenItsErrorArrivesAfterTheFailure() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        LspTestHooks.logError(fx.manager, b.getPath(), "Could not fetch model of type 'Map'");
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING"));
+        awaitError(tr("status.lsp.importProblemWhy", "jdtls", "Could not fetch model of type 'Map'"));
+        var cause = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.ERROR,
+                "The supplied phased action failed.\nCould not find method nope()",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(cause)));
+        awaitError(tr("status.lsp.importProblemWhy", "jdtls", "Could not find method nope()"));
+        int said = fx.host.errors.size();
+        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(cause))); // published again
+        assertEquals(said, fx.host.errors.size(), "said once");
+    }
+
     @Test
     void anImportWithBuildProblemsIsLoadedNotFailed() throws Exception {
         fx.open("A.java", SOURCE);

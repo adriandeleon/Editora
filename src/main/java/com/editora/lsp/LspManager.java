@@ -348,6 +348,15 @@ public final class LspManager {
      * The last error {@code serverId}'s servers logged (its first line), or null: what a failed import was really
      * about, which jdtls says only in its log (re-review CN2).
      */
+    /** As {@link #lastServerError(String)}, from the session on {@code root} only. */
+    public @Nullable String lastServerError(@Nullable String serverId, @Nullable Path root) {
+        if (root == null) {
+            return lastServerError(serverId);
+        }
+        LanguageServerSession s = sessionsByRoot.get(sessionKey(String.valueOf(serverId), root));
+        return s == null ? null : s.lastErrorLog();
+    }
+
     public @Nullable String lastServerError(@Nullable String serverId) {
         for (LanguageServerSession s : sessionsByRoot.values()) {
             if (s.serverId().equals(serverId) && s.lastErrorLog() != null) {
@@ -1461,7 +1470,8 @@ public final class LspManager {
             }
             ServerStatusListener named = onServerStatus;
             if (named != null) {
-                named.status(serverId, type, msg);
+                LanguageServerSession said = session.get();
+                named.status(serverId, said == null ? null : said.root(), type, msg);
             } else {
                 onStatus.accept(type, msg);
             }
@@ -1893,6 +1903,11 @@ public final class LspManager {
     @FunctionalInterface
     public interface ServerStatusListener {
         void status(String serverId, String type, String message);
+
+        /** As above, with the project folder of the session that said it (null when unknown). */
+        default void status(String serverId, @Nullable Path root, String type, String message) {
+            status(serverId, type, message);
+        }
     }
 
     /** When set, receives every server status instead of the constructor's callback, naming the server. */
