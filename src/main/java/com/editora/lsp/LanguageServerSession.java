@@ -238,6 +238,11 @@ final class LanguageServerSession implements LanguageClient {
         return question;
     }
 
+    /** Tests: a question the server asked, open until {@code question} completes. */
+    <T> CompletableFuture<T> askForTest(CompletableFuture<T> question) {
+        return asking(question);
+    }
+
     /** Whether the server is waiting on the user's answer to a question it asked. */
     boolean questionOpen() {
         return !openQuestions.isEmpty();
@@ -3070,8 +3075,32 @@ final class LanguageServerSession implements LanguageClient {
     public void languageStatus(LanguageStatus status) {
         if (status != null) {
             String message = status.message == null ? "" : status.message.strip();
-            onStatus.accept(status.type == null ? "" : status.type, message);
+            String type = status.type == null ? "" : status.type;
+            if (type.equalsIgnoreCase("Starting")) {
+                lastStarting = message;
+            } else if (type.toLowerCase(java.util.Locale.ROOT).contains("ready")) {
+                saidReady = true;
+            }
+            onStatus.accept(type, message);
         }
+    }
+
+    /** jdtls's last "Starting" line, and whether it has said itself that it is ready (its import done). */
+    private volatile @Nullable String lastStarting;
+
+    private volatile boolean saidReady;
+
+    /**
+     * Whether jdtls is still importing: its handshake is done, but it has not said it is ready. A window that joins
+     * now is told it is starting, not ready (eighth review CQ1).
+     */
+    boolean stillImporting() {
+        return LspServerRegistry.JAVA_SERVER_ID.equals(serverId()) && !saidReady;
+    }
+
+    @Nullable
+    String lastStarting() {
+        return lastStarting;
     }
 
     /** JDT LS's legacy progress channel, enabled by {@code progressReportProvider}. Recent servers still

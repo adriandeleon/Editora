@@ -287,12 +287,32 @@ class ProjectPanelMoveFxTest {
         });
         move(p.panel(), List.of(root.resolve("A.java")), sub);
         move(p.panel(), List.of(root.resolve("C.java")), sub);
-        assertEquals(List.of(tr("project.moveInProgress")), statuses, "the second drop waits");
+        assertEquals(List.of(tr("project.moveInProgress")), statuses, "the second drop is refused");
         assertEquals(1, pending.size());
+        FxTestSupport.runOnFx(p.panel()::undoLastMove);
+        assertEquals(tr("project.undoMoveInProgress"), statuses.getLast(), "Undo Move is not told to drop (BQ5)");
 
         FxTestSupport.runOnFx(() -> pending.get(0).accept(false)); // the edit no longer applied
         settle();
         assertEquals(tr("project.moveEditFailed", 0, 1), statuses.getLast());
+        assertTrue(statuses.getLast().startsWith("Nothing moved"), "not \"Moved 0\" (eighth review BQ5)");
         assertTrue(Files.exists(root.resolve("A.java")));
+    }
+
+    /** A folder counts as a Java item only with Java in it: a folder of text files asked about (eighth review BV3). */
+    @Test
+    void onlyAFolderWithJavaIsAJavaItem(@TempDir Path root) throws Exception {
+        Path docs = Files.createDirectories(root.resolve("docs"));
+        Files.writeString(docs.resolve("readme.txt"), "x");
+        Path pkg = Files.createDirectories(root.resolve("pkg/deep"));
+        Files.writeString(pkg.resolve("A.java"), "class A {}");
+        Path into = root.resolve("into");
+        assertEquals(0, ProjectPanel.javaItems(List.of(new ProjectPanel.Move(docs, into.resolve("docs")))));
+        assertEquals(
+                2,
+                ProjectPanel.javaItems(List.of(
+                        new ProjectPanel.Move(root.resolve("pkg"), into.resolve("pkg")),
+                        new ProjectPanel.Move(pkg.resolve("A.java"), into.resolve("A.java")),
+                        new ProjectPanel.Move(docs.resolve("readme.txt"), into.resolve("readme.txt")))));
     }
 }

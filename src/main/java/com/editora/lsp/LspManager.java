@@ -1579,11 +1579,17 @@ public final class LspManager {
         clientOf.put(session, client);
         ensureRootWatcher(session.root());
         if (session.isInitialized()) {
+            // the project's own problems first, so its verdict can name them (seventh review CR2)
+            session.projectDiagnostics().forEach(client.diagnostics::accept);
+        }
+        if (session.isInitialized() && session.stillImporting()) {
+            // jdtls is still importing: this window waits for its own ready, as the first window does; the
+            // handshake's replayed ready said "Loaded and ready" over unchecked files (eighth review CQ1)
+            client.status.accept("Starting", session.lastStarting());
+        } else if (session.isInitialized()) {
             // Ready before this window came: it hears so now — its status bar says "Loaded and ready" instead of
             // a stale progress line, and its documents' gates and data are refreshed (re-review CN5). How the
             // project imported goes first: a failed import was "Loaded and ready" here (sixth review CS2).
-            // the project's own problems first, so its verdict can name them (seventh review CR2)
-            session.projectDiagnostics().forEach(client.diagnostics::accept);
             String imported = session.lastProjectStatus();
             if (imported != null) {
                 client.status.accept("ProjectStatus", imported);
@@ -3576,6 +3582,25 @@ public final class LspManager {
         s.documentSymbol(uri(file)).whenComplete((result, error) -> {
             List<SymbolNode> symbols = error == null && result != null ? DocumentSymbolMapper.map(result) : List.of();
             Platform.runLater(() -> cb.accept(symbols));
+        });
+    }
+
+    /**
+     * The members of {@code libraryUri} (a {@code jdt://} class file), else of {@code file}, else of {@code anchor},
+     * with their whole extents, asked on {@code anchor}'s session (Go to Super Method, eighth review BQ1).
+     */
+    public void memberSpans(
+            Path anchor, @Nullable Path file, @Nullable String libraryUri, Consumer<List<MemberSpan>> cb) {
+        LanguageServerSession s = sessionFor(anchor);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        String document = libraryUri != null ? libraryUri : uri(file != null ? file : anchor);
+        s.documentSymbol(document).whenComplete((result, error) -> {
+            List<MemberSpan> members =
+                    error == null && result != null ? DocumentSymbolMapper.members(result) : List.of();
+            Platform.runLater(() -> cb.accept(members));
         });
     }
 
@@ -6104,10 +6129,25 @@ public final class LspManager {
      * folders are not walked: a 40,000-file {@code node_modules} took 61 ms (sixth review BV5).
      */
     static boolean holdsJava(Path dir) {
+        return holdsJava(dir, Integer.MAX_VALUE);
+    }
+
+    /**
+     * {@link #holdsJava}, fast enough for the UI thread: after 5,000 entries it stops and says yes. A
+     * drag's question counted a folder of text files as a Java item (eighth review BV3).
+     */
+    public static boolean mayHoldJava(Path dir) {
+        return holdsJava(dir, QUICK_WALK);
+    }
+
+    private static final int QUICK_WALK = 5_000;
+
+    private static boolean holdsJava(Path dir, int maxEntries) {
         if (!Files.isDirectory(dir)) {
             return false;
         }
         boolean[] found = {false};
+        int[] seen = {0};
         try {
             Files.walkFileTree(dir, java.util.Set.of(), 32, new java.nio.file.SimpleFileVisitor<>() {
                 @Override
@@ -6122,7 +6162,7 @@ public final class LspManager {
                 @Override
                 public java.nio.file.FileVisitResult visitFile(
                         Path f, java.nio.file.attribute.BasicFileAttributes attrs) {
-                    if (f.toString().endsWith(".java")) {
+                    if (f.toString().endsWith(".java") || ++seen[0] >= maxEntries) {
                         found[0] = true;
                         return java.nio.file.FileVisitResult.TERMINATE;
                     }
@@ -6281,6 +6321,12 @@ public final class LspManager {
     /** Whether a jdtls serves {@code file}'s project, whichever server edits the file itself. */
     public boolean hasJavaSession(@Nullable Path file) {
         return javaSessionFor(file) != null;
+    }
+
+    /** Whether {@code a} and {@code b} are served by one running jdtls (a save in one can break the other). */
+    public boolean sameJavaSession(@Nullable Path a, @Nullable Path b) {
+        LanguageServerSession s = javaSessionFor(a);
+        return s != null && s == javaSessionFor(b);
     }
 
     /** What a jdtls {@code java/buildWorkspace} reported ({@code BuildWorkspaceStatus}), or {@link #UNAVAILABLE}. */

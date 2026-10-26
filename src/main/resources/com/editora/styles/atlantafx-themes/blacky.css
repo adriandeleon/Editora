@@ -4968,3 +4968,9 @@ Text {
  * Canvas: #000000 (black) - Foreground: #f2f2f2 (white) - Accent: #D98C42 (amber)
  * Danger: #E2463D (red) - Warning: #F0C030 (golden yellow) - Success: #44C46A (green)
  */
+
+/* Editora: the accent here is the bookmark's warning colour, so the assist bulb takes the foreground colour, apart
+   from the bookmark and from the red quick-fix bulb (eighth review AR3). */
+.editor-area {
+  -editora-bulb-assist: -color-fg-default;
+}

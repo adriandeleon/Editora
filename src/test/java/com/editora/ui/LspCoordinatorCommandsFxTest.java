@@ -858,6 +858,26 @@ class LspCoordinatorCommandsFxTest {
         assertEquals(Boolean.FALSE, build.params(), "incremental, not a full build");
     }
 
+    /**
+     * With another Java file of the project open, a save rechecks too: a file calling a method just renamed elsewhere
+     * showed no error until it was typed in (eighth review AQ1).
+     */
+    @Test
+    void aSaveRechecksWhileAnotherJavaFileIsOpen() throws Exception {
+        fx.open("B.java", "class B {}\n");
+        EditorBuffer a = fx.open("A.java", SOURCE);
+        fx.run(() -> fx.coordinator.notifyDocumentSaved(a, SOURCE));
+        long deadline = System.currentTimeMillis() + 5000;
+        while (fx.server().rawRequests.stream().noneMatch(r -> r.method().equals("java/buildWorkspace"))
+                && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50);
+            fx.settle();
+        }
+        assertTrue(
+                fx.server().rawRequests.stream().anyMatch(r -> r.method().equals("java/buildWorkspace")),
+                "B.java is rechecked after A.java's save");
+    }
+
     @Test
     void aMavenProjectsSourceRootIsLeftToItsBuild() throws Exception {
         java.nio.file.Files.writeString(fx.root.resolve("pom.xml"), "<project/>");
@@ -1563,6 +1583,28 @@ class LspCoordinatorCommandsFxTest {
         fx.settle();
         assertEquals(1, fx.server().formattings.size(), "format only: no Organize Imports");
         assertTrue(fx.ops.saved.isEmpty(), "nothing changed: no second save");
+    }
+
+    /**
+     * While an import question is open no on-save action runs: a format on save changed the file under the question
+     * and its answer was dropped though the user typed nothing (eighth review AR1).
+     */
+    @Test
+    void noActionOnSaveRunsWhileAnImportQuestionIsOpen() throws Exception {
+        EditorBuffer b = fx.open("A.java", UNTIDY);
+        fx.ops.saves = true;
+        fx.host.settings.setJavaFormatOnSave(true);
+        fx.host.settings.setJavaCleanupOnSave(true);
+        fx.server().formattingResponse = List.of();
+        var question = com.editora.lsp.LspTestHooks.openQuestion(fx.manager, b.getPath());
+        fx.run(() -> fx.coordinator.afterUserSave(b));
+        fx.settle();
+        assertTrue(fx.server().formattings.isEmpty() && fx.server().rawRequests.isEmpty(), "nothing while it is open");
+
+        question.complete(null);
+        fx.run(() -> fx.coordinator.afterUserSave(b));
+        fx.settle();
+        assertEquals(1, fx.server().formattings.size(), "answered: the next save formats");
     }
 
     // --- Java clean-ups ------------------------------------------------------------------------------

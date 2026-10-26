@@ -100,11 +100,16 @@ class LspWorkspaceEditFxTest {
         @Override
         public void setStatus(String message) {
             status = message;
+            echo = message;
         }
+
+        /** What the echo line shows last: a status or an error. */
+        String echo;
 
         @Override
         public void setError(String message) {
             error = message;
+            echo = message;
         }
     }
 
@@ -2024,5 +2029,35 @@ class LspWorkspaceEditFxTest {
         assertEquals("Moved 2 to util", host.status, "not \"Renamed to Circle.java\" or the save's (seventh BF3)");
         var applied = FxTestSupport.callOnFx(coordinator::lastAppliedEdit);
         assertEquals(2, applied.renames().size(), "both moves, as one refactoring");
+    }
+
+    /**
+     * The tree's status said again after the saves never covers the warning that jdtls left a package line as it was
+     * (eighth review BQ4).
+     */
+    @Test
+    void theDragsStatusLeavesAPackageWarningShown() throws Exception {
+        EditorBuffer canvasTab = openBuffer("Canvas.java", "class Canvas {}\n");
+        Path canvas = canvasTab.getPath();
+        Path big = root.resolve("Big.java");
+        Path circle = root.resolve("Circle.java");
+        Files.writeString(big, "class Big {}\n");
+        Files.writeString(circle, "class Circle {}\n");
+        Path util = Files.createDirectory(root.resolve("util"));
+        serveWillRename();
+        manager.openDocument(canvas, root, "java", "class Canvas {}\n");
+        ProjectPanel.RenameParticipant participant = FxTestSupport.callOnFx(coordinator::treeParticipant);
+
+        FxTestSupport.runOnFx(() -> participant.beginMove(2));
+        fakes.get(0).willRenameResponse = new WorkspaceEdit(); // no edit for Big.java: its package line stays
+        assertTrue(treeMove(participant, big, util.resolve("Big.java")));
+        fakes.get(0).willRenameResponse = canvasEdit(canvas, 0, "/*2*/");
+        ops.duringSave = () -> {
+            participant.endMove(false, "Moved 2 to util");
+            host.setStatus("Saved /the/whole/path");
+        };
+        assertTrue(treeMove(participant, circle, util.resolve("Circle.java")));
+
+        assertEquals(tr("status.lsp.moveWithoutPackageEdit", "Big.java", 1), host.echo, "the warning stays shown");
     }
 }

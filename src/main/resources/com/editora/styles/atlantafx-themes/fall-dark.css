@@ -4969,3 +4969,9 @@ Text {
  * Accent: pumpkin orange (#f09810) - Success: harvest green (#78c020)
  * Warning: harvest gold (#f0b010) - Danger: cranberry (#f06040)
  */
+
+/* Editora: the accent here is the bookmark's warning colour, so the assist bulb takes the foreground colour, apart
+   from the bookmark and from the red quick-fix bulb (eighth review AR3). */
+.editor-area {
+  -editora-bulb-assist: -color-fg-default;
+}

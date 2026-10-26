@@ -120,6 +120,9 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public List<Location> declarationResponse = List.of();
     public List<Location> referenceResponse = List.of();
     public List<Either<SymbolInformation, DocumentSymbol>> documentSymbolResponse = List.of();
+    /** Per document URI, ahead of {@link #documentSymbolResponse} (a supertype's outline in another file). */
+    public final java.util.Map<String, List<Either<SymbolInformation, DocumentSymbol>>> documentSymbolByUri =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     /** Answers documentSymbol with lemminx's -32603 "Internal error." + NoClassDefFoundError (Maven review C2). */
     public boolean documentSymbolFault;
@@ -402,7 +405,10 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
                             "Internal error.",
                             "java.lang.NoClassDefFoundError: com/google/common/cache/CacheBuilder")));
         }
-        return failEverything ? failed() : answer(documentSymbolResponse);
+        var byUri = params.getTextDocument() == null
+                ? null
+                : documentSymbolByUri.get(params.getTextDocument().getUri());
+        return failEverything ? failed() : answer(byUri != null ? byUri : documentSymbolResponse);
     }
 
     @Override

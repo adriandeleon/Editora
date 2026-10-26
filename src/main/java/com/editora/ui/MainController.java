@@ -2268,6 +2268,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void setupMruTracking() {
         // A mouse click in the editor area repositions the caret, which ends an Emacs mark session.
         editorArea.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> editing.deactivateMark());
+        TabFocus.install(editorArea, this::activeBuffer); // a tab header's click focuses its editor (AQ2)
         // A selected tab always has its buffer: a restore placeholder is built before any listener runs.
         editorArea.setTabMaterializer(tab -> sessions.materialize(tab, true));
         editorArea.addSelectionListener((obs, was, now) -> findBar.onActiveBufferChanged());
@@ -7344,7 +7345,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Opens {@code file} (if needed) and moves the caret to a 0-based LSP line/column. */
     private void openAndGoto(@Nullable Path file, int line0, int col0) {
         NavigationHistory.Location origin = navigation.navigating ? null : navigation.captureCurrent();
-        fileWorkflows.openPath(file);
+        fileWorkflows.openPath(file, true); // a jump says no "Already open" (eighth review EQ5)
         Platform.runLater(() -> navigation.landJump(origin, file, line0, col0));
     }
 
@@ -9133,6 +9134,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (count > 1) {
             int idx = (editorArea.selectedIndex() + 1) % count;
             editorArea.select(idx);
+            Platform.runLater(() -> TabFocus.focus(activeBuffer())); // as a tab chosen any other way (AQ2)
         }
     }
 

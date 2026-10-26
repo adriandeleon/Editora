@@ -297,6 +297,63 @@ public final class JavaRuntimes {
         return out;
     }
 
+    /**
+     * The JDKs without sources that the project at {@code projectRoot} gets: its stated release's JDK when jdtls is
+     * given one, else the default. Doctor warned for every bare JDK on the machine, though no project used it, and
+     * named only one (eighth review DQ4). No project: the default's.
+     */
+    public static List<Jdk> withoutSourcesFor(
+            List<Jdk> jdks, @Nullable String preferredHome, java.nio.file.@Nullable Path projectRoot) {
+        int release = statedRelease(projectRoot);
+        List<Jdk> bare = allWithoutSources(jdks, preferredHome);
+        List<Map<String, Object>> given = runtimes(jdks, preferredHome);
+        boolean releaseGiven = release > 0
+                && given.stream().anyMatch(e -> executionEnvironment(release).equals(e.get("name")));
+        String defaultPath = given.stream()
+                .filter(e -> Boolean.TRUE.equals(e.get("default")))
+                .map(e -> String.valueOf(e.get("path")))
+                .findFirst()
+                .orElse(null);
+        return bare.stream()
+                .filter(j -> releaseGiven ? j.major() == release : j.path().equals(defaultPath))
+                .toList();
+    }
+
+    private static final java.util.regex.Pattern RELEASE = java.util.regex.Pattern.compile(
+            "<maven\\.compiler\\.(?:release|source)>\\s*(?:1\\.)?(\\d+)"
+                    + "|<release>\\s*(\\d+)\\s*</release>"
+                    + "|languageVersion(?:\\.set)?\\s*[(=]\\s*JavaLanguageVersion\\.of\\(\\s*(\\d+)"
+                    + "|(?:source|target)Compatibility\\s*=\\s*(?:JavaVersion\\.VERSION_(?:1_)?(\\d+)|['\"]?(?:1\\.)?(\\d+))");
+
+    /**
+     * The Java release the build file in {@code root} states (a pom's {@code maven.compiler.release} or
+     * {@code <release>}, a Gradle toolchain or {@code sourceCompatibility}), or 0 when it states none or there is none.
+     */
+    static int statedRelease(java.nio.file.@Nullable Path root) {
+        if (root == null) {
+            return 0;
+        }
+        for (String name : List.of("pom.xml", "build.gradle.kts", "build.gradle")) {
+            java.nio.file.Path file = root.resolve(name);
+            try {
+                if (!java.nio.file.Files.isRegularFile(file) || java.nio.file.Files.size(file) > 1_000_000) {
+                    continue;
+                }
+                java.util.regex.Matcher m = RELEASE.matcher(java.nio.file.Files.readString(file));
+                if (m.find()) {
+                    for (int g = 1; g <= m.groupCount(); g++) {
+                        if (m.group(g) != null) {
+                            return Integer.parseInt(m.group(g));
+                        }
+                    }
+                }
+            } catch (java.io.IOException | RuntimeException e) {
+                // unreadable: as if it stated none
+            }
+        }
+        return 0;
+    }
+
     /** Whether the JDK at {@code home} has its sources ({@code lib/src.zip}, or {@code src.zip} for Java 8). */
     static boolean hasSources(String home) {
         try {

@@ -59,6 +59,17 @@ public final class LspTestHooks {
     }
 
     /** The project root of the server serving {@code file}. */
+    /** Opens a question from {@code file}'s server (an import to choose), answered when the result completes. */
+    public static java.util.concurrent.CompletableFuture<Object> openQuestion(
+            LspManager manager, java.nio.file.Path file) {
+        return manager.sessionForTest(file).askForTest(new java.util.concurrent.CompletableFuture<>());
+    }
+
+    /** The document URI the manager sends for {@code file}. */
+    public static String uri(java.nio.file.Path file) {
+        return DocumentUris.of(file);
+    }
+
     public static java.nio.file.Path sessionRoot(LspManager manager, java.nio.file.Path file) {
         return manager.sessionForTest(file).root();
     }
