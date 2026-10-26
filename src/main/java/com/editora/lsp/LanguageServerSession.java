@@ -1494,6 +1494,29 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /**
+     * Re-sends each other open Java document's text, unchanged, so jdtls reconciles it against the file just saved:
+     * an error that save caused or fixed shows in those files without a workspace build, which would compile a Gradle
+     * project into Buildship's {@code bin/} (tenth review CO1).
+     */
+    void revalidateOtherJavaDocuments(String saved) {
+        for (var e : openers.entrySet()) {
+            String uri = e.getKey();
+            if (uri.equals(saved) || !uri.endsWith(".java") || e.getValue().isEmpty()) {
+                continue;
+            }
+            whenReady("revalidate:" + uri, () -> {
+                String text = shadows.get(uri);
+                if (text == null || changeSyncDisabled()) return;
+                int version = versions.merge(uri, 1, Integer::sum);
+                server().getTextDocumentService()
+                        .didChange(new DidChangeTextDocumentParams(
+                                new VersionedTextDocumentIdentifier(named.toWire(uri), version),
+                                List.of(new TextDocumentContentChangeEvent(wireText(uri, text)))));
+            });
+        }
+    }
+
+    /**
      * The change events for syncing {@code text}: under {@code TextDocumentSyncKind.Incremental} (and with
      * a shadow held), the minimal splice vs. the server's last-known content — a fraction of the transport
      * and lets the server process incrementally (#678); otherwise (Full/unspecified/no shadow) the whole

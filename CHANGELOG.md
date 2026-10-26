@@ -34,7 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overload, has none. In a lambda, its functional interface's method; in a constructor, the super constructor it
   calls, through `this(...)` too; on a type, its supertypes, the superclass first and each named by its type; a
   picker when there are several. It works the same in a library source tab, and says it is looking when a deep
-  hierarchy takes a moment.
+  hierarchy takes a moment. A type parameter of any name (`Store<Item>`, `Handler<Req, Res>`) stands for the type
+  it is given, and a method marked `@Override` is looked for up the hierarchy when jdtls finds nothing, as for an
+  inner class of a generic class.
 - **More IntelliJ and VS Code chords.** IntelliJ keymaps: Ctrl+I implements methods on Linux, Ctrl+Shift+= / - (⌘⇧= /
   ⌘⇧-, and the numpad's Ctrl+Shift++ / -) expand and collapse all folds, Ctrl+Alt+Shift+C copies the qualified name,
   Ctrl+Alt+F7 finds usages, and menus name Alt+Enter for Code Actions. VS
@@ -336,7 +338,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Java: an open file sees an API changed in another.** Rename a method in one file and save: another open file
   that calls it showed no error, its counter included, until it was typed in. A Java save now rechecks the project
   quietly when another of its files is open, in this window or another sharing its jdtls, as it did only while
-  Problems showed the whole project.
+  Problems showed the whole project. Outside a Maven project the open files are rechecked without a build, which
+  would compile a Gradle project into `bin/`.
 - **A tab chosen by its header or by Window ▸ Next Tab has the keyboard focus in its editor**, and so has the tab
   shown when the focused one is closed or split off, or after a right- or middle-click on a header. It stayed on the
   tab pane, the breadcrumbs or the toolbar's New button, so the first keys went nowhere, the arrows switched tabs and

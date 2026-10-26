@@ -206,6 +206,39 @@ class LspSuperMethodFxTest {
     }
 
     /**
+     * A class's method marked {@code @Override} is looked for up the hierarchy when findLinks answers nothing, as for an
+     * inner class of a generic class; a type variable named {@code Item} matches String (tenth review EO1).
+     */
+    @Test
+    void anOverrideFindLinksMissesIsFoundUpTheHierarchy() throws Exception {
+        Path store =
+                Files.writeString(root.resolve("Store.java"), "interface Store<Item> {\n    void add(Item i);\n}\n");
+        String source = "class StrStore implements Store<String> {\n    @Override\n    public void add(String i) {\n"
+                + "        int x = 1;\n    }\n}\n";
+        EditorBuffer b = fx.open("StrStore.java", source);
+        DocumentSymbol strStore = member("StrStore", SymbolKind.Class, 0, 5, 0, 6);
+        strStore.getChildren().add(member("add(String)", SymbolKind.Method, 1, 4, 2, 16));
+        fx.server().documentSymbolResponse = List.of(Either.forRight(strStore));
+        DocumentSymbol storeType = member("Store<Item>", SymbolKind.Interface, 0, 2, 0, 10);
+        storeType.getChildren().add(member("add(Item)", SymbolKind.Method, 1, 1, 1, 9));
+        fx.server()
+                .documentSymbolByUri
+                .put(com.editora.lsp.LspTestHooks.uri(store), List.of(Either.forRight(storeType)));
+        String uri = root.resolve("StrStore.java").toUri().toString();
+        fx.server().typeHierarchyResponse =
+                List.of(new TypeHierarchyItem("StrStore", SymbolKind.Class, uri, range(0, 0, 1), range(0, 6, 14)));
+        fx.server().supertypesResponse = List.of(new TypeHierarchyItem(
+                "Store", SymbolKind.Interface, store.toUri().toString(), range(0, 0, 1), range(0, 10, 15)));
+        fx.server().supertypesByName.put("Store", List.of());
+        fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString("[]"); // findLinks: nothing
+        fx.caret(b, 3, 10);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(store, 1, 9)), fx.ops.jumps);
+    }
+
+    /**
      * From a library tab a target in another library class opens: the request's check compared the project file the
      * tab is served through with the tab's own path, none, and dropped every such target (eighth review BQ3).
      */

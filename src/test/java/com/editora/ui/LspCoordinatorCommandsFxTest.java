@@ -864,6 +864,7 @@ class LspCoordinatorCommandsFxTest {
      */
     @Test
     void aSaveRechecksWhileAnotherJavaFileIsOpen() throws Exception {
+        java.nio.file.Files.writeString(fx.root.resolve("pom.xml"), "<project/>");
         fx.open("B.java", "class B {}\n");
         EditorBuffer a = fx.open("A.java", SOURCE);
         fx.run(() -> fx.coordinator.notifyDocumentSaved(a, SOURCE));
@@ -876,6 +877,39 @@ class LspCoordinatorCommandsFxTest {
         assertTrue(
                 fx.server().rawRequests.stream().anyMatch(r -> r.method().equals("java/buildWorkspace")),
                 "B.java is rechecked after A.java's save");
+    }
+
+    /**
+     * Outside a Maven project the other open files are re-sent, not built: jdtls compiles a Gradle project into
+     * Buildship's bin/, which then shows in `git status` (re-review CN3, tenth review CO1).
+     */
+    @Test
+    void aSaveOutsideMavenRechecksTheOpenFilesWithoutABuild() throws Exception {
+        java.nio.file.Files.writeString(fx.root.resolve("build.gradle"), "plugins { id 'java' }\n");
+        EditorBuffer b = fx.open("B.java", "class B {}\n");
+        EditorBuffer a = fx.open("A.java", SOURCE);
+        String bUri = fx.root.resolve("B.java").toUri().toString();
+        long before = fx.server().changed.stream()
+                .filter(c -> c.getTextDocument().getUri().equals(bUri))
+                .count();
+        fx.run(() -> fx.coordinator.notifyDocumentSaved(a, SOURCE));
+        long deadline = System.currentTimeMillis() + 5000;
+        while (fx.server().changed.stream()
+                                .filter(c -> c.getTextDocument().getUri().equals(bUri))
+                                .count()
+                        == before
+                && System.currentTimeMillis() < deadline) {
+            Thread.sleep(50);
+            fx.settle();
+        }
+        var resent = fx.server().changed.stream()
+                .filter(c -> c.getTextDocument().getUri().equals(bUri))
+                .reduce((x, y) -> y)
+                .orElseThrow();
+        assertEquals(b.getContent(), resent.getContentChanges().get(0).getText(), "B.java's text, unchanged");
+        assertTrue(
+                fx.server().rawRequests.stream().noneMatch(r -> r.method().equals("java/buildWorkspace")),
+                "no build: it would write bin/");
     }
 
     @Test

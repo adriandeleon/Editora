@@ -196,6 +196,18 @@ public final class JavaMembers {
     }
 
     /**
+     * Whether the declaration from {@code from} to its name at {@code name} is annotated {@code @annotation}, by its
+     * simple or qualified name ({@code @Override}, {@code @java.lang.Override}).
+     */
+    public static boolean annotated(String text, int from, int name, String annotation) {
+        String code = code(text);
+        String head = code.substring(Math.max(0, from), Math.max(Math.max(0, from), Math.min(name, code.length())));
+        return java.util.regex.Pattern.compile("@(?:\\w+\\s*\\.\\s*)*" + annotation + "\\b")
+                .matcher(head)
+                .find();
+    }
+
+    /**
      * In a library source, whose outline has no anonymous classes: the offsets of the instantiated type's name and of
      * the method's name when the caret, after {@code from} (the enclosing member's start), is in a method of an
      * anonymous class ({@code new X() { ... void m() { | } }}); else null (ninth review BP2).
@@ -276,6 +288,15 @@ public final class JavaMembers {
      * matches any. An overload of another type does not (ninth review DP1).
      */
     public static List<MemberSpan> overridden(List<MemberSpan> members, String method) {
+        return overridden(members, method, java.util.Set.of());
+    }
+
+    /**
+     * As {@link #overridden(List, String)}, where {@code typeVariables} are also type variables of the super method's
+     * type, whatever their names ({@code Item}, {@code Req}; tenth review EO1).
+     */
+    public static List<MemberSpan> overridden(
+            List<MemberSpan> members, String method, java.util.Set<String> typeVariables) {
         String name = methodName(method);
         List<String> params = parameters(method);
         List<MemberSpan> out = new ArrayList<>();
@@ -286,7 +307,7 @@ public final class JavaMembers {
                 boolean same = theirs.size() == params.size();
                 boolean equal = same;
                 for (int i = 0; same && i < params.size(); i++) {
-                    same = sameParameter(params.get(i), theirs.get(i));
+                    same = sameParameter(params.get(i), theirs.get(i), typeVariables);
                     equal = equal && bare(params.get(i)).equals(bare(theirs.get(i)));
                 }
                 if (same) {
@@ -302,6 +323,15 @@ public final class JavaMembers {
 
     /** Whether {@code mine} may override a super method's parameter {@code theirs}. */
     static boolean sameParameter(String mine, String theirs) {
+        return sameParameter(mine, theirs, java.util.Set.of());
+    }
+
+    /**
+     * Whether {@code mine} may override a super method's parameter {@code theirs}, which is a type variable when it
+     * is one of {@code typeVariables} or is shaped like one ({@code T}, {@code E2}: a method's own are not in its
+     * type's outline name).
+     */
+    static boolean sameParameter(String mine, String theirs, java.util.Set<String> typeVariables) {
         String a = bare(mine);
         String b = bare(theirs);
         if (a.equals(b)) {
@@ -310,7 +340,7 @@ public final class JavaMembers {
         String array = b.replaceAll("[\\[\\]]|\\.\\.\\.", "");
         boolean primitive = dims(a) == dims(b)
                 && a.replaceAll("[\\[\\]]", "").matches("boolean|byte|char|short|int|long|float|double");
-        boolean typeVariable = !primitive && array.matches("[A-Z][A-Z0-9]?");
+        boolean typeVariable = !primitive && (typeVariables.contains(array) || array.matches("[A-Z][A-Z0-9]?"));
         return typeVariable && a.replaceAll("[\\[\\]]|\\.\\.\\.", "").length() > 0 && dims(a) >= dims(b);
     }
 
@@ -351,6 +381,57 @@ public final class JavaMembers {
             }
         }
         return null;
+    }
+
+    /**
+     * The type variables {@code type} sees: its own and its enclosing types', from their outline names
+     * ({@code Store<Item>}, {@code EnumMap<K extends Enum<K>, V>}; tenth review EO1).
+     */
+    public static java.util.Set<String> typeParameters(List<MemberSpan> members, MemberSpan type) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        typeParameters(members, type, out);
+        return out;
+    }
+
+    private static boolean typeParameters(List<MemberSpan> members, MemberSpan type, java.util.Set<String> out) {
+        for (MemberSpan m : members) {
+            if (m == type || typeParameters(m.children(), type, out)) {
+                if (m.isType()) {
+                    out.addAll(typeParameters(m.name()));
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** A type parameter's name, after any annotations: {@code K} in {@code K extends Enum<K>}. */
+    private static final java.util.regex.Pattern TYPE_PARAMETER =
+            java.util.regex.Pattern.compile("^\\s*(?:@[\\w.]+\\s*)*([A-Za-z_$][\\w$]*)");
+
+    /** The type parameter names in a type's outline name: {@code KeyStore<Key, Val>} gives Key and Val. */
+    static List<String> typeParameters(String typeName) {
+        int open = typeName.indexOf('<');
+        int close = typeName.lastIndexOf('>');
+        List<String> out = new ArrayList<>();
+        if (open < 0 || close < open || typeName.startsWith("new ")) {
+            return out;
+        }
+        int depth = 0;
+        int start = open + 1;
+        for (int i = open + 1; i <= close; i++) {
+            char c = typeName.charAt(i);
+            if (c == '<') {
+                depth++;
+            } else if ((c == '>' && depth-- == 0) || (c == ',' && depth == 0)) {
+                java.util.regex.Matcher m = TYPE_PARAMETER.matcher(typeName.substring(start, i));
+                if (m.find()) {
+                    out.add(m.group(1));
+                }
+                start = i + 1;
+            }
+        }
+        return out;
     }
 
     /** The type whose name is on {@code line} among {@code members} and their children, or null. */
