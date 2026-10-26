@@ -4944,7 +4944,9 @@ public final class LspManager {
         if (!LspServerRegistry.JAVA_SERVER_ID.equals(serverId) || !(options instanceof Map<?, ?> map) || root == null) {
             return options;
         }
-        Map<String, Object> project = JavaProjectSettings.forRoot(root);
+        com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(root);
+        Map<String, Object> project = JavaProjectSettings.forRoot(
+                root, target.isLocal() ? null : WireUris.mapped(target)::toWire); // a container or WSL (DF2)
         Object settings = map.get("settings");
         if (project.isEmpty() || !(settings instanceof Map<?, ?> s) || !(s.get("java") instanceof Map<?, ?> java)) {
             return options;

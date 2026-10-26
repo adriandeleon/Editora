@@ -89,11 +89,15 @@ final class RootWatcher implements AutoCloseable {
         }
     }
 
-    /** Whether a folder is one a language server never analyses: hidden, packages, caches, environments. Pure. */
+    /**
+     * Whether a folder is one a language server never analyses: hidden, packages, caches, environments. Pure.
+     * Eclipse's {@code .settings} is watched: a formatter profile kept there and edited outside Editora was never
+     * re-read (fourth review DN4).
+     */
     static boolean skipped(Path dir) {
         Path name = dir.getFileName();
         String n = name == null ? "" : name.toString();
-        return n.startsWith(".")
+        return (n.startsWith(".") && !n.equals(".settings"))
                 || n.equals("node_modules")
                 || n.equals("__pycache__")
                 || Files.isRegularFile(dir.resolve("pyvenv.cfg"));

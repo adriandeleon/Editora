@@ -113,6 +113,26 @@ class JdtlsProfileReloadProbeTest {
             }
             System.out.println("PROBE after = " + after.replace("\n", "\\n"));
             assertTrue(after.contains("go() {"), "the edited profile, no restart");
+
+            // back to next-line, then the profile removed: jdtls's defaults come back (fourth review DN4)
+            Files.writeString(style, profile("next_line"));
+            m.projectStyleChanged(style);
+            String again = "";
+            for (int attempt = 0; attempt < 20 && !again.contains("go()\n    {"); attempt++) {
+                Thread.sleep(500);
+                again = format(m, app);
+            }
+            assertTrue(again.contains("go()\n    {"), "next-line again: " + again);
+            Files.delete(style);
+            m.projectStyleChanged(style);
+            m.notifyWatchedFiles(List.of(new LspManager.WatchedFile(style, LspManager.WatchedKind.DELETED)));
+            String removed = "";
+            for (int attempt = 0; attempt < 20 && !removed.contains("go() {"); attempt++) {
+                Thread.sleep(500);
+                removed = format(m, app);
+            }
+            System.out.println("PROBE removed = " + removed.replace("\n", "\\n"));
+            assertTrue(removed.contains("go() {"), "the removed profile no longer formats, no restart");
         } finally {
             m.close();
         }

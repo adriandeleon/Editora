@@ -1083,7 +1083,9 @@ final class LanguageServerSession implements LanguageClient {
             @SuppressWarnings("unchecked")
             Map<String, Object> own = (Map<String, Object>) javaMap;
             Map<String, Object> merged = JavaProjectSettings.merge(
-                    own, JavaProjectSettings.withJdtlsDefaults(JavaProjectSettings.forRoot(root)));
+                    own,
+                    JavaProjectSettings.withJdtlsDefaults(
+                            JavaProjectSettings.forRoot(root, uris == WireUris.LOCAL ? null : uris::toWire)));
             // The clean-ups java/cleanup runs; never jdtls's own on-save switch (Editora runs them after a save).
             merged.put("cleanup", Map.of("actions", javaCleanups));
             Map<String, Object> completion = new java.util.HashMap<>();
