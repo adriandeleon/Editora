@@ -1582,6 +1582,8 @@ public final class LspManager {
             // Ready before this window came: it hears so now — its status bar says "Loaded and ready" instead of
             // a stale progress line, and its documents' gates and data are refreshed (re-review CN5). How the
             // project imported goes first: a failed import was "Loaded and ready" here (sixth review CS2).
+            // the project's own problems first, so its verdict can name them (seventh review CR2)
+            session.projectDiagnostics().forEach(client.diagnostics::accept);
             String imported = session.lastProjectStatus();
             if (imported != null) {
                 client.status.accept("ProjectStatus", imported);

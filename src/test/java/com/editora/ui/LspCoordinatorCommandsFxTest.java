@@ -1995,4 +1995,32 @@ class LspCoordinatorCommandsFxTest {
                 FxTestSupport.callOnFx(() -> failed.stream().anyMatch(k -> k.endsWith("other-project"))),
                 "the other project's failure stands");
     }
+
+    /** Clean in one project leaves another project's build error in Problems (seventh review CR4). */
+    @Test
+    void aCleanKeepsAnotherProjectsProblems() throws Exception {
+        fx.open("A.java", SOURCE);
+        Path other = java.nio.file.Files.createDirectories(root.resolve("other-project"));
+        Path otherFile = java.nio.file.Files.writeString(other.resolve("B.java"), "class B {}");
+        fx.run(() -> fx.manager.openDocument(otherFile, other, "java", "class B {}"));
+        fx.run(() -> fx.coordinator.onServerStatus("java", other, "ServiceReady", "ServiceReady")); // known here
+        var broken = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.ERROR,
+                "The supplied phased action failed",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(other, List.of(broken)));
+        assertTrue(FxTestSupport.callOnFx(
+                () -> fx.coordinator.problems().keySet().stream().anyMatch(p -> p.endsWith("other-project"))));
+
+        fx.run(() -> fx.coordinator.cleanJavaWorkspace()); // from A.java's project
+        assertTrue(
+                FxTestSupport.callOnFx(
+                        () -> fx.coordinator.problems().keySet().stream().anyMatch(p -> p.endsWith("other-project"))),
+                "the other project's build error stands");
+    }
 }

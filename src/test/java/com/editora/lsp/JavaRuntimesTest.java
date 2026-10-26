@@ -136,6 +136,14 @@ class JavaRuntimesTest {
             out.closeEntry();
         }
         assertEquals(25, JavaRuntimes.serverMinMajor(launcher.toString()));
+        // an Update in place: read again, not kept from before (seventh review CR1)
+        manifest.getMainAttributes().putValue("Bundle-RequiredExecutionEnvironment", "JavaSE-27");
+        try (var out = new java.util.jar.JarOutputStream(
+                java.nio.file.Files.newOutputStream(plugins.resolve("org.eclipse.jdt.core_3.48.0.jar")), manifest)) {
+            out.putNextEntry(new java.util.jar.JarEntry("a.txt"));
+            out.closeEntry();
+        }
+        assertEquals(27, JavaRuntimes.serverMinMajor(launcher.toString()), "the updated bundles' floor");
         assertEquals(
                 21, JavaRuntimes.serverMinMajor(dir.resolve("none/bin/jdtls").toString()), "unknown: 21");
 

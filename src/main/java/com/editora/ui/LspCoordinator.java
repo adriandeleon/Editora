@@ -915,6 +915,9 @@ final class LspCoordinator {
         if (LspManager.isHeldForInstall(serverId)) {
             return; // an install stopped it: the files stay paused, and reopen when it is released (fifth review CF1)
         }
+        // the ended server's project problems go too: another window restarted it, and its "The supplied phased
+        // action failed" stayed here after the project imported (seventh review CR3)
+        clearProjectProblems(root);
         forEachCrashedBuffer(serverId, root, b -> {
             b.setLspActive(false);
             clearDiagnostics(lspPath(b));
@@ -1233,10 +1236,10 @@ final class LspCoordinator {
         }
     }
 
-    /** Diagnostics callback from the manager (already on the FX thread): store + paint + refresh Problems. */
     /** Project-level problems already said in the status line, by folder and message. */
     private final java.util.Set<String> announcedProjectProblems = new java.util.HashSet<>();
 
+    /** Diagnostics callback from the manager (already on the FX thread): store + paint + refresh Problems. */
     void onDiagnostics(Path file, List<LspDiagnostic> diagnostics) {
         if (!ops.lspFeatureEnabled()) {
             return;
@@ -4887,13 +4890,18 @@ final class LspCoordinator {
             return;
         }
         host.setStatus(tr("status.lsp.javaWorkspaceCleaning"));
-        correctedSourceRoots.clear();
-        builtAfterImport.clear(); // the fresh import builds again
-        announcedProjectProblems.clear();
-        forgetImport(lspManager.javaSessionRoot(path)); // its fresh import says its own outcome (CT3); others stand
+        // this project's only: Clean in one project emptied another's build error from Problems (seventh review CR4)
+        Path cleaned = lspManager.javaSessionRoot(path);
+        Path under = cleaned == null ? null : cleaned.toAbsolutePath().normalize();
+        correctedSourceRoots.removeIf(
+                r -> under == null || r.toAbsolutePath().normalize().startsWith(under));
+        builtAfterImport.removeIf(
+                r -> under == null || r.toAbsolutePath().normalize().startsWith(under));
+        announcedProjectProblems.removeIf(k -> under == null || k.startsWith(under.toString()));
+        forgetImport(cleaned); // its fresh import says its own outcome (CT3); others stand
         refreshImportNotes();
         java.util.List<EditorBuffer> java = javaBuffersOf(path);
-        clearProjectProblems(); // the dead server's "project:1" entries would stay for good
+        clearProjectProblems(cleaned); // the dead server's "project:1" entries would stay for good
         lspManager.cleanJavaWorkspace(path, deleted -> {
             host.setStatus(tr(deleted ? "status.lsp.javaWorkspaceCleaned" : "status.lsp.javaWorkspaceKept"));
             applyGating();
@@ -4968,10 +4976,18 @@ final class LspCoordinator {
     /** As above, those of the project at {@code root} only (null: every project's). */
     private void clearProjectProblems(@Nullable Path root) {
         Path only = root == null ? null : root.toAbsolutePath().normalize();
+        // a project nested in this one has its own problems: they are not this one's to clear (seventh review CR4)
+        java.util.List<Path> nested = only == null
+                ? java.util.List.of()
+                : statusSources.values().stream()
+                        .map(StatusSource::root)
+                        .filter(r -> r.startsWith(only) && !r.equals(only))
+                        .toList();
         for (Path p : java.util.List.copyOf(problems.keySet())) {
+            Path at = p.toAbsolutePath().normalize();
             if (LspManager.projectLevel(p)
                     && bufferForLspPath(p) == null
-                    && (only == null || p.toAbsolutePath().normalize().startsWith(only))) {
+                    && (only == null || (at.startsWith(only) && nested.stream().noneMatch(at::startsWith)))) {
                 clearDiagnostics(p);
             }
         }

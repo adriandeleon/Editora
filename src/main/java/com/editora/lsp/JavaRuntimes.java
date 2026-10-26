@@ -335,9 +335,6 @@ public final class JavaRuntimes {
     /** jdtls's launcher's own floor, which is what is known when its bundles cannot be read. */
     static final int SERVER_MIN_MAJOR = 21;
 
-    /** The floor each jdtls install's bundles state, by its {@code plugins} folder. */
-    private static final java.util.Map<String, Integer> BUNDLE_FLOORS = new java.util.concurrent.ConcurrentHashMap<>();
-
     /**
      * The oldest Java the jdtls whose launcher is {@code launcher} runs on: the newest
      * {@code Bundle-RequiredExecutionEnvironment} of its core bundles, never below {@link #SERVER_MIN_MAJOR}. jdtls
@@ -359,8 +356,9 @@ public final class JavaRuntimes {
         if (plugins == null || !java.nio.file.Files.isDirectory(plugins)) {
             return SERVER_MIN_MAJOR;
         }
-        java.nio.file.Path dir = plugins;
-        return BUNDLE_FLOORS.computeIfAbsent(dir.toString(), k -> Math.max(SERVER_MIN_MAJOR, bundleFloor(dir)));
+        // read at every start, not kept: an Update replaces the folder's bundles in place, and a kept floor started
+        // the new jdtls on the old Java (seventh review CR1); three manifests cost next to nothing
+        return Math.max(SERVER_MIN_MAJOR, bundleFloor(plugins));
     }
 
     /** The newest {@code JavaSE-N} the core bundles in {@code plugins} require; 0 when none says. */
