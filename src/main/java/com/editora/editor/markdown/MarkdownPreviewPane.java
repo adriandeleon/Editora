@@ -249,6 +249,9 @@ public final class MarkdownPreviewPane implements TabContent {
         followQueued = true;
         Platform.runLater(() -> {
             followQueued = false;
+            if (!PreviewScrollSync.enabled() || scroll.isHover()) {
+                return; // switched off (or taken over by the reader) since this was queued, while the editor scrolled
+            }
             EditorBuffer from = liveSource();
             if (from == null || from.getArea().getScene() == null || !preview.isShowing()) {
                 return; // the source's tab is not on screen: nothing to keep in step with

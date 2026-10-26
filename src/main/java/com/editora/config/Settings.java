@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 146;
+    public static final int SCHEMA_VERSION = 147;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -311,6 +311,10 @@ public class Settings {
     private String inlayHintMode = "literals";
     /** LSP code lenses — reference and implementation counts drawn after a declaration; default off. */
     private boolean codeLens = false;
+    /** A lightbulb in the gutter on the caret line when the server has quick fixes or quick actions there. */
+    private boolean lspLightbulb = true;
+    /** The file's error and warning counts at the top right of the editor, with previous/next arrows. */
+    private boolean problemCounter = true;
     /** Re-indent the current line when a language server's trigger character is typed ({@code ;}, {@code }},
      *  Enter). Default <b>off</b>: it acts on very common keystrokes and overlaps the local auto-indent
      *  assists, so it is opt-in until it has proven itself in the field (#740). */
@@ -1983,6 +1987,22 @@ public class Settings {
 
     public void setLspOnTypeFormatting(boolean lspOnTypeFormatting) {
         this.lspOnTypeFormatting = lspOnTypeFormatting;
+    }
+
+    public boolean isLspLightbulb() {
+        return lspLightbulb;
+    }
+
+    public void setLspLightbulb(boolean lspLightbulb) {
+        this.lspLightbulb = lspLightbulb;
+    }
+
+    public boolean isProblemCounter() {
+        return problemCounter;
+    }
+
+    public void setProblemCounter(boolean problemCounter) {
+        this.problemCounter = problemCounter;
     }
 
     public boolean isCodeLens() {

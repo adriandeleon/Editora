@@ -131,6 +131,11 @@ public final class FoldManager {
 
     /** Whether a line carries a bookmark (drawn as a gutter marker); default none. */
     private IntPredicate isBookmarked = i -> false;
+    /** The lightbulb's style class on a line ({@code fix} or {@code assist}), or null for none. */
+    private java.util.function.IntFunction<@Nullable String> bulbClass = i -> null;
+
+    private IntConsumer onBulb = i -> {};
+    private java.util.function.Supplier<String> bulbTooltip = () -> "";
 
     /** Whether this is a compact source file (reserve the Run slot on every row while true). */
     private BooleanSupplier runEnabled = () -> false;
@@ -702,6 +707,21 @@ public final class FoldManager {
      *  right-click menu, never by clicking the gutter (see {@link #buildGutter}). */
     public void setBookmarkHooks(IntPredicate isBookmarked) {
         this.isBookmarked = isBookmarked == null ? i -> false : isBookmarked;
+    }
+
+    /**
+     * Wires the code-action lightbulb: {@code bulbClass} names the bulb a line shows ({@code fix} when the server
+     * has a quick fix there, {@code assist} for other quick actions) or null, and {@code onBulb} runs when it is
+     * clicked. It sits in the bookmark column, which every row reserves, so it never shifts the line's text, and it
+     * stands in for a bookmark glyph while it shows.
+     */
+    public void setBulbHooks(
+            java.util.function.IntFunction<@Nullable String> bulbClass,
+            IntConsumer onBulb,
+            java.util.function.Supplier<String> tooltip) {
+        this.bulbClass = bulbClass == null ? i -> null : bulbClass;
+        this.onBulb = onBulb == null ? i -> {} : onBulb;
+        this.bulbTooltip = tooltip == null ? () -> "" : tooltip;
     }
 
     /** Wires the Personal-Notes gutter marker: a predicate for which lines carry a note + a click handler
@@ -1657,7 +1677,22 @@ public final class FoldManager {
         // bare Region, not a Pane: a StackPane's children list, alignment and margin bookkeeping would be
         // built for every row only to stay empty.
         javafx.scene.layout.Region bookmarkSlot;
-        if (isBookmarked.test(idx)) {
+        String bulb = bulbClass.apply(idx);
+        if (bulb != null) {
+            Node marker = bulbMarker(bulb);
+            StackPane slot = new StackPane(marker);
+            slot.setCursor(Cursor.HAND);
+            LazyTooltip.install(slot, bulbTooltip::get, null, 300);
+            ownPointer(slot);
+            final int bulbIdx = idx;
+            slot.setOnMouseClicked(e -> {
+                if (e.getButton() == MouseButton.PRIMARY) {
+                    onBulb.accept(bulbIdx);
+                    e.consume();
+                }
+            });
+            bookmarkSlot = slot;
+        } else if (isBookmarked.test(idx)) {
             bookmarkSlot = new StackPane(bookmarkMarker());
         } else {
             bookmarkSlot = new javafx.scene.layout.Region();
@@ -1861,6 +1896,17 @@ public final class FoldManager {
             }
         });
         return slot;
+    }
+
+    /** The lightbulb glyph (Material "lightbulb"), colored by {@code .bulb-marker} and {@code kind}. */
+    private static Node bulbMarker(String kind) {
+        SVGPath svg = new SVGPath();
+        svg.setContent("M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 "
+                + "5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z");
+        svg.getStyleClass().addAll("bulb-marker", kind);
+        svg.setScaleX(0.55);
+        svg.setScaleY(0.55);
+        return new Group(svg);
     }
 
     /** A small bookmark glyph for the gutter (Material "bookmark"); colored via the {@code .bookmark-marker}
