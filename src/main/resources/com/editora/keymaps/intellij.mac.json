@@ -116,5 +116,7 @@
   "Cmd-[": "nav.back",
   "Cmd-]": "nav.forward",
   "Cmd-j": "snippets.insert",
-  "Cmd-S--": "view.foldAll"
+  "Cmd-S--": "view.foldAll",
+  "M-Cmd-S-c": "lsp.copyQualifiedName",
+  "M-Cmd-f7": "lsp.findReferences"
 }

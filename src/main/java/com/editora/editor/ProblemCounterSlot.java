@@ -82,6 +82,15 @@ public final class ProblemCounterSlot {
         }
     }
 
+    /** {@link #update()}, first forgetting what was checked when {@code reset}. */
+    void update(boolean reset) {
+        if (reset) {
+            reset();
+        } else {
+            update();
+        }
+    }
+
     /** Mounts or unmounts it for the buffer's state now. */
     void update() {
         if (!enabled || !possible.getAsBoolean()) {

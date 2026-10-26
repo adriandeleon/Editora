@@ -4128,7 +4128,6 @@ public class EditorBuffer implements TabContent {
         // The minimap stripes only draw while LSP is active for this file, regardless of any stale list.
         minimap.setDiagnosticsEnabled(this.lspActive);
         if (!this.lspActive) {
-            problemCounter.reset();
             if (lspOverlay != null) {
                 lspOverlay.setDiagnostics(java.util.List.of());
             }
@@ -4138,10 +4137,7 @@ public class EditorBuffer implements TabContent {
             }
         }
         updateDiagnosticStripe();
-        if (!was && lspActive) {
-            problemCounter.reset(); // opened on a server: nothing checked yet (fifth review CV1)
-        }
-        problemCounter.update();
+        problemCounter.update(was != lspActive); // on or off a server: nothing checked yet (fifth review CV1)
         bulb.schedule();
     }
 

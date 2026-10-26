@@ -429,9 +429,10 @@ public final class CompleteStatement {
             } else if (call.length() == 0
                     && style == Style.SEMICOLON
                     && !top.blockHeader()
-                    && ASSIGNED.matcher(head).find()) {
-                call.append(
-                        ';'); // `Runnable r = () -> {`, `Object o = new Object() {`: the declaration ends `};` (AF4)
+                    && (ASSIGNED.matcher(head).find() || RETURNED.matcher(head).lookingAt())) {
+                // `Runnable r = () -> {`, `Object o = new Object() {`: the declaration ends `};` (AF4), as
+                // `return () -> {` does (fifth review AF4)
+                call.append(';');
             }
             String close = closedLater(text, le, top.indent) ? "" : "\n" + top.indent + "}" + call;
             int at = le + body.length();
@@ -450,6 +451,8 @@ public final class CompleteStatement {
             java.util.regex.Pattern.compile("(?:\\}\\s*else\\s+)?(?:if|while|for|switch)\\s*\\(");
 
     /** An assignment ({@code =}, not {@code ==}, {@code !=}, {@code <=}, {@code >=}, {@code ->}) in a head. */
+    private static final java.util.regex.Pattern RETURNED = java.util.regex.Pattern.compile("(?:return|yield)\\b");
+
     private static final java.util.regex.Pattern ASSIGNED = java.util.regex.Pattern.compile("(?<![=!<>])=(?![=>])");
 
     /**

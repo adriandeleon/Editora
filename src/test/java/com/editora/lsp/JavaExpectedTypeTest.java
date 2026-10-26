@@ -190,4 +190,25 @@ class JavaExpectedTypeTest {
         String closed = "    String s = String.valueOf(1) + java.util.Objects.requireNonNull(n";
         assertEquals("String", JavaExpectedType.declaredTarget(closed, closed.length()), "a closed call is not");
     }
+
+    /** Which argument the caret is in, for Smart Type when jdtls names none (fifth review AV8). */
+    @Test
+    void theArgumentAtTheCaretIsCountedAtTheCallsOwnDepth() {
+        String a = "String s = String.valueOf(words, c";
+        assertEquals(1, JavaExpectedType.argumentIndex(a, a.length()));
+        String b = "f(g(x, y), \"a,b\", ";
+        assertEquals(2, JavaExpectedType.argumentIndex(b, b.length()));
+        String c = "f(";
+        assertEquals(0, JavaExpectedType.argumentIndex(c, c.length()));
+        String d = "int x = 1;";
+        assertNull(JavaExpectedType.argumentIndex(d, d.length()));
+    }
+
+    /** A bound type variable inside a parameter type is named, not left as T (fifth review AV8). */
+    @Test
+    void aBoundTypeVariableInsideAGenericParameterIsSubstituted() {
+        assertEquals(
+                List.of("Collection<? extends String>"),
+                JavaExpectedType.bindTypeVariables(List.of("Collection<? extends T>"), "String", "T"));
+    }
 }

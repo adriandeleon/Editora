@@ -5475,27 +5475,69 @@ final class LspCoordinator {
                     }
                     // The References window is keyed by file and a library target has none: list them all in a
                     // picker instead of opening one unexplained class (re-review BN4).
-                    java.nio.file.Path base = ops.lspProjectRoot();
-                    List<String> excluded = lspManager.javaFilteredTypes();
-                    List<LspManager.Target> listed = targets.stream() // no sun.awt.util.IdentityArrayList (BN4)
-                            .filter(t -> t.file() != null
-                                    || !SymbolRanking.excluded(
-                                            libraryPackage(t) + "." + implementationLabel(t), excluded))
-                            // by class and line, so a class's own rows sit together in order (fourth review BN4)
-                            .sorted(java.util.Comparator.comparing(LspCoordinator::implementationLabel)
-                                    .thenComparingInt(LspManager.Target::line))
-                            .toList();
-                    pickOne(
-                            symbol == null
-                                    ? tr("picker.implementations.title")
-                                    : tr("picker.implementations.of", symbol),
-                            tr("picker.implementations.prompt"),
-                            listed.isEmpty() ? targets : listed,
-                            t -> implementationLabel(t),
-                            t -> implementationDetail(t, base),
-                            chosen -> openTarget(anchor, chosen));
+                    nestedImplementationNames(anchor, targets, names -> {
+                        java.nio.file.Path base = ops.lspProjectRoot();
+                        List<String> excluded = lspManager.javaFilteredTypes();
+                        java.util.function.Function<LspManager.Target, String> label =
+                                t -> names.getOrDefault(t, implementationLabel(t));
+                        List<LspManager.Target> listed = targets.stream() // no sun.awt.util.IdentityArrayList (BN4)
+                                .filter(t -> t.file() != null
+                                        || !SymbolRanking.excluded(
+                                                libraryPackage(t) + "." + implementationLabel(t), excluded))
+                                // by class and line, so a class's own rows sit together in order (fourth review BN4)
+                                .sorted(java.util.Comparator.comparing(label).thenComparingInt(LspManager.Target::line))
+                                .toList();
+                        pickOne(
+                                symbol == null
+                                        ? tr("picker.implementations.title")
+                                        : tr("picker.implementations.of", symbol),
+                                tr("picker.implementations.prompt"),
+                                listed.isEmpty() ? targets : listed,
+                                label,
+                                t -> implementationDetail(t, base),
+                                chosen -> openTarget(anchor, chosen));
+                    });
                 });
     }
+
+    /**
+     * Each library target's type by its own name, nested ones dotted ({@code AbstractList.SubList}), read from its
+     * class's source; a target whose source is not had keeps its file's name (fifth review BN4). One request per
+     * class file, at most {@link #NESTED_NAME_FILES}.
+     */
+    private void nestedImplementationNames(
+            Path anchor,
+            List<LspManager.Target> targets,
+            java.util.function.Consumer<Map<LspManager.Target, String>> cb) {
+        Map<String, List<LspManager.Target>> byClass = new java.util.LinkedHashMap<>();
+        for (LspManager.Target t : targets) {
+            if (t.file() == null && t.classFileUri() != null && byClass.size() < NESTED_NAME_FILES) {
+                byClass.computeIfAbsent(t.classFileUri(), k -> new java.util.ArrayList<>())
+                        .add(t);
+            }
+        }
+        Map<LspManager.Target, String> names = new java.util.HashMap<>();
+        if (byClass.isEmpty()) {
+            cb.accept(names);
+            return;
+        }
+        int[] left = {byClass.size()};
+        byClass.forEach((uri, rows) -> lspManager.classFileContents(anchor, uri, source -> {
+            if (source != null) {
+                for (LspManager.Target t : rows) {
+                    String name = com.editora.lsp.JavaTypeAtLine.at(source, t.line());
+                    if (name != null) {
+                        names.put(t, name);
+                    }
+                }
+            }
+            if (--left[0] == 0) {
+                cb.accept(names);
+            }
+        }));
+    }
+
+    private static final int NESTED_NAME_FILES = 24;
 
     /** An implementation's picker row: its class (a library's {@code ArrayList}) or its file's name. */
     static String implementationLabel(LspManager.Target t) {
@@ -8824,7 +8866,8 @@ final class LspCoordinator {
             // return type against what the line declares (AF1).
             String target = com.editora.lsp.JavaExpectedType.declaredTarget(area.getText(), caret);
             java.util.LinkedHashSet<String> types = new java.util.LinkedHashSet<>();
-            for (var parameter : com.editora.lsp.SignatureFormat.parametersAtCaret(help)) {
+            Integer argument = com.editora.lsp.JavaExpectedType.argumentIndex(area.getText(), caret);
+            for (var parameter : com.editora.lsp.SignatureFormat.parametersAtCaret(help, argument)) {
                 types.addAll(com.editora.lsp.JavaExpectedType.bindTypeVariables(
                         com.editora.lsp.JavaExpectedType.parameterTypes(parameter.label()),
                         target,
