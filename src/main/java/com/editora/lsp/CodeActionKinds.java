@@ -93,6 +93,24 @@ public final class CodeActionKinds {
         return kind != null && (kind.equals(prefix) || kind.startsWith(prefix + "."));
     }
 
+    /**
+     * Within a group, what acts on the selection or caret before what acts on the whole type: Extract Variable,
+     * Constant, Field, Method and Parameter, then Inline, then the rest, then Extract Interface and Move. Refactor
+     * This over a selected expression offered Extract Interface first, as its Enter default (Java review B11).
+     */
+    static int scope(String kind) {
+        if (matches(kind, "refactor.extract.interface") || matches(kind, "refactor.move")) {
+            return 3;
+        }
+        if (matches(kind, "refactor.extract")) {
+            return 0;
+        }
+        if (matches(kind, "refactor.inline")) {
+            return 1;
+        }
+        return 2;
+    }
+
     /** {@code items} that {@code keep} accepts, grouped and de-duplicated as the class comment says. */
     public static List<LspManager.CodeActionItem> arrange(
             List<LspManager.CodeActionItem> items, Predicate<LspManager.CodeActionItem> keep) {
@@ -105,7 +123,8 @@ public final class CodeActionKinds {
         List<LspManager.CodeActionItem> sorted = new ArrayList<>(kept);
         // A server's own preferred actions first (jdtls marks none), then by group; stable within each.
         sorted.sort(Comparator.comparing((LspManager.CodeActionItem i) -> !i.preferred())
-                .thenComparing(i -> group(i.kind())));
+                .thenComparing(i -> group(i.kind()))
+                .thenComparingInt(i -> scope(i.kind())));
         Set<String> titles = new HashSet<>();
         List<LspManager.CodeActionItem> out = new ArrayList<>();
         for (LspManager.CodeActionItem item : sorted) {

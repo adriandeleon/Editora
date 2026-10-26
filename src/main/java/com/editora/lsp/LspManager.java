@@ -4893,6 +4893,9 @@ public final class LspManager {
         // refactorings (variable, constant, method, field) into that same command; each is one
         // java/getRefactorEdit away.
         caps.put("extractInterfaceSupport", true);
+        // Resolving "Add all missing imports" then asks about each ambiguous name (chooseImports), as Organize
+        // Imports does; without it Date was skipped silently (Java review D6).
+        caps.put("advancedOrganizeImportsSupport", true);
         caps.put("advancedExtractRefactoringSupport", true);
         caps.put("moveRefactoringSupport", true);
         // jdtls 1.61+: a move with problems answers a confirmationToken instead of applying anyway; the

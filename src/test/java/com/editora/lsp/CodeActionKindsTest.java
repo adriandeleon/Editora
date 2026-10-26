@@ -32,4 +32,16 @@ class CodeActionKindsTest {
                         new LspManager.CodeActionItem("Generate x", "quickfix", false, real)),
                 "only quick assists");
     }
+
+    /** What acts on the selection comes before what acts on the type: Extract Interface was the default (B11). */
+    @org.junit.jupiter.api.Test
+    void aSelectionsRefactoringsComeBeforeTheTypes() {
+        var iface = new LspManager.CodeActionItem("Extract interface...", "refactor.extract.interface", false, "a");
+        var tryCatch = new LspManager.CodeActionItem("Surround with try/catch", "refactor", false, "b");
+        var variable = new LspManager.CodeActionItem(
+                "Extract to local variable (replace all occurrences)", "refactor.extract.variable", false, "c");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of(variable, tryCatch, iface),
+                CodeActionKinds.arrange(java.util.List.of(iface, tryCatch, variable), i -> true));
+    }
 }

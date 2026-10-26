@@ -2263,6 +2263,18 @@ public class EditorBuffer implements TabContent {
                         "command.lsp.generate", MenuIcons.add(), offset, () -> lspCommand.accept("lsp.generate")));
             }
         }
+        if (lspCodeActionsAvailable && "java".equals(language)) { // only in Navigate and the palette before (B14)
+            items.add(lspItem(
+                    "command.lsp.callHierarchy",
+                    MenuIcons.find(),
+                    offset,
+                    () -> lspCommand.accept("lsp.callHierarchy")));
+            items.add(lspItem(
+                    "command.lsp.typeHierarchy",
+                    MenuIcons.find(),
+                    offset,
+                    () -> lspCommand.accept("lsp.typeHierarchy")));
+        }
         if (lspFormatAvailable) {
             MenuItem format = new MenuItem(MenuTitles.of(tr("command.lsp.formatDocument")));
             format.setGraphic(MenuIcons.code());

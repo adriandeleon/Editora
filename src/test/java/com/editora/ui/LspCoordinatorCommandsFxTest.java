@@ -163,7 +163,7 @@ class LspCoordinatorCommandsFxTest {
         fx.run(() -> fx.coordinator.gotoImplementation());
         assertEquals(3, FxTestSupport.callOnFx(fx::pickerRows).size());
         assertEquals(1, fx.ops.referencesWindowOpened, "not the References window, which would drop it");
-        FxTestSupport.runOnFx(() -> fx.choose(2));
+        FxTestSupport.runOnFx(() -> fx.choose(1)); // rows by class: Impl, Other, String (fourth review BN4)
         fx.settle();
         assertEquals(new LspCoordinatorFixture.Jump(other, 0, 6), fx.ops.jumps.get(fx.ops.jumps.size() - 1));
 
@@ -205,7 +205,7 @@ class LspCoordinatorCommandsFxTest {
                 "IdentityArrayList",
                 LspCoordinator.implementationLabel(new com.editora.lsp.LspManager.Target(
                         null, 1, 0, "jdt://contents/java.desktop/sun.awt.util/IdentityArrayList.java?=x")));
-        FxTestSupport.runOnFx(() -> fx.choose(0));
+        FxTestSupport.runOnFx(() -> fx.choose(1)); // rows by class: Other, then String (fourth review BN4)
         fx.settle();
 
         assertEquals(0, fx.ops.referencesWindowOpened);

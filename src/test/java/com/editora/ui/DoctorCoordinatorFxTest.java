@@ -448,4 +448,21 @@ class DoctorCoordinatorFxTest {
         FxTestSupport.runOnFx(() -> actions.openSettings("git"));
         assertEquals("git", ops.openedSettingsKey);
     }
+
+    /** jdtls's row says which Java it runs on (fourth review C5); a row that is not OK is left as it is. */
+    @Test
+    void jdtlsSaysWhichJavaItRunsOn() {
+        DoctorCheck ok =
+                DoctorCheck.checking("lsp.java", "lsp", "Java", "jdtls").ok("1.63.0 — /x/bin/jdtls");
+        DoctorCheck shown = DoctorCoordinator.jdtlsRuntime(ok, null);
+        if (shown.status() == com.editora.doctor.DoctorStatus.OK) {
+            assertTrue(shown.detail().startsWith("1.63.0 — /x/bin/jdtls · "), shown.detail());
+            assertTrue(shown.detail().contains("Java") || shown.detail().contains("java"), shown.detail());
+        } else {
+            assertEquals(com.editora.doctor.DoctorStatus.WARN, shown.status(), "no python3 or no Java 21+ here");
+        }
+        DoctorCheck missing =
+                DoctorCheck.checking("lsp.java", "lsp", "Java", "jdtls").missing("doctor.tip.notConfigured");
+        assertEquals(missing, DoctorCoordinator.jdtlsRuntime(missing, null));
+    }
 }

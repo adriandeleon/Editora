@@ -85,5 +85,8 @@
   "C-M--": "nav.back",
   "C-S--": "nav.forward",
   "f8": "lsp.nextProblem",
-  "S-f8": "lsp.previousProblem"
+  "S-f8": "lsp.previousProblem",
+  "C-f12": "lsp.gotoImplementation",
+  "M-f12": "lsp.peekDefinition",
+  "C-t": "lsp.gotoSymbol"
 }

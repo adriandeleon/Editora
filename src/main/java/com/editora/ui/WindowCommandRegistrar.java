@@ -2015,6 +2015,16 @@ final class WindowCommandRegistrar {
         // "Enable Test Results" setting (default on) + suppressed in Simple UI mode.
         host.registry().register(Command.of("test.run", host::runTestsForContext));
         host.registry().register(Command.of("test.runAtCaret", () -> host.runTestAtCaret(false, false)));
+        // IntelliJ's Run Context Configuration (Ctrl+Shift+F10): the test at the caret, else the file (fourth
+        // review E1). The chord started Maven's Rerun Last.
+        host.registry().register(Command.of("run.context", () -> {
+            EditorBuffer b = host.activeBuffer();
+            if (b != null && b.testTargetAtCaret(false) != null) {
+                host.runTestAtCaret(false, false);
+            } else {
+                host.runCoordinator().runActiveFile();
+            }
+        }));
         host.registry().register(Command.of("test.runClassAtCaret", () -> host.runTestAtCaret(true, false)));
         host.registry().register(Command.of("test.debugAtCaret", () -> host.runTestAtCaret(false, true)));
         host.registry().register(Command.of("test.rerun", host.testRunCoordinator()::rerun));

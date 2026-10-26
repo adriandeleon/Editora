@@ -104,4 +104,20 @@ class CommandPaletteRankTest {
         assertEquals(
                 FuzzyMatch.NO_SCORE, CommandPalette.keywordScore(titled, "markdown"), "no keyword, no second look");
     }
+
+    /** IntelliJ's and VS Code's names find the command, below any title match (fourth review EN4). */
+    @Test
+    void anotherIdesNameFindsTheCommand() {
+        var organize = com.editora.command.Command.of("lsp.organizeImports", () -> {});
+        var actions = com.editora.command.Command.of("lsp.codeActions", () -> {});
+        var context = com.editora.command.Command.of("run.context", () -> {});
+        var all = java.util.List.of(organize, actions, context);
+        assertEquals(java.util.List.of(organize), CommandPalette.orderedMatches(all, "optimize imports"));
+        assertEquals(java.util.List.of(actions), CommandPalette.orderedMatches(all, "show context actions"));
+        assertEquals(java.util.List.of(context), CommandPalette.orderedMatches(all, "run context configuration"));
+        assertEquals(
+                com.editora.search.FuzzyMatch.NO_SCORE,
+                CommandPalette.otherIdeScore(organize, "ports"),
+                "the first word must begin a word of the name");
+    }
 }

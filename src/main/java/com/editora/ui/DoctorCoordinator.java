@@ -988,6 +988,33 @@ final class DoctorCoordinator {
     }
 
     /**
+     * {@code row} for jdtls, with the Java its launcher runs on (fourth review C5: with {@code JAVA_HOME} on 17 it
+     * ran on another JDK and nothing said which), and a warning when the launcher's {@code python3} is missing
+     * on Linux or macOS. Probes off the FX thread.
+     */
+    static DoctorCheck jdtlsRuntime(DoctorCheck row, @Nullable String defaultJdk) {
+        if (row.status() != com.editora.doctor.DoctorStatus.OK) {
+            return row;
+        }
+        boolean windows = java.io.File.separatorChar == '\\';
+        if (!windows && DoctorProbes.resolvedPath(List.of("python3")).isEmpty()) {
+            return row.warn(row.detail(), "doctor.tip.jdtlsNeedsPython");
+        }
+        int launcher = com.editora.lsp.JavaRuntimes.launcherJavaMajor();
+        var java = com.editora.lsp.JavaRuntimes.serverJava(
+                launcher,
+                com.editora.lsp.JavaRuntimes.discover(),
+                com.editora.lsp.JavaRuntimes.preferredHome(defaultJdk, System.getenv("JAVA_HOME")));
+        if (java.missing()) {
+            return row.warn(row.detail(), "doctor.tip.jdtlsNoJava", "21");
+        }
+        String runs = java.executable() != null
+                ? java.executable()
+                : launcher > 0 ? tr("doctor.detail.jdtlsLauncherJava", launcher) : "";
+        return runs.isEmpty() ? row : row.withDetail(row.detail() + " · " + tr("doctor.detail.jdtlsRunsOn", runs));
+    }
+
+    /**
      * One language server: its resolved path    /**
      * One language server: its resolved path (and Pyright's npm version) when found. Missing, it is a problem
      * only when something in this window needs it (review A1); otherwise it is "not installed", Install… kept.
@@ -1006,6 +1033,7 @@ final class DoctorCoordinator {
         PinnedVersions.Pin pin = PinnedVersions.forServer(serverId).orElse(null);
         Path config = host.configDir();
         String latest = latestFor(row.id());
+        String mavenJdk = host.settings().getMavenJdkHome();
         return probe(row, base -> {
             if (argv.isEmpty()) {
                 // No command at all (an uninstalled maven-pom): say that, not "not found on PATH" (review A3).
@@ -1049,7 +1077,8 @@ final class DoctorCoordinator {
                 Supplier<String> printed = InstallCatalog.CLOJURE_LSP_ID.equals(pin.stepId())
                         ? () -> DoctorProbes.output(withArgs(argv, "--version"))
                         : null;
-                return pinnedRow(base, pin, config, locations, own, printed, path, true);
+                DoctorCheck pinned = pinnedRow(base, pin, config, locations, own, printed, path, true);
+                return own != null ? jdtlsRuntime(pinned, mavenJdk) : pinned;
             }
             // Pyright's launcher prints no version; its npm package.json beside it says (review B16).
             String version = python ? DoctorRules.npmPackageVersion(Path.of(path)) : "";

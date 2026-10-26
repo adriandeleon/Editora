@@ -3784,6 +3784,8 @@ final class LspCoordinator {
                 case "lsp.peekDefinition" -> peekDefinition();
                 case "lsp.refactorThis" -> refactorActions();
                 case "lsp.generate" -> generateActions();
+                case "lsp.callHierarchy" -> callHierarchy();
+                case "lsp.typeHierarchy" -> typeHierarchy();
                 default -> {}
             }
         });

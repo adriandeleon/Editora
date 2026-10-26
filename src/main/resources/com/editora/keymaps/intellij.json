@@ -44,7 +44,7 @@
   "M-4": "tool.run",
   "M-5": "tool.debug",
   "C-=": "view.textZoomIn",
-  "C-S-=": "view.textZoomIn",
+  "C-S-=": "view.unfoldAll",
   "C--": "view.textZoomOut",
   "C-0": "view.textZoomReset",
   "S-f9": "debug.start",
@@ -80,7 +80,7 @@
   "C-f9": "debug.applyCodeChanges",
   "M-f12": "tool.terminal",
   "S-escape": "terminal.focusEditor",
-  "C-S-f10": "maven.rerunLast",
+  "C-S-f10": "run.context",
   "M-S-b": "tool.buildOutput",
   "M-enter": "lsp.codeActions",
   "S-f6": "lsp.rename",
@@ -112,5 +112,7 @@
   "C-M-t": "snippets.surround",
   "C-o": "lsp.overrideMethods",
   "C-M-insert": "file.new",
-  "C-j": "snippets.insert"
+  "C-j": "snippets.insert",
+  "C-S--": "view.foldAll",
+  "C-i": "lsp.overrideMethods"
 }

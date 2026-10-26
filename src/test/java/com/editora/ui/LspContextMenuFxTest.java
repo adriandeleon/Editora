@@ -85,7 +85,9 @@ class LspContextMenuFxTest {
                     "command.lsp.formatDocument",
                     "command.lsp.peekDefinition",
                     "command.lsp.refactorThis",
-                    "command.lsp.generate")) {
+                    "command.lsp.generate",
+                    "command.lsp.callHierarchy",
+                    "command.lsp.typeHierarchy")) {
                 String label = com.editora.editor.MenuTitles.of(tr(key));
                 assertTrue(labels.contains(label), label + " is missing from the LSP submenu");
                 assertFalse(label.startsWith("LSP"), "the submenu is already called LSP (B14)");

@@ -302,6 +302,9 @@ public class CommandPalette {
             if (score == FuzzyMatch.NO_SCORE) {
                 score = keywordScore(command, q);
             }
+            if (score == FuzzyMatch.NO_SCORE) {
+                score = otherIdeScore(command, q);
+            }
             if (score != FuzzyMatch.NO_SCORE) {
                 scored.add(new Scored(command, score));
             }
@@ -339,6 +342,29 @@ public class CommandPalette {
         }
         int score = FuzzyMatch.scoreOf(keywords + " " + command.title(), query);
         return score == FuzzyMatch.NO_SCORE ? score : score - KEYWORD_PENALTY;
+    }
+
+    /**
+     * The score of {@code command} through what IntelliJ or VS Code call it ({@link
+     * com.editora.command.OtherIdeNames}), for a query that matched neither its title nor its keywords: "optimize
+     * imports" finds Organize Imports (fourth review EN4). The query's first word must begin a word of the name, and
+     * it ranks below every title match.
+     */
+    static int otherIdeScore(Command command, String query) {
+        int token = query.indexOf(' ');
+        String first = (token < 0 ? query : query.substring(0, token)).toLowerCase(java.util.Locale.ROOT);
+        int best = FuzzyMatch.NO_SCORE;
+        for (String name : com.editora.command.OtherIdeNames.of(command.id())) {
+            String lower = name.toLowerCase(java.util.Locale.ROOT);
+            if (first.isEmpty() || !(lower.startsWith(first) || lower.contains(" " + first))) {
+                continue;
+            }
+            int score = FuzzyMatch.scoreOf(name, query);
+            if (score != FuzzyMatch.NO_SCORE) {
+                best = Math.max(best, score - KEYWORD_PENALTY);
+            }
+        }
+        return best;
     }
 
     /** Selects the first <em>enabled</em> result (the cursor never rests on a grayed-out command). */
