@@ -156,8 +156,10 @@
 
 /* The code-action lightbulb, on the caret line in the bookmark column: amber for quick actions, red when there is
    a quick fix (IntelliJ's two bulbs). */
-.editor-area .fold-gutter .bulb-marker { -fx-fill: -state-amber; }
-.editor-area .fold-gutter .bulb-marker.fix { -fx-fill: -state-red; }
+/* The adaptive editor themes and Primer Light keep these: a hue apart from the warning-coloured bookmark (seventh
+   review AR3); the other editor themes set their own. */
+.editor-area .fold-gutter .bulb-marker { -fx-fill: -color-accent-emphasis; }
+.editor-area .fold-gutter .bulb-marker.fix { -fx-fill: -color-danger-emphasis; }
 .editor-area .fold-gutter .bookmark-slot:hover .bulb-marker { -fx-opacity: 0.8; }
 
 /* Personal Note glyph in the gutter — a deep orange comment bubble, deliberately distinct from the
