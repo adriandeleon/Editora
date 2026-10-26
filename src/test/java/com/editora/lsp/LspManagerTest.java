@@ -907,4 +907,19 @@ class LspManagerTest {
                 "first-seen order; the call sites add up (Java review B19)");
         org.junit.jupiter.api.Assertions.assertSame(append.raw(), merged.get(0).raw(), "the first item expands");
     }
+
+    /** A package named build, out or target is walked; a module's output folder beside its build file is not (BR3). */
+    @org.junit.jupiter.api.Test
+    void aBuildPackageHoldsJavaButAModulesOutputIsSkipped(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path tools = java.nio.file.Files.createDirectories(dir.resolve("src/tools/build"));
+        java.nio.file.Files.writeString(tools.resolve("Builder.java"), "package tools.build;");
+        org.junit.jupiter.api.Assertions.assertTrue(LspManager.holdsJava(dir.resolve("src/tools")));
+
+        java.nio.file.Path module = java.nio.file.Files.createDirectories(dir.resolve("lib"));
+        java.nio.file.Files.writeString(module.resolve("pom.xml"), "<project/>");
+        java.nio.file.Files.createDirectories(module.resolve("target/gen"));
+        java.nio.file.Files.writeString(module.resolve("target/gen/Gen.java"), "class Gen {}");
+        org.junit.jupiter.api.Assertions.assertFalse(LspManager.holdsJava(module), "only the build output has Java");
+    }
 }

@@ -6112,7 +6112,7 @@ public final class LspManager {
                 public java.nio.file.FileVisitResult preVisitDirectory(
                         Path d, java.nio.file.attribute.BasicFileAttributes attrs) {
                     String name = d.getFileName() == null ? "" : d.getFileName().toString();
-                    return !d.equals(dir) && NOT_SOURCES.contains(name)
+                    return !d.equals(dir) && notSources(d, name)
                             ? java.nio.file.FileVisitResult.SKIP_SUBTREE
                             : java.nio.file.FileVisitResult.CONTINUE;
                 }
@@ -6138,9 +6138,24 @@ public final class LspManager {
         return found[0];
     }
 
-    /** Folders that hold no Java sources a move could need edits for. */
+    /** Folders that hold no Java sources a move could need edits for, whatever their place. */
     private static final java.util.Set<String> NOT_SOURCES =
-            java.util.Set.of("node_modules", ".git", ".svn", ".hg", ".gradle", ".idea", "target", "build", "out");
+            java.util.Set.of("node_modules", ".git", ".svn", ".hg", ".gradle", ".idea");
+
+    /** Build output folders, skipped only beside a build file: elsewhere they are packages (seventh review BR3). */
+    private static final java.util.Set<String> BUILD_OUTPUTS = java.util.Set.of("target", "build", "out");
+
+    private static boolean notSources(Path folder, String name) {
+        if (NOT_SOURCES.contains(name)) {
+            return true;
+        }
+        Path module = folder.getParent();
+        return BUILD_OUTPUTS.contains(name)
+                && module != null
+                && (Files.exists(module.resolve("pom.xml"))
+                        || Files.exists(module.resolve("build.gradle"))
+                        || Files.exists(module.resolve("build.gradle.kts")));
+    }
 
     /** As {@link #willRenameFile(Path, Path, Consumer)}, asking {@code fallback} when jdtls has no edit for it. */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {

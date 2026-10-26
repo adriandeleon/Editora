@@ -7791,6 +7791,7 @@ final class LspCoordinator {
      */
     void willRenameFile(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
         AppliedEdit previous = lastApplied;
+        lastRenameRefused = false;
         renamesInFlight++;
         lspManager.willRenameFile(
                 from,
@@ -7829,12 +7830,22 @@ final class LspCoordinator {
     /** The end of the drag, waiting for a rename still in flight: true for an Undo Move's, null when none waits. */
     private @Nullable Boolean moveEndWaiting;
 
+    /** What the tree said when the drag ended, said again once it is recorded: a save's status landed over it (BF3). */
+    private @Nullable String moveEndStatus;
+
+    /** Whether the last refused tree rename was the user's No; false for a failed edit (seventh review BR4). */
+    private boolean lastRenameRefused;
+
     private void renameDone() {
         renamesInFlight = Math.max(0, renamesInFlight - 1);
         Boolean undo = moveEndWaiting;
         if (renamesInFlight == 0 && undo != null) {
             moveEndWaiting = null;
+            String said = moveEndStatus;
             endTreeMove(undo);
+            if (said != null) {
+                host.setStatus(said); // the tree's "Moved 1 to geo", not the save's "Saved /the/whole/path"
+            }
         }
     }
 
@@ -7860,11 +7871,22 @@ final class LspCoordinator {
 
             @Override
             public void endMove(boolean undo) {
+                endMove(undo, null);
+            }
+
+            @Override
+            public void endMove(boolean undo, @Nullable String status) {
+                moveEndStatus = status;
                 if (renamesInFlight > 0) {
                     moveEndWaiting = undo; // a move's edit is still being recorded (sixth review BS1)
                 } else {
                     endTreeMove(undo);
                 }
+            }
+
+            @Override
+            public boolean refusedByUser() {
+                return lastRenameRefused;
             }
         };
     }
@@ -7909,7 +7931,12 @@ final class LspCoordinator {
         } else if (edited) {
             lastApplied = moveGroupWhole ? merged(group) : null;
             treeMoveEdit = lastApplied;
+        } else {
+            // a drag with no edit is the tree's newest move: an older drag's refactoring no longer ends it, nor does
+            // its Undo Move take that refactoring's undo away (seventh review BS2)
+            treeMoveEdit = null;
         }
+        moveEndStatus = null;
         if (!moveWithoutEdits.isEmpty()) {
             host.setError(tr(
                     "status.lsp.moveWithoutPackageEdit", String.join(", ", moveWithoutEdits), moveWithoutEdits.size()));
@@ -7962,6 +7989,7 @@ final class LspCoordinator {
         }
         Boolean asked = moveWithoutEditsAnswer;
         if (moveGroup != null && asked != null) {
+            lastRenameRefused = !asked;
             return asked; // asked once for the whole drag (fifth review BV3)
         }
         boolean rename = java.util.Objects.equals(from.getParent(), to.getParent());
@@ -7978,6 +8006,7 @@ final class LspCoordinator {
         if (moveGroup != null) {
             moveWithoutEditsAnswer = answer;
         }
+        lastRenameRefused = !answer;
         return answer;
     }
 
