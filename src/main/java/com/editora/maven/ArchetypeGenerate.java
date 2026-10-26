@@ -23,10 +23,6 @@ public final class ArchetypeGenerate {
     private ArchetypeGenerate() {}
 
     /**
-     * @param mvnExecutable the resolved Maven launcher, e.g. {@code ["mvn"]} — from
-     *     {@code BuildTool.MAVEN.executable(...)}, so a user's Settings override is honoured
-     */
-    /**
      * Whether generation must be detached from a Maven project already sitting in the target directory.
      *
      * <p>{@code archetype:generate} run inside an existing project tries to register the new project as a
@@ -69,6 +65,10 @@ public final class ArchetypeGenerate {
         return List.copyOf(argv);
     }
 
+    /**
+     * @param mvnExecutable the resolved Maven launcher, e.g. {@code ["mvn"]} — from
+     *     {@code BuildTool.MAVEN.executable(...)}, so a user's Settings override is honoured
+     */
     public static List<String> argv(List<String> mvnExecutable, MavenProjectSpec spec) {
         return argv(mvnExecutable, spec, Map.of());
     }

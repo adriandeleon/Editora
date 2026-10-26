@@ -666,7 +666,6 @@ public final class FoldManager {
         }
     }
 
-    /** Recreates the visible rows' gutter graphics so their line numbers re-pad to a new digit width. */
     /** {@code -1}: the paragraph is its own line number. {@code 0}: the row has none. */
     private java.util.function.IntUnaryOperator lineNumberAt = paragraph -> -1;
 
@@ -698,6 +697,7 @@ public final class FoldManager {
         repadVisibleLineNumbers(area.getParagraphs().size());
     }
 
+    /** Recreates the visible rows' gutter graphics so their line numbers re-pad to a new digit width. */
     private void repadVisibleLineNumbers(int total) {
         recreateVisibleGutter(area, null, total);
         CodeArea second = secondView.get();
@@ -1107,14 +1107,14 @@ public final class FoldManager {
         }
     }
 
+    /** A bulk fold put the caret back: the viewport restored next keeps it on screen. */
+    private boolean revealCaret;
+
     /**
      * Puts the caret back where it was before a bulk fold or unfold: each region folded or unfolded moved it to that
      * region's header, so Fold All left it in another method, off screen (fifth review EV2). A caret a fold now
      * hides goes to the end of the header of the outermost fold hiding it, as IntelliJ's Collapse All leaves it.
      */
-    /** A bulk fold put the caret back: the viewport restored next keeps it on screen. */
-    private boolean revealCaret;
-
     private void keepCaret(int caret, int anchor) {
         revealCaret = true;
         int at = Math.min(caret, area.getLength());
@@ -1902,12 +1902,6 @@ public final class FoldManager {
     }
 
     /**
-     * Builds the leftmost blame "Annotate" cell for a row: a fixed-width author (left, ellipsized) + date
-     * (right) with an age-heatmap background, a full-commit hover tooltip, and click → show that line's
-     * commit. A blank slot of the same width is returned for an empty / not-yet-loaded row so the column
-     * width — and thus the line-number alignment — stays constant across rows.
-     */
-    /**
      * The age-heatmap backgrounds, one per distinct tint. An inline style string is parsed by the CSS engine
      * for every cell that carries it, and blame puts one on every row scrolled into view; the tints are a
      * few dozen values per file, so each is resolved once. FX-thread only.
@@ -1932,6 +1926,12 @@ public final class FoldManager {
         return tint;
     }
 
+    /**
+     * Builds the leftmost blame "Annotate" cell for a row: a fixed-width author (left, ellipsized) + date
+     * (right) with an age-heatmap background, a full-commit hover tooltip, and click → show that line's
+     * commit. A blank slot of the same width is returned for an empty / not-yet-loaded row so the column
+     * width — and thus the line-number alignment — stays constant across rows.
+     */
     private Node buildBlameSlot(int idx) {
         double w = Math.max(0, blameColumnWidth.getAsDouble());
         HBox slot = new HBox();

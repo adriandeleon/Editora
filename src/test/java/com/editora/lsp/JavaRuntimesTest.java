@@ -309,4 +309,40 @@ class JavaRuntimesTest {
         assertEquals(List.of(jdk21), JavaRuntimes.allWithoutSources(List.of(jdk21, jdk25), jdk25.path()));
         assertEquals(jdk21, JavaRuntimes.withoutSources(List.of(jdk21, jdk25), jdk25.path()));
     }
+
+    /**
+     * Doctor names the bare JDKs the project gets, not every bare JDK on the machine: a distro JDK 21 warned in a
+     * release-25 project (eighth review DQ4).
+     */
+    @Test
+    void onlyTheProjectsJdkIsChecked(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path distro = java.nio.file.Files.createDirectories(dir.resolve("distro21/lib"));
+        java.nio.file.Path sdk25 = java.nio.file.Files.createDirectories(dir.resolve("sdk25/lib"));
+        java.nio.file.Files.writeString(sdk25.resolve("src.zip"), "zip");
+        var jdk21 = new JavaRuntimes.Jdk(21, distro.getParent().toString());
+        var jdk25 = new JavaRuntimes.Jdk(25, sdk25.getParent().toString());
+        java.nio.file.Path p25 = java.nio.file.Files.createDirectories(dir.resolve("p25"));
+        java.nio.file.Files.writeString(
+                p25.resolve("pom.xml"), "<properties><maven.compiler.release>25</maven.compiler.release></properties>");
+        java.nio.file.Path p21 = java.nio.file.Files.createDirectories(dir.resolve("p21"));
+        java.nio.file.Files.writeString(
+                p21.resolve("build.gradle.kts"), "java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }");
+        List<JavaRuntimes.Jdk> jdks = List.of(jdk21, jdk25);
+        assertEquals(List.of(), JavaRuntimes.withoutSourcesFor(jdks, jdk25.path(), p25), "release 25: it has sources");
+        assertEquals(
+                List.of(jdk21), JavaRuntimes.withoutSourcesFor(jdks, jdk25.path(), p21), "release 21: it has none");
+        assertEquals(List.of(), JavaRuntimes.withoutSourcesFor(jdks, jdk25.path(), null), "no project: the default's");
+    }
+
+    @Test
+    void theStatedReleaseIsRead(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Files.writeString(dir.resolve("build.gradle"), "sourceCompatibility = JavaVersion.VERSION_17\n");
+        assertEquals(17, JavaRuntimes.statedRelease(dir));
+        java.nio.file.Files.writeString(
+                dir.resolve("pom.xml"), "<plugin><configuration><release>11</release></configuration></plugin>");
+        assertEquals(11, JavaRuntimes.statedRelease(dir), "the pom first");
+        java.nio.file.Files.writeString(dir.resolve("pom.xml"), "<maven.compiler.source>1.8</maven.compiler.source>");
+        assertEquals(8, JavaRuntimes.statedRelease(dir));
+        assertEquals(0, JavaRuntimes.statedRelease(dir.resolve("none")));
+    }
 }

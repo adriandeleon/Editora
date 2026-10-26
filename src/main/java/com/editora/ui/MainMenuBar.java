@@ -69,11 +69,11 @@ final class MainMenuBar {
     private final Supplier<Chrome.PaletteGates> gates;
     private final Supplier<Chrome.PaletteContext> context;
 
-    /** Items by command id, so {@link #refresh()} can restyle them without rebuilding the bar. */
     /** An item plus, for the in-window rendering, the two labels {@link #refresh} writes into. */
     private record Row(
             MenuItem item, @Nullable Label title, @Nullable Label chord) {}
 
+    /** Items by command id, so {@link #refresh()} can restyle them without rebuilding the bar. */
     private final Map<String, Row> items = new LinkedHashMap<>();
 
     /** Rows grouped by the menu they belong to — a chord column is aligned per menu, not app-wide. */

@@ -87,15 +87,15 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
      */
     private final ServedText served = new ServedText(new java.util.WeakHashMap<>());
 
+    /** Why an MCP client may not read or edit an encrypted file's buffer. */
+    static final String ENCRYPTED =
+            "This buffer is an encrypted file; Editora does not share its decrypted text with MCP clients.";
+
     /**
      * Runs {@code task} on the FX thread and blocks (with a timeout) for its result. A task the FX thread has
      * not started when the wait ends is cancelled — a call answered with a timeout is not applied afterwards
      * — and the failure says which of the two it was (see {@link FxCall}).
      */
-    /** Why an MCP client may not read or edit an encrypted file's buffer. */
-    static final String ENCRYPTED =
-            "This buffer is an encrypted file; Editora does not share its decrypted text with MCP clients.";
-
     static <T> T mcpOnFx(java.util.function.Supplier<T> task) {
         try {
             return FxCall.call(task, FX_TIMEOUT_MILLIS);

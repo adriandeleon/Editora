@@ -325,7 +325,6 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** Renders a language header, a file header (name + count), or a diagnostic (severity glyph + line). */
     /**
      * A diagnostic row's text after its glyph: the 1-based line, the message (one line, at most 200 characters)
      * and the rule's code in brackets — {@code 3:  Double quote to prevent globbing…  [SC2086]} — which is what a
@@ -369,6 +368,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         return menu.getItems().isEmpty() ? null : menu;
     }
 
+    /** Renders a language header, a file header (name + count), or a diagnostic (severity glyph + line). */
     private final class RowCell extends TreeCell<Row> {
         @Override
         protected void updateItem(Row row, boolean empty) {

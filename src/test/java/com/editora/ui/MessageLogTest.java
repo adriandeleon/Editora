@@ -48,6 +48,21 @@ class MessageLogTest {
         assertEquals("m50", entries.get(entries.size() - 1).text());
     }
 
+    /** A message said again at once is one entry and one unread error: the start refusal counted 2 (eighth review DQ3). */
+    @Test
+    void anImmediateRepeatIsOneEntry() {
+        MessageLog log = new MessageLog();
+        log.add("jdtls needs Java 25", MessageLog.Severity.ERROR, 1_000);
+        log.add("jdtls needs Java 25", MessageLog.Severity.ERROR, 1_300);
+        assertEquals(1, log.size());
+        assertEquals(1, log.unreadErrors());
+        log.add("jdtls needs Java 25", MessageLog.Severity.ERROR, 1_000 + MessageLog.REPEAT_MILLIS + 400);
+        assertEquals(2, log.size(), "said again later: recorded again");
+        log.add("other", MessageLog.Severity.INFO, 9_000);
+        log.add("jdtls needs Java 25", MessageLog.Severity.ERROR, 9_100);
+        assertEquals(4, log.size(), "not the latest entry: recorded");
+    }
+
     @Test
     void clearEmptiesTheLog() {
         MessageLog log = new MessageLog();

@@ -161,15 +161,6 @@ final class TagRenameMirror {
             });
         }
 
-        /**
-         * Tolerates an offset past the end of the document. While a multi-caret change is being notified,
-         * the extra carets still hold their pre-edit offsets; the current-line highlighter (subscribed
-         * before them) re-creates the caret line's cell in that window, which resolves every caret's
-         * paragraph — and for a caret near the end of a document that just got shorter, the stale offset
-         * is out of range. RichTextFX threw from the change notification, the multi-caret commit never
-         * re-asserted its carets, and every later key in the buffer failed. The carets correct themselves
-         * as soon as their own change handlers run, so clamping the transient lookup is all that is needed.
-         */
         /** Double-click: the word under the caret by {@link DoubleClickWord}'s rules for this language. */
         @Override
         public void selectWord() {
@@ -187,6 +178,15 @@ final class TagRenameMirror {
             }
         }
 
+        /**
+         * Tolerates an offset past the end of the document. While a multi-caret change is being notified,
+         * the extra carets still hold their pre-edit offsets; the current-line highlighter (subscribed
+         * before them) re-creates the caret line's cell in that window, which resolves every caret's
+         * paragraph — and for a caret near the end of a document that just got shorter, the stale offset
+         * is out of range. RichTextFX threw from the change notification, the multi-caret commit never
+         * re-asserted its carets, and every later key in the buffer failed. The carets correct themselves
+         * as soon as their own change handlers run, so clamping the transient lookup is all that is needed.
+         */
         @Override
         public TwoDimensional.Position offsetToPosition(int offset, TwoDimensional.Bias bias) {
             return super.offsetToPosition(Math.min(offset, getLength()), bias);

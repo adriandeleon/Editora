@@ -453,12 +453,6 @@ final class InstallCoordinator {
     }
 
     /**
-     * The servers that {@code steps} reinstall while they run (an update, or an outdated copy Install replaces) —
-     * those of a step whose server is detected ({@link InstallCatalog#serversOfStep}):
-     * they are stopped first, so none runs on files being swapped out; the support re-applied afterwards starts
-     * them again.
-     */
-    /**
      * Stops {@code serverIds} while their install folder is swapped: here, and in every other window, which kept
      * running the old copy's deleted jars, or restarted it from the folder mid-swap (third review CT6). No window
      * starts them again until the install is done.
@@ -470,6 +464,12 @@ final class InstallCoordinator {
         }
     }
 
+    /**
+     * The servers that {@code steps} reinstall while they run (an update, or an outdated copy Install replaces) —
+     * those of a step whose server is detected ({@link InstallCatalog#serversOfStep}):
+     * they are stopped first, so none runs on files being swapped out; the support re-applied afterwards starts
+     * them again.
+     */
     private List<String> runningServersOf(List<Step> steps) {
         return steps.stream()
                 .flatMap(s -> InstallCatalog.serversOfStep(s.id()).stream())

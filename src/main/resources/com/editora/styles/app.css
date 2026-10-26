@@ -154,11 +154,13 @@
     -fx-fill: #e08a33;
 }
 
-/* The code-action lightbulb, on the caret line in the bookmark column: amber for quick actions, red when there is
-   a quick fix (IntelliJ's two bulbs). */
-/* The adaptive editor themes and Primer Light keep these: a hue apart from the warning-coloured bookmark (seventh
-   review AR3); the other editor themes set their own. */
-.editor-area .fold-gutter .bulb-marker { -fx-fill: -color-accent-emphasis; }
+/* The code-action lightbulb, on the caret line in the bookmark column: one colour for quick actions, red when there
+   is a quick fix (IntelliJ's two bulbs). The adaptive editor themes and Primer Light keep these, a hue apart from the
+   warning-coloured bookmark (seventh review AR3); the other editor themes set their own. A UI theme whose accent is
+   its warning colour (Summer Dark, Navy Dark, Fall Dark, Blacky) sets -editora-bulb-assist on .editor-area, which is
+   nearer the bulb than this default (eighth review AR3). */
+.root { -editora-bulb-assist: -color-accent-emphasis; }
+.editor-area .fold-gutter .bulb-marker { -fx-fill: -editora-bulb-assist; }
 .editor-area .fold-gutter .bulb-marker.fix { -fx-fill: -color-danger-emphasis; }
 .editor-area .fold-gutter .bookmark-slot:hover .bulb-marker { -fx-opacity: 0.8; }
 

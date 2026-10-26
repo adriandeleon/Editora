@@ -4969,3 +4969,9 @@ Text {
  * Accent: golden sunset (#d48800) - Success: tropical teal (#20c89c)
  * Warning: golden sun (#d49000) - Danger: sunset coral (#f06850)
  */
+
+/* Editora: the accent here is the bookmark's warning colour, so the assist bulb takes the foreground colour, apart
+   from the bookmark and from the red quick-fix bulb (eighth review AR3). */
+.editor-area {
+  -editora-bulb-assist: -color-fg-default;
+}

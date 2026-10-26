@@ -436,8 +436,8 @@ public class SettingsWindow {
     private ComboBox<String> aiProviderCombo;
     private TextField aiEndpointField;
     private @Nullable Label aiStatusLabel;
-    /** Injected by MainController: runs a live connection check, delivering (ok, message) on the FX thread. */
-    /** (fresh, onResult): a fresh check, or the last one when it is recent (see AiCoordinator.checkConnection). */
+    /** Injected by MainController: runs a live connection check, delivering (ok, message) on the FX thread.
+     *  (fresh, onResult): a fresh check, or the last one when it is recent (see AiCoordinator.checkConnection). */
     private java.util.function.@Nullable BiConsumer<Boolean, java.util.function.BiConsumer<Boolean, String>>
             aiConnectionProbe;
     /** Coalesces rapid field edits into a single connection check (~600 ms after the last keystroke). */
@@ -841,7 +841,6 @@ public class SettingsWindow {
         this.onInstallSupport = onInstallSupport;
     }
 
-    /** Wires the per-LSP-server Install buttons (json/bash/yaml/…) to {@code InstallCoordinator.installServer}. */
     /** Installs a pinned command-line tool (shellcheck/shfmt) from the Bash card's Install buttons. */
     private java.util.function.@Nullable Consumer<String> onInstallTool;
 
@@ -856,6 +855,7 @@ public class SettingsWindow {
         this.openUrl = openUrl;
     }
 
+    /** Wires the per-LSP-server Install buttons (json/bash/yaml/…) to {@code InstallCoordinator.installServer}. */
     public void setInstallServerActions(java.util.function.Consumer<String> onInstallServer) {
         this.onInstallServer = onInstallServer;
     }
@@ -2176,7 +2176,6 @@ public class SettingsWindow {
         });
     }
 
-    /** A view-toggle checkbox that writes {@code setter} and applies live. */
     /** A small editable int spinner that writes {@code setter} + re-applies (skipping the loading phase). */
     private Spinner<Integer> historySpinner(
             int min, int max, int def, java.util.function.BiConsumer<Settings, Integer> setter) {
@@ -2231,6 +2230,7 @@ public class SettingsWindow {
         historyMaxTotalSpinner.setDisable(!on);
     }
 
+    /** A view-toggle checkbox that writes {@code setter} and applies live. */
     private CheckBox viewCheck(String label, java.util.function.BiConsumer<Settings, Boolean> setter) {
         CheckBox check = new CheckBox(label);
         check.selectedProperty().addListener((obs, was, now) -> {
@@ -6398,7 +6398,6 @@ public class SettingsWindow {
         return com.editora.ai.AiProvider.from(config.getSettings().getAiProvider());
     }
 
-    /** Reload together: switching providers must not write the previous provider's fields back. */
     /** Stores what the four per-provider fields show under {@code provider} (the caller saves and applies). */
     private void commitAiFieldsFor(com.editora.ai.AiProvider provider) {
         Settings settings = config.getSettings();
@@ -6410,6 +6409,7 @@ public class SettingsWindow {
         settings.setAiModelFor(provider, aiModelField.getText());
     }
 
+    /** Reload together: switching providers must not write the previous provider's fields back. */
     private void syncAiProviderFields() {
         boolean previous = loading;
         loading = true;
@@ -7621,7 +7621,6 @@ public class SettingsWindow {
                         () -> config.getSettings().getAstroLspCommand()));
     }
 
-    /** A "[label] [path field] [Browse…]" row for picking a CLI executable. */
     /** A simple "label: control" row (no Browse button), used for the AI provider combo + endpoint URL. */
     private HBox labeledRow(String label, javafx.scene.control.Control control) {
         HBox.setHgrow(control, Priority.ALWAYS);
@@ -7720,7 +7719,6 @@ public class SettingsWindow {
      * Pins each control's minimum width to its preferred one, so a narrow window cannot squeeze it: a
      * Labeled's own minimum is the width of an ellipsis, which is how buttons ended up reading "…".
      */
-    /** Names a ▲/▼ pair for a screen reader (and a tooltip): on their own they announce as the glyphs. */
     private static void keepWidth(Region... controls) {
         for (Region control : controls) {
             control.setMinWidth(Region.USE_PREF_SIZE);
@@ -8756,12 +8754,12 @@ public class SettingsWindow {
     private final ComboBox<String> finalNewlineCombo = scopeUi.projectOnlyCombo("editor.insertFinalNewline");
     private @Nullable LspCoordinator projectLsp;
 
-    /** Injected by MainController: the window's language-server coordinator, which owns its project scope. */
     /** How the User / Project bar names the window's project: the name the main window's title shows. */
     void setProjectName(java.util.function.Supplier<String> projectName) {
         scopeUi.setProjectName(projectName);
     }
 
+    /** Injected by MainController: the window's language-server coordinator, which owns its project scope. */
     void setProjectLsp(LspCoordinator lsp) {
         this.projectLsp = lsp;
         this.lspProjectNotes = lsp::projectOverrideNote;

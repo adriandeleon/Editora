@@ -371,7 +371,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final LinkedList<Tab> mru = new LinkedList<>();
     /** Pinned tabs (identity-based): kept grouped at the front and skipped by bulk-close actions. */
     final Set<Tab> pinned = Collections.newSetFromMap(new IdentityHashMap<>());
-    /** The tab currently being dragged to reorder the strip, or null. */
     /** The editor-theme override stylesheet currently on the scene, or null for the default theme. */
     private @Nullable String currentEditorThemeCss;
 
@@ -2268,6 +2267,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void setupMruTracking() {
         // A mouse click in the editor area repositions the caret, which ends an Emacs mark session.
         editorArea.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> editing.deactivateMark());
+        TabFocus.install(editorArea, this::activeBuffer); // a tab header's click focuses its editor (AQ2)
         // A selected tab always has its buffer: a restore placeholder is built before any listener runs.
         editorArea.setTabMaterializer(tab -> sessions.materialize(tab, true));
         editorArea.addSelectionListener((obs, was, now) -> findBar.onActiveBufferChanged());
@@ -3235,6 +3235,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         editing.onPaste();
     }
 
+    /** Shows the find/replace bar, or hides it if it's already open. */
     @FXML
     private void onFind() {
         editing.onFind();
@@ -6163,10 +6164,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
     }
 
-    /** Run-a-file feature; owns the run service/console panel (the tool window + commands stay here). */
     /** This window's deployments: running configurations on a host, in a copy of the project there. */
     final DeploymentCoordinator deployments = new DeploymentCoordinator(new DeploymentHost(this));
 
+    /** Run-a-file feature; owns the run service/console panel (the tool window + commands stay here). */
     final RunCoordinator runCoordinator = new RunCoordinator(coordinatorHost, new RunCoordinator.Ops() {
         @Override
         public void openToolWindow() {
@@ -7286,8 +7287,6 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // --- McpBridge: marshals editor reads onto the FX thread for the off-FX HTTP worker -----------
 
-    /** True when {@code b}'s file is on the local filesystem (or untitled) — the gate for every feature
-     *  that shells out to a local process (LSP/DAP/git/run/HTTP). Remote (SFTP) buffers are text-only. */
     /** The .http ▶ tooltip: "Run this request (C-M-r) · Run all requests: C-M-S-enter", with the keymap's chords. */
     static String httpRunTooltip(com.editora.command.KeymapManager keymap) {
         String run = keymap == null ? null : keymap.displayChord("http.runRequest");
@@ -7298,6 +7297,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         return ChordHint.tr(keymap, "editmenu.runHttpRequest.tip", "http.runRequest");
     }
 
+    /** True when {@code b}'s file is on the local filesystem (or untitled) — the gate for every feature
+     *  that shells out to a local process (LSP/DAP/git/run/HTTP). Remote (SFTP) buffers are text-only. */
     boolean isLocalBuffer(EditorBuffer b) {
         return b != null && com.editora.vfs.Vfs.isLocal(b.getPath());
     }
@@ -7344,7 +7345,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Opens {@code file} (if needed) and moves the caret to a 0-based LSP line/column. */
     private void openAndGoto(@Nullable Path file, int line0, int col0) {
         NavigationHistory.Location origin = navigation.navigating ? null : navigation.captureCurrent();
-        fileWorkflows.openPath(file);
+        fileWorkflows.openPath(file, true); // a jump says no "Already open" (eighth review EQ5)
         Platform.runLater(() -> navigation.landJump(origin, file, line0, col0));
     }
 
@@ -9133,6 +9134,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (count > 1) {
             int idx = (editorArea.selectedIndex() + 1) % count;
             editorArea.select(idx);
+            Platform.runLater(() -> TabFocus.focus(activeBuffer())); // as a tab chosen any other way (AQ2)
         }
     }
 
@@ -9140,7 +9142,6 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // --- Markdown image paste / drop -------------------------------------------------------------
 
-    /** Shows the find/replace bar, or hides it if it's already open. */
     /** C-s: show the find bar, or — if already showing — cycle to the next match. */
     void findShowOrNext() {
         if (findBar.isShown()) {
@@ -9190,14 +9191,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    /**
-     * Gates the stripe buttons of tool windows whose content comes from the <b>active editor buffer</b>, so
-     * they only advertise themselves when there is something to act on — hidden on the Welcome page and other
-     * non-buffer tabs (mirroring how Run/Debug/HTTP/Commit already gate their buttons). Structure / File
-     * Information / TODO need any buffer; Markdown Lint additionally needs a Markdown buffer (with the feature
-     * on); External Tools needs a buffer and to not be in Simple mode. Uses transient
-     * {@code setAvailable} (never persisted), so the user's show/hide preference is preserved.
-     */
     /** Set when the no-project window hid an open TODO window because the active tab has no TODOs, so it
      *  comes back (unfocused) on the next tab that has some; a user close clears it by never setting it. */
     private boolean todoReopenWhenAvailable;
@@ -9229,6 +9222,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /**
+     * Gates the stripe buttons of tool windows whose content comes from the <b>active editor buffer</b>, so
+     * they only advertise themselves when there is something to act on — hidden on the Welcome page and other
+     * non-buffer tabs (mirroring how Run/Debug/HTTP/Commit already gate their buttons). Structure / File
+     * Information / TODO need any buffer; Markdown Lint additionally needs a Markdown buffer (with the feature
+     * on); External Tools needs a buffer and to not be in Simple mode. Uses transient
+     * {@code setAvailable} (never persisted), so the user's show/hide preference is preserved.
+     */
     void updateBufferToolWindows() {
         EditorBuffer b = activeBuffer();
         boolean buffer = b != null;
@@ -9314,12 +9315,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Expands the active tool window over its split, or hands the space back if it already holds it.
-     *
-     * <p>Session-only and deliberately unpersisted: maximizing is a "let me read this for a moment" gesture,
-     * and a window that reopened next launch covering the editor would read as a broken layout.
-     */
-    /**
      * Picks a tool window to open <em>beside</em> whatever holds its side, splitting that side in two.
      *
      * <p>The picker lists only what could actually join a side right now, so an empty list is the honest
@@ -9350,6 +9345,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 toolWindows.isFloating(tw) ? "status.toolwindow.floated" : "status.toolwindow.docked", tw.getTitle()));
     }
 
+    /**
+     * Expands the active tool window over its split, or hands the space back if it already holds it.
+     *
+     * <p>Session-only and deliberately unpersisted: maximizing is a "let me read this for a moment" gesture,
+     * and a window that reopened next launch covering the editor would read as a broken layout.
+     */
     void toggleMaximizedToolWindow() {
         ToolWindow tw = toolWindows.maximizeTarget();
         if (tw == null) {
@@ -9412,13 +9413,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
     }
 
-    /**
-     * The main class a new run configuration should start from: the one the active Java file's project
-     * declares, else the first {@code main} in that file. Null when there is nothing to suggest.
-     *
-     * <p>Shared by {@code run.saveConfig} and Run Configurations → Add, so the two cannot disagree
-     * about what "the obvious main class here" is.
-     */
     /** A configuration for the active Python, shell, Groovy or Kotlin file (Add / Save as Run Configuration), or null. */
     com.editora.config.@Nullable RunConfiguration suggestedScriptConfiguration() {
         EditorBuffer b = activeBuffer();
@@ -9438,6 +9432,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         return com.editora.run.RunConfigDefaults.forScript(type, b.getPath(), windowProjectRoot());
     }
 
+    /**
+     * The main class a new run configuration should start from: the one the active Java file's project
+     * declares, else the first {@code main} in that file. Null when there is nothing to suggest.
+     *
+     * <p>Shared by {@code run.saveConfig} and Run Configurations → Add, so the two cannot disagree
+     * about what "the obvious main class here" is.
+     */
     @Nullable
     String suggestedMainClass() {
         EditorBuffer b = activeBuffer();

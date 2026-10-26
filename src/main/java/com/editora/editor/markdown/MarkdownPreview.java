@@ -505,7 +505,6 @@ public final class MarkdownPreview {
 
     // --- planning (pure, off the FX thread) -----------------------------------------------------
 
-    /** Parses {@code markdown} and cuts it into keyed units. Pure CPU plus a {@code stat} per local image. */
     /** An {@code <img … src="http…">} of the HTML subset. */
     private static final java.util.regex.Pattern REMOTE_IMG = java.util.regex.Pattern.compile(
             "<img\\b[^>]*\\bsrc\\s*=\\s*[\"']?\\s*https?://", java.util.regex.Pattern.CASE_INSENSITIVE);
@@ -532,6 +531,7 @@ public final class MarkdownPreview {
         return found[0];
     }
 
+    /** Parses {@code markdown} and cuts it into keyed units. Pure CPU plus a {@code stat} per local image. */
     public static Plan plan(String markdown, @Nullable Path baseDir) {
         String md = markdown == null ? "" : markdown;
         org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(md);

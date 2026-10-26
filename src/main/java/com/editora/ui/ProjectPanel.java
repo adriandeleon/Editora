@@ -1389,14 +1389,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         watchThread.start();
     }
 
+    /** Folders watched only for the project's Java style (DN4): the tree does not show them, so no refresh. */
+    private volatile java.util.Set<Path> styleOnlyDirs = java.util.Set.of();
+
     /**
      * Registers the root + currently-expanded directories with the watcher and cancels watches for
      * directories no longer present/expanded. Runs on the FX thread (it reads the tree). Cheap: the set is
      * just the visible folders.
      */
-    /** Folders watched only for the project's Java style (DN4): the tree does not show them, so no refresh. */
-    private volatile java.util.Set<Path> styleOnlyDirs = java.util.Set.of();
-
     private void syncWatches() {
         if (watchService == null) {
             return;
@@ -2614,10 +2614,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Whether a drag-move or its Undo Move is under way; another drop waits for it to end (BR4). */
     private boolean moving;
 
-    /** The Java items among {@code moves}: {@code .java} files and folders, which the participant may ask about. */
-    private static int javaItems(List<Move> moves) {
+    /**
+     * The Java items among {@code moves}, which the participant may ask about: {@code .java} files, and folders with
+     * Java in them (a folder of text files is none, eighth review BV3).
+     */
+    static int javaItems(List<Move> moves) {
         return (int) moves.stream()
-                .filter(m -> m.from().toString().endsWith(".java") || Files.isDirectory(m.from()))
+                .filter(m -> m.from().toString().endsWith(".java") || com.editora.lsp.LspManager.mayHoldJava(m.from()))
                 .count();
     }
 
@@ -2634,7 +2637,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      */
     void undoLastMove() {
         if (moving) {
-            onStatus.accept(tr("project.moveInProgress"));
+            onStatus.accept(tr("project.undoMoveInProgress")); // not "drop again": this was Undo Move (BQ5)
             return;
         }
         List<Move> moves = lastMove;

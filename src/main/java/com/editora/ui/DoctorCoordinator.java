@@ -917,7 +917,6 @@ final class DoctorCoordinator {
 
     // --- rows --------------------------------------------------------------------------------------
 
-    /** A feature-off row: gray, never probed, with a "Turn on" for {@code enableKey} ("" = none offered). */
     /**
      * The Plugins section: what this session runs, then one row per plugin that failed to load or to start,
      * started slowly, or changed since it was enabled — what used to show nowhere but the log. No "Turn on":
@@ -961,6 +960,7 @@ final class DoctorCoordinator {
         return rows;
     }
 
+    /** A feature-off row: gray, never probed, with a "Turn on" for {@code enableKey} ("" = none offered). */
     private static DoctorCheck offRow(DoctorCheck placeholder, String enableKey) {
         // A whole section that is off says so in its label; a tip repeating it would be noise.
         boolean section = placeholder.label().equals(tr("doctor.label.sectionOff"));
@@ -992,7 +992,11 @@ final class DoctorCoordinator {
      * ran on another JDK and nothing said which), and a warning when the launcher's {@code python3} is missing
      * on Linux or macOS. Probes off the FX thread.
      */
-    static DoctorCheck jdtlsRuntime(DoctorCheck row, @Nullable String defaultJdk, @Nullable String launcherPath) {
+    static DoctorCheck jdtlsRuntime(
+            DoctorCheck row,
+            @Nullable String defaultJdk,
+            @Nullable String launcherPath,
+            java.nio.file.@Nullable Path projectRoot) {
         if (row.status() != com.editora.doctor.DoctorStatus.OK
                 && row.status() != com.editora.doctor.DoctorStatus.WARN) {
             return row; // an outdated (WARN) install runs on a Java too, and says which (fifth review CV5)
@@ -1027,12 +1031,23 @@ final class DoctorCoordinator {
         String shown = major > 0 ? runs + " (Java " + major + ")" : runs.toString();
         DoctorCheck named = row.withDetail(row.detail() + " · " + tr("doctor.detail.jdtlsRunsOn", shown));
         // the project's JDK with no sources: parameters read arg0, and how to fix it is said here (sixth review DF1)
-        var bare = com.editora.lsp.JavaRuntimes.withoutSources( // the default's, else any project JDK's (DR2)
+        // only the JDKs this window's project gets, each named (eighth review DQ4)
+        var bare = com.editora.lsp.JavaRuntimes.withoutSourcesFor(
                 com.editora.lsp.JavaRuntimes.discover(),
-                com.editora.lsp.JavaRuntimes.preferredHome(defaultJdk, System.getenv("JAVA_HOME")));
-        return bare == null || named.status() != com.editora.doctor.DoctorStatus.OK
-                ? named
-                : named.warn(named.detail(), "doctor.tip.jdkNoSources", String.valueOf(bare.major()), bare.path());
+                com.editora.lsp.JavaRuntimes.preferredHome(defaultJdk, System.getenv("JAVA_HOME")),
+                projectRoot);
+        if (bare.isEmpty() || named.status() != com.editora.doctor.DoctorStatus.OK) {
+            return named;
+        }
+        String majors = String.join(
+                ", ", bare.stream().map(j -> String.valueOf(j.major())).toList());
+        String paths = String.join(
+                ", ", bare.stream().map(com.editora.lsp.JavaRuntimes.Jdk::path).toList());
+        return named.warn(named.detail(), "doctor.tip.jdkNoSources", majors, paths);
+    }
+
+    static DoctorCheck jdtlsRuntime(DoctorCheck row, @Nullable String defaultJdk, @Nullable String launcherPath) {
+        return jdtlsRuntime(row, defaultJdk, launcherPath, null);
     }
 
     /**
@@ -1054,6 +1069,7 @@ final class DoctorCoordinator {
         Path config = host.configDir();
         String latest = latestFor(row.id());
         String mavenJdk = host.settings().getMavenJdkHome();
+        Path projectRoot = ops.projectRoot();
         return probe(row, base -> {
             if (argv.isEmpty()) {
                 // No command at all (an uninstalled maven-pom): say that, not "not found on PATH" (review A3).
@@ -1098,7 +1114,7 @@ final class DoctorCoordinator {
                         ? () -> DoctorProbes.output(withArgs(argv, "--version"))
                         : null;
                 DoctorCheck pinned = pinnedRow(base, pin, config, locations, own, printed, path, true);
-                return own != null ? jdtlsRuntime(pinned, mavenJdk, path) : pinned;
+                return own != null ? jdtlsRuntime(pinned, mavenJdk, path, projectRoot) : pinned;
             }
             // Pyright's launcher prints no version; its npm package.json beside it says (review B16).
             String version = python ? DoctorRules.npmPackageVersion(Path.of(path)) : "";
@@ -1330,8 +1346,10 @@ final class DoctorCoordinator {
 
     // --- helpers -----------------------------------------------------------------------------------
 
-    /** A standard "present + version, else missing" tool row, asking for the version with {@code versionArg}. */
-    /** As a tool row; {@code latest} is its newest release as Check for Newer Versions found it, or null. */
+    /**
+     * A standard "present + version, else missing" tool row, asking for the version with {@code versionArg};
+     * {@code latest} is its newest release as Check for Newer Versions found it, or null.
+     */
     private static DoctorService.CheckSpec versionedTool(
             DoctorCheck placeholder, List<String> cmd, String toolName, String versionArg, @Nullable String latest) {
         return probe(placeholder, base -> {

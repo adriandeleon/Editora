@@ -23,6 +23,9 @@ public final class MessageLog {
     /** Maximum retained messages; older ones are evicted. */
     public static final int MAX_ENTRIES = 200;
 
+    /** A message repeated within this long is not recorded again (the start refusal, eighth review DQ3). */
+    static final long REPEAT_MILLIS = 2_000;
+
     /** How much the message matters. Drives its styling and whether it counts as unread. */
     public enum Severity {
         INFO,
@@ -59,6 +62,13 @@ public final class MessageLog {
     public void add(@Nullable String message, Severity severity, long epochMillis) {
         if (message == null || message.isBlank()) {
             return;
+        }
+        Entry last = entries.peekLast();
+        if (last != null
+                && last.text().equals(message)
+                && last.severity() == severity
+                && epochMillis - last.epochMillis() < REPEAT_MILLIS) {
+            return; // the same message said again at once (re-shown over a later status): one entry, one unread
         }
         entries.addLast(new Entry(epochMillis, message, severity));
         if (severity == Severity.ERROR) {

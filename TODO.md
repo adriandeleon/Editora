@@ -61,6 +61,14 @@ A backlog of planned features and improvements. Unordered within each section.
       strict live probe when evaluating server updates.
 
 ## Recently shipped
+- [x] **Java LSP eighth review (2026-10-26)** — Go to Super Method from anywhere in a member (annotations, Javadoc,
+      anonymous classes, lambdas, constructors), up the type hierarchy, from library tabs, superclass first; other
+      open files rechecked after a save; focus follows the chosen tab; one-word palette queries; a joining window
+      waits for jdtls's ready; no on-save action under an import question; Doctor's sources hint per project;
+      drag wording and package warning; the bulb apart from the bookmark in four themes; 130 stacked Javadocs moved
+      (StackedJavadocTest). Left open: Method Hierarchy, Safe Delete, Shift Shift, Select In; A11, AN2 (upstream),
+      intention preview, C17; the owner's deferred list (inspections, missing refactorings, usages popup, symbol
+      breadcrumbs, Create Test, coverage, library sources).
 - [x] **Java LSP seventh review (2026-10-26)** — Go to Super Method works (java/findLinks declared; enclosing method;
       supertypes); drag-move status, failures and build packages; the Java floor read at every start; project
       problems across windows; the import answer and a changing file; bulb on hidden tabs and in plain themes.

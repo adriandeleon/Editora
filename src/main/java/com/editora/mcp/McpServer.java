@@ -208,6 +208,13 @@ public final class McpServer {
         return MessageDigest.isEqual(got, want);
     }
 
+    /** Cap on a request body — the app runs with a bounded heap; an unbounded readAllBytes need not oblige. */
+    private static final int MAX_BODY_BYTES = 8 * 1024 * 1024;
+
+    private static byte[] readCapped(java.io.InputStream in) throws IOException {
+        return in.readNBytes(MAX_BODY_BYTES);
+    }
+
     /**
      * Writes the endpoint + bearer token for a local MCP client to read.
      *
@@ -220,13 +227,6 @@ public final class McpServer {
      * is sound; this file undid it. Elsewhere the codebase already writes secrets 0600 (InstallService, the
      * elevated-save temp).
      */
-    /** Cap on a request body — the app runs with a bounded heap; an unbounded readAllBytes need not oblige. */
-    private static final int MAX_BODY_BYTES = 8 * 1024 * 1024;
-
-    private static byte[] readCapped(java.io.InputStream in) throws IOException {
-        return in.readNBytes(MAX_BODY_BYTES);
-    }
-
     private void writeEndpointFile() {
         ObjectNode node = mapper.createObjectNode();
         node.put("url", url());

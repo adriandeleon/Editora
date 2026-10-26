@@ -653,13 +653,6 @@ public final class FoldRegions {
     // --- Markdown (code fences, front matter, comment blocks, heading sections, quotes, list items) ---
 
     /**
-     * Folds on the document's real blocks ({@link com.editora.markdown.MarkdownBlocks}) and headings
-     * ({@link com.editora.markdown.MarkdownOutline}) rather than on a second, simpler reading of them: a
-     * {@code ~~~} fence folds, a fence inside a longer fence is its content and not a fence of its own, the
-     * front matter and a multi-line HTML comment fold, a setext heading opens a section like an ATX one, and
-     * a {@code #} line in code or in a commented-out section opens none.
-     */
-    /**
      * A {@code .http} file folds per request: from its {@code ###} separator (or, for the first request, its
      * request line) to the last non-blank line before the next one — the block JetBrains folds. Comments, directives
      * and {@code @var} lines between the separator and the request line fold with it.
@@ -691,6 +684,13 @@ public final class FoldRegions {
         return out;
     }
 
+    /**
+     * Folds on the document's real blocks ({@link com.editora.markdown.MarkdownBlocks}) and headings
+     * ({@link com.editora.markdown.MarkdownOutline}) rather than on a second, simpler reading of them: a
+     * {@code ~~~} fence folds, a fence inside a longer fence is its content and not a fence of its own, the
+     * front matter and a multi-line HTML comment fold, a setext heading opens a section like an ATX one, and
+     * a {@code #} line in code or in a commented-out section opens none.
+     */
     private static List<Region> markdown(String text) {
         com.editora.markdown.MarkdownBlocks blocks = com.editora.markdown.MarkdownBlocks.scan(text);
         int count = blocks.lineCount();

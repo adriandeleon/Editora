@@ -238,6 +238,11 @@ final class LanguageServerSession implements LanguageClient {
         return question;
     }
 
+    /** Tests: a question the server asked, open until {@code question} completes. */
+    <T> CompletableFuture<T> askForTest(CompletableFuture<T> question) {
+        return asking(question);
+    }
+
     /** Whether the server is waiting on the user's answer to a question it asked. */
     boolean questionOpen() {
         return !openQuestions.isEmpty();
@@ -1634,12 +1639,6 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /**
-     * Sends a <b>non-standard</b> request the typed {@link LanguageServer} proxy can't express — e.g. jdtls's
-     * {@code java/classFileContents} (#665) — via the launcher's raw JSON-RPC endpoint. The result is the
-     * gson-decoded payload (lsp4j has no registered response type for an unknown method, so expect a
-     * {@code JsonElement}/{@code JsonPrimitive}). Queued until {@code initialize} completes.
-     */
-    /**
      * TEST SEAM (inert in production, like {@link #attachForTest}): intercepts the custom {@code java/…}
      * traffic, which otherwise goes out through the launcher's raw endpoint and so is invisible to a
      * {@link org.eclipse.lsp4j.services.LanguageServer} test double.
@@ -1659,6 +1658,12 @@ final class LanguageServerSession implements LanguageClient {
         this.rawSinkForTest = sink;
     }
 
+    /**
+     * Sends a <b>non-standard</b> request the typed {@link LanguageServer} proxy can't express — e.g. jdtls's
+     * {@code java/classFileContents} (#665) — via the launcher's raw JSON-RPC endpoint. The result is the
+     * gson-decoded payload (lsp4j has no registered response type for an unknown method, so expect a
+     * {@code JsonElement}/{@code JsonPrimitive}). Queued until {@code initialize} completes.
+     */
     CompletableFuture<Object> rawRequest(String method, Object params) {
         return rawRequest(method, params, REQUEST_TIMEOUT);
     }
@@ -3070,8 +3075,32 @@ final class LanguageServerSession implements LanguageClient {
     public void languageStatus(LanguageStatus status) {
         if (status != null) {
             String message = status.message == null ? "" : status.message.strip();
-            onStatus.accept(status.type == null ? "" : status.type, message);
+            String type = status.type == null ? "" : status.type;
+            if (type.equalsIgnoreCase("Starting")) {
+                lastStarting = message;
+            } else if (type.toLowerCase(java.util.Locale.ROOT).contains("ready")) {
+                saidReady = true;
+            }
+            onStatus.accept(type, message);
         }
+    }
+
+    /** jdtls's last "Starting" line, and whether it has said itself that it is ready (its import done). */
+    private volatile @Nullable String lastStarting;
+
+    private volatile boolean saidReady;
+
+    /**
+     * Whether jdtls is still importing: its handshake is done, but it has not said it is ready. A window that joins
+     * now is told it is starting, not ready (eighth review CQ1).
+     */
+    boolean stillImporting() {
+        return LspServerRegistry.JAVA_SERVER_ID.equals(serverId()) && !saidReady;
+    }
+
+    @Nullable
+    String lastStarting() {
+        return lastStarting;
     }
 
     /** JDT LS's legacy progress channel, enabled by {@code progressReportProvider}. Recent servers still

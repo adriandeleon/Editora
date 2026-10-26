@@ -35,7 +35,6 @@ public final class ShellCommand {
 
     private ShellCommand() {}
 
-    /** The interpreter argv (before the script path) and any variables the shebang's {@code env} sets. */
     /**
      * The interpreter argv (before the script path), the variables the shebang's {@code env} sets — a
      * {@code null} value <em>unsets</em> one ({@code env -u NAME}) — and the folder {@code env -C DIR} runs it

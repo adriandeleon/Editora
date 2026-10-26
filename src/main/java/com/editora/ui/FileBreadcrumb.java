@@ -52,15 +52,15 @@ public class FileBreadcrumb extends StackPane {
 
     private final Breadcrumbs<Path> breadcrumbs = new Breadcrumbs<>();
 
+    /** After the path: where the caret is in a Markdown document's headings. */
+    private final MarkdownHeadingCrumbs headingCrumbs = new MarkdownHeadingCrumbs();
+
     /**
      * Vertically centres the crumbs in the fixed-height bar. {@code fitToHeight} stretches the scroll's
      * content to the viewport, but {@code Breadcrumbs}' skin lays its buttons out at the TOP of whatever
      * height it is given — so all of the bar's slack collected below the text, leaving the row visibly
      * bottom-heavy. A centring holder splits that slack evenly instead.
      */
-    /** After the path: where the caret is in a Markdown document's headings. */
-    private final MarkdownHeadingCrumbs headingCrumbs = new MarkdownHeadingCrumbs();
-
     private final StackPane crumbHolder = new StackPane(new javafx.scene.layout.HBox(breadcrumbs, headingCrumbs));
 
     private final ScrollPane scroll = new ScrollPane(crumbHolder);

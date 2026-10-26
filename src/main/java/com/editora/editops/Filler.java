@@ -526,11 +526,10 @@ public final class Filler {
     }
 
     /**
-     * The fill prefix of {@code firstLine}: its leading whitespace, plus — if what follows begins with the
-     * language line-comment token, a Markdown blockquote {@code >}, or a Javadoc {@code *} — that marker and
-     * the whitespace after it. Pure (the controller supplies {@code lineComment}).
+     * The fill prefix of {@code firstLine} (the continuation prefix): its leading whitespace, plus — if what
+     * follows begins with the language line-comment token, a Markdown blockquote {@code >}, or a Javadoc
+     * {@code *} — that marker and the whitespace after it. Pure (the controller supplies {@code lineComment}).
      */
-    /** The continuation prefix (leading indent, plus a comment/quote marker for a comment line). */
     public static String fillPrefix(String firstLine, @Nullable String lineComment) {
         int ws = leadingWhitespace(firstLine);
         for (String marker : markers(lineComment)) {

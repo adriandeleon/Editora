@@ -391,14 +391,16 @@ public class CommandPalette {
     /**
      * The score of {@code command} when the query is most of its own title, from the start of what follows its
      * category ("LSP: "): above any other IDE's name, so "go to declaration" lists Go to Declaration before Go to
-     * Definition, whose VS Code name is "Go to Declaration or Usages" (seventh review ER4).
+     * Definition, whose VS Code name is "Go to Declaration or Usages" (seventh review ER4). Only for a query of two
+     * words or more: one word is no phrase, and "rename" or "find" chose the terminal's Rename Tab and Find over
+     * Rename Symbol and Find in Files (eighth review EQ3).
      */
     static int titlePhraseScore(Command command, String query) {
         String title = command.title();
         int colon = title.indexOf(": ");
         String bare = (colon < 0 ? title : title.substring(colon + 2)).toLowerCase(java.util.Locale.ROOT);
-        String q = query.toLowerCase(java.util.Locale.ROOT);
-        if (!bare.startsWith(q) || q.length() * 5 < bare.length() * 3) {
+        String q = query.strip().toLowerCase(java.util.Locale.ROOT);
+        if (q.indexOf(' ') < 0 || !bare.startsWith(q) || q.length() * 5 < bare.length() * 3) {
             return FuzzyMatch.NO_SCORE;
         }
         int score = FuzzyMatch.scoreOf(title, query);
@@ -441,13 +443,6 @@ public class CommandPalette {
         return showing;
     }
 
-    /**
-     * The title as styled runs: the characters the query matched wear {@code palette-match} (accent +
-     * bold — the kit's {@code <mark>}), the rest {@code palette-cell-text}. Reuses the completion popup's
-     * {@code MatchHighlighter} — same substring-else-subsequence semantics as {@link #filter}'s matcher,
-     * and it indexes the label directly (case folded per char) so highlights can't drift on a
-     * length-changing lowercase mapping.
-     */
     /**
      * The emboldened runs for a row. These are {@link FuzzyMatch}'s <em>own</em> ranges — the same call
      * that scored the row — so the highlight can never point at different characters than the ranking

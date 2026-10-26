@@ -143,4 +143,22 @@ class CommandPaletteRankTest {
                 CommandPalette.orderedMatches(java.util.List.of(definition, declaration), "go to declaration")
                         .get(0));
     }
+
+    /** One word is no phrase: "rename" is still Rename Symbol, not the terminal's Rename Tab (eighth review EQ3). */
+    @Test
+    void oneWordGetsNoTitleBoost() {
+        var symbol = com.editora.command.Command.of("lsp.rename", () -> {});
+        var tab = com.editora.command.Command.of("terminal.rename", () -> {});
+        assertEquals(
+                com.editora.search.FuzzyMatch.NO_SCORE,
+                CommandPalette.titlePhraseScore(tab, "rename"),
+                "Rename Tab gets no title boost from one word");
+        List<com.editora.command.Command> ranked = CommandPalette.orderedMatches(List.of(tab, symbol), "rename");
+        assertTrue(ranked.indexOf(symbol) >= 0 && ranked.indexOf(tab) >= 0);
+        assertTrue(
+                CommandPalette.titlePhraseScore(
+                                com.editora.command.Command.of("lsp.gotoDeclaration", () -> {}), "go to declaration")
+                        != com.editora.search.FuzzyMatch.NO_SCORE,
+                "a phrase still does");
+    }
 }

@@ -43,6 +43,50 @@ final class DocumentSymbolMapper {
         return out;
     }
 
+    /** The hierarchical symbols of {@code raw} as {@link MemberSpan}s, every child kept; a flat answer gives none. */
+    static List<MemberSpan> members(List<Either<SymbolInformation, DocumentSymbol>> raw) {
+        List<MemberSpan> out = new ArrayList<>();
+        if (raw != null) {
+            for (Either<SymbolInformation, DocumentSymbol> e : raw) {
+                if (e != null && e.isRight() && e.getRight() != null) {
+                    MemberSpan m = member(e.getRight());
+                    if (m != null) {
+                        out.add(m);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    private static @Nullable MemberSpan member(DocumentSymbol s) {
+        if (s.getName() == null || s.getRange() == null || s.getRange().getStart() == null) {
+            return null;
+        }
+        var sel = s.getSelectionRange() != null && s.getSelectionRange().getStart() != null
+                ? s.getSelectionRange()
+                : s.getRange();
+        List<MemberSpan> children = new ArrayList<>();
+        if (s.getChildren() != null) {
+            for (DocumentSymbol c : s.getChildren()) {
+                MemberSpan m = c == null ? null : member(c);
+                if (m != null) {
+                    children.add(m);
+                }
+            }
+        }
+        int start = Math.max(0, s.getRange().getStart().getLine());
+        int end = s.getRange().getEnd() != null ? s.getRange().getEnd().getLine() : start;
+        return new MemberSpan(
+                s.getName(),
+                kindName(s.getKind()),
+                start,
+                Math.max(start, end),
+                Math.max(0, sel.getStart().getLine()),
+                Math.max(0, sel.getStart().getCharacter()),
+                children);
+    }
+
     /**
      * A flat {@link SymbolInformation} list as a tree: each symbol under the innermost other symbol whose range
      * contains its own, and a name that repeats with the same kind in one scope listed once (its first

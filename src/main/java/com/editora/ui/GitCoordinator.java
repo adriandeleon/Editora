@@ -300,11 +300,6 @@ final class GitCoordinator {
     }
 
     /**
-     * Guard shared by every repo-only operation: when there's no active repo, echoes the standard
-     * "not a repo" / "git not installed" status and returns {@code true} so the caller early-returns.
-     * Returns {@code false} (no echo) when a repo is present.
-     */
-    /**
      * Told (on the FX thread) whenever a refresh has applied the active repository root and branch — the
      * Git Log uses it to stop listing the commits of a repository that is no longer the active one.
      */
@@ -317,6 +312,11 @@ final class GitCoordinator {
         mutationListener = listener;
     }
 
+    /**
+     * Guard shared by every repo-only operation: when there's no active repo, echoes the standard
+     * "not a repo" / "git not installed" status and returns {@code true} so the caller early-returns.
+     * Returns {@code false} (no echo) when a repo is present.
+     */
     boolean reportIfNoRepo() {
         if (repoRoot != null) {
             return false;
@@ -1919,12 +1919,6 @@ final class GitCoordinator {
     // --- clone (URL + destination form → git clone → open a file so Git lights up) ---
 
     /**
-     * Clones a remote repository via one form asking for both the <em>URL</em> and the destination directory
-     * (a Browse button + auto-fill of {@code <home>/<repo-name>} as you type the URL, until you edit it
-     * yourself). Clones into that folder, then opens a file from it (its README, if any) so Git lights up.
-     * Clone and Projects are independent — no project is created.
-     */
-    /**
      * Creates a repository in a folder ({@code git init}) — the other half of {@link #cloneRepo()}, and the
      * only way to start version control on a folder that Editora opened but that has no repo yet.
      *
@@ -1996,6 +1990,12 @@ final class GitCoordinator {
         });
     }
 
+    /**
+     * Clones a remote repository via one form asking for both the <em>URL</em> and the destination directory
+     * (a Browse button + auto-fill of {@code <home>/<repo-name>} as you type the URL, until you edit it
+     * yourself). Clones into that folder, then opens a file from it (its README, if any) so Git lights up.
+     * Clone and Projects are independent — no project is created.
+     */
     void cloneRepo() {
         KeymapManager keymap = ops.keymap();
         TextField urlField = new TextField();

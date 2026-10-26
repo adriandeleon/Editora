@@ -599,7 +599,6 @@ public enum BuildTool {
         return List.of(MAVEN, NPM, CARGO, GO, GRADLE, SBT, MILL, SCALA_CLI, CLOJURE, LEIN, BABASHKA);
     }
 
-    /** The user's home directory — where Maven's {@code ~/.m2} local repository lives. */
     /**
      * {@code text} without a leading UTF-8 byte-order mark. {@code Files.readString} keeps it, and the JSON,
      * TOML and go.mod readers reject or mis-anchor on it — while npm, cargo and go accept such a manifest
@@ -609,6 +608,7 @@ public enum BuildTool {
         return text != null && !text.isEmpty() && text.charAt(0) == '\uFEFF' ? text.substring(1) : text;
     }
 
+    /** The user's home directory — where Maven's {@code ~/.m2} local repository lives. */
     private static Path userHome() {
         return Path.of(System.getProperty("user.home", "."));
     }

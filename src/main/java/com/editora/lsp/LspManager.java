@@ -367,10 +367,6 @@ public final class LspManager {
         }
     }
 
-    /**
-     * The last error {@code serverId}'s servers logged (its first line), or null: what a failed import was really
-     * about, which jdtls says only in its log (re-review CN2).
-     */
     /** As {@link #lastServerError(String)}, from the session on {@code root} only. */
     public @Nullable String lastServerError(@Nullable String serverId, @Nullable Path root) {
         if (root == null) {
@@ -380,6 +376,10 @@ public final class LspManager {
         return s == null ? null : s.lastErrorLog();
     }
 
+    /**
+     * The last error {@code serverId}'s servers logged (its first line), or null: what a failed import was really
+     * about, which jdtls says only in its log (re-review CN2).
+     */
     public @Nullable String lastServerError(@Nullable String serverId) {
         for (LanguageServerSession s : sessionsByRoot.values()) {
             if (s.serverId().equals(serverId) && s.lastErrorLog() != null) {
@@ -1280,10 +1280,6 @@ public final class LspManager {
     }
 
     /**
-     * Whether {@code serverId} already runs for {@code root} and has finished its handshake: a file opened into
-     * it starts nothing, so there is no "starting" to announce (Java review C18).
-     */
-    /**
      * Whether a session for {@code (serverId, root)} exists, started or still starting: a second file opened
      * while jdtls starts said "Starting…" again (Java review C18).
      */
@@ -1299,6 +1295,10 @@ public final class LspManager {
         return s != null && !s.isDisposed();
     }
 
+    /**
+     * Whether {@code serverId} already runs for {@code root} and has finished its handshake: a file opened into
+     * it starts nothing, so there is no "starting" to announce (Java review C18).
+     */
     public boolean isRunning(String serverId, Path root) {
         String key = sessionKey(serverId, root);
         LanguageServerSession s = sessionsByRoot.get(key);
@@ -1579,11 +1579,17 @@ public final class LspManager {
         clientOf.put(session, client);
         ensureRootWatcher(session.root());
         if (session.isInitialized()) {
+            // the project's own problems first, so its verdict can name them (seventh review CR2)
+            session.projectDiagnostics().forEach(client.diagnostics::accept);
+        }
+        if (session.isInitialized() && session.stillImporting()) {
+            // jdtls is still importing: this window waits for its own ready, as the first window does; the
+            // handshake's replayed ready said "Loaded and ready" over unchecked files (eighth review CQ1)
+            client.status.accept("Starting", session.lastStarting());
+        } else if (session.isInitialized()) {
             // Ready before this window came: it hears so now — its status bar says "Loaded and ready" instead of
             // a stale progress line, and its documents' gates and data are refreshed (re-review CN5). How the
             // project imported goes first: a failed import was "Loaded and ready" here (sixth review CS2).
-            // the project's own problems first, so its verdict can name them (seventh review CR2)
-            session.projectDiagnostics().forEach(client.diagnostics::accept);
             String imported = session.lastProjectStatus();
             if (imported != null) {
                 client.status.accept("ProjectStatus", imported);
@@ -1967,7 +1973,6 @@ public final class LspManager {
         sharedServers = new ConcurrentHashMap<>(); // no joining another test's server (see shareServersForTest)
     }
 
-    /** Sets the session-crashed callback (see {@link #onSessionCrashed}); marshaled to the FX thread. */
     /** A server's status, with the id of the server it came from. */
     @FunctionalInterface
     public interface ServerStatusListener {
@@ -1990,6 +1995,7 @@ public final class LspManager {
         this.onServerStatus = listener;
     }
 
+    /** Sets the session-crashed callback (see {@link #onSessionCrashed}); marshaled to the FX thread. */
     public void setOnSessionCrashed(BiConsumer<String, Path> callback) {
         this.onSessionCrashed = callback == null ? (id, root) -> {} : callback;
     }
@@ -3310,8 +3316,6 @@ public final class LspManager {
         return RenamePrep.REFUSED;
     }
 
-    /** Renames the symbol at a 0-based position to {@code newName}; the workspace edit applies through the
-     *  registered handler and {@code cb} gets overall success on the FX thread (#676). */
     /**
      * Asks the server what a rename would change, <b>without applying it</b>, so the caller can preview and
      * filter first (#768). Delivers null when the server refuses or the edit contains an operation the mapper
@@ -3347,6 +3351,8 @@ public final class LspManager {
         });
     }
 
+    /** Renames the symbol at a 0-based position to {@code newName}; the workspace edit applies through the
+     *  registered handler and {@code cb} gets overall success on the FX thread (#676). */
     public void rename(Path file, int line, int character, String newName, Consumer<Boolean> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
@@ -3576,6 +3582,25 @@ public final class LspManager {
         s.documentSymbol(uri(file)).whenComplete((result, error) -> {
             List<SymbolNode> symbols = error == null && result != null ? DocumentSymbolMapper.map(result) : List.of();
             Platform.runLater(() -> cb.accept(symbols));
+        });
+    }
+
+    /**
+     * The members of {@code libraryUri} (a {@code jdt://} class file), else of {@code file}, else of {@code anchor},
+     * with their whole extents, asked on {@code anchor}'s session (Go to Super Method, eighth review BQ1).
+     */
+    public void memberSpans(
+            Path anchor, @Nullable Path file, @Nullable String libraryUri, Consumer<List<MemberSpan>> cb) {
+        LanguageServerSession s = sessionFor(anchor);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        String document = libraryUri != null ? libraryUri : uri(file != null ? file : anchor);
+        s.documentSymbol(document).whenComplete((result, error) -> {
+            List<MemberSpan> members =
+                    error == null && result != null ? DocumentSymbolMapper.members(result) : List.of();
+            Platform.runLater(() -> cb.accept(members));
         });
     }
 
@@ -5011,6 +5036,27 @@ public final class LspManager {
     }
 
     /**
+     * {@code options} (jdtls's) with the preferences {@code root}'s own files state ({@link JavaProjectSettings})
+     * merged into {@code settings.java}; anything else unchanged.
+     */
+    @SuppressWarnings("unchecked")
+    static @Nullable Object withProjectSettings(String serverId, @Nullable Object options, @Nullable Path root) {
+        if (!LspServerRegistry.JAVA_SERVER_ID.equals(serverId) || !(options instanceof Map<?, ?> map) || root == null) {
+            return options;
+        }
+        com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(root);
+        Map<String, Object> project = JavaProjectSettings.forRoot(
+                root, target.isLocal() ? null : WireUris.mapped(target)::toWire); // a container or WSL (DF2)
+        Object settings = map.get("settings");
+        if (project.isEmpty() || !(settings instanceof Map<?, ?> s) || !(s.get("java") instanceof Map<?, ?> java)) {
+            return options;
+        }
+        Map<String, Object> out = new java.util.HashMap<>((Map<String, Object>) map);
+        out.put("settings", Map.of("java", JavaProjectSettings.merge((Map<String, Object>) java, project)));
+        return Map.copyOf(out);
+    }
+
+    /**
      * The {@code initialize.initializationOptions} for a server, or {@code null} for one that needs none. Pure
      * + package-private so it's unit-tested:
      * <ul>
@@ -5036,27 +5082,6 @@ public final class LspManager {
      *       first place.</li>
      * </ul>
      */
-    /**
-     * {@code options} (jdtls's) with the preferences {@code root}'s own files state ({@link JavaProjectSettings})
-     * merged into {@code settings.java}; anything else unchanged.
-     */
-    @SuppressWarnings("unchecked")
-    static @Nullable Object withProjectSettings(String serverId, @Nullable Object options, @Nullable Path root) {
-        if (!LspServerRegistry.JAVA_SERVER_ID.equals(serverId) || !(options instanceof Map<?, ?> map) || root == null) {
-            return options;
-        }
-        com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(root);
-        Map<String, Object> project = JavaProjectSettings.forRoot(
-                root, target.isLocal() ? null : WireUris.mapped(target)::toWire); // a container or WSL (DF2)
-        Object settings = map.get("settings");
-        if (project.isEmpty() || !(settings instanceof Map<?, ?> s) || !(s.get("java") instanceof Map<?, ?> java)) {
-            return options;
-        }
-        Map<String, Object> out = new java.util.HashMap<>((Map<String, Object>) map);
-        out.put("settings", Map.of("java", JavaProjectSettings.merge((Map<String, Object>) java, project)));
-        return Map.copyOf(out);
-    }
-
     static @Nullable Object initOptionsFor(String serverId, List<String> debugBundles) {
         return initOptionsFor(serverId, debugBundles, null, false);
     }
@@ -5148,7 +5173,6 @@ public final class LspManager {
         this.folderTrust = trust == null ? folder -> false : trust;
     }
 
-    /** Told (on the FX thread) that a server was <b>not started</b> because it would need untrusted code. */
     /** Told when a Java server starts on a second workspace for a project another window already serves. */
     private volatile BiConsumer<String, Path> onSecondServer = (id, root) -> {};
 
@@ -5156,6 +5180,7 @@ public final class LspManager {
         this.onSecondServer = callback == null ? (id, root) -> {} : callback;
     }
 
+    /** Told (on the FX thread) that a server was <b>not started</b> because it would need untrusted code. */
     private volatile BiConsumer<String, Path> onStartWithheld = (id, root) -> {};
 
     public void setOnStartWithheld(BiConsumer<String, Path> callback) {
@@ -5316,12 +5341,6 @@ public final class LspManager {
         return null;
     }
 
-    /**
-     * Requests <em>pull</em> diagnostics ({@code textDocument/diagnostic}) for {@code file} and routes the
-     * result through the same diagnostics callback as pushed {@code publishDiagnostics}. A no-op unless the
-     * file's server advertises a {@code diagnosticProvider} (so push-only servers like jdtls/pyright/tsserver
-     * are untouched). An "unchanged" report leaves the current diagnostics in place.
-     */
     /** Told (FX thread) that a document's diagnostics are confirmed unchanged by its server. */
     private volatile Consumer<Path> onDiagnosticsUnchanged = file -> {};
 
@@ -5329,6 +5348,12 @@ public final class LspManager {
         onDiagnosticsUnchanged = handler == null ? file -> {} : handler;
     }
 
+    /**
+     * Requests <em>pull</em> diagnostics ({@code textDocument/diagnostic}) for {@code file} and routes the
+     * result through the same diagnostics callback as pushed {@code publishDiagnostics}. A no-op unless the
+     * file's server advertises a {@code diagnosticProvider} (so push-only servers like jdtls/pyright/tsserver
+     * are untouched). An "unchanged" report leaves the current diagnostics in place.
+     */
     public void pullDiagnostics(Path file) {
         if (file == null) {
             return;
@@ -5446,7 +5471,6 @@ public final class LspManager {
         sessions.forEach(this::disposeDeliberately);
     }
 
-    /** Shuts down every session for {@code serverId} (e.g. when that server's per-server toggle goes off). */
     /**
      * Shuts down every started session whose folder's tools now run somewhere else than where it was started:
      * a folder bound to a container, or released from one, or a host whose agreement was withdrawn. Its
@@ -5473,6 +5497,7 @@ public final class LspManager {
         return any;
     }
 
+    /** Shuts down every session for {@code serverId} (e.g. when that server's per-server toggle goes off). */
     public void shutdownServer(String serverId) {
         shutdownServerAt(serverId, null);
     }
@@ -5641,12 +5666,6 @@ public final class LspManager {
         }
     }
 
-    /**
-     * Fetches the source of a {@code jdt://} class-file URI via jdtls's {@code java/classFileContents}
-     * request (the attached/decompiled source of a JDK or dependency class) and delivers it on the FX
-     * thread — {@code null} when the session is gone, the request fails/times out, or the server returns
-     * nothing. {@code anchorFile} is any file managed by the jdtls session that produced the URI.
-     */
     /**
      * Step 1 of a jdtls generate prompt (#741): runs the {@code java/check…} request and delivers the
      * choosable candidates on the FX thread. Empty when the server has no session, the request fails, or the
@@ -6104,10 +6123,25 @@ public final class LspManager {
      * folders are not walked: a 40,000-file {@code node_modules} took 61 ms (sixth review BV5).
      */
     static boolean holdsJava(Path dir) {
+        return holdsJava(dir, Integer.MAX_VALUE);
+    }
+
+    /**
+     * {@link #holdsJava}, fast enough for the UI thread: after 5,000 entries it stops and says yes. A
+     * drag's question counted a folder of text files as a Java item (eighth review BV3).
+     */
+    public static boolean mayHoldJava(Path dir) {
+        return holdsJava(dir, QUICK_WALK);
+    }
+
+    private static final int QUICK_WALK = 5_000;
+
+    private static boolean holdsJava(Path dir, int maxEntries) {
         if (!Files.isDirectory(dir)) {
             return false;
         }
         boolean[] found = {false};
+        int[] seen = {0};
         try {
             Files.walkFileTree(dir, java.util.Set.of(), 32, new java.nio.file.SimpleFileVisitor<>() {
                 @Override
@@ -6122,7 +6156,7 @@ public final class LspManager {
                 @Override
                 public java.nio.file.FileVisitResult visitFile(
                         Path f, java.nio.file.attribute.BasicFileAttributes attrs) {
-                    if (f.toString().endsWith(".java")) {
+                    if (f.toString().endsWith(".java") || ++seen[0] >= maxEntries) {
                         found[0] = true;
                         return java.nio.file.FileVisitResult.TERMINATE;
                     }
@@ -6283,6 +6317,12 @@ public final class LspManager {
         return javaSessionFor(file) != null;
     }
 
+    /** Whether {@code a} and {@code b} are served by one running jdtls (a save in one can break the other). */
+    public boolean sameJavaSession(@Nullable Path a, @Nullable Path b) {
+        LanguageServerSession s = javaSessionFor(a);
+        return s != null && s == javaSessionFor(b);
+    }
+
     /** What a jdtls {@code java/buildWorkspace} reported ({@code BuildWorkspaceStatus}), or {@link #UNAVAILABLE}. */
     public enum BuildOutcome {
         FAILED,
@@ -6390,15 +6430,6 @@ public final class LspManager {
                 });
     }
 
-    /**
-     * Organize imports for a whole file ({@code java/organizeImports}, #746) and apply the resulting edit.
-     *
-     * <p>The same operation is also reachable as the {@code source.organizeImports} code action, but only by
-     * opening the code-action picker and choosing it. This is the direct, bindable form.
-     *
-     * <p>Signature read off the jdtls jar: it takes {@code CodeActionParams} — the whole file's range, not a
-     * position — and answers a {@code WorkspaceEdit}.
-     */
     /** What an Organize Imports did. */
     public enum OrganizeOutcome {
         ORGANIZED,
@@ -6529,6 +6560,15 @@ public final class LspManager {
         });
     }
 
+    /**
+     * Organize imports for a whole file ({@code java/organizeImports}, #746) and apply the resulting edit.
+     *
+     * <p>The same operation is also reachable as the {@code source.organizeImports} code action, but only by
+     * opening the code-action picker and choosing it. This is the direct, bindable form.
+     *
+     * <p>Signature read off the jdtls jar: it takes {@code CodeActionParams} — the whole file's range, not a
+     * position — and answers a {@code WorkspaceEdit}.
+     */
     public void organizeImports(Path file, int lastLine, int lastChar, Consumer<Boolean> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null || file == null) {
@@ -6597,12 +6637,12 @@ public final class LspManager {
 
     /**
      * Re-reads the project's build configuration ({@code java/projectConfigurationUpdate}, #746) — the
-     * manual escape hatch when a {@code pom.xml} / {@code build.gradle} change hasn't been picked up.
+     * manual escape hatch when a {@code pom.xml} / {@code build.gradle} change hasn't been picked up. Asks the
+     * Java server of {@code file}'s project; false when there is none.
      *
      * <p>A <b>notification</b>, not a request (jdtls declares it {@code void}), so there is nothing to
      * report back and nothing to wait for; the result shows up as fresh diagnostics.
      */
-    /** Asks the Java server of {@code file}'s project to reload its build configuration; false when there is none. */
     public boolean reloadProjectConfiguration(Path file) {
         LanguageServerSession s = javaSessionFor(file);
         if (s != null && file != null) {
@@ -6614,6 +6654,12 @@ public final class LspManager {
         return false;
     }
 
+    /**
+     * Fetches the source of a {@code jdt://} class-file URI via jdtls's {@code java/classFileContents}
+     * request (the attached/decompiled source of a JDK or dependency class) and delivers it on the FX
+     * thread — {@code null} when the session is gone, the request fails/times out, or the server returns
+     * nothing. {@code anchorFile} is any file managed by the jdtls session that produced the URI.
+     */
     public void classFileContents(Path anchorFile, @Nullable String jdtUri, Consumer<String> cb) {
         LanguageServerSession s = sessionFor(anchorFile);
         if (s == null || jdtUri == null) {

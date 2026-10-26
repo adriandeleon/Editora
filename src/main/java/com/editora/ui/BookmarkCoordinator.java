@@ -477,7 +477,6 @@ final class BookmarkCoordinator {
         }
     }
 
-    /** Opens the cross-file jump picker ({@code bookmarks.jump}). */
     /**
      * {@code bookmarks.setMnemonic}: give the bookmark at the caret a one-character shortcut, creating
      * the bookmark first if there isn't one.
@@ -541,6 +540,7 @@ final class BookmarkCoordinator {
                 ops.currentProjectKey(), Path.of(found.file()), found.bookmark().line());
     }
 
+    /** Opens the cross-file jump picker ({@code bookmarks.jump}). */
     void openJumpPalette() {
         jumpPalette.show(host.window());
     }

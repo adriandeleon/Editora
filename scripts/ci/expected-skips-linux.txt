@@ -14,6 +14,7 @@ com.editora.lsp.JdtlsLombokProbeTest
 com.editora.lsp.JdtlsProfileReloadProbeTest
 com.editora.lsp.JdtlsProjectStyleProbeTest
 com.editora.lsp.JdtlsSmartTypeProbeTest
+com.editora.lsp.JdtlsSuperMethodProbeTest
 com.editora.lsp.JdtlsSharedServerProbeTest
 com.editora.lsp.JdtlsJavaScriptShadowProbeTest
 com.editora.lsp.JdtlsPasteProbeTest

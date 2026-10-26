@@ -549,13 +549,6 @@ final class DebugCoordinator {
         }
     }
 
-    /**
-     * Reconciles the Debug feature with its setting (mirrors {@link LspCoordinator#applySupport}). The plugin
-     * jar is located synchronously and pushed into the LSP layer BEFORE any jdtls session can start — doing it
-     * in an async callback raced the session-restore, so jdtls could come up without the debug bundle. When the
-     * bundle set changes, a running jdtls is restarted so it reloads with (or without) the plugin. Gates the
-     * breakpoint gutter + Debug window. Runs at init + every settings apply.
-     */
     /** Runs a debugged program in a Terminal tab (Settings → Debug → in the Terminal); set by the window. */
     private com.editora.dap.@Nullable ProgramTerminal programTerminal;
 
@@ -563,6 +556,13 @@ final class DebugCoordinator {
         this.programTerminal = programTerminal;
     }
 
+    /**
+     * Reconciles the Debug feature with its setting (mirrors {@link LspCoordinator#applySupport}). The plugin
+     * jar is located synchronously and pushed into the LSP layer BEFORE any jdtls session can start — doing it
+     * in an async callback raced the session-restore, so jdtls could come up without the debug bundle. When the
+     * bundle set changes, a running jdtls is restarted so it reloads with (or without) the plugin. Gates the
+     * breakpoint gutter + Debug window. Runs at init + every settings apply.
+     */
     void applySupport() {
         restoreExceptionFilters();
         var s = host.settings();
@@ -1558,10 +1558,6 @@ final class DebugCoordinator {
     private static final int MAX_SOURCE_SEARCH = 64;
 
     /**
-     * Pure: the frame a new stop selects — the topmost one whose source can be shown, so pausing a thread that
-     * sits in {@code Thread.sleep} lands on the caller's line rather than nowhere; the top frame when none can.
-     */
-    /**
      * Pure: the frame a stop selects. After a step into a JDK or library class whose text jdtls can supply (a
      * {@code jdt://} source), that frame: the user asked to go there, and showing the caller instead made Step
      * Into look as if it did nothing (B5). Any other stop: {@link #firstFrameWithSource}.
@@ -1574,6 +1570,10 @@ final class DebugCoordinator {
         return firstFrameWithSource(frames, has);
     }
 
+    /**
+     * Pure: the frame a new stop selects — the topmost one whose source can be shown, so pausing a thread that
+     * sits in {@code Thread.sleep} lands on the caller's line rather than nowhere; the top frame when none can.
+     */
     static int firstFrameWithSource(List<DapModels.StackFrameInfo> frames, Predicate<DapModels.StackFrameInfo> has) {
         for (int i = 0; i < frames.size() && i < MAX_SOURCE_SEARCH; i++) {
             if (has.test(frames.get(i))) {

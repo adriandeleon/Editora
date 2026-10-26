@@ -309,6 +309,7 @@ class LspSharedServerFxTest {
         b.setOnRefreshRequested((kind, origin) -> refreshedB.add(kind));
         Path f = javaFile("A.java");
         a.openDocument(f, root, "java", "class A {}");
+        LspTestHooks.languageStatus(a, f, "ServiceReady"); // imported before the second window comes
         b.openDocument(f, root, "java", "class A {}");
         awaitFx(
                 () -> refreshedB.contains("capabilities"),
@@ -380,6 +381,7 @@ class LspSharedServerFxTest {
     void aWindowJoiningAReadyServerIsToldItIsReady() throws Exception {
         Path f = javaFile("A.java");
         a.openDocument(f, root, "java", "class A {}");
+        LspTestHooks.languageStatus(a, f, "ServiceReady"); // jdtls's own: its import is done
         List<String> statuses = new CopyOnWriteArrayList<>();
         LspManager c = new LspManager((file, list) -> {}, (type, msg) -> statuses.add(type));
         try {
@@ -394,12 +396,39 @@ class LspSharedServerFxTest {
         }
     }
 
+    /**
+     * A window joining while jdtls still imports hears it is starting, not ready: the handshake's ready said "Loaded
+     * and ready" over files jdtls had not checked (eighth review CQ1).
+     */
+    @Test
+    void aWindowJoiningAnImportingServerWaitsForItsReady() throws Exception {
+        Path f = javaFile("A.java");
+        a.openDocument(f, root, "java", "class A {}");
+        LspTestHooks.languageStatus(a, f, "Starting", "Importing Maven project(s)");
+        List<String> statuses = new CopyOnWriteArrayList<>();
+        LspManager c = new LspManager((file, list) -> {}, (type, msg) -> statuses.add(type + ":" + msg));
+        try {
+            c.setSessionStarterForTest(
+                    session -> session.attachForTest(new FakeLanguageServer(), new ServerCapabilities()));
+            c.configure(true, Map.of("java", "jdtls"));
+            a.shareServersForTest(c);
+            c.openDocument(f, root, "java", "class A {}");
+            awaitFx(() -> statuses.contains("Starting:Importing Maven project(s)"), "told it is starting");
+            assertTrue(statuses.stream().noneMatch(st -> st.startsWith("ServiceReady")), statuses.toString());
+            LspTestHooks.languageStatus(a, f, "ServiceReady");
+            awaitFx(() -> statuses.stream().anyMatch(st -> st.startsWith("ServiceReady")), "then jdtls's own ready");
+        } finally {
+            c.shutdownAll();
+        }
+    }
+
     /** A window joining a project that did not import hears so, not only "ready" (sixth review CS2). */
     @Test
     void aWindowJoiningIsToldHowTheProjectImported() throws Exception {
         Path f = javaFile("A.java");
         a.openDocument(f, root, "java", "class A {}");
         LspTestHooks.languageStatus(a, f, "ProjectStatus", "WARNING");
+        LspTestHooks.languageStatus(a, f, "ServiceReady");
         awaitFx(() -> "WARNING".equals(a.sessionForTest(f).lastProjectStatus()), "the outcome kept on the session");
         List<String> statuses = new CopyOnWriteArrayList<>();
         LspManager c = new LspManager((file, list) -> {}, (type, msg) -> statuses.add(type + ":" + msg));

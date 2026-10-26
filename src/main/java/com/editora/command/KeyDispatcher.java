@@ -580,11 +580,6 @@ public class KeyDispatcher {
             KeyCode.PAGE_DOWN);
 
     /**
-     * True if the event's target (or any ancestor) opts out of global key dispatch via the
-     * {@code editora.ownsKeys} node property. Such components (e.g. the Structure tool window)
-     * implement their own keyboard handling and must receive raw key events, including bound chords.
-     */
-    /**
      * Editor-context commands — caret movement and text manipulation — are the only bound chords a
      * focused key-owning window swallows (it reuses them for its own navigation). Jump/window/view
      * commands stay global. Keyed by id prefix: {@code nav.*} (caret) and {@code edit.*} (text).
@@ -628,6 +623,11 @@ public class KeyDispatcher {
         return false;
     }
 
+    /**
+     * True if the event's target (or any ancestor) opts out of global key dispatch via the
+     * {@code editora.ownsKeys} node property. Such components (e.g. the Structure tool window)
+     * implement their own keyboard handling and must receive raw key events, including bound chords.
+     */
     private static boolean ownsKeys(EventTarget target) {
         Node node = target instanceof Node n ? n : null;
         while (node != null) {

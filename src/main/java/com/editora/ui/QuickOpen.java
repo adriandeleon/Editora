@@ -143,6 +143,16 @@ public class QuickOpen<T> {
         this.itemIcon = itemIcon;
     }
 
+    /** The title over the list: one picker serves two commands (Insert Snippet, Surround With — ET2). */
+    public void setTitle(String title) {
+        header.setText(title);
+    }
+
+    /** Runs {@code onCancelled} when the picker is dismissed without choosing (the caret put back — ET2). */
+    public void setOnCancelled(Runnable onCancelled) {
+        this.onPreviewCancelled = onCancelled;
+    }
+
     /**
      * Makes the picker preview the highlighted row: {@code onPreview} runs as the selection moves, and
      * {@code onCancelled} runs if the picker is dismissed without choosing.
@@ -155,16 +165,6 @@ public class QuickOpen<T> {
      * user moved to. Firing on open would yank the editor somewhere the instant the picker appears, before
      * any intent has been expressed.
      */
-    /** The title over the list: one picker serves two commands (Insert Snippet, Surround With — ET2). */
-    public void setTitle(String title) {
-        header.setText(title);
-    }
-
-    /** Runs {@code onCancelled} when the picker is dismissed without choosing (the caret put back — ET2). */
-    public void setOnCancelled(Runnable onCancelled) {
-        this.onPreviewCancelled = onCancelled;
-    }
-
     public void setPreview(Consumer<T> onPreview, Runnable onCancelled) {
         this.onPreview = onPreview;
         this.onPreviewCancelled = onCancelled;

@@ -300,10 +300,6 @@ final class SettingsSearch {
 
     // --- filtering ---------------------------------------------------------------------------------------------
 
-    /**
-     * Shows the rows, headings and cards {@code query} matches and marks the rows whose title or description shows
-     * a query word. A blank query shows everything and returns null.
-     */
     /** The word that, typed in the search, lists only modified rows (as the "Modified" toggle does). */
     static final String MODIFIED_TOKEN = "@modified";
 
@@ -327,6 +323,10 @@ final class SettingsSearch {
         this.onlyRows = filter;
     }
 
+    /**
+     * Shows the rows, headings and cards {@code query} matches and marks the rows whose title or description shows
+     * a query word. A blank query shows everything and returns null.
+     */
     @Nullable
     Result filter(String query) {
         boolean searching = query != null && !query.isBlank() || onlyRows != null;

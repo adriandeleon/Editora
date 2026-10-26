@@ -52,8 +52,8 @@ final class ExternalToolCoordinator {
 
     private int outputFontSize;
     private @Nullable CommandRegistry registry;
-    /** The last external tool run, for {@code externalTool.rerunLast}. */
-    /** Name of the last tool run — re-resolved on rerun, so a deleted/edited tool can't be re-run stale. */
+    /** The last external tool run, for {@code externalTool.rerunLast}: its name, re-resolved on rerun, so a
+     *  deleted/edited tool can't be re-run stale. */
     private @Nullable String lastToolName;
 
     ExternalToolCoordinator(CoordinatorHost host, Ops ops) {
@@ -193,10 +193,10 @@ final class ExternalToolCoordinator {
         return null;
     }
 
-    /** Runs an external tool against the active buffer; applies its output per the tool's {@code OutputTarget}. */
     /** Asked before a tool runs on the active buffer — an encrypted file's text goes to it unencrypted. */
     volatile java.util.function.Predicate<com.editora.editor.EditorBuffer> plaintextOut = buffer -> true;
 
+    /** Runs an external tool against the active buffer; applies its output per the tool's {@code OutputTarget}. */
     private void run(ExternalTool tool) {
         if (!isEnabled() || tool == null || !tool.isEnabled()) {
             return;

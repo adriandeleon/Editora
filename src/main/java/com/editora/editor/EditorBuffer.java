@@ -728,8 +728,6 @@ public class EditorBuffer implements TabContent {
     private static final int COMPACT_SCAN_LIMIT = 256 * 1024;
     /** Whether this buffer can run as a local file (remote buffers cannot). */
     private boolean runFeatureEnabled = true;
-    /** Whether shell scripts may show the Run glyph (gated by the Bash LSP server toggle, under the LSP
-     *  feature) — separate from Java/Python, which only need {@link #runFeatureEnabled}. */
     /** Whether the HTTP Client feature is enabled for this buffer (gated by {@code Settings.httpClientSupport},
      *  Simple UI mode and a local file) — a {@code .http} file then shows a Run glyph on every request line. */
     private boolean httpFeatureEnabled;
@@ -879,7 +877,6 @@ public class EditorBuffer implements TabContent {
             () -> this.fontSize,
             () -> this.path != null ? this.path.getParent() : null);
 
-    /** Handles a gutter note-marker click (the controller opens/edits that line's note). Default: no-op. */
     /** Handles a click on a line's blame annotation (the controller shows that line's commit). Default: no-op. */
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBlameClick = (buffer, line) -> {};
     /** Invoked by the "Add Personal Note" context-menu item (the controller prompts + creates). */
@@ -958,8 +955,8 @@ public class EditorBuffer implements TabContent {
     /** Spell checking (Lucene Hunspell, drawn by {@link #spellOverlay}); off until the controller enables it. */
     private final BufferSpell spell = new BufferSpell(
             area, spellOverlay, this::getFocusedArea, () -> language, this::isEditable, () -> largeFile);
-    /** Bumped on every highlight request (FX thread only); lets background results discard if stale. */
-    /** Volatile: bumped on the FX thread, read per line by the background tokenize's cancel check. */
+    /** Bumped on every highlight request (FX thread only); lets background results discard if stale. Volatile:
+     *  read per line by the background tokenize's cancel check. */
     private volatile long highlightGen;
     /** Bumped on every language/grammar change (FX thread only); drops a stale deferred grammar load. */
     private long languageGen;
@@ -2193,14 +2190,6 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * The language-server actions, gathered under one <b>LSP</b> submenu.
-     *
-     * <p>A submenu rather than the flat list they used to be: a served buffer contributes up to seven items,
-     * which pushed the editing actions everyone uses — cut/copy/paste, the spelling suggestions — far enough
-     * down the menu to hunt for. Grouping them also names what they are, which a bare "Go to Definition"
-     * sitting between "Paste" and a spelling suggestion does not.
-     */
-    /**
      * Wraps a markup language's formatting actions in one titled submenu — the {@link #lspMenu} shape.
      *
      * <p>The items keep their palette titles ("Markdown: Bold"), matching the Maven submenu rather than the
@@ -2228,6 +2217,14 @@ public class EditorBuffer implements TabContent {
         return menu;
     }
 
+    /**
+     * The language-server actions, gathered under one <b>LSP</b> submenu.
+     *
+     * <p>A submenu rather than the flat list they used to be: a served buffer contributes up to seven items,
+     * which pushed the editing actions everyone uses — cut/copy/paste, the spelling suggestions — far enough
+     * down the menu to hunt for. Grouping them also names what they are, which a bare "Go to Definition"
+     * sitting between "Paste" and a spelling suggestion does not.
+     */
     private Menu lspMenu(int offset) {
         Menu menu = new Menu(tr("editmenu.lsp"), MenuIcons.code());
         menu.getItems().addAll(lspMenuItems(offset));
@@ -3097,9 +3094,6 @@ public class EditorBuffer implements TabContent {
         return "csv".equals(language);
     }
 
-    /** Whether this buffer supports the 3-mode preview: Markdown always, Mermaid only while the feature
-     *  is enabled (so a .mmd file is plain text with no preview affordance when Mermaid is off), and CSV
-     *  only once the grid preview node has been injected (the feature-on gate — see {@link #hasCsvPreview}). */
     /**
      * Leaves the preview when — and only when — this buffer has no preview left. Called after any
      * {@code set*PreviewEnabled} flip.
@@ -3118,6 +3112,9 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /** Whether this buffer supports the 3-mode preview: Markdown always, Mermaid only while the feature
+     *  is enabled (so a .mmd file is plain text with no preview affordance when Mermaid is off), and CSV
+     *  only once the grid preview node has been injected (the feature-on gate — see {@link #hasCsvPreview}). */
     public boolean hasPreview() {
         return isMarkdown()
                 || isMarkwhen()
@@ -4106,8 +4103,6 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Turns LSP rendering (diagnostics overlay + hover) on/off for this buffer. The controller drives
-     *  document open/close + requests; this only gates the editor surface. */
     /** A language whose server copes with this file despite the large-source tier (Python, review B10). */
     private boolean heavyFileLspAllowed;
 
@@ -4115,6 +4110,8 @@ public class EditorBuffer implements TabContent {
         heavyFileLspAllowed = allowed;
     }
 
+    /** Turns LSP rendering (diagnostics overlay + hover) on/off for this buffer. The controller drives
+     *  document open/close + requests; this only gates the editor surface. */
     public void setLspActive(boolean on) {
         boolean was = lspActive;
         // Large-file mode disables LSP just like syntax highlighting and the minimap: a 5–50 MB document
@@ -4857,14 +4854,14 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
+    /** Longest word an abbreviation lookup will scan back over — bounds the per-keystroke text slice below. */
+    private static final int MAX_ABBREV_LOOKBACK = 256;
+
     /**
      * Abbrev-mode auto-expand: when the just-typed single character is a word terminator (anything but a
      * letter/digit), expand the word that ended just before it. The terminator stays. Same guarded
      * {@code plainTextChanges} shape as {@link #maybeAutoFill}; the first field check short-circuits when off.
      */
-    /** Longest word an abbreviation lookup will scan back over — bounds the per-keystroke text slice below. */
-    private static final int MAX_ABBREV_LOOKBACK = 256;
-
     private void maybeExpandAbbrev(org.fxmisc.richtext.model.PlainTextChange c) {
         if (!abbrevMode || applyingAbbrev || hugeFile || !isEditable() || abbrevTable.isEmpty()) {
             return;
@@ -6236,12 +6233,6 @@ public class EditorBuffer implements TabContent {
         structuredContentHolder().getChildren().setAll(node);
     }
 
-    /**
-     * Surfaces a Throwable from a {@code PREVIEW_POOL.submit(...)} tree-preview task (structured/XML) that the
-     * task's {@code Future} would otherwise swallow into a silent blank — the {@code exec.submit}
-     * Error-swallowing trap the project conventions warn about — as a logged warning + a visible error label
-     * in the shared holder, so a failed render is diagnosable rather than a blank pane.
-     */
     /** The {@link #surfaceTreePreviewError} counterpart for the Markdown preview, which has its own pane. */
     private void surfaceMarkdownPreviewError(long gen, Throwable t) {
         java.util.logging.Logger.getLogger(EditorBuffer.class.getName())
@@ -6258,6 +6249,12 @@ public class EditorBuffer implements TabContent {
         });
     }
 
+    /**
+     * Surfaces a Throwable from a {@code PREVIEW_POOL.submit(...)} tree-preview task (structured/XML) that the
+     * task's {@code Future} would otherwise swallow into a silent blank — the {@code exec.submit}
+     * Error-swallowing trap the project conventions warn about — as a logged warning + a visible error label
+     * in the shared holder, so a failed render is diagnosable rather than a blank pane.
+     */
     private void surfaceTreePreviewError(long gen, Throwable t) {
         java.util.logging.Logger.getLogger(EditorBuffer.class.getName())
                 .log(java.util.logging.Level.WARNING, "tree preview render failed", t);
@@ -7354,7 +7351,6 @@ public class EditorBuffer implements TabContent {
         folds.unfoldAll();
     }
 
-    /** Show/hide the minimap overview (on every split pane); reclaims its width for the editor when hidden. */
     /**
      * Whether the minimap should actually show: the user's setting, but forced off for large/heavy files
      * (too costly) and in full {@link MarkdownViewMode#PREVIEW} (no editor surface to map). It stays on in
@@ -7443,6 +7439,7 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /** Show/hide the minimap overview (on every split pane); reclaims its width for the editor when hidden. */
     public void setMinimapVisible(boolean visible) {
         this.minimapVisible = visible;
         boolean effective = minimapEffective(visible, largeFile, heavyFile, markdownViewMode);
@@ -7467,11 +7464,6 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Coalesces a ruler re-measurement onto the next pulse. Measuring queries character bounds, which
-     * must not happen synchronously inside a layout/viewport event (it re-enters layout and blanks the
-     * editor), so we always defer it via {@link Platform#runLater}.
-     */
-    /**
      * Records that an input to the ruler's position changed other than the viewport width or the horizontal
      * scroll (the gutter, the font, wrap, the ruler column), and schedules the re-measure. The flag survives
      * until a measure actually runs, so a change made before the area has been laid out is not lost.
@@ -7481,6 +7473,11 @@ public class EditorBuffer implements TabContent {
         scheduleRulerMeasure();
     }
 
+    /**
+     * Coalesces a ruler re-measurement onto the next pulse. Measuring queries character bounds, which
+     * must not happen synchronously inside a layout/viewport event (it re-enters layout and blanks the
+     * editor), so we always defer it via {@link Platform#runLater}.
+     */
     private void scheduleRulerMeasure() {
         // Measuring queries the viewport (a forced VirtualFlow layout) + character bounds. A background tab
         // is not on screen, so doing that for it is pure cost — and a settings apply dirties every open
@@ -7497,13 +7494,6 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Positions the rulers at their columns (80 unless Settings or {@code .editorconfig} say otherwise), drawn
-     * whether or not any text reaches them. Each is column 0's on-screen x plus that many advances of the
-     * editor font (see {@link #columnZeroX}), so it is exact regardless of which glyphs are present; one
-     * measure serves them all. A ruler is hidden when its column falls outside the visible text width (the
-     * window is too narrow, or the text is scrolled past it).
-     */
-    /**
      * How many times the ruler has been measured, app-wide. A test seam, not state the editor reads: how
      * often this runs is a measured property (each measure is two forced {@code VirtualFlow} layouts plus
      * character-bounds queries), and without a counter a regression to the old measure-on-every-viewport-event
@@ -7513,6 +7503,13 @@ public class EditorBuffer implements TabContent {
     static final java.util.concurrent.atomic.AtomicInteger RULER_MEASURES_FOR_TEST =
             new java.util.concurrent.atomic.AtomicInteger();
 
+    /**
+     * Positions the rulers at their columns (80 unless Settings or {@code .editorconfig} say otherwise), drawn
+     * whether or not any text reaches them. Each is column 0's on-screen x plus that many advances of the
+     * editor font (see {@link #columnZeroX}), so it is exact regardless of which glyphs are present; one
+     * measure serves them all. A ruler is hidden when its column falls outside the visible text width (the
+     * window is too narrow, or the text is scrolled past it).
+     */
     private void measureAndPlaceRuler() {
         RULER_MEASURES_FOR_TEST.incrementAndGet();
         lastRulerViewportWidth = area.getWidth();

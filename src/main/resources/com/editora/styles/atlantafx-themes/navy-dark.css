@@ -4965,3 +4965,9 @@ Text {
 }
 
 /* Dark navy background (#1a2744) with gold (#c9a84c) accents  */
+
+/* Editora: the accent here is the bookmark's warning colour, so the assist bulb takes the foreground colour, apart
+   from the bookmark and from the red quick-fix bulb (eighth review AR3). */
+.editor-area {
+  -editora-bulb-assist: -color-fg-default;
+}

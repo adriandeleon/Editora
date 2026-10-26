@@ -438,12 +438,13 @@ public final class StatusBar extends HBox {
         getChildren().remove(segment);
     }
 
-    /** Sets the transient echo-area message (called by MainController.setStatus) and logs it for the session.
-     *  The echo shows a single line only (a Label renders embedded newlines as line breaks, so a multi-line
-     *  message — e.g. a compiler error dump — would grow the whole status bar); the full text goes to the
-     *  message log, whose rows wrap and are copyable. */
     /**
-     * Shows {@code message} with the severity its catalog key implies: a {@code status.*Failed} /
+     * Sets the transient echo-area message (called by MainController.setStatus) and logs it for the session.
+     * The echo shows a single line only (a Label renders embedded newlines as line breaks, so a multi-line
+     * message — e.g. a compiler error dump — would grow the whole status bar); the full text goes to the
+     * message log, whose rows wrap and are copyable.
+     *
+     * <p>Shows {@code message} with the severity its catalog key implies: a {@code status.*Failed} /
      * {@code *Error} message is an error whichever of the ~90 call sites reported it through the plain
      * status channel (see {@link StatusSeverity}); everything else is ordinary echo text.
      */
@@ -1150,8 +1151,6 @@ public final class StatusBar extends HBox {
     java.util.concurrent.Executor sizeCounter =
             task -> Thread.ofVirtual().name("status-size").start(task);
 
-    /** Simple UI mode: hide the git / language / tab-size / line-ending / encoding segments (size is kept). */
-    /** Shows the narrowing indicator. Deliberately visible in Simple mode too — it is not chrome. */
     /** Shows "Snippet position/count" while a snippet session runs in the active buffer; a count of 0 hides it. */
     public void setSnippetSession(int position, int count) {
         boolean on = count > 0;
@@ -1162,11 +1161,13 @@ public final class StatusBar extends HBox {
         snippet.setManaged(on);
     }
 
+    /** Shows the narrowing indicator. Deliberately visible in Simple mode too — it is not chrome. */
     public void setNarrowed(boolean on) {
         narrowed.setVisible(on);
         narrowed.setManaged(on);
     }
 
+    /** Simple UI mode: hide the git / language / tab-size / line-ending / encoding segments (size is kept). */
     public void setSimpleMode(boolean simpleMode) {
         if (this.simpleMode != simpleMode) {
             this.simpleMode = simpleMode;

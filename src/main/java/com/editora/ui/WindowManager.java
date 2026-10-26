@@ -745,16 +745,6 @@ public class WindowManager {
     }
 
     /**
-     * As above, additionally applying a focus mode the delivering launch asked for — the single-instance path
-     * ({@code App.openForwardedLaunch}), where the user clicked a specific launcher entry such as "Editora
-     * Expert Mode" and a window already exists to receive it.
-     *
-     * <p>The mode is applied rather than ignored because the user picked that entry deliberately; a launcher
-     * named "Expert Mode" that silently opens a normal window is the more surprising outcome, and it is a
-     * no-op in the common case where the running window is already in that mode. All three flags false (the
-     * plain overload, and every OS-delivered event) leaves the window's chrome exactly as it was.
-     */
-    /**
      * Opens an externally-delivered launch — a file-manager "Open With" click that {@code ipc.SingleInstance}
      * handed to this already-running process — in a <b>new window of its own</b>.
      *
@@ -827,6 +817,17 @@ public class WindowManager {
         return null;
     }
 
+    /**
+     * {@code openExternalFiles(files)}, additionally applying a focus mode the delivering launch asked for — the
+     * single-instance path
+     * ({@code App.openForwardedLaunch}), where the user clicked a specific launcher entry such as "Editora
+     * Expert Mode" and a window already exists to receive it.
+     *
+     * <p>The mode is applied rather than ignored because the user picked that entry deliberately; a launcher
+     * named "Expert Mode" that silently opens a normal window is the more surprising outcome, and it is a
+     * no-op in the common case where the running window is already in that mode. All three flags false (the
+     * plain overload, and every OS-delivered event) leaves the window's chrome exactly as it was.
+     */
     public void openExternalFiles(List<MainController.OpenTarget> files, boolean zen, boolean expert, boolean simple) {
         if (files == null || files.isEmpty()) {
             return;
@@ -1118,6 +1119,15 @@ public class WindowManager {
         openSetReconcile.playFromStart();
     }
 
+    /** Every window's terminals that are running something, for the quit question. */
+    List<String> busyTerminals() {
+        List<String> busy = new ArrayList<>();
+        for (Holder h : windows) {
+            busy.addAll(h.controller().terminalCoordinator.busyTerminals());
+        }
+        return busy;
+    }
+
     /**
      * The in-app quit path ({@code app.quit} / the toolbar Quit button / {@code C-x C-c}) ends in
      * {@code Platform.exit()} — which fires <b>no</b> {@code Stage.onCloseRequest}, so the per-window close
@@ -1134,15 +1144,6 @@ public class WindowManager {
      *
      * @return false if the user cancelled at some window's save prompt (the quit is off).
      */
-    /** Every window's terminals that are running something, for the quit question. */
-    List<String> busyTerminals() {
-        List<String> busy = new ArrayList<>();
-        for (Holder h : windows) {
-            busy.addAll(h.controller().terminalCoordinator.busyTerminals());
-        }
-        return busy;
-    }
-
     boolean confirmCloseAllWindows() {
         // The prompts below run nested event loops; a pending restored window must not be built under them.
         // Left paused when the quit goes ahead: the unbuilt windows keep their saved sessions and their

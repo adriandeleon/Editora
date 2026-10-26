@@ -82,16 +82,16 @@ public final class PreviewSnapshots {
     private PreviewSnapshots() {}
 
     /**
-     * The images of one preview, top to bottom. For a tree, {@code shownRows} of its {@code totalRows} rows
-     * were captured (both 0 for a preview that is not a row list).
-     */
-    /**
      * One snapshot: a PNG at {@code scale} image pixels per logical pixel, the pixel rows it may be cut at
      * ({@code cuts}, null when it has no rows), and whether it {@code continues} the chunk before it. The
      * print and PDF side turns it into its own page image — this package does not depend on that one.
      */
     public record Chunk(byte[] png, double scale, int[] cuts, boolean continues) {}
 
+    /**
+     * The images of one preview, top to bottom. For a tree, {@code shownRows} of its {@code totalRows} rows
+     * were captured (both 0 for a preview that is not a row list).
+     */
     public record Result(List<Chunk> images, int shownRows, int totalRows) {
         /** The tree was longer than the row cap: the output ends with a line saying so. */
         public boolean truncated() {

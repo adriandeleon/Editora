@@ -39,7 +39,6 @@ public final class TypstService {
         return TypstRenderer.command(path);
     }
 
-    /** Probes {@code typst}'s presence off-thread (cached), posting the result on the FX thread. */
     /** The last cached detection result ({@code false} if never probed) — a synchronous read for the
      *  installer's "already installed?" pre-check. */
     public boolean cachedAvailable() {
@@ -47,6 +46,7 @@ public final class TypstService {
         return c != null && c;
     }
 
+    /** Probes {@code typst}'s presence off-thread (cached), posting the result on the FX thread. */
     public void detect(Consumer<Boolean> onResult) {
         Boolean hit = cached;
         if (hit != null) {
