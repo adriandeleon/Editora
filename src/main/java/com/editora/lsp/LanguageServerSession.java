@@ -2172,8 +2172,6 @@ final class LanguageServerSession implements LanguageClient {
                         .implementation(new org.eclipse.lsp4j.ImplementationParams(doc(uri), pos)));
     }
 
-    /** The declaration of the <em>type</em> of the symbol at a position ({@code textDocument/typeDefinition})
-     *  — from a variable to its type, as opposed to definition's "to the variable" (#736). */
     /**
      * jdtls's {@code java/findLinks} of {@code type} ({@code superImplementation}: the method or type the one at
      * {@code pos} overrides or extends), as locations. Empty from a server without it.
@@ -2200,6 +2198,8 @@ final class LanguageServerSession implements LanguageClient {
         });
     }
 
+    /** The declaration of the <em>type</em> of the symbol at a position ({@code textDocument/typeDefinition})
+     *  — from a variable to its type, as opposed to definition's "to the variable" (#736). */
     CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> typeDefinition(
             String uri, Position pos) {
         if (!ready()) {

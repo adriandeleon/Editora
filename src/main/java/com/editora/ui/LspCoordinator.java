@@ -1040,7 +1040,15 @@ final class LspCoordinator {
             }
         });
         ops.setLspLoading(false);
-        host.setError(startRefusedMessage(serverLabel(serverId), refusal));
+        // the server's own name ("jdtls needs Java 25"), not the language's ("Java needs Java 25"); said again on the
+        // next pulse too, as the file's own "Opened …" status landed over it (seventh review DR3)
+        String said = startRefusedMessage(
+                refusal.kind() == com.editora.lsp.StartRefusal.Kind.NO_JAVA_FOR_SERVER
+                        ? serverProgram(serverId)
+                        : serverLabel(serverId),
+                refusal);
+        host.setError(said);
+        Platform.runLater(() -> host.setError(said));
         updateStatusBar();
     }
 

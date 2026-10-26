@@ -714,12 +714,12 @@ public final class LspManager {
         this.clientUi = ui;
     }
 
-    /** {@link #clientUi} reached from a session's reader thread: every call is posted to the FX thread. */
     /** The client UI sessions are given, which answers on the FX thread (tests). */
     LspClientUi clientUiForTest() {
         return fxClientUi;
     }
 
+    /** {@link #clientUi} reached from a session's reader thread: every call is posted to the FX thread. */
     private final LspClientUi fxClientUi = new LspClientUi() {
         @Override
         public java.util.concurrent.CompletableFuture<String> chooseAction(

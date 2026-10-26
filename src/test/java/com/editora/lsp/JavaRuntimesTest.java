@@ -296,4 +296,17 @@ class JavaRuntimesTest {
                         List.of(bare, new JavaRuntimes.Jdk(21, sdk.getParent().toString())), distroHome),
                 "a twin with sources stands in");
     }
+
+    /** Every JDK a project may get is checked for sources, not only the default (seventh review DR2). */
+    @Test
+    void aProjectJdkWithoutSourcesIsNamedThoughTheDefaultHasThem(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path distro = java.nio.file.Files.createDirectories(dir.resolve("distro21/lib"));
+        java.nio.file.Path sdk25 = java.nio.file.Files.createDirectories(dir.resolve("sdk25/lib"));
+        java.nio.file.Files.writeString(sdk25.resolve("src.zip"), "zip");
+        var jdk21 = new JavaRuntimes.Jdk(21, distro.getParent().toString());
+        var jdk25 = new JavaRuntimes.Jdk(25, sdk25.getParent().toString());
+        assertEquals(List.of(jdk21), JavaRuntimes.allWithoutSources(List.of(jdk21, jdk25), jdk25.path()));
+        assertEquals(jdk21, JavaRuntimes.withoutSources(List.of(jdk21, jdk25), jdk25.path()));
+    }
 }
