@@ -2154,12 +2154,15 @@ final class LanguageServerSession implements LanguageClient {
 
     /**
      * {@code workspace/willRenameFiles} for {@code from} → {@code to} (wire URIs): the edit the server wants made
-     * before the move — an empty one when it has none, cannot say, or does not take the request.
+     * before the move — an empty one when it has none or does not take the request, and null when it could not
+     * say: still starting, or the request failed or timed out (fourth review BF5).
      */
-    CompletableFuture<org.eclipse.lsp4j.WorkspaceEdit> willRenameFiles(String from, String to) {
+    CompletableFuture<org.eclipse.lsp4j.@Nullable WorkspaceEdit> willRenameFiles(String from, String to) {
         ServerCapabilities c = capabilities;
-        if (!ready()
-                || c == null
+        if (!ready()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        if (c == null
                 || c.getWorkspace() == null
                 || c.getWorkspace().getFileOperations() == null
                 || c.getWorkspace().getFileOperations().getWillRename() == null) {
@@ -2167,8 +2170,9 @@ final class LanguageServerSession implements LanguageClient {
         }
         var params = new org.eclipse.lsp4j.RenameFilesParams(List.of(new org.eclipse.lsp4j.FileRename(from, to)));
         return bounded(server().getWorkspaceService().willRenameFiles(params))
-                .thenApply(edit -> edit == null ? new org.eclipse.lsp4j.WorkspaceEdit() : edit)
-                .exceptionally(t -> new org.eclipse.lsp4j.WorkspaceEdit());
+                .<org.eclipse.lsp4j.@Nullable WorkspaceEdit>thenApply(
+                        edit -> edit == null ? new org.eclipse.lsp4j.WorkspaceEdit() : edit)
+                .exceptionally(t -> null);
     }
 
     /** Project-wide symbol search ({@code workspace/symbol}) for {@code query}; empty when not ready/on error. */

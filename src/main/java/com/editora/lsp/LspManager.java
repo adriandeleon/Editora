@@ -5954,16 +5954,56 @@ public final class LspManager {
      * made, {@code proceed} runs at once with true (Java review B15).
      */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed) {
+        willRenameFile(from, to, proceed, (f, t, answered) -> true);
+    }
+
+    /**
+     * What a rename does when jdtls has no edit for it. {@code answered} false: it could not say (still importing,
+     * or the request failed), so the package line and imports would silently stay as they were; true: it answered
+     * with nothing for a {@code .java} file moved to another folder. Returns whether to rename the file anyway.
+     */
+    public interface RenameFallback {
+        boolean renameWithoutEdits(Path from, Path to, boolean answered);
+    }
+
+    /** Whether {@code dir} is a folder with a {@code .java} file in it, at any depth. */
+    private static boolean holdsJava(Path dir) {
+        if (!Files.isDirectory(dir)) {
+            return false;
+        }
+        try (var files = Files.walk(dir, 32)) {
+            return files.anyMatch(p -> p.toString().endsWith(".java"));
+        } catch (java.io.IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** As {@link #willRenameFile(Path, Path, Consumer)}, asking {@code fallback} when jdtls has no edit for it. */
+    public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
         LanguageServerSession s = javaSessionFor(from);
-        if (s == null) {
+        boolean java = from.toString().endsWith(".java") || holdsJava(from);
+        if (s == null || !java) {
             Platform.runLater(() -> proceed.accept(true));
             return;
         }
+        Path into = to.getParent();
+        if (into != null && !into.equals(from.getParent()) && Files.isDirectory(into)) {
+            // jdtls answers null for a package it has not heard of: a folder made a moment ago, before the
+            // watcher's batch reached it, or any new folder of an SSH project (fourth review DF3). Saying it
+            // exists is idempotent, and goes out before the request on the same channel.
+            s.didChangeWatchedFiles(
+                    eventsUnderRoot(List.of(new WatchedFile(into, WatchedKind.CREATED)), s.root(), s.uris()));
+        }
+        boolean moved = into != null
+                && !into.equals(from.getParent())
+                && from.toString().endsWith(".java");
         EditBasis expected = editBasis(s);
         s.willRenameFiles(s.uris().toWire(uri(from)), s.uris().toWire(uri(to)))
                 .whenComplete((edit, e) -> Platform.runLater(() -> {
-                    if (e != null || edit == null || !changesText(edit)) {
-                        proceed.accept(true);
+                    if (e != null || edit == null) {
+                        proceed.accept(fallback.renameWithoutEdits(from, to, false));
+                    } else if (!changesText(edit)) {
+                        proceed.accept(!moved || fallback.renameWithoutEdits(from, to, true));
                     } else {
                         applyWorkspaceEdit(edit, expected, proceed);
                     }

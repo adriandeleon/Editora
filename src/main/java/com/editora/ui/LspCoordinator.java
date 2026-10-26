@@ -7358,6 +7358,9 @@ final class LspCoordinator {
         for (EditorBuffer b : buffers) {
             if (b != null && !b.isDisposed()) {
                 touched.add(b);
+                // An applied edit is not typing: the auto-popup read a rename or inline at the caret as an
+                // identifier typed, and its list took the next Enter (fourth review BF2).
+                b.cancelCompletion();
             }
         }
         boolean resources = !mapped.renames().isEmpty()
@@ -7383,11 +7386,18 @@ final class LspCoordinator {
         java.util.List<com.editora.lsp.LspManager.WatchedFile> written = new java.util.ArrayList<>();
         for (EditorBuffer b : touched) {
             boolean opened = openBefore != null && !openBefore.contains(b);
-            if (!resources && !opened) {
-                continue; // an open file the user can see stays as it is: they save it
-            }
             Path path = b.getPath();
             boolean unmanaged = path != null && !lspManager.isManaged(path); // a background tab is never opened on it
+            if (!resources && !opened) {
+                if (unmanaged) {
+                    // An open file the user can see stays as it is: they save it. But the server must hear its new
+                    // text now: one never opened there kept its old text, so a second refactoring before a save
+                    // skipped it and left the project broken (fourth review, BT2's remainder).
+                    deferredLsp.remove(b);
+                    syncBuffer(b);
+                }
+                continue;
+            }
             boolean saved = b.isDirty() && ops.saveBuffer(b);
             if (saved && unmanaged && path != null) {
                 written.add(new com.editora.lsp.LspManager.WatchedFile(
@@ -7412,17 +7422,148 @@ final class LspCoordinator {
      */
     void willRenameFile(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
         AppliedEdit previous = lastApplied;
-        lspManager.willRenameFile(from, to, ok -> {
-            proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
-            AppliedEdit edit = lastApplied;
-            if (ok
-                    && edit != null
-                    && edit != previous
-                    && !java.nio.file.Files.exists(from)
-                    && java.nio.file.Files.exists(to)) {
-                treeRenamed(edit, from, to);
+        lspManager.willRenameFile(
+                from,
+                to,
+                ok -> {
+                    proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
+                    AppliedEdit edit = lastApplied;
+                    if (ok
+                            && edit != null
+                            && edit != previous
+                            && !java.nio.file.Files.exists(from)
+                            && java.nio.file.Files.exists(to)) {
+                        treeRenamed(edit, from, to);
+                    }
+                },
+                this::renameWithoutEdits);
+    }
+
+    /**
+     * The Project tree's participant: a rename or a drag-move goes through jdtls (B15, BT1), and the moves of one
+     * drag, or of its Undo Move, are one change (fourth review BF1).
+     */
+    ProjectPanel.RenameParticipant treeParticipant() {
+        return new ProjectPanel.RenameParticipant() {
+            @Override
+            public void willRename(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
+                willRenameFile(from, to, proceed);
             }
-        });
+
+            @Override
+            public void beginMove() {
+                moveGroup = new java.util.ArrayList<>();
+                moveGroupWhole = true;
+                moveWithoutEdits.clear();
+            }
+
+            @Override
+            public void endMove(boolean undo) {
+                endTreeMove(undo);
+            }
+        };
+    }
+
+    /** The edits of the drag-move under way, one per moved file; null when none is. */
+    private java.util.@Nullable List<AppliedEdit> moveGroup;
+
+    /** False once a folder moved in it: a folder cannot be moved back as one, so Undo Move is the way back. */
+    private boolean moveGroupWhole;
+
+    /** The {@code .java} files of the drag that moved without their package line edited. */
+    private final java.util.List<String> moveWithoutEdits = new java.util.ArrayList<>();
+
+    /** The edit Undo Last Refactoring would revert when it came from a drag-move, so reverting it ends Undo Move. */
+    private @Nullable AppliedEdit treeMoveEdit;
+
+    /** Told when Undo Last Refactoring took back a drag-move, which the tree must no longer offer to undo. */
+    private Runnable onTreeMoveUndone = () -> {};
+
+    void setOnTreeMoveUndone(Runnable action) {
+        onTreeMoveUndone = action == null ? () -> {} : action;
+    }
+
+    private void endTreeMove(boolean undo) {
+        java.util.List<AppliedEdit> group = moveGroup;
+        moveGroup = null;
+        if (group == null) {
+            return;
+        }
+        if (undo) {
+            // Undo Move took the drag back: it is not a refactoring to undo, and the drag's own edit is gone
+            if (!group.isEmpty() || (lastApplied != null && lastApplied == treeMoveEdit)) {
+                lastApplied = null;
+            }
+            treeMoveEdit = null;
+        } else if (!group.isEmpty()) {
+            lastApplied = moveGroupWhole ? merged(group) : null;
+            treeMoveEdit = lastApplied;
+        }
+        if (!moveWithoutEdits.isEmpty()) {
+            host.setError(tr("status.lsp.moveWithoutPackageEdit", String.join(", ", moveWithoutEdits)));
+            moveWithoutEdits.clear();
+        }
+    }
+
+    /** One edit made of several, in order: a file edited twice keeps its first text, a later move renames it. */
+    static AppliedEdit merged(java.util.List<AppliedEdit> edits) {
+        Map<Path, EditedFile> files = new java.util.LinkedHashMap<>();
+        java.util.List<com.editora.lsp.WorkspaceEditMapper.FileRename> renames = new java.util.ArrayList<>();
+        java.util.List<Path> created = new java.util.ArrayList<>();
+        for (AppliedEdit e : edits) {
+            for (var r : e.renames()) {
+                Path f = r.from().toAbsolutePath().normalize();
+                Path t = r.to().toAbsolutePath().normalize();
+                Map<Path, EditedFile> moved = new java.util.LinkedHashMap<>();
+                files.forEach((p, ef) -> {
+                    Path n = p.toAbsolutePath().normalize();
+                    Path now = n.startsWith(f) ? t.resolve(f.relativize(n)) : p;
+                    moved.put(now, new EditedFile(now, ef.before(), ef.after()));
+                });
+                files = moved;
+            }
+            for (EditedFile f : e.files()) {
+                files.merge(f.path(), f, (old, now) -> new EditedFile(old.path(), old.before(), now.after()));
+            }
+            renames.addAll(e.renames());
+            created.addAll(e.created());
+        }
+        return new AppliedEdit(
+                java.util.List.copyOf(files.values()), java.util.List.copyOf(renames), java.util.List.copyOf(created));
+    }
+
+    /**
+     * jdtls had no edit for a rename. When it could not say (still importing, or no answer), the file would move
+     * with its package line and its users' imports as they were, with no word (fourth review BF5): ask first. When
+     * it answered with nothing for a {@code .java} file moved to another folder, move it and say so (DF3).
+     */
+    private boolean renameWithoutEdits(Path from, Path to, boolean answered) {
+        String name = PathDisplay.fileName(from);
+        if (answered) {
+            if (moveGroup != null) {
+                moveWithoutEdits.add(name);
+            } else {
+                host.setError(tr("status.lsp.moveWithoutPackageEdit", name));
+            }
+            return true;
+        }
+        return confirmRenameWithoutEdits.test(tr("dialog.lsp.renameWithoutEdits.body", name));
+    }
+
+    /** Asks whether to rename a file jdtls could not edit for; a field so a test can answer. */
+    java.util.function.Predicate<String> confirmRenameWithoutEdits = this::askRenameWithoutEdits;
+
+    private boolean askRenameWithoutEdits(String body) {
+        javafx.scene.control.Alert confirm = Dialogs.styled(new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.CONFIRMATION,
+                body,
+                javafx.scene.control.ButtonType.OK,
+                javafx.scene.control.ButtonType.CANCEL));
+        confirm.initOwner(host.window());
+        confirm.setTitle(tr("dialog.lsp.renameWithoutEdits.title"));
+        confirm.setHeaderText(null);
+        return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
+                == javafx.scene.control.ButtonType.OK;
     }
 
     private void treeRenamed(AppliedEdit edit, Path from, Path to) {
@@ -7440,6 +7581,7 @@ final class LspCoordinator {
         }
         if (java.nio.file.Files.isDirectory(t)) {
             lastApplied = null; // a folder cannot be moved back as one: rename it back, and jdtls edits again
+            moveGroupWhole = false;
         } else {
             java.util.List<com.editora.lsp.WorkspaceEditMapper.FileRename> renames =
                     new java.util.ArrayList<>(edit.renames());
@@ -7449,6 +7591,13 @@ final class LspCoordinator {
         lspManager.notifyWatchedFiles(java.util.List.of(
                 new com.editora.lsp.LspManager.WatchedFile(from, com.editora.lsp.LspManager.WatchedKind.DELETED),
                 new com.editora.lsp.LspManager.WatchedFile(to, com.editora.lsp.LspManager.WatchedKind.CREATED)));
+        java.util.List<AppliedEdit> group = moveGroup;
+        if (group != null) {
+            if (lastApplied != null) {
+                group.add(lastApplied);
+            }
+            return; // a drag-move: the tree says what moved, not "Renamed to" (fourth review BF3)
+        }
         // the saves above said "Saved /the/whole/path"; the rename is what happened (BT7)
         host.setStatus(tr("status.renamedTo", PathDisplay.fileName(to)));
     }
@@ -7589,9 +7738,18 @@ final class LspCoordinator {
             undoingEdit = false;
             if (ok) {
                 lastApplied = null;
+                if (edit == treeMoveEdit) {
+                    treeMoveEdit = null;
+                    onTreeMoveUndone.run(); // the drag is taken back: Undo Move has nothing left (BF1)
+                }
                 Path[] made = newPackageFolders.remove(edit);
                 if (made != null) {
-                    removeEmptyFolders(made[0], made[1]); // Move ▸ New package's folder goes with it (BT4)
+                    // Move ▸ New package's folder goes with it (BT4), and jdtls hears it is gone: the next Move
+                    // still offered the package (fourth review BF4)
+                    lspManager.notifyWatchedFiles(removeEmptyFolders(made[0], made[1]).stream()
+                            .map(f -> new com.editora.lsp.LspManager.WatchedFile(
+                                    f, com.editora.lsp.LspManager.WatchedKind.DELETED))
+                            .toList());
                 }
             }
             reportEdit(ok, tr("status.lsp.refactoringUndone", files), tr("status.lsp.refactoringUndoFailed"));
@@ -7601,21 +7759,27 @@ final class LspCoordinator {
     /** Folders Move ▸ New package created, by the refactoring that filled them, with their source root. */
     private final Map<AppliedEdit, Path[]> newPackageFolders = new java.util.IdentityHashMap<>();
 
-    /** Deletes {@code folder} and its parents up to (not including) {@code root} while they are empty. */
-    static void removeEmptyFolders(Path folder, Path root) {
+    /**
+     * Deletes {@code folder} and its parents up to (not including) {@code root} while they are empty, and returns
+     * the folders it deleted.
+     */
+    static java.util.List<Path> removeEmptyFolders(Path folder, Path root) {
+        java.util.List<Path> deleted = new java.util.ArrayList<>();
         @Nullable Path at = folder.toAbsolutePath().normalize();
         Path stop = root.toAbsolutePath().normalize();
         while (at != null && at.startsWith(stop) && !at.equals(stop)) {
             try (var entries = java.nio.file.Files.list(at)) {
                 if (entries.findAny().isPresent()) {
-                    return;
+                    break;
                 }
                 java.nio.file.Files.delete(at);
+                deleted.add(at);
             } catch (java.io.IOException | RuntimeException e) {
-                return;
+                break;
             }
             at = at.getParent();
         }
+        return deleted;
     }
 
     /** The position just past the end of {@code text}, in LSP's UTF-16 units. */
