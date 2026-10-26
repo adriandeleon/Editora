@@ -206,11 +206,14 @@ class JdtlsClientSettingsProbeTest {
         Files.writeString(src.resolve("Helper.java"), HELPER);
         Files.writeString(src.resolve("Broken.java"), BROKEN);
         Files.writeString(src.resolve("Ambig.java"), AMBIGUOUS);
-        Files.writeString(project.resolve("pom.xml"), """
+        // The running JDK's release: a JDK 21 from distro packages has no sources, and its parameter docs were
+        // missing for that reason alone (fourth review DF1).
+        Files.writeString(
+                project.resolve("pom.xml"), """
                 <project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>
                 <groupId>demo</groupId><artifactId>settings-probe</artifactId><version>1</version>
-                <properties><maven.compiler.release>21</maven.compiler.release></properties></project>
-                """);
+                <properties><maven.compiler.release>%d</maven.compiler.release></properties></project>
+                """.formatted(Runtime.version().feature()));
         String app = src.resolve("App.java").toUri().toString();
         String broken = src.resolve("Broken.java").toUri().toString();
         String ambiguous = src.resolve("Ambig.java").toUri().toString();
