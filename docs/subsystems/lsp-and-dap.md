@@ -428,8 +428,13 @@ launched on the Java its installed bundles require (`JavaRuntimes.serverMinMajor
 said `ServiceReady` itself (it is still importing) a joining window is told "Starting", not the handshake's ready.
 Go to Super Method (`LspCoordinator.gotoSuperMethod`) finds the member at the caret in `MemberSpan`s (whole ranges,
 every child kept, unlike the Structure outline), reads lambdas and `super(...)` calls with `JavaMembers`, and walks
-the type hierarchy for a named type's method (`SuperWalk`), falling back to `java/findLinks`, which answers only for
-a class's method at its name. Every `java/*` request
+the type hierarchy (`SuperWalk`) for what `java/findLinks` misses: findLinks answers first and is exact for a class's
+method (empty means none: a static, private or overloading method), but skips interface methods, a second interface
+and some anonymous classes. The walk matches override-equivalent signatures (`JavaMembers.overridden`: parameter
+types, a type variable matching any reference type), drops a hit whose type another hit's type extends, reads
+`Object` only for its own methods' names, and caches library outlines per session. A hierarchy item's line can
+differ from the outline's for the same type, so a type is also found by name. Class-file outlines have no anonymous
+classes or initializers: `JavaMembers.anonymousMethod` finds them in the text. Every `java/*` request
 sent through `rawRequest` must be declared on `JdtLanguageServer`: LSP4J types a response by that registry and
 turns an undeclared method's answer into null (`JdtLanguageServerProtocolTest` checks every literal).
 
