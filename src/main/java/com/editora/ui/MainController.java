@@ -3744,6 +3744,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
             });
 
+    /** Toolbar run-configuration selector + its Run/Debug/Stop buttons (#765). */
     @FXML
     private javafx.scene.control.ComboBox<com.editora.config.RunConfiguration> runConfigCombo;
 
@@ -5761,7 +5762,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         return list;
     }
 
-    /** Whether any enabled build tool currently has a detected marker file (drives the shared console stripe). */
     // --- Git / GitHub CLI transcripts (their own Output tabs) ------------------------------
 
     /**
@@ -5831,6 +5831,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         return git != null && git.isAvailable();
     }
 
+    /** Whether any enabled build tool currently has a detected marker file (drives the shared console stripe). */
     private boolean anyBuildDetected() {
         for (BuildCoordinator c : buildCoordinators) {
             if (c.isEnabled() && c.isDetected()) {
@@ -7181,13 +7182,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Consent before generating from an archetype we did not vet (a user-typed GAV, or one pulled from the
-     * remote catalog). {@code archetype:generate} downloads and executes third-party Maven plugin code, and
-     * the workspace-trust gate cannot cover it: that only fires when a repo ships an {@code mvnw}, and a
-     * brand-new empty directory has none. Default button is Cancel, so dismissing never grants consent.
-     */
-
-    /**
      * The HTTP Client's secrets gate: a {@code .http} request in {@code file} that reads {@code reads} (the secret
      * sources it resolves, as written — {@code $env TOKEN}, {@code $dotenv KEY}) runs only from a trusted folder,
      * the same trust store as build wrappers. Asked about the open project when the file is inside it, else the
@@ -7455,15 +7449,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // --- Git Log / History tool window -----------------------------------------------------------
 
-    /** Read-only diff of one file at a commit vs its first parent (from the Git Log file list). */
-
     // --- TODO / highlight patterns ---------------------------------------------------------------
 
-    /** The compiled-pattern matcher pushed to every buffer; rebuilt on init + each settings apply. */
-
     // --- Markdown lint ---------------------------------------------------------------------------
-
-    /** A cached parse of one {@code .markdownlint.json} (keyed by path, invalidated by mtime). */
 
     // --- Local File History --------------------------------------------------------------------
 

@@ -69,6 +69,7 @@ final class TodoCoordinator {
     private List<String> keywords = List.of();
 
     private @Nullable CommandRegistry registry;
+    /** The compiled-pattern matcher pushed to every buffer; rebuilt on init + each settings apply. */
     private TodoMatcher matcher = text -> List.of();
     /** Effective highlight on/off (Settings.todoHighlight). */
     private boolean highlightOn;

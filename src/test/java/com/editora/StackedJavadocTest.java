@@ -10,14 +10,14 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * No Javadoc comment may end on the line directly above another one. The first of two stacked comments
- * documents nothing: it is almost always a member's doc that lost its member when something was inserted
- * between them, so the reader of either member sees the wrong text.
+ * No Javadoc comment may sit above another one with only blank lines or {@code //} comments between them. The
+ * first of two stacked comments documents nothing: it is almost always a member's doc that lost its member when
+ * something was inserted between them, so the reader of either member sees the wrong text.
  */
 class StackedJavadocTest {
 
     @Test
-    void noJavadocCommentSitsDirectlyAboveAnother() throws Exception {
+    void noJavadocCommentSitsAboveAnother() throws Exception {
         Path sourceRoot = Path.of("src/main/java");
         assertTrue(Files.isDirectory(sourceRoot), "Run from the Maven project root");
         var stacked = new ArrayList<String>();
@@ -37,7 +37,10 @@ class StackedJavadocTest {
                         + " comment):\n" + String.join("\n", stacked));
     }
 
-    /** The 1-based first lines of the Javadoc comments that end directly above another {@code /**}. */
+    /**
+     * The 1-based first lines of the Javadoc comments followed by another {@code /**}, skipping blank lines and
+     * {@code //} comment lines between them.
+     */
     static List<Integer> stackedComments(List<String> lines) {
         var hits = new ArrayList<Integer>();
         int i = 0;
@@ -47,7 +50,12 @@ class StackedJavadocTest {
                 while (i < lines.size() && !lines.get(i).strip().endsWith("*/")) {
                     i++;
                 }
-                if (i + 1 < lines.size() && lines.get(i + 1).strip().startsWith("/**")) {
+                int next = i + 1;
+                while (next < lines.size()
+                        && (lines.get(next).isBlank() || lines.get(next).strip().startsWith("//"))) {
+                    next++;
+                }
+                if (next < lines.size() && lines.get(next).strip().startsWith("/**")) {
                     hits.add(start + 1);
                 }
             }

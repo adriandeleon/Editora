@@ -654,7 +654,6 @@ public class EditorBuffer implements TabContent {
     private java.util.function.UnaryOperator<@Nullable Path> snippetWorkspaceRoot = file -> null;
     private java.util.function.Consumer<int[]> snippetProgress = progress -> {};
     private @Nullable SnippetFieldOverlay snippetOverlay; // lazily attached when the first session starts
-    /** Resolves completions for the typed prefix; injected by the controller (default: none). */
 
     // Settings: auto-show docs beside the list
     // per-open session flag (reset on each popup open; Ctrl+Q toggles)
@@ -1073,6 +1072,12 @@ public class EditorBuffer implements TabContent {
         return completionActions.codeActionsShowing();
     }
 
+    /**
+     * Shows {@code actions} at the caret and calls {@code onAccept} with the chosen one.
+     *
+     * <p>Focus stays in the editor — the popup is focus-less and this buffer's key filter drives it — which
+     * is why the caret keeps blinking where the fix will land while the list is open.
+     */
     public void showCodeActions(List<CodeAction> actions, java.util.function.Consumer<CodeAction> onAccept) {
         completionActions.showCodeActions(actions, onAccept);
     }
@@ -9168,20 +9173,6 @@ public class EditorBuffer implements TabContent {
     }
 
     // ---- Completion documentation side-popup (IntelliJ "quick documentation") ----
-
-    /**
-     * Popup navigation/accept/dismiss while it's open. Registered <b>after</b> the snippet/indent filters
-     * so it runs first: with the popup open, Tab/Enter accept the selection (instead of expanding a
-     * snippet or inserting a newline); ↑/↓ move; Esc closes; caret-moving keys dismiss. With the popup
-     * closed it does nothing, so normal Tab/Enter behavior is unaffected.
-     */
-
-    /**
-     * Shows {@code actions} at the caret and calls {@code onAccept} with the chosen one.
-     *
-     * <p>Focus stays in the editor — the popup is focus-less and this buffer's key filter drives it — which
-     * is why the caret keeps blinking where the fix will land while the list is open.
-     */
 
     /**
      * Monotonic count of edits made to this buffer's document. Callers that hand work to an async round-trip

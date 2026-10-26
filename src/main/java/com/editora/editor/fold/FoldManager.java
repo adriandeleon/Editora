@@ -728,9 +728,6 @@ public final class FoldManager {
         this.bulbTooltip = tooltip == null ? () -> "" : tooltip;
     }
 
-    /** Wires the Personal-Notes gutter marker: a predicate for which lines carry a note + a click handler
-     *  (clicking the marker opens/edits the note on that line). */
-
     /**
      * Wires the gutter Run column (Java 25 compact source files): {@code enabled} reserves the fixed-width
      * slot on every row while this is a compact source file (so the glyph appearing never shifts text),

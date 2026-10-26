@@ -113,6 +113,7 @@ public final class BufferCompletion {
         int[] lspPosition(CodeArea a, int offset);
     }
 
+    /** Resolves completions for the typed prefix; injected by the controller (default: none). */
     private CompletionProvider completionProvider = (s, d, p, sp, prose) -> List.of();
     /** What {@code {{} completion offers in a {@code .http} buffer; null: only the dynamic built-ins. */
     private java.util.function.@Nullable Supplier<com.editora.http.HttpVariableIndex.Context> httpVariables;
@@ -670,6 +671,12 @@ public final class BufferCompletion {
         });
     }
 
+    /**
+     * Popup navigation/accept/dismiss while it's open. Registered <b>after</b> the snippet/indent filters
+     * so it runs first: with the popup open, Tab/Enter accept the selection (instead of expanding a
+     * snippet or inserting a newline); ↑/↓ move; Esc closes; caret-moving keys dismiss. With the popup
+     * closed it does nothing, so normal Tab/Enter behavior is unaffected.
+     */
     public void addCompletionKeys(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (e.isConsumed()) return;
