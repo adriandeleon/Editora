@@ -248,6 +248,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java: a failed import names the real cause** (a Gradle build's "Could not find method …", not the generic
+  "Could not fetch model"), and belongs to its own project: in a window of several projects one failed import no
+  longer marks the others, and it clears once that project imports.
+- **Doctor's Update no longer half-deletes an install that is in use.** When another window or program still holds
+  the old jdtls open (on Windows), the update is refused with a reason and the old copy stays whole.
+
 - **Java: dragging a `.java` file or package in the Project tree moves the class**: its package line and the
   imports of its users are updated, and Undo Move takes both back. It used to move the file only, and the project
   stopped compiling.
