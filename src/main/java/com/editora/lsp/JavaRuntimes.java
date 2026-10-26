@@ -219,6 +219,14 @@ public final class JavaRuntimes {
             return List.of();
         }
         String preferred = realPath(preferredHome);
+        // Each JDK's own path is resolved too: a JDK reached through a symlink or an alias (macOS's /var →
+        // /private/var, a Windows 8.3 short name) is the preferred one even though the strings differ.
+        java.util.Set<String> preferredPaths = new java.util.HashSet<>();
+        for (Jdk j : jdks) {
+            if (j != null && j.path() != null && preferred != null && preferred.equals(realPath(j.path()))) {
+                preferredPaths.add(j.path());
+            }
+        }
         Map<Integer, String> byMajor = new LinkedHashMap<>();
         jdks.stream()
                 .filter(j -> j != null
@@ -232,7 +240,7 @@ public final class JavaRuntimes {
                         // DF1), even as the preferred JDK, which then yields to its twin (fifth review DF1)
                         .thenComparing(j -> local && !hasSources(j.path()))
                         // then the preferred JDK holds its major's slot against another install of the same major
-                        .thenComparing(j -> !j.path().equals(preferred)))
+                        .thenComparing(j -> !preferredPaths.contains(j.path())))
                 .forEach(j -> byMajor.putIfAbsent(j.major(), j.path()));
 
         if (byMajor.isEmpty()) {
@@ -240,7 +248,7 @@ public final class JavaRuntimes {
         }
         // The default is the preferred JDK's major: its twin with sources stands in for it.
         Integer preferredMajor = jdks.stream()
-                .filter(j -> j != null && j.path() != null && j.path().equals(preferred))
+                .filter(j -> j != null && j.path() != null && preferredPaths.contains(j.path()))
                 .map(Jdk::major)
                 .findFirst()
                 .orElse(null);
@@ -444,7 +452,7 @@ public final class JavaRuntimes {
             if (j == null || j.major() < minMajor || j.path() == null) {
                 continue;
             }
-            if (j.path().equals(preferred)) {
+            if (preferred != null && (j.path().equals(preferred) || preferred.equals(realPath(j.path())))) {
                 pick = j;
                 break;
             }

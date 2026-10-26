@@ -294,6 +294,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Default JDK is recognised when it is reached through a symlink.** jdtls's default runtime and the Java it
+  runs on compared the Default JDK's resolved path with each JDK's path as found, so a JDK listed through a link (or
+  macOS's `/var` → `/private/var`, a Windows short name) lost its place as the default.
+- **Markdown: with scroll sync off, the preview no longer jumps once.** A follow queued while sync was on still ran
+  after it was switched off; it now checks again. A mode switch still hands the position over.
 - **A crash's log is no longer erased by the launch after it.** Each start truncated `editora-session.log`, so the
   log that recorded a crash was gone by the time Editora was reopened to report it. The previous session's file is
   now kept as `editora-session.prev.log` (left out of config exports, like the session log).
