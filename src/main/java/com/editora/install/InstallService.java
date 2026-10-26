@@ -714,13 +714,8 @@ public final class InstallService {
     private static void swapIn(Path staged, Path dest, Path aside) throws IOException {
         boolean previous = false;
         if (Files.exists(dest, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-            try {
-                Files.move(dest, aside);
-                previous = true;
-            } catch (IOException busy) {
-                // Cannot be renamed (on Windows: a file inside is open). Clear it in place, as before.
-                deleteRecursively(dest);
-            }
+            moveAside(dest, aside);
+            previous = true;
         }
         try {
             Files.move(staged, dest);
@@ -737,6 +732,38 @@ public final class InstallService {
         if (previous) {
             deleteRecursively(aside);
         }
+    }
+
+    /** How long a just-stopped server gets to let go of its files before the old install counts as in use. */
+    static final int ASIDE_ATTEMPTS = 10;
+
+    static final long ASIDE_WAIT_MILLIS = 300;
+
+    /**
+     * Renames the old install out of the way. On Windows a file another process holds open cannot be renamed:
+     * a server stopped a moment ago may still be letting go, so it is tried again for a few seconds. Then the
+     * install is refused and the old copy left whole. Deleting it in place instead, as before, could stop part
+     * way through and leave neither copy (third review CT6).
+     */
+    static void moveAside(Path dest, Path aside) throws IOException {
+        IOException last = null;
+        for (int attempt = 0; attempt < ASIDE_ATTEMPTS; attempt++) {
+            try {
+                Files.move(dest, aside);
+                return;
+            } catch (IOException busy) {
+                last = busy;
+                try {
+                    Thread.sleep(ASIDE_WAIT_MILLIS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        throw new IOException(
+                "the existing install at " + dest + " is in use by another window or program; close it and try again",
+                last);
     }
 
     /** Downloads + extracts a per-OS binary archive; returns the resolved server command (binary + suffix). */

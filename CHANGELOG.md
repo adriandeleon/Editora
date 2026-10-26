@@ -248,6 +248,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java: a failed import names the real cause** (a Gradle build's "Could not find method …", not the generic
+  "Could not fetch model"), and belongs to its own project: in a window of several projects one failed import no
+  longer marks the others, and it clears once that project imports.
+- **Doctor's Update no longer half-deletes an install that is in use.** When another window or program still holds
+  the old jdtls open (on Windows), the update is refused with a reason and the old copy stays whole.
+
 - **Java: dragging a `.java` file or package in the Project tree moves the class**: its package line and the
   imports of its users are updated, and Undo Move takes both back. It used to move the file only, and the project
   stopped compiling.
@@ -285,8 +291,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lines) and closes a new block when the next `}` belongs to the enclosing one.
 - **Java: Smart Type completion** finds the type behind a qualifier (`String s = user.`), in a ternary branch and
   at a varargs argument.
-- **Java: the project's code style follows `.editorconfig` changes** without a restart (a changed formatter profile is
-  sent under a new name, but in a full window still applies only after Restart Language Servers), and the quiet
+- **Java: the project's code style follows `.editorconfig` and formatter-profile changes** without a restart (an
+  edited profile is sent under a new name, which is what makes jdtls read it again), and the quiet
   import chooser answers only for the document it was raised for. jdtls's bundle reload no longer logs an error
   on every start.
 - **Java: Clean Java Workspace wins against another window's restart**, and a window joining a ready shared server
