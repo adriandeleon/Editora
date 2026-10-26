@@ -818,7 +818,8 @@ public class WindowManager {
     }
 
     /**
-     * As above, additionally applying a focus mode the delivering launch asked for — the single-instance path
+     * {@code openExternalFiles(files)}, additionally applying a focus mode the delivering launch asked for — the
+     * single-instance path
      * ({@code App.openForwardedLaunch}), where the user clicked a specific launcher entry such as "Editora
      * Expert Mode" and a window already exists to receive it.
      *

@@ -243,6 +243,55 @@ class LspSuperMethodFxTest {
         assertEquals(2, fx.ops.readOnlyDocs.size(), "AbstractList opened from ArrayList's tab: " + asked);
     }
 
+    /** A constructor with no super(...) call goes to the superclass's no-argument constructor (eighth review BR2). */
+    @Test
+    void anImplicitSuperCallGoesToTheNoArgumentConstructor() throws Exception {
+        Path base =
+                Files.writeString(root.resolve("Base.java"), "class Base {\n    Base(int x) {}\n    Base() {}\n}\n");
+        String source = "class A extends Base {\n    A() {\n        int y = 1;\n    }\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        DocumentSymbol a = member("A", SymbolKind.Class, 0, 4, 0, 6);
+        a.getChildren().add(member("A()", SymbolKind.Constructor, 1, 3, 1, 4));
+        fx.server().documentSymbolResponse = List.of(Either.forRight(a));
+        DocumentSymbol baseType = member("Base", SymbolKind.Class, 0, 3, 0, 6);
+        baseType.getChildren().add(member("Base(int)", SymbolKind.Constructor, 1, 1, 1, 4));
+        baseType.getChildren().add(member("Base()", SymbolKind.Constructor, 2, 2, 2, 4));
+        fx.server().documentSymbolByUri.put(com.editora.lsp.LspTestHooks.uri(base), List.of(Either.forRight(baseType)));
+        String uri = root.resolve("A.java").toUri().toString();
+        fx.server().typeHierarchyResponse =
+                List.of(new TypeHierarchyItem("A", SymbolKind.Class, uri, range(0, 0, 1), range(0, 6, 7)));
+        fx.server().supertypesResponse = List.of(new TypeHierarchyItem(
+                "Base", SymbolKind.Class, base.toUri().toString(), range(0, 0, 1), range(0, 6, 10)));
+        fx.caret(b, 2, 10);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(base, 2, 4)), fx.ops.jumps, "Base(), not Base(int)");
+    }
+
+    /** On an anonymous class itself, the type it instantiates (eighth review BQ2). */
+    @Test
+    void onAnAnonymousClassItGoesToTheTypeItMakes() throws Exception {
+        Path task = Files.writeString(root.resolve("Task.java"), "interface Task {\n    void run();\n}\n");
+        String source = "class A {\n    void go() {\n        Task t = new Task() {\n            int n;\n"
+                + "            public void run() {}\n        };\n    }\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        DocumentSymbol a = member("A", SymbolKind.Class, 0, 7, 0, 6);
+        DocumentSymbol go = member("go()", SymbolKind.Method, 1, 6, 1, 9);
+        DocumentSymbol anon = member("new Task() {...}", SymbolKind.Class, 2, 5, 2, 21);
+        anon.getChildren().add(member("run()", SymbolKind.Method, 4, 4, 4, 24));
+        go.getChildren().add(anon);
+        a.getChildren().add(go);
+        fx.server().documentSymbolResponse = List.of(Either.forRight(a));
+        fx.server().typeHierarchyResponse = List.of(new TypeHierarchyItem(
+                "Task", SymbolKind.Interface, task.toUri().toString(), range(0, 0, 1), range(0, 10, 14)));
+        fx.caret(b, 3, 14); // the anonymous class's field
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(task, 0, 10)), fx.ops.jumps);
+    }
+
     @Test
     void nothingFoundIsSaid() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);

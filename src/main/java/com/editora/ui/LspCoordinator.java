@@ -7685,9 +7685,9 @@ final class LspCoordinator {
     }
 
     /**
-     * Applies a workspace edit's per-file batches through undoable buffers (FX thread; registered as the
-     * manager's apply-edit handler — both a picked action's inline edit and a server-initiated
-     * {@code workspace/applyEdit} land here). All-or-nothing: if any touched file can't be opened editable,
+     * Applies a workspace edit's per-file batches through undoable buffers (FX thread; the manager's apply-edit
+     * handler, {@link #applyWorkspaceEditsConfirmed}, ends here — both a picked action's inline edit and a
+     * server-initiated {@code workspace/applyEdit} land here). All-or-nothing: if any touched file can't be opened editable,
      * nothing is applied — half a refactoring corrupts the workspace. A file with no open tab opens in a
      * background tab so its change is visible and undoable.
      *
