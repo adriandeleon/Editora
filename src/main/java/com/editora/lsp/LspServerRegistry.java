@@ -339,6 +339,18 @@ public final class LspServerRegistry {
     }
 
     /**
+     * As {@link #protocolLanguageId(String)} for the document {@code file}: an XML-routed DTD ({@code .dtd},
+     * {@code .ent}, {@code .mod}) opens as {@code dtd} and an XSLT stylesheet as {@code xsl}, the ids vscode-xml
+     * sends lemminx for them (XML review A8). lemminx itself tells a DTD by its URI, so this only keeps Editora in
+     * step with the reference client.
+     */
+    public static String protocolLanguageId(String routeLanguageId, @Nullable Path file) {
+        String id = protocolLanguageId(routeLanguageId);
+        Path name = file == null ? null : file.getFileName();
+        return "xml".equals(routeLanguageId) && name != null ? XmlServer.languageId(name.toString()) : id;
+    }
+
+    /**
      * The root markers for a server id in tiers, nearest-first within a tier and tier by tier: Python's own
      * project files ({@code pyproject.toml}, {@code setup.py}, {@code setup.cfg}) first, then the repository,
      * and only then a {@code requirements.txt}/{@code Pipfile}. Nearest-of-any let a {@code docs/requirements.txt}
@@ -408,9 +420,14 @@ public final class LspServerRegistry {
      * checks a 10,000-line file in about four seconds, and long generated or vendored Python modules are
      * common, so Python keeps it to 50,000 lines (Python review B10). jdtls reconciles a 12,000-line file in well
      * under a second, and large generated parsers, protobuf classes and legacy classes lost every diagnostic and
-     * navigation, so Java keeps it to 50,000 lines too (Java review C16). 0 = the tier's default (no server).
+     * navigation, so Java keeps it to 50,000 lines too (Java review C16). lemminx validates and outlines a
+     * 60,000-line document in under a second, so XML keeps it to {@link XmlServer#HEAVY_FILE_LINE_LIMIT} (XML review
+     * A10). 0 = the tier's default (no server).
      */
     public static int heavyFileLspLineLimit(String languageId) {
+        if ("xml".equals(languageId)) {
+            return XmlServer.HEAVY_FILE_LINE_LIMIT;
+        }
         return "python".equals(languageId) || "java".equals(languageId) ? 50_000 : 0;
     }
 

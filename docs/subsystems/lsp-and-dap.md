@@ -628,6 +628,24 @@ share one session rooted at `<config>/lsp/loose-files`, with no separate syntax 
 file an inferred project of its own because none lies under that root. The server's PATH starts with the bin
 folder of the Node.js `NodeRuntimes` resolves.
 
+**The XML server (lemminx) is one process per window.** `XmlServer.sharedRoot` roots every XML file outside the
+open project at the same `<config>/lsp/loose-files`, markers or not, since lemminx keeps no project model (a folder
+of configs or a Maven reactor opened file by file used to start one native process per folder or module). Files
+that only XML reads reach it: `LanguageRegistry` and `GrammarRegistry` map the XML dialects (`.dtd .ent .mod .rng
+.xsl .xslt .xsd .wsdl .xlf .xliff .plist .csproj …`, a `go.mod` excepted) to `xml`, and `Modeline.detect` makes a
+file whose name says nothing XML when it opens with `<?xml` (not a `.txt`). A DTD opens as language id `dtd` and a
+stylesheet as `xsl`, as vscode-xml sends them. lemminx keeps its server in the large-source tier up to
+`XmlServer.HEAVY_FILE_LINE_LIMIT` lines. Its protocol extensions: `initializationOptions.extendedClientCapabilities`
+(reference code lenses, the binding wizard, actionable notifications), `xml/actionableNotification` (handled like
+jdtls's), `xml/executeClientCommand` and the binding wizard's quick fix (`XmlLspActions`: `xml.open.uri`,
+`xml.show.references`, `xml.open.binding.wizard` → `xml.associate.grammar.insert`). It registers its commands only
+for a client with dynamic `workspace/executeCommand` registration, which `clientCapabilities("xml")` alone
+declares; registrations add up (`withCommands`). Go to Definition (and so Ctrl/Cmd-click and Peek) on the XML
+server goes through `XmlServer.definition`: lemminx's own answer, unless that is only the element's other tag, then
+`typeDefinition` (the XSD declaration), then the `documentLink` at the caret (`schemaLocation`, DOCTYPE system id,
+`xml-model` href, `xsl:include`). Editora's own auto-close and auto-rename tag stay; lemminx's `xml/closeTag` and
+`linkedEditingRange` are not requested.
+
 **A refused `initialize` is not a crash.** A server that answers `initialize` with an error (its message kept as
 `LanguageServerSession.initializeRefusal`; the exit is reported only after LSP4J has read the server's last
 output) is dropped without the crash path and reported through `onStartRefused` with its own words. Such roots,

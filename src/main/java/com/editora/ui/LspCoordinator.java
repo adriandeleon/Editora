@@ -546,6 +546,15 @@ final class LspCoordinator {
         lspManager.setOpenDocumentDiagnosticsOnly(!projectWideProblems); // the Problems window's default scope
         lspManager.setOnDiagnosticsUnchanged(this::diagnosticsUnchanged);
         lspManager.setClientUi(new ServerPrompts()); // a server's questions (Metals' "Import build?") get asked
+        xml = new XmlLspActions(
+                host, lspManager, ops::openAndGoto, this::activeLspBuffer, this::lspPath, () -> findReferences(true));
+    }
+
+    /** The XML server's commands and client commands (XML review B15, D6). */
+    private final XmlLspActions xml;
+
+    XmlLspActions xml() {
+        return xml;
     }
 
     /**
@@ -1974,7 +1983,7 @@ final class LspCoordinator {
         lspManager.setLooseRoot(config == null ? null : config.getConfigDir().resolve(LOOSE_ROOT));
     }
 
-    /** The shared root of loose JavaScript/TypeScript files, under the config folder. */
+    /** The shared root of loose JavaScript/TypeScript (and XML) files, under the config folder. */
     static final String LOOSE_ROOT = "lsp/loose-files";
 
     /** The project root whose withheld overrides were last announced, so a gating pass does not repeat it. */
@@ -2799,6 +2808,9 @@ final class LspCoordinator {
             return origin.root(); // a library file reached from the project: read in the project's server (B4)
         }
         Path loose = lspManager.looseRoot();
+        if (loose != null && com.editora.lsp.XmlServer.isXml(serverId)) {
+            return com.editora.lsp.XmlServer.sharedRoot(ops.lspProjectRoot(), file, loose); // one lemminx (A7)
+        }
         if (loose != null
                 && com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)
                 && com.editora.lsp.RootResolver.isLoose(
@@ -4095,6 +4107,12 @@ final class LspCoordinator {
         @Override
         public void openLocation(String serverId, Path file, int line, int column) {
             ops.openAndGoto(file, line, column);
+        }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<Object> clientCommand(
+                String serverId, String command, List<Object> arguments) {
+            return xml.clientCommand(serverId, command, arguments);
         }
 
         private javafx.scene.control.Alert.AlertType alertType(org.eclipse.lsp4j.MessageType type) {
@@ -7023,8 +7041,8 @@ final class LspCoordinator {
         if (runGeneratePrompt(path, item)) {
             return; // a jdtls generate prompt: we drive it, not the server (#741)
         }
-        if (runRefactorCommand(path, item)) {
-            return; // likewise a refactoring that asks the user where to, or what
+        if (runRefactorCommand(path, item) || xml.runsCodeAction(path, item)) {
+            return; // likewise a refactoring that asks the user where to, or what; or lemminx's binding wizard
         }
         LspManager.CodeActionItem applied = item;
         beginReportedEdit();

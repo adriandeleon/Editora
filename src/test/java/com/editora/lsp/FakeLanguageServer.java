@@ -279,6 +279,21 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
                 : CompletableFuture.completedFuture(signatureHelpResponse);
     }
 
+    /** The links {@code textDocument/documentLink} answers with; resolve fills a missing target from data. */
+    public List<org.eclipse.lsp4j.DocumentLink> documentLinkResponse = List.of();
+
+    @Override
+    public CompletableFuture<List<org.eclipse.lsp4j.DocumentLink>> documentLink(
+            org.eclipse.lsp4j.DocumentLinkParams params) {
+        return answer(documentLinkResponse);
+    }
+
+    @Override
+    public CompletableFuture<org.eclipse.lsp4j.DocumentLink> documentLinkResolve(org.eclipse.lsp4j.DocumentLink link) {
+        var resolved = new org.eclipse.lsp4j.DocumentLink(link.getRange(), String.valueOf(link.getData()));
+        return CompletableFuture.completedFuture(resolved);
+    }
+
     public final List<org.eclipse.lsp4j.CodeLensParams> codeLenses = new ArrayList<>();
     /** The lenses {@code codeLens/resolve} was asked about, in order. */
     public final List<org.eclipse.lsp4j.CodeLens> resolvedCodeLenses = new ArrayList<>();

@@ -17,6 +17,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+<!-- XML review: routing -->
+- **XML: DTDs, RELAX NG schemas and other XML dialects are XML.** `.dtd .ent .mod .rng .fo .xspec .sch .csproj
+  .vbproj .fsproj .props .targets .nuspec .resx .xaml .xlf .xliff .plist .xul .kml .gpx .tld .jnlp .xmi .ditamap
+  .dita` open with XML highlighting, folding, comments and the XML language server instead of as spell-checked
+  plain text, and a file with no telling extension that starts with `<?xml` (an `AndroidManifest`) is XML too.
+  `go.mod` stays plain text; `.xhtml` stays HTML.
+- **XML: Go to Definition opens the schema.** On a `schemaLocation`, a DOCTYPE's DTD, an `xml-model` href or an
+  `xsl:include`, Go to Definition and Ctrl/Cmd-click open the referenced file; on an element or attribute name they
+  go to its XSD declaration instead of the element's own end tag.
+- **XML: one language server per window.** XML files outside the project, in any number of folders or Maven
+  modules, share one lemminx instead of starting one each.
+- **XML: files up to 100,000 lines keep the language server** (it stopped at 10,000), and the large-file notice
+  now says that folding, Structure, spell check and the language server are off too; Structure says why it is
+  empty.
+- **XML: lemminx's commands and quick fixes work.** New palette commands XML: Revalidate File, XML: Revalidate
+  All Open Files and XML: Bind to Grammar…; the "Bind to existing grammar/schema" quick fix picks an XSD, DTD or
+  RELAX NG file and binds it with `xsi:noNamespaceSchemaLocation`, a DOCTYPE or `xml-model`; lemminx's buttons on
+  its notifications and its client commands are carried out.
+
 - **Java: Go to Super Method reads type arguments.** In `interface StrStore extends Store<String>`, `save(Integer)`
   opened `Store.save(T)`, and `Multi.accept(Integer)` offered a second, wrong branch; `T` now stands for `String`
   there, so neither does, and `take(T[])` takes only a `String[]`. It also works on a method reference

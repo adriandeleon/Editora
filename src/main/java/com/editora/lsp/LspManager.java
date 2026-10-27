@@ -203,7 +203,8 @@ public final class LspManager {
      * The one root every loose JavaScript/TypeScript file (no project, no tsconfig/jsconfig/package.json/.git
      * above it) shares, so ten scripts in ten folders run one server instead of ten (Node review B7). A folder
      * of Editora's own that holds none of them: the server then gives each file an inferred project of its own.
-     * Null until the coordinator sets it.
+     * Every XML file outside the open project shares it too, markers or not: lemminx keeps no project model
+     * (XML review A7, {@link XmlServer#sharedRoot}). Null until the coordinator sets it.
      */
     private volatile @Nullable Path looseRoot;
 
@@ -755,6 +756,27 @@ public final class LspManager {
             });
         }
 
+        @Override
+        public java.util.concurrent.CompletableFuture<Object> clientCommand(
+                String serverId, String command, List<Object> arguments) {
+            var answer = new java.util.concurrent.CompletableFuture<Object>();
+            Platform.runLater(() -> {
+                LspClientUi ui = clientUi;
+                if (ui == null || closed) {
+                    answer.complete(null);
+                    return;
+                }
+                try {
+                    ui.clientCommand(serverId, command, arguments)
+                            .whenComplete((v, e) -> answer.complete(e == null ? v : null));
+                } catch (RuntimeException e) {
+                    LOG.log(java.util.logging.Level.FINE, "client command not run: " + command, e);
+                    answer.complete(null);
+                }
+            });
+            return answer;
+        }
+
         private java.util.concurrent.CompletableFuture<String> onFx(
                 java.util.function.Function<LspClientUi, java.util.concurrent.CompletableFuture<String>> ask) {
             var answer = new java.util.concurrent.CompletableFuture<String>();
@@ -970,7 +992,7 @@ public final class LspManager {
                 session.alias(uri, DocumentUris.of(shadow), JavaScriptShadow::wireText);
             }
         }
-        session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId), text, this);
+        session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId, file), text, this);
     }
 
     /** Where the stand-in {@code .java} files for Java scripts live (see {@link JavaScriptShadow}); lazily made. */
@@ -4333,7 +4355,10 @@ public final class LspManager {
             int line,
             int character,
             Consumer<List<Target>> cb) {
-        requestLocations(s, documentUri, line, character, LanguageServerSession::definition, cb, null);
+        // XML: the grammar declaration instead of the element's own other tag, else the linked schema (B5, B10).
+        LocationRequest request =
+                s != null && XmlServer.isXml(s.serverId()) ? XmlServer::definition : LanguageServerSession::definition;
+        requestLocations(s, documentUri, line, character, request, cb, null);
     }
 
     private void requestLocations(
@@ -5155,6 +5180,9 @@ public final class LspManager {
             case "scala" -> metalsInitOptions();
             case ASTRO_SERVER_ID ->
                 astroTsdk == null ? null : Map.of("typescript", Map.of("tsdk", astroTsdk.toString()));
+            // lemminx's protocol extensions Editora carries out (XML review D6). The xml settings object is
+            // the Settings → LSP → XML section's (merge it in beside this key).
+            case XmlServer.SERVER_ID -> Map.of("extendedClientCapabilities", XmlServer.extendedClientCapabilities());
             case LspServerRegistry.MAVEN_POM_SERVER_ID ->
                 Map.of(
                         "settings",
@@ -6763,6 +6791,35 @@ public final class LspManager {
     public String serverUri(Path file) {
         LanguageServerSession s = sessionFor(file);
         return (s == null ? WireUris.LOCAL : s.uris()).toWire(uri(file));
+    }
+
+    /**
+     * Binds the XML document {@code file} to {@code grammar} with lemminx's {@link XmlServer#ASSOCIATE_GRAMMAR}
+     * ({@code bindingType} one of {@link XmlServer#bindingTypes}) and applies the edit it answers — the
+     * {@code xsi:noNamespaceSchemaLocation}, DOCTYPE or {@code xml-model} lemminx writes, with a path relative to
+     * the document (XML review D6). {@code cb} hears on the FX thread whether the edit landed.
+     */
+    public void xmlAssociateGrammar(Path file, Path grammar, String bindingType, Consumer<Boolean> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || !XmlServer.isXml(s.serverId())) {
+            Platform.runLater(() -> cb.accept(false));
+            return;
+        }
+        List<Object> args =
+                List.of(Map.of("uri", s.uris().toWire(uri(file))), s.uris().toWire(uri(grammar)), bindingType);
+        s.executeCommand(XmlServer.ASSOCIATE_GRAMMAR, args).whenComplete((result, error) -> {
+            org.eclipse.lsp4j.WorkspaceEdit edit = error == null ? XmlServer.associateEdit(result) : null;
+            if (error != null) {
+                lastCodeActionFailure = failureReason(error);
+            }
+            Platform.runLater(() -> {
+                if (edit == null) {
+                    cb.accept(false);
+                } else {
+                    applyWorkspaceEdit(edit, versionedBasis(s, edit), cb);
+                }
+            });
+        });
     }
 
     /**
