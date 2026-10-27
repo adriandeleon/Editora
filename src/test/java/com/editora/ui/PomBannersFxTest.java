@@ -17,7 +17,6 @@ import org.junit.jupiter.api.io.TempDir;
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -137,7 +136,8 @@ class PomBannersFxTest {
             MainController c = fx.controller;
             FxTestSupport.runOnFx(() -> c.openAndNavigate(pom, 1));
             awaitPomDetected(c);
-            assertNull(bannerTitle(c), "Install would change nothing there");
+            // Install would change nothing there: the file offers trust instead (XmlFolderTrust)
+            assertEquals(tr("xml.trust.pomNotice"), bannerTitle(c), "the trust offer, not Install");
         }
     }
 }
