@@ -160,8 +160,46 @@ public final class TerminalView extends Region {
      */
     private volatile @Nullable TerminalSelection selection;
 
-    /** Where the current drag began, so a backwards drag extends rather than restarts. */
-    private @Nullable Point selectionAnchor;
+    /**
+     * Where the current drag began, so a backwards drag extends rather than restarts.
+     *
+     * <p>Moved with its text as output scrolls, like the selection: a drag held while a build runs would otherwise
+     * extend from whatever row has since scrolled under where it began — and with autoscroll a drag routinely lasts
+     * long enough for that. Volatile for the same reason the selection is: the emulator thread moves it.
+     */
+    private volatile @Nullable Point selectionAnchor;
+
+    /**
+     * Whether {@link #selection} is a block — the same columns on every row — rather than a stream. A block's x is a
+     * <b>column</b>, not a slot; see {@link SelectionGeometry#blockDrag}.
+     */
+    private volatile boolean rectangular;
+
+    /** The column the current drag was pressed in, which a block needs and a stream does not. */
+    private int anchorColumn;
+
+    /** Whether the current drag makes a block, decided at the press and kept for the drag. */
+    private boolean blockDrag;
+
+    /** Whether the button is down on a drag of our own (not the scrollbar's, not a program's). */
+    private boolean dragging;
+
+    /**
+     * The selection's text as it was when the selection was made, so a later change to that text drops the
+     * highlight. A keystroke no longer does: typing a command under a selection of the output above it should leave
+     * that selection alone. What must not survive is a highlight over text that has been redrawn in place — a line
+     * editor rewriting the prompt — because copying it would then produce something the user never selected.
+     */
+    private volatile @Nullable String settledText;
+
+    /** Set by any buffer change while there is a selection; the next frame compares the text. */
+    private volatile boolean selectionToVerify;
+
+    /** Past this many rows the comparison is skipped: a Select All over a long history is not redrawn. */
+    private static final int VERIFIED_ROWS = 1000;
+
+    /** Copies each selection to the clipboard as it is made. A setting. */
+    private boolean copyOnSelect;
 
     /** Lines already in history, to derive the delta the history listener does not supply. */
     private int knownHistoryLines;
@@ -362,6 +400,7 @@ public final class TerminalView extends Region {
         buffer.addModelListener(() -> {
             onHistoryLineCountChanged();
             if (search != SearchState.NONE) searchStale = true;
+            if (selection != null) selectionToVerify = true;
             markDirty();
         });
         buffer.addHistoryBufferListener(this::onHistoryLineCountChanged);
@@ -741,6 +780,10 @@ public final class TerminalView extends Region {
                 @Override
                 public void consumeQueue(int x, int y, int nulIndex, int startRow) {}
             });
+            if (selectionToVerify && !dragging) {
+                selectionToVerify = false;
+                dropSelectionIfRewritten();
+            }
             drawSearch(g);
             drawSelection(g);
             drawLinkUnderline(g);
@@ -1067,7 +1110,7 @@ public final class TerminalView extends Region {
             }
         }
         if (session == null || !session.isRunning()) return;
-        if (scrollbackKey(e)) {
+        if (scrollbackKey(e) || clipboardKey(e)) {
             e.consume();
             return;
         }
@@ -1086,18 +1129,18 @@ public final class TerminalView extends Region {
                 if (KeyTrace.enabled()) KeyTrace.log(e, kitty);
                 if (kitty.length > 0) {
                     snapToLive();
-                    clearSelection();
                     session.send(kitty);
                 }
                 e.consume();
                 return;
             }
         }
+        // The selection is not cleared: it survives a keystroke, and goes only if the text under it
+        // changes. See settledText.
         byte[] encoded = KeyEncoding.encodePressed(e, session::keyCode, altIsMeta, ctrlAltIsMeta());
         if (KeyTrace.enabled()) KeyTrace.log(e, encoded);
         if (encoded != null) {
             snapToLive();
-            clearSelection();
             session.send(encoded);
             e.consume();
         }
@@ -1126,6 +1169,24 @@ public final class TerminalView extends Region {
             markDirty();
         }
         return true;
+    }
+
+    /**
+     * Shift+Insert pastes and Ctrl+Insert copies, the IBM CUA chords every X terminal and Windows console honours —
+     * ahead of the encoder, which would otherwise send the program {@code CSI 2;2~}. Only with exactly that modifier,
+     * so Insert alone, and with anything else held, still reaches the program.
+     */
+    private boolean clipboardKey(KeyEvent e) {
+        if (e.getCode() != KeyCode.INSERT || e.isAltDown() || e.isMetaDown()) return false;
+        if (e.isShiftDown() && !e.isControlDown()) {
+            paste();
+            return true;
+        }
+        if (e.isControlDown() && !e.isShiftDown()) {
+            copySelection();
+            return true;
+        }
+        return false;
     }
 
     /** The screen as a screen reader reads it, and where the cursor is in it. */
@@ -1179,7 +1240,6 @@ public final class TerminalView extends Region {
             if (kitty != null) {
                 if (kitty.length > 0) {
                     snapToLive();
-                    clearSelection();
                     session.send(kitty);
                 }
                 e.consume();
@@ -1190,7 +1250,6 @@ public final class TerminalView extends Region {
         if (KeyTrace.enabled()) KeyTrace.log(e, encoded);
         if (encoded != null) {
             snapToLive();
-            clearSelection();
             session.send(encoded);
             e.consume();
         }
@@ -1278,6 +1337,11 @@ public final class TerminalView extends Region {
     /** A cell's width in pixels, for tests. */
     double cellWidth() {
         return charWidth;
+    }
+
+    /** A row's height in pixels, for tests. */
+    double lineHeightForTest() {
+        return lineHeight;
     }
 
     /** Rows scrolled back from the live screen (0 at it, negative into history), for tests. */
@@ -1672,6 +1736,8 @@ public final class TerminalView extends Region {
 
         TerminalSelection current = selection;
         if (current != null) current.shiftY(-delta);
+        Point anchor = selectionAnchor;
+        if (anchor != null) selectionAnchor = new Point(anchor.x, anchor.y - delta);
         markDirty();
     }
 
@@ -1758,13 +1824,20 @@ public final class TerminalView extends Region {
     }
 
     private void onMouseReleased(MouseEvent e) {
-        dragScroll = 0;
-        dragScroller.stop();
+        boolean dragged = dragging;
+        dragging = false;
+        stopAutoScroll();
         if (pressedOnScrollBar) {
             pressedOnScrollBar = false;
             return;
         }
-        if (reportMouse(e, com.jediterm.core.input.MouseEvent.Type.RELEASED)) e.consume();
+        if (reportMouse(e, com.jediterm.core.input.MouseEvent.Type.RELEASED)) {
+            e.consume();
+            return;
+        }
+        // The end of a drag is when the selection is made; a double or triple click was made at its press. Anything
+        // else — a plain click — left no selection to announce.
+        if (dragged && selection != null) settleSelection();
     }
 
     // ---------------------------------------------------------------- links
@@ -2255,11 +2328,13 @@ public final class TerminalView extends Region {
             int history = buffer.getHistoryLinesCount();
             TerminalSelection all = new TerminalSelection(new Point(0, -history));
             all.updateEnd(new Point(slotsInRow(rows - 1), rows - 1));
+            rectangular = false;
             selection = all;
             selectionAnchor = new Point(0, -history);
         } finally {
             buffer.unlock();
         }
+        settleSelection();
         markDirty();
     }
 
@@ -2279,6 +2354,7 @@ public final class TerminalView extends Region {
         // the viewport scrolls into rows that no longer exist.
         selection = null;
         selectionAnchor = null;
+        settledText = null;
         scrollOrigin = 0;
         knownHistoryLines = 0;
         discardedHistoryLines = 0;
@@ -2339,17 +2415,41 @@ public final class TerminalView extends Region {
             e.consume();
             return;
         }
-        if (e.getButton() != MouseButton.PRIMARY || buffer == null) return;
+        if (buffer == null) return;
+        if (e.getButton() == MouseButton.MIDDLE) {
+            // Middle-click pastes the PRIMARY selection, as on every X11 terminal — read through wl-paste or xclip,
+            // since JavaFX's Clipboard is CLIPBOARD and nothing else. Where there is no PRIMARY (macOS, Windows) or no
+            // tool to read it, the clipboard. Reached only when the program did not take the press, or Shift
+            // bypassed it.
+            PrimarySelection.get(this::pasteText, this::paste);
+            e.consume();
+            return;
+        }
+        if (e.getButton() != MouseButton.PRIMARY) return;
 
         Point at = cellAt(e);
         switch (e.getClickCount()) {
-            case 2 -> selectWordAt(at);
-            case 3 -> selectLineAt(at);
+            case 2 -> {
+                selectWordAt(at);
+                settleSelection();
+            }
+            case 3 -> {
+                selectLineAt(at);
+                settleSelection();
+            }
             default -> {
                 // A press with no drag clears the selection, matching every terminal: it is how
                 // you dismiss a highlight without copying it.
                 selectionAnchor = at;
                 selection = null;
+                settledText = null;
+                // Option on macOS, as in Terminal and iTerm2; Alt elsewhere, as in Windows Terminal and Konsole.
+                // Ctrl+Alt works too, and is the one to use where the window manager takes Alt+drag to move windows,
+                // as GNOME and KDE do.
+                blockDrag = e.isAltDown();
+                anchorColumn = Math.max(0, Math.min(columns - 1, (int) Math.floor(e.getX() / charWidth)));
+                dragging = true;
+                autoScroll.reset();
             }
         }
         markDirty();
@@ -2405,50 +2505,122 @@ public final class TerminalView extends Region {
         }
         if (e.getButton() != MouseButton.PRIMARY || selectionAnchor == null) return;
         dragX = e.getX();
-        dragScroll = e.getY() < 0 ? -1 : e.getY() >= getHeight() ? 1 : 0;
-        if (dragScroll != 0 && dragScroller.getStatus() != javafx.animation.Animation.Status.RUNNING) {
-            dragScroller.play();
-        } else if (dragScroll == 0) {
-            dragScroller.stop();
+        dragY = e.getY();
+        extendDragTo(dragX, dragY);
+        if (pastEdge(dragY) != 0) {
+            if (dragScroller.getStatus() != javafx.animation.Animation.Status.RUNNING) {
+                autoScroll.reset();
+                dragScroller.play();
+            }
+        } else {
+            stopAutoScroll();
         }
-        Point at = cellAt(e);
-        TerminalSelection current = selection;
-        if (current == null) {
-            // Only on the first drag event, so a plain click never leaves an empty selection.
-            if (at.x == selectionAnchor.x && at.y == selectionAnchor.y) return;
-            current = new TerminalSelection(new Point(selectionAnchor.x, selectionAnchor.y));
-            selection = current;
+    }
+
+    /** Extends the drag's selection to a pointer position, clamped to the view. */
+    private void extendDragTo(double x, double y) {
+        Point anchor = selectionAnchor;
+        if (anchor == null || buffer == null) return;
+        if (blockDrag) {
+            Point to = boundaryColumnAt(x, y);
+            if (selection == null && !SelectionGeometry.leftPressCell(new Point(anchorColumn, anchor.y), to.y, to.x))
+                return;
+            rectangular = true;
+            selection = SelectionGeometry.blockDrag(anchorColumn, anchor.y, to.y, to.x);
+        } else {
+            Point to = boundaryAt(x, y);
+            // Nothing until the pointer has left the cell it pressed in, so a plain click never leaves a one-cell
+            // selection behind — unless one exists already, in which case the drag is extending it and every
+            // movement counts.
+            if (selection == null && !SelectionGeometry.leftPressCell(anchor, to.y, to.x)) return;
+            rectangular = false;
+            selection = SelectionGeometry.drag(anchor, to.y, to.x);
         }
-        current.updateEnd(at);
         markDirty();
     }
 
-    /** Which way a drag past the top (-1) or bottom (1) edge scrolls, or 0; and where the pointer is across. */
-    private int dragScroll;
+    /**
+     * The cell boundary nearest a pointer position, as a slot — the end of a drag, where "past the middle of a cell"
+     * means the cell is in. See {@link SelectionGeometry#drag}.
+     */
+    private Point boundaryAt(double x, double y) {
+        Point cell = boundaryColumnAt(x, y);
+        return new Point(ColumnMap.slotAt(lockedLineTextAt(cell.y), cell.x), cell.y);
+    }
 
+    /** {@link #boundaryAt} as a column — what a block is measured in. */
+    private Point boundaryColumnAt(double x, double y) {
+        int column = (int) Math.round(x / charWidth);
+        int row = (int) Math.floor(y / lineHeight);
+        column = Math.max(0, Math.min(columns, column));
+        row = Math.max(0, Math.min(rows - 1, row));
+        return new Point(column, scrollOrigin + row);
+    }
+
+    /** {@link #lineTextAt} for a caller that does not hold the lock: the mouse handlers, on the FX thread. */
+    private String lockedLineTextAt(int row) {
+        TerminalTextBuffer buf = buffer;
+        if (buf == null) return "";
+        buf.lock();
+        try {
+            return lineTextAt(row);
+        } finally {
+            buf.unlock();
+        }
+    }
+
+    /**
+     * How far past the top (negative) or bottom (positive) edge the pointer is, in pixels; zero inside. The bottom
+     * edge is the last whole row's, not the view's, which can have a sliver below.
+     */
+    private double pastEdge(double y) {
+        if (y < 0) return y;
+        double bottom = rows * lineHeight;
+        return y >= bottom ? y - bottom + 1 : 0;
+    }
+
+    /** Where the pointer last was during the drag, for the ticks that autoscroll with it held still. */
     private double dragX;
 
-    /** While a selection is dragged past an edge: a line a tick, the selection following, as every terminal does. */
+    private double dragY;
+
+    /** How far a tick of autoscroll goes: by time, and faster the further past the edge the pointer is. */
+    private final AutoScroll autoScroll = new AutoScroll();
+
+    /**
+     * While a selection is dragged past an edge: the scrollback scrolls by time rather than per event — a pointer held
+     * still below the view sends none, and it still means "keep going" — and faster the further out it is, so a
+     * careful selection and one through a long log are both possible with the same gesture.
+     */
     private final javafx.animation.Timeline dragScroller = new javafx.animation.Timeline(
-            new javafx.animation.KeyFrame(javafx.util.Duration.millis(50), e -> dragScrollTick()));
+            new javafx.animation.KeyFrame(javafx.util.Duration.millis(16), e -> dragScrollTick()));
 
     {
         dragScroller.setCycleCount(javafx.animation.Animation.INDEFINITE);
     }
 
     private void dragScrollTick() {
-        TerminalSelection current = selection;
-        if (dragScroll == 0 || buffer == null || current == null) {
-            dragScroller.stop();
+        if (!dragging || buffer == null || selectionAnchor == null) {
+            stopAutoScroll();
             return;
         }
+        double past = pastEdge(dragY);
+        if (past == 0) {
+            stopAutoScroll();
+            return;
+        }
+        int lines = autoScroll.step(System.nanoTime(), Math.abs(past), lineHeight);
+        if (lines == 0) return;
         int history = buffer.getHistoryLinesCount();
-        scrollOrigin = Math.max(-history, Math.min(0, scrollOrigin + dragScroll));
-        int line = dragScroll < 0 ? scrollOrigin : scrollOrigin + rows - 1;
-        int column = Math.max(0, Math.min(columns, (int) Math.floor(dragX / charWidth)));
-        current.updateEnd(
-                new Point(dragScroll < 0 ? ColumnMap.slotAt(lineTextAt(line), column) : slotsInRow(line), line));
-        markDirty();
+        int next = Math.max(-history, Math.min(0, scrollOrigin + (past < 0 ? -lines : lines)));
+        if (next == scrollOrigin) return;
+        scrollOrigin = next;
+        extendDragTo(dragX, dragY);
+    }
+
+    private void stopAutoScroll() {
+        dragScroller.stop();
+        autoScroll.reset();
     }
 
     /** Whether a drag past an edge is scrolling the view; for tests. */
@@ -2484,13 +2656,15 @@ public final class TerminalView extends Region {
         TerminalTextBuffer buf = buffer;
         if (buf == null) return; // the press handler has checked; no session, no words
         TerminalSelection word = wordSelection(at, buf);
+        rectangular = false;
         selection = word;
         selectionAnchor = new Point(word.getStart().x, word.getStart().y);
     }
 
     private void selectLineAt(Point at) {
         TerminalSelection line = new TerminalSelection(new Point(0, at.y));
-        line.updateEnd(new Point(slotsInRow(at.y), at.y));
+        line.updateEnd(new Point(Math.max(columns, lockedLineTextAt(at.y).length()), at.y));
+        rectangular = false;
         selection = line;
         selectionAnchor = new Point(0, at.y);
     }
@@ -2501,40 +2675,84 @@ public final class TerminalView extends Region {
 
     /** The selected text, or "" — the find bar starts from a one-line selection. */
     public String selectedText() {
+        String text = lockedSelectedText();
+        return text == null ? "" : text;
+    }
+
+    /** The text a selection stands for, a stream's or a block's. The caller holds the lock. */
+    private String selectedText(TerminalSelection current, TerminalTextBuffer buf) {
+        if (rectangular) return BlockSelection.text(current, buf);
+        // JediTerm's extractor, not ours: it understands that a wrapped line is one logical line and must not gain a
+        // newline in the middle.
+        String text = SelectionUtil.getSelectionText(current, buf);
+        return text == null ? "" : text;
+    }
+
+    /** {@link #selectedText(TerminalSelection, TerminalTextBuffer)} without the lock; null with no selection. */
+    private @Nullable String lockedSelectedText() {
         TerminalSelection current = selection;
-        if (current == null || buffer == null) return "";
-        buffer.lock();
+        TerminalTextBuffer buf = buffer;
+        if (current == null || buf == null) return null;
+        buf.lock();
         try {
-            String text = SelectionUtil.getSelectionText(current, buffer);
-            return text == null ? "" : text;
+            return selectedText(current, buf);
         } finally {
-            buffer.unlock();
+            buf.unlock();
         }
     }
 
     /** Copies the selection, returning false when there was nothing to copy. */
     public boolean copySelection() {
-        TerminalSelection current = selection;
-        if (current == null || buffer == null) return false;
-
-        String text;
-        buffer.lock();
-        try {
-            // JediTerm's extractor, not ours: it understands that a wrapped line is one logical
-            // line and must not gain a newline in the middle.
-            text = SelectionUtil.getSelectionText(current, buffer);
-        } finally {
-            buffer.unlock();
-        }
+        String text = lockedSelectedText();
         if (text == null || text.isEmpty()) return false;
-
-        ClipboardContent content = new ClipboardContent();
-        content.putString(text);
-        Clipboard.getSystemClipboard().setContent(content);
+        toClipboard(text);
         return true;
     }
 
+    private static void toClipboard(String text) {
+        ClipboardContent content = new ClipboardContent();
+        content.putString(text);
+        Clipboard.getSystemClipboard().setContent(content);
+    }
+
+    /**
+     * A selection has been made — at the end of a drag, on a double or triple click, by Select All. Its text is
+     * remembered (see {@link #settledText}), offered as PRIMARY where there is one, and copied to the clipboard if
+     * copy-on-select is on.
+     */
+    private void settleSelection() {
+        String text = lockedSelectedText();
+        settledText = text;
+        if (text == null || text.isEmpty()) return;
+        PrimarySelection.set(text);
+        if (copyOnSelect) toClipboard(text);
+    }
+
+    /**
+     * Drops the selection when the text under it is no longer the text that was selected. Under the lock, from the
+     * frame, so the comparison and the highlight agree.
+     */
+    private void dropSelectionIfRewritten() {
+        TerminalSelection current = selection;
+        String settled = settledText;
+        TerminalTextBuffer buf = buffer;
+        if (current == null || settled == null || buf == null) return;
+        int top = Math.min(current.getStart().y, current.getEnd().y);
+        int bottom = Math.max(current.getStart().y, current.getEnd().y);
+        if (bottom - top > VERIFIED_ROWS) return;
+        if (!settled.equals(selectedText(current, buf))) {
+            selection = null;
+            settledText = null;
+        }
+    }
+
+    /** Copies each selection to the clipboard as it is made (Settings → Terminal). */
+    public void setCopyOnSelect(boolean copyOnSelect) {
+        this.copyOnSelect = copyOnSelect;
+    }
+
     public void clearSelection() {
+        settledText = null;
         if (selection != null) {
             selection = null;
             markDirty();
@@ -2546,17 +2764,24 @@ public final class TerminalView extends Region {
         TerminalSelection current = selection;
         if (current == null) return;
         g.setFill(selectionWash);
+        if (rectangular) {
+            for (int row = 0; row < rows; row++) {
+                int[] span = SelectionGeometry.blockOnRow(current, scrollOrigin + row);
+                if (span == null) continue;
+                fillCells(g, span[0], span[1], row * lineHeight, lineHeight);
+            }
+            return;
+        }
         for (int row = 0; row < rows; row++) {
             int line = scrollOrigin + row;
-            kotlin.Pair<Integer, Integer> span = current.intersect(0, line, slotsInRow(line));
+            // Ours, not TerminalSelection.intersect: that one counts the end column in, and the copy does not, so the
+            // highlight was a cell wider than the text it stood for.
+            int[] span = SelectionGeometry.onRow(current, line, slotsInRow(line));
             if (span == null) continue;
-            int from = span.getFirst();
-            int length = span.getSecond();
-            if (length <= 0) continue;
             // The span is in slots; the rectangle is in columns.
             String text = lineTextAt(line);
-            double x = ColumnMap.columnAt(text, from);
-            double to = ColumnMap.columnAt(text, from + length);
+            double x = ColumnMap.columnAt(text, span[0]);
+            double to = ColumnMap.columnAt(text, span[1]);
             fillCells(g, x, to, row * lineHeight, lineHeight);
         }
     }
@@ -2624,7 +2849,13 @@ public final class TerminalView extends Region {
     /** Pastes the clipboard, honouring bracketed-paste mode if the shell enabled it. */
     public void paste() {
         String text = Clipboard.getSystemClipboard().getString();
-        if (text == null || text.isEmpty() || session == null) return;
+        if (text != null) pasteText(text);
+    }
+
+    /** Pastes {@code text} — the clipboard's, or PRIMARY's on a middle-click — as {@link #paste} does. */
+    private void pasteText(String text) {
+        TerminalSession session = this.session;
+        if (text.isEmpty() || session == null) return;
         if (!display.isBracketedPaste()
                 && KeyEncoding.pasteText(text).strip().contains("\n")
                 && !pasteGuard.test(text)) {

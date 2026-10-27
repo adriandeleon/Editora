@@ -336,6 +336,11 @@ class TerminalViewFxTest {
 
     private static javafx.scene.input.MouseEvent mouse(
             javafx.event.EventType<javafx.scene.input.MouseEvent> type, double x, double y) {
+        return mouse(type, x, y, false);
+    }
+
+    private static javafx.scene.input.MouseEvent mouse(
+            javafx.event.EventType<javafx.scene.input.MouseEvent> type, double x, double y, boolean alt) {
         return new javafx.scene.input.MouseEvent(
                 type,
                 x,
@@ -346,7 +351,7 @@ class TerminalViewFxTest {
                 1,
                 false,
                 false,
-                false,
+                alt,
                 false,
                 true,
                 false,
@@ -411,7 +416,7 @@ class TerminalViewFxTest {
     }
 
     @Test
-    void selectAllSelectsAndTypingDropsTheSelection() throws Exception {
+    void aSelectionSurvivesTypingAndGoesWhenItsTextIsRewritten() throws Exception {
         open();
         connector.emit("one\r\ntwo\r\n");
         await(() -> screen().contains("two"), "the output");
@@ -420,10 +425,75 @@ class TerminalViewFxTest {
             view.selectAll();
             return view.hasSelection();
         }));
-        assertFalse(fx(() -> {
+        // Typing a command under a selection of the output above it leaves the selection alone.
+        assertTrue(fx(() -> {
             Event.fireEvent(view, typed("x"));
             return view.hasSelection();
         }));
+        // A program redrawing the selected text in place is what drops it: copying it would copy something else.
+        connector.emit("\u001b[1;1HONE");
+        await(() -> screen().startsWith("ONE"), "the first row rewritten");
+        await(() -> !call(view::hasSelection), "the selection dropped with its text");
+    }
+
+    @Test
+    void anAltDragSelectsABlockAndCopiesItOneRowPerLine() throws Exception {
+        open();
+        connector.emit("abcdef\r\nghijkl\r\nmnopqr\r\n");
+        await(() -> screen().contains("mnopqr"), "the output");
+        double cell = fx(view::cellWidth);
+        double row = fx(() -> view.lineHeightForTest());
+        fx(() -> {
+            // From the middle of column 1 on the first row to the boundary after column 3 on the third: columns 1–3.
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_PRESSED, cell * 1.5, row / 2, true));
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_DRAGGED, cell * 4.1, row * 2.5, true));
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_RELEASED, cell * 4.1, row * 2.5, true));
+            return null;
+        });
+        assertEquals("bcd\nhij\nnop", fx(view::selectedText));
+    }
+
+    @Test
+    void aDragHighlightsExactlyWhatItCopies() throws Exception {
+        open();
+        connector.emit("hello world\r\n");
+        await(() -> screen().startsWith("hello world"), "the output");
+        double cell = fx(view::cellWidth);
+        double row = fx(() -> view.lineHeightForTest());
+        fx(() -> {
+            // Press in the "h", release past the middle of the "o": the whole word, no more and no less.
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_PRESSED, cell * 0.2, row / 2));
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_DRAGGED, cell * 4.7, row / 2));
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_RELEASED, cell * 4.7, row / 2));
+            return null;
+        });
+        assertEquals("hello", fx(view::selectedText));
+    }
+
+    @Test
+    void shiftInsertPastesAndCtrlInsertCopies() throws Exception {
+        open();
+        connector.emit("copied\r\n");
+        await(() -> screen().startsWith("copied"), "the output");
+        fx(() -> {
+            view.selectAll();
+            Event.fireEvent(
+                    view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.INSERT, false, true, false, false));
+            return null;
+        });
+        assertTrue(fx(() -> javafx.scene.input.Clipboard.getSystemClipboard().getString())
+                .startsWith("copied"));
+        connector.clearWritten();
+        fx(() -> {
+            javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+            content.putString("pasted");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+            Event.fireEvent(
+                    view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.INSERT, true, false, false, false));
+            return null;
+        });
+        await(() -> connector.written().contains("pasted"), "the clipboard pasted");
+        assertFalse(connector.written().contains("[2;2~"), "and no Shift+Insert key sent to the shell");
     }
 
     @Test
