@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -88,7 +87,7 @@ class TabFocusFxTest {
                         n.getProperties().get(javafx.scene.control.Tab.class) instanceof javafx.scene.control.Tab tab
                                 ? MainController.bufferOf(tab)
                                 : null;
-                if (TabFocus.onTabHeader(n) && of != null && of != before) {
+                if (onTabHeader(n) && of != null && of != before) {
                     other = n;
                 }
             }
@@ -124,13 +123,18 @@ class TabFocusFxTest {
         assertSame(now.getFocusedArea(), focusOwner());
     }
 
-    @Test
-    void aCloseButtonIsNoHeaderClick() throws Exception {
-        Node close = FxTestSupport.callOnFx(
-                () -> active().getArea().getScene().getRoot().lookup(".tab-close-button"));
-        if (close != null) {
-            assertFalse(TabFocus.onTabHeader(close));
+    /** Whether {@code target} is (in) a tab's header, not its close button. */
+    private static boolean onTabHeader(Node target) {
+        for (Node n = target; n != null; n = n.getParent()) {
+            if (n.getStyleClass().contains("tab-close-button")) {
+                return false;
+            }
+            if (n.getStyleClass().contains("tab")
+                    && n.getParent() != null
+                    && n.getParent().getStyleClass().contains("headers-region")) {
+                return true;
+            }
         }
-        assertFalse(TabFocus.onTabHeader(FxTestSupport.callOnFx(() -> active().getArea())));
+        return false;
     }
 }

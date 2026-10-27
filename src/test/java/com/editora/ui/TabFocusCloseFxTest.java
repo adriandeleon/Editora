@@ -117,4 +117,78 @@ class TabFocusCloseFxTest {
         settle();
         assertSame(active().getFocusedArea(), focusOwner());
     }
+
+    /** Focus Next Editor Group puts the keyboard in that group's editor, not its tab's container (tenth review AO1). */
+    @Test
+    void focusNextEditorGroupFocusesItsEditor() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            reg.run("file.new");
+            activeNow().getFocusedArea().requestFocus();
+            reg.run("view.splitEditorRight");
+        });
+        settle();
+        try {
+            EditorBuffer before = active();
+            FxTestSupport.runOnFx(() -> reg.run("view.focusNextGroup"));
+            settle();
+            EditorBuffer now = active();
+            assertTrue(now != null && now != before, "the other group's tab");
+            assertSame(now.getFocusedArea(), focusOwner());
+        } finally {
+            FxTestSupport.runOnFx(() -> reg.run("view.unsplitEditorGroups"));
+            settle();
+        }
+    }
+
+    /**
+     * Closing the last file tab with the Welcome tab left puts the keyboard on the Welcome page, not on the toolbar's
+     * New button, where a Space opened a new buffer (tenth review AP1).
+     */
+    @Test
+    void closingTheLastFileTabBesideWelcomeLeavesTheToolbar() throws Exception {
+        FxWindowFixture own = FxWindowFixture.create();
+        try {
+            CommandRegistry r = FxTestSupport.callOnFx(() -> FxTestSupport.field(own.controller, "registry"));
+            FxTestSupport.runOnFx(() -> {
+                r.run("buffer.closeAll");
+                r.run("view.welcome");
+                r.run("file.new"); // the Welcome tab and one file
+            });
+            settle();
+            EditorBuffer file = FxTestSupport.callOnFx(
+                    () -> (EditorBuffer) FxTestSupport.call(own.controller, "activeBuffer", new Class<?>[] {}));
+            javafx.scene.Scene scene =
+                    FxTestSupport.callOnFx(() -> file.getArea().getScene());
+            FxTestSupport.runOnFx(() -> {
+                file.getFocusedArea().requestFocus();
+                r.run("buffer.close");
+            });
+            settle();
+            Node owner = null;
+            for (int i = 0; i < 100 && !onWelcomePage(owner); i++) { // JavaFX moves focus on a later pulse
+                Thread.sleep(20);
+                settle();
+                owner = FxTestSupport.callOnFx(scene::getFocusOwner);
+            }
+            Node focused = owner;
+            assertTrue(
+                    focused != null && !"newButton".equals(focused.getId()),
+                    "not the toolbar's New button: " + focused);
+            assertTrue(onWelcomePage(focused), "on the Welcome page: " + focused);
+        } finally {
+            own.dispose();
+        }
+    }
+
+    private static boolean onWelcomePage(@org.jspecify.annotations.Nullable Node node) throws Exception {
+        return node != null
+                && FxTestSupport.callOnFx(() -> {
+                    for (Node n = node; n != null; n = n.getParent()) {
+                        if (n.getStyleClass().contains("welcome-pane")) {
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+    }
 }

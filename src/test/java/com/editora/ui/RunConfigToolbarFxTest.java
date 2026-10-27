@@ -392,16 +392,6 @@ class RunConfigToolbarFxTest {
         pickTheEditRowTwice(List.of(), null);
     }
 
-    /**
-     * Picks the Edit row from the open dropdown twice — the way a click does, through the popup list's
-     * selection model — closing the editor in between, and expects it opened both times.
-     *
-     * <p>The revert used to run inside the list's own selection change: with nothing to put back, JavaFX threw
-     * an IndexOutOfBoundsException out of the click ({@code ListViewBehavior} reading an added range the revert
-     * had already emptied) and left the popup list on the Edit row, so the next pick of that row was no change
-     * and nothing opened. {@code combo.setValue} (the test above) never goes through the list, so it missed
-     * this.
-     */
     /** Whether {@code e} came out of the headless Glass window's pixel upload ({@code HeadlessWindow.blit}). */
     private static boolean headlessBlit(Throwable e) {
         for (StackTraceElement frame : e.getStackTrace()) {
@@ -420,6 +410,16 @@ class RunConfigToolbarFxTest {
         return out.toString();
     }
 
+    /**
+     * Picks the Edit row from the open dropdown twice — the way a click does, through the popup list's
+     * selection model — closing the editor in between, and expects it opened both times.
+     *
+     * <p>The revert used to run inside the list's own selection change: with nothing to put back, JavaFX threw
+     * an IndexOutOfBoundsException out of the click ({@code ListViewBehavior} reading an added range the revert
+     * had already emptied) and left the popup list on the Edit row, so the next pick of that row was no change
+     * and nothing opened. {@code combo.setValue} (the test above) never goes through the list, so it missed
+     * this.
+     */
     private void pickTheEditRowTwice(List<RunConfiguration> configs, String selected) throws Exception {
         setConfigs(configs);
         ComboBox<RunConfiguration> combo = combo();

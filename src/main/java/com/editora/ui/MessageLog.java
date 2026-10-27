@@ -23,7 +23,10 @@ public final class MessageLog {
     /** Maximum retained messages; older ones are evicted. */
     public static final int MAX_ENTRIES = 200;
 
-    /** A message repeated within this long is not recorded again (the start refusal, eighth review DQ3). */
+    /**
+     * A message repeated within this long moves to the top as one entry, unread once (the start refusal, eighth review
+     * DQ3; ninth review DQ3).
+     */
     static final long REPEAT_MILLIS = 2_000;
 
     /** How much the message matters. Drives its styling and whether it counts as unread. */

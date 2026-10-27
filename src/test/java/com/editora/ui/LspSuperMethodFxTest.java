@@ -638,4 +638,171 @@ class LspSuperMethodFxTest {
         assertEquals(tr("status.lsp.noSuperMethod"), fx.host.lastStatus());
         assertTrue(fx.ops.jumps.isEmpty());
     }
+
+    /** An interface whose supertype is Store<String>: save(Integer) overrides nothing, save(String) Store.save (DO2). */
+    @Test
+    void aTypeArgumentDecidesWhichMethodIsOverridden() throws Exception {
+        Path store = Files.writeString(root.resolve("Store.java"), "interface Store<T> {\n    void save(T item);\n}\n");
+        String source = "interface StrStore extends Store<String> {\n    void save(Integer other);\n"
+                + "    void save(String item);\n}\n";
+        EditorBuffer b = fx.open("StrStore.java", source);
+        DocumentSymbol strStore = member("StrStore", SymbolKind.Interface, 0, 3, 0, 10);
+        strStore.getChildren().add(member("save(Integer)", SymbolKind.Method, 1, 1, 1, 9));
+        strStore.getChildren().add(member("save(String)", SymbolKind.Method, 2, 2, 2, 9));
+        fx.server().documentSymbolResponse = List.of(Either.forRight(strStore));
+        DocumentSymbol storeType = member("Store<T>", SymbolKind.Interface, 0, 2, 0, 10);
+        storeType.getChildren().add(member("save(T)", SymbolKind.Method, 1, 1, 1, 9));
+        fx.server()
+                .documentSymbolByUri
+                .put(com.editora.lsp.LspTestHooks.uri(store), List.of(Either.forRight(storeType)));
+        String uri = root.resolve("StrStore.java").toUri().toString();
+        fx.server().typeHierarchyResponse =
+                List.of(new TypeHierarchyItem("StrStore", SymbolKind.Interface, uri, range(0, 0, 1), range(0, 10, 18)));
+        fx.server()
+                .supertypesByName
+                .put(
+                        "StrStore",
+                        List.of(new TypeHierarchyItem(
+                                "Store",
+                                SymbolKind.Interface,
+                                store.toUri().toString(),
+                                range(0, 0, 1),
+                                range(0, 10, 15))));
+        fx.server().supertypesByName.put("Store", List.of());
+        fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString("[]");
+
+        fx.caret(b, 1, 10);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+        assertEquals(tr("status.lsp.noSuperMethod"), fx.host.lastStatus(), "T is String here");
+        assertTrue(fx.ops.jumps.isEmpty());
+
+        fx.caret(b, 2, 10);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(store, 1, 9)), fx.ops.jumps);
+    }
+
+    /**
+     * jdtls prepares the hierarchy of {@code new java.util.Comparator<>()} at the anonymous class itself: the walk
+     * starts above it, and never lands on the method asked about (tenth review AO2).
+     */
+    @Test
+    void anAnonymousClassNeverGoesToItself() throws Exception {
+        Path comparator = Files.writeString(
+                root.resolve("Comparator.java"), "interface Comparator<T> {\n    int compare(T a, T b);\n}\n");
+        String source = "class A {\n    void f() {\n        Object c = new java.util.Comparator<>() {\n"
+                + "            public int compare(String a, String b) {\n                return 3;\n            }\n"
+                + "        };\n    }\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        DocumentSymbol a = member("A", SymbolKind.Class, 0, 8, 0, 6);
+        DocumentSymbol f = member("f()", SymbolKind.Method, 1, 7, 1, 9);
+        DocumentSymbol anonymous = member("new Comparator<>() {...}", SymbolKind.Class, 2, 6, 2, 34);
+        anonymous.getChildren().add(member("compare(String, String)", SymbolKind.Method, 3, 5, 3, 23));
+        f.getChildren().add(anonymous);
+        a.getChildren().add(f);
+        fx.server().documentSymbolResponse = List.of(Either.forRight(a));
+        DocumentSymbol comparatorType = member("Comparator<T>", SymbolKind.Interface, 0, 2, 0, 10);
+        comparatorType.getChildren().add(member("compare(T, T)", SymbolKind.Method, 1, 1, 1, 8));
+        fx.server()
+                .documentSymbolByUri
+                .put(com.editora.lsp.LspTestHooks.uri(comparator), List.of(Either.forRight(comparatorType)));
+        String uri = root.resolve("A.java").toUri().toString();
+        fx.server().typeHierarchyResponse = List.of(new TypeHierarchyItem(
+                "new Comparator<>() {...}", SymbolKind.Class, uri, range(2, 0, 1), range(2, 34, 44)));
+        fx.server()
+                .supertypesByName
+                .put(
+                        "new Comparator<>() {...}",
+                        List.of(new TypeHierarchyItem(
+                                "Comparator",
+                                SymbolKind.Interface,
+                                comparator.toUri().toString(),
+                                range(0, 0, 1),
+                                range(0, 10, 20))));
+        fx.server().supertypesByName.put("Comparator", List.of());
+        fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString("[]");
+        fx.caret(b, 4, 16);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(comparator, 1, 8)), fx.ops.jumps);
+    }
+
+    /**
+     * An initializer's {@code new Comparator<>()}, which findLinks does not answer for, is walked from the type it
+     * instantiates, bound by the field's type (tenth review BO2).
+     */
+    @Test
+    void anInitializersDiamondAnonymousClassIsWalked() throws Exception {
+        Path comparator = Files.writeString(
+                root.resolve("Comparator.java"), "interface Comparator<T> {\n    int compare(T a, T b);\n}\n");
+        String source = "class A {\n    static {\n        Comparator<String> by = new Comparator<>() {\n"
+                + "            public int compare(String a, String b) {\n                return 0;\n            }\n"
+                + "        };\n    }\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        fx.server().documentSymbolResponse = List.of(Either.forRight(member("A", SymbolKind.Class, 0, 8, 0, 6)));
+        DocumentSymbol comparatorType = member("Comparator<T>", SymbolKind.Interface, 0, 2, 0, 10);
+        comparatorType.getChildren().add(member("compare(T, T)", SymbolKind.Method, 1, 1, 1, 8));
+        fx.server()
+                .documentSymbolByUri
+                .put(com.editora.lsp.LspTestHooks.uri(comparator), List.of(Either.forRight(comparatorType)));
+        fx.server().typeHierarchyResponse = List.of(new TypeHierarchyItem(
+                "Comparator", SymbolKind.Interface, comparator.toUri().toString(), range(0, 0, 1), range(0, 10, 20)));
+        fx.server().supertypesByName.put("Comparator", List.of());
+        fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString("[]"); // findLinks: nothing
+        fx.caret(b, 4, 16);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(comparator, 1, 8)), fx.ops.jumps);
+    }
+
+    /** On a method reference, its functional interface's method, asked one character into the {@code ::} (BO3). */
+    @Test
+    void aMethodReferenceGoesToItsFunctionalMethod() throws Exception {
+        Path function = Files.writeString(
+                root.resolve("ToIntFunction.java"), "interface ToIntFunction<T> {\n    int applyAsInt(T t);\n}\n");
+        String source = "class A {\n    int n(java.util.List<String> s) {\n"
+                + "        return s.stream().mapToInt(String::length).sum();\n    }\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        DocumentSymbol a = member("A", SymbolKind.Class, 0, 4, 0, 6);
+        a.getChildren().add(member("n(List<String>)", SymbolKind.Method, 1, 3, 1, 8));
+        fx.server().documentSymbolResponse = List.of(Either.forRight(a));
+        fx.server().definitionResponse =
+                List.of(new org.eclipse.lsp4j.Location(function.toUri().toString(), range(1, 8, 18)));
+        int line = source.split("\n")[2].indexOf("length");
+        fx.caret(b, 2, line + 2);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        Position asked =
+                fx.server().definitions.get(fx.server().definitions.size() - 1).getPosition();
+        assertEquals(new Position(2, source.split("\n")[2].indexOf("::") + 1), asked, "in the ::");
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(function, 1, 8)), fx.ops.jumps);
+    }
+
+    /**
+     * A one-line field's anonymous class: the field's {@code private final} is not the method's, so jdtls is asked
+     * (tenth review DO1).
+     */
+    @Test
+    void aOneLineFieldsAnonymousMethodIsAsked() throws Exception {
+        Path task = Files.writeString(root.resolve("Task.java"), "interface Task {\n    void run();\n}\n");
+        String source = "class A {\n    private final Task r = new Task() { public void run() { } };\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        DocumentSymbol a = member("A", SymbolKind.Class, 0, 2, 0, 6);
+        DocumentSymbol field = member("r", SymbolKind.Field, 1, 1, 1, 23);
+        DocumentSymbol anonymous = member("new Task() {...}", SymbolKind.Class, 1, 1, 1, 31);
+        anonymous.getChildren().add(member("run()", SymbolKind.Method, 1, 1, 1, 52));
+        field.getChildren().add(anonymous);
+        a.getChildren().add(field);
+        fx.server().documentSymbolResponse = List.of(Either.forRight(a));
+        fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString(link(task, 1, 9));
+        fx.caret(b, 1, 56);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(task, 1, 9)), fx.ops.jumps);
+    }
 }
