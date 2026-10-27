@@ -356,6 +356,15 @@ public final class TextMateHighlighter {
             if (end <= start) {
                 continue;
             }
+            if (kind.equals("tag")) {
+                // A namespaced tag is three tokens (`xs` `:` `element`): its name is all of them, not the prefix (C4).
+                for (int k = i + 1; k < count && Math.min(tokens[k].getStartIndex(), len) == end; k++) {
+                    if (!"tag".equals(kindForScopes(tokens[k].getScopes()))) {
+                        break;
+                    }
+                    end = Math.max(end, Math.min(tokens[k].getEndIndex(), len));
+                }
+            }
             String name = line.substring(start, end).strip();
             if (name.isEmpty()) {
                 continue;

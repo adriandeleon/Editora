@@ -2352,7 +2352,7 @@ final class WindowCommandRegistrar {
                         () -> host.ifLsp(() -> host.lspCoordinator()
                                 .setProjectWideProblems(!host.lspCoordinator().isProjectWideProblems()))));
         host.registry().register(Command.of("lsp.formatDocument", () -> {
-            // Python: Ruff/Black unless a language server formats it — with the language server off too.
+            // Python: Ruff/Black, XML: the built-in formatter, unless a language server formats it — LSP off too.
             if (!host.lspCoordinator().formatPythonExternally()) {
                 host.ifLsp(host.lspCoordinator()::formatDocument);
             }

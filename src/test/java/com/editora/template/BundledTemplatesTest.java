@@ -191,4 +191,16 @@ class BundledTemplatesTest {
         assertTrue(js.contains("process.exitCode = 1;"), js);
         assertEquals("javascript", t.language());
     }
+
+    /** The XML starters (XML review D9) render as well-formed XML with the wizard's defaults. */
+    @Test
+    void theXmlTemplatesAreWellFormed(@TempDir Path tmp) throws Exception {
+        for (String id : List.of("xml-schema", "xslt-stylesheet", "xml-with-schema")) {
+            Map<String, String> files = rendered(tmp, bundled(tmp, id));
+            assertEquals(1, files.size(), id);
+            String text = files.values().iterator().next();
+            assertEquals(null, com.editora.structured.XmlParser.firstError(text), id + ":\n" + text);
+        }
+        assertTrue(rendered(tmp, bundled(tmp, "xml-schema")).containsKey("schema.xsd"));
+    }
 }

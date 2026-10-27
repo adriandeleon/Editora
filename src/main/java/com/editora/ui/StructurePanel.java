@@ -364,8 +364,13 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return narrowedRoots;
         }
         // LSP-served file: precise hierarchy + kinds; fallback: fold-region nesting + TextMate-scope names.
+        CodeArea area = buffer.getArea();
         return lspSymbols != null
-                ? StructureOutline.fromLsp(lspSymbols)
+                ? StructureOutline.fromLsp(
+                        lspSymbols,
+                        buffer.getLanguage(),
+                        i -> area.getParagraph(i).getText(),
+                        area.getParagraphs().size())
                 : StructureOutline.build(StructureOutline.Source.area(buffer));
     }
 

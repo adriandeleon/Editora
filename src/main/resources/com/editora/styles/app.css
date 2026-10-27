@@ -993,6 +993,10 @@
     -fx-wrap-text: true;
 }
 
+/* A preview's parse error with its position link (XML review C15). */
+.preview-error { -fx-padding: 6 0 0 6; }
+.preview-error .preview-error-position { -fx-font-weight: bold; }
+
 /* XML DOM-tree preview — theme-aware via AtlantaFX semantic colors. */
 .xml-tree { -fx-font-family: monospace; -fx-background-color: -color-bg-default; }
 .xml-tree .xml-row { -fx-font-family: monospace; }

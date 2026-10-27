@@ -1,0 +1,13 @@
+{
+  "name": "XML Bound to a Schema",
+  "description": "An XML document whose root names its XSD, so a schema-aware editor validates and completes it",
+  "language": "xml",
+  "fileName": "${baseName:document}.xml",
+  "body": [
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+    "<${rootElement:note} xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"",
+    "      xsi:noNamespaceSchemaLocation=\"${schema:schema.xsd}\">",
+    "  ${cursor}",
+    "</${rootElement:note}>"
+  ]
+}

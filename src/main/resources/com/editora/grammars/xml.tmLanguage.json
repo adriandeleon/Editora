@@ -58,6 +58,18 @@
 			"include": "#comments"
 		},
 		{
+			"include": "#EntityDecl"
+		},
+		{
+			"include": "#ElementDecl"
+		},
+		{
+			"include": "#AttlistDecl"
+		},
+		{
+			"include": "#NotationDecl"
+		},
+		{
 			"begin": "(<)((?:([-_a-zA-Z0-9]+)(:))?([-_a-zA-Z0-9:]+))(?=(\\s[^>]*)?></\\2>)",
 			"beginCaptures": {
 				"1": {
@@ -224,6 +236,9 @@
 				},
 				{
 					"include": "#singlequotedString"
+				},
+				{
+					"include": "#parameterEntity"
 				}
 			]
 		},
@@ -278,6 +293,15 @@
 			"patterns": [
 				{
 					"include": "#EntityDecl"
+				},
+				{
+					"include": "#ElementDecl"
+				},
+				{
+					"include": "#AttlistDecl"
+				},
+				{
+					"include": "#NotationDecl"
 				},
 				{
 					"include": "#parameterEntity"
@@ -380,6 +404,107 @@
 							}
 						}
 					]
+				}
+			]
+		},
+		"ElementDecl": {
+			"begin": "(<!)(ELEMENT)\\s+((?:%[:a-zA-Z_][:a-zA-Z0-9_.-]*;|[:a-zA-Z_][:a-zA-Z0-9_.-]*))",
+			"captures": {
+				"1": {
+					"name": "punctuation.definition.tag.xml"
+				},
+				"2": {
+					"name": "keyword.other.element.xml"
+				},
+				"3": {
+					"name": "variable.language.element.xml"
+				}
+			},
+			"end": "(>)",
+			"name": "meta.tag.sgml.element.xml",
+			"patterns": [
+				{
+					"match": "(?:\\b(?:EMPTY|ANY)\\b|#PCDATA)",
+					"name": "constant.language.contentspec.xml"
+				},
+				{
+					"match": "[?*+|,]",
+					"name": "keyword.operator.contentspec.xml"
+				},
+				{
+					"include": "#parameterEntity"
+				},
+				{
+					"include": "#comments"
+				}
+			]
+		},
+		"AttlistDecl": {
+			"begin": "(<!)(ATTLIST)\\s+((?:%[:a-zA-Z_][:a-zA-Z0-9_.-]*;|[:a-zA-Z_][:a-zA-Z0-9_.-]*))",
+			"captures": {
+				"1": {
+					"name": "punctuation.definition.tag.xml"
+				},
+				"2": {
+					"name": "keyword.other.attlist.xml"
+				},
+				"3": {
+					"name": "variable.language.element.xml"
+				}
+			},
+			"end": "(>)",
+			"name": "meta.tag.sgml.attlist.xml",
+			"patterns": [
+				{
+					"match": "\\b(?:CDATA|IDREFS|IDREF|ID|ENTITIES|ENTITY|NMTOKENS|NMTOKEN|NOTATION)\\b",
+					"name": "support.type.attribute-type.xml"
+				},
+				{
+					"match": "#(?:REQUIRED|IMPLIED|FIXED)\\b",
+					"name": "keyword.other.default-decl.xml"
+				},
+				{
+					"match": "[|]",
+					"name": "keyword.operator.enumeration.xml"
+				},
+				{
+					"include": "#parameterEntity"
+				},
+				{
+					"include": "#doublequotedString"
+				},
+				{
+					"include": "#singlequotedString"
+				},
+				{
+					"include": "#comments"
+				}
+			]
+		},
+		"NotationDecl": {
+			"begin": "(<!)(NOTATION)\\s+([:a-zA-Z_][:a-zA-Z0-9_.-]*)(\\s+(?:SYSTEM|PUBLIC)\\s+)?",
+			"captures": {
+				"1": {
+					"name": "punctuation.definition.tag.xml"
+				},
+				"2": {
+					"name": "keyword.other.notation.xml"
+				},
+				"3": {
+					"name": "variable.language.notation.xml"
+				},
+				"4": {
+					"name": "keyword.other.entitytype.xml"
+				}
+			},
+			"end": "(>)",
+			"name": "meta.tag.sgml.notation.xml",
+			"patterns": [
+				{
+					"include": "#doublequotedString"
+				},
+				{
+					"include": "#singlequotedString"
 				}
 			]
 		}

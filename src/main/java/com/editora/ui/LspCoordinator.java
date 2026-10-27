@@ -429,7 +429,7 @@ final class LspCoordinator {
                 host.setStatus(message);
             }
         });
-        this.pythonFormat = new PythonFormatCoordinator(new PythonFormatCoordinator.Host() {
+        PythonFormatCoordinator.Host formatHost = new PythonFormatCoordinator.Host() {
             @Override
             public @Nullable EditorBuffer activeBuffer() {
                 return host.activeBuffer();
@@ -459,7 +459,9 @@ final class LspCoordinator {
             public void setError(@Nullable String message) {
                 host.setError(message);
             }
-        });
+        };
+        this.pythonFormat = new PythonFormatCoordinator(formatHost);
+        this.xmlFormat = new XmlFormatCoordinator(formatHost); // XML without a formatting server (C8)
         this.workspaceFiles = java.util.Objects.requireNonNull(workspaceFiles, "workspaceFiles");
         this.workspaceExecutor = java.util.Objects.requireNonNull(workspaceExecutor, "workspaceExecutor");
         this.problemsActions = new ProblemsPanel.Actions() {
@@ -3179,13 +3181,16 @@ final class LspCoordinator {
     /** Ruff/Black Format Document for Python files no language server formats (adl's decision 4). */
     final PythonFormatCoordinator pythonFormat;
 
+    private final XmlFormatCoordinator xmlFormat;
+
     /**
-     * {@code lsp.formatDocument} for a Python file: Ruff or Black when no running server formats it. True when
-     * this took the command — then it works with the language server off too.
+     * {@code lsp.formatDocument} for a Python file: Ruff or Black when no running server formats it; for an XML
+     * file, the built-in {@link XmlFormatCoordinator}. True when this took the command — then it works with the
+     * language server off too.
      */
     boolean formatPythonExternally() {
         pythonInterpreters.captureSnapshot();
-        return pythonFormat.formatActive();
+        return pythonFormat.formatActive() || xmlFormat.formatActive();
     }
 
     /** For Doctor (FX thread): resolves, off the FX thread, the interpreter of the active Python file or project. */

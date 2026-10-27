@@ -71,6 +71,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   typed keys went nowhere and the arrows switched tabs.
 - **Closing the last file tab beside the Welcome tab leaves the keyboard on the Welcome page**, not on the toolbar's
   New button, where a Space opened a new buffer.
+- **XML: Structure outlines every element, named by its attribute.** Without the XML server an XSD or XSLT outline
+  listed only the namespace prefix (`xs line 2`, `xs line 3`) and no one-line elements; every element is now listed
+  as `xs:element name="note"` or `xsl:template match="/"`. With the server, the outline loses lemminx's "Grammars",
+  "Cache: false" and "Binding: …" rows and schema rows carry their `name`.
+- **XML: Format Document works without the XML server**: a built-in formatter puts one element per line in the
+  file's own indentation and leaves text, CDATA and `xml:space="preserve"` content exactly as written.
+- **XML and SVG previews say where they fail**: the parser's message with a "Line 2, column 5" link that jumps there,
+  instead of "Could not render this SVG".
+- **New File ▸ XML and SVG start with a skeleton, and XML Schema and XSLT are new entries**; New From Template adds
+  "XML Schema (XSD)", "XSLT Stylesheet" and "XML Bound to a Schema". XML has 25 snippets (was 6), and element,
+  comment, CDATA and the XSLT/XSD containers wrap the selection, so Surround With works in XML.
+- **XML: `<!ELEMENT>`, `<!ATTLIST>` and `<!NOTATION>` declarations are highlighted**, like `<!ENTITY>`, in a
+  DOCTYPE's internal subset and in a bare DTD.
+- **VS Code keymap: Shift+Alt+F (Shift+Option+F on macOS) formats the document**, as in VS Code.
+- **A jump shows its own column**: Go to Definition, Structure clicks and search hits kept the old horizontal
+  scroll, so after the end of a long line a jump near a line start landed with the first characters cut off, and a
+  jump far along a long line left the caret off screen.
 
 ## [0.25.0] - 2026-10-26
 

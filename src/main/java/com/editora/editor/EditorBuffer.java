@@ -5961,8 +5961,8 @@ public class EditorBuffer implements TabContent {
             // re-render a cheap re-fit.
             double v = previewPane().getVvalue();
             double scale = previewFontScale;
-            javafx.scene.layout.VBox box =
-                    new javafx.scene.layout.VBox(SvgImages.node(documentTextSnapshot(), lw -> lw * scale));
+            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
+                    SvgImages.node(documentTextSnapshot(), lw -> lw * scale, this::jumpToSource));
             box.getStyleClass().add("markdown-preview");
             StackPane wrap = new StackPane(box);
             wrap.getStyleClass().add("markdown-preview-wrap");
@@ -6226,16 +6226,20 @@ public class EditorBuffer implements TabContent {
 
     /** Sets the freshly parsed XML DOM tree (or an error label) into the shared self-scrolling holder. */
     private void renderXml(XmlParser.Parsed parsed) {
-        Node node;
-        if (!parsed.ok()) {
-            Label err = new Label(parsed.error());
-            err.getStyleClass().add("structured-error");
-            err.setWrapText(true);
-            node = err;
-        } else {
-            node = XmlTree.build(parsed.root());
-        }
+        Node node = parsed.ok()
+                ? XmlTree.build(parsed.root())
+                : com.editora.editor.structured.ParseErrorView.of(
+                        String.valueOf(parsed.error()),
+                        parsed.line(),
+                        parsed.column(),
+                        this::jumpToSource,
+                        "structured-error");
         structuredContentHolder().getChildren().setAll(node);
+    }
+
+    /** A preview's parse-error link: the caret to that 1-based line and column (XML review C15). */
+    private void jumpToSource(int line, int column) {
+        com.editora.editor.structured.ParseErrorView.jump(this, line, column);
     }
 
     /** The {@link #surfaceTreePreviewError} counterpart for the Markdown preview, which has its own pane. */

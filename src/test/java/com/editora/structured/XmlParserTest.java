@@ -80,4 +80,28 @@ class XmlParserTest {
         assertFalse(p.ok()); // parse fails on the DOCTYPE; the entity is never resolved
         assertNull(p.root());
     }
+
+    /** A parse error says where (XML review C15): the tree preview used to give the message alone. */
+    @Test
+    void aParseErrorCarriesItsLineAndColumn() {
+        XmlParser.Parsed bad = XmlParser.parse("<?xml version=\"1.0\"?>\n<note>\n  <to>Tove</from>\n</note>\n");
+        assertFalse(bad.ok());
+        assertEquals(3, bad.line());
+        assertTrue(bad.column() > 0, "column " + bad.column());
+        assertEquals(0, XmlParser.parse("   ").line(), "no position for an empty document");
+    }
+
+    /** The SVG preview's locator: a DOCTYPE is allowed, an external one is never fetched, errors have a place. */
+    @Test
+    void firstErrorFindsWhereWellFormednessEnds() {
+        assertNull(XmlParser.firstError("<svg xmlns=\"http://www.w3.org/2000/svg\"><circle r=\"1\"/></svg>"));
+        assertNull(XmlParser.firstError("<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" "
+                + "\"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n<svg/>"));
+        XmlParser.Parsed bad = XmlParser.firstError("<svg>\n  <circle r=\"1\">\n</svg>\n");
+        assertTrue(bad != null && bad.error() != null, "an unclosed circle is an error");
+        assertEquals(3, bad.line());
+        XmlParser.Parsed xxe =
+                XmlParser.firstError("<!DOCTYPE foo [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>\n<foo>&xxe;</foo>");
+        assertTrue(xxe == null || xxe.error() == null || !xxe.error().contains("root:"), "never read");
+    }
 }
