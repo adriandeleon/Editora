@@ -380,6 +380,12 @@ public class QuickOpen<T> {
         private @Nullable String appliedClass;
 
         ItemCell() {
+            // Never wider than the list. A row whose detail ran past it (Surround With's snippet bodies) gave
+            // the list a horizontal scroll bar on one pulse and took it away on the next: the picker
+            // flickered. The detail gives way with an ellipsis; the title keeps its width and never wraps.
+            setPrefWidth(0);
+            title.setMinWidth(Region.USE_PREF_SIZE);
+            titleBox.setMinWidth(Region.USE_PREF_SIZE);
             titleBox.setAlignment(Pos.CENTER_LEFT);
             box.setAlignment(Pos.CENTER_LEFT);
             sub.getStyleClass().add("keybinding"); // reuse the palette's muted right-detail style
