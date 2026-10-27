@@ -149,6 +149,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   any name (`<Out>`) pairs with the override's, a raw supertype's (`extends Store`) stands for its erasure, type
   arguments carry through a library interface (`Names extends List<String>`: `add(Integer)` overrides nothing), and
   an open supertype file is read with its unsaved edits.
+- **Java: Go to Super Method never opens a wrong file.** A `<>` anonymous class of a nested type
+  (`new Outer.Mid.Sink<>() {…}`) opened an unrelated JDK method (`Consumer.accept`) or said nothing: the nested type is
+  now found through its outer one. In an initializer's or a library class's anonymous method, the caret in the
+  parameter list (an annotated or a wrapped one) or the Javadoc opened `Object.java`; it is that method's now, and the
+  anonymous class's header or a field in it goes to the type it instantiates. On a one-line class a later method is
+  itself, a wrapped class header with a trailing comment is the class's, and `Collections::<List<String>>emptyList`
+  goes to `Supplier.get`. A class's supertypes leave out `java.lang.Object`, as in IntelliJ: `class X implements
+  Runnable` opens `Runnable.java`, and a plain class says "No supertype found".
+- **Java: Go to Super Method's generics at the edges.** A jar interface without sources whose type variable has a
+  longer name (`LKeyed<Key>`) is read from its decompiled header, so its override is found and an overload with another
+  type is not; a raw `new Store() {…}` assigned to a `Store<String>` is raw; a supertype open in another window is read
+  with its unsaved edits.
 - **Java: the import verdict.** A pom broken after a compile error had been built read as "the project did not
   import", every file "Not checked"; a Gradle build that failed beside a Maven one in one folder marked both. A
   reactor module whose pom.xml does not parse, and a broken pom with a loose file opened first, now say the project
@@ -274,6 +286,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A jump shows its own column**: Go to Definition, Structure clicks and search hits kept the old horizontal
   scroll, so after the end of a long line a jump near a line start landed with the first characters cut off, and a
   jump far along a long line left the caret off screen.
+- **Java: more of the import verdict.** jdtls's "… does not exist" errors for a file outside the source folders no
+  longer turn a later pom break into "the project did not import"; a Gradle build that fails in `tools/` of a Maven
+  project is that folder's, the rest stays checked; a pom.xml that does not parse beside another build is said, and
+  its files are "Not checked" rather than "Loaded and ready". A module's pom.xml saved or changed (a `git pull`) in a
+  collapsed folder now reaches jdtls, so its classpath updates without Reload Project Configuration. A broken Gradle
+  settings file names its cause, two Kotlin script errors name the first, a script is named by its file name, and a
+  pom's line and column read in the interface's language.
+- **Focus and paste.** Window ▸ Buffer: Next and the Switcher onto the Welcome, Doctor or an image tab focus that page;
+  the toolbar's New button had the focus, and Space opened a buffer. A paste's imports no longer depend on a pause
+  after it: typing right after the pasted text keeps them. Code copied from a file that was deleted or moved since
+  still imports what the text alone needs. In the Emacs keymap, a kill (C-k, M-d, zap) records its file as a cut does,
+  and M-y adds the imports the swapped-in text needs.
+- **Small fixes.** Doctor's JDK reading follows a multi-line Gradle `include(…)`, a convention plugin rather than
+  buildSrc's own toolchain, and `providers.gradleProperty("javaVersion")`, and no longer takes an aggregator above a
+  Spring Boot module for its parent. A drag-move right after opening a file the move edits is asked of jdtls once more
+  instead of failing with "the file changed". The bundled grammars' "character class has ']' without escape" warnings
+  no longer reach the Debug Log.
 
 ## [0.25.0] - 2026-10-26
 

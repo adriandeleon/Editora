@@ -617,7 +617,23 @@ public final class LspManager {
         return dot > 0 && XML_GRAMMAR_EXTENSIONS.contains(n.substring(dot + 1).toLowerCase(java.util.Locale.ROOT));
     }
 
-    /** Root → a watcher that reports only grammar files, for an XML server inside a watched project (B9). */
+    /** The build files jdtls updates a project's configuration from when told they changed. */
+    private static final java.util.Set<String> JAVA_BUILD_FILES =
+            java.util.Set.of("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts");
+
+    /**
+     * Whether a file is one a server rebuilds its model from when it changes: an XML grammar (XML review B9) or a
+     * Java build file (twelfth review CL1).
+     */
+    static boolean modelFile(Path file) {
+        Path name = file.getFileName();
+        return xmlGrammarFile(file) || (name != null && JAVA_BUILD_FILES.contains(name.toString()));
+    }
+
+    /**
+     * Root → a watcher that reports only {@link #modelFile model files}, for an XML or Java server inside a watched
+     * project (B9, CL1).
+     */
     private final Map<Path, RootWatcher> grammarWatchers = new ConcurrentHashMap<>();
 
     /**
@@ -625,7 +641,9 @@ public final class LspManager {
      * watcher covers still gets a grammar-only watcher for an XML server: the panel watches only its expanded
      * folders, so a schema regenerated in a collapsed one left lemminx's errors stale until the next keystroke
      * (XML review B9). lemminx registers those globs dynamically, which this client does not offer for every
-     * server (jdtls would then expect its own registrations honoured), so they are watched here by name.
+     * server (jdtls would then expect its own registrations honoured), so they are watched here by name. A Java
+     * server's root gets one for its build files: a module's pom.xml edited in a collapsed folder, saved here or
+     * changed by a git pull, left the classpath stale until Reload (twelfth review CL1).
      */
     private void ensureRootWatcher(Path root, String serverId) {
         if (closed
@@ -636,14 +654,15 @@ public final class LspManager {
         }
         Path key = root.toAbsolutePath().normalize();
         boolean whole = watchRoot.test(key);
-        boolean grammar = !whole && XmlServer.SERVER_ID.equals(serverId);
+        boolean grammar =
+                !whole && (XmlServer.SERVER_ID.equals(serverId) || LspServerRegistry.JAVA_SERVER_ID.equals(serverId));
         Map<Path, RootWatcher> watchers = whole ? rootWatchers : grammar ? grammarWatchers : null;
         if (watchers == null || watchers.containsKey(key) || watchers.size() >= MAX_ROOT_WATCHERS) {
             return;
         }
         java.util.function.Consumer<List<WatchedFile>> sink =
                 batch -> Platform.runLater(() -> notifyWatchedFiles(batch));
-        RootWatcher w = whole ? RootWatcher.start(key, sink) : RootWatcher.start(key, sink, LspManager::xmlGrammarFile);
+        RootWatcher w = whole ? RootWatcher.start(key, sink) : RootWatcher.start(key, sink, LspManager::modelFile);
         if (w != null && watchers.putIfAbsent(key, w) != null) {
             w.close(); // another start won
         }
@@ -657,6 +676,23 @@ public final class LspManager {
         rootWatchers.clear();
         grammarWatchers.values().forEach(RootWatcher::close);
         grammarWatchers.clear();
+    }
+
+    /** Whether a watcher of this manager's own reports changes to {@code file}, a build file or a grammar. */
+    public boolean watchesModelFile(Path file) {
+        Path at = file.toAbsolutePath().normalize();
+        return modelFile(at)
+                && java.util.stream.Stream.concat(rootWatchers.keySet().stream(), grammarWatchers.keySet().stream())
+                        .anyMatch(at::startsWith);
+    }
+
+    /**
+     * Whether a model-file-only watcher, which runs beside the Project panel's, reports {@code file}: the panel's own
+     * event for it would go out twice (twelfth review CL1).
+     */
+    public boolean watchesModelFileBesidePanel(Path file) {
+        Path at = file.toAbsolutePath().normalize();
+        return modelFile(at) && grammarWatchers.keySet().stream().anyMatch(at::startsWith);
     }
 
     /** The roots watched for grammar files only (tests). */
@@ -3353,6 +3389,21 @@ public final class LspManager {
                     }
                     Platform.runLater(() -> cb.accept(out));
                 });
+    }
+
+    /**
+     * As above at a position in {@code file} (another file of {@code anchor}'s session), or in {@code libraryUri} (a
+     * class file's), as {@link #memberSpans} reads one.
+     */
+    public void prepareTypeHierarchyAt(
+            Path anchor,
+            @Nullable Path file,
+            @Nullable String libraryUri,
+            int line,
+            int character,
+            Consumer<List<HierarchyNode>> cb) {
+        prepareTypeHierarchyAt(
+                anchor, libraryUri != null ? libraryUri : file != null ? uri(file) : null, line, character, cb);
     }
 
     /** The supertypes ({@code supertypes=true}) or subtypes of a type-hierarchy node's {@code raw} item. */
@@ -6156,6 +6207,7 @@ public final class LspManager {
                 insertSpaces,
                 null,
                 stillValid,
+                null,
                 true,
                 cb);
     }
@@ -6163,7 +6215,10 @@ public final class LspManager {
     /**
      * As above, with the Java file the text was copied from ({@code copiedFrom}, or null). jdtls answers null when
      * asked a few milliseconds after the paste's change, before it has read it (most pastes): asked once more, after
-     * the change has settled, it answers (eleventh review AM2).
+     * the change has settled, it answers (eleventh review AM2). {@code current}, when given, is the document's text
+     * now: an answer that inserts only above the pasted text applies to it though the user typed after the paste,
+     * which {@code stillValid} allows (twelfth review AL2). A null or failed answer with {@code copiedFrom} is asked
+     * again without it: jdtls answers nothing when that file is gone (AL3).
      */
     public void handlePasteEvent(
             Path file,
@@ -6176,6 +6231,7 @@ public final class LspManager {
             boolean insertSpaces,
             @Nullable Path copiedFrom,
             java.util.function.BooleanSupplier stillValid,
+            java.util.function.@Nullable Supplier<String> current,
             boolean retry,
             Consumer<Boolean> cb) {
         LanguageServerSession s = sessionFor(file);
@@ -6206,7 +6262,23 @@ public final class LspManager {
                     com.google.gson.JsonElement json = e == null ? asJson(r) : null;
                     boolean unanswered = e == null && (json == null || json.isJsonNull());
                     Platform.runLater(() -> {
-                        if (unanswered && retry && stillValid.getAsBoolean()) {
+                        if (copiedFrom != null && (e != null || (unanswered && !retry)) && stillValid.getAsBoolean()) {
+                            // no answer even once settled, or a failure: perhaps the copied file is gone (AL3)
+                            handlePasteEvent(
+                                    file,
+                                    startLine,
+                                    startChar,
+                                    endLine,
+                                    endChar,
+                                    pastedText,
+                                    tabSize,
+                                    insertSpaces,
+                                    null,
+                                    stillValid,
+                                    current,
+                                    retry,
+                                    cb);
+                        } else if (unanswered && retry && stillValid.getAsBoolean()) {
                             var later = new javafx.animation.PauseTransition(javafx.util.Duration.millis(400));
                             later.setOnFinished(ev -> {
                                 if (stillValid.getAsBoolean()) {
@@ -6221,6 +6293,7 @@ public final class LspManager {
                                             insertSpaces,
                                             copiedFrom,
                                             stillValid,
+                                            current,
                                             false,
                                             cb);
                                 } else {
@@ -6231,10 +6304,24 @@ public final class LspManager {
                         } else if (edit == null || !stillValid.getAsBoolean()) {
                             cb.accept(false);
                         } else {
-                            applyWorkspaceEdit(edit, expected, cb);
+                            String now = current == null ? null : current.get();
+                            applyWorkspaceEdit(
+                                    edit,
+                                    now != null && JdtlsPaste.above(edit, startLine, startChar)
+                                            ? rebased(expected, file, now)
+                                            : expected,
+                                    cb);
                         }
                     });
                 });
+    }
+
+    /** {@code basis} with {@code file}'s text as {@code now}: an edit in text that has not changed since. */
+    private static EditBasis rebased(EditBasis basis, Path file, String now) {
+        Map<Path, String> documents = new java.util.HashMap<>(basis.documents());
+        documents.put(file, now);
+        documents.put(com.editora.config.PathKeys.canonical(file), now);
+        return new EditBasis(Map.copyOf(documents), basis.sentAtMillis(), basis.uris());
     }
 
     /**
@@ -7002,6 +7089,15 @@ public final class LspManager {
             return true;
         }
         return false;
+    }
+
+    /**
+     * The text {@code anchorFile}'s server holds for {@code file}, open in any window sharing that server; null when
+     * it is not open there. Its outline positions follow this text, not the file on disk (twelfth review BM3).
+     */
+    public @Nullable String sentText(Path anchorFile, Path file) {
+        LanguageServerSession s = sessionFor(anchorFile);
+        return s == null ? null : s.documentSnapshot(uri(file));
     }
 
     /**

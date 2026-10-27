@@ -1,6 +1,7 @@
 package com.editora.editor.highlight;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -37,6 +38,16 @@ import org.jspecify.annotations.Nullable;
 public final class GrammarRegistry {
 
     private static final String RESOURCE_DIR = "/com/editora/grammars/";
+    /**
+     * tm4e's loggers silenced below, held: JUL keeps a logger only weakly, so one collected before tm4e first asked
+     * for it came back at the default level, and 20–64 "character class has ']' without escape" warnings per run
+     * reached the Debug Log from the bundled grammars (twelfth review CL5).
+     */
+    private static final List<Logger> QUIET_LOGGERS = List.of(
+            Logger.getLogger("org.eclipse.tm4e.core.internal.oniguruma.OnigRegExp"),
+            Logger.getLogger("org.eclipse.tm4e.core.internal.grammar.raw.RawCaptures"));
+
+    // after QUIET_LOGGERS, which its constructor reads
     private static final GrammarRegistry INSTANCE = new GrammarRegistry();
 
     /** TextMate scope name -> grammar resource base name (without {@code .tmLanguage.json}). */
@@ -57,9 +68,7 @@ public final class GrammarRegistry {
         // handle ourselves (see TextMateHighlighter): the Oniguruma backend warns for nearly every
         // regex using Oniguruma-specific syntax (e.g. an unescaped ']'), and the rule parser logs
         // each unparseable rule/capture. Silence these to keep the console usable.
-        Logger.getLogger("org.eclipse.tm4e.core.internal.oniguruma.OnigRegExp").setLevel(Level.OFF);
-        Logger.getLogger("org.eclipse.tm4e.core.internal.grammar.raw.RawCaptures")
-                .setLevel(Level.OFF);
+        QUIET_LOGGERS.forEach(l -> l.setLevel(Level.OFF));
         registerGrammars();
         // The resource base name doubles as the language name (see LanguageRegistry), so the
         // inverse of scopeToResource resolves a language name to its scope.

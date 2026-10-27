@@ -58,6 +58,13 @@ final class SuperMethodWalk {
                 LspCoordinator.offsetOf(text, anchor.nameLine()) + anchor.nameColumn());
     }
 
+    /** {@code supers} without {@code java.lang.Object}, which IntelliJ never offers (twelfth review EL1). */
+    static List<LspManager.HierarchyNode> withoutObject(List<LspManager.HierarchyNode> supers) {
+        return supers.stream()
+                .filter(n -> !(n.name().equals("Object") && "java.lang".equals(n.detail())))
+                .toList();
+    }
+
     void start(com.editora.lsp.MemberSpan type) {
         pending++;
         int name = LspCoordinator.offsetOf(text, type.nameLine()) + type.nameColumn();
@@ -74,6 +81,52 @@ final class SuperMethodWalk {
                 Map.of(),
                 type.name(),
                 !type.isAnonymous());
+        var qualified = com.editora.lsp.JavaMembers.qualifiedName(text, at);
+        if (type.isAnonymous() && qualified.getValue().size() > 1 && qualified.getKey() < at) {
+            // a nested type (Wrong12.Mid.Sink<>): at its last segment jdtls may resolve a JDK type of the same name
+            // (java.util.stream.Sink) or the enclosing class, its Go to Definition too; the outer type is found from
+            // the first segment, and the nested one in its outline (twelfth review BL1)
+            int firstColumn = type.nameColumn() - Math.max(0, name - qualified.getKey());
+            lspManager.definitionAt(ask.path(), ask.libraryUri(), type.nameLine(), Math.max(0, firstColumn), outers -> {
+                LspManager.Target outer = outers.isEmpty() ? null : outers.get(0);
+                if (outer == null) {
+                    prepare(type, column, header);
+                    return;
+                }
+                lspManager.memberSpans(ask.path(), outer.file(), outer.classFileUri(), members -> {
+                    com.editora.lsp.MemberSpan top = com.editora.lsp.JavaMembers.typeAt(members, outer.line());
+                    com.editora.lsp.MemberSpan nested = top == null
+                            ? null
+                            : com.editora.lsp.JavaMembers.nestedType(
+                                    top,
+                                    qualified
+                                            .getValue()
+                                            .subList(1, qualified.getValue().size()));
+                    if (nested == null) {
+                        prepare(type, column, header); // a package's (java.util.Comparator): the last segment's
+                        return;
+                    }
+                    lspManager.prepareTypeHierarchyAt(
+                            ask.path(),
+                            outer.file(),
+                            outer.classFileUri(),
+                            nested.nameLine(),
+                            nested.nameColumn(),
+                            roots -> {
+                                if (!roots.isEmpty()) {
+                                    visit(roots.get(0), "a", 1, false, header);
+                                }
+                                finish();
+                            });
+                });
+            });
+            return;
+        }
+        prepare(type, column, header);
+    }
+
+    /** Prepares {@code type}'s hierarchy at {@code column} of its name line and walks from there. */
+    private void prepare(com.editora.lsp.MemberSpan type, int column, Header header) {
         lspManager.prepareTypeHierarchyAt(ask.path(), ask.libraryUri(), type.nameLine(), column, roots -> {
             if (!roots.isEmpty()) {
                 LspManager.HierarchyNode root = roots.get(0);
@@ -107,8 +160,8 @@ final class SuperMethodWalk {
     }
 
     /**
-     * The text of {@code type}'s file: the anchor's, an open file's buffer, or a closed project file read once; null for
-     * another class file.
+     * The text of {@code type}'s file: the anchor's, an open file's buffer (in any window sharing the server), or a
+     * closed project file read once; null for another class file.
      */
     private @Nullable String textOf(LspManager.HierarchyNode type) {
         if (ask.libraryUri() != null
@@ -121,6 +174,9 @@ final class SuperMethodWalk {
             return null;
         }
         String open = openText.apply(file);
+        if (open == null) {
+            open = lspManager.sentText(ask.path(), file); // open in another window sharing the server (twelfth BM3)
+        }
         if (open != null) {
             return open;
         }
@@ -157,40 +213,70 @@ final class SuperMethodWalk {
         pending++;
         lspManager.memberSpans(ask.path(), type.file(), type.libraryUri(), members -> {
             com.editora.lsp.MemberSpan declared = com.editora.lsp.JavaMembers.typeAt(members, type.line(), type.name());
-            Map<String, String> bindings =
-                    declared == null || subtype == null ? Map.of() : subtype.bindingsFor(declared.name());
-            String own = declared == null ? null : textOf(type);
-            List<com.editora.lsp.MemberSpan> hits = declared == null
-                    ? List.of()
-                    : com.editora.lsp.JavaMembers.overridden(
-                            declared.children(),
-                            method,
-                            com.editora.lsp.JavaMembers.typeParameters(members, declared),
-                            bindings,
-                            m -> ownTypeVariables(own, m));
-            for (int i = 0; i < hits.size(); i++) {
-                com.editora.lsp.MemberSpan hit = hits.get(i);
-                found.put(
-                        order + i,
-                        new LspCoordinator.SuperTarget(
-                                new LspManager.Target(type.file(), hit.nameLine(), hit.nameColumn(), type.libraryUri()),
-                                type.name() + "." + com.editora.lsp.JavaMembers.methodName(hit.name())));
-                foundIn.put(order + i, key);
+            if (declared != null
+                    && type.file() == null
+                    && type.libraryUri() != null
+                    && !declared.name().contains("<")) {
+                // a jar class without sources: its outline names no type parameters, its decompiled header does
+                // (LKeyed<Key>, LMid<T> extends LStore<T>) (twelfth review DL2, DO2)
+                lspManager.classFileContents(
+                        ask.path(),
+                        type.libraryUri(),
+                        own -> visited(type, order, depth, subtype, members, declared, own));
+                return;
             }
-            Header header = declared == null
-                    ? null
-                    : new Header(
-                            own,
-                            own == null
-                                    ? -1
-                                    : LspCoordinator.offsetOf(own, declared.nameLine()) + declared.nameColumn(),
-                            -1,
-                            bindings,
-                            declared.name(),
-                            true);
-            expand(type, order, depth, !hits.isEmpty(), header);
-            finish();
+            visited(type, order, depth, subtype, members, declared, declared == null ? null : textOf(type));
         });
+    }
+
+    /** {@link #visit}'s rest, with {@code type}'s outline and {@code own}, its file's text (null if none). */
+    private void visited(
+            LspManager.HierarchyNode type,
+            String order,
+            int depth,
+            @Nullable Header subtype,
+            List<com.editora.lsp.MemberSpan> members,
+            com.editora.lsp.@Nullable MemberSpan declared,
+            @Nullable String own) {
+        String key = key(type);
+        String name = declared == null
+                ? ""
+                : own == null || declared.name().contains("<")
+                        ? declared.name()
+                        : com.editora.lsp.JavaMembers.withTypeParameters(
+                                own,
+                                LspCoordinator.offsetOf(own, declared.nameLine()) + declared.nameColumn(),
+                                declared.name());
+        Map<String, String> bindings = declared == null || subtype == null ? Map.of() : subtype.bindingsFor(name);
+        java.util.Set<String> typeVariables = new java.util.HashSet<>();
+        if (declared != null) {
+            typeVariables.addAll(com.editora.lsp.JavaMembers.typeParameters(members, declared));
+            typeVariables.addAll(com.editora.lsp.JavaMembers.typeParameters(name));
+        }
+        List<com.editora.lsp.MemberSpan> hits = declared == null
+                ? List.of()
+                : com.editora.lsp.JavaMembers.overridden(
+                        declared.children(), method, typeVariables, bindings, m -> ownTypeVariables(own, m));
+        for (int i = 0; i < hits.size(); i++) {
+            com.editora.lsp.MemberSpan hit = hits.get(i);
+            found.put(
+                    order + i,
+                    new LspCoordinator.SuperTarget(
+                            new LspManager.Target(type.file(), hit.nameLine(), hit.nameColumn(), type.libraryUri()),
+                            type.name() + "." + com.editora.lsp.JavaMembers.methodName(hit.name())));
+            foundIn.put(order + i, key);
+        }
+        Header header = declared == null
+                ? null
+                : new Header(
+                        own,
+                        own == null ? -1 : LspCoordinator.offsetOf(own, declared.nameLine()) + declared.nameColumn(),
+                        -1,
+                        bindings,
+                        name,
+                        true);
+        expand(type, order, depth, !hits.isEmpty(), header);
+        finish();
     }
 
     private void finish() {
@@ -237,7 +323,7 @@ final class SuperMethodWalk {
     /**
      * A type's declaration header in {@code text} from {@code from} ({@code ownName}: its own name; else the type an
      * anonymous class instantiates), or from {@code fallback} when that names no type arguments (an anonymous class's
-     * {@code <>}: its field's declared type), and what its own type variables stand for: the type arguments it gives a
+     * {@code <>}: its field's declared type, never for a raw {@code new X()}), and what its own type variables stand for: the type arguments it gives a
      * supertype bind that supertype's type variables (tenth review DO2). A wildcard binds nothing (eleventh review
      * EM1); a raw supertype's are their erasure (BM4). With no text (a class file), a supertype's type variables keep
      * what this type's of the same names stand for when the two lists are the same ({@code List<E>} to
@@ -263,7 +349,10 @@ final class SuperMethodWalk {
                 return out;
             }
             List<String> args = com.editora.lsp.JavaMembers.typeArguments(text, from, supertype, ownName);
-            if (args.isEmpty() && fallback >= 0) {
+            if (args.isEmpty()
+                    && fallback >= 0
+                    && !com.editora.lsp.JavaMembers.namesRaw(text, from, supertype, ownName)) {
+                // only a <> takes its variable's type: a raw new Store2() {…} is raw (twelfth review BM4)
                 args = com.editora.lsp.JavaMembers.typeArguments(text, fallback, supertype, false);
             }
             if (args.isEmpty() && com.editora.lsp.JavaMembers.namesRaw(text, from, supertype, ownName)) {

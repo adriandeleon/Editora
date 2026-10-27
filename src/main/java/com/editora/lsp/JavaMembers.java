@@ -24,23 +24,31 @@ public final class JavaMembers {
     }
 
     /**
-     * As {@link #enclosing(List, int)} at {@code column} of {@code line}: a member that starts on its parent's name line
-     * ({@code class V { void v() {} }}, or a class line ending in a comment jdtls gives the first member) holds the
-     * caret only from its start column on, so the class name is the class's (eleventh review DM3).
+     * As {@link #enclosing(List, int)} at {@code column} of {@code line}: a member holds the caret only from its start
+     * column on its first line to its end column on its last, so on a one-line type ({@code class V { void v() {} }})
+     * the class name and a later member are not the first member's (eleventh review DM3, twelfth review BL3).
      */
     public static List<MemberSpan> enclosing(List<MemberSpan> members, int line, int column) {
+        return enclosing(members, line, column, null);
+    }
+
+    /**
+     * As {@link #enclosing(List, int, int)}, reading {@code text} for a range that jdtls starts at a comment ending
+     * code on the line before the member ({@code implements Runnable { // note}): that line is not the member's, so the
+     * comment and the code before it belong to whatever holds them (twelfth review BL3).
+     */
+    public static List<MemberSpan> enclosing(List<MemberSpan> members, int line, int column, @Nullable String text) {
         List<MemberSpan> chain = new ArrayList<>();
         List<MemberSpan> level = members;
         boolean descended = true;
         while (descended) {
             descended = false;
-            MemberSpan parent = chain.isEmpty() ? null : chain.get(chain.size() - 1);
             for (MemberSpan m : level) {
-                boolean beforeIt = parent != null
-                        && line == m.startLine()
-                        && m.startLine() == parent.nameLine()
-                        && column < m.startColumn();
-                if (m.startLine() <= line && line <= m.endLine() && !m.kind().equals("package") && !beforeIt) {
+                boolean outside = line < m.startLine()
+                        || line > m.endLine()
+                        || (line == m.startLine() && (column < m.startColumn() || trailingStart(text, m)))
+                        || (line == m.endLine() && column > m.endColumn());
+                if (!outside && !m.kind().equals("package")) {
                     chain.add(m);
                     level = m.children();
                     descended = true;
@@ -49,6 +57,23 @@ public final class JavaMembers {
             }
         }
         return chain;
+    }
+
+    /** Whether {@code m}'s range starts at a comment after other code on a line before its name's. */
+    private static boolean trailingStart(@Nullable String text, MemberSpan m) {
+        if (text == null || m.startLine() >= m.nameLine() || m.startColumn() == 0) {
+            return false;
+        }
+        int at = 0;
+        for (int l = 0; l < m.startLine() && at >= 0; l++) {
+            at = text.indexOf('\n', at);
+            at = at < 0 ? -1 : at + 1;
+        }
+        if (at < 0) {
+            return false;
+        }
+        int end = Math.min(text.length(), at + m.startColumn());
+        return !text.substring(at, end).isBlank();
     }
 
     /** {@code text} with comments and string, character and text-block contents as spaces; offsets and lines kept. */
@@ -227,9 +252,9 @@ public final class JavaMembers {
             while (right < code.length() && Character.isWhitespace(code.charAt(right))) {
                 right++;
             }
-            if (right < code.length() && code.charAt(right) == '<') { // Collections::<String>emptyList
-                int close = code.indexOf('>', right);
-                right = close < 0 ? right : close + 1;
+            if (right < code.length() && code.charAt(right) == '<') { // Collections::<List<String>>emptyList
+                int close = closing(code, right, '<', '>', to); // nested type arguments (twelfth review BO3)
+                right = close >= to ? right : close + 1;
             }
             while (right < code.length() && Character.isJavaIdentifierPart(code.charAt(right))) {
                 right++;
@@ -362,10 +387,11 @@ public final class JavaMembers {
         List<int[]> open = new ArrayList<>(braces); // innermost first
         if (!open.isEmpty() && open.get(0)[1] >= 0) {
             // in an anonymous class's body, outside its methods: on a method's header (its name, modifiers,
-            // annotations),
-            // that method, as IntelliJ takes the member the caret's leaf is in (eleventh review EM2)
-            int name = methodHeaderName(code, open.get(0)[0] + 1, end);
-            return name < 0 ? null : new int[] {open.get(0)[1], name};
+            // annotations, parameters, Javadoc), that method, as IntelliJ takes the member the caret's leaf is in
+            // (eleventh review EM2, twelfth review DL1); elsewhere in the body (a field, between members), the
+            // anonymous class itself, whose name offset stands for it with -1 as the method's (EL2)
+            int name = methodHeaderName(text, code, open.get(0)[0] + 1, end);
+            return new int[] {open.get(0)[1], name};
         }
         for (int k = 0; k + 1 < open.size(); k++) {
             if (open.get(k)[1] >= 0) {
@@ -390,18 +416,22 @@ public final class JavaMembers {
 
     /**
      * The offset of the name of the method whose header holds {@code caret}, in a class body opened at {@code bodyStart}:
-     * the header runs from what ends the member before it (outside parentheses, so an annotation's {@code {"a"}} does
-     * not) to the method's {@code {}; -1 when the caret is in no method header.
+     * the header runs from what ends the member before it to the method's {@code {}, its parameter list and the
+     * Javadoc right above it included; -1 when the caret is in no method header (a field, between members). The
+     * member's start is found back past the parameter list the caret may be in (an unmatched {@code (}), the header's
+     * end forward from that start, so a caret inside the parentheses or an annotated parameter does not lose the
+     * method (twelfth review DL1).
      */
-    private static int methodHeaderName(String code, int bodyStart, int caret) {
+    private static int methodHeaderName(String text, String code, int bodyStart, int caret) {
+        int at = Math.min(caret, code.length());
         int start = bodyStart;
         int depth = 0;
-        for (int i = Math.min(caret, code.length()) - 1; i >= bodyStart; i--) {
+        for (int i = at - 1; i >= bodyStart; i--) {
             char c = code.charAt(i);
             if (c == ')') {
                 depth++;
             } else if (c == '(') {
-                depth--;
+                depth = Math.max(0, depth - 1); // an unmatched '(' is the list the caret is in
             } else if (depth == 0 && (c == '{' || c == '}' || c == ';')) {
                 start = i + 1;
                 break;
@@ -411,12 +441,18 @@ public final class JavaMembers {
         while (first < code.length() && Character.isWhitespace(code.charAt(first))) {
             first++;
         }
-        if (caret < first) {
-            return -1; // between members, not on one
+        if (at < first) {
+            // blanks before the header: a caret in the comment right above it (its Javadoc) is the method's
+            String gap = text.substring(start, Math.min(first, text.length()));
+            int open = gap.lastIndexOf("/*", Math.max(0, at - start));
+            int close = gap.indexOf("*/", Math.max(0, at - start));
+            if (open < 0 || close < 0 || !gap.substring(close + 2).isBlank()) {
+                return -1; // between members, not on one
+            }
         }
         int brace = -1;
         depth = 0;
-        for (int i = Math.max(start, Math.min(caret, code.length())); i < code.length(); i++) {
+        for (int i = first; i < code.length(); i++) {
             char c = code.charAt(i);
             if (c == '(') {
                 depth++;
@@ -429,16 +465,57 @@ public final class JavaMembers {
                 break;
             }
         }
-        if (brace < 0) {
+        if (brace < 0 || at > brace) {
             return -1;
         }
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
-                        "([\\w$]+)\\s*\\([^(){};]*\\)\\s*(throws\\s+[\\w.,\\s]+)?\\s*$")
-                .matcher(code.substring(start, brace));
-        if (!m.find() || code.substring(start, start + m.start(1)).matches("(?s).*\\bnew\\s.*")) {
-            return -1; // no method, or an anonymous class's own header
+        // the name: the identifier before the header's first '(' outside its annotations and type parameters
+        int i = first;
+        while (i < brace) {
+            char c = code.charAt(i);
+            if (c == '@') {
+                i++;
+                while (i < brace && (Character.isJavaIdentifierPart(code.charAt(i)) || code.charAt(i) == '.')) {
+                    i++;
+                }
+                while (i < brace && Character.isWhitespace(code.charAt(i))) {
+                    i++;
+                }
+                if (i < brace && code.charAt(i) == '(') {
+                    i = closing(code, i, '(', ')', brace) + 1;
+                }
+            } else if (c == '<') {
+                i = closing(code, i, '<', '>', brace) + 1;
+            } else if (Character.isJavaIdentifierStart(c)) {
+                int j = i;
+                while (j < brace && Character.isJavaIdentifierPart(code.charAt(j))) {
+                    j++;
+                }
+                int k = j;
+                while (k < brace && Character.isWhitespace(code.charAt(k))) {
+                    k++;
+                }
+                if (k < brace && code.charAt(k) == '(') {
+                    return code.substring(i, j).equals("new") ? -1 : i; // not an anonymous class's own header
+                }
+                i = j;
+            } else {
+                i++;
+            }
         }
-        return start + m.start(1);
+        return -1;
+    }
+
+    /** The offset of the {@code close} matching the {@code open} at {@code at}, reading on; {@code limit} if none. */
+    private static int closing(String code, int at, char open, char close, int limit) {
+        int depth = 0;
+        for (int i = at; i < limit; i++) {
+            if (code.charAt(i) == open) {
+                depth++;
+            } else if (code.charAt(i) == close && --depth == 0) {
+                return i;
+            }
+        }
+        return limit;
     }
 
     /** A method symbol's simple name: {@code label} of {@code label()} or {@code map(T) : R}. */
@@ -737,6 +814,66 @@ public final class JavaMembers {
         return last;
     }
 
+    /**
+     * The offset where the qualified type name whose last segment is at {@code last} starts ({@code Wrong12} of
+     * {@code new Wrong12.Mid.Sink<>()}), and its segments (twelfth review BL1).
+     */
+    public static java.util.Map.Entry<Integer, List<String>> qualifiedName(String text, int last) {
+        String code = code(text);
+        int start = Math.max(0, Math.min(last, code.length()));
+        while (start > 0) {
+            int i = start - 1;
+            while (i >= 0 && Character.isWhitespace(code.charAt(i))) {
+                i--;
+            }
+            if (i < 0 || code.charAt(i) != '.') {
+                break;
+            }
+            i--;
+            while (i >= 0 && Character.isWhitespace(code.charAt(i))) {
+                i--;
+            }
+            int j = i;
+            while (j >= 0 && Character.isJavaIdentifierPart(code.charAt(j))) {
+                j--;
+            }
+            if (j == i) {
+                break;
+            }
+            start = j + 1;
+        }
+        int end = Math.max(0, Math.min(last, code.length()));
+        while (end < code.length() && Character.isJavaIdentifierPart(code.charAt(end))) {
+            end++;
+        }
+        List<String> segments = new ArrayList<>();
+        for (String part : code.substring(start, end).split("\\.")) {
+            if (!part.isBlank()) {
+                segments.add(part.strip());
+            }
+        }
+        return java.util.Map.entry(start, segments);
+    }
+
+    /** The nested type {@code path} names under {@code outer} ({@code Mid}, {@code Sink}), or null. */
+    public static @Nullable MemberSpan nestedType(MemberSpan outer, List<String> path) {
+        MemberSpan at = outer;
+        for (String name : path) {
+            MemberSpan next = null;
+            for (MemberSpan child : at.children()) {
+                if (child.isType() && child.name().replaceAll("<.*", "").strip().equals(name)) {
+                    next = child;
+                    break;
+                }
+            }
+            if (next == null) {
+                return null;
+            }
+            at = next;
+        }
+        return at;
+    }
+
     /** The comma-separated arguments of the {@code <…>} opening at {@code open}. */
     private static List<String> arguments(String code, int open) {
         List<String> args = new ArrayList<>();
@@ -887,6 +1024,28 @@ public final class JavaMembers {
     /** A type parameter's name, after any annotations: {@code K} in {@code K extends Enum<K>}. */
     private static final java.util.regex.Pattern TYPE_PARAMETER =
             java.util.regex.Pattern.compile("^\\s*(?:@[\\w.]+\\s*)*([A-Za-z_$][\\w$]*)");
+
+    /**
+     * {@code name} with the type parameters written after it at {@code at} in {@code text} ({@code LKeyed<Key>} of a
+     * decompiled {@code public interface LKeyed<Key> {}), or {@code name} when none are (twelfth review DL2).
+     */
+    public static String withTypeParameters(String text, int at, String name) {
+        String code = code(text);
+        int i = Math.max(0, Math.min(at, code.length()));
+        while (i < code.length() && Character.isJavaIdentifierPart(code.charAt(i))) {
+            i++;
+        }
+        while (i < code.length() && Character.isWhitespace(code.charAt(i))) {
+            i++;
+        }
+        if (i >= code.length() || code.charAt(i) != '<') {
+            return name;
+        }
+        int close = closing(code, i, '<', '>', code.length());
+        return close >= code.length()
+                ? name
+                : name + code.substring(i, close + 1).replaceAll("\\s+", " ");
+    }
 
     /** The type parameter names in a type's outline name: {@code KeyStore<Key, Val>} gives Key and Val. */
     public static List<String> typeParameters(String typeName) {

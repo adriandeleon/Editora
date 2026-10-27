@@ -4420,9 +4420,10 @@ public class EditorBuffer implements TabContent {
      *
      * <p>The pending didChange is flushed FIRST ({@link #sendLspChange}) so the server computes against
      * the post-paste document — JSON-RPC preserves order, the {@code requestLspCompletion} idiom. The
-     * {@code stillValid} supplier the requester must consult before applying is a {@link #docVersion}
-     * check: an answer that arrives after the user kept typing is dropped, never applied to text it
-     * wasn't computed for.
+     * {@code stillValid} supplier the requester must consult before applying: an edit before or inside the pasted
+     * text since drops the answer, never applied to text it wasn't computed for, while typing after it does not,
+     * so a paste followed by Enter keeps its imports (twelfth review AL2). The answer's edit then lands above the
+     * paste, in text that has not changed.
      */
     public void requestLspPasteImports(int start, int end) {
         if (!lspPasteImportsEnabled
@@ -4436,6 +4437,19 @@ public class EditorBuffer implements TabContent {
         }
         sendLspChange();
         long version = docVersion;
+        String pasted = area.getText(start, end);
+        boolean[] touched = {false};
+        var watch = area.plainTextChanges().subscribe(c -> {
+            if (c.getPosition() < end) {
+                touched[0] = true; // before or inside the pasted text: its lines moved, or it changed
+            }
+        });
+        var stop = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(30));
+        stop.setOnFinished(e -> {
+            watch.unsubscribe();
+            touched[0] = true; // no longer watched: only an unchanged document still takes the answer
+        });
+        stop.play();
         var s = area.offsetToPosition(start, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
         var e = area.offsetToPosition(end, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
         lspPasteImportsRequester.request(
@@ -4443,8 +4457,8 @@ public class EditorBuffer implements TabContent {
                 s.getMinor(),
                 e.getMajor(),
                 e.getMinor(),
-                area.getText(start, end),
-                () -> docVersion == version);
+                pasted,
+                () -> docVersion == version || !touched[0]);
     }
 
     /** Async range-formatter for Tab line re-indent: requests the edits the server would apply to a line
