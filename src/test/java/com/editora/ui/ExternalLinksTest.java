@@ -146,6 +146,14 @@ class ExternalLinksTest {
         assertEquals(
                 new Browser("https://example.com/a#b"),
                 ExternalLinks.classify("https://example.com/a#b", readme, null, true));
+        // a file: URL keeps its fragment: a language server's hover link names a line (review 2, E7)
+        Path pom = Files.writeString(docs.resolve("pom.xml"), "<project/>");
+        String link = pom.toUri().toString().replace("file:///", "file:/") + "#L28,22-L28,22";
+        assertEquals(new InDocument(pom, "L28,22-L28,22"), ExternalLinks.classify(link, readme, null, true));
+        assertEquals(
+                new InEditor(pom),
+                ExternalLinks.classify(link, readme, null),
+                "dropped where anchors are not followed");
     }
 
     @Test

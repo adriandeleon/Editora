@@ -102,9 +102,14 @@ final class ExternalLinks {
         return target;
     }
 
-    /** The percent-decoded {@code #fragment} of a scheme-less link, or "" when it has none. */
+    /**
+     * The percent-decoded {@code #fragment} of a scheme-less link or a {@code file:} URL, or "" when it has none.
+     * A language server's hover links are {@code file:} URLs naming a line ({@code …/pom.xml#L28,22}), which used to
+     * open the file at its top (review 2, E7).
+     */
     private static String fragmentOf(String link) {
-        if (SCHEME.matcher(link).find()) {
+        Matcher scheme = SCHEME.matcher(link);
+        if (scheme.find() && !"file".equalsIgnoreCase(scheme.group(1))) {
             return "";
         }
         int hash = link.indexOf('#');
