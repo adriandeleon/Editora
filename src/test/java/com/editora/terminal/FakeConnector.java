@@ -51,6 +51,11 @@ public final class FakeConnector implements TerminalConnector {
         return input.toString(StandardCharsets.UTF_8);
     }
 
+    /** Forgets what was written so far, so a test can check only what follows. */
+    public synchronized void clearWritten() {
+        input.reset();
+    }
+
     @Override
     public int read(char[] buf, int offset, int length) throws IOException {
         try {

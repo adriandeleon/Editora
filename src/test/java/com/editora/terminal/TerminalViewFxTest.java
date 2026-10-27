@@ -427,6 +427,31 @@ class TerminalViewFxTest {
     }
 
     @Test
+    void aProgramThatAsksForTheKittyKeyboardGetsItAndTheShellBeneathDoesNot() throws Exception {
+        open();
+        // Neovim's request on the alternate screen, then its query: the cursor must not move (JediTerm read
+        // CSI > 1 u as SCORC), the query is answered, and Escape is a key of its own.
+        connector.emit("\u001b[?1049h\u001b[>1u\u001b[?u");
+        await(() -> connector.written().contains("\u001b[?1u"), "the query answered with the flags in force");
+        connector.clearWritten();
+        fx(() -> {
+            Event.fireEvent(view, pressed(KeyCode.ESCAPE, false));
+            return null;
+        });
+        await(() -> connector.written().equals("\u001b[27u"), "Escape as a kitty key");
+
+        // Back on the main screen the shell never asked: legacy bytes.
+        connector.emit("\u001b[?1049l");
+        await(() -> !view.getDisplay().isAlternateScreen(), "the main screen");
+        connector.clearWritten();
+        fx(() -> {
+            Event.fireEvent(view, pressed(KeyCode.ESCAPE, false));
+            return null;
+        });
+        await(() -> connector.written().equals("\u001b"), "a plain ESC");
+    }
+
+    @Test
     void theWindowsItemsFollowTheViewsOwn() throws Exception {
         open();
         AtomicInteger asked = new AtomicInteger();

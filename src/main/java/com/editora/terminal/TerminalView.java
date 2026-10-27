@@ -256,6 +256,11 @@ public final class TerminalView extends Region {
         // unhandled here, and it never consumes.
         addEventFilter(KeyEvent.KEY_RELEASED, this::onKeyReleased);
         addEventFilter(KeyEvent.KEY_TYPED, this::onKeyTyped);
+        // Keys held when focus leaves are released somewhere else; forgetting them keeps the next
+        // press of one from being reported as a repeat, and no release from being owed for it.
+        focusedProperty().addListener((o, was, now) -> {
+            if (!now) kittyInput.reset();
+        });
         addEventFilter(ScrollEvent.SCROLL, this::onScroll);
         setOnContextMenuRequested(this::onContextMenuRequested);
         // The cursor is drawn hollow while the keyboard is elsewhere, so which terminal (or whether one) has it shows.
@@ -1072,6 +1077,22 @@ public final class TerminalView extends Region {
         } else if (!e.isAltDown()) {
             altGrHeld = false; // a release missed while focus was elsewhere must not outlive the next key
         }
+        // A program that asked for the kitty keyboard protocol gets it; everything else, and every
+        // key the protocol leaves alone — plain typing, Enter at a shell — takes the legacy route.
+        int kittyFlags = session.keyboardFlags(display.isAlternateScreen());
+        if (kittyFlags != 0) {
+            byte[] kitty = kittyInput.pressed(e, kittyFlags, altIsMeta, ctrlAltIsMeta());
+            if (kitty != null) {
+                if (KeyTrace.enabled()) KeyTrace.log(e, kitty);
+                if (kitty.length > 0) {
+                    snapToLive();
+                    clearSelection();
+                    session.send(kitty);
+                }
+                e.consume();
+                return;
+            }
+        }
         byte[] encoded = KeyEncoding.encodePressed(e, session::keyCode, altIsMeta, ctrlAltIsMeta());
         if (KeyTrace.enabled()) KeyTrace.log(e, encoded);
         if (encoded != null) {
@@ -1152,6 +1173,19 @@ public final class TerminalView extends Region {
 
     private void onKeyTyped(KeyEvent e) {
         if (session == null || !session.isRunning()) return;
+        int kittyFlags = session.keyboardFlags(display.isAlternateScreen());
+        if (kittyFlags != 0) {
+            byte[] kitty = kittyInput.typed(e, kittyFlags);
+            if (kitty != null) {
+                if (kitty.length > 0) {
+                    snapToLive();
+                    clearSelection();
+                    session.send(kitty);
+                }
+                e.consume();
+                return;
+            }
+        }
         byte[] encoded = KeyEncoding.encodeTyped(e, altIsMeta, ctrlAltIsMeta());
         if (KeyTrace.enabled()) KeyTrace.log(e, encoded);
         if (encoded != null) {
@@ -2340,7 +2374,18 @@ public final class TerminalView extends Region {
     private void onKeyReleased(KeyEvent e) {
         if (e.getCode() == KeyCode.ALT_GRAPH) altGrHeld = false;
         onLinkModifierChanged(e);
+        // Always, flags or not: the release is what takes the key out of the held set, and a key
+        // left in it would make its next press look like a repeat.
+        TerminalSession live = session;
+        if (live != null && live.isRunning()) {
+            byte[] kitty =
+                    kittyInput.released(e, live.keyboardFlags(display.isAlternateScreen()), altIsMeta, ctrlAltIsMeta());
+            if (kitty != null) live.send(kitty);
+        }
     }
+
+    /** The kitty keyboard protocol's view of the keys: repeats, and the releases owed. */
+    private final KittyKeyInput kittyInput = new KittyKeyInput();
 
     private static final boolean LINUX =
             System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("linux");
