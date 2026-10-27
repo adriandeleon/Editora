@@ -148,12 +148,16 @@ class FoldLevelsFxTest {
         run("view.foldAll");
         FxTestSupport.drainFx();
         run("view.unfoldAll");
-        for (int i = 0; i < 5; i++) {
-            FxTestSupport.drainFx();
-        }
+        // the re-anchor and the follow land on layout pulses, the follow one after the other: draining the queue
+        // alone does not wait for those, and a slow macOS runner had not had them yet
         int caretLine = FxTestSupport.callOnFx(area::getCurrentParagraph);
-        int first = FxTestSupport.callOnFx(
-                () -> area.allParToVisibleParIndex(caretLine).orElse(-1));
+        int first = -1;
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        while (first < 0 && System.nanoTime() < deadline) {
+            Thread.sleep(20);
+            first = FxTestSupport.callOnFx(
+                    () -> area.allParToVisibleParIndex(caretLine).orElse(-1));
+        }
         assertTrue(first >= 0, "the caret's line " + caretLine + " is on screen");
         closeActiveTab(b);
     }
