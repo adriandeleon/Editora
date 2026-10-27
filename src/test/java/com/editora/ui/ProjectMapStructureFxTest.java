@@ -15,12 +15,15 @@ import javafx.scene.Scene;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
+import javafx.scene.image.PixelReader;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.PickResult;
 import javafx.scene.layout.Region;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Rectangle;
 
 import com.editora.text.FoldRegions;
 import org.fxmisc.richtext.CodeArea;
@@ -94,6 +97,33 @@ class ProjectMapStructureFxTest {
                         .map(ProjectMapModel.Entry::name)
                         .toList();
                 assertEquals(List.of("add()", "reset()"), members);
+            });
+        } finally {
+            map.close();
+        }
+    }
+
+    @Test
+    void structureColumnsAreTintedApartFromFolderColumns() throws Exception {
+        root = projectRoot();
+        Path app = Files.writeString(root.resolve("App.java"), APP);
+        Fixture map = openMap(path -> null);
+        try {
+            waitForRow(map, app);
+            FxTestSupport.runOnFx(() -> clickStructureIcon(map.surface(), app));
+            waitForSymbol(map, "add()");
+            FxTestSupport.runOnFx(() -> {
+                PixelReader pixels = map.surface().snapshot(null, null).getPixelReader();
+                Color folder = cardColor(map.surface(), pixels, root);
+                Color structure = cardColor(map.surface(), pixels, app);
+                Rectangle probe = FxTestSupport.field(map.surface(), "structureProbe");
+                Color tint = (Color) probe.getFill();
+                assertTrue(
+                        distance(folder, structure) > 0.02,
+                        "the Structure card differs from the folder card: " + folder + " vs " + structure);
+                assertTrue(
+                        distance(structure, tint) < distance(folder, tint),
+                        "the Structure card leans toward the structure tint");
             });
         } finally {
             map.close();
@@ -502,6 +532,25 @@ class ProjectMapStructureFxTest {
             TimeUnit.MILLISECONDS.sleep(20);
         }
         throw new AssertionError("timed out: " + message);
+    }
+
+    /** The card's fill in its left margin, halfway down: inside the card, outside every row. */
+    private static Color cardColor(Region surface, PixelReader pixels, Path parent) {
+        List<?> columns = FxTestSupport.field(surface, "columnBoxes");
+        Object column = columns.stream()
+                .filter(box ->
+                        parent.equals(((ProjectMapModel.Column) FxTestSupport.call(box, "column", new Class<?>[0]))
+                                .id()
+                                .parent()))
+                .findFirst()
+                .orElseThrow();
+        return pixels.getColor((int) box(column, "x") + 4, (int) (box(column, "y") + box(column, "height") / 2));
+    }
+
+    private static double distance(Color a, Color b) {
+        return Math.abs(a.getRed() - b.getRed())
+                + Math.abs(a.getGreen() - b.getGreen())
+                + Math.abs(a.getBlue() - b.getBlue());
     }
 
     private static Object boxFor(Region surface, Path path) {
