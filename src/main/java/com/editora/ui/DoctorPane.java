@@ -86,6 +86,9 @@ final class DoctorPane extends Region implements TabContent {
 
         /** "Check for Newer Versions": ask where each server is published whether a newer release exists. */
         default void checkNewer() {}
+
+        /** "Clear": empty the cache the row reports ({@link DoctorCheck#clearable()}). */
+        default void clear(DoctorCheck check) {}
     }
 
     /** Narrowest the centered column gets before the page scrolls horizontally; tips wrap, so it is not scaled. */
@@ -909,6 +912,11 @@ final class DoctorPane extends Region implements TabContent {
                 Button help = action(tr("doctor.action.howToInstall"), "help");
                 help.setOnAction(e -> actions.openUrl(c.helpUrl()));
                 box.getChildren().add(help);
+            }
+            if (c.clearable() && st == DoctorStatus.OK && pathIn(c.detail()) != null) {
+                Button clear = action(tr("doctor.action.clear"), "clear"); // a cache with something in it
+                clear.setOnAction(e -> actions.clear(c));
+                box.getChildren().add(clear);
             }
             if (!c.settingsKey().isEmpty()) {
                 Button settings = action(tr("doctor.action.settings"), "settings");

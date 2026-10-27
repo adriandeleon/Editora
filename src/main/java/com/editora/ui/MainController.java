@@ -2763,7 +2763,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public boolean lspAvailable(String serverId) {
-                return lspCoordinator.isServerAvailable(serverId);
+                return lspCoordinator.isServerAvailable(serverId) && lspCoordinator.serverTrouble(serverId) == null;
             }
 
             @Override
@@ -6978,8 +6978,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public @Nullable String lspServerFailure(String serverId) {
-                    return lspCoordinator.serverFailure(serverId);
+                public LspCoordinator.@Nullable ServerTrouble lspServerFailure(String serverId) {
+                    return lspCoordinator.serverTrouble(serverId);
                 }
 
                 @Override

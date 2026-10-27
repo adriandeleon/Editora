@@ -107,8 +107,8 @@ class SvgPreviewCanvasFxTest {
         for (int i = 0; i < 100; i++) {
             TimeUnit.MILLISECONDS.sleep(20);
             FxTestSupport.runOnFx(() -> {});
-            Boolean errored = FxTestSupport.callOnFx(() -> ((StackPane) host)
-                    .getChildren().stream().anyMatch(n -> n.getStyleClass().contains("svg-error")));
+            // the message label, under a "Line N, column M" link when the parser said where (XML review C15)
+            Boolean errored = FxTestSupport.callOnFx(() -> host.lookup(".svg-error") != null);
             if (errored) {
                 return;
             }

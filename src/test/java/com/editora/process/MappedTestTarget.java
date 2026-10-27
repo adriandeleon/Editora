@@ -61,6 +61,13 @@ public final class MappedTestTarget implements ExecTarget, ExecTargets.Resolver 
         return List.copyOf(started);
     }
 
+    private final List<Boolean> longLived = new CopyOnWriteArrayList<>();
+
+    /** For every command started here, whether it was started long-lived (see {@link ExecSpec#longLived}). */
+    public List<Boolean> longLived() {
+        return List.copyOf(longLived);
+    }
+
     private boolean ours(Path path) {
         return path.toAbsolutePath().normalize().startsWith(local);
     }
@@ -88,6 +95,7 @@ public final class MappedTestTarget implements ExecTarget, ExecTargets.Resolver 
     @Override
     public Process start(ExecSpec spec) throws IOException {
         started.add(spec.argv());
+        longLived.add(spec.longLived());
         String mine = local.toString();
         spec.argv().stream().filter(a -> a.contains(mine)).forEach(a -> leaks.add("argv: " + a));
         spec.env().forEach((name, value) -> {

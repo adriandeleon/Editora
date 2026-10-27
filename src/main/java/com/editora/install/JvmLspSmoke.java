@@ -62,6 +62,20 @@ public final class JvmLspSmoke {
      * or empty when the server answered with a result. Never throws: a failure to even start is a failure text.
      */
     public static Optional<String> hoverCheck(List<String> argv, Duration deadline) {
+        return check(argv, deadline, true);
+    }
+
+    /**
+     * Starts {@code argv} and asks it only to {@code initialize}: whether the program runs here and speaks LSP at
+     * all. For a native server whose hash already proves it is the release (lemminx): its question is whether this
+     * machine can run it — lemminx needs glibc 2.34 (XML review A4) — not whether its bundle is whole; and its
+     * hover on the one-line pom fails inside the server even where it works. Empty when it answered.
+     */
+    public static Optional<String> initializeCheck(List<String> argv, Duration deadline) {
+        return check(argv, deadline, false);
+    }
+
+    private static Optional<String> check(List<String> argv, Duration deadline, boolean hover) {
         if (argv == null || argv.isEmpty()) {
             return Optional.of("no launch command");
         }
@@ -76,7 +90,7 @@ public final class JvmLspSmoke {
             ProcessRunner.applyUserEnv(pb);
             process = pb.start();
             ProcessRegistry.track(process);
-            return exchange(process, dir, pom, deadline);
+            return exchange(process, dir, pom, deadline, hover);
         } catch (IOException e) {
             return Optional.of("could not start " + argv.get(0) + ": " + e.getMessage());
         } catch (InterruptedException e) {
@@ -95,7 +109,7 @@ public final class JvmLspSmoke {
     /** A message read from the server, or the end of its output ({@code eof}, with the exit code once known). */
     private record Incoming(@Nullable JsonObject message, boolean eof) {}
 
-    private static Optional<String> exchange(Process process, Path dir, Path pom, Duration deadline)
+    private static Optional<String> exchange(Process process, Path dir, Path pom, Duration deadline, boolean hover)
             throws IOException, InterruptedException {
         List<String> stderr = new ArrayList<>();
         Thread stderrDrain = drain(process.getErrorStream(), stderr);
@@ -123,17 +137,25 @@ public final class JvmLspSmoke {
         OutputStream out = process.getOutputStream();
         String rootUri = dir.toUri().toString();
         String docUri = pom.toUri().toString();
-        send(out, request(1, "initialize", initializeParams(rootUri)));
+        try {
+            send(out, request(1, "initialize", initializeParams(rootUri)));
+        } catch (IOException e) {
+            // Gone before it read a byte (a native build on too old a C library exits at once): the end of its
+            // output, awaited below, says how it ended and what it wrote on stderr — "Stream closed" says neither.
+            LOG.log(Level.FINE, "smoke: the server closed its input before initialize", e);
+        }
         Optional<String> failure = await(inbox, 1, "initialize", deadlineNanos, deadline, process, stderr, stderrDrain);
         if (failure.isPresent()) {
             return failure;
         }
         send(out, notification("initialized", new JsonObject()));
-        send(out, notification("textDocument/didOpen", didOpenParams(docUri)));
-        send(out, request(2, "textDocument/hover", positionParams(docUri, 0, 2)));
-        failure = await(inbox, 2, "hover", deadlineNanos, deadline, process, stderr, stderrDrain);
-        if (failure.isPresent()) {
-            return failure;
+        if (hover) {
+            send(out, notification("textDocument/didOpen", didOpenParams(docUri)));
+            send(out, request(2, "textDocument/hover", positionParams(docUri, 0, 2)));
+            failure = await(inbox, 2, "hover", deadlineNanos, deadline, process, stderr, stderrDrain);
+            if (failure.isPresent()) {
+                return failure;
+            }
         }
         try {
             send(out, request(3, "shutdown", null));

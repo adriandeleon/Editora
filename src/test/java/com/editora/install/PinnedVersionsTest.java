@@ -43,6 +43,7 @@ class PinnedVersionsTest {
         assertEquals(InstallCatalog.METALS_VERSION, pin("metals").version());
         assertEquals(InstallCatalog.KOTLIN_LSP_VERSION, pin("kotlin-lsp").version());
         assertEquals(InstallCatalog.CLOJURE_LSP_VERSION, pin("clojure-lsp").version());
+        assertEquals(InstallCatalog.LEMMINX_VERSION, pin("lemminx").version());
         assertEquals(InstallCatalog.SHELLCHECK_VERSION, pin("shellcheck").version());
         assertEquals(InstallCatalog.SHFMT_VERSION, pin("shfmt").version());
         for (Pin p : PinnedVersions.all()) {
@@ -83,8 +84,33 @@ class PinnedVersionsTest {
         assertEquals(
                 "lemminx-maven",
                 PinnedVersions.forServer("maven-pom").orElseThrow().stepId());
+        assertEquals("lemminx", PinnedVersions.forServer("xml").orElseThrow().stepId(), "XML review A3");
         assertTrue(PinnedVersions.forServer("python").isEmpty(), "Pyright installs whatever npm has");
         assertTrue(PinnedVersions.forServer(null).isEmpty());
+    }
+
+    /** lemminx is shown as the server it is, with the vscode-xml release it came from (XML review A3). */
+    @Test
+    void lemminxIsLabelledWithTheServerAndTheRelease() {
+        assertEquals(
+                InstallCatalog.LEMMINX_SERVER_VERSION + " · vscode-xml " + InstallCatalog.LEMMINX_VERSION,
+                pin("lemminx").label());
+        assertEquals("vscode-xml 0.28.0", PinnedVersions.label("lemminx", "0.28.0"));
+    }
+
+    /** Settings shows which lemminx it runs once the install recorded it; another copy just by its path (A3). */
+    @Test
+    void settingsLeadsEditorasOwnCopyWithItsRecordedVersion(@TempDir Path config) throws IOException {
+        Path dir = Files.createDirectories(config.resolve("plugins/lsp/xml"));
+        Path program = Files.writeString(dir.resolve("lemminx"), "");
+        List<String> argv = List.of(program.toString());
+
+        assertEquals("/p", PinnedVersions.withVersion("xml", argv, config, "/p"), "no receipt: nothing to add");
+        new InstallReceipt("lemminx", InstallCatalog.LEMMINX_VERSION, null).write(dir);
+        assertEquals(pin("lemminx").label() + " — /p", PinnedVersions.withVersion("xml", argv, config, "/p"));
+        assertEquals("/p", PinnedVersions.withVersion("xml", List.of("/usr/bin/lemminx"), config, "/p"));
+        assertEquals("/p", PinnedVersions.withVersion("json", argv, config, "/p"), "a server with no pin");
+        assertEquals("", PinnedVersions.withVersion("xml", argv, config, ""), "not found: no detail");
     }
 
     // --- freshness -------------------------------------------------------------------------------------

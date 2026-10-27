@@ -2287,6 +2287,19 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of("lsp.organizeImports", () -> host.ifLsp(host.lspCoordinator()::organizeImports)));
         host.registry().register(Command.of("lsp.cleanUp", () -> host.ifLsp(host.lspCoordinator()::cleanUpFile)));
+        // lemminx's own commands (XML review B15): revalidate after a schema changed, bind to a grammar.
+        host.registry()
+                .register(Command.of(
+                        "lsp.xmlValidateFile",
+                        () -> host.ifLsp(() -> host.lspCoordinator().xml().validateCurrent())));
+        host.registry()
+                .register(Command.of(
+                        "lsp.xmlValidateAllFiles",
+                        () -> host.ifLsp(() -> host.lspCoordinator().xml().validateAll())));
+        host.registry()
+                .register(Command.of(
+                        "lsp.xmlBindGrammar",
+                        () -> host.ifLsp(() -> host.lspCoordinator().xml().bindGrammar())));
         host.registry()
                 .register(Command.of("lsp.undoRefactoring", () -> host.ifLsp(host.lspCoordinator()::undoRefactoring)));
         host.registry().register(Command.of("lsp.generate", () -> host.ifLsp(host.lspCoordinator()::generateActions)));
@@ -2339,7 +2352,7 @@ final class WindowCommandRegistrar {
                         () -> host.ifLsp(() -> host.lspCoordinator()
                                 .setProjectWideProblems(!host.lspCoordinator().isProjectWideProblems()))));
         host.registry().register(Command.of("lsp.formatDocument", () -> {
-            // Python: Ruff/Black unless a language server formats it — with the language server off too.
+            // Python: Ruff/Black, XML: the built-in formatter, unless a language server formats it — LSP off too.
             if (!host.lspCoordinator().formatPythonExternally()) {
                 host.ifLsp(host.lspCoordinator()::formatDocument);
             }

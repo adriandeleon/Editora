@@ -993,6 +993,10 @@
     -fx-wrap-text: true;
 }
 
+/* A preview's parse error with its position link (XML review C15). */
+.preview-error { -fx-padding: 6 0 0 6; }
+.preview-error .preview-error-position { -fx-font-weight: bold; }
+
 /* XML DOM-tree preview — theme-aware via AtlantaFX semantic colors. */
 .xml-tree { -fx-font-family: monospace; -fx-background-color: -color-bg-default; }
 .xml-tree .xml-row { -fx-font-family: monospace; }
@@ -4338,6 +4342,15 @@
 /* The card has its own padding: the preview's page margins (48px a side) only squeezed the signature. */
 .lsp-hover-popup .markdown-preview-wrap,
 .lsp-hover-popup .markdown-preview { -fx-padding: 0; -fx-background-color: transparent; }
+/* The problems at the caret lead the card, whole (XML review C6): a severity bar, the message as plain text. */
+.lsp-hover-problem {
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 0 0 0 8;
+    -fx-border-width: 0 0 0 3;
+    -fx-border-color: -color-border-default;
+}
+.lsp-hover-problem.error { -fx-border-color: -color-danger-emphasis; }
+.lsp-hover-problem.warning { -fx-border-color: -color-warning-emphasis; }
 
 /* Run tool window (Java 25 compact source files). */
 .run-panel .run-status { -fx-text-fill: -color-fg-muted; }

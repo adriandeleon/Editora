@@ -85,6 +85,11 @@ public final class LspTestHooks {
         manager.sessionForTest(file).simulateServerDeathForTest();
     }
 
+    /** Plays the server serving {@code file} dying before it was ever ready, having written {@code stderr} first. */
+    public static void simulateStartupDeath(LspManager manager, java.nio.file.Path file, String stderr) {
+        manager.sessionForTest(file).simulateStartupDeathForTest(stderr);
+    }
+
     /** Plays a server's {@code workspace/…/refresh} request of {@code kind} for {@code file}'s session. */
     public static void refresh(LspManager manager, java.nio.file.Path file, String kind) {
         LanguageServerSession session = manager.sessionForTest(file);

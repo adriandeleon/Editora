@@ -1078,3 +1078,49 @@ Closes #
 </project>
 
 --- end
+=== xml-schema
+--- sample.xsd caret=415
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="urn:example:notes"
+           xmlns="urn:example:notes"
+           elementFormDefault="qualified">
+
+  <xs:element name="note">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="title" type="xs:string"/>
+        <xs:element name="body" type="xs:string" minOccurs="0"/>
+        
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:ID" use="required"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+--- end
+=== xslt-stylesheet
+--- sample.xsl caret=390
+<?xml version="1.0" encoding="UTF-8"?>
+<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+  <xsl:output method="xml" indent="yes"/>
+
+  <!-- Identity: copy every node and attribute as it is. -->
+  <xsl:template match="@*|node()">
+    <xsl:copy>
+      <xsl:apply-templates select="@*|node()"/>
+    </xsl:copy>
+  </xsl:template>
+
+  <xsl:template match="note">
+    
+  </xsl:template>
+</xsl:stylesheet>
+--- end
+=== xml-with-schema
+--- sample.xml caret=151
+<?xml version="1.0" encoding="UTF-8"?>
+<note xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="schema.xsd">
+  
+</note>
+--- end

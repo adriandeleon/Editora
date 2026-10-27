@@ -4766,35 +4766,11 @@ public class EditorBuffer implements TabContent {
     /** Auto-close tags: typing the {@code >} of an HTML/XML open tag inserts the matching closer. */
     private boolean autoCloseTags;
 
+    private final TagTyping tagTyping = new TagTyping(); // the closer typed after '>', a hand-typed one joined
+
     /** Enables/disables tag auto-closing (pushed from the controller's view settings). */
     public void setAutoCloseTags(boolean on) {
         autoCloseTags = on;
-    }
-
-    /**
-     * Typing the {@code >} that completes an open tag inserts {@code </name>} after the caret (the
-     * VS Code auto-closing-tags behavior), leaving the caret between the tags. Gated to editable
-     * html/xml buffers; the decision is the pure {@link com.editora.editops.TagAutoClose} over a
-     * bounded window before the caret, so the per-keystroke cost is one short backward scan.
-     */
-    private boolean applyTagAutoClose(CodeArea a) {
-        if (!autoCloseTags || a.getSelection().getLength() > 0) {
-            return false;
-        }
-        String lang = getLanguage();
-        boolean html = "html".equals(lang);
-        if (!html && !"xml".equals(lang)) {
-            return false;
-        }
-        int caret = a.getCaretPosition();
-        int from = Math.max(0, caret - com.editora.editops.TagAutoClose.MAX_TAG_SCAN);
-        String closer = com.editora.editops.TagAutoClose.closer(a.getText(from, caret), html);
-        if (closer == null) {
-            return false;
-        }
-        a.replaceText(caret, caret, ">" + closer);
-        a.moveTo(caret + 1);
-        return true;
     }
 
     /** Enables/disables the paired-tag auto-rename (pushed from the controller's view settings). */
@@ -5961,8 +5937,8 @@ public class EditorBuffer implements TabContent {
             // re-render a cheap re-fit.
             double v = previewPane().getVvalue();
             double scale = previewFontScale;
-            javafx.scene.layout.VBox box =
-                    new javafx.scene.layout.VBox(SvgImages.node(documentTextSnapshot(), lw -> lw * scale));
+            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
+                    SvgImages.node(documentTextSnapshot(), lw -> lw * scale, this::jumpToSource));
             box.getStyleClass().add("markdown-preview");
             StackPane wrap = new StackPane(box);
             wrap.getStyleClass().add("markdown-preview-wrap");
@@ -6226,16 +6202,20 @@ public class EditorBuffer implements TabContent {
 
     /** Sets the freshly parsed XML DOM tree (or an error label) into the shared self-scrolling holder. */
     private void renderXml(XmlParser.Parsed parsed) {
-        Node node;
-        if (!parsed.ok()) {
-            Label err = new Label(parsed.error());
-            err.getStyleClass().add("structured-error");
-            err.setWrapText(true);
-            node = err;
-        } else {
-            node = XmlTree.build(parsed.root());
-        }
+        Node node = parsed.ok()
+                ? XmlTree.build(parsed.root())
+                : com.editora.editor.structured.ParseErrorView.of(
+                        String.valueOf(parsed.error()),
+                        parsed.line(),
+                        parsed.column(),
+                        this::jumpToSource,
+                        "structured-error");
         structuredContentHolder().getChildren().setAll(node);
+    }
+
+    /** A preview's parse-error link: the caret to that 1-based line and column (XML review C15). */
+    private void jumpToSource(int line, int column) {
+        com.editora.editor.structured.ParseErrorView.jump(this, line, column);
     }
 
     /** The {@link #surfaceTreePreviewError} counterpart for the Markdown preview, which has its own pane. */
@@ -7774,7 +7754,7 @@ public class EditorBuffer implements TabContent {
         }
         int len = area.getLength(); // a shebang, else a vim/emacs modeline in the first or last lines
         Shebang.Result r =
-                Modeline.detect(area.getText(0, Math.min(len, 1024)), area.getText(Math.max(0, len - 1024), len));
+                Modeline.detect(area.getText(0, Math.min(len, 1024)), area.getText(Math.max(0, len - 1024), len), path);
         if (r == null) {
             return;
         }
@@ -8476,14 +8456,17 @@ public class EditorBuffer implements TabContent {
         }
         int caret = a.getCaretPosition();
         long gen = ++reindentGen;
-        lspRangeFormatter.format(par, 0, par, line.length(), edits -> {
+        int from = Math.max(0, par - 1); // from the line break: lemminx indents by editing it (XML review B4)
+        lspRangeFormatter.format(from, par == 0 ? 0 : a.getParagraphLength(from), par, line.length(), edits -> {
             if (gen != reindentGen
                     || a.getScene() == null
                     || a.getCurrentParagraph() != par
                     || !a.getParagraph(par).getText().equals(line)) {
                 return; // stale, detached, or the line changed under us
             }
-            applyLspLineIndent(a, par, line, caret, edits, true);
+            if (!applyLspLineIndent(a, par, line, caret, edits, true) && a.getCaretPosition() == caret) {
+                applySmartTab(a, false); // no usable indent: Tab still does what it does without a server
+            }
         });
         return true;
     }
@@ -8494,13 +8477,13 @@ public class EditorBuffer implements TabContent {
      * <p>{@code fromTab} distinguishes the two callers, and only matters when the indent is already right:
      * a Tab pressed from inside the leading whitespace must still put the caret where typing starts (the
      * same rule the re-indent below applies), whereas on-type formatting fires while the user is typing and
-     * must never move the caret out from under them.
+     * must never move the caret out from under them. False when the answer gives no usable indent.
      */
-    private void applyLspLineIndent(
+    private boolean applyLspLineIndent(
             CodeArea a, int par, String line, int caret, java.util.List<LspTextEdit> edits, boolean fromTab) {
         String newIndent = LineIndent.formattedIndent(line, edits, par);
         if (newIndent == null) {
-            return; // unusable (multi-line) result → leave the line untouched
+            return false; // unusable (multi-line) result → leave the line untouched
         }
         String oldIndent = LineIndent.leadingWhitespace(line);
         if (newIndent.equals(oldIndent)) {
@@ -8510,7 +8493,7 @@ public class EditorBuffer implements TabContent {
             if (fromTab && caret < indentEnd && indentEnd <= a.getLength()) {
                 a.moveTo(indentEnd);
             }
-            return;
+            return true;
         }
         int lineStart = a.getAbsolutePosition(par, 0);
         int oldEnd = lineStart + oldIndent.length();
@@ -8521,6 +8504,7 @@ public class EditorBuffer implements TabContent {
         a.moveTo(newCaret);
         // Re-indenting isn't the user typing a word — don't let the edit we just made pop the completion.
         completionActions.suppressCompletionAt(docVersion);
+        return true;
     }
 
     /**
@@ -8828,8 +8812,8 @@ public class EditorBuffer implements TabContent {
      * macro replay ({@link #typeChar}).
      */
     private boolean applyAutoCloseTyped(CodeArea a, char c) {
-        if (c == '>' && applyTagAutoClose(a)) {
-            return true; // html/xml: the > completed an open tag and the closer was inserted
+        if (autoCloseTags && tagTyping.typed(a, c, language)) {
+            return true; // html/xml: the > completed an open tag, or a hand-typed closer joined the one there
         }
         if (isMarkdown() && markdownEditing.typed(a, c)) {
             return true; // emphasis wrap / pair, smart typography — before the generic bracket and quote pairs

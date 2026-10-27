@@ -16,6 +16,7 @@ import com.editora.install.InstallCatalog.Prereq;
 import com.editora.install.InstallCatalog.Step;
 import com.editora.install.InstallService;
 import com.editora.install.PinnedVersions;
+import com.editora.install.XmlServerInstall;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -245,7 +246,11 @@ final class InstallCoordinator {
                                 applyServerCommand(host.settings(), serverId, result.installedCommand());
                             }
                             ops.reapplyToolSupport();
-                            host.setStatus(tr("status.install.done", serverName(serverId)));
+                            String fellBack = result.message();
+                            host.setStatus(
+                                    fellBack == null || fellBack.isBlank()
+                                            ? tr("status.install.done", serverName(serverId))
+                                            : tr("status.install.javaFallback", serverName(serverId), fellBack));
                         } else {
                             if (!replaced.isEmpty()) {
                                 ops.reapplyToolSupport(); // a failed install leaves the old copy: run it again
@@ -409,7 +414,9 @@ final class InstallCoordinator {
             // clojure-lsp: a pinned native binary; the installer returns its bare path
             case "clojure" -> s.setClojureLspCommand(InstallCatalog.quoteCommandPath(command));
             case "lua" -> s.setLuaLspCommand(command);
-            case "xml" -> s.setXmlLspCommand(command);
+            // lemminx: Editora's own copy needs no setting (a blank command finds it, review A9); the Java lemminx it
+            // falls back to where the native build cannot run is a command of its own
+            case "xml" -> s.setXmlLspCommand(XmlServerInstall.isNativeInstall(command) ? "" : command);
             case "terraform" -> s.setTerraformLspCommand(command);
             case "typst" -> s.setTypstLspCommand(command); // tinymist: a binary archive, path must be persisted
             case "maven-pom" -> s.setMavenPomLspCommand(command); // java -cp launcher over the extracted bundle
