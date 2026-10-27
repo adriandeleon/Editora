@@ -314,15 +314,20 @@ update this commit here.
 | `SelectionGeometry`, `BlockSelection`, `AutoScroll` | `ui/…` | Package only. The view drives autoscroll from a `Timeline`, not the painter's frames, since Editora's painter stops when idle. |
 | `PrimarySelection`, `DesktopNotifier` | `ui/…` | Tools are found on `ProcessRunner`'s augmented PATH and run in the user's locale (see `ChildLocalePolicyTest`). |
 | `OscSequences` | `term/OscSequences` | Only notifications (OSC 9, 777) and OSC 52. `OscTap`, Editora's own, takes them out of the stream; Termina's `OscInterceptor` is not ported. |
-| `IconFont` | `ui/IconFont` | Installed Nerd Fonts only; see below. |
+| `IconFont` | `ui/IconFont` | The bundled face is found by name, not in `Font.getFamilies()`, which JavaFX never updates after its first call; `TerminalPanel` registers it off the FX thread for the first terminal (`Fonts.loadFamilyAsync`). |
+| `HistoryFollow` | `ui/HistoryFollow` | A resize also reports its delta, which prompt marks and search hits (`pushedLines`) still follow; the selection is left to JediTerm. |
 | `ChildProcesses` | `process/ChildProcesses` | Package only. |
 
 Termina's window, tabs, panes, settings, profiles, colour-scheme import, settings sync, command palette, update
-check, CLI and `DevCapture` are not ported; Editora has its own. Also left out at `4443118`: the bundled Symbols
-Nerd Font Mono (2.6 MB, its icon sets under MIT, CC BY 4.0, Apache 2.0, OFL and one unlicensed set, where every
-font Editora bundles is OFL), so a machine without a Nerd Font still gets its fallback list's icons; reading a
-Windows shell's directory from its process (Termina's `WindowsCwd`, never run on Windows); and `HistoryFollow`'s
-resize detection. The tests came with the code. `TerminalViewFxTest` is new: it drives the view
+check, CLI and `DevCapture` are not ported; Editora has its own. Also left out at `4443118`: reading a Windows
+shell's directory from its process (Termina's `WindowsCwd`, never run on Windows).
+
+Symbols Nerd Font Mono (Nerd Fonts 3.5.1, 2.6 MB) is bundled in `fonts/symbols-nerd-font` as the icon floor. Its
+font files are OFL (`OFL.txt`), the patcher MIT (`LICENSE.txt`), and its glyph sets keep their own licences
+(`README.md`, and NOTICE, which gives the CC BY 4.0 attribution). It is in `Fonts`' deferred set but not in
+`Fonts.BUNDLED`, and `FontChoices` keeps it out of the picker. `IconFont` ranks an installed Nerd Font build of the
+terminal's face first, then a symbols build, so the bundled one is the floor; its 1 em icons are drawn 1.5 cells
+wide and centred on the row, Powerline separators at text size. The tests came with the code. `TerminalViewFxTest` is new: it drives the view
 over an in-memory connector.
 
 ## How it fits together

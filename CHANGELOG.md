@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Terminal: Nerd Font icons without installing a Nerd Font.** Editora bundles Symbols Nerd Font Mono (Nerd Fonts
+  3.5.1), so the icons eza, lsd and powerline prompts print show on any machine. An installed Nerd Font build of the
+  terminal's font still wins. Bundled icons are drawn a cell and a half wide, the size Nerd Font builds give them;
+  Powerline separators stay at text size. Licences in NOTICE.
+
 - **Terminal: the kitty keyboard protocol.** A program that asks for it (Neovim, Helix, fish, nushell) gets
   unambiguous keys: Escape on its own, Ctrl+I apart from Tab, Shift+Enter as a key, and with its further flags
   repeats, releases and the text each key types. Everything else keeps the legacy bytes.
@@ -45,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   folder columns (the overview tints them too). Themes can retune it with `.project-map-probe-structure`.
 
 ### Fixed
+
+- **Terminal: a selection keeps its text when the terminal is resized.** JediTerm moves a selection itself when a
+  shorter window pushes rows into history, and the terminal moved it again: after a splitter drag the highlight sat
+  rows above the selected text, and Copy copied those rows. A block selection is dropped on a resize, whose reflow
+  moves its columns.
 
 - **Terminal (from Termina):** closing a terminal no longer holds the window for up to half a second each; the
   cursor no longer vanishes at the end of a line typed to its full width; Nerd Font icons (eza, lsd, powerline) are

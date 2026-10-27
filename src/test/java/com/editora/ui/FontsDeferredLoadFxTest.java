@@ -67,11 +67,13 @@ class FontsDeferredLoadFxTest {
             CompletableFuture<Void> load = Fonts.loadRemainingAsync();
             assertTrue(load.isDone(), "a second request returns the finished load");
 
-            List<String> families = Font.getFamilies();
+            // By name, not Font.getFamilies(): JavaFX builds that list at its first call and never adds a font
+            // registered later, and a terminal earlier in the same JVM may have made that call.
             for (String family : Fonts.BUNDLED) {
-                assertTrue(families.contains(family), family + " is not registered with the toolkit");
+                assertEquals(family, Font.font(family, 12).getFamily(), family + " is not registered with the toolkit");
             }
-            assertTrue(families.contains(Fonts.UI));
+            assertEquals(Fonts.UI, Font.font(Fonts.UI, 12).getFamily());
+            assertEquals(Fonts.ICONS, Font.font(Fonts.ICONS, 12).getFamily());
         } finally {
             Fonts.ensureAllLoaded(); // leave the suite as bootToolkit set it up
         }
@@ -108,7 +110,8 @@ class FontsDeferredLoadFxTest {
             assertFalse(Fonts.allLoaded());
             Fonts.ensureAllLoaded();
             assertTrue(Fonts.allLoaded());
-            assertEquals(6, Fonts.loadedFamilies().size(), "five editor families plus the chrome font");
+            assertEquals(
+                    7, Fonts.loadedFamilies().size(), "five editor families, the chrome font and the terminal's icons");
         } finally {
             Fonts.ensureAllLoaded();
         }

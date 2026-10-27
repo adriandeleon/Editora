@@ -176,6 +176,35 @@ src/main/resources/com/editora/fonts/<family>/OFL.txt (in a build:
 com/editora/fonts/<family>/OFL.txt inside the application jar / runtime image).
 The OFL permits bundling and redistribution within this application.
 
+Symbols Nerd Font Mono — https://github.com/ryanoasis/nerd-fonts (release v3.5.1)
+Copyright (c) 2016, Ryan McIntyre.
+src/main/resources/com/editora/fonts/symbols-nerd-font/, redistributed
+unmodified: the integrated terminal's icon fallback for private-use code points
+(eza, lsd and powerline prompts), kept out of the font picker. Per the Nerd Fonts
+licence, the font files are under the SIL Open Font License 1.1 (OFL.txt beside
+the font) and the project's source code, the font patcher included, under the
+MIT License (LICENSE.txt beside the font, Copyright (c) 2014 Ryan L McIntyre).
+Every glyph set in it remains under its own licence, as the README.md shipped
+beside the font lists:
+
+    Codicons               — github.com/microsoft/vscode-codicons     CC BY 4.0
+    Devicons               — github.com/devicons/devicon              MIT
+    extraglyphs            — github.com/source-foundry/Hack           MIT
+    Font Awesome           — github.com/FortAwesome/Font-Awesome      CC BY 4.0
+    Font Awesome Extension — github.com/AndreLZGava/font-awesome-extension MIT
+    Font Logos             — github.com/lukas-w/font-logos            unlicensed (as listed upstream)
+    Material Design Icons  — github.com/Templarian/MaterialDesign-Font Apache-2.0
+    Octicons               — github.com/primer/octicons               MIT
+    Seti UI and original   — github.com/jesseweed/seti-ui             MIT
+    Pomicons               — github.com/gabrielelana/pomicons         OFL-1.1 (Reserved Font Name)
+    Powerline Extra        — github.com/ryanoasis/powerline-extra-symbols MIT
+    Powerline Symbols      — github.com/powerline/powerline           MIT
+    Power Symbols IEC      — github.com/jloughry/Unicode              MIT
+    Weather Icons          — github.com/erikflowers/weather-icons     OFL-1.1
+
+The CC BY 4.0 sets ask for attribution, which this list is: Codicons
+© Microsoft Corporation, Font Awesome Free © Fonticons, Inc.
+
 ================================================================================
 Bundled snippets
 ================================================================================

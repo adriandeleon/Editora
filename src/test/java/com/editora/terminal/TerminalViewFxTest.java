@@ -437,6 +437,56 @@ class TerminalViewFxTest {
     }
 
     @Test
+    void aSelectionKeepsItsTextWhenTheTerminalGetsShorter() throws Exception {
+        open();
+        StringBuilder lines = new StringBuilder();
+        for (int i = 0; i < 60; i++) lines.append("line ").append(i).append("\r\n");
+        connector.emit(lines.toString());
+        await(() -> screen().contains("line 59"), "the output");
+        List<String> rows =
+                java.util.Arrays.stream(screen().split("\n")).map(String::strip).toList();
+        int row = rows.indexOf("line 55");
+        assertTrue(row >= 0, "line 55 on the screen");
+        double height = fx(() -> view.lineHeightForTest());
+        fx(() -> {
+            javafx.scene.input.MouseEvent press = new javafx.scene.input.MouseEvent(
+                    javafx.scene.input.MouseEvent.MOUSE_PRESSED,
+                    5,
+                    (row + 0.5) * height,
+                    5,
+                    (row + 0.5) * height,
+                    javafx.scene.input.MouseButton.PRIMARY,
+                    3,
+                    false,
+                    false,
+                    false,
+                    false,
+                    true,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    null);
+            Event.fireEvent(view, press);
+            return null;
+        });
+        assertEquals("line 55", fx(view::selectedText).strip());
+        int screenRows = fx(() -> view.getSession().getTextBuffer().getHeight());
+
+        // A shorter window pushes rows into history. JediTerm moves the selection with them itself; moving it again
+        // here selected a row above the one highlighted.
+        fx(() -> {
+            stage.setHeight(stage.getHeight() - 6 * height);
+            view.getScene().getRoot().layout();
+            view.flushResize();
+            return null;
+        });
+        await(() -> call(() -> view.getSession().getTextBuffer().getHeight()) < screenRows, "the shell resized");
+        assertEquals("line 55", fx(view::selectedText).strip(), "the same line selected after the resize");
+    }
+
+    @Test
     void anAltDragSelectsABlockAndCopiesItOneRowPerLine() throws Exception {
         open();
         connector.emit("abcdef\r\nghijkl\r\nmnopqr\r\n");

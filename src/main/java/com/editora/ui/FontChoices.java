@@ -49,10 +49,10 @@ final class FontChoices {
             "italic",
             "oblique");
 
-    /** Math and symbol fonts (TeX's, MathJax's, dingbats): no letters, so not an editor font. */
+    /** Math and symbol fonts (TeX's, MathJax's, dingbats, Nerd Fonts' symbols-only face): no letters, so not an editor font. */
     private static final Pattern SYMBOL_FONT = Pattern.compile(
             "(?i)^(mathjax_.*|esint\\d*|cm(ex|sy|mi|r|tt)\\d*|ms(am|bm)\\d*|wasy\\d*|stmary\\d*|rsfs\\d*"
-                    + "|.*dingbats.*|symbol|opensymbol|.*emoji.*)$");
+                    + "|.*dingbats.*|symbol|opensymbol|.*emoji.*|symbols nerd font.*)$");
 
     private FontChoices() {}
 

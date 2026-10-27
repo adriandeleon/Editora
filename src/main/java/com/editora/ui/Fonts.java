@@ -46,6 +46,14 @@ public final class Fonts {
      */
     public static final String UI = "Inter";
 
+    /**
+     * The integrated terminal's icon face (Symbols Nerd Font Mono): the floor for the private-use code points eza, lsd
+     * and powerline prompts print, on a machine with no Nerd Font of its own. No letters, so it is never an editor font
+     * (see {@link FontChoices}). Loaded with the deferred families, or at once for a terminal
+     * ({@link #loadFamilyAsync}).
+     */
+    public static final String ICONS = com.editora.terminal.TerminalView.ICON_FONT_FAMILY;
+
     /** Family -> its font files, in load order. */
     private static final Map<String, List<String>> FILES = files();
 
@@ -87,6 +95,7 @@ public final class Fonts {
                         "inter/Inter-Bold.ttf",
                         "inter/Inter-Italic.ttf",
                         "inter/Inter-BoldItalic.ttf"));
+        m.put(ICONS, List.of("symbols-nerd-font/SymbolsNerdFontMono-Regular.ttf"));
         return m;
     }
 
@@ -211,6 +220,22 @@ public final class Fonts {
         } else {
             loadFamilies(List.of(family));
         }
+    }
+
+    /**
+     * Registers one bundled family off the FX thread, if it is not yet: for a family something needs before the
+     * deferred load would get to it (the terminal's icon face). Completes at once when it is in; joins the deferred
+     * load when that has already claimed it.
+     */
+    public static CompletableFuture<Void> loadFamilyAsync(String family) {
+        synchronized (Fonts.class) {
+            if (!FILES.containsKey(family) || DONE.contains(family)) {
+                return CompletableFuture.completedFuture(null);
+            }
+        }
+        return CompletableFuture.runAsync(
+                () -> ensureFamily(family),
+                r -> Thread.ofVirtual().name("fonts-load-" + family).start(r));
     }
 
     /** Whether every bundled family has been registered. */

@@ -124,6 +124,12 @@ public final class TerminalView extends Region {
     /** Bundled with Editora, so always there; the window passes the editor font once it is wired. */
     static final String DEFAULT_FONT_FAMILY = "JetBrains Mono";
 
+    /**
+     * The icon face bundled for terminals (Symbols Nerd Font Mono), which the window registers before or soon after the
+     * first terminal opens; see {@link #iconFontsChanged}.
+     */
+    public static final String ICON_FONT_FAMILY = IconFont.BUNDLED;
+
     private String fontFamily = DEFAULT_FONT_FAMILY;
 
     private Font font;
@@ -137,6 +143,14 @@ public final class TerminalView extends Region {
     private @Nullable Font boldIconFont;
     private @Nullable Font italicIconFont;
     private @Nullable Font boldItalicIconFont;
+
+    /**
+     * The bundled icon face sized from the cell ({@link IconFont#iconSize}), and how far below the text baseline to
+     * draw it to sit centred in the row; null when the icons come from an installed Nerd Font, drawn at text size.
+     */
+    private @Nullable Font scaledIconFont;
+
+    private double scaledIconShift;
     private double fontSize;
     private double charWidth;
     private double lineHeight;
@@ -201,11 +215,18 @@ public final class TerminalView extends Region {
     /** Copies each selection to the clipboard as it is made. A setting. */
     private boolean copyOnSelect;
 
-    /** Lines already in history, to derive the delta the history listener does not supply. */
-    private int knownHistoryLines;
-
-    /** Lines a full history dropped since the last {@link #onHistoryLineCountChanged()}. */
-    private int discardedHistoryLines;
+    /**
+     * How far the text moved on each change, so the selection and viewport can follow it; see {@link HistoryFollow}.
+     * When the history goes, everything measured against it goes too, or the viewport scrolls into rows that no longer
+     * exist.
+     */
+    private final HistoryFollow follow = new HistoryFollow(() -> {
+        selection = null;
+        selectionAnchor = null;
+        settledText = null;
+        scrollOrigin = 0;
+        markDirty();
+    });
 
     private volatile boolean dirty = true;
     private int columns = 80;
@@ -403,14 +424,9 @@ public final class TerminalView extends Region {
             if (selection != null) selectionToVerify = true;
             markDirty();
         });
-        buffer.addHistoryBufferListener(this::onHistoryLineCountChanged);
-        // Once history is full its count stops growing; the lines it drops say how far the text moved.
-        buffer.addChangesListener(new com.jediterm.terminal.model.TextBufferChangesListener() {
-            @Override
-            public void linesDiscardedFromHistory(java.util.List<com.jediterm.terminal.model.TerminalLine> lines) {
-                discardedHistoryLines += lines.size();
-            }
-        });
+        // Once history is full its count stops growing; the lines it drops say how far the text moved. It also hears
+        // a width change and a cleared history (see HistoryFollow).
+        buffer.addChangesListener(follow);
         session.setTypeAhead(typeAhead);
         session.setOnTypeAheadChanged(this::markDirty);
         session.setOnSessionEnded(() -> Platform.runLater(() -> {
@@ -543,9 +559,31 @@ public final class TerminalView extends Region {
         requestLayout();
     }
 
+    /**
+     * The window registered the bundled icon face after this view chose its fonts (it loads off the FX thread): choose
+     * again, and repaint.
+     */
+    public void iconFontsChanged() {
+        IconFont.forget();
+        applyIconFont(IconFont.familyFor(fontFamily).orElse(null));
+        markDirty();
+    }
+
+    /** After {@link #measureFont}: the bundled face is sized from the cell. */
     private void applyIconFont(@Nullable String icons) {
+        scaledIconFont = null;
         if (icons == null) {
             iconFont = boldIconFont = italicIconFont = boldItalicIconFont = null;
+            return;
+        }
+        if (icons.equals(IconFont.BUNDLED)) {
+            // One file, no weights. Its icons are 1 em squares — a symbols-only font has no cell of its own to fit them
+            // to — so at text size each spilled two-thirds of a cell into the name after it. Sized from the cell
+            // instead, like the NF builds' icons.
+            iconFont = boldIconFont = italicIconFont = boldItalicIconFont = Font.font(icons, fontSize);
+            double size = IconFont.iconSize(charWidth);
+            scaledIconFont = Font.font(icons, size);
+            scaledIconShift = IconFont.iconBaselineShift(ascent, lineHeight, size);
             return;
         }
         iconFont = Font.font(icons, fontSize);
@@ -906,15 +944,18 @@ public final class TerminalView extends Region {
      * Draws one code point in {@code face}, which the context is already set to — or, for a private-use one when
      * {@code iconFace} is set, in the icon face, leaving {@code face} set after.
      */
-    private static void drawCodePoint(
+    private void drawCodePoint(
             GraphicsContext g, int codePoint, double x, double baseline, Font face, @Nullable Font iconFace) {
         String glyph = new String(Character.toChars(codePoint));
         if (iconFace == null || !IconFont.isPrivateUse(codePoint)) {
             g.fillText(glyph, x, baseline);
             return;
         }
-        g.setFont(iconFace);
-        g.fillText(glyph, x, baseline);
+        // Powerline separators stay at text size: they have to span the line for a prompt's segments to meet.
+        Font scaled = scaledIconFont;
+        boolean rescale = scaled != null && !IconFont.isPowerline(codePoint);
+        g.setFont(rescale ? scaled : iconFace);
+        g.fillText(glyph, x, rescale ? baseline + scaledIconShift : baseline);
         g.setFont(face);
     }
 
@@ -1769,30 +1810,39 @@ public final class TerminalView extends Region {
      * Keeps the viewport and any selection pinned to their text as lines age out of the screen and
      * into history.
      *
-     * <p>Called on the emulator thread, after any buffer change. No listener carries the delta, so
-     * it is derived from the history line count plus the lines a full history dropped. Without this, output arriving while the user is scrolled back slides the
-     * text under them, and a selection made moments earlier silently comes to refer to different
-     * characters — which matters because copying it would then produce the wrong text.
+     * <p>Called on the emulator thread, after any buffer change. Without this, output arriving while the user is
+     * scrolled back slides the text under them, and a selection made moments earlier silently comes to refer to
+     * different characters — which matters because copying it would then produce the wrong text. {@link
+     * HistoryFollow} says how far things moved and whether it was a resize, where JediTerm has already moved the
+     * selection itself: shifting it again here moved it twice.
      */
     private void onHistoryLineCountChanged() {
-        if (buffer == null) return;
-        int now = buffer.getHistoryLinesCount();
-        int delta = now - knownHistoryLines + discardedHistoryLines;
-        knownHistoryLines = now;
-        discardedHistoryLines = 0;
-        if (delta <= 0) return;
+        TerminalTextBuffer buf = buffer;
+        if (buf == null) return;
+        int history = buf.getHistoryLinesCount();
+        HistoryFollow.Change change = follow.sync(history, buf.getHeight());
+        if (change == HistoryFollow.Change.NONE) return;
+        int delta = change.delta();
 
-        // At the live view (origin 0) staying pinned to the bottom is what is wanted, so only a
-        // scrolled-back viewport moves.
-        if (scrollOrigin < 0) scrollOrigin = Math.max(-now, scrollOrigin - delta);
+        // Marks and hits are kept at absolute lines; this one count moves them all. Only forward: lines a wider
+        // window pulls back out of history are rewrapped, and no count says where a mark's text went.
+        if (delta > 0) pushedLines += delta;
 
-        // Marks and hits are kept at absolute lines; this one count moves them all.
-        pushedLines += delta;
-
-        TerminalSelection current = selection;
-        if (current != null) current.shiftY(-delta);
-        Point anchor = selectionAnchor;
-        if (anchor != null) selectionAnchor = new Point(anchor.x, anchor.y - delta);
+        if (change.resize()) {
+            // The viewport keeps its place, within the history that is left.
+            scrollOrigin = HistoryFollow.origin(scrollOrigin, 0, history);
+            // JediTerm moved a stream's endpoints, by slot. A block is in columns, and its rows have just been
+            // rewrapped into other rows: nothing it covered is where it was.
+            if (rectangular) selection = null;
+        } else if (delta > 0) {
+            // At the live view (origin 0) staying pinned to the bottom is what is wanted, so only a scrolled-back
+            // viewport moves.
+            scrollOrigin = HistoryFollow.origin(scrollOrigin, delta, history);
+            TerminalSelection current = selection;
+            if (current != null) current.shiftY(-delta);
+            Point anchor = selectionAnchor;
+            if (anchor != null) selectionAnchor = new Point(anchor.x, anchor.y - delta);
+        }
         markDirty();
     }
 
@@ -2411,8 +2461,6 @@ public final class TerminalView extends Region {
         selectionAnchor = null;
         settledText = null;
         scrollOrigin = 0;
-        knownHistoryLines = 0;
-        discardedHistoryLines = 0;
         marks.removeIf(m -> rowOf(m.line()) < 0);
         clearSearch();
         markDirty();
