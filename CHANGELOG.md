@@ -32,7 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missing leads to Settings instead of an Install that would overwrite it; it says what the server adds and what
   Install downloads (about 17 MB, from Red Hat's vscode-xml release on GitHub); and "Not now" holds for every XML
   file of the window, not one tab. With language servers off, the first XML file asks once whether to turn them on.
-<!-- XML review: routing -->
 - **XML: DTDs, RELAX NG schemas and other XML dialects are XML.** `.dtd .ent .mod .rng .fo .xspec .sch .csproj
   .vbproj .fsproj .props .targets .nuspec .resx .xaml .xlf .xliff .plist .xul .kml .gpx .tld .jnlp .xmi .ditamap
   .dita` open with XML highlighting, folding, comments and the XML language server instead of as spell-checked
@@ -69,7 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on a line without one.
 - **XML: a schema changed outside Editora revalidates the XML files that use it**, also in a collapsed Project
   folder; the errors stayed until the next keystroke.
-
 - **XML server settings** (Settings ▸ LSP, the XML card): Editora now sends lemminx its settings at start, pushes a
   change to the running server and answers its configuration questions, where before it sent nothing at all.
   **Download schemas** (`xmlSchemaDownloads`: never / only in trusted folders, the default / always), **Files without

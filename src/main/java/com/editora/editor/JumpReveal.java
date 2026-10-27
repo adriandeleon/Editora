@@ -64,11 +64,29 @@ public final class JumpReveal {
         // Across, the target's own column decides, not where the view happened to be: a column near the line's
         // start shows from column 1, and one past the viewport's width is scrolled to. A jump used to keep the old
         // horizontal scroll, landing with the line start cut off or the caret off to the right (XML review C19).
-        // The line is on screen now, so following the caret moves the view only sideways.
+        // Only the horizontal scroll moves: following the caret would also nudge the view down a row past the
+        // pinned rows it was just placed under.
         area.scrollXToPixel(0);
-        area.requestFollowCaret();
+        revealCaretColumn(area);
         if (pinning && pinsOver.test(area)) {
             pinFor.accept(firstVisible);
+        }
+    }
+
+    /** Scrolls {@code area} sideways so its caret, on a line already on screen, is inside the viewport. */
+    private static void revealCaretColumn(CodeArea area) {
+        area.layout();
+        var caret = area.getCaretBounds().orElse(null);
+        if (caret == null) {
+            return;
+        }
+        var view = area.localToScreen(area.getBoundsInLocal());
+        if (view == null) {
+            return;
+        }
+        double margin = Math.min(view.getWidth() / 4, 4 * caret.getHeight());
+        if (caret.getMaxX() > view.getMaxX()) {
+            area.scrollXBy(caret.getMaxX() - view.getMaxX() + margin);
         }
     }
 

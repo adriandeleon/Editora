@@ -171,8 +171,13 @@ class XmlServerSettingsTest {
         assertEquals(Map.of("noGrammar", "ignore"), mergedXml.get("validation"));
         assertEquals(Map.of("central", Map.of("skip", true)), mergedXml.get("maven"), "lemminx-maven's object stays");
         assertEquals(
-                Map.of("settings", Map.of("xml", xml)),
-                LspManager.withXmlSettings("xml", LspManager.initOptionsFor("xml", List.of()), xml));
+                Map.of(
+                        "extendedClientCapabilities",
+                        XmlServer.extendedClientCapabilities(),
+                        "settings",
+                        Map.of("xml", xml)),
+                LspManager.withXmlSettings("xml", LspManager.initOptionsFor("xml", List.of()), xml),
+                "the settings sit beside lemminx's extended client capabilities");
         assertEquals(
                 Map.of("provideFormatter", true),
                 LspManager.withXmlSettings("json", Map.of("provideFormatter", true), xml));
