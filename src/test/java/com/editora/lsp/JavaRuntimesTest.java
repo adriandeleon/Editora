@@ -453,4 +453,74 @@ class JavaRuntimesTest {
                 app.resolve("build.gradle.kts"), "java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }");
         assertEquals(21, JavaRuntimes.statedRelease(app.getParent()), "the included project's");
     }
+
+    /**
+     * The layouts the tenth review's reading still misread: a module inheriting its parent's release or managed
+     * plugin, a Boot parent's version first, an MR-jar execution, every include, a variable named release, a version
+     * catalog and a convention plugin (eleventh review CM5, DM8).
+     */
+    @Test
+    void theStatedReleaseFollowsInheritanceAndConventions(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path implicit = java.nio.file.Files.createDirectories(dir.resolve("implicit/child"));
+        java.nio.file.Files.writeString(
+                implicit.getParent().resolve("pom.xml"),
+                "<properties><maven.compiler.release>17</maven.compiler.release></properties>");
+        java.nio.file.Files.writeString(implicit.resolve("pom.xml"), "<parent><artifactId>p</artifactId></parent>");
+        assertEquals(17, JavaRuntimes.statedRelease(implicit), "inherited, not named");
+        java.nio.file.Path managed = java.nio.file.Files.createDirectories(dir.resolve("managed/child"));
+        java.nio.file.Files.writeString(
+                managed.getParent().resolve("pom.xml"),
+                "<build><pluginManagement><plugins><plugin><artifactId>maven-compiler-plugin</artifactId>"
+                        + "<configuration><release>17</release></configuration></plugin></plugins></pluginManagement></build>");
+        java.nio.file.Files.writeString(managed.resolve("pom.xml"), "<parent><artifactId>p</artifactId></parent>");
+        assertEquals(17, JavaRuntimes.statedRelease(managed), "the parent's pluginManagement");
+        java.nio.file.Path override = java.nio.file.Files.createDirectories(dir.resolve("override"));
+        java.nio.file.Files.writeString(
+                override.resolve("pom.xml"),
+                "<build><pluginManagement><plugins><plugin><artifactId>maven-compiler-plugin</artifactId>"
+                        + "<configuration><release>11</release></configuration></plugin></plugins></pluginManagement>"
+                        + "<plugins><plugin><artifactId>maven-compiler-plugin</artifactId><configuration><release>17"
+                        + "</release></configuration></plugin></plugins></build>");
+        assertEquals(17, JavaRuntimes.statedRelease(override), "<plugins> before <pluginManagement>");
+        java.nio.file.Path mrjar = java.nio.file.Files.createDirectories(dir.resolve("mrjar"));
+        java.nio.file.Files.writeString(
+                mrjar.resolve("pom.xml"),
+                "<plugin><artifactId>maven-compiler-plugin</artifactId><executions><execution><configuration>"
+                        + "<release>9</release></configuration></execution></executions><configuration><release>17"
+                        + "</release></configuration></plugin>");
+        assertEquals(17, JavaRuntimes.statedRelease(mrjar), "an execution's release is not the project's");
+        java.nio.file.Path boot = java.nio.file.Files.createDirectories(dir.resolve("bootorder"));
+        java.nio.file.Files.writeString(
+                boot.resolve("pom.xml"),
+                "<parent><groupId>org.springframework.boot</groupId><version>3.3.4</version>"
+                        + "<artifactId>spring-boot-starter-parent</artifactId></parent><version>1.0.0</version>");
+        assertEquals(17, JavaRuntimes.statedRelease(boot), "the parent's version, not the project's");
+        java.nio.file.Path two = java.nio.file.Files.createDirectories(dir.resolve("two/lib"));
+        java.nio.file.Files.createDirectories(dir.resolve("two/app"));
+        java.nio.file.Files.writeString(two.getParent().resolve("settings.gradle.kts"), "include(\"app\", \"lib\")\n");
+        java.nio.file.Files.writeString(two.getParent().resolve("app/build.gradle.kts"), "plugins { java }\n");
+        java.nio.file.Files.writeString(
+                two.resolve("build.gradle.kts"),
+                "java { toolchain { languageVersion = " + "JavaLanguageVersion.of(17) } }\n");
+        assertEquals(17, JavaRuntimes.statedRelease(two.getParent()), "every include");
+        java.nio.file.Path def = java.nio.file.Files.createDirectories(dir.resolve("def"));
+        java.nio.file.Files.writeString(
+                def.resolve("build.gradle"),
+                "def release = 3\njava { toolchain { " + "languageVersion = JavaLanguageVersion.of(21) } }\n");
+        assertEquals(21, JavaRuntimes.statedRelease(def), "a variable named release is none");
+        java.nio.file.Path catalog = java.nio.file.Files.createDirectories(dir.resolve("catalog/gradle"));
+        java.nio.file.Files.writeString(catalog.resolve("libs.versions.toml"), "[versions]\njdk = \"21\"\n");
+        java.nio.file.Files.writeString(catalog.getParent().resolve("settings.gradle.kts"), "\n");
+        java.nio.file.Files.writeString(
+                catalog.getParent().resolve("build.gradle.kts"),
+                "java { toolchain { languageVersion.set(JavaLanguageVersion.of(libs.versions.jdk.get().toInt())) } }\n");
+        assertEquals(21, JavaRuntimes.statedRelease(catalog.getParent()), "a version catalog's");
+        java.nio.file.Path conv = java.nio.file.Files.createDirectories(dir.resolve("conv/buildSrc/src/main/kotlin"));
+        java.nio.file.Files.writeString(
+                conv.resolve("java-conventions.gradle.kts"),
+                "java { toolchain { " + "languageVersion = JavaLanguageVersion.of(21) } }\n");
+        java.nio.file.Files.writeString(dir.resolve("conv/build.gradle.kts"), "plugins { id(\"java-conventions\") }\n");
+        assertEquals(21, JavaRuntimes.statedRelease(dir.resolve("conv")), "a convention plugin's");
+    }
 }

@@ -84,7 +84,8 @@ final class DocumentSymbolMapper {
                 Math.max(start, end),
                 Math.max(0, sel.getStart().getLine()),
                 Math.max(0, sel.getStart().getCharacter()),
-                children);
+                children,
+                Math.max(0, s.getRange().getStart().getCharacter()));
     }
 
     /**

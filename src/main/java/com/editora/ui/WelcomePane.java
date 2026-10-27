@@ -275,6 +275,15 @@ public final class WelcomePane extends Region implements TabContent {
         });
     }
 
+    /**
+     * Takes the focus itself, with its recents current, as the tab left when the last file tab closes: handing it to
+     * the first recent entry, drawn with no focus ring, let a Space open that file (eleventh review AP1).
+     */
+    void focusPage() {
+        refresh();
+        super.requestFocus();
+    }
+
     /** Whether this window's focus owner is this pane or inside it (true even while the window is inactive). */
     boolean ownsFocus() {
         Node owner = getScene() == null ? null : getScene().getFocusOwner();

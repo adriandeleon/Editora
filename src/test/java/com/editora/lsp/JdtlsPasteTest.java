@@ -132,4 +132,23 @@ class JdtlsPasteTest {
                 JsonParser.parseString(edit("import static java.lang.Math.max;\n", true)), "int m = max(a, b);");
         assertEquals("import static java.lang.Math.max;\n", newText(statics));
     }
+
+    /** The copied file, sent so jdtls names the text's types by its imports (eleventh review A11). */
+    @org.junit.jupiter.api.Test
+    void theCopiedFileIsSent() {
+        String json =
+                JdtlsPaste.paramsJson("file:///x/B.java", 0, 0, 1, 0, "Duration d;\n", 4, true, "file:///x/A.java");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "file:///x/A.java",
+                com.google.gson.JsonParser.parseString(json)
+                        .getAsJsonObject()
+                        .get("copiedDocumentUri")
+                        .getAsString());
+        java.nio.file.Path a = java.nio.file.Path.of("/x/A.java");
+        JdtlsPaste.copied("Duration d;\n", a);
+        org.junit.jupiter.api.Assertions.assertEquals(a, JdtlsPaste.copiedFrom("Duration d;\r\n"));
+        org.junit.jupiter.api.Assertions.assertNull(JdtlsPaste.copiedFrom("other"), "not what was copied");
+        JdtlsPaste.copied("x", java.nio.file.Path.of("/x/notes.md"));
+        org.junit.jupiter.api.Assertions.assertNull(JdtlsPaste.copiedFrom("x"), "only a Java file");
+    }
 }

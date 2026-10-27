@@ -721,7 +721,7 @@ final class EditorArea {
         setFocusedGroup(next);
         Tab tab = next.getSelectionModel().getSelectedItem();
         if (tab != null && tab.getContent() != null) {
-            tab.getContent().requestFocus();
+            TabFocus.focusPage(tab.getContent()); // an editor's tab is then focused in its editor (AO1)
         }
         return true;
     }

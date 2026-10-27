@@ -3027,7 +3027,10 @@ final class LanguageServerSession implements LanguageClient {
         // says only here that it found no ShellCheck ("disabling linting as no executable was found") or that
         // a format failed, and the user otherwise saw a script with no diagnostics and no hint why.
         org.eclipse.lsp4j.MessageType type = message.getType();
-        if (type == org.eclipse.lsp4j.MessageType.Error && message.getMessage() != null) {
+        if (type == org.eclipse.lsp4j.MessageType.Error
+                && message.getMessage() != null
+                && !message.getMessage().contains("while building workspace")) {
+            // a build that found a compile error says so as an Error: no import failure (eleventh review CM1)
             lastErrorLog = firstLine(message.getMessage());
         }
         if (type == org.eclipse.lsp4j.MessageType.Error || type == org.eclipse.lsp4j.MessageType.Warning) {
@@ -3039,6 +3042,11 @@ final class LanguageServerSession implements LanguageClient {
 
     /** The first line of the last error this server logged: a failed Gradle import's reason is only there. */
     private volatile @Nullable String lastErrorLog;
+
+    /** Forgets the last logged error: an import starts again, or one succeeded (eleventh review CM1). */
+    void forgetLastErrorLog() {
+        lastErrorLog = null;
+    }
 
     @Nullable
     String lastErrorLog() {

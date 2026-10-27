@@ -1184,6 +1184,8 @@ final class EditingCoordinator {
         Clipboard cb = Clipboard.getSystemClipboard();
         if (cb.hasString()) {
             pushSave(cb.getString());
+            EditorBuffer b = host.activeBuffer(); // a paste into Java asks jdtls with this file's imports (A11)
+            com.editora.lsp.JdtlsPaste.copied(cb.getString(), b == null ? null : b.getPath());
         }
     }
 

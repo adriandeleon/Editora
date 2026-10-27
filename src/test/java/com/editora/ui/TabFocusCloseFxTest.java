@@ -58,8 +58,11 @@ class TabFocusCloseFxTest {
         return (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class<?>[] {});
     }
 
+    /** The window's focus owner (its scene, not an editor's, which a split moves between groups). */
     private Node focusOwner() throws Exception {
-        return FxTestSupport.callOnFx(() -> active().getArea().getScene().getFocusOwner());
+        return FxTestSupport.callOnFx(() -> ((javafx.stage.Stage) FxTestSupport.field(fx.controller, "stage"))
+                .getScene()
+                .getFocusOwner());
     }
 
     /** Closing the focused tab leaves the keyboard in the editor shown, not on the toolbar (ninth review AP1). */
@@ -133,6 +136,10 @@ class TabFocusCloseFxTest {
             settle();
             EditorBuffer now = active();
             assertTrue(now != null && now != before, "the other group's tab");
+            for (int i = 0; i < 100 && now.getFocusedArea() != focusOwner(); i++) { // a split settles over pulses
+                Thread.sleep(20);
+                settle();
+            }
             assertSame(now.getFocusedArea(), focusOwner());
         } finally {
             FxTestSupport.runOnFx(() -> reg.run("view.unsplitEditorGroups"));
@@ -175,6 +182,8 @@ class TabFocusCloseFxTest {
                     focused != null && !"newButton".equals(focused.getId()),
                     "not the toolbar's New button: " + focused);
             assertTrue(onWelcomePage(focused), "on the Welcome page: " + focused);
+            assertTrue(
+                    focused instanceof WelcomePane, "the page, not its first entry (eleventh review AP1): " + focused);
         } finally {
             own.dispose();
         }
@@ -190,5 +199,47 @@ class TabFocusCloseFxTest {
                     }
                     return false;
                 });
+    }
+
+    /**
+     * Closing the focused Welcome tab from the keyboard puts the keyboard in the editor shown, not on the toolbar's New
+     * button: the page's link that had the focus left with its tab (eleventh review AM1).
+     */
+    @Test
+    void closingAFocusedPageTabFocusesTheEditorShown() throws Exception {
+        FxWindowFixture own = FxWindowFixture.create();
+        try {
+            CommandRegistry r = FxTestSupport.callOnFx(() -> FxTestSupport.field(own.controller, "registry"));
+            FxTestSupport.runOnFx(() -> {
+                r.run("buffer.closeAll");
+                r.run("file.new");
+                r.run("view.welcome"); // the Welcome tab, its first entry focused
+            });
+            settle();
+            javafx.scene.Scene scene = FxTestSupport.callOnFx(
+                    () -> ((javafx.stage.Stage) FxTestSupport.field(own.controller, "stage")).getScene());
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.Node page = scene.getRoot().lookup(".welcome-pane");
+                page.requestFocus(); // hands the focus to an entry
+            });
+            settle();
+            FxTestSupport.runOnFx(() -> r.run("buffer.close"));
+            settle();
+            Node owner = null;
+            for (int i = 0; i < 100; i++) {
+                owner = FxTestSupport.callOnFx(scene::getFocusOwner);
+                if (owner != null && owner.getStyleClass().contains("editor-area")) {
+                    break;
+                }
+                Thread.sleep(20);
+                settle();
+            }
+            Node focused = owner;
+            assertTrue(
+                    focused != null && focused.getStyleClass().contains("editor-area"),
+                    "the file's editor: " + focused);
+        } finally {
+            own.dispose();
+        }
     }
 }

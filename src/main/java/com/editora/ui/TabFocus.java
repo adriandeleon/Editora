@@ -45,9 +45,13 @@ final class TabFocus {
             return;
         }
         scene.getProperties().put(TabFocus.class, Boolean.TRUE);
+        boolean[] inArea = {within(scene.getFocusOwner(), area.node())};
         scene.focusOwnerProperty().addListener((o, was, now) -> {
-            boolean editorLeft =
-                    was != null && was.getScene() == null && was.getStyleClass().contains("editor-area");
+            // what had the focus was in a tab (an editor, Doctor's link, a viewer) and left with its tab: once removed,
+            // its parents no longer lead to the area, so where it was is kept as it gets the focus (eleventh review
+            // AM1)
+            boolean editorLeft = was != null && was.getScene() == null && inArea[0];
+            inArea[0] = within(now, area.node());
             boolean hiddenEditor = now != null && now.getStyleClass().contains("editor-area") && !shown(now);
             if (editorLeft || hiddenEditor) {
                 Platform.runLater(() -> {
@@ -63,7 +67,7 @@ final class TabFocus {
                         Tab tab = area.selectedTab();
                         Node page = tab == null ? null : tab.getContent();
                         if (page != null && !within(owner, page)) {
-                            page.requestFocus();
+                            focusPage(page);
                         }
                     }
                 });
@@ -79,6 +83,15 @@ final class TabFocus {
             }
         }
         return true;
+    }
+
+    /** Puts the focus on a non-editor tab's page: the Welcome page itself, not its first entry (AP1). */
+    static void focusPage(Node page) {
+        if (page instanceof WelcomePane welcome) {
+            welcome.focusPage();
+        } else {
+            page.requestFocus();
+        }
     }
 
     /** Whether {@code node} is {@code ancestor} or inside it. */
