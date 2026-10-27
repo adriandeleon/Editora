@@ -6,7 +6,8 @@ import java.util.Deque;
 /**
  * Takes the shell-integration sequences out of a terminal's output and turns them into events, in stream order:
  * OSC 7 (the shell's working directory, as a {@code file://host/path} URL) and OSC 133 (prompt marks:
- * {@code A} prompt starts, {@code B} command starts, {@code C} its output starts, {@code D;status} it finished).
+ * {@code A} prompt starts, {@code B} command starts, {@code C} its output starts, {@code D;status} it finished) —
+ * and a program's own requests: OSC 9 and OSC 777 (a desktop notification) and OSC 52 (setting the clipboard).
  *
  * <p>JediTerm stubs the first and does not know the second, and warns about each, at every prompt. Every other
  * escape sequence is passed on exactly as it came, split across reads or not.
@@ -23,6 +24,12 @@ final class OscTap {
 
         /** OSC 133: {@code kind} is A, B, C or D; {@code params} what followed it (D's exit status), or "". */
         void promptMark(char kind, String params);
+
+        /** OSC 9 or OSC 777: a program asked for a desktop notification. */
+        default void notification(OscSequences.Notification notification) {}
+
+        /** OSC 52: a program asked to put {@code text} on the clipboard. Never a query: those are dropped. */
+        default void clipboard(String text) {}
     }
 
     /** An event found between pieces of text, handed to the listener {@link #next} is given. */
@@ -154,6 +161,16 @@ final class OscTap {
             char kind = rest.charAt(0);
             String params = more < 0 ? "" : rest.substring(more + 1);
             queue.addLast((Event) listener -> listener.promptMark(kind, params));
+        } else if (number.equals("9") || number.equals("777")) {
+            // Taken whatever they turn out to be: ConEmu's numbered OSC 9 subcommands (a progress bar) are not
+            // notifications, and nothing downstream knows them either.
+            flushText();
+            OscSequences.notification(Integer.parseInt(number), rest)
+                    .ifPresent(n -> queue.addLast((Event) listener -> listener.notification(n)));
+        } else if (number.equals("52")) {
+            flushText();
+            OscSequences.clipboardText(rest)
+                    .ifPresent(text -> queue.addLast((Event) listener -> listener.clipboard(text)));
         } else {
             text.append(ESC).append(']').append(body).append(terminator);
         }

@@ -522,6 +522,40 @@ class TerminalViewFxTest {
     }
 
     @Test
+    void aProgramCanSetTheClipboardUnlessTheSettingSaysNo() throws Exception {
+        open();
+        // "from vim" in base64, as vim's OSC 52 integration sends a yank.
+        connector.emit("\u001b]52;c;ZnJvbSB2aW0=\u0007");
+        await(
+                () -> "from vim"
+                        .equals(call(() -> javafx.scene.input.Clipboard.getSystemClipboard()
+                                .getString())),
+                "the clipboard set");
+        fx(() -> {
+            view.setClipboardWrites(false);
+            return null;
+        });
+        connector.emit("\u001b]52;c;bm90IGFsbG93ZWQ=\u0007marker\r\n");
+        await(() -> screen().contains("marker"), "the output after it");
+        assertEquals(
+                "from vim",
+                fx(() -> javafx.scene.input.Clipboard.getSystemClipboard().getString()));
+    }
+
+    @Test
+    void aProgramsNotificationsReachTheWindowAtMostOnceEveryTwoSeconds() throws Exception {
+        open();
+        List<String> heard = new java.util.concurrent.CopyOnWriteArrayList<>();
+        fx(() -> {
+            view.setOnNotify((title, body, post) -> heard.add(title + "|" + body + "|" + post));
+            return null;
+        });
+        connector.emit("\u001b]777;notify;make;done\u0007\u001b]9;again\u0007");
+        await(() -> heard.size() == 2, "both notifications heard");
+        assertEquals(List.of("make|done|true", "|again|false"), heard, "the second only marks the tab");
+    }
+
+    @Test
     void theWindowsItemsFollowTheViewsOwn() throws Exception {
         open();
         AtomicInteger asked = new AtomicInteger();

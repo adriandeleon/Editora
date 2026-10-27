@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 148;
+    public static final int SCHEMA_VERSION = 149;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -802,6 +802,12 @@ public class Settings {
     private boolean terminalMacOptionIsMeta = false;
     /** Ask before pasting several lines into a program that has not turned on bracketed paste. */
     private boolean terminalConfirmMultilinePaste = true;
+    /** Integrated terminal: a selection goes to the clipboard as soon as it is made. */
+    private boolean terminalCopyOnSelect = false;
+    /** Integrated terminal: programs may put text on the clipboard (OSC 52). They can never read it. */
+    private boolean terminalClipboardWrites = true;
+    /** Integrated terminal: a program's notification (OSC 9, OSC 777) reaches the desktop. Its tab is marked anyway. */
+    private boolean terminalNotifications = true;
     /**
      * Integrated terminal: its colour scheme, by name ({@code TerminalThemes.NAMES}); blank uses the editor theme's
      * colours. A name this version does not know also follows the editor theme.
@@ -3521,6 +3527,30 @@ public class Settings {
 
     public void setTerminalConfirmMultilinePaste(boolean terminalConfirmMultilinePaste) {
         this.terminalConfirmMultilinePaste = terminalConfirmMultilinePaste;
+    }
+
+    public boolean isTerminalCopyOnSelect() {
+        return terminalCopyOnSelect;
+    }
+
+    public void setTerminalCopyOnSelect(boolean terminalCopyOnSelect) {
+        this.terminalCopyOnSelect = terminalCopyOnSelect;
+    }
+
+    public boolean isTerminalClipboardWrites() {
+        return terminalClipboardWrites;
+    }
+
+    public void setTerminalClipboardWrites(boolean terminalClipboardWrites) {
+        this.terminalClipboardWrites = terminalClipboardWrites;
+    }
+
+    public boolean isTerminalNotifications() {
+        return terminalNotifications;
+    }
+
+    public void setTerminalNotifications(boolean terminalNotifications) {
+        this.terminalNotifications = terminalNotifications;
     }
 
     public String getTerminalTheme() {

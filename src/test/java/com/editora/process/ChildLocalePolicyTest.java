@@ -106,7 +106,9 @@ class ChildLocalePolicyTest {
             Map.entry("mermaid/Mermaid.java", 2), // render + export
             Map.entry("process/DesktopActions.java", 1), // terminal / file manager
             Map.entry("run/RunService.java", 1), // the user's program
+            Map.entry("terminal/DesktopNotifier.java", 1), // a program's notification: notify-send, osascript, a toast
             Map.entry("terminal/LocalShell.java", 1), // the integrated terminal's shell
+            Map.entry("terminal/PrimarySelection.java", 2), // wl-copy/xclip and wl-paste/xclip: the user's text
             Map.entry("terminal/TerminalImageCheck.java", 1), // a shell on a pseudo-terminal
             Map.entry("typst/TypstRenderer.java", 2), // render + export
             Map.entry("ui/PluginCoordinator.java", 1), // a plugin's own command
@@ -130,6 +132,7 @@ class ChildLocalePolicyTest {
             RUNNER, // the login-shell PATH probe
             "run/RunService.java",
             "terminal/LocalShell.java", // pty4j's PtyProcessBuilder, with applyUserEnv
+            "terminal/PrimarySelection.java", // wl-copy/xclip -i fork and keep serving: output discarded, applyUserEnv
             "terminal/PtyChannel.java", // pty4j's PtyProcessBuilder, with its caller's applyUserEnv environment
             "terminal/TerminalImageCheck.java", // pty4j's PtyProcessBuilder, with applyUserEnv
             "web/HtmlPreviewService.java");

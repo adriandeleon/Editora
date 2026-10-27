@@ -28,6 +28,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 
 import com.editora.command.KeyDispatcher;
+import com.editora.terminal.DesktopNotifier;
 import com.editora.terminal.LinkActions;
 import com.editora.terminal.ProgramRun;
 import com.editora.terminal.RunningProgram;
@@ -67,7 +68,39 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
             boolean confirmClose,
             boolean typeAhead,
             boolean macOptionIsMeta,
-            boolean confirmMultilinePaste) {
+            boolean confirmMultilinePaste,
+            boolean copyOnSelect,
+            boolean clipboardWrites,
+            boolean notifications) {
+
+        Config(
+                String fontFamily,
+                double fontSize,
+                int scrollback,
+                TerminalCursor cursor,
+                boolean bell,
+                String shell,
+                List<String> ideCommands,
+                boolean confirmClose,
+                boolean typeAhead,
+                boolean macOptionIsMeta,
+                boolean confirmMultilinePaste) {
+            this(
+                    fontFamily,
+                    fontSize,
+                    scrollback,
+                    cursor,
+                    bell,
+                    shell,
+                    ideCommands,
+                    confirmClose,
+                    typeAhead,
+                    macOptionIsMeta,
+                    confirmMultilinePaste,
+                    false,
+                    true,
+                    true);
+        }
 
         Config(
                 String fontFamily,
@@ -185,7 +218,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
 
         tabs.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
             if (now != null) {
-                now.getStyleClass().remove(BELL);
+                now.getStyleClass().removeAll(BELL, NOTIFIED);
                 TerminalView shown = views.get(now);
                 if (shown != null) {
                     shown.repaint(); // not painted while its tab was in the background
@@ -644,6 +677,7 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         tab.getTooltip().textProperty().unbind();
         tab.getTooltip().textProperty().bind(view.getDisplay().tabTooltipProperty());
         markBell(tab, view);
+        markNotifications(tab, view);
     }
 
     /** Each tab's own title, before same-name tabs are numbered (see {@link #refreshTitles}). */
@@ -683,6 +717,33 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
 
     /** Style class of a tab whose bell rang while it was not in view. */
     static final String BELL = "terminal-bell";
+
+    /** Style class of a tab whose program posted a notification (OSC 9, OSC 777) while it was not in view. */
+    static final String NOTIFIED = "terminal-notified";
+
+    /**
+     * A program's notification marks its tab when the tab is out of sight, and reaches the desktop unless the
+     * terminal is the one in front — its tab selected, in a shown panel of the focused window — or the setting is
+     * off. The view decides how often one may be posted; the rest only mark.
+     */
+    private void markNotifications(Tab tab, TerminalView view) {
+        view.setOnNotify((title, body, post) -> {
+            boolean inView = tab.isSelected() && isVisible() && getScene() != null;
+            if (!inView && !tab.getStyleClass().contains(NOTIFIED)) {
+                tab.getStyleClass().add(NOTIFIED);
+            }
+            if (!post || !config.notifications()) {
+                return;
+            }
+            boolean focused = inView
+                    && getScene().getWindow() != null
+                    && getScene().getWindow().isFocused();
+            if (!focused) {
+                // Untitled, it is named after the tab, which is how the user knows which terminal spoke.
+                DesktopNotifier.post(title.isEmpty() ? tab.getText() : title, body);
+            }
+        });
+    }
 
     /**
      * A shell ended: its tab closes, unless the connection to its machine went — then the tab keeps what the shell
@@ -863,6 +924,8 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         // Option composes on macOS unless the user asked for Meta; Alt is Meta everywhere else (AltGr composes).
         view.setAltIsMeta(altIsMeta(MAC, config.macOptionIsMeta()));
         view.setPasteGuard(text -> !config.confirmMultilinePaste() || pasteGuard.test(text));
+        view.setCopyOnSelect(config.copyOnSelect());
+        view.setClipboardWrites(config.clipboardWrites());
         view.setScrollbackLines(config.scrollback());
         view.setMenuIcons(TerminalPanel::menuIcon);
         view.setMenuExtras(menuExtras);

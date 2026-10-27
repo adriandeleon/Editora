@@ -4291,6 +4291,30 @@ public class SettingsWindow {
         switchRow(
                 keys,
                 cat,
+                "terminal.copyOnSelect",
+                true,
+                Settings::isTerminalCopyOnSelect,
+                Settings::setTerminalCopyOnSelect,
+                "terminal copy select selection clipboard automatic primary middle click");
+        switchRow(
+                keys,
+                cat,
+                "terminal.clipboardWrites",
+                true,
+                Settings::isTerminalClipboardWrites,
+                Settings::setTerminalClipboardWrites,
+                "terminal clipboard osc 52 program copy yank remote ssh");
+        switchRow(
+                keys,
+                cat,
+                "terminal.notifications",
+                true,
+                Settings::isTerminalNotifications,
+                Settings::setTerminalNotifications,
+                "terminal notification desktop osc 9 777 alert finished build");
+        switchRow(
+                keys,
+                cat,
                 "terminal.confirmClose",
                 false,
                 Settings::isTerminalConfirmClose,

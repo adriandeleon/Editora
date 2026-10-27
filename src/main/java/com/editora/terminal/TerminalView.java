@@ -1332,7 +1332,62 @@ public final class TerminalView extends Region {
                 marks.removeFirst();
             }
         }
+
+        @Override
+        public void notification(OscSequences.Notification notification) {
+            onNotification(notification);
+        }
+
+        @Override
+        public void clipboard(String text) {
+            if (clipboardWrites) Platform.runLater(() -> toClipboard(text));
+        }
     };
+
+    /** Whether a program may set the clipboard with OSC 52 (Settings → Terminal). It can never read it. */
+    private volatile boolean clipboardWrites = true;
+
+    public void setClipboardWrites(boolean allowed) {
+        this.clipboardWrites = allowed;
+    }
+
+    /** Told, on the FX thread, of a program's notification (OSC 9, OSC 777). */
+    @FunctionalInterface
+    public interface NotificationListener {
+        /**
+         * @param title the program's title, or empty for none
+         * @param post whether this one may reach the desktop: one per terminal every {@link #NOTIFY_INTERVAL_MS};
+         *     the rest only mark the tab
+         */
+        void notified(String title, String body, boolean post);
+    }
+
+    private NotificationListener onNotify = (title, body, post) -> {};
+
+    public void setOnNotify(NotificationListener onNotify) {
+        this.onNotify = onNotify == null ? (title, body, post) -> {} : onNotify;
+    }
+
+    /** A program cannot post more than one notification per terminal in this long; the rest only mark its tab. */
+    static final long NOTIFY_INTERVAL_MS = 2_000;
+
+    /** When this terminal last posted one. Written on the FX thread only. */
+    private long lastNotifiedMs = Long.MIN_VALUE / 2;
+
+    /**
+     * A program asked for a notification. The window decides whether it reaches the desktop — not while you are
+     * looking at the terminal — but the view decides how often: a loop printing OSC 9 would otherwise fill the screen
+     * with bubbles. Every one still marks the tab.
+     */
+    private void onNotification(OscSequences.Notification notification) {
+        Platform.runLater(() -> {
+            if (closed) return;
+            long now = System.currentTimeMillis();
+            boolean post = now - lastNotifiedMs >= NOTIFY_INTERVAL_MS;
+            if (post) lastNotifiedMs = now;
+            onNotify.notified(notification.title(), notification.body(), post);
+        });
+    }
 
     /** A cell's width in pixels, for tests. */
     double cellWidth() {
