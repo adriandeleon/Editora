@@ -100,6 +100,18 @@ class XmlOutlineTest {
         String many = "<r>\n" + "<e/>\n".repeat(XmlOutline.MAX_NODES + 50) + "</r>\n";
         List<StructureNode> roots = XmlOutline.build(many);
         assertEquals(XmlOutline.MAX_NODES - 1, roots.get(0).children().size());
+        // Settings → LSP → XML's "Structure element limit" caps the outline without the server too (XML review 2 C9).
+        assertEquals(9, XmlOutline.build(many, 10).get(0).children().size());
+        try {
+            XmlOutline.setLimit(20);
+            assertEquals(19, XmlOutline.build(many).get(0).children().size());
+        } finally {
+            XmlOutline.setLimit(0);
+        }
+        assertEquals(
+                XmlOutline.MAX_NODES - 1,
+                XmlOutline.build(many).get(0).children().size(),
+                "0 = the default");
     }
 
     @Test

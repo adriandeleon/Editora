@@ -82,6 +82,29 @@ class LineIndentTest {
                 "two of them contradict");
     }
 
+    /**
+     * Tab on a line that opens an element: lemminx formats the whole element, so besides this line's indent it
+     * answers with the break before the end tag and the previous line's attribute spacing. Only the indent counts;
+     * before, the answer was "unusable" and the smart-Tab fallback typed spaces inside the tag (XML review 2 B4).
+     */
+    @Test
+    void editsAfterThisLinesTextOrOnLaterLinesDoNotSpoilTheIndent() {
+        // `    <c x="1"   y="2"/>` then `  <d>` (caret inside the tag), `  </d>` below: lemminx's real answer
+        List<LspTextEdit> edits = List.of(
+                new LspTextEdit(LINE - 1, 12, LINE - 1, 15, " "),
+                new LspTextEdit(LINE - 1, 20, LINE - 1, 20, " "),
+                new LspTextEdit(LINE - 1, 22, LINE, 2, "\n    "),
+                new LspTextEdit(LINE, 5, LINE + 1, 2, "\n    "));
+        assertEquals("    ", LineIndent.formattedIndent("  <d>", edits, LINE));
+        assertEquals(
+                "  ",
+                LineIndent.formattedIndent("  <d>", List.of(new LspTextEdit(LINE + 1, 0, LINE + 1, 4, "  ")), LINE),
+                "a later line's indent");
+        assertNull(
+                LineIndent.formattedIndent("  <d>", List.of(new LspTextEdit(LINE, 2, LINE + 1, 0, "")), LINE),
+                "an edit from the indent's end on is still unusable");
+    }
+
     @Test
     void leadingWhitespaceHelper() {
         assertEquals("   ", LineIndent.leadingWhitespace("   abc"));

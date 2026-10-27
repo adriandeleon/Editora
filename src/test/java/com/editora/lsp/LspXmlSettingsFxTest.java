@@ -103,6 +103,31 @@ class LspXmlSettingsFxTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void formattingIsSwitchedOnInEveryWayTheServerReadsIt() throws Exception {
+        // lemminx registers formatting only when xml.format.enabled is true, and reads a missing key as false
+        // (XML review 2 C1): Format Document fell back to the built-in formatter and Tab got no server indent.
+        assertEquals(true, ask("xml.format.enabled"));
+        assertEquals(2, ask("xml.format.preservedNewlines"));
+        Settings wrap = new Settings();
+        wrap.setXmlFormatWrap(true); // a changed setting is pushed with the whole object, enabled included
+        manager.setXmlSettings(XmlServerSettings.of(wrap, config));
+        Integer width = wrap.getFillColumn();
+        long until = System.nanoTime() + 10_000_000_000L; // the push is a notification: it lands on another thread
+        while (System.nanoTime() < until
+                && (FakeLanguageServer.last(fakes.get(0).configurations) == null
+                        || !width.equals(
+                                ((Map<String, Object>) pushedXml(fakes.get(0)).get("format")).get("maxLineWidth")))) {
+            Thread.sleep(20);
+        }
+        Map<String, Object> format =
+                (Map<String, Object>) pushedXml(fakes.get(0)).get("format");
+        assertEquals(width, format.get("maxLineWidth"));
+        assertEquals(true, format.get("enabled"), "the didChangeConfiguration push");
+        assertEquals(true, format.get("preserveAttributeLineBreaks"));
+    }
+
+    @Test
     void indentationIsAnsweredFromTheDocument() throws Exception {
         assertEquals(2, ask("xml.format.tabSize"));
         assertEquals(false, ask("xml.format.insertSpaces"));

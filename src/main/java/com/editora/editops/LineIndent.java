@@ -22,9 +22,12 @@ public final class LineIndent {
      * unusable for an indent-only change — an edit reaches further back, joins or splits lines, or rewrites
      * text past the indent. Edits on line {@code lineIndex} apply as they are. lemminx (and others) express an
      * indent as one edit from the previous line's end, {@code "\n" + indent} replacing the line break and the
-     * old indent: that one is read as the new indent (XML review B4). Edits wholly on the previous line (its
-     * trailing whitespace) do not touch this line's indent and are ignored. Edits are applied right-to-left so
-     * earlier columns stay valid; out-of-range columns are clamped.
+     * old indent: that one is read as the new indent (XML review B4). Edits that cannot touch this line's indent
+     * are ignored: those wholly on the previous line (its trailing whitespace, its attributes), those on later
+     * lines, and a line break the formatter puts after this line's start tag — lemminx formats the whole
+     * element the line opens, so Tab on {@code <d>} came back with the {@code <d>…</d>} split too, and the
+     * fallback typed spaces inside the tag (XML review 2 B4). Edits are applied right-to-left so earlier columns
+     * stay valid; out-of-range columns are clamped.
      */
     public static @Nullable String formattedIndent(String line, List<LspTextEdit> edits, int lineIndex) {
         if (line == null) {
@@ -40,8 +43,13 @@ public final class LineIndent {
             if (e == null) {
                 continue;
             }
-            if (e.startLine() == lineIndex - 1 && e.endLine() == lineIndex - 1) {
-                continue; // the previous line's own whitespace
+            if ((e.startLine() == lineIndex - 1 && e.endLine() == lineIndex - 1) || e.startLine() > lineIndex) {
+                continue; // the previous line's own whitespace or attributes; a later line's indent
+            }
+            if (e.startLine() == lineIndex
+                    && e.startCol() > indentLength
+                    && (e.endLine() != lineIndex || e.newText().indexOf('\n') >= 0)) {
+                continue; // a break after this line's indent and text began: it splits the line, its indent stays
             }
             int newline = e.newText().lastIndexOf('\n');
             if (e.startLine() == lineIndex - 1

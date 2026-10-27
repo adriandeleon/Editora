@@ -25,8 +25,14 @@ import org.jspecify.annotations.Nullable;
  */
 final class XmlOutline {
 
-    /** At most this many elements are listed; lemminx's own default symbol limit. */
-    static final int MAX_NODES = 5000;
+    /** At most this many elements are listed by default; lemminx's own default symbol limit. */
+    static final int MAX_NODES = com.editora.config.Settings.XML_SYMBOL_LIMIT_DEFAULT;
+
+    /**
+     * The limit in use: Settings → LSP → XML's "Structure element limit", which caps the server's outline too, so
+     * the outline without the server follows it as well (XML review 2 C9). Set when settings are applied.
+     */
+    private static volatile int limit = MAX_NODES;
 
     /** Attributes that name an element, in the order they are preferred. */
     private static final List<String> NAMING_ATTRIBUTES = List.of("name", "id", "xml:id", "match", "ref");
@@ -39,8 +45,18 @@ final class XmlOutline {
 
     private XmlOutline() {}
 
-    /** The element outline of {@code text}. */
+    /** Sets the most elements {@link #build(String)} lists; below 1 = the default. */
+    static void setLimit(int max) {
+        limit = max < 1 ? MAX_NODES : max;
+    }
+
+    /** The element outline of {@code text}, at most the current limit of elements. */
     static List<StructureNode> build(String text) {
+        return build(text, limit);
+    }
+
+    /** The element outline of {@code text}, at most {@code max} elements. */
+    static List<StructureNode> build(String text, int max) {
         List<StructureNode> roots = new ArrayList<>();
         Deque<Open> stack = new ArrayDeque<>();
         int n = text.length();
@@ -77,7 +93,7 @@ final class XmlOutline {
                 continue; // a stray '<' in text
             }
             boolean selfClosing = tag.endsWith("/>");
-            if (count >= MAX_NODES) {
+            if (count >= max) {
                 // Full: what is still open runs to the end of the text, and the rest is not read — a 6 MB file is
                 // outlined in the time its first elements take (the Structure window rebuilds on the FX thread).
                 line += newlines(text, i, n);

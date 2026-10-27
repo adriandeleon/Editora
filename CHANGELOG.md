@@ -63,6 +63,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when its text starts with `<`, so a Modula-2 module or a KiCad schematic opens as plain text.
 - **The status bar and Problems say XML, JSON, YAML, HTML, CSS, SQL, TOML, C++, C#** (and other acronyms) instead
   of "Xml" or "Cpp", and plain text reads "Plain Text".
+- **XML formatting (XML/pom review 2: format).**
+  - Format Document and Tab use lemminx again. Editora's XML settings left out `format.enabled`, so lemminx never
+    offered formatting: every Format Document fell back to the built-in formatter, Tab never got the server's
+    indent, and the four XML formatting settings did nothing.
+  - lemminx now gets vscode-xml's whole set of format defaults, so it keeps up to two blank lines, keeps a
+    multi-line start tag such as a pom's `<project …>` header on its lines, and leaves comment and CDATA lines alone.
+  - New **Keep text as written in** (Settings ▸ LSP ▸ XML, `xmlFormatPreserveSpace`, vscode-xml's list): elements
+    whose text the XML server leaves exactly as written. Settings schema 150 → 151 (additive).
+  - Tab on a line that opens an element (`<d>` with its `</d>` below) re-indents it instead of typing spaces into
+    the tag.
+  - The built-in formatter (no XML server) keeps blank lines, at most two in a row, and keeps a trailing comment on
+    the line it follows. It formats off the UI thread, puts the caret back on the character it was on, and its
+    no-undo notice for a large file says "Format Document".
+  - The XML settings card has Validation, Formatting (XML server) and Structure headings; the formatting rows say
+    they need the XML server, and "Wrap long text: off" no longer claims text is left as it is. The Structure
+    element limit applies without the server too.
 
 - **Terminal: a selection keeps its text when the terminal is resized.** JediTerm moves a selection itself when a
   shorter window pushes rows into history, and the terminal moved it again: after a splitter drag the highlight sat

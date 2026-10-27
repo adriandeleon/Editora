@@ -3593,6 +3593,18 @@ public class SettingsWindow {
         settingSyncs.add(st -> combo.setValue(get.apply(st)));
     }
 
+    /**
+     * A sub-heading inside a card that groups the rows after it ({@code text}); found by {@code keywords}, so a
+     * search that finds any row under it can name the group too (the XML card's Validation / Formatting /
+     * Structure, XML review 2 C9).
+     */
+    void cardSubheading(Card card, Category cat, String text, String keywords) {
+        Label h = new Label(text);
+        h.getStyleClass().addAll("settings-row", "settings-card-subheading");
+        h.setMaxWidth(Double.MAX_VALUE);
+        cardRow(card, cat, h, keywords);
+    }
+
     /** A row for a size in pixels where 0 means "the built-in one" (described by {@code settings.<key>.desc}). */
     void intRow(
             Card card,

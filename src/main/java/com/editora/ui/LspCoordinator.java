@@ -2107,6 +2107,7 @@ final class LspCoordinator {
         com.editora.config.ConfigManager config = ops.config();
         lspManager.setXmlSettings(
                 com.editora.lsp.XmlServerSettings.of(host.settings(), config == null ? null : config.getConfigDir()));
+        XmlOutline.setLimit(host.settings().getXmlSymbolLimit()); // the outline without the server too (C9)
         xmlNotices.reset();
     }
 

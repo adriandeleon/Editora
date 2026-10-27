@@ -94,7 +94,7 @@ final class PythonFormatCoordinator {
             host.setStatus(tr("status.python.formatNoChange", formatter.name()));
             return;
         }
-        if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lsp"))) {
+        if (!NoUndoGuard.allow(buffer, tr("noUndo.op.format"))) {
             return;
         }
         buffer.getArea().replaceText(span[0], span[1], text.substring(span[0], span[2]));

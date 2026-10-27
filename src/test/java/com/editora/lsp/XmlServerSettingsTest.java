@@ -168,6 +168,50 @@ class XmlServerSettingsTest {
         assertEquals("alignWithFirstAttr", format.get("splitAttributes"));
         assertEquals("collapse", format.get("emptyElements"));
         assertEquals(false, format.get("spaceBeforeEmptyCloseTag"));
+        assertEquals(true, format.get("enabled"), "the user's settings never drop the rest of the object");
+        assertEquals(2, format.get("preservedNewlines"));
+    }
+
+    @Test
+    void theFormatObjectIsCompleteSoLemminxRegistersFormattingAndKeepsTheLayout() {
+        // lemminx reads xml.format as a whole: a key left out is Java's default, not lemminx's. Without "enabled" it
+        // never registered formatting (XML review 2 C1); without the rest it dropped blank lines and joined a pom's
+        // multi-line <project> start tag (E8), and joined comment and CDATA lines.
+        Map<String, Object> format =
+                map(XmlServerSettings.defaults().section(root, true, true).get("format"));
+        assertEquals(true, format.get("enabled"));
+        assertEquals(2, format.get("preservedNewlines"));
+        assertEquals(true, format.get("preserveAttributeLineBreaks"));
+        assertEquals(false, format.get("joinContentLines"));
+        assertEquals(false, format.get("joinCDATALines"));
+        assertEquals(false, format.get("joinCommentLines"));
+        assertEquals(false, format.get("preserveEmptyContent"));
+        assertEquals("ignore", format.get("enforceQuoteStyle"));
+        assertEquals(Settings.XML_PRESERVE_SPACE_DEFAULT, format.get("preserveSpace"));
+        assertEquals(
+                true,
+                XmlServerSettings.answer(
+                        XmlServerSettings.defaults().section(root, true, true), "xml.format.enabled", null),
+                "workspace/configuration says so too");
+        Map<String, Object> init =
+                XmlServerSettings.withSection(null, XmlServerSettings.defaults().section(root, true, true));
+        assertEquals(
+                true,
+                map(map(map(init.get("settings")).get("xml")).get("format")).get("enabled"));
+    }
+
+    @Test
+    void elementsWhoseTextIsKeptAreTheUsersList() {
+        Settings s = new Settings();
+        assertEquals(Settings.XML_PRESERVE_SPACE_DEFAULT, s.getXmlFormatPreserveSpace());
+        s.setXmlFormatPreserveSpace(XmlServerSettings.parseNames("p; pre,  xsl:text\n p "));
+        assertEquals(List.of("p", "pre", "xsl:text"), s.getXmlFormatPreserveSpace());
+        assertEquals(
+                List.of("p", "pre", "xsl:text"),
+                map(XmlServerSettings.of(s, null).section(root, true, true).get("format"))
+                        .get("preserveSpace"));
+        s.setXmlFormatPreserveSpace(XmlServerSettings.parseNames(""));
+        assertEquals(List.of(), s.getXmlFormatPreserveSpace(), "an empty list is kept: every text is reflowed");
     }
 
     @Test
