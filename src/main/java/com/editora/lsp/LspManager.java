@@ -554,7 +554,6 @@ public final class LspManager {
             java.util.Set.of("xsd", "dtd", "rng", "rnc", "ent", "mod");
 
     /** The plain XML server's id (lemminx). */
-    private static final String XML_SERVER_ID = "xml";
 
     /** Whether a file is one an XML server revalidates its documents against when it changes (XML review B9). */
     static boolean xmlGrammarFile(Path file) {
@@ -583,7 +582,7 @@ public final class LspManager {
         }
         Path key = root.toAbsolutePath().normalize();
         boolean whole = watchRoot.test(key);
-        boolean grammar = !whole && XML_SERVER_ID.equals(serverId);
+        boolean grammar = !whole && XmlServer.SERVER_ID.equals(serverId);
         Map<Path, RootWatcher> watchers = whole ? rootWatchers : grammar ? grammarWatchers : null;
         if (watchers == null || watchers.containsKey(key) || watchers.size() >= MAX_ROOT_WATCHERS) {
             return;

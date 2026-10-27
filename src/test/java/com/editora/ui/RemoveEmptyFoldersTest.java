@@ -16,7 +16,7 @@ class RemoveEmptyFoldersTest {
     void theNewPackagesEmptyFoldersGoAndTheRestStays(@TempDir Path root) throws Exception {
         Path made = Files.createDirectories(root.resolve("com/example/text"));
         Files.writeString(root.resolve("com/Kept.java"), "class Kept {}");
-        LspCoordinator.removeEmptyFolders(made, root);
+        WorkspaceEditFiles.removeEmptyFolders(made, root);
         assertFalse(Files.exists(made));
         assertFalse(Files.exists(root.resolve("com/example")), "its empty parent too");
         assertTrue(Files.exists(root.resolve("com/Kept.java")), "a folder with a file stays");
