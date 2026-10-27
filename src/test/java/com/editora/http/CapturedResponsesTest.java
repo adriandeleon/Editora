@@ -2,6 +2,8 @@ package com.editora.http;
 
 import java.util.List;
 
+import com.editora.i18n.Messages;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -10,6 +12,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for the per-run captured-response session backing request chaining. */
 class CapturedResponsesTest {
+
+    @BeforeAll
+    static void loadMessages() {
+        Messages.init("en"); // the reasons are read in English: not left to whichever test ran first in the fork
+    }
 
     private static HttpResult result() {
         return HttpFixtures.text(
