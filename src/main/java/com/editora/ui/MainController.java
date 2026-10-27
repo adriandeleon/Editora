@@ -9297,7 +9297,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     void onAbout() {
-        SettingsWindow.showAbout(
+        AboutDialog.show(
                 stage,
                 config.getSettingsFile(),
                 fileWorkflows::openPath,

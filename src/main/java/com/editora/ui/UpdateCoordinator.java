@@ -19,7 +19,7 @@ import static com.editora.i18n.Messages.tr;
  * for Updates", the status-bar notice and the download page. The last answer is kept in the shared
  * preferences, so every window, the About panel and the next launch go on the same one until the next check.
  */
-final class UpdateCoordinator implements SettingsWindow.AboutUpdates {
+final class UpdateCoordinator implements AboutDialog.Updates {
 
     private final UpdateService service = new UpdateService();
     private final Supplier<Settings> settings;
