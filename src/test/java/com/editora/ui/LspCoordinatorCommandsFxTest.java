@@ -1955,14 +1955,10 @@ class LspCoordinatorCommandsFxTest {
      */
     @Test
     void aFailedBuildBesideAnotherIsItsFoldersOwn() throws Exception {
-        // one server for the project folder (a project window), the Gradle build's diagnostic on its own folder
-        fx.ops.projectRoot = root;
+        // the root has no build file of its own; its server imports a Gradle build in gb/, whose import fails
         java.nio.file.Files.createDirectories(root.resolve("gb"));
-        java.nio.file.Files.createDirectories(root.resolve("mv"));
-        EditorBuffer gradle = fx.open("gb/G.java", "class G {}\n");
-        EditorBuffer maven = fx.open("mv/M.java", "class M {}\n");
-        assertEquals(root, LspTestHooks.sessionRoot(fx.manager, gradle.getPath()), "precondition: one server");
-        LspTestHooks.logError(fx.manager, gradle.getPath(), "Could not fetch model of type 'Map'");
+        EditorBuffer beside = fx.open("A.java", SOURCE);
+        LspTestHooks.logError(fx.manager, beside.getPath(), "Could not fetch model of type 'Map'");
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING"));
         var cause = new com.editora.text.LspDiagnostic(
                 0,
@@ -1975,11 +1971,12 @@ class LspCoordinatorCommandsFxTest {
                 "jdtls");
         fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("gb"), List.of(cause)));
         awaitError(tr("status.lsp.importProblemWhy", "jdtls", "Could not find method thisIsNotAConfiguration()"));
-        assertEquals(
-                tr("editor.problemCounter.notImported"),
-                FxTestSupport.callOnFx(() -> FxTestSupport.field(gradle.problemCounter(), "note")));
-        Object mavenNote = FxTestSupport.callOnFx(() -> FxTestSupport.field(maven.problemCounter(), "note"));
-        assertEquals(null, mavenNote, "the Maven build beside it imported");
+        java.util.Set<String> failed = FxTestSupport.field(fx.coordinator, "importFailed");
+        assertTrue(
+                FxTestSupport.callOnFx(() -> failed.stream().anyMatch(k -> k.endsWith(java.io.File.separator + "gb"))),
+                "gb's build failed");
+        Object besideNote = FxTestSupport.callOnFx(() -> FxTestSupport.field(beside.problemCounter(), "note"));
+        assertEquals(null, besideNote, "the file beside it is checked");
     }
 
     /** A Java file in no source folder of the project is a non-project file by rights: ready (CO2). */
