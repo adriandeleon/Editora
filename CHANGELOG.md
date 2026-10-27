@@ -15,6 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Campbell and the Editora pair are fixed schemes that stay the same whichever editor theme is active. Open
   terminals recolour at once. Settings schema 147 → 148 (additive).
 
+### Fixed
+
+- **Java: Go to Super Method reads type arguments.** In `interface StrStore extends Store<String>`, `save(Integer)`
+  opened `Store.save(T)`, and `Multi.accept(Integer)` offered a second, wrong branch; `T` now stands for `String`
+  there, so neither does, and `take(T[])` takes only a `String[]`. It also works on a method reference
+  (`String::length`) and in a lambda's parameters, both the functional interface's method; in an initializer's or a
+  library field's anonymous class written with `<>`; in a one-line nested class or field initializer, whose
+  `static` or `private` was read as the method's; and it never lands on the method itself
+  (`new java.util.Comparator<>() {…}`). "Looking for super methods…" no longer stays under the picker, and a
+  dependency's class rebuilt in place is read again.
+- **Java: a pom.xml that does not parse when the project is first opened is a failed import.** jdtls reported the
+  project as imported and checked every Java file for syntax only, under "Loaded and ready"; it now says the project
+  did not import, why, and each file's counter says it is not checked. A file outside the source folders is not
+  counted.
+- **Java: a window that joins after a failed import counts it as one error**, as the first window does, not two.
+- **Doctor's missing-sources hint names the JDK Maven compiles with**: the compiler plugin's `<release>` over a
+  property, no profile's properties, a property from the parent pom, Spring Boot's default; in Gradle, a release in
+  an included project's build, and `prerelease` is no release.
+- **View: Focus Next Editor Group puts the keyboard in that group's editor.** It focused the tab's container, so
+  typed keys went nowhere and the arrows switched tabs.
+- **Closing the last file tab beside the Welcome tab leaves the keyboard on the Welcome page**, not on the toolbar's
+  New button, where a Space opened a new buffer.
+
 ## [0.25.0] - 2026-10-26
 
 ### Added

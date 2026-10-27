@@ -220,6 +220,88 @@ class JavaMembersTest {
         assertFalse(JavaMembers.annotated(comment, 0, comment.indexOf("take"), "Override"));
     }
 
+    /**
+     * A type variable stands for the type argument the subtype's header gives it: {@code Store<String>}'s
+     * {@code save(T)} is no super method of {@code save(Integer)} (tenth review DO2, EP2).
+     */
+    @Test
+    void aTypeArgumentBindsTheSupertypesTypeVariable() {
+        String text = "interface StrStore extends Store<String> {\n    void save(Integer other);\n}\n";
+        assertEquals(List.of("String"), JavaMembers.typeArguments(text, text.indexOf("StrStore"), "Store<T>"));
+        String bounded = "class Node<T extends Comparable<T>> implements Comparable<Node<T>> {}";
+        assertEquals(List.of("Node<T>"), JavaMembers.typeArguments(bounded, 6, "Comparable<T>"), "not the bound");
+        String handler = "class H implements java.util.function.BiFunction<String, List<Integer>, Long> {}";
+        assertEquals(
+                List.of("String", "List<Integer>", "Long"),
+                JavaMembers.typeArguments(handler, 6, "BiFunction<T, U, R>"));
+        assertTrue(JavaMembers.typeArguments("new Store<>() {", 4, "Store<T>").isEmpty(), "a diamond names none");
+        assertEquals("Map<String, K>", JavaMembers.substitute("Map<T, K>", java.util.Map.of("T", "String")));
+
+        List<MemberSpan> store = List.of(span("save(T)", "method", 1, 1, 1));
+        var bound = java.util.Map.of("T", "String");
+        assertTrue(JavaMembers.overridden(store, "save(Integer)", java.util.Set.of("T"), bound)
+                .isEmpty());
+        assertEquals(store, JavaMembers.overridden(store, "save(String)", java.util.Set.of("T"), bound));
+        List<MemberSpan> takes = List.of(span("take(T[])", "method", 1, 1, 1));
+        assertEquals(takes, JavaMembers.overridden(takes, "take(String[])", java.util.Set.of("T"), bound));
+        assertTrue(JavaMembers.overridden(takes, "take(Integer[])", java.util.Set.of("T"), bound)
+                .isEmpty());
+        assertEquals(
+                store,
+                JavaMembers.overridden(store, "save(Integer)", java.util.Set.of("T"), java.util.Map.of()),
+                "unbound (raw, or a class file between): any type");
+    }
+
+    /**
+     * A one-line nested class or a field's anonymous class: the modifiers before the method's name are the method's
+     * own, not the class's or the field's on that line (tenth review DO1).
+     */
+    @Test
+    void aOneLineDeclarationsModifiersAreTheMethodsOwn() {
+        String nested = "    private static class Base3 { public String toString() { return \"\"; } }\n";
+        assertEquals(java.util.Set.of("public"), JavaMembers.modifiers(nested, 0, nested.indexOf("toString")));
+        String field = "    private final Runnable r = new Runnable() { public void run() { } };\n";
+        assertEquals(java.util.Set.of("public"), JavaMembers.modifiers(field, 0, field.indexOf("run()")));
+        String annotated = "    @SuppressWarnings({\"a\"}) static void util() {}\n";
+        assertEquals(java.util.Set.of("static"), JavaMembers.modifiers(annotated, 0, annotated.indexOf("util")));
+        String oneLine = "static class V2 extends V { @Override void v(String[] b) { } }\n";
+        assertTrue(JavaMembers.annotated(oneLine, 0, oneLine.indexOf("v(String"), "Override"));
+        assertTrue(
+                JavaMembers.modifiers(oneLine, 0, oneLine.indexOf("v(String")).isEmpty());
+    }
+
+    /** A lambda's parameters and a method reference are their functional expression's (tenth review BO3). */
+    @Test
+    void aLambdasParametersAndAMethodReferenceAreFound() {
+        String text = "void f() {\n    list.forEach((String item) -> use(item));\n    run(x -> x + 1);\n"
+                + "    call(a, y -> y);\n    int n = s.mapToInt(String::length).sum();\n"
+                + "    switch (k) { case ONE -> go(); default -> { } }\n}\n";
+        int typed = text.indexOf("->");
+        assertEquals(typed, JavaMembers.lambdaParameterArrow(text, 0, text.indexOf("item)")));
+        assertEquals(typed, JavaMembers.lambdaParameterArrow(text, 0, text.indexOf("String item") + 2));
+        int bare = text.indexOf("->", typed + 2);
+        assertEquals(bare, JavaMembers.lambdaParameterArrow(text, 0, text.indexOf("x ->")));
+        assertEquals(-1, JavaMembers.lambdaParameterArrow(text, 0, text.indexOf("a, y")), "an argument before it");
+        assertEquals(-1, JavaMembers.lambdaParameterArrow(text, 0, text.indexOf("ONE")), "a switch label");
+        assertEquals(-1, JavaMembers.lambdaParameterArrow(text, 0, text.indexOf("use(")), "the lambda's body");
+        int ref = text.indexOf("::");
+        assertEquals(ref, JavaMembers.methodReference(text, text.indexOf("length")));
+        assertEquals(ref, JavaMembers.methodReference(text, text.indexOf("String::")));
+        assertEquals(-1, JavaMembers.methodReference(text, text.indexOf("sum")));
+    }
+
+    /** A method no outline holds is named from its declaration, as jdtls names one (tenth review BO2). */
+    @Test
+    void aMethodsSignatureIsReadFromItsDeclaration() {
+        String text = "new Comparator<>() { public int compare(final String a, @NonNull String b) { return 0; } }";
+        assertEquals("compare(String, String)", JavaMembers.signatureAt(text, text.indexOf("compare")));
+        String generic = "void put(Map<String, Integer> m, int... xs, String[] grid) {}";
+        assertEquals(
+                "put(Map<String, Integer>, int..., String[])",
+                JavaMembers.signatureAt(generic, generic.indexOf("put")));
+        assertEquals("run()", JavaMembers.signatureAt("public void run() {}", 12));
+    }
+
     /** A field holding an anonymous class is part of the chain, so the class is found (ninth review DP2). */
     @Test
     void aFieldsAnonymousClassIsFound() {

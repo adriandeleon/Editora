@@ -238,7 +238,6 @@ public final class EditorFx {
         }
     }
 
-    /** Marks {@code node} as (not) under the mouse — there is no pointer to move in the headless toolkit. */
     /** Marks {@code node} as (not) pressed, as the mouse button going down on it does. */
     public static void pressed(Node node, boolean pressed) {
         try {
@@ -250,6 +249,7 @@ public final class EditorFx {
         }
     }
 
+    /** Marks {@code node} as (not) under the mouse — there is no pointer to move in the headless toolkit. */
     public static void hover(Node node, boolean hover) {
         try {
             Method m = Node.class.getDeclaredMethod("setHover", boolean.class);

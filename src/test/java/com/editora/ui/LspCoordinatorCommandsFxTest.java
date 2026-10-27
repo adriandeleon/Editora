@@ -1842,6 +1842,72 @@ class LspCoordinatorCommandsFxTest {
     }
 
     /**
+     * A pom.xml that does not parse when jdtls first imports it: m2e skips it with a ProjectStatus of OK, and a source
+     * file is "a non-project file". The import failed; not "Loaded and ready" (tenth review CO2).
+     */
+    @Test
+    void aSourceFileOutsideTheProjectMeansTheImportFailed() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project><brokenTag></project>");
+        java.nio.file.Files.createDirectories(root.resolve("src/main/java/demo"));
+        EditorBuffer b = fx.open("src/main/java/demo/A.java", "package demo;\n\nclass A {}\n");
+        String why = "A.java is a non-project file, only syntax errors are reported";
+        var warning = new com.editora.text.LspDiagnostic(
+                0, 0, 0, 1, com.editora.text.LspDiagnostic.Severity.WARNING, why, null, "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(warning)));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitError(tr("status.lsp.importProblemWhy", "jdtls", why));
+        awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
+    }
+
+    /**
+     * A window that joins after a failed import gets the project's diagnostic before the import's line, both replayed:
+     * the failure is one error, not two (tenth review CP3).
+     */
+    @Test
+    void aWindowJoiningAfterAFailedImportCountsOneError() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        LspTestHooks.logError(
+                fx.manager, b.getPath(), "Could not fetch model of type 'Map' using connection to Gradle");
+        var cause = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.ERROR,
+                "The supplied phased action failed with an exception.\nBuild file 'build.gradle' line: 3\n"
+                        + "Could not find method thisIsNotAConfiguration() for arguments [x]",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(root, List.of(cause))); // replayed first
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING"));
+        awaitError(tr(
+                "status.lsp.importProblemWhy",
+                "jdtls",
+                "Could not find method thisIsNotAConfiguration() for arguments [x]"));
+        assertEquals(1, fx.host.errors.size(), fx.host.errors.toString());
+    }
+
+    /** A Java file in no source folder of the project is a non-project file by rights: ready (CO2). */
+    @Test
+    void aLooseFileOutsideTheSourceFoldersIsNoFailedImport() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project/>");
+        EditorBuffer b = fx.open("Scratch.java", "class Scratch {}\n");
+        var warning = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.WARNING,
+                "Scratch.java is a non-project file, only syntax errors are reported",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(warning)));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.ready", "jdtls"));
+        assertEquals(null, fx.host.lastError());
+    }
+
+    /**
      * A failed import is said in the project's own words when jdtls put an error on the project, belongs to that
      * project's folder only, and an OK import of that folder clears it (third review CT3, CT7).
      */

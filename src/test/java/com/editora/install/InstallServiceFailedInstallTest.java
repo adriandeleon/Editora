@@ -66,7 +66,6 @@ class InstallServiceFailedInstallTest {
         return mavenDir();
     }
 
-    /** The names directly inside {@code dir} (empty when it does not exist). */
     /** The install's files, without the version receipt every pinned install leaves (InstallReceiptTest). */
     private static List<String> children(Path dir) throws IOException {
         if (!Files.isDirectory(dir)) {

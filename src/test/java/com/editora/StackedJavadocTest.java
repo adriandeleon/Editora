@@ -18,16 +18,18 @@ class StackedJavadocTest {
 
     @Test
     void noJavadocCommentSitsAboveAnother() throws Exception {
-        Path sourceRoot = Path.of("src/main/java");
-        assertTrue(Files.isDirectory(sourceRoot), "Run from the Maven project root");
         var stacked = new ArrayList<String>();
-        try (var files = Files.walk(sourceRoot)) {
-            for (Path file :
-                    files.filter(p -> p.toString().endsWith(".java")).sorted().toList()) {
-                List<String> lines = Files.readAllLines(file);
-                String name = sourceRoot.relativize(file).toString().replace('\\', '/');
-                for (int line : stackedComments(lines)) {
-                    stacked.add(name + ":" + line);
+        for (Path sourceRoot : List.of(Path.of("src/main/java"), Path.of("src/test/java"))) { // tests too (DO5)
+            assertTrue(Files.isDirectory(sourceRoot), "Run from the Maven project root");
+            try (var files = Files.walk(sourceRoot)) {
+                for (Path file : files.filter(p -> p.toString().endsWith(".java"))
+                        .sorted()
+                        .toList()) {
+                    List<String> lines = Files.readAllLines(file);
+                    String name = file.toString().replace('\\', '/');
+                    for (int line : stackedComments(lines)) {
+                        stacked.add(name + ":" + line);
+                    }
                 }
             }
         }
