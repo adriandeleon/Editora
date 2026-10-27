@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Terminal: the kitty keyboard protocol.** A program that asks for it (Neovim, Helix, fish, nushell) gets
+  unambiguous keys: Escape on its own, Ctrl+I apart from Tab, Shift+Enter as a key, and with its further flags
+  repeats, releases and the text each key types. Everything else keeps the legacy bytes.
+- **Terminal selection:** dragging past the top or bottom edge scrolls faster the further out the pointer is;
+  **Alt+drag** (Option on macOS, Ctrl+Alt where the window manager takes Alt) selects a block of columns, copied one
+  row per line; **Copy on select** (Settings ▸ Terminal, off); on Linux a selection sets the PRIMARY selection and a
+  middle-click pastes it (wl-copy/wl-paste, xclip or xsel), elsewhere middle-click pastes the clipboard;
+  **Shift+Insert** pastes and **Ctrl+Insert** copies.
+- **Terminal: desktop notifications from programs** (OSC 9, OSC 777): a build saying it has finished marks its tab
+  and, unless you are looking at that terminal, reaches the desktop (notify-send or the session bus, osascript, a
+  PowerShell toast). One per terminal every two seconds; Settings ▸ Terminal ▸ Desktop notifications turns the
+  desktop half off.
+- **Terminal: programs can copy to the clipboard** (OSC 52), as tmux and editors do over SSH. A program can never
+  read the clipboard. Settings ▸ Terminal ▸ Let programs copy to the clipboard (on). Settings schema 148 → 149
+  (additive).
+- **Terminal tabs name the program running in them** (vim, npm, ssh) when the shell set no title, before the
+  folder's name.
+
 - **Terminal theme** (Settings ▸ Terminal ▸ Theme, `terminalTheme`): the integrated terminal's colours, chosen
   apart from the editor theme. **Editor theme**, the default, keeps today's palette derived from the editor's
   syntax colours; Solarized Dark/Light, Dracula, Nord, Gruvbox Dark/Light, One Half Dark/Light, Tango Dark/Light,
@@ -17,11 +35,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Terminal: a keystroke no longer clears the selection.** It goes when the text under it is redrawn, so a
+  selection of the output above the prompt survives typing a command.
+- **Terminal: a selection highlights exactly what it copies.** The highlight was a cell wider than the copied text,
+  and a drag now ends at the cell boundary nearest the pointer.
+
 - **Project Map: Structure columns have their own colour.** A file's Structure column, and the columns of
   declarations opened from it, sit on a faint violet card with violet-tinted rows, so they no longer look like
   folder columns (the overview tints them too). Themes can retune it with `.project-map-probe-structure`.
 
 ### Fixed
+
+- **Terminal (from Termina):** closing a terminal no longer holds the window for up to half a second each; the
+  cursor no longer vanishes at the end of a line typed to its full width; Nerd Font icons (eza, lsd, powerline) are
+  drawn in an installed Nerd Font rather than the first fallback face that maps them, which put a stray `¯` beside
+  some names; rows are tall enough for the font, so descenders are not clipped; a block cursor redraws its
+  character in the cell's own font and colour; a binary file's flood of bells is one flash; entering or leaving a
+  full-screen program drops a selection made on the other screen; `file://` links naming this machine open as
+  local files; the keypad's arrow keys work; box drawing and other one-cell text is drawn in one call per run.
 
 - **Java: Go to Super Method reads type arguments.** In `interface StrStore extends Store<String>`, `save(Integer)`
   opened `Store.save(T)`, and `Multi.accept(Integer)` offered a second, wrong branch; `T` now stands for `String`

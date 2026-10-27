@@ -184,6 +184,26 @@ VS Code, iTerm2 and WezTerm shells do.
   calls `onTerminalStateChanged` after each chunk, and `JediTermDebouncerImpl` clears stale predictions. The
   manager predicts only once two echoes took 100 ms or more, and stops when they get fast, so local shells
   never show a prediction. Nothing is predicted on the alternate screen.
+- **Kitty keyboard protocol**: `KeyboardModeInterceptor` wraps the stream JediTerm reads and takes out the four
+  mode requests (`CSI > < = ? u`), which JediTerm would read as SCORC and move the cursor; `ESC c` resets them.
+  `KeyboardFlags` keeps a stack per screen and answers the query. While the screen in front has flags set,
+  `KittyKeyInput` encodes presses, repeats and the releases owed (`KittyKeys`); with none, every key takes the
+  legacy path.
+- **Selection**: one convention, end exclusive and in slots (`SelectionGeometry`), so the highlight is what is
+  copied. A drag ends at the nearest cell boundary; past an edge it scrolls by time, faster further out
+  (`AutoScroll`, ticked by a `Timeline`). Alt+drag (Option, or Ctrl+Alt) makes a block in columns
+  (`BlockSelection`). A selection is "settled" at the end of a drag, a double or triple click and Select All:
+  its text is kept, set as PRIMARY on Linux (`PrimarySelection`), and copied when `terminalCopyOnSelect` is on.
+  Keystrokes leave it; the next frame after a buffer change drops it if the text under it is not the settled
+  text. Middle-click pastes PRIMARY, or the clipboard where there is none. Shift+Insert pastes, Ctrl+Insert
+  copies.
+- **Notifications and the clipboard**: `OscTap` takes OSC 9, 777 and 52 out of the stream too
+  (`OscSequences` parses them). A notification marks its tab (`terminal-notified`) when it is out of sight and,
+  at most once per terminal every two seconds, `DesktopNotifier` posts it unless that terminal is in front or
+  `terminalNotifications` is off. OSC 52 sets the clipboard when `terminalClipboardWrites` is on; a query is
+  never answered.
+- **Tab titles**: `CwdWatcher` also reports the shell's first child (`RunningProgram`, children read by parent
+  through `ChildProcesses`), and `TerminalTitle.tab` shows it before the folder when the shell set no title.
 - **Programs in a tab**: `TerminalCoordinator.runProgram(title, dir, argv, env, onExit)` opens a tab running a
   program instead of a shell, where `dir`'s commands run.
   - Locally it uses `LocalShell.startProgram` (the user's environment plus `env`, a null value unsetting).
@@ -268,13 +288,16 @@ to open terminals. Scrollback and shell apply from the next tab. Schema 131 adds
 adds `terminalShellIntegration`, which applies from the next tab; 133 adds `terminalTypeAhead` (applies at
 once) and Debug's `debugProgramInTerminal`. 135 adds `terminalMacOptionIsMeta` and
 `terminalConfirmMultilinePaste`, and lowers the scrollback maximum to 50,000 lines (about 94 MB a tab at the old
-100,000); the migration clamps a larger value. The terminal's font size follows the editor's text zoom.
+100,000); the migration clamps a larger value. 149 adds `terminalCopyOnSelect` (off), `terminalClipboardWrites`
+(on: OSC 52) and `terminalNotifications` (on: OSC 9 / 777), all applying at once. The terminal's font size
+follows the editor's text zoom.
 
 ## Where the code came from
 
-The package is a port of [Termina](https://github.com/adriandeleon/Termina) at **`caebc9f`** (0.7.1, MIT,
-same author). Copied, not shared: fixes made here are back-ported to Termina by hand. When porting a later
-Termina change, diff Termina from `caebc9f` and update this commit here.
+The package is a port of [Termina](https://github.com/adriandeleon/Termina), first at `caebc9f` (0.7.1, MIT,
+same author) and brought up to **`4443118`** (after 0.12.0) on 2026-10-27. Copied, not shared: fixes made here
+are back-ported to Termina by hand. When porting a later Termina change, diff Termina from `4443118` and
+update this commit here.
 
 | Here | Termina | Changed in the port |
 | --- | --- | --- |
@@ -287,9 +310,19 @@ Termina change, diff Termina from `caebc9f` and update this commit here.
 | `KeyTrace` | `ui/KeyTrace` | Property `-Deditora.terminal.keyTrace`, logger `com.editora.terminal.keys`. |
 | `KeyEncoding`, `MouseEncoding`, `CellWidth`, `ColumnMap`, `RunColumns`, `ScrollBarModel`, `TerminalPalette`, `Link*`, `ProcessCwd`, `CwdWatcher`, `TerminalExecutors` | same names | Package only. |
 | `TypeAheadOverlay` (new) | `DisabledTypeAhead` | A working type-ahead model in place of Termina's switched-off one. |
+| `KeyboardFlags`, `KeyboardModeInterceptor`, `KittyKeys`, `KittyKeyInput` | `term/…`, `ui/…` | The kitty keyboard protocol. `KittyKeyInput` takes Editora's Ctrl+Alt rule (`ctrlAltIsMeta`) instead of Termina's `isPlainCtrlAlt`. |
+| `SelectionGeometry`, `BlockSelection`, `AutoScroll` | `ui/…` | Package only. The view drives autoscroll from a `Timeline`, not the painter's frames, since Editora's painter stops when idle. |
+| `PrimarySelection`, `DesktopNotifier` | `ui/…` | Tools are found on `ProcessRunner`'s augmented PATH and run in the user's locale (see `ChildLocalePolicyTest`). |
+| `OscSequences` | `term/OscSequences` | Only notifications (OSC 9, 777) and OSC 52. `OscTap`, Editora's own, takes them out of the stream; Termina's `OscInterceptor` is not ported. |
+| `IconFont` | `ui/IconFont` | Installed Nerd Fonts only; see below. |
+| `ChildProcesses` | `process/ChildProcesses` | Package only. |
 
-Termina's window, tabs, settings, profiles, command palette, update check, CLI and `DevCapture` are not
-ported; Editora has its own. The tests came with the code. `TerminalViewFxTest` is new: it drives the view
+Termina's window, tabs, panes, settings, profiles, colour-scheme import, settings sync, command palette, update
+check, CLI and `DevCapture` are not ported; Editora has its own. Also left out at `4443118`: the bundled Symbols
+Nerd Font Mono (2.6 MB, its icon sets under MIT, CC BY 4.0, Apache 2.0, OFL and one unlicensed set, where every
+font Editora bundles is OFL), so a machine without a Nerd Font still gets its fallback list's icons; reading a
+Windows shell's directory from its process (Termina's `WindowsCwd`, never run on Windows); and `HistoryFollow`'s
+resize detection. The tests came with the code. `TerminalViewFxTest` is new: it drives the view
 over an in-memory connector.
 
 ## How it fits together
