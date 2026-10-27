@@ -26,8 +26,16 @@ public final class XmlParser {
     /** Guard so a pathological document can't build millions of tree nodes on the FX thread. */
     static final int MAX_NODES = 50_000;
 
-    /** The parse outcome: a {@code root} element (never null on success) or an {@code error} message. */
-    public record Parsed(@Nullable XmlNode root, @Nullable String error) {
+    /**
+     * The parse outcome: a {@code root} element (never null on success) or an {@code error} message, with the
+     * 1-based {@code line} and {@code column} the parser stopped at (0 when it gave none) so the preview can say
+     * where and jump there (XML review C15).
+     */
+    public record Parsed(@Nullable XmlNode root, @Nullable String error, int line, int column) {
+        public Parsed(@Nullable XmlNode root, @Nullable String error) {
+            this(root, error, 0, 0);
+        }
+
         public boolean ok() {
             return error == null && root != null;
         }
@@ -57,8 +65,38 @@ public final class XmlParser {
             return new Parsed(fromElement(root, new int[] {0}), null);
         } catch (TooLargeException e) {
             return new Parsed(null, "document too large to preview (over " + MAX_NODES + " nodes)");
+        } catch (org.xml.sax.SAXParseException e) {
+            return new Parsed(
+                    null, firstLine(e.getMessage()), Math.max(0, e.getLineNumber()), Math.max(0, e.getColumnNumber()));
         } catch (Exception e) {
             return new Parsed(null, firstLine(e.getMessage()));
+        }
+    }
+
+    /**
+     * Where {@code text} stops being well-formed XML, as a failed {@link Parsed} (message, line, column), or
+     * {@code null} when it is well-formed. Unlike {@link #parse} a DOCTYPE is allowed — an SVG may carry one — but
+     * nothing external is ever loaded and the JDK's entity-expansion limits stay on. For a renderer that only
+     * says "could not render" (the SVG preview, C15). Pure; any thread.
+     */
+    public static @Nullable Parsed firstError(String text) {
+        if (text == null || text.isBlank()) {
+            return new Parsed(null, "empty document");
+        }
+        try {
+            javax.xml.parsers.SAXParserFactory f = javax.xml.parsers.SAXParserFactory.newInstance();
+            f.setFeature(javax.xml.XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            f.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            f.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            f.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            f.setXIncludeAware(false);
+            f.newSAXParser().parse(new InputSource(new StringReader(text)), new org.xml.sax.helpers.DefaultHandler());
+            return null;
+        } catch (org.xml.sax.SAXParseException e) {
+            return new Parsed(
+                    null, firstLine(e.getMessage()), Math.max(0, e.getLineNumber()), Math.max(0, e.getColumnNumber()));
+        } catch (Exception e) {
+            return null; // not a well-formedness problem: nothing to point at
         }
     }
 
