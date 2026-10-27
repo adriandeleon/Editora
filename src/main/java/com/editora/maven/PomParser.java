@@ -258,6 +258,7 @@ public final class PomParser {
             dbf.setXIncludeAware(false);
             dbf.setExpandEntityReferences(false);
             DocumentBuilder builder = dbf.newDocumentBuilder();
+            builder.setErrorHandler(new org.xml.sax.helpers.DefaultHandler()); // no "[Fatal Error]" on stderr (CM4)
             return builder.parse(source);
         } catch (ParserConfigurationException | SAXException | IOException e) {
             String message = e.getMessage();

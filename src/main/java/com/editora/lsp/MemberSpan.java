@@ -14,9 +14,31 @@ import java.util.List;
  * @param nameLine   0-based line of the name (selection range)
  * @param nameColumn 0-based column of the name
  * @param children   nested members, in document order
+ * @param startColumn 0-based column the full range starts at, on {@code startLine}: jdtls starts a member's range at a
+ *                    comment ending the line before it, so a class line's {@code // comment} is its first member's
+ *                    (eleventh review DM3)
  */
 public record MemberSpan(
-        String name, String kind, int startLine, int endLine, int nameLine, int nameColumn, List<MemberSpan> children) {
+        String name,
+        String kind,
+        int startLine,
+        int endLine,
+        int nameLine,
+        int nameColumn,
+        List<MemberSpan> children,
+        int startColumn) {
+
+    /** A member whose range starts at its line's start. */
+    public MemberSpan(
+            String name,
+            String kind,
+            int startLine,
+            int endLine,
+            int nameLine,
+            int nameColumn,
+            List<MemberSpan> children) {
+        this(name, kind, startLine, endLine, nameLine, nameColumn, children, 0);
+    }
 
     /** Whether this is a class, interface, enum, record or anonymous class. */
     public boolean isType() {

@@ -368,6 +368,17 @@ public final class LspManager {
         }
     }
 
+    /**
+     * Forgets the last error the session on {@code root} logged: what an import that starts again or succeeded says
+     * next is its own (eleventh review CM1).
+     */
+    public void forgetServerError(@Nullable String serverId, @Nullable Path root) {
+        LanguageServerSession s = root == null ? null : sessionsByRoot.get(sessionKey(String.valueOf(serverId), root));
+        if (s != null) {
+            s.forgetLastErrorLog();
+        }
+    }
+
     /** As {@link #lastServerError(String)}, from the session on {@code root} only. */
     public @Nullable String lastServerError(@Nullable String serverId, @Nullable Path root) {
         if (root == null) {
@@ -6058,6 +6069,39 @@ public final class LspManager {
             boolean insertSpaces,
             java.util.function.BooleanSupplier stillValid,
             Consumer<Boolean> cb) {
+        handlePasteEvent(
+                file,
+                startLine,
+                startChar,
+                endLine,
+                endChar,
+                pastedText,
+                tabSize,
+                insertSpaces,
+                null,
+                stillValid,
+                true,
+                cb);
+    }
+
+    /**
+     * As above, with the Java file the text was copied from ({@code copiedFrom}, or null). jdtls answers null when
+     * asked a few milliseconds after the paste's change, before it has read it (most pastes): asked once more, after
+     * the change has settled, it answers (eleventh review AM2).
+     */
+    public void handlePasteEvent(
+            Path file,
+            int startLine,
+            int startChar,
+            int endLine,
+            int endChar,
+            String pastedText,
+            int tabSize,
+            boolean insertSpaces,
+            @Nullable Path copiedFrom,
+            java.util.function.BooleanSupplier stillValid,
+            boolean retry,
+            Consumer<Boolean> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null || !JdtlsPaste.supportsPasteEvent(s.capabilities())) {
             Platform.runLater(() -> cb.accept(false));
@@ -6066,7 +6110,15 @@ public final class LspManager {
         // The params go over the wire as a STRINGIFIED json — an object argument deserializes to null
         // server-side (established empirically; see JdtlsPaste).
         String params = JdtlsPaste.paramsJson(
-                s.uris().toWire(uri(file)), startLine, startChar, endLine, endChar, pastedText, tabSize, insertSpaces);
+                s.uris().toWire(uri(file)),
+                startLine,
+                startChar,
+                endLine,
+                endChar,
+                pastedText,
+                tabSize,
+                insertSpaces,
+                copiedFrom == null ? null : s.uris().toWire(uri(copiedFrom)));
         EditBasis expected = editBasis(s);
         s.executeCommand(JdtlsPaste.COMMAND, List.of(params))
                 .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
@@ -6075,8 +6127,32 @@ public final class LspManager {
                             ? null
                             : asWorkspaceEdit(
                                     JdtlsPaste.keepPastedImports(JdtlsPaste.additionalEdit(asJson(r)), pastedText));
+                    com.google.gson.JsonElement json = e == null ? asJson(r) : null;
+                    boolean unanswered = e == null && (json == null || json.isJsonNull());
                     Platform.runLater(() -> {
-                        if (edit == null || !stillValid.getAsBoolean()) {
+                        if (unanswered && retry && stillValid.getAsBoolean()) {
+                            var later = new javafx.animation.PauseTransition(javafx.util.Duration.millis(400));
+                            later.setOnFinished(ev -> {
+                                if (stillValid.getAsBoolean()) {
+                                    handlePasteEvent(
+                                            file,
+                                            startLine,
+                                            startChar,
+                                            endLine,
+                                            endChar,
+                                            pastedText,
+                                            tabSize,
+                                            insertSpaces,
+                                            copiedFrom,
+                                            stillValid,
+                                            false,
+                                            cb);
+                                } else {
+                                    cb.accept(false);
+                                }
+                            });
+                            later.play();
+                        } else if (edit == null || !stillValid.getAsBoolean()) {
                             cb.accept(false);
                         } else {
                             applyWorkspaceEdit(edit, expected, cb);

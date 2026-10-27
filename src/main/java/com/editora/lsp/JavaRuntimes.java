@@ -332,9 +332,10 @@ public final class JavaRuntimes {
      * compiler plugin {@code <release>} comes before {@code maven.compiler.release}, both before a {@code source},
      * and Spring Boot's {@code java.version} counts (else its parent's default); a {@code ${property}} is read from
      * the pom's own properties, then its parent's; a profile's are left out, as profiles may not be active; a
-     * reactor's first module that states one answers for it. A Gradle build's {@code jvmToolchain(n)}, toolchain
-     * language version, {@code release} or {@code sourceCompatibility}, else its first included project's. Comments
-     * are left out (ninth review CP2, tenth review CO3).
+     * reactor's first module that states one answers for it; a module inherits its parents' (pom chain). A Gradle
+     * build's toolchain first, then {@code release} or {@code sourceCompatibility}, a version catalog's value, a
+     * convention plugin's, else an included project's. Comments are left out (ninth review CP2, tenth review CO3,
+     * eleventh review CM5).
      */
     static int statedRelease(java.nio.file.@Nullable Path root) {
         return statedRelease(root, 0);
@@ -348,27 +349,41 @@ public final class JavaRuntimes {
         if (pom != null) {
             String xml = pomCode(pom);
             java.util.Map<String, String> properties = pomProperties(xml);
-            parentProperties(root, xml, properties, 0);
-            java.util.regex.Matcher plugin = java.util.regex.Pattern.compile(
-                            "(?s)<artifactId>\\s*maven-compiler-plugin\\s*</artifactId>(.*?)</plugin>")
-                    .matcher(xml);
-            String compiler = plugin.find() ? plugin.group(1) : "";
-            List<java.util.Map.Entry<String, String>> lookups = List.of(
-                    java.util.Map.entry(compiler, "<release>\\s*([^<]+?)\\s*</release>"),
-                    java.util.Map.entry(xml, "<maven\\.compiler\\.release>\\s*([^<]+?)\\s*<"),
-                    java.util.Map.entry(xml, "<java\\.version>\\s*([^<]+?)\\s*<"),
-                    java.util.Map.entry(compiler, "<source>\\s*([^<]+?)\\s*</source>"),
-                    java.util.Map.entry(xml, "<maven\\.compiler\\.source>\\s*([^<]+?)\\s*<"),
-                    java.util.Map.entry(xml, "<release>\\s*([^<]+?)\\s*</release>"),
-                    java.util.Map.entry(xml, "<source>\\s*([^<]+?)\\s*</source>"));
-            for (var lookup : lookups) {
-                java.util.regex.Matcher m =
-                        java.util.regex.Pattern.compile(lookup.getValue()).matcher(lookup.getKey());
-                while (m.find()) {
-                    int release = javaRelease(resolve(m.group(1), properties));
-                    if (release > 0) {
-                        return release;
-                    }
+            List<String> chain = new java.util.ArrayList<>(List.of(xml)); // this pom, then its parents (CM5)
+            parentProperties(root, xml, properties, 0, chain);
+            List<String> plugins =
+                    chain.stream().map(x -> compilerPlugin(x, false)).toList();
+            List<String> managed =
+                    chain.stream().map(x -> compilerPlugin(x, true)).toList();
+            for (List<String> blocks : List.of(plugins, managed)) {
+                int release = firstRelease(blocks, "<release>\\s*([^<]+?)\\s*</release>", properties);
+                if (release > 0) {
+                    return release;
+                }
+            }
+            for (String property : List.of("maven.compiler.release", "java.version")) {
+                int release = property(properties, property, chain);
+                if (release > 0) {
+                    return release;
+                }
+            }
+            for (List<String> blocks : List.of(plugins, managed)) {
+                int release = firstRelease(blocks, "<source>\\s*([^<]+?)\\s*</source>", properties);
+                if (release > 0) {
+                    return release;
+                }
+            }
+            int source = property(properties, "maven.compiler.source", chain);
+            if (source > 0) {
+                return source;
+            }
+            List<String> bare = chain.stream() // a release or source no plugin is named for: the last resort
+                    .map(x -> x.replaceAll("(?s)<executions>.*?</executions>", ""))
+                    .toList();
+            for (String pattern : List.of("<release>\\s*([^<]+?)\\s*</release>", "<source>\\s*([^<]+?)\\s*</source>")) {
+                int release = firstRelease(bare, pattern, properties);
+                if (release > 0) {
+                    return release;
                 }
             }
             java.util.regex.Matcher module = java.util.regex.Pattern.compile("<module>\\s*([^<]+?)\\s*</module>")
@@ -379,51 +394,186 @@ public final class JavaRuntimes {
                     return release;
                 }
             }
-            java.util.regex.Matcher boot = java.util.regex.Pattern.compile(
-                            "(?s)<parent>.*?<artifactId>\\s*spring-boot-starter-parent\\s*</artifactId>"
-                                    + ".*?<version>\\s*(\\d+)\\.")
+            java.util.regex.Matcher parent = java.util.regex.Pattern.compile("(?s)<parent>(.*?)</parent>")
                     .matcher(xml);
-            if (boot.find()) { // Spring Boot's own java.version: 17 since 3.0, 1.8 before
-                return Integer.parseInt(boot.group(1)) >= 3 ? 17 : 8;
+            if (parent.find() && parent.group(1).matches("(?s).*<artifactId>\\s*spring-boot-starter-parent\\s*<.*")) {
+                java.util.regex.Matcher version = java.util.regex.Pattern.compile("<version>\\s*(\\d+)\\.")
+                        .matcher(parent.group(1));
+                if (version.find()) { // Spring Boot's own java.version: 17 since 3.0, 1.8 before
+                    return Integer.parseInt(version.group(1)) >= 3 ? 17 : 8;
+                }
             }
             return 0;
         }
         for (String name : List.of("build.gradle.kts", "build.gradle")) {
             String gradle = buildFile(root.resolve(name));
-            if (gradle == null) {
-                continue;
+            int release = gradle == null ? 0 : gradleRelease(gradle, root);
+            if (release > 0) {
+                return release;
             }
-            String code = gradle.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("//[^\n]*", "");
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile("jvmToolchain\\s*\\(\\s*(\\d+)"
-                            + "|JavaLanguageVersion\\.of\\(\\s*(\\d+)"
-                            + "|(?<![\\w$])release(?:\\.set)?\\s*[(=]\\s*(\\d+)"
-                            + "|(?:source|target)Compatibility\\s*=\\s*(?:JavaVersion\\.VERSION_(?:1_)?(\\d+)"
-                            + "|['\"]?(?:1\\.)?(\\d+))")
-                    .matcher(code);
-            if (m.find()) {
-                for (int g = 1; g <= m.groupCount(); g++) {
-                    if (m.group(g) != null) {
-                        return Integer.parseInt(m.group(g));
-                    }
-                }
-            }
+        }
+        int convention = conventionRelease(root);
+        if (convention > 0) {
+            return convention;
         }
         for (String name : List.of("settings.gradle.kts", "settings.gradle")) {
             String settings = buildFile(root.resolve(name));
             if (settings == null) {
                 continue;
             }
-            java.util.regex.Matcher include = java.util.regex.Pattern.compile(
-                            "include\\s*\\(?\\s*['\"]:?([\\w.-]+(?::[\\w.-]+)*)['\"]")
-                    .matcher(settings.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("//[^\n]*", ""));
-            while (include.find()) { // a release stated only in app/build.gradle.kts (tenth review DP4)
-                int release = statedRelease(root.resolve(include.group(1).replace(':', '/')), depth + 1);
+            for (String project : includedProjects(gradleCode(settings))) {
+                int release = statedRelease(root.resolve(project.replace(':', '/')), depth + 1);
                 if (release > 0) {
                     return release;
                 }
             }
         }
         return 0;
+    }
+
+    /**
+     * The maven-compiler-plugin's configuration in a pom: under {@code <plugins>} ({@code managed} false) or under
+     * {@code <pluginManagement>} (true), its {@code <executions>} left out (an MR-jar's per-execution release is not
+     * the project's, eleventh review DM8); empty when there is none.
+     */
+    private static String compilerPlugin(String xml, boolean managed) {
+        java.util.regex.Matcher pm = java.util.regex.Pattern.compile("(?s)<pluginManagement>(.*?)</pluginManagement>")
+                .matcher(xml);
+        String where = managed ? (pm.find() ? pm.group(1) : "") : pm.replaceAll("");
+        java.util.regex.Matcher plugin = java.util.regex.Pattern.compile(
+                        "(?s)<artifactId>\\s*maven-compiler-plugin\\s*</artifactId>(.*?)</plugin>")
+                .matcher(where);
+        return plugin.find() ? plugin.group(1).replaceAll("(?s)<executions>.*?</executions>", "") : "";
+    }
+
+    /** The first release {@code pattern} finds in {@code blocks}, in order, its {@code ${…}} resolved; else 0. */
+    private static int firstRelease(List<String> blocks, String pattern, java.util.Map<String, String> properties) {
+        for (String block : blocks) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile(pattern).matcher(block);
+            while (m.find()) {
+                int release = javaRelease(resolve(m.group(1), properties));
+                if (release > 0) {
+                    return release;
+                }
+            }
+        }
+        return 0;
+    }
+
+    /** The release in property {@code name}, from the poms' properties, else written anywhere in {@code chain}. */
+    private static int property(java.util.Map<String, String> properties, String name, List<String> chain) {
+        String value = properties.get(name);
+        if (value == null) {
+            value = chain.stream()
+                    .map(x -> java.util.regex.Pattern.compile(
+                                    "<" + java.util.regex.Pattern.quote(name) + ">\\s*([^<]+?)\\s*<")
+                            .matcher(x))
+                    .filter(java.util.regex.Matcher::find)
+                    .map(m -> m.group(1))
+                    .findFirst()
+                    .orElse(null);
+        }
+        return value == null ? 0 : javaRelease(resolve(value, properties));
+    }
+
+    /** A Gradle build file without its comments. */
+    private static String gradleCode(String gradle) {
+        return gradle.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("//[^\n]*", "");
+    }
+
+    /**
+     * The release a Gradle build states: a toolchain first (it decides the JDK), then {@code options.release} or
+     * {@code release.set}, then a source or target compatibility; a version catalog's value ({@code
+     * libs.versions.jdk}) is read from {@code gradle/libs.versions.toml}; a variable named {@code release} is none
+     * (eleventh review CM5).
+     */
+    private static int gradleRelease(String gradle, java.nio.file.Path root) {
+        String code = gradleCode(gradle);
+        for (String pattern : List.of(
+                "jvmToolchain\\s*\\(\\s*(\\d+|libs\\.versions\\.[\\w.]+)",
+                "JavaLanguageVersion\\.of\\(\\s*(\\d+|libs\\.versions\\.[\\w.]+)",
+                "(?<![\\w$])(?<!def\\s)(?<!val\\s)(?<!var\\s)release(?:\\.set)?\\s*[(=]\\s*(\\d+|libs\\.versions\\.[\\w.]+)",
+                "(?:source|target)Compatibility\\s*=\\s*(?:JavaVersion\\.VERSION_(?:1_)?(\\d+)|['\"]?(?:1\\.)?(\\d+))")) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile(pattern).matcher(code);
+            if (m.find()) {
+                for (int g = 1; g <= m.groupCount(); g++) {
+                    String value = m.group(g);
+                    if (value != null) {
+                        int release = value.startsWith("libs.") ? catalogVersion(root, value) : Integer.parseInt(value);
+                        if (release > 0) {
+                            return release;
+                        }
+                    }
+                }
+            }
+        }
+        return 0;
+    }
+
+    /** A version catalog's {@code libs.versions.<name>} from {@code gradle/libs.versions.toml}, or 0. */
+    private static int catalogVersion(java.nio.file.Path root, String accessor) {
+        String name = accessor.replaceFirst("^libs\\.versions\\.", "").replaceFirst("\\.get$", "");
+        for (java.nio.file.Path dir = root; dir != null; dir = dir.getParent()) {
+            String toml = buildFile(dir.resolve("gradle/libs.versions.toml"));
+            if (toml != null) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                                "(?m)^\\s*([\\w.-]+)\\s*=\\s*\"(?:1\\.)?(\\d+)[^\"]*\"")
+                        .matcher(toml);
+                while (m.find()) {
+                    if (m.group(1).replaceAll("[-_.]", "").equals(name.replaceAll("[-_.]", ""))) {
+                        return Integer.parseInt(m.group(2));
+                    }
+                }
+                return 0;
+            }
+            if (java.nio.file.Files.exists(dir.resolve("settings.gradle"))
+                    || java.nio.file.Files.exists(dir.resolve("settings.gradle.kts"))) {
+                return 0; // the build's root: no catalog above it counts
+            }
+        }
+        return 0;
+    }
+
+    /** A release a convention plugin under {@code buildSrc} or {@code build-logic} states, or 0 (DM8). */
+    private static int conventionRelease(java.nio.file.Path root) {
+        for (String folder : List.of("buildSrc", "build-logic")) {
+            java.nio.file.Path dir = root.resolve(folder);
+            if (!java.nio.file.Files.isDirectory(dir)) {
+                continue;
+            }
+            try (var files = java.nio.file.Files.walk(dir, 8)) {
+                for (java.nio.file.Path f : files.filter(f -> {
+                            String n = f.getFileName().toString();
+                            return n.endsWith(".gradle.kts") || n.endsWith(".gradle");
+                        })
+                        .limit(50)
+                        .toList()) {
+                    String text = buildFile(f);
+                    int release = text == null ? 0 : gradleRelease(text, root);
+                    if (release > 0) {
+                        return release;
+                    }
+                }
+            } catch (java.io.IOException | RuntimeException e) {
+                // unreadable: no convention release
+            }
+        }
+        return 0;
+    }
+
+    /** Every project a settings file includes, as written ({@code include("app", "lib")}, {@code include 'a'}). */
+    private static List<String> includedProjects(String settings) {
+        List<String> out = new java.util.ArrayList<>();
+        java.util.regex.Matcher include = java.util.regex.Pattern.compile("(?m)\\binclude\\b\\s*\\(?([^)\n]*)")
+                .matcher(settings);
+        while (include.find()) {
+            java.util.regex.Matcher name = java.util.regex.Pattern.compile("['\"]:?([\\w.-]+(?::[\\w.-]+)*)['\"]")
+                    .matcher(include.group(1));
+            while (name.find()) {
+                out.add(name.group(1));
+            }
+        }
+        return out;
     }
 
     /** A pom without its comments and profiles: a profile may not be active. */
@@ -446,9 +596,16 @@ public final class JavaRuntimes {
         return properties;
     }
 
-    /** Adds the properties of the parent pom at {@code <relativePath>} (by default ../pom.xml) the child lacks. */
+    /**
+     * Adds the properties of the parent pom at {@code <relativePath>} (by default ../pom.xml) the child lacks, and each
+     * parent's text to {@code chain}: a module inherits its parent's compiler configuration too (eleventh review CM5).
+     */
     private static void parentProperties(
-            java.nio.file.Path root, String xml, java.util.Map<String, String> properties, int depth) {
+            java.nio.file.Path root,
+            String xml,
+            java.util.Map<String, String> properties,
+            int depth,
+            List<String> chain) {
         java.util.regex.Matcher parent =
                 java.util.regex.Pattern.compile("(?s)<parent>(.*?)</parent>").matcher(xml);
         if (depth > 3 || !parent.find()) {
@@ -471,7 +628,8 @@ public final class JavaRuntimes {
         }
         String parentXml = pomCode(pom);
         pomProperties(parentXml).forEach(properties::putIfAbsent);
-        parentProperties(file.getParent(), parentXml, properties, depth + 1);
+        chain.add(parentXml);
+        parentProperties(file.getParent(), parentXml, properties, depth + 1, chain);
     }
 
     /** A build file's text, or null when there is none or it is too large or unreadable. */

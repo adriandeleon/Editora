@@ -165,4 +165,20 @@ class LspPasteEventFxTest {
         assertFalse(paste(() -> true));
         assertTrue(applied.get() == null);
     }
+
+    /**
+     * jdtls answers null when asked a few milliseconds after the paste's change: asked once more after it settles,
+     * it answers (eleventh review AM2).
+     */
+    @Test
+    void aNullAnswerIsAskedOnceMore() throws Exception {
+        FakeLanguageServer fake = open();
+        var answers = new java.util.ArrayDeque<Object>(java.util.Arrays.asList(
+                com.google.gson.JsonNull.INSTANCE, pasteAnswer(file.toUri().toString())));
+        fake.executeCommandHandler = params -> answers.isEmpty() ? null : answers.poll();
+        manager.setApplyEditHandler((edits, done) -> done.accept(true));
+
+        assertTrue(paste(() -> true), "the second answer is applied");
+        assertEquals(2, fake.executedCommands.size(), "asked twice, not more");
+    }
 }

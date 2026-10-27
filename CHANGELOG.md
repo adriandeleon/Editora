@@ -53,6 +53,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   character in the cell's own font and colour; a binary file's flood of bells is one flash; entering or leaving a
   full-screen program drops a selection made on the other screen; `file://` links naming this machine open as
   local files; the keypad's arrow keys work; box drawing and other one-cell text is drawn in one call per run.
+- **Java: Go to Super Method answers where the caret is.** On an anonymous class method's name, modifiers or
+  `@Override` line in an initializer or a library class, it opened `Object.java` or the enclosing method's super
+  method; on a class whose line ends in a `// comment`, its first method's. A caret just before a lambda's `(`,
+  inside its `->`, or on `String[]::new`'s type or `Collections::<String>emptyList`'s name goes to the functional
+  method.
+- **Java: Go to Super Method reads more generics right.** `new java.util.Comparator<>()` after another anonymous
+  class, or `new Holder.Pair<>()`, said "No super method found", as did a `<>` assigned to a wildcard type
+  (`Comparator<? super String>`) and a supertype named twice (`List<List<Double>>`). A method's own type parameter of
+  any name (`<Out>`) pairs with the override's, a raw supertype's (`extends Store`) stands for its erasure, type
+  arguments carry through a library interface (`Names extends List<String>`: `add(Integer)` overrides nothing), and
+  an open supertype file is read with its unsaved edits.
+- **Java: the import verdict.** A pom broken after a compile error had been built read as "the project did not
+  import", every file "Not checked"; a Gradle build that failed beside a Maven one in one folder marked both. A
+  reactor module whose pom.xml does not parse, and a broken pom with a loose file opened first, now say the project
+  did not import; a pom that does not parse is named with its line and column, and a Gradle script that does not
+  compile with its error, not "1 error".
+- **Paste with imports asks again when jdtls answers before it has the paste**, and sends the file the text was
+  copied from, so its imports decide ambiguous names (`Duration`).
+- **Closing a focused Doctor, Welcome or viewer tab from the keyboard leaves the keyboard in the tab shown**, not on
+  the toolbar's New button; the Welcome page takes the focus itself, with its recent list current, not its first
+  entry.
+- **Doctor's missing-sources hint reads more build layouts**: a module inheriting its parent's release or managed
+  compiler plugin, a Spring Boot parent with its version first, an MR-jar's per-execution release, every included
+  Gradle project, a version catalog, a `buildSrc` convention plugin; a Gradle toolchain wins over a variable named
+  `release`.
 - **XML: the lemminx install is pinned and checked.** Install… downloads vscode-xml 0.29.3's lemminx (0.31.2) instead
   of whatever `releases/latest` was, refuses a zip or a program whose SHA-256 is not the release's, takes exactly
   the program (not any file whose name starts with "lemminx"), and no longer asks for `tar` (every asset is a zip).

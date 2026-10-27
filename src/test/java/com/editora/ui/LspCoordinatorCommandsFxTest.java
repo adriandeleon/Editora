@@ -1942,8 +1942,13 @@ class LspCoordinatorCommandsFxTest {
                 0, 0, 0, 1, com.editora.text.LspDiagnostic.Severity.WARNING, why, null, "jdtls");
         fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(warning)));
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
-        awaitError(tr("status.lsp.importProblemWhy", "jdtls", why));
         awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
+        // the build file and its parse error, not the Java file jdtls names (eleventh review CM4)
+        String said = fx.host.lastError();
+        assertTrue(
+                said.startsWith(tr("status.lsp.importProblemWhy", "jdtls", "").replaceFirst(":.*", "")), said);
+        assertTrue(said.contains(tr("status.lsp.pomUnreadable", "pom.xml", "")), said);
+        assertTrue(said.contains("(line 1, column"), said);
     }
 
     /**
@@ -1972,6 +1977,93 @@ class LspCoordinatorCommandsFxTest {
                 "jdtls",
                 "Could not find method thisIsNotAConfiguration() for arguments [x]"));
         assertEquals(1, fx.host.errors.size(), fx.host.errors.toString());
+    }
+
+    /**
+     * A reactor whose module's pom.xml does not parse: jdtls imports the others and says nothing of it, so the module's
+     * failure is said, naming its pom (eleventh review CO2, CM4).
+     */
+    @Test
+    void aModulePomThatDoesNotParseIsAFailedImport() throws Exception {
+        java.nio.file.Files.writeString(
+                root.resolve("pom.xml"),
+                "<project><modules><module>core</module><module>app</module></modules></project>");
+        java.nio.file.Files.createDirectories(root.resolve("core"));
+        java.nio.file.Files.writeString(root.resolve("core/pom.xml"), "<project/>");
+        java.nio.file.Files.createDirectories(root.resolve("app/src/main/java"));
+        java.nio.file.Files.writeString(root.resolve("app/pom.xml"), "<project>\n<brokenTag>\n</project>\n");
+        EditorBuffer app = fx.open("app/src/main/java/App.java", "class App {}\n");
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
+        String said = fx.host.lastError();
+        assertTrue(said != null && said.contains(tr("status.lsp.pomUnreadable", "app/pom.xml", "")), said);
+        assertEquals(
+                tr("editor.problemCounter.notImported"),
+                FxTestSupport.callOnFx(() -> FxTestSupport.field(app.problemCounter(), "note")));
+    }
+
+    /**
+     * A loose file opened first makes jdtls put the project's files in an invisible project: "not on the classpath of
+     * project project_…" is a failed import too (eleventh review CO2).
+     */
+    @Test
+    void anInvisibleProjectsFileMeansTheImportFailed() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project/>");
+        java.nio.file.Files.createDirectories(root.resolve("src/main/java/demo"));
+        EditorBuffer b = fx.open("src/main/java/demo/A.java", "package demo;\n\nclass A {}\n");
+        String why = "A.java is not on the classpath of project project_d15135a6, only syntax errors are reported";
+        var warning = new com.editora.text.LspDiagnostic(
+                0, 0, 0, 1, com.editora.text.LspDiagnostic.Severity.WARNING, why, null, "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(warning)));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitError(tr("status.lsp.importProblemWhy", "jdtls", why.replaceFirst("[.\\s]+$", "")));
+        awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
+    }
+
+    /**
+     * jdtls logs an Error for every workspace build that finds a compile error; an import that succeeded after it
+     * forgets it, so a later build problem is "the build has problems", not a failed import (eleventh review CM1).
+     */
+    @Test
+    void anErrorLoggedBeforeAGoodImportIsNoImportFailure() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        LspTestHooks.logError(fx.manager, b.getPath(), "Some earlier error");
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "OK"));
+        LspTestHooks.logError(fx.manager, b.getPath(), "Error occured while building workspace. Details:");
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING"));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.readyWithProblems", "jdtls"));
+        assertEquals(null, fx.host.lastError());
+    }
+
+    /**
+     * Two builds side by side under a project folder with no build file of its own: a failed Gradle import is that
+     * build's, and the Maven build's files stay checked (eleventh review CM2).
+     */
+    @Test
+    void aFailedBuildBesideAnotherIsItsFoldersOwn() throws Exception {
+        // the root has no build file of its own; its server imports a Gradle build in gb/, whose import fails
+        java.nio.file.Files.createDirectories(root.resolve("gb"));
+        EditorBuffer beside = fx.open("A.java", SOURCE);
+        LspTestHooks.logError(fx.manager, beside.getPath(), "Could not fetch model of type 'Map'");
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING"));
+        var cause = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.ERROR,
+                "The supplied phased action failed.\nCould not find method thisIsNotAConfiguration()",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("gb"), List.of(cause)));
+        awaitError(tr("status.lsp.importProblemWhy", "jdtls", "Could not find method thisIsNotAConfiguration()"));
+        java.util.Set<String> failed = FxTestSupport.field(fx.coordinator, "importFailed");
+        assertTrue(
+                FxTestSupport.callOnFx(() -> failed.stream().anyMatch(k -> k.endsWith(java.io.File.separator + "gb"))),
+                "gb's build failed");
+        Object besideNote = FxTestSupport.callOnFx(() -> FxTestSupport.field(beside.problemCounter(), "note"));
+        assertEquals(null, besideNote, "the file beside it is checked");
     }
 
     /** A Java file in no source folder of the project is a non-project file by rights: ready (CO2). */
