@@ -7589,8 +7589,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /**
      * Fills the fixed, non-customizable toolbar tail — the run-configuration group, the project-combo group
-     * (a gap, the combo, and the Open-Folder icon), Recent, an optional {@code snapshot}/{@code --dev}
-     * badge, and the right-pinned Settings button. Called by {@link ToolbarCoordinator} after it lays out
+     * (a gap, the combo, and the Open-Folder icon), an optional {@code snapshot}/{@code --dev} badge, and the
+     * right-pinned Simple-mode toggle and Settings button. Called by {@link ToolbarCoordinator} after it lays out
      * the customizable cluster.
      *
      * <p>The tail is its <b>own container</b> beside the {@link javafx.scene.control.ToolBar}, not items in
@@ -7640,11 +7640,16 @@ public class MainController implements com.editora.mcp.McpBridge {
             items.addAll(toolbarGap(), devBadge);
         }
 
-        // Settings is the only app-level control left on the bar. About and Quit were removed: both live in
-        // the Help/File menus and the palette, neither is an action anyone takes mid-edit, and Quit in
-        // particular sat in the top-right corner directly under the window's own close button — a
-        // one-icon-high miss between "minimise this window" and "exit the application".
-        items.addAll(toolbarGap(), settingsButton);
+        // The Simple-mode toggle and Settings close the bar as one pair of app-level controls. The toggle
+        // used to be a customizable cluster item, but it is the way back out of a mode that empties much of
+        // that cluster, and the cluster is what overflows into the chevron on a narrow window — so it is
+        // pinned here instead, beside the other "how the app looks" control. The wider gap keeps the project
+        // combo and its Open-Folder icon from reading as part of the pair.
+        // About and Quit were removed from the bar: both live in the Help/File menus and the palette,
+        // neither is an action anyone takes mid-edit, and Quit in particular sat in the top-right corner
+        // directly under the window's own close button — a one-icon-high miss between "minimise this
+        // window" and "exit the application".
+        items.addAll(appControlsGap(), simpleModeButton, settingsButton);
     }
 
     /**
@@ -7680,7 +7685,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             m.put("view.splitVertical", splitVerticalButton);
             m.put("view.splitHorizontal", splitHorizontalButton);
             m.put("palette.show", paletteButton);
-            m.put("view.toggleSimpleMode", simpleModeButton);
             toolbarBaseWidgets = m;
         }
         return toolbarBaseWidgets;
@@ -7725,6 +7729,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         Region gap = new Region();
         gap.setMinWidth(14);
         gap.setPrefWidth(14);
+        return gap;
+    }
+
+    /** The gap ahead of the Simple-mode/Settings pair: about two toolbar-icon widths, so the pair stands apart. */
+    private static Region appControlsGap() {
+        Region gap = new Region();
+        gap.setMinWidth(40);
+        gap.setPrefWidth(40);
         return gap;
     }
 
