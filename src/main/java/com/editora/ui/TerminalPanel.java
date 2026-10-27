@@ -915,7 +915,28 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
         return "-fx-background-color: " + web(palette.background()) + ";";
     }
 
+    /** Whether the bundled icon face has been asked for (see {@link #loadIconFont}). */
+    private boolean iconFontRequested;
+
+    /**
+     * Registers the bundled Nerd Font symbols face off the FX thread when the first terminal is made, unless the
+     * deferred font load already has: a terminal opened at startup would otherwise draw its icons in whatever the
+     * system's fallback list holds until the next font change. Every terminal chooses its icon face again once it is in.
+     */
+    private void loadIconFont() {
+        if (iconFontRequested || Fonts.allLoaded()) {
+            return;
+        }
+        iconFontRequested = true;
+        Fonts.loadFamilyAsync(Fonts.ICONS)
+                .thenRun(() -> Platform.runLater(() -> {
+                    views.values().forEach(TerminalView::iconFontsChanged);
+                    connecting.values().forEach(TerminalView::iconFontsChanged);
+                }));
+    }
+
     private void configure(TerminalView view) {
+        loadIconFont();
         view.setFontFamily(config.fontFamily());
         view.setFontSize(config.fontSize());
         view.setPreferredCursor(config.cursor());

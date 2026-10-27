@@ -125,6 +125,21 @@ class NoticeCoverageTest {
     }
 
     @Test
+    void theNerdFontSymbolsShipTheirOtherLicencesAndNoticeNamesTheGlyphSets() throws IOException {
+        // The font files are OFL (checked above); the Nerd Fonts patcher is MIT, and each glyph set keeps its own
+        // licence, two of which (CC BY 4.0) ask for attribution.
+        String mit = new String(resource("/com/editora/fonts/symbols-nerd-font/LICENSE.txt"), StandardCharsets.UTF_8);
+        assertTrue(mit.contains("The MIT License") && mit.contains("Ryan L McIntyre"), "the Nerd Fonts MIT text");
+        String sets = new String(resource("/com/editora/fonts/symbols-nerd-font/README.md"), StandardCharsets.UTF_8);
+        assertTrue(sets.contains("Codicons") && sets.contains("CC BY 4.0"), "the README listing each glyph set");
+        String notice = Files.readString(REPO.resolve("NOTICE"));
+        for (String named :
+                List.of("Symbols Nerd Font Mono", "symbols-nerd-font", "Codicons", "Font Awesome", "CC BY")) {
+            assertTrue(notice.contains(named), "NOTICE does not name " + named);
+        }
+    }
+
+    @Test
     void theDeliveriesBuiltOutsideTheJarAreHandedTheLicenceToo() throws IOException {
         String aot = Files.readString(REPO.resolve(Path.of("scripts", "aot_build.java")));
         assertTrue(aot.contains("\"--license-file\""), "the jpackage installer wrap no longer passes --license-file");

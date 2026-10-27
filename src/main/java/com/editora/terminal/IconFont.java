@@ -24,10 +24,10 @@ import org.jspecify.annotations.Nullable;
  * glyphs there: on a machine with the Microsoft core fonts and MathJax installed, Arial claims U+F016 and
  * MathJax_WinIE6 claims U+E271, both ahead of the Nerd Font in that list. {@code eza} gives a symlink to a file those
  * two icons, so {@code vmlinuz} and {@code initrd.img} came out with a stray accent beside them while every other
- * icon in the listing was right. Asking for an installed Nerd Font by name for these code points takes the list out of
- * it. With none installed, or with one as the terminal face, nothing changes.
- *
- * <p>Ported from Termina, without its bundled Symbols Nerd Font Mono (see docs/subsystems/terminal.md).
+ * icon in the listing was right. Asking for a Nerd Font by name for these code points takes the list out of it. One is
+ * always there to ask for — {@link #BUNDLED} ships with Editora, so a machine with no Nerd Font installed gets the
+ * icons too rather than whatever its fallback list holds. When the terminal face is itself a Nerd Font it covers them
+ * already. Ported from Termina.
  */
 final class IconFont {
 
@@ -39,6 +39,45 @@ final class IconFont {
     private static final Pattern NERD = Pattern.compile("(.+?) (?:Nerd Font( Mono| Propo)?|NF([MP])?)");
 
     private IconFont() {}
+
+    /** The bundled symbols-only face ({@code fonts/symbols-nerd-font}), which the window loads for terminals. */
+    static final String BUNDLED = "Symbols Nerd Font Mono";
+
+    /**
+     * Whether {@code codePoint} is one of Powerline's separators or their extras. These are drawn to the height of the
+     * line, so that a prompt's segments meet, and are never rescaled.
+     */
+    static boolean isPowerline(int codePoint) {
+        return codePoint >= 0xE0A0 && codePoint <= 0xE0D7;
+    }
+
+    /** The bundled face's icons are this many em wide: squares, since it has no letters to match. */
+    private static final double SYMBOLS_ICON_EM = 1.0;
+
+    /** Where the centre of the bundled face's em box sits above its baseline: 0.8 em up, 0.2 down. */
+    private static final double SYMBOLS_EM_CENTRE = 0.3;
+
+    /**
+     * How many cells wide a bundled icon is drawn. About what the Nerd Font builds of a text face give their icons —
+     * JetBrainsMono NF's folder is 0.87 em on a 0.6 em cell — so an icon looks the same size whichever face draws it.
+     * It spills into half the next cell, which in a listing is the space before the name. At text size the bundled
+     * icons, 1 em squares, ran two-thirds of a cell into the name; at one cell they were markedly smaller than the NF
+     * builds'.
+     */
+    private static final double ICON_CELLS = 1.5;
+
+    /** The size to draw the bundled face at for its icons to be {@link #ICON_CELLS} wide. */
+    static double iconSize(double charWidth) {
+        return ICON_CELLS * charWidth / SYMBOLS_ICON_EM;
+    }
+
+    /**
+     * How far below the text baseline to draw the bundled face at {@code iconSize} for its icons to sit centred in the
+     * row, rather than on the text's baseline, where an icon smaller than the text would sit low.
+     */
+    static double iconBaselineShift(double ascent, double lineHeight, double iconSize) {
+        return lineHeight / 2 - ascent + SYMBOLS_EM_CENTRE * iconSize;
+    }
 
     /**
      * Whether {@code codePoint} is private use, in the BMP or in either supplementary plane. JediTerm's
@@ -68,7 +107,8 @@ final class IconFont {
      * fallbacks.
      *
      * <p>Empty when {@code primary} is itself a Nerd Font. Otherwise, best first: the Nerd Font build of the
-     * terminal's own face, then the symbols-only build, then any other. Within each, the plain variant before
+     * terminal's own face, then the symbols-only build — which is bundled, so in the app the search ends here — then
+     * any other. Within each, the plain variant before
      * {@code Mono}: its icons are drawn larger and may lean into the space after them, which is the look a listing is
      * laid out for. {@code Propo} is proportional and never chosen.
      */
@@ -101,11 +141,32 @@ final class IconFont {
     private static @Nullable Set<String> installed;
     private static final Map<String, Optional<String>> CHOSEN = new HashMap<>();
 
-    /** {@link #chooseFamily} against this machine's fonts, once per terminal face. */
+    /**
+     * Forgets the answers given: the bundled face was registered after the first terminal asked (it loads off the FX
+     * thread), and the answers given without it are out of date.
+     */
+    static synchronized void forget() {
+        CHOSEN.clear();
+    }
+
+    /**
+     * {@link #chooseFamily} against this machine's fonts, once per terminal face.
+     *
+     * <p>The bundled face is looked up by name rather than in {@link Font#getFamilies}: JavaFX builds that list at its
+     * first call and never adds a font registered after, and a terminal opened at startup asks before the deferred
+     * font load has run. Until the face is registered no answer is kept, so the next terminal asks again.
+     */
     static synchronized Optional<String> familyFor(String primary) {
         Set<String> fonts = installed;
         if (fonts == null) installed = fonts = Set.copyOf(Font.getFamilies());
+        boolean bundled = BUNDLED.equals(Font.font(BUNDLED, 12).getFamily());
         Set<String> chooseFrom = fonts;
-        return CHOSEN.computeIfAbsent(primary, p -> chooseFamily(p, chooseFrom));
+        if (bundled && !fonts.contains(BUNDLED)) {
+            chooseFrom = new java.util.HashSet<>(fonts);
+            chooseFrom.add(BUNDLED);
+        }
+        if (!bundled) return chooseFamily(primary, chooseFrom);
+        Set<String> withBundled = chooseFrom;
+        return CHOSEN.computeIfAbsent(primary, p -> chooseFamily(p, withBundled));
     }
 }
