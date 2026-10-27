@@ -1085,6 +1085,7 @@ final class LanguageServerSession implements LanguageClient {
         ws.setInlayHint(new org.eclipse.lsp4j.InlayHintWorkspaceCapabilities(true));
         ws.setDiagnostics(new org.eclipse.lsp4j.DiagnosticWorkspaceCapabilities(true));
         ws.setFoldingRange(new org.eclipse.lsp4j.FoldingRangeWorkspaceCapabilities(true));
+        ws.setCodeLens(new org.eclipse.lsp4j.CodeLensWorkspaceCapabilities(true)); // jdtls asks too (B2)
         cc.setWorkspace(ws);
         return cc;
     }
@@ -2656,6 +2657,16 @@ final class LanguageServerSession implements LanguageClient {
     @Override
     public CompletableFuture<Void> refreshFoldingRanges() {
         refresh("foldingRanges");
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * lemminx sends {@code workspace/codeLens/refresh} after every settings push; lsp4j's default threw, so it got
+     * an "Internal error" reply, a SEVERE log line, and its lenses went stale (XML review 2 B2).
+     */
+    @Override
+    public CompletableFuture<Void> refreshCodeLenses() {
+        refresh("codeLenses");
         return CompletableFuture.completedFuture(null);
     }
 

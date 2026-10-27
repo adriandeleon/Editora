@@ -137,8 +137,10 @@ class LanguageServerSessionProtocolTest {
         s.refreshSemanticTokens();
         s.refreshInlayHints();
         s.refreshFoldingRanges();
+        var lenses = s.refreshCodeLenses(); // lsp4j's default threw: an "Internal error" reply (XML review 2 B2)
 
-        assertEquals(List.of("diagnostics", "semanticTokens", "inlayHints", "foldingRanges"), refreshed);
+        assertEquals(List.of("diagnostics", "semanticTokens", "inlayHints", "foldingRanges", "codeLenses"), refreshed);
+        assertTrue(lenses.isDone() && !lenses.isCompletedExceptionally());
     }
 
     // --- #725: signature help must report the trigger character ------------------------------------

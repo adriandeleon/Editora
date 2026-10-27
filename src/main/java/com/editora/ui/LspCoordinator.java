@@ -645,6 +645,7 @@ final class LspCoordinator {
                     case "semanticTokens" -> requestSemanticTokens(buffer);
                     case "inlayHints" -> requestInlayHints(buffer);
                     case "foldingRanges" -> requestFoldingRanges(buffer);
+                    case "codeLenses" -> requestCodeLens(buffer); // XML review 2 B2
                     default -> {
                         // Future server refresh kinds are ignored until the corresponding UI feature exists.
                     }
@@ -676,7 +677,8 @@ final class LspCoordinator {
      * when it is shown — {@link #onBufferShown}), so asking for them for every open tab was pure server load.
      */
     static boolean refreshAppliesTo(String kind, boolean activeBuffer) {
-        return activeBuffer || !("semanticTokens".equals(kind) || "inlayHints".equals(kind));
+        return activeBuffer
+                || !("semanticTokens".equals(kind) || "inlayHints".equals(kind) || "codeLenses".equals(kind));
     }
 
     /**
@@ -2784,6 +2786,9 @@ final class LspCoordinator {
         boolean eligible = ops.lspFeatureEnabled()
                 && path != null
                 && (!remote || (RemoteExec.runsFor(path) && !remoteUnsupported(serverId)))
+                // A loading shell is empty: its heavy-file flag let Python/Java/XML's line limits through, so they
+                // got an empty didOpen, then a whole-file insert (XML review 2 B1). The load re-syncs it.
+                && !buffer.isLoading()
                 && !buffer.isLargeFile() // 5+ MB files skip LSP (like highlighting/minimap/git) — see setLspActive
                 // The intermediate large-source tier skips LSP (keeps highlighting) — up to a per-language limit:
                 // Python keeps Pyright to 50,000 lines (review B10).
@@ -2828,6 +2833,8 @@ final class LspCoordinator {
             buffer.setViewMode(true); // a library or stub file is for reading; Enable Editing is one click away
         }
         if (eligible && path != null && serverId != null) {
+            // Every sync re-records it (a settings apply, a language change); didChange keeps it current (B12).
+            lspManager.setDocumentIndent(path, formattingIndent(buffer)); // quick fixes keep its indent (B8)
             // Open when not yet managed, or re-open when the desired server changed — a pom.xml moving from the
             // plain XML server to lemminx-maven (once installed/enabled), or back. isManaged() alone can't tell:
             // it's keyed by URI, not server, so it stays true across a switch (which would otherwise never happen).
@@ -2842,7 +2849,6 @@ final class LspCoordinator {
                     host.setStatus(tr("status.lsp.starting", serverLabel(serverId)));
                     ops.setLspLoading(true); // show the loading bar until the server reports ready
                 }
-                lspManager.setDocumentIndent(path, formattingIndent(buffer)); // quick fixes keep its indent (B8)
                 lspManager.openDocument(path, root, routeLanguageId(buffer, serverId), buffer.text());
                 correctPlainFolderSourceRoot(buffer, path); // queued until the server is up (C6)
             }
@@ -4023,6 +4029,9 @@ final class LspCoordinator {
         buffer.setOccurrenceRequester(() -> requestOccurrences(buffer)); // caret at rest (#675)
         buffer.setLspChangeListener(text -> {
             Path path = lspPath(buffer);
+            if (path != null && lspManager.isManaged(path)) { // the indent servers are told follows the text (B12)
+                lspManager.setDocumentIndent(path, formattingIndent(buffer));
+            }
             if (path != null && !lspManager.changeDocument(path, text)) {
                 // A net-zero edit (type + Backspace, edit + undo): the server was sent nothing and will
                 // publish nothing, but the edit already cleared the buffer's marks.

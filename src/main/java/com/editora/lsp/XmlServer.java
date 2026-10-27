@@ -35,7 +35,8 @@ public final class XmlServer {
 
     /**
      * Lines up to which an XML file in the large-source tier keeps lemminx: it validated and outlined a 60,000-line
-     * (6.4 MB) document in under a second with no measurable typing lag (XML review A10).
+     * document in under a second with no measurable typing lag (XML review A10). The 5 MB large-file cut still
+     * applies first, so in practice the limit is "up to 100,000 lines and 5 MB" (XML review 2 B5).
      */
     public static final int HEAVY_FILE_LINE_LIMIT = 100_000;
 

@@ -238,6 +238,11 @@ public final class LspManager {
         }
     }
 
+    /** The indentation recorded for {@code file} (see {@link #setDocumentIndent}), or null when none is. */
+    public @Nullable FormattingIndent documentIndent(Path file) {
+        return documentIndents.get(uri(file));
+    }
+
     /** Sets the shared root of loose JavaScript/TypeScript files (see {@link #looseRoot}). */
     public void setLooseRoot(@Nullable Path root) {
         Path next = root == null ? null : root.toAbsolutePath().normalize();
@@ -507,8 +512,11 @@ public final class LspManager {
      */
     Map<String, Object> xmlSectionFor(String serverId, Path root) {
         boolean local = com.editora.process.ExecTargets.runsHere(root);
+        // The loose-files root is a folder Editora made, not the user's: a relative grammar or catalog has nothing to
+        // be relative to there, and resolved under it named that internal folder in a false error (XML review 2 B4).
+        Path base = root.equals(looseRoot) ? null : root;
         Map<String, Object> xml =
-                new java.util.LinkedHashMap<>(xmlServerSettings.section(root, folderTrust.test(root), local));
+                new java.util.LinkedHashMap<>(xmlServerSettings.section(base, folderTrust.test(root), local));
         if (LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
             xml.put("maven", Map.of("central", Map.of("skip", !mavenCentralIndex)));
         }

@@ -220,6 +220,7 @@ class ClientCapabilitiesTest {
         assertTrue(Boolean.TRUE.equals(ws.getInlayHint().getRefreshSupport()));
         assertTrue(Boolean.TRUE.equals(ws.getDiagnostics().getRefreshSupport()));
         assertTrue(Boolean.TRUE.equals(ws.getFoldingRange().getRefreshSupport()));
+        assertTrue(Boolean.TRUE.equals(ws.getCodeLens().getRefreshSupport()));
     }
 
     // --- Python review B3: unused / deprecated tags --------------------------------------------------

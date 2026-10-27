@@ -115,7 +115,8 @@ public record XmlServerSettings(
     }
 
     /**
-     * The {@code xml} object for a server on {@code root} (null = unknown): {@code trusted} is that folder's trust,
+     * The {@code xml} object for a server on {@code root} (null = none, as for files outside the project: relative
+     * catalogs and grammars are then left out): {@code trusted} is that folder's trust,
      * {@code local} whether the server runs on this machine (a remote one keeps its own work dir, and relative
      * paths are sent as typed: this machine cannot look at the host's disk).
      */
@@ -189,7 +190,7 @@ public record XmlServerSettings(
                 return path.toString();
             }
             if (root == null) {
-                return mustExist ? null : v;
+                return null; // no folder to be relative to (the loose files' root): left out, as a missing catalog is
             }
             Path under = root.resolve(path).normalize();
             return !mustExist || Files.isRegularFile(under) ? under.toString() : null;

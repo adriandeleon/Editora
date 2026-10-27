@@ -114,6 +114,41 @@ class XmlServerSettingsTest {
         assertEquals("**/web.xml", XmlServerSettings.globPattern("web.xml"));
     }
 
+    /**
+     * Files outside the project share Editora's own loose-files folder as their root: a relative grammar resolved
+     * under it failed with an error naming that folder (XML review 2 B4). The manager sends no root for it, and a
+     * relative grammar or catalog is then left out; absolute ones and URLs stay.
+     */
+    @Test
+    void theLooseRootGetsNoRelativeGrammarsOrCatalogs() throws Exception {
+        Path absolute = root.resolve("abs.xsd");
+        Settings s = new Settings();
+        s.setXmlFileAssociations(Map.of("*.myconf.xml", "xsd/note.xsd", "*.b.xml", absolute.toString()));
+        s.setXmlCatalogs(List.of("catalog.xml", "https://x.test/c.xml"));
+        LspManager manager = new LspManager((f, d) -> {}, (t, m) -> {});
+        try {
+            Path loose = Files.createDirectories(root.resolve("loose-files"));
+            Files.createDirectories(loose.resolve("xsd"));
+            Files.writeString(loose.resolve("xsd/note.xsd"), "<x/>"); // even where it would resolve
+            Files.writeString(loose.resolve("catalog.xml"), "<catalog/>");
+            manager.setLooseRoot(loose);
+            manager.setXmlSettings(XmlServerSettings.of(s, null));
+
+            Map<String, Object> xml = manager.xmlSectionFor(XmlServerSettings.SERVER_ID, loose);
+            assertEquals(
+                    List.of(Map.of("pattern", "**/*.b.xml", "systemId", absolute.toString())),
+                    xml.get("fileAssociations"));
+            assertEquals(List.of("https://x.test/c.xml"), xml.get("catalogs"));
+
+            Path project = Files.createDirectories(root.resolve("project"));
+            Object associations =
+                    manager.xmlSectionFor(XmlServerSettings.SERVER_ID, project).get("fileAssociations");
+            assertEquals(2, ((List<?>) associations).size(), "a project root keeps its relative grammar");
+        } finally {
+            manager.close();
+        }
+    }
+
     @Test
     void formattingKeepsTextUnwrappedUnlessAskedThenWrapsAtTheFillColumn() {
         Map<String, Object> format =

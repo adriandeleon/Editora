@@ -425,6 +425,26 @@ class LspCoordinatorHooksFxTest {
 
     // --- refresh requests from the server ------------------------------------------------------------
 
+    /** lemminx's {@code workspace/codeLens/refresh} re-requests the lenses on screen (XML review 2 B2). */
+    @Test
+    void aCodeLensRefreshReRequestsTheActiveTabsLenses() throws Exception {
+        fx.capabilities.setCodeLensProvider(new org.eclipse.lsp4j.CodeLensOptions(false));
+        fx.host.settings.setCodeLens(true);
+        HookedBuffer buffer = wired("A.java");
+        fx.server().codeLensResponse = List.of(lens(1, "1 reference", "java.show.references"));
+        fx.run(() -> fx.coordinator.requestCodeLens(buffer));
+        int asked = fx.server().codeLenses.size();
+        fx.server().codeLensResponse = List.of(lens(1, "2 references", "java.show.references"));
+
+        fx.run(() -> LspTestHooks.refresh(fx.manager, buffer.getPath(), "codeLenses"));
+        fx.run(() -> fx.coordinator.flushRefreshes());
+
+        assertTrue(fx.server().codeLenses.size() > asked, "the lenses were not asked for again");
+        assertEquals(
+                List.of("2 references"),
+                buffer.lenses.stream().map(EditorBuffer.CodeLens::label).toList());
+    }
+
     @Test
     void aRefreshIsRequestedForTheTabOnScreenAndOwedToTheOthers() throws Exception {
         fx.host.settings.setInlayHints(true);
