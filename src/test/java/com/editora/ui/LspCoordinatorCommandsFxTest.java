@@ -2109,7 +2109,7 @@ class LspCoordinatorCommandsFxTest {
         java.nio.file.Files.writeString(root.resolve("shelf/pom.xml"), "<project>\n<brokenTag>\n</project>\n");
         java.nio.file.Files.createDirectories(root.resolve("gradle2"));
         java.nio.file.Files.writeString(root.resolve("gradle2/build.gradle"), "plugins { id 'java' }\n");
-        fx.ops.projectRoot = root; // opened as the project: the server's root has no build file of its own
+        asProject(); // opened as the project: the server's root has no build file of its own
         EditorBuffer b = fx.open("shelf/src/main/java/Main.java", "class Main {}\n");
         assertEquals(root, FxTestSupport.callOnFx(() -> fx.manager.javaSessionRoot(b.getPath())), "precondition");
         var warning = new com.editora.text.LspDiagnostic(
@@ -2165,7 +2165,7 @@ class LspCoordinatorCommandsFxTest {
         java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project/>");
         java.nio.file.Path app = java.nio.file.Files.createDirectories(root.resolve("app"));
         java.nio.file.Files.writeString(app.resolve("pom.xml"), "<project/>");
-        fx.ops.projectRoot = root;
+        asProject(); // inside the project: the Project panel's watcher, not the server's, covers the tree
         fx.open("A.java", SOURCE);
         String uri = app.resolve("pom.xml").toUri().toString();
         boolean seen = false;
@@ -2180,6 +2180,23 @@ class LspCoordinatorCommandsFxTest {
                     .anyMatch(e -> e.getUri().equals(uri));
         }
         assertTrue(seen, "app/pom.xml's change was sent");
+    }
+
+    /**
+     * Makes {@code root} this window's project, as already applied: a project learnt later re-detects the server
+     * commands, which finds no jdtls on a machine without one, and no file would open on the fake server.
+     */
+    private void asProject() throws Exception {
+        fx.ops.projectRoot = root;
+        FxTestSupport.runOnFx(() -> {
+            try {
+                java.lang.reflect.Field applied = LspCoordinator.class.getDeclaredField("appliedProjectRoot");
+                applied.setAccessible(true);
+                applied.set(fx.coordinator, root);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+        });
     }
 
     /** A Java file in no source folder of the project is a non-project file by rights: ready (CO2). */
