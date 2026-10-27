@@ -68,6 +68,43 @@ class XmlFormatterTest {
     }
 
     @Test
+    void blankLinesAreKeptAtMostTwoInARow() {
+        // XML review 2 C3: every blank line was deleted, so a hand-grouped config lost its groups.
+        String in =
+                "<Configuration>\n\n<Appenders>\n<A/>\n\n\n\n<B/>\n</Appenders>\n\n<Loggers/>\n\n</Configuration>\n";
+        String out = XmlFormatter.format(in, "  ");
+        assertEquals("""
+                <Configuration>
+
+                  <Appenders>
+                    <A/>
+
+
+                    <B/>
+                  </Appenders>
+
+                  <Loggers/>
+
+                </Configuration>
+                """, out);
+        assertEquals(out, XmlFormatter.format(out, "  "), "stable");
+    }
+
+    @Test
+    void aCommentOnTheLineOfWhatItFollowsStaysThere() {
+        // XML review 2 C3: a trailing comment moved onto its own line, above the next element it does not describe.
+        String in =
+                "<Loggers>\n<Logger level=\"debug\"/> <!-- our code -->\n<Root/><!--x-->\n<!-- own line -->\n</Loggers>";
+        assertEquals("""
+                <Loggers>
+                  <Logger level="debug"/> <!-- our code -->
+                  <Root/><!--x-->
+                  <!-- own line -->
+                </Loggers>""", XmlFormatter.format(in, "  "));
+        assertEquals("<a> <!-- c -->\n  <b/>\n</a>", XmlFormatter.format("<a> <!-- c --><b/></a>", "  "));
+    }
+
+    @Test
     void markupThatDoesNotNestIsLeftAlone() {
         assertNull(XmlFormatter.format("<a><b></a>", "  "), "mismatched");
         assertNull(XmlFormatter.format("<a><b>", "  "), "unclosed");
