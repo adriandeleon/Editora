@@ -186,7 +186,8 @@ final class StructureOutline {
             return clojureFormNodes(src.text(), regions);
         }
         if ("xml".equals(src.language()) && !src.pom()) {
-            return XmlOutline.build(src.text()); // every element, by qualified name and naming attribute (C4)
+            List<StructureNode> elements = XmlOutline.build(src.text()); // by qualified name and naming attribute
+            return elements.isEmpty() ? DtdOutline.build(src.text()) : elements; // a DTD has declarations instead
         }
         // Sort so each region precedes the regions it contains: by start asc, then by end desc.
         regions.sort(Comparator.comparingInt(Region::startLine)

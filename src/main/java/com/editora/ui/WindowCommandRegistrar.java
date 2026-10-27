@@ -2301,6 +2301,10 @@ final class WindowCommandRegistrar {
                         "lsp.xmlBindGrammar",
                         () -> host.ifLsp(() -> host.lspCoordinator().xml().bindGrammar())));
         host.registry()
+                .register(Command.of(
+                        "lsp.xmlGenerateGrammar",
+                        () -> host.ifLsp(() -> host.lspCoordinator().xml().generateGrammar())));
+        host.registry()
                 .register(Command.of("lsp.undoRefactoring", () -> host.ifLsp(host.lspCoordinator()::undoRefactoring)));
         host.registry().register(Command.of("lsp.generate", () -> host.ifLsp(host.lspCoordinator()::generateActions)));
         host.registry()

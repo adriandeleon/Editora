@@ -162,6 +162,22 @@ class XmlServerFxTest {
         assertEquals(List.of(), none);
     }
 
+    /** XML review 2 B3: lemminx has no link for xsl:include/xsl:import; Go to Definition opens the file anyway. */
+    @Test
+    void definitionOnAnXslIncludeHrefOpensTheStylesheet() throws Exception {
+        Path base = root.resolve("base.xsl");
+        Files.writeString(base, "<xsl:stylesheet/>\n");
+        Path main = root.resolve("main.xsl");
+        String text = "<xsl:stylesheet>\n  <xsl:import href=\"base.xsl\"/>\n</xsl:stylesheet>\n";
+        Files.writeString(main, text);
+        manager.openDocument(main, root, "xml", text);
+
+        List<LspManager.Target> targets = await(cb -> manager.definition(main, 1, 22, cb));
+
+        assertEquals(List.of(new LspManager.Target(base, 0, 0)), targets);
+        assertEquals(1, fakes.get(0).typeDefinitions.size(), "lemminx is asked first");
+    }
+
     @Test
     void aDtdOpensUnderTheDtdLanguageId() throws Exception {
         Path dtd = root.resolve("catalog.dtd");

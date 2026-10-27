@@ -229,13 +229,13 @@ public final class TagRename {
     }
 
     /** Position after {@code marker} starting the search at {@code from} (end of text if absent). */
-    private static int skipTo(String text, int from, String marker) {
+    static int skipTo(String text, int from, String marker) {
         int idx = text.indexOf(marker, from);
         return idx < 0 ? text.length() : idx + marker.length();
     }
 
     /** End of the tag-name run starting at {@code from}. */
-    private static int nameEnd(String text, int from) {
+    static int nameEnd(String text, int from) {
         int i = from;
         int n = text.length();
         while (i < n && isNameChar(text.charAt(i))) {
@@ -249,7 +249,7 @@ public final class TagRename {
      * {@code >}, honoring single/double-quoted attribute values. Returns {@code {posAfterTag,
      * selfClosing ? 1 : 0}}; an unterminated tag runs to the end of the text.
      */
-    private static int[] skipTag(String text, int from) {
+    static int[] skipTag(String text, int from) {
         int n = text.length();
         int i = from;
         char lastMeaningful = 0;
@@ -301,7 +301,7 @@ public final class TagRename {
     }
 
     /** Position of {@code </name} (case-insensitive) at/after {@code from} — for raw-text content. */
-    private static int skipToCloseTag(String text, int from, String name) {
+    static int skipToCloseTag(String text, int from, String name) {
         String needle = "</" + name;
         int n = text.length();
         for (int i = Math.max(0, from); i <= n - needle.length(); i++) {
@@ -325,7 +325,7 @@ public final class TagRename {
         return true;
     }
 
-    private static boolean isNameChar(char c) {
+    static boolean isNameChar(char c) {
         return Character.isLetterOrDigit(c) || c == '-' || c == '_' || c == '.' || c == ':';
     }
 

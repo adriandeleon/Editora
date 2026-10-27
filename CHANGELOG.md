@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Campbell and the Editora pair are fixed schemes that stay the same whichever editor theme is active. Open
   terminals recolour at once. Settings schema 147 → 148 (additive).
 
+- **XML: Generate Grammar….** Generates an XSD, DTD or RELAX NG grammar from the current XML file and binds the
+  file to it, with "Files without a grammar" left at Nothing (lemminx offered these fixes only on its no-grammar
+  hint). In Structure, a DTD now lists its elements with their attributes, its entities and notations.
+
 ### Changed
 
 - **Terminal: a keystroke no longer clears the selection.** It goes when the text under it is redrawn, so a
@@ -79,6 +83,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The XML settings card has Validation, Formatting (XML server) and Structure headings; the formatting rows say
     they need the XML server, and "Wrap long text: off" no longer claims text is left as it is. The Structure
     element limit applies without the server too.
+- **XML and HTML: typing a close tag by hand no longer renames another tag.** Typing `</b>` before an outer `</p>`
+  gave `<bp>…</b>p>`, and a typo in a closing name (`</itme>`) renamed the open tag. Only the closer of the innermost
+  open element is joined, and a name that turns out different becomes a tag of its own.
+- **XML: Bind to Grammar… on a file that is already bound** says what it is bound to instead of writing a second,
+  duplicate binding; a file with a DOCTYPE binds a DTD by `xml-model`.
+- **XML: Go to Definition on an `xsl:include` or `xsl:import` href** opens the stylesheet, as documented.
+- **A DTD no longer offers an XML tree preview** that called the file not well-formed.
+- **Banner buttons no longer shrink to "…".** Install and Not now on the XML install banner (and every other
+  banner) keep their labels; the message wraps instead, and the XML banner is shorter.
 
 - **Terminal: a selection keeps its text when the terminal is resized.** JediTerm moves a selection itself when a
   shorter window pushes rows into history, and the terminal moved it again: after a splitter drag the highlight sat

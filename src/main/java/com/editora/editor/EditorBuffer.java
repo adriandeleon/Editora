@@ -3226,9 +3226,10 @@ public class EditorBuffer implements TabContent {
         return structuredPreviewEnabled && isStructured() && !hugeFile;
     }
 
-    /** An XML buffer (excluding {@code .svg}, which renders as an image). Reuses the structured-preview gate. */
+    /** An XML document: not an {@code .svg}, which renders as an image, nor a DTD, which has no tree (C11). */
     public boolean isXml() {
-        return "xml".equals(language) && !isSvg();
+        String name = path != null ? String.valueOf(path.getFileName()) : displayName;
+        return "xml".equals(language) && !isSvg() && !com.editora.structured.DtdDeclarations.isDtdFileName(name);
     }
 
     /** Whether the XML DOM-tree preview should be offered (structured-preview feature on, XML, not huge). */

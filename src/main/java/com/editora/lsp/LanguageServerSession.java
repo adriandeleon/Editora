@@ -2334,8 +2334,8 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /**
-     * The document's links ({@code textDocument/documentLink}) — lemminx's schema, DTD, {@code xml-model} and
-     * {@code xsl:include} references (XML review B5). Empty when not ready, unsupported or on error.
+     * The document's links ({@code textDocument/documentLink}) — lemminx's schema, DTD and {@code xml-model}
+     * references (XML review B5; it has none for {@code xsl:include}). Empty when not ready, unsupported or on error.
      */
     CompletableFuture<List<org.eclipse.lsp4j.DocumentLink>> documentLinks(String uri) {
         ServerCapabilities c = capabilities;
