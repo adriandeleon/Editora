@@ -428,7 +428,7 @@ launched on the Java its installed bundles require (`JavaRuntimes.serverMinMajor
 said `ServiceReady` itself (it is still importing) a joining window is told "Starting", not the handshake's ready.
 Go to Super Method (`LspCoordinator.gotoSuperMethod`) finds the member at the caret in `MemberSpan`s (whole ranges,
 every child kept, unlike the Structure outline), reads lambdas and `super(...)` calls with `JavaMembers`, and walks
-the type hierarchy (`SuperWalk`) for what `java/findLinks` misses: findLinks answers first and is exact for a class's
+the type hierarchy (`SuperMethodWalk`) for what `java/findLinks` misses: findLinks answers first and is exact for a class's
 method (empty means none: a static, private or overloading method, unless it is marked `@Override`: findLinks misses
 an inner class of a generic class), but skips interface methods, a second interface and some anonymous classes. The
 walk matches override-equivalent signatures (`JavaMembers.overridden`: parameter types, a type variable matching any
