@@ -53,6 +53,19 @@ final class StructureOutline {
         };
     }
 
+    /**
+     * As {@link #fromLsp(List)} for a document in {@code language}: an XML document's outline is tidied (no
+     * "Grammars" pseudo-rows, element rows named by their {@code name}/{@code id}/{@code match} attribute — see
+     * {@link XmlOutline#tidyLsp}), reading the document's lines through {@code lineAt}.
+     */
+    static List<StructureNode> fromLsp(
+            List<SymbolNode> symbols,
+            @Nullable String language,
+            java.util.function.IntFunction<String> lineAt,
+            int lineCount) {
+        return "xml".equals(language) ? XmlOutline.tidyLsp(symbols, lineAt, lineCount) : fromLsp(symbols);
+    }
+
     /** Converts the LSP symbol tree into structure nodes (region-less; navigation uses the symbol line). */
     static List<StructureNode> fromLsp(List<SymbolNode> symbols) {
         List<StructureNode> out = new ArrayList<>();
@@ -171,6 +184,9 @@ final class StructureOutline {
         List<Region> regions = new ArrayList<>(new LinkedHashSet<>(src.regions()));
         if ("clojure".equals(src.language())) {
             return clojureFormNodes(src.text(), regions);
+        }
+        if ("xml".equals(src.language()) && !src.pom()) {
+            return XmlOutline.build(src.text()); // every element, by qualified name and naming attribute (C4)
         }
         // Sort so each region precedes the regions it contains: by start asc, then by end desc.
         regions.sort(Comparator.comparingInt(Region::startLine)
