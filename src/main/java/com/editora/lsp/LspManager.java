@@ -587,8 +587,6 @@ public final class LspManager {
     private static final java.util.Set<String> XML_GRAMMAR_EXTENSIONS =
             java.util.Set.of("xsd", "dtd", "rng", "rnc", "ent", "mod");
 
-    /** The plain XML server's id (lemminx). */
-
     /** Whether a file is one an XML server revalidates its documents against when it changes (XML review B9). */
     static boolean xmlGrammarFile(Path file) {
         Path name = file.getFileName();

@@ -87,9 +87,17 @@ public final class XmlServerInstall {
      * folder), which the setting need not hold — rather than another server it fell back to. Pure.
      */
     public static boolean isNativeInstall(@Nullable String installedCommand) {
-        Path exe = executable(installedCommand);
-        Path parent = exe == null ? null : exe.getParent();
-        return parent != null && parent.endsWith(Path.of(InstallCatalog.LEMMINX_DIR));
+        if (installedCommand == null || installedCommand.isBlank()) {
+            return false;
+        }
+        List<String> argv = com.editora.run.ProgramArgs.commandLine(installedCommand);
+        try {
+            // the folder alone decides, so a path need not be absolute on this OS (a POSIX path on Windows)
+            Path parent = argv.isEmpty() ? null : Path.of(argv.get(0)).getParent();
+            return parent != null && parent.endsWith(Path.of(InstallCatalog.LEMMINX_DIR));
+        } catch (InvalidPathException e) {
+            return false;
+        }
     }
 
     private static boolean staleOwnPath(String raw, @Nullable Path configDir) {
