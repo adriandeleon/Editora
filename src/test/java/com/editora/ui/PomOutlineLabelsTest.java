@@ -72,4 +72,28 @@ class PomOutlineLabelsTest {
         assertEquals("dependency org.junit.jupiter:junit-jupiter-api", label("dependency", 2, -1));
         assertEquals("profile", label("profile", 25, -1), "past the end: nothing found, no exception");
     }
+
+    /** Review 2, E4: the Maven server's element-named symbols get the pom-aware labels too. */
+    @org.junit.jupiter.api.Test
+    void theServersOutlineOfAPomIsLabelledLikeTheHeuristicOne() {
+        java.util.List<String> lines = java.util.List.of(
+                "<project>",
+                "  <dependencies>",
+                "    <dependency>",
+                "      <groupId>org.slf4j</groupId>",
+                "      <artifactId>slf4j-api</artifactId>",
+                "    </dependency>",
+                "  </dependencies>",
+                "</project>");
+        var dep = new com.editora.lsp.SymbolNode("dependency", "", "Field", 2, 5, java.util.List.of());
+        var deps = new com.editora.lsp.SymbolNode("dependencies", "", "Field", 1, 6, java.util.List.of(dep));
+        var project = new com.editora.lsp.SymbolNode("project", "", "Field", 0, 7, java.util.List.of(deps));
+        var pom = StructureOutline.fromLsp(java.util.List.of(project), "xml", true, lines::get, lines.size());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "dependency org.slf4j:slf4j-api",
+                pom.get(0).children().get(0).children().get(0).label());
+        var plain = StructureOutline.fromLsp(java.util.List.of(project), "xml", false, lines::get, lines.size());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "dependency", plain.get(0).children().get(0).children().get(0).label(), "not a pom: as it was");
+    }
 }

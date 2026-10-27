@@ -183,9 +183,9 @@ class InstallCoordinatorFxTest {
             Path dest = rig.dir("plugins/lsp/maven");
             assertEquals("1", Files.readString(dest.resolve("lemminx.jar")));
             assertEquals(
-                    InstallCatalog.jvmClasspathCommand(dest, InstallCatalog.LEMMINX_MAIN_CLASS),
+                    "",
                     rig.host.settings.getMavenPomLspCommand(),
-                    "the launch command is saved, so the server is found without a restart");
+                    "Editora's own bundle needs no setting: a blank command runs it, so Reset keeps it (review 2, A3)");
             assertEquals(1, rig.window.redetected);
             String name = tr("install.lang.maven-pom");
             assertEquals(
@@ -244,7 +244,7 @@ class InstallCoordinatorFxTest {
             rig.settle();
 
             assertEquals(List.of(false, true), rig.outcomes);
-            assertFalse(rig.host.settings.getMavenPomLspCommand().isEmpty());
+            assertTrue(Files.isDirectory(rig.dir("plugins/lsp/maven")), "installed where a blank command finds it");
         }
     }
 

@@ -84,10 +84,16 @@ class XmlServerTest {
     }
 
     @Test
-    void onlyTheXmlServerIsToldItMayRegisterCommandsDynamically() {
+    void onlyTheLemminxServersAreToldTheyMayRegisterCommandsDynamically() {
         var xml = LanguageServerSession.clientCapabilities("xml").getWorkspace().getExecuteCommand();
         assertNotNull(xml);
         assertEquals(Boolean.TRUE, xml.getDynamicRegistration());
+        // the pom server is lemminx too: without it "XML: Revalidate File" could not run on a pom (review 2, D15)
+        var pom = LanguageServerSession.clientCapabilities("maven-pom")
+                .getWorkspace()
+                .getExecuteCommand();
+        assertNotNull(pom);
+        assertEquals(Boolean.TRUE, pom.getDynamicRegistration());
         assertNull(
                 LanguageServerSession.clientCapabilities("java").getWorkspace().getExecuteCommand());
         assertNotNull(

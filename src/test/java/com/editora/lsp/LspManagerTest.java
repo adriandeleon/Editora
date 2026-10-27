@@ -120,8 +120,13 @@ class LspManagerTest {
         assertEquals(Map.of("semanticTokens", true), LspManager.initOptionsFor("go", List.of()));
         assertEquals(LspManager.javaInitOptions(List.of()), LspManager.initOptionsFor("java", List.of()));
         // maven-pom (lemminx-maven): turn the extension on with the heavy Central index disabled (local ~/.m2).
+        // It is lemminx too: the same protocol extensions as the XML server (review 2, D15).
         assertEquals(
-                Map.of("settings", Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", true))))),
+                Map.of(
+                        "extendedClientCapabilities",
+                        XmlServer.extendedClientCapabilities(),
+                        "settings",
+                        Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", true))))),
                 LspManager.initOptionsFor("maven-pom", List.of()));
         assertNull(LspManager.initOptionsFor("python", List.of()));
         assertNull(LspManager.initOptionsFor("typescript", List.of()));

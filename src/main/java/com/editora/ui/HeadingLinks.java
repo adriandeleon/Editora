@@ -143,6 +143,22 @@ final class HeadingLinks {
             Function<Path, @Nullable EditorBuffer> openBuffer,
             Jump jump,
             Consumer<String> status) {
+        int[] place = linePlace(fragment);
+        if (place != null) {
+            // #L28,22 — a line (and column), as a language server's hover links name a place; a Markdown heading
+            // that happens to answer to the same fragment still wins
+            int heading = file == null
+                    ? clicked.isMarkdown() ? MarkdownAnchors.lineOf(clicked.getContent(), fragment) : -1
+                    : lineIn(file, openBuffer.apply(file), fragment);
+            if (heading < 0) {
+                if (file == null && clicked.getPath() == null) {
+                    clicked.jumpToLine(place[0]);
+                } else {
+                    jump.to(file == null ? clicked.getPath() : file, place[0], place[1]);
+                }
+                return;
+            }
+        }
         if (file == null) {
             int line = clicked.isMarkdown() ? MarkdownAnchors.lineOf(clicked.getContent(), fragment) : -1;
             if (line >= 0 && clicked.getPath() == null) {
@@ -171,6 +187,32 @@ final class HeadingLinks {
                 status.accept(tr("status.link.noAnchor", "#" + fragment));
             }
         });
+    }
+
+    /** {@code #L<line>[,<column>]}, optionally followed by a range end ({@code -L28,30}), 1-based. */
+    private static final java.util.regex.Pattern LINE_FRAGMENT =
+            java.util.regex.Pattern.compile("L(\\d{1,9})(?:[,:C](\\d{1,9}))?(?:-L?\\d{1,9}(?:[,:C]\\d{1,9})?)?");
+
+    /**
+     * The 0-based {@code {line, column}} a {@code L<line>[,<column>]} fragment names (lemminx-maven's "managed in
+     * …#L28,22-L28,22", GitHub's {@code #L28}), or null for any other fragment. The hover link opened the parent
+     * pom at its top (review 2, E7). Pure.
+     */
+    static int @Nullable [] linePlace(@Nullable String fragment) {
+        if (fragment == null) {
+            return null;
+        }
+        java.util.regex.Matcher m = LINE_FRAGMENT.matcher(fragment.strip());
+        if (!m.matches()) {
+            return null;
+        }
+        try {
+            int line = Math.max(0, Integer.parseInt(m.group(1)) - 1);
+            int column = m.group(2) == null ? 0 : Math.max(0, Integer.parseInt(m.group(2)) - 1);
+            return new int[] {line, column};
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /** The line {@code fragment} names in {@code file}: from its open buffer (unsaved edits count), else from disk. */

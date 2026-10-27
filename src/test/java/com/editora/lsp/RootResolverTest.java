@@ -258,6 +258,28 @@ class RootResolverTest {
         assertEquals(proj.toAbsolutePath().normalize(), RootResolver.outermostContiguous(proj, "pom.xml", null, home));
     }
 
+    /** A reactor beside the open project widens like a loose one: one server for it, not one per module (review 2 A4). */
+    @Test
+    void aReactorOutsideTheOpenProjectStillWidensToItsTop(@TempDir Path tmp) throws IOException {
+        Path project = Files.createDirectories(tmp.resolve("project"));
+        Files.createFile(project.resolve("pom.xml"));
+        Path rx = Files.createDirectories(tmp.resolve("loose").resolve("rx"));
+        Files.createFile(rx.resolve("pom.xml"));
+        Path mod = Files.createDirectories(rx.resolve("mod"));
+        Files.createFile(mod.resolve("pom.xml"));
+
+        Path top = rx.toAbsolutePath().normalize();
+        assertEquals(top, RootResolver.outermostContiguous(mod, "pom.xml", project, null));
+        assertEquals(top, RootResolver.outermostContiguous(rx, "pom.xml", project, null));
+        // inside the project the bound still holds, though the project's own parent has a pom
+        Files.createFile(tmp.resolve("pom.xml"));
+        Path inner = Files.createDirectories(project.resolve("inner"));
+        Files.createFile(inner.resolve("pom.xml"));
+        assertEquals(
+                project.toAbsolutePath().normalize(),
+                RootResolver.outermostContiguous(inner, "pom.xml", project, null));
+    }
+
     /** One jdtls per Maven reactor or Gradle build, not per module, outside a project too (Java review C10). */
     @org.junit.jupiter.api.Test
     void javaRootsWidenToTheirBuild(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {

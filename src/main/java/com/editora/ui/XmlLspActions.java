@@ -18,6 +18,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.XmlGrammarBinding;
 import com.editora.lsp.XmlServer;
+import com.editora.lsp.XmlServerSettings;
 import com.google.gson.JsonElement;
 import org.jspecify.annotations.Nullable;
 
@@ -98,7 +99,7 @@ final class XmlLspActions {
         if (b == null || path == null) {
             return null;
         }
-        if (!XmlServer.isXml(lsp.managedServerId(path))) {
+        if (!XmlServerSettings.isLemminx(lsp.managedServerId(path))) { // a pom on the Maven server too (D15)
             host.setStatus(tr("status.xml.notXmlServer"));
             return null;
         }
@@ -249,7 +250,7 @@ final class XmlLspActions {
     /** Takes over a picked code action whose command is a client command ("Bind to existing grammar/schema"). */
     boolean runsCodeAction(Path path, LspManager.CodeActionItem item) {
         String command = LspManager.commandIdOf(item.raw());
-        if (!XmlServer.BINDING_WIZARD.equals(command) || !XmlServer.isXml(lsp.managedServerId(path))) {
+        if (!XmlServer.BINDING_WIZARD.equals(command) || !XmlServerSettings.isLemminx(lsp.managedServerId(path))) {
             return false;
         }
         bindingWizard(path);
@@ -261,7 +262,7 @@ final class XmlLspActions {
      * answers null, which is all lemminx expects of these.
      */
     CompletableFuture<Object> clientCommand(String serverId, String command, List<Object> arguments) {
-        if (!XmlServer.isXml(serverId)) {
+        if (!XmlServerSettings.isLemminx(serverId)) {
             return CompletableFuture.completedFuture(null);
         }
         List<JsonElement> args = arguments.stream().map(LspManager::asJson).toList();

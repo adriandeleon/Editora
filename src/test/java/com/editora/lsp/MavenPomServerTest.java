@@ -96,4 +96,44 @@ class MavenPomServerTest {
         assertEquals("abc", MavenPomServer.elementPrefix("abc", 99));
         assertEquals("", MavenPomServer.elementPrefix(null, 3));
     }
+
+    /** Review 2 / Maven C20: a source that is the pom's URI reads as the server's name. */
+    @Test
+    void aDiagnosticSourceThatIsAUriBecomesTheServerName() {
+        LspDiagnostic d = new LspDiagnostic(
+                1,
+                0,
+                1,
+                4,
+                LspDiagnostic.Severity.WARNING,
+                "Duplicating managed version 2.0.17 for slf4j-api",
+                null,
+                "file:///home/u/proj/core/pom.xml",
+                null,
+                false,
+                false);
+        assertEquals(
+                "lemminx-maven",
+                MavenPomServer.adjustDiagnostics("lemminx-maven", List.of(d))
+                        .get(0)
+                        .source());
+        LspDiagnostic named =
+                new LspDiagnostic(1, 0, 1, 4, LspDiagnostic.Severity.WARNING, "m", null, "xml", null, false, false);
+        assertSame(
+                named,
+                MavenPomServer.adjustDiagnostics("lemminx-maven", List.of(named))
+                        .get(0));
+    }
+
+    /** Review 2, E6: a plugin's "managed in" link carries the project folder and the parent's URI; the last wins. */
+    @Test
+    void aDoubledFileUriInAHoverLinkIsCutToTheLastOne() {
+        String doubled = "**The artifact is managed in [g:a:1](file:/home/u/proj/file:/home/u/proj/reactor/pom.xml)**";
+        assertEquals(
+                "**The artifact is managed in [g:a:1](file:/home/u/proj/reactor/pom.xml)**",
+                MavenPomServer.fixHoverLinks(doubled));
+        String fine = "[g:a:1](file:/home/u/proj/reactor/pom.xml#L28,22-L28,22) and [web](https://example.com/a)";
+        assertEquals(fine, MavenPomServer.fixHoverLinks(fine));
+        assertEquals("", MavenPomServer.fixHoverLinks(null));
+    }
 }

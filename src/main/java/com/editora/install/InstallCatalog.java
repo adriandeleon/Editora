@@ -160,6 +160,12 @@ public final class InstallCatalog {
     public static final String LEMMINX_MAVEN_VERSION = "0.12.0";
 
     /**
+     * What the pom.xml server's install downloads in MB, rounded: the lemminx-maven bundle from the Eclipse
+     * repository plus {@link #LEMMINX_MAVEN_EXTRA_JARS} from Maven Central (16.1 MB in all for 0.12.0).
+     */
+    public static final int LEMMINX_MAVEN_DOWNLOAD_MB = 16;
+
+    /**
      * The lemminx-maven "zip with dependencies" — a single self-contained bundle (~10 MB) holding lemminx core
      * ({@code org.eclipse.lemminx}), the Maven extension, the Maven resolver/embedder deps, and lsp4j. Hosted on
      * Eclipse's own repository (lemminx-maven is published to neither Maven Central nor GitHub release assets).
@@ -548,7 +554,7 @@ public final class InstallCatalog {
                         null,
                         LEMMINX_MAVEN_ZIP_URL,
                         false,
-                        "plugins/lsp/maven",
+                        LEMMINX_MAVEN_DIR,
                         null)));
             // --- clojure-lsp: a pinned GraalVM native binary per OS/arch (no JVM needed) ---
             case "clojure" ->
@@ -926,6 +932,9 @@ public final class InstallCatalog {
 
     /** Where Editora installs lemminx, relative to the config dir. */
     public static final String LEMMINX_DIR = "plugins/lsp/xml";
+
+    /** Where the pom.xml server's bundle (Java lemminx + lemminx-maven) is extracted, under the config dir. */
+    public static final String LEMMINX_MAVEN_DIR = "plugins/lsp/maven";
 
     private static final String LEMMINX_BASE =
             "https://github.com/redhat-developer/vscode-xml/releases/download/" + LEMMINX_VERSION + "/lemminx-";

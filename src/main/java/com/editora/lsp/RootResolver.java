@@ -81,7 +81,7 @@ public final class RootResolver {
     /**
      * The outermost directory of the contiguous chain of {@code marker}-bearing folders that {@code root}
      * belongs to: while the parent folder also holds {@code marker} (and is neither too broad nor outside
-     * {@code projectRoot}, when given), step up. A Maven reactor's module pom thus resolves to the reactor
+     * {@code projectRoot}, when given and {@code root} lies in it), step up. A Maven reactor's module pom thus resolves to the reactor
      * root — the same "contiguous chain" {@code MavenReactor} uses — and one server serves every module
      * (Maven review C11). {@code root} itself is returned when it has no marker or no marker-bearing parent.
      */
@@ -130,8 +130,13 @@ public final class RootResolver {
         if (root == null || marker == null || !Files.isRegularFile(root.resolve(marker))) {
             return root;
         }
-        Path pr = projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
         Path current = root.toAbsolutePath().normalize();
+        // The project bounds the walk only for a root inside it: a reactor beside the project (a second checkout,
+        // a library) is walked up like any loose one, or each of its modules got a server (review 2, A4).
+        Path pr = projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
+        if (pr != null && !current.startsWith(pr)) {
+            pr = null;
+        }
         for (int hops = 0; hops < 32; hops++) {
             Path parent = current.getParent();
             if (parent == null

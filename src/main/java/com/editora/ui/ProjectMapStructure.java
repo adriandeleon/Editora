@@ -22,6 +22,7 @@ import javafx.application.Platform;
 
 import com.editora.config.PathDisplay;
 import com.editora.lsp.SymbolNode;
+import com.editora.maven.PomFiles;
 import com.editora.text.FoldRegions.Region;
 import org.jspecify.annotations.Nullable;
 
@@ -450,12 +451,13 @@ final class ProjectMapStructure {
         List<StructureNode> roots;
         List<String> lines = List.of(text.split("\n", -1));
         try {
+            String language = com.editora.text.LanguageRegistry.forFileName(PathDisplay.fileName(file));
+            boolean pom = "xml".equals(language)
+                    && PomFiles.isPom(
+                            PathDisplay.fileName(file),
+                            text.substring(0, Math.min(text.length(), PomFiles.SNIFF_CHARS)));
             roots = server != null
-                    ? StructureOutline.fromLsp(
-                            server,
-                            com.editora.text.LanguageRegistry.forFileName(PathDisplay.fileName(file)),
-                            lines::get,
-                            lines.size())
+                    ? StructureOutline.fromLsp(server, language, pom, lines::get, lines.size())
                     : StructureOutline.build(StructureOutline.Source.file(PathDisplay.fileName(file), text)
                             .analyzed());
         } catch (RuntimeException | LinkageError failed) {

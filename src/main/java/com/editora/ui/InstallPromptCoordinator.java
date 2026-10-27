@@ -98,6 +98,12 @@ final class InstallPromptCoordinator {
             buffer.showInstallBar(true);
             return;
         }
+        // A pom.xml prefers the Maven-aware server (JVM lemminx + lemminx-maven). When that one is missing, the pom
+        // is served by the plain XML server, so the "already served" check below would hide the offer for good —
+        // it is asked first (review 2, A1/E2).
+        if (offerPomServer(buffer)) {
+            return;
+        }
         // A live LSP session already serving this file ⇒ its server is present; never nag.
         if (host.lspCoordinator().isManaged(buffer.getPath())) {
             buffer.showInstallBar(false);
@@ -122,26 +128,6 @@ final class InstallPromptCoordinator {
                     "lang:" + l.name(),
                     tr("install.banner.message", tr("install.lang." + l.name().toLowerCase(java.util.Locale.ROOT))),
                     cb -> host.installCoordinator().installSupport(l, cb));
-            return;
-        }
-        // A pom.xml prefers the Maven-aware server (JVM lemminx + lemminx-maven) — offer *that* when it's
-        // enabled but not installed, rather than the native lemminx the generic branch below would pick (which
-        // gives base XML but no dependency/plugin/GAV completion — the whole point of opening this banner).
-        String pomServer = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;
-        boolean isPom = buffer.getPath() != null
-                && buffer.getPath().getFileName() != null
-                && com.editora.lsp.LspServerRegistry.isPomFile(
-                        buffer.getPath().getFileName().toString());
-        if (isPom
-                && host.lspEnabled()
-                && host.lspCoordinator().serverEnabled(pomServer)
-                && host.lspCoordinator().isServerMissing(pomServer)
-                && com.editora.install.InstallCatalog.installableServerIds().contains(pomServer)) {
-            offerInstall(
-                    buffer,
-                    pomServer,
-                    tr("install.banner.serverMessage", host.installCoordinator().serverName(pomServer)),
-                    cb -> host.installCoordinator().installServer(pomServer, cb));
             return;
         }
         // …then the LSP-only servers (json/bash/yaml/dockerfile/toml/typst/…). This offers the *language
@@ -172,6 +158,45 @@ final class InstallPromptCoordinator {
             return;
         }
         buffer.showInstallBar(false);
+    }
+
+    /**
+     * The pom.xml server's own offer, made whether or not the plain XML server already serves the pom: Install
+     * (with what it adds and downloads) when the Maven server is switched on and not installed, or Settings… when
+     * the user's own command for it is missing (Install would overwrite it). Not for a pom kept on the plain XML
+     * server because its folder is not trusted: Installing would change nothing there, and the trust offer is
+     * shown instead. True when this decided the banner.
+     */
+    private boolean offerPomServer(EditorBuffer buffer) {
+        String pomServer = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;
+        java.nio.file.Path path = buffer.getPath();
+        boolean isPom = path != null
+                && path.getFileName() != null
+                && com.editora.lsp.LspServerRegistry.isPomFile(
+                        path.getFileName().toString());
+        LspCoordinator lsp = host.lspCoordinator();
+        if (!isPom
+                || !host.lspEnabled()
+                || !lsp.serverEnabled(pomServer)
+                || !lsp.isServerMissing(pomServer)
+                || !com.editora.install.InstallCatalog.installableServerIds().contains(pomServer)
+                || lsp.pomWithheldUntrusted(buffer)) {
+            return false;
+        }
+        String custom = lsp.customServerCommand(pomServer);
+        if (custom != null) {
+            offerSettings(buffer, pomServer, custom);
+        } else {
+            offerInstall(
+                    buffer,
+                    pomServer,
+                    tr(
+                            "install.banner.mavenPomServer",
+                            com.editora.install.InstallCatalog.LEMMINX_MAVEN_VERSION,
+                            com.editora.install.InstallCatalog.LEMMINX_MAVEN_DOWNLOAD_MB),
+                    cb -> host.installCoordinator().installServer(pomServer, cb));
+        }
+        return true;
     }
 
     /**
