@@ -1478,6 +1478,9 @@ public final class LspManager {
         return Map.copyOf(out);
     }
 
+    /** The version {@code didOpen} gives every document ({@link LanguageServerSession}); later ones count up. */
+    static final int FIRST_DOCUMENT_VERSION = 1;
+
     /** The no-I/O half of planning: the mapped edit with every server-open target's request-time text
      *  attached, plus the targets the server did not have open (still to be checked against the disk). */
     record EditDraft(WorkspaceEditMapper.Mapped mapped, List<Path> closedTargets) {}
@@ -1509,6 +1512,16 @@ public final class LspManager {
             if (expected == null && created.contains(com.editora.config.PathKeys.key(fileEdit.file()))) {
                 expected = "";
                 version = null;
+            }
+            if (version != null && version < FIRST_DOCUMENT_VERSION) {
+                // A version below the first one this client sends names none of its documents: the server computed
+                // this file's edit from the disk, not from the text it was sent. lemminx-maven's "Extract as new
+                // property in parent" addresses the parent pom so even while it is open — every such edit was
+                // refused, and applied to unsaved text it would land at the wrong lines. It is planned as a closed
+                // file's edit: applied when the file is saved and unchanged on disk since the request (review 2, E5).
+                edits.add(new WorkspaceEditMapper.FileEdit(fileEdit.file(), fileEdit.edits(), null, null, null));
+                closedTargets.add(fileEdit.file());
+                continue;
             }
             if (expected != null) {
                 edits.add(new WorkspaceEditMapper.FileEdit(fileEdit.file(), fileEdit.edits(), version, expected, null));
@@ -4278,7 +4291,10 @@ public final class LspManager {
                         Platform.runLater(() -> onFailure.accept(why));
                         return;
                     }
-                    String text = error == null ? hoverText(hover) : "";
+                    String raw = error == null ? hoverText(hover) : "";
+                    String text = LspServerRegistry.MAVEN_POM_SERVER_ID.equals(s.serverId())
+                            ? MavenPomServer.fixHoverLinks(raw) // a plugin's "managed in" link (review 2, E6)
+                            : raw;
                     Platform.runLater(() -> cb.accept(text));
                 });
     }
@@ -5321,8 +5337,11 @@ public final class LspManager {
             // lemminx's protocol extensions Editora carries out (XML review D6). The xml settings object is
             // the Settings → LSP → XML section's (merge it in beside this key).
             case XmlServer.SERVER_ID -> Map.of("extendedClientCapabilities", XmlServer.extendedClientCapabilities());
+            // The pom server is lemminx with the Maven extension: the same protocol extensions (review 2, D15).
             case LspServerRegistry.MAVEN_POM_SERVER_ID ->
                 Map.of(
+                        "extendedClientCapabilities",
+                        XmlServer.extendedClientCapabilities(),
                         "settings",
                         Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", !mavenCentralIndex)))));
             default -> null;
@@ -7004,7 +7023,7 @@ public final class LspManager {
      */
     public void xmlAssociateGrammar(Path file, Path grammar, String bindingType, Consumer<Boolean> cb) {
         LanguageServerSession s = sessionFor(file);
-        if (s == null || !XmlServer.isXml(s.serverId())) {
+        if (s == null || !XmlServerSettings.isLemminx(s.serverId())) {
             Platform.runLater(() -> cb.accept(false));
             return;
         }

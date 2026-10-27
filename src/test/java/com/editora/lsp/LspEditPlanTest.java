@@ -140,4 +140,43 @@ class LspEditPlanTest {
         assertNull(WorkspaceEditMapper.unresolvedUri(
                 LemminxPayloads.generateDtdAndBind(Path.of("/project").toAbsolutePath()), WireUris.LOCAL::toPath));
     }
+
+    /**
+     * Review 2, E5: lemminx-maven's "Extract as new property in parent" names the open parent pom as version 0 — a
+     * version this client never sends, computed from the disk. It is planned as a closed file's edit (applied only
+     * while the saved file is unchanged), not refused for its version nor applied to unsaved text.
+     */
+    @Test
+    void aVersionZeroOnAnOpenDocumentIsPlannedAsADiskEdit() {
+        Path parent = Path.of("/proj/reactor/pom.xml").toAbsolutePath();
+        Path core = Path.of("/proj/reactor/core/pom.xml").toAbsolutePath();
+        var basis = new LspManager.EditBasis(Map.of(parent, "<project/>", core, "<project/>"), 1_000, WireUris.LOCAL);
+        var edit = new org.eclipse.lsp4j.WorkspaceEdit();
+        edit.setDocumentChanges(List.of(
+                org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(new org.eclipse.lsp4j.TextDocumentEdit(
+                        new org.eclipse.lsp4j.VersionedTextDocumentIdentifier(
+                                parent.toUri().toString(), 0),
+                        List.of(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(new org.eclipse.lsp4j.TextEdit(
+                                new org.eclipse.lsp4j.Range(
+                                        new org.eclipse.lsp4j.Position(0, 9), new org.eclipse.lsp4j.Position(0, 9)),
+                                "<p>1</p>"))))),
+                org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(new org.eclipse.lsp4j.TextDocumentEdit(
+                        new org.eclipse.lsp4j.VersionedTextDocumentIdentifier(
+                                core.toUri().toString(), 2),
+                        List.of(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(new org.eclipse.lsp4j.TextEdit(
+                                new org.eclipse.lsp4j.Range(
+                                        new org.eclipse.lsp4j.Position(0, 0), new org.eclipse.lsp4j.Position(0, 0)),
+                                "x")))))));
+
+        var draft = LspManager.draftWorkspaceEdit(edit, basis);
+
+        assertNotNull(draft);
+        assertEquals(List.of(parent), draft.closedTargets(), "planned against the disk, not the open text");
+        var onParent = draft.mapped().edits().get(0);
+        assertNull(onParent.version());
+        assertNull(onParent.expectedText());
+        var onCore = draft.mapped().edits().get(1);
+        assertEquals(2, onCore.version(), "a real version still guards its document");
+        assertEquals("<project/>", onCore.expectedText());
+    }
 }

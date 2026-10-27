@@ -896,7 +896,7 @@ final class LanguageServerSession implements LanguageClient {
      */
     static ClientCapabilities clientCapabilities(@Nullable String serverId) {
         ClientCapabilities cc = clientCapabilities();
-        if (XmlServer.isXml(serverId)) {
+        if (XmlServerSettings.isLemminx(serverId)) { // the pom server is lemminx too (review 2, D15)
             cc.getWorkspace().setExecuteCommand(new org.eclipse.lsp4j.ExecuteCommandCapabilities(true));
         }
         return cc;
@@ -3422,7 +3422,7 @@ final class LanguageServerSession implements LanguageClient {
 
     /** Whether {@code command} is one the window carries out for this server (an XML client command). */
     private boolean clientRuns(@Nullable String command) {
-        return XmlServer.isXml(serverId) && command != null && XmlServer.CLIENT_COMMANDS.contains(command);
+        return XmlServerSettings.isLemminx(serverId) && command != null && XmlServer.CLIENT_COMMANDS.contains(command);
     }
 
     /** The commands the server says it executes ({@code executeCommandProvider}). */
