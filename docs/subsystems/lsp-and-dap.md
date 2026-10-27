@@ -669,7 +669,10 @@ stylesheet as `xsl`, as vscode-xml sends them. lemminx keeps its server in the l
 `XmlServer.HEAVY_FILE_LINE_LIMIT` lines. Its protocol extensions: `initializationOptions.extendedClientCapabilities`
 (reference code lenses, the binding wizard, actionable notifications), `xml/actionableNotification` (handled like
 jdtls's), `xml/executeClientCommand` and the binding wizard's quick fix (`XmlLspActions`: `xml.open.uri`,
-`xml.show.references`, `xml.open.binding.wizard` → `xml.associate.grammar.insert`). It registers its commands only
+`xml.show.references`, `xml.open.binding.wizard` → `xml.associate.grammar.insert`; Bind to Grammar… refuses a
+document `XmlGrammarBinding.existing` finds bound). XML: Generate Grammar… sends `XmlServer.noGrammarDiagnostic` at
+the root element as a code-action context (`LspManager.codeActionsFor`), so lemminx's "Generate … and bind" fixes
+come back even while `xml.validation.noGrammar` is `ignore` and the real diagnostic is never reported. It registers its commands only
 for a client with dynamic `workspace/executeCommand` registration, which `clientCapabilities("xml")` alone
 declares; registrations add up (`withCommands`). Go to Definition (and so Ctrl/Cmd-click and Peek) on the XML
 server goes through `XmlServer.definition`: lemminx's own answer, unless that is only the element's other tag, then
