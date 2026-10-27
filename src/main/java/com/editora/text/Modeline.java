@@ -19,6 +19,8 @@ import org.jspecify.annotations.Nullable;
  *       is a shebang.
  * </ul>
  *
+ * <p>When neither names one, a file that opens with an XML declaration ({@code <?xml version="1.0"?>}) is XML.
+ *
  * <p>The answer is a {@link Shebang.Result} — a representative extension — so the caller resolves it exactly as
  * it resolves a shebang, through {@code LanguageRegistry.forFileName("shebang." + extension)}.
  */
@@ -90,6 +92,14 @@ public final class Modeline {
      * for the file: a shebang wins, then a modeline. {@code null} when they name nothing Editora knows.
      */
     public static Shebang.@Nullable Result detect(String head, String tail) {
+        return detect(head, tail, null);
+    }
+
+    /**
+     * As {@link #detect(String, String)} for the file {@code fileName} (a name or path; null when unsaved). A
+     * {@code .txt} file is plain text by its own name, so its content is not sniffed for XML (as in VS Code).
+     */
+    public static Shebang.@Nullable Result detect(String head, String tail, @Nullable Object fileName) {
         List<String> first =
                 head == null ? List.of() : head.lines().limit(VIM_LINES).toList();
         if (!first.isEmpty() && first.get(0).startsWith("#!")) {
@@ -106,7 +116,40 @@ public final class Modeline {
             List<String> all = tail.lines().toList();
             ext = vim(all.subList(Math.max(0, all.size() - VIM_LINES), all.size()));
         }
+        if (ext == null && startsWithXmlDeclaration(head) && !namedAsText(fileName)) {
+            ext = "xml"; // an AndroidManifest-style file with no telling extension (XML review A8)
+        }
         return ext == null ? null : new Shebang.Result(ext, null);
+    }
+
+    /** Whether {@code fileName} ends in {@code .txt} or {@code .text}: a name that says "plain text". */
+    private static boolean namedAsText(@Nullable Object fileName) {
+        String name = fileName == null ? "" : fileName.toString().toLowerCase(Locale.ROOT);
+        return name.endsWith(".txt") || name.endsWith(".text");
+    }
+
+    /**
+     * Whether {@code head} opens with an XML declaration ({@code <?xml} followed by white space or {@code ?>}), after
+     * an optional byte-order mark and blank space — the content sniff IntelliJ and VS Code apply to a file whose
+     * name says nothing. Pure.
+     */
+    public static boolean startsWithXmlDeclaration(@Nullable String head) {
+        if (head == null) {
+            return false;
+        }
+        int i = 0;
+        int n = head.length();
+        if (i < n && head.charAt(i) == '\uFEFF') {
+            i++;
+        }
+        while (i < n && Character.isWhitespace(head.charAt(i))) {
+            i++;
+        }
+        if (!head.startsWith("<?xml", i) || i + 5 >= n) {
+            return false;
+        }
+        char after = head.charAt(i + 5);
+        return Character.isWhitespace(after) || after == '?';
     }
 
     /** The extension an emacs {@code -*- … -*-} line names: the first line, or the second after a shebang. */

@@ -793,7 +793,7 @@ final class LanguageServerSession implements LanguageClient {
         String uri = uris.toWire(DocumentUris.ofDirectory(root));
         ip.setRootUri(uri);
         ip.setWorkspaceFolders(List.of(new WorkspaceFolder(uri, workspaceFolderName(root))));
-        ip.setCapabilities(clientCapabilities());
+        ip.setCapabilities(clientCapabilities(serverId));
         Object initializationOptions = initializationOptionsSupplier.get();
         if (initializationOptions != null) {
             ip.setInitializationOptions(initializationOptions); // jdtls: {"bundles":[<java-debug jar>]}
@@ -887,6 +887,20 @@ final class LanguageServerSession implements LanguageClient {
             org.eclipse.lsp4j.SemanticTokenModifiers.Modification,
             org.eclipse.lsp4j.SemanticTokenModifiers.Documentation,
             org.eclipse.lsp4j.SemanticTokenModifiers.DefaultLibrary);
+
+    /**
+     * {@link #clientCapabilities()} as {@code serverId} is told them. lemminx registers its commands
+     * ({@code xml.validation.current.file}, {@code xml.associate.grammar.insert}, …) only with a client that declares
+     * dynamic {@code workspace/executeCommand} registration, and has no static {@code executeCommandProvider}, so
+     * without it none could run (XML review B15). The other servers keep their static command lists.
+     */
+    static ClientCapabilities clientCapabilities(@Nullable String serverId) {
+        ClientCapabilities cc = clientCapabilities();
+        if (XmlServer.isXml(serverId)) {
+            cc.getWorkspace().setExecuteCommand(new org.eclipse.lsp4j.ExecuteCommandCapabilities(true));
+        }
+        return cc;
+    }
 
     /** Package-private for {@code ClientCapabilitiesTest}: what we declare here decides what servers will
      *  do for us, and three separate features have died from a silent change to it (#468, #674, #676). */
@@ -1017,6 +1031,9 @@ final class LanguageServerSession implements LanguageClient {
         var documentSymbol = new org.eclipse.lsp4j.DocumentSymbolCapabilities(true);
         documentSymbol.setHierarchicalDocumentSymbolSupport(true);
         td.setDocumentSymbol(documentSymbol);
+        // Document links (XML review B5): lemminx names the schema a schemaLocation, DOCTYPE or xml-model refers
+        // to; Go to Definition falls back to them for XML. Requested only where that fallback asks.
+        td.setDocumentLink(new org.eclipse.lsp4j.DocumentLinkCapabilities(false, false));
         td.setFormatting(new org.eclipse.lsp4j.FormattingCapabilities(true));
         td.setRangeFormatting(new org.eclipse.lsp4j.RangeFormattingCapabilities(true));
         td.setOnTypeFormatting(new org.eclipse.lsp4j.OnTypeFormattingCapabilities(true));
@@ -2294,6 +2311,34 @@ final class LanguageServerSession implements LanguageClient {
                         .typeDefinition(new org.eclipse.lsp4j.TypeDefinitionParams(doc(uri), pos)));
     }
 
+    /**
+     * The document's links ({@code textDocument/documentLink}) — lemminx's schema, DTD, {@code xml-model} and
+     * {@code xsl:include} references (XML review B5). Empty when not ready, unsupported or on error.
+     */
+    CompletableFuture<List<org.eclipse.lsp4j.DocumentLink>> documentLinks(String uri) {
+        ServerCapabilities c = capabilities;
+        if (!ready() || c == null || c.getDocumentLinkProvider() == null) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return bounded(server().getTextDocumentService()
+                        .documentLink(new org.eclipse.lsp4j.DocumentLinkParams(doc(uri))))
+                .<List<org.eclipse.lsp4j.DocumentLink>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                .exceptionally(t -> List.of());
+    }
+
+    /** A link with its target filled in ({@code documentLink/resolve}); the link itself when that fails. */
+    CompletableFuture<org.eclipse.lsp4j.DocumentLink> resolveDocumentLink(org.eclipse.lsp4j.DocumentLink link) {
+        ServerCapabilities c = capabilities;
+        if (!ready()
+                || c == null
+                || c.getDocumentLinkProvider() == null
+                || !Boolean.TRUE.equals(c.getDocumentLinkProvider().getResolveProvider())) {
+            return CompletableFuture.completedFuture(link);
+        }
+        return bounded(server().getTextDocumentService().documentLinkResolve(link))
+                .handle((resolved, error) -> error == null && resolved != null ? resolved : link);
+    }
+
     /** The declaration of the symbol at a position ({@code textDocument/declaration}); most servers alias
      *  this to definition, but they differ for Java module directives and some forward declarations (#736). */
     CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> declaration(
@@ -2633,6 +2678,10 @@ final class LanguageServerSession implements LanguageClient {
                 if (method == null) {
                     continue; // names neither a registration we hold nor a method: nothing to undo
                 }
+                if ("workspace/executeCommand".equals(method)) {
+                    changed |= reregisterCommands(); // the union of what is still registered (withCommands)
+                    continue;
+                }
                 var replacement = dynamicRegistrations.values().stream()
                         .filter(r -> java.util.Objects.equals(method, r.getMethod()))
                         .findFirst();
@@ -2648,6 +2697,23 @@ final class LanguageServerSession implements LanguageClient {
             refresh("capabilities");
         }
         return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Rebuilds the command list from the registrations left after one was withdrawn: none when every one is gone.
+     * A server that listed commands at initialize keeps its list as it stands.
+     */
+    private boolean reregisterCommands() {
+        if (staticCapabilityMethods.contains("workspace/executeCommand")) {
+            return false;
+        }
+        applyDynamicCapabilitySafely("workspace/executeCommand", null, false);
+        for (var r : List.copyOf(dynamicRegistrations.values())) {
+            if ("workspace/executeCommand".equals(r.getMethod())) {
+                applyDynamicCapabilitySafely(r.getMethod(), r.getRegisterOptions(), true);
+            }
+        }
+        return true;
     }
 
     private void rememberStaticCapabilities() {
@@ -2805,12 +2871,34 @@ final class LanguageServerSession implements LanguageClient {
             case "workspace/symbol" -> c.setWorkspaceSymbolProvider(enabled);
             case "workspace/executeCommand" ->
                 c.setExecuteCommandProvider(
-                        enabled ? dynamicOptions(options, org.eclipse.lsp4j.ExecuteCommandOptions.class) : null);
+                        enabled
+                                ? withCommands(
+                                        c.getExecuteCommandProvider(),
+                                        dynamicOptions(options, org.eclipse.lsp4j.ExecuteCommandOptions.class))
+                                : null);
             default -> {
                 return;
             }
         }
         capabilities = c; // volatile write publishes the mutation to FX-thread feature gates
+    }
+
+    /**
+     * The commands of {@code added} together with those already registered: a server may register its commands in
+     * several registrations (one per extension), and the last one replacing the rest left the others unrunnable.
+     */
+    static org.eclipse.lsp4j.ExecuteCommandOptions withCommands(
+            org.eclipse.lsp4j.@Nullable ExecuteCommandOptions current, org.eclipse.lsp4j.ExecuteCommandOptions added) {
+        if (current == null
+                || current.getCommands() == null
+                || current.getCommands().isEmpty()) {
+            return added;
+        }
+        java.util.LinkedHashSet<String> all = new java.util.LinkedHashSet<>(current.getCommands());
+        if (added.getCommands() != null) {
+            all.addAll(added.getCommands());
+        }
+        return new org.eclipse.lsp4j.ExecuteCommandOptions(List.copyOf(all));
     }
 
     /**
@@ -3234,7 +3322,7 @@ final class LanguageServerSession implements LanguageClient {
                 if (c != null
                         && c.getTitle() != null
                         && c.getCommand() != null
-                        && executable.contains(c.getCommand())) {
+                        && (executable.contains(c.getCommand()) || clientRuns(c.getCommand()))) {
                     runnable.add(c);
                 }
             }
@@ -3257,11 +3345,49 @@ final class LanguageServerSession implements LanguageClient {
                     }
                     for (org.eclipse.lsp4j.Command c : runnable) {
                         if (chosen.equals(c.getTitle())) {
-                            executeCommand(c.getCommand(), c.getArguments() == null ? List.of() : c.getArguments());
+                            List<Object> args = c.getArguments() == null ? List.of() : c.getArguments();
+                            if (clientRuns(c.getCommand())) {
+                                ui.clientCommand(serverId, c.getCommand(), args);
+                            } else {
+                                executeCommand(c.getCommand(), args);
+                            }
                             return;
                         }
                     }
                 });
+    }
+
+    /**
+     * lemminx's {@code xml/actionableNotification} (declared by {@code actionableNotificationSupport}): a message
+     * with commands to offer as buttons — the same shape as jdtls's, answered the same way (XML review D6).
+     */
+    @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("xml/actionableNotification")
+    public void xmlActionableNotification(LanguageActionableNotification notification) {
+        languageActionableNotification(notification);
+    }
+
+    /**
+     * lemminx's {@code xml/executeClientCommand}: an editor action the server (or one of its extensions) asks for,
+     * carried out by the window when it is one of {@link XmlServer#CLIENT_COMMANDS}; any other is answered null, as
+     * the protocol allows a client that does not know it (XML review D6). Before this the request failed with
+     * "method not found".
+     */
+    @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("xml/executeClientCommand")
+    public CompletableFuture<Object> xmlExecuteClientCommand(org.eclipse.lsp4j.ExecuteCommandParams params) {
+        LspClientUi ui = clientUi();
+        if (ui == null || disposed || params == null || params.getCommand() == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return ui.clientCommand(
+                        serverId,
+                        params.getCommand(),
+                        params.getArguments() == null ? List.of() : List.copyOf(params.getArguments()))
+                .exceptionally(t -> null);
+    }
+
+    /** Whether {@code command} is one the window carries out for this server (an XML client command). */
+    private boolean clientRuns(@Nullable String command) {
+        return XmlServer.isXml(serverId) && command != null && XmlServer.CLIENT_COMMANDS.contains(command);
     }
 
     /** The commands the server says it executes ({@code executeCommandProvider}). */

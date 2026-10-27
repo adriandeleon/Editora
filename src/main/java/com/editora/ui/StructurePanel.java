@@ -1483,7 +1483,10 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         if (root.getChildren().isEmpty()) {
             String message = buffer == null
                     ? tr("structure.noFileOpen")
-                    : (q.isEmpty() ? tr("structure.noStructure") : tr("structure.noMatches"));
+                    : !q.isEmpty()
+                            ? tr("structure.noMatches")
+                            // say why a large file has none, not just that (XML review C18)
+                            : tr(buffer.isLargeFile() ? "structure.largeFile" : "structure.noStructure");
             root.getChildren().add(new TreeItem<>(new StructureNode(null, message, null, -1)));
             tree.setRoot(root);
         } else {
