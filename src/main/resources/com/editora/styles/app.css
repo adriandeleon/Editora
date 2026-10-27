@@ -5644,6 +5644,11 @@
     -fx-text-fill: -color-warning-fg;
     -fx-font-weight: bold;
 }
+/* A tab whose program posted a notification (OSC 9 / 777) while it was out of sight; it outranks the bell. */
+.terminal-panel .terminal-tabs > .tab-header-area .tab.terminal-notified .tab-label {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-weight: bold;
+}
 /* The scrollback bar, coloured from the terminal palette rather than the control theme: TerminalView sets
    -terminal-thumb / -terminal-thumb-hover on the bar itself (Termina's rules). */
 .terminal-scroll-bar {

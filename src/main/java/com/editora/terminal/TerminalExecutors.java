@@ -4,7 +4,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.jediterm.terminal.TerminalExecutorServiceManager;
@@ -53,14 +52,16 @@ public final class TerminalExecutors implements TerminalExecutorServiceManager {
         unbounded.shutdown();
     }
 
-    /** Immediate teardown, for closing a session without waiting on queued work. */
+    /**
+     * Immediate teardown, for closing a session without waiting on queued work.
+     *
+     * <p>And without waiting for the threads either. This runs on the FX thread when a tab closes, and it used to
+     * await termination for up to half a second per tab — a stall that closing a window with several terminals
+     * turned into a visible freeze. Nothing needs the threads gone: they are daemons, interrupted here, and whatever
+     * they were doing was for a session that no longer exists.
+     */
     public void shutdownNow() {
         scheduled.shutdownNow();
         unbounded.shutdownNow();
-        try {
-            scheduled.awaitTermination(500, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
     }
 }

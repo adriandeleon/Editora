@@ -807,7 +807,7 @@ class SettingsPagesFxTest {
             java.util.function.Consumer<Path> openFile,
             java.util.function.Consumer<String> openUrl,
             String commit,
-            SettingsWindow.AboutUpdates updates,
+            AboutDialog.Updates updates,
             java.util.function.Consumer<DialogPane> inside) {
         Throwable[] failure = new Throwable[1];
         javafx.application.Platform.runLater(() -> {
@@ -827,7 +827,7 @@ class SettingsPagesFxTest {
                 }
             }
         });
-        SettingsWindow.showAbout(rig.owner, settingsFile, openFile, openUrl, commit, updates);
+        AboutDialog.show(rig.owner, settingsFile, openFile, openUrl, commit, updates);
         if (failure[0] != null) {
             throw new AssertionError(failure[0]);
         }
@@ -837,8 +837,8 @@ class SettingsPagesFxTest {
     private static final long CHECKED_AT = 1_792_800_000_000L;
 
     /** An update check that last answered with {@code status} and never checks again. */
-    private static SettingsWindow.AboutUpdates updates(UpdateStatus status) {
-        return new SettingsWindow.AboutUpdates() {
+    private static AboutDialog.Updates updates(UpdateStatus status) {
+        return new AboutDialog.Updates() {
             @Override
             public UpdateStatus status() {
                 return status;
@@ -877,7 +877,7 @@ class SettingsPagesFxTest {
     void beforeAnyCheckTheAboutPanelClaimsNothingAndCheckNowShowsTheAnswer() throws Exception {
         UpdateStatus[] status = {UpdateStatus.NONE};
         String[] answer = {"offline"};
-        SettingsWindow.AboutUpdates live = new SettingsWindow.AboutUpdates() {
+        AboutDialog.Updates live = new AboutDialog.Updates() {
             @Override
             public UpdateStatus status() {
                 return status[0];

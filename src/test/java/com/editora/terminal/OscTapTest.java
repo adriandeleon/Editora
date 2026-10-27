@@ -21,6 +21,16 @@ class OscTapTest {
         public void promptMark(char kind, String params) {
             seen.add("mark " + kind + (params.isEmpty() ? "" : " " + params));
         }
+
+        @Override
+        public void notification(OscSequences.Notification notification) {
+            seen.add("notify " + notification.title() + "|" + notification.body());
+        }
+
+        @Override
+        public void clipboard(String text) {
+            seen.add("clipboard " + text);
+        }
     };
 
     /** Feeds {@code pieces} one read at a time and returns what came out: text as "text …", events as they are. */
@@ -60,6 +70,20 @@ class OscTapTest {
         assertEquals(
                 List.of("mark A", "text $ ", "mark B", "text ls", "mark C", "text out\r\n", "mark D 1"),
                 run("\u001b]133;A\u0007$ \u001b]133;B\u001b\\ls\u001b]133;C\u0007out\r\n\u001b]133;D;1\u0007"));
+    }
+
+    @Test
+    void aProgramsNotificationsAndClipboardWritesAreTakenOutInOrder() {
+        assertEquals(
+                List.of("text a", "notify |Build finished", "text b", "notify make|done", "clipboard hi", "text c"),
+                run("a\u001b]9;Build finished\u0007b\u001b]777;notify;make;done\u001b\\" + "\u001b]52;c;aGk=\u0007c"));
+    }
+
+    @Test
+    void aProgressBarAClipboardQueryAndBadDataAreTakenOutAndDropped() {
+        // ConEmu's progress bar, a clipboard read (never answered), and data that is not base64: none is an event,
+        // and none reaches the emulator either.
+        assertEquals(List.of("text xyz"), run("x\u001b]9;4;1;50\u0007y\u001b]52;c;?\u0007\u001b]52;c;!!!\u0007z"));
     }
 
     @Test

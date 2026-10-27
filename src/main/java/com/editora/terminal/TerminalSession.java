@@ -27,6 +27,10 @@ public final class TerminalSession {
     private final Thread emulatorThread;
 
     private final TypeAheadOverlay typeAheadOverlay;
+
+    /** What programs have asked of the keyboard with the kitty protocol. */
+    private final KeyboardFlags keyboardFlags = new KeyboardFlags();
+
     private final TerminalTypeAheadManager typeAhead;
     private volatile Runnable onTypeAheadChanged = () -> {};
     private volatile boolean closed;
@@ -51,12 +55,23 @@ public final class TerminalSession {
         typeAhead.setClearPredictionsDebouncer(new com.jediterm.terminal.model.JediTermDebouncerImpl(
                 typeAhead::debounce, TerminalTypeAheadManager.MAX_TERMINAL_DELAY, executors));
         // The manager checks its predictions against what the shell echoed after every chunk of output.
-        starter = new TerminalStarter(
-                terminal,
-                connector,
+        // The kitty keyboard protocol's mode requests are taken out of the stream before JediTerm reads
+        // them as SCORC (see KeyboardModeInterceptor).
+        KeyboardModeInterceptor stream = new KeyboardModeInterceptor(
                 new TtyBasedArrayDataStream(connector, typeAhead::onTerminalStateChanged),
-                typeAhead,
-                executors);
+                new KeyboardModeInterceptor.Listener() {
+                    @Override
+                    public void keyboardMode(char marker, String params) {
+                        byte[] answer = keyboardFlags.apply(marker, params, textBuffer.isUsingAlternateBuffer());
+                        if (answer != null) answerProgram(answer);
+                    }
+
+                    @Override
+                    public void reset() {
+                        keyboardFlags.reset();
+                    }
+                });
+        starter = new TerminalStarter(terminal, connector, stream, typeAhead, executors);
 
         emulatorThread = new Thread(this::runEmulator, "editora-terminal-emulator");
         emulatorThread.setDaemon(true);
@@ -155,6 +170,19 @@ public final class TerminalSession {
     public void sendString(String text) {
         if (closed || text == null || text.isEmpty()) return;
         starter.sendString(text, true);
+    }
+
+    /**
+     * The kitty keyboard flags a program has set on one screen; 0 is the legacy encoding. Each screen keeps its
+     * own, so an editor on the alternate screen can enable the protocol without the shell beneath it seeing it.
+     */
+    public int keyboardFlags(boolean alternateScreen) {
+        return keyboardFlags.current(alternateScreen);
+    }
+
+    /** Sends a reply to a query, the way JediTerm sends its own: not as typing. */
+    private void answerProgram(byte[] answer) {
+        if (!closed) starter.sendBytes(answer, false);
     }
 
     /** Encodes a key using the emulator's current modes (application vs ANSI cursor keys). */

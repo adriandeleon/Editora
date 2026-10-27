@@ -321,7 +321,10 @@ final class TerminalCoordinator {
                 s.isTerminalConfirmClose(),
                 s.isTerminalTypeAhead(),
                 s.isTerminalMacOptionIsMeta(),
-                s.isTerminalConfirmMultilinePaste());
+                s.isTerminalConfirmMultilinePaste(),
+                s.isTerminalCopyOnSelect(),
+                s.isTerminalClipboardWrites(),
+                s.isTerminalNotifications());
     }
 
     /**

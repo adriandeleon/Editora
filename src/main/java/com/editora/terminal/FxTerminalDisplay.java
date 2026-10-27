@@ -150,6 +150,19 @@ public final class FxTerminalDisplay implements TerminalDisplay {
         refreshTitles();
     }
 
+    /** What the shell is running (its first child's name), or empty at an idle prompt; from {@link CwdWatcher}. */
+    private volatile String program = "";
+
+    /** Sets what the shell is running, which the tab title shows before the directory (see {@link TerminalTitle}). */
+    public void setProgram(String program) {
+        this.program = program == null ? "" : program;
+        refreshTitles();
+    }
+
+    public String getProgram() {
+        return program;
+    }
+
     /** The shell's working directory, from {@link CwdWatcher}. */
     public void setCwd(String cwd) {
         this.cwd = cwd == null ? "" : cwd;
@@ -180,7 +193,7 @@ public final class FxTerminalDisplay implements TerminalDisplay {
         Platform.runLater(() -> {
             titlesQueued.set(false);
             windowTitle.set(TerminalTitle.window(shellTitle, cwd, home));
-            tabTitle.set(TerminalTitle.tab(shellTitle, cwd, home));
+            tabTitle.set(TerminalTitle.tab(shellTitle, program, cwd, home));
             tabTooltip.set(TerminalTitle.tooltip(shellTitle, cwd, home));
         });
     }

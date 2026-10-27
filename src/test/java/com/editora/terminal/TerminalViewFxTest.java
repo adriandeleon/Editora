@@ -336,6 +336,11 @@ class TerminalViewFxTest {
 
     private static javafx.scene.input.MouseEvent mouse(
             javafx.event.EventType<javafx.scene.input.MouseEvent> type, double x, double y) {
+        return mouse(type, x, y, false);
+    }
+
+    private static javafx.scene.input.MouseEvent mouse(
+            javafx.event.EventType<javafx.scene.input.MouseEvent> type, double x, double y, boolean alt) {
         return new javafx.scene.input.MouseEvent(
                 type,
                 x,
@@ -346,7 +351,7 @@ class TerminalViewFxTest {
                 1,
                 false,
                 false,
-                false,
+                alt,
                 false,
                 true,
                 false,
@@ -411,7 +416,7 @@ class TerminalViewFxTest {
     }
 
     @Test
-    void selectAllSelectsAndTypingDropsTheSelection() throws Exception {
+    void aSelectionSurvivesTypingAndGoesWhenItsTextIsRewritten() throws Exception {
         open();
         connector.emit("one\r\ntwo\r\n");
         await(() -> screen().contains("two"), "the output");
@@ -420,10 +425,134 @@ class TerminalViewFxTest {
             view.selectAll();
             return view.hasSelection();
         }));
-        assertFalse(fx(() -> {
+        // Typing a command under a selection of the output above it leaves the selection alone.
+        assertTrue(fx(() -> {
             Event.fireEvent(view, typed("x"));
             return view.hasSelection();
         }));
+        // A program redrawing the selected text in place is what drops it: copying it would copy something else.
+        connector.emit("\u001b[1;1HONE");
+        await(() -> screen().startsWith("ONE"), "the first row rewritten");
+        await(() -> !call(view::hasSelection), "the selection dropped with its text");
+    }
+
+    @Test
+    void anAltDragSelectsABlockAndCopiesItOneRowPerLine() throws Exception {
+        open();
+        connector.emit("abcdef\r\nghijkl\r\nmnopqr\r\n");
+        await(() -> screen().contains("mnopqr"), "the output");
+        double cell = fx(view::cellWidth);
+        double row = fx(() -> view.lineHeightForTest());
+        fx(() -> {
+            // From the middle of column 1 on the first row to the boundary after column 3 on the third: columns 1–3.
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_PRESSED, cell * 1.5, row / 2, true));
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_DRAGGED, cell * 4.1, row * 2.5, true));
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_RELEASED, cell * 4.1, row * 2.5, true));
+            return null;
+        });
+        assertEquals("bcd\nhij\nnop", fx(view::selectedText));
+    }
+
+    @Test
+    void aDragHighlightsExactlyWhatItCopies() throws Exception {
+        open();
+        connector.emit("hello world\r\n");
+        await(() -> screen().startsWith("hello world"), "the output");
+        double cell = fx(view::cellWidth);
+        double row = fx(() -> view.lineHeightForTest());
+        fx(() -> {
+            // Press in the "h", release past the middle of the "o": the whole word, no more and no less.
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_PRESSED, cell * 0.2, row / 2));
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_DRAGGED, cell * 4.7, row / 2));
+            Event.fireEvent(view, mouse(javafx.scene.input.MouseEvent.MOUSE_RELEASED, cell * 4.7, row / 2));
+            return null;
+        });
+        assertEquals("hello", fx(view::selectedText));
+    }
+
+    @Test
+    void shiftInsertPastesAndCtrlInsertCopies() throws Exception {
+        open();
+        connector.emit("copied\r\n");
+        await(() -> screen().startsWith("copied"), "the output");
+        fx(() -> {
+            view.selectAll();
+            Event.fireEvent(
+                    view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.INSERT, false, true, false, false));
+            return null;
+        });
+        assertTrue(fx(() -> javafx.scene.input.Clipboard.getSystemClipboard().getString())
+                .startsWith("copied"));
+        connector.clearWritten();
+        fx(() -> {
+            javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+            content.putString("pasted");
+            javafx.scene.input.Clipboard.getSystemClipboard().setContent(content);
+            Event.fireEvent(
+                    view, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.INSERT, true, false, false, false));
+            return null;
+        });
+        await(() -> connector.written().contains("pasted"), "the clipboard pasted");
+        assertFalse(connector.written().contains("[2;2~"), "and no Shift+Insert key sent to the shell");
+    }
+
+    @Test
+    void aProgramThatAsksForTheKittyKeyboardGetsItAndTheShellBeneathDoesNot() throws Exception {
+        open();
+        // Neovim's request on the alternate screen, then its query: the cursor must not move (JediTerm read
+        // CSI > 1 u as SCORC), the query is answered, and Escape is a key of its own.
+        connector.emit("\u001b[?1049h\u001b[>1u\u001b[?u");
+        await(() -> connector.written().contains("\u001b[?1u"), "the query answered with the flags in force");
+        connector.clearWritten();
+        fx(() -> {
+            Event.fireEvent(view, pressed(KeyCode.ESCAPE, false));
+            return null;
+        });
+        await(() -> connector.written().equals("\u001b[27u"), "Escape as a kitty key");
+
+        // Back on the main screen the shell never asked: legacy bytes.
+        connector.emit("\u001b[?1049l");
+        await(() -> !view.getDisplay().isAlternateScreen(), "the main screen");
+        connector.clearWritten();
+        fx(() -> {
+            Event.fireEvent(view, pressed(KeyCode.ESCAPE, false));
+            return null;
+        });
+        await(() -> connector.written().equals("\u001b"), "a plain ESC");
+    }
+
+    @Test
+    void aProgramCanSetTheClipboardUnlessTheSettingSaysNo() throws Exception {
+        open();
+        // "from vim" in base64, as vim's OSC 52 integration sends a yank.
+        connector.emit("\u001b]52;c;ZnJvbSB2aW0=\u0007");
+        await(
+                () -> "from vim"
+                        .equals(call(() -> javafx.scene.input.Clipboard.getSystemClipboard()
+                                .getString())),
+                "the clipboard set");
+        fx(() -> {
+            view.setClipboardWrites(false);
+            return null;
+        });
+        connector.emit("\u001b]52;c;bm90IGFsbG93ZWQ=\u0007marker\r\n");
+        await(() -> screen().contains("marker"), "the output after it");
+        assertEquals(
+                "from vim",
+                fx(() -> javafx.scene.input.Clipboard.getSystemClipboard().getString()));
+    }
+
+    @Test
+    void aProgramsNotificationsReachTheWindowAtMostOnceEveryTwoSeconds() throws Exception {
+        open();
+        List<String> heard = new java.util.concurrent.CopyOnWriteArrayList<>();
+        fx(() -> {
+            view.setOnNotify((title, body, post) -> heard.add(title + "|" + body + "|" + post));
+            return null;
+        });
+        connector.emit("\u001b]777;notify;make;done\u0007\u001b]9;again\u0007");
+        await(() -> heard.size() == 2, "both notifications heard");
+        assertEquals(List.of("make|done|true", "|again|false"), heard, "the second only marks the tab");
     }
 
     @Test

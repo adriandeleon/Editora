@@ -133,4 +133,26 @@ class TerminalTitleTest {
         assertEquals("My Project", TerminalTitle.tab("", "/home/adl/My Project", HOME));
         assertEquals(".config", TerminalTitle.tab("", "/home/adl/.config", HOME));
     }
+
+    // --- the foreground program ---------------------------------------------------------------
+
+    @Test
+    void aRunningProgramNamesTheTabBeforeTheDirectoryDoes() {
+        // Three tabs all reading "Editora" said nothing about which held the editor and which the build.
+        assertEquals("vim", TerminalTitle.tab("", "vim", "/home/adl/src", HOME));
+        assertEquals("ssh", TerminalTitle.tab("", "ssh", HOME, HOME));
+    }
+
+    @Test
+    void theShellsOwnTitleStillComesBeforeTheProgram() {
+        assertEquals("vim README.md", TerminalTitle.tab("vim README.md", "vim", "/home/adl/src", HOME));
+    }
+
+    @Test
+    void withNothingRunningTheDirectoryIsBack() {
+        // Empty is what the watcher reports when the child exits, and it has to restore the tab.
+        assertEquals("src", TerminalTitle.tab("", "", "/home/adl/src", HOME));
+        assertEquals("src", TerminalTitle.tab("", null, "/home/adl/src", HOME));
+        assertEquals("src", TerminalTitle.tab("", "   ", "/home/adl/src", HOME));
+    }
 }
