@@ -4617,13 +4617,29 @@ public final class LspManager {
             int endChar,
             @Nullable List<String> only,
             Consumer<List<CodeActionItem>> cb) {
+        var range = new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
+        requestCodeActions(file, range, contextDiagnostics(rawDiagnosticsFor(file), range), only, cb);
+    }
+
+    /**
+     * The code actions for {@code diagnostic} alone, at its range, as if the server had reported it: lemminx's
+     * generate-a-grammar fixes for a diagnostic its settings keep it from reporting (XML review 2 C8).
+     */
+    public void codeActionsFor(Path file, org.eclipse.lsp4j.Diagnostic diagnostic, Consumer<List<CodeActionItem>> cb) {
+        requestCodeActions(file, diagnostic.getRange(), List.of(diagnostic), null, cb);
+    }
+
+    private void requestCodeActions(
+            Path file,
+            org.eclipse.lsp4j.Range range,
+            List<org.eclipse.lsp4j.Diagnostic> context,
+            @Nullable List<String> only,
+            Consumer<List<CodeActionItem>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
-        var range = new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
-        List<org.eclipse.lsp4j.Diagnostic> context = contextDiagnostics(rawDiagnosticsFor(file), range);
         EditBasis basis = editBasis(s);
         Map<Path, String> expected = basis.documents();
         long sentAt = basis.sentAtMillis();

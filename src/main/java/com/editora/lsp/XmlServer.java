@@ -69,6 +69,43 @@ public final class XmlServer {
 
     private XmlServer() {}
 
+    /**
+     * The diagnostic lemminx reports on a document without a grammar, at the root element's name {@code range}: sent
+     * as a code-action context, it brings lemminx's generate-a-grammar fixes even while "Files without a grammar" is
+     * Nothing and the real one is never reported (XML review 2 C8).
+     */
+    public static org.eclipse.lsp4j.Diagnostic noGrammarDiagnostic(Range range) {
+        var d = new org.eclipse.lsp4j.Diagnostic(range, "No grammar constraints (DTD or XML Schema).");
+        d.setSeverity(org.eclipse.lsp4j.DiagnosticSeverity.Hint);
+        d.setSource("xml");
+        d.setCode(XmlGrammarBinding.NO_GRAMMAR_CODE);
+        return d;
+    }
+
+    /**
+     * Whether a code action from lemminx generates a grammar for a document without one: a fix for its
+     * {@link XmlGrammarBinding#NO_GRAMMAR_CODE} diagnostic that is not "Bind to existing grammar/schema" (a client
+     * command, which XML: Bind to Grammar… already is).
+     */
+    public static boolean generatesGrammar(@Nullable Object raw) {
+        if (!(raw instanceof org.eclipse.lsp4j.CodeAction action) || action.getDiagnostics() == null) {
+            return false;
+        }
+        if (action.getCommand() != null
+                && BINDING_WIZARD.equals(action.getCommand().getCommand())) {
+            return false;
+        }
+        for (org.eclipse.lsp4j.Diagnostic d : action.getDiagnostics()) {
+            if (d != null
+                    && d.getCode() != null
+                    && d.getCode().isLeft()
+                    && XmlGrammarBinding.NO_GRAMMAR_CODE.equals(d.getCode().getLeft())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Whether {@code serverId} is the plain XML server. */
     public static boolean isXml(@Nullable String serverId) {
         return SERVER_ID.equals(serverId);

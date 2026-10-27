@@ -549,7 +549,13 @@ final class LspCoordinator {
         lspManager.setOnDiagnosticsUnchanged(this::diagnosticsUnchanged);
         lspManager.setClientUi(serverPrompts()); // a server's questions (Metals' "Import build?") get asked
         xml = new XmlLspActions(
-                host, lspManager, ops::openAndGoto, this::activeLspBuffer, this::lspPath, () -> findReferences(true));
+                host,
+                lspManager,
+                ops::openAndGoto,
+                this::activeLspBuffer,
+                this::lspPath,
+                () -> findReferences(true),
+                this::applyCodeActionItem);
     }
 
     /** The XML server's commands and client commands (XML review B15, D6). */
@@ -7110,7 +7116,11 @@ final class LspCoordinator {
         if (runRefactorCommand(path, item) || xml.runsCodeAction(path, item)) {
             return; // likewise a refactoring that asks the user where to, or what; or lemminx's binding wizard
         }
-        LspManager.CodeActionItem applied = item;
+        applyCodeActionItem(path, item);
+    }
+
+    /** Applies a code action and says how it went (the popup's pick, or XML: Generate Grammar…'s). */
+    void applyCodeActionItem(Path path, LspManager.CodeActionItem applied) {
         beginReportedEdit();
         lspManager.applyCodeAction(
                 path,

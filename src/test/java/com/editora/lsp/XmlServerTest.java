@@ -182,4 +182,25 @@ class XmlServerTest {
         assertNull(XmlServer.resolveInclude(doc, "common/missing.xsl", WireUris.LOCAL), "no such file");
         assertNull(XmlServer.resolveInclude(doc, "https://example.com/a.xsl", WireUris.LOCAL), "a web address");
     }
+
+    /** XML review 2 C8: the diagnostic that brings lemminx's generate fixes, and which fixes those are. */
+    @Test
+    void generateGrammarFixesAreTheNoGrammarFixesButTheBindingWizard() {
+        Range root = new Range(new Position(1, 1), new Position(1, 7));
+        var d = XmlServer.noGrammarDiagnostic(root);
+        assertEquals("NoGrammarConstraints", d.getCode().getLeft());
+        assertEquals("xml", d.getSource());
+        assertEquals(root, d.getRange());
+
+        var generate =
+                new org.eclipse.lsp4j.CodeAction("Generate 'config.xsd' and bind with xsi:noNamespaceSchemaLocation");
+        generate.setDiagnostics(List.of(d));
+        assertTrue(XmlServer.generatesGrammar(generate));
+        var wizard = new org.eclipse.lsp4j.CodeAction("Bind to existing grammar/schema");
+        wizard.setDiagnostics(List.of(d));
+        wizard.setCommand(new org.eclipse.lsp4j.Command("Bind", XmlServer.BINDING_WIZARD));
+        assertFalse(XmlServer.generatesGrammar(wizard));
+        assertFalse(XmlServer.generatesGrammar(new org.eclipse.lsp4j.CodeAction("Minify XML")));
+        assertFalse(XmlServer.generatesGrammar(new org.eclipse.lsp4j.Command("x", "y")));
+    }
 }
