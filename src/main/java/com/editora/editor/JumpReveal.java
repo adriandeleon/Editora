@@ -61,6 +61,12 @@ public final class JumpReveal {
         boolean pinning = stickyScroll.getAsBoolean();
         int firstVisible = pinning ? StickyScroll.navigationFirstVisible(regions.get(), line) : Math.max(0, line);
         area.showParagraphAtTop(firstVisible);
+        // Across, the target's own column decides, not where the view happened to be: a column near the line's
+        // start shows from column 1, and one past the viewport's width is scrolled to. A jump used to keep the old
+        // horizontal scroll, landing with the line start cut off or the caret off to the right (XML review C19).
+        // The line is on screen now, so following the caret moves the view only sideways.
+        area.scrollXToPixel(0);
+        area.requestFollowCaret();
         if (pinning && pinsOver.test(area)) {
             pinFor.accept(firstVisible);
         }
