@@ -123,4 +123,38 @@ class DiagnosticMapperTest {
         org.junit.jupiter.api.Assertions.assertFalse(mapped.unnecessary());
         org.junit.jupiter.api.Assertions.assertTrue(mapped.tagOnlyHint(), "a tag carried as a hint is not a problem");
     }
+
+    /** lemminx's messages end on a "Code:" that VS Code completes with the code; here it dangled (XML review B16). */
+    @Test
+    void lemminxsDanglingCodeTailIsCut() {
+        String enumeration = "Value 'urgent' is not in the enumeration list.\n\nIt must be one of the following:\n"
+                + " - low\n - normal\n - high\n\nCode:";
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "Value 'urgent' is not in the enumeration list.\n\nIt must be one of the following:\n"
+                        + " - low\n - normal\n - high",
+                DiagnosticMapper.xmlMessage("xml", enumeration));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "Invalid element name:\n - from\n\nOne of the following is expected:\n - to\n\n"
+                        + "Error indicated by:\n {the schema}",
+                DiagnosticMapper.xmlMessage(
+                        "xml",
+                        "Invalid element name:\n - from\n\nOne of the following is expected:\n - to\n\n"
+                                + "Error indicated by:\n {the schema}\nwith code:"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "Ends in error code:",
+                DiagnosticMapper.xmlMessage("xml", "Ends in error code:"),
+                "not on its own line");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                enumeration, DiagnosticMapper.xmlMessage("other", enumeration), "only lemminx's messages");
+
+        var d = new org.eclipse.lsp4j.Diagnostic(
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(1, 0), new org.eclipse.lsp4j.Position(1, 5)),
+                "Attribute 'id' is missing from element 'note'.\n\nCode:");
+        d.setSource("xml");
+        d.setCode("cvc-complex-type.4");
+        var mapped = DiagnosticMapper.map(java.util.List.of(d)).get(0);
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "Attribute 'id' is missing from element 'note'.", mapped.message());
+        org.junit.jupiter.api.Assertions.assertEquals("cvc-complex-type.4", mapped.code());
+    }
 }

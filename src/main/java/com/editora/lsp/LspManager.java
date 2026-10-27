@@ -3318,7 +3318,10 @@ public final class LspManager {
                     range == null ? 0 : range.getEnd().getCharacter());
         }
         if (r.isThird() && r.getThird() != null) {
-            return new RenamePrep(true, "", 0, 0, 0, 0); // default behavior: rename the word at the caret
+            // {defaultBehavior: true}: rename the word at the caret. lemminx answers {defaultBehavior: false} where
+            // nothing can be renamed (an attribute value), which VS Code's client reports as "can't be renamed"
+            // instead of opening a dialog that leads nowhere (XML review B11).
+            return r.getThird().isDefaultBehavior() ? new RenamePrep(true, "", 0, 0, 0, 0) : RenamePrep.REFUSED;
         }
         return RenamePrep.REFUSED;
     }
