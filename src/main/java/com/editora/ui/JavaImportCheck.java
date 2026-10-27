@@ -45,10 +45,21 @@ final class JavaImportCheck {
     }
 
     /**
+     * Why a pom.xml does not parse: the parser's {@code message} without its closing period, and where, 1-based, or -1
+     * when the parser did not say (twelfth review CL4).
+     */
+    record PomError(String message, int line, int column) {
+        /** In English, for the Debug Log. */
+        String describe() {
+            return line < 1 ? message : message + " (line " + line + ", column " + column + ")";
+        }
+    }
+
+    /**
      * Why the XML at {@code pom} does not parse, with its line and column, or null when it parses or is not there
      * (eleventh review CM4). An empty file does not parse.
      */
-    static @Nullable String unreadablePom(Path pom) {
+    static @Nullable PomError unreadablePom(Path pom) {
         if (!Files.isRegularFile(pom)) {
             return null;
         }
@@ -61,9 +72,9 @@ final class JavaImportCheck {
             spf.newSAXParser().parse(pom.toFile(), new org.xml.sax.helpers.DefaultHandler());
             return null;
         } catch (org.xml.sax.SAXParseException e) {
-            return e.getMessage() + " (line " + e.getLineNumber() + ", column " + e.getColumnNumber() + ")";
+            return new PomError(withoutPeriod(e.getMessage()), e.getLineNumber(), e.getColumnNumber());
         } catch (Exception e) {
-            return String.valueOf(e.getMessage());
+            return new PomError(withoutPeriod(e.getMessage()), -1, -1);
         }
     }
 
@@ -112,26 +123,45 @@ final class JavaImportCheck {
         return null;
     }
 
+    private static String withoutPeriod(@Nullable String message) {
+        return String.valueOf(message).strip().replaceFirst("\\.$", "");
+    }
+
+    /** What a script error says is wrong, the first of several: a parse error's place, an unknown name. */
+    private static final java.util.regex.Pattern SPECIFIC_CAUSE = java.util.regex.Pattern.compile(
+            "(?i)unexpected (input|character|token)|unresolved reference|expecting|@ line \\d+, column \\d+");
+
+    /** A wrapper's or a lone cause's wording, the last of which is the nearest the cause. */
+    private static final java.util.regex.Pattern GENERAL_CAUSE =
+            java.util.regex.Pattern.compile("(?i)could not|cannot|not found");
+
+    /** An absolute path in a message ({@code '/tmp/x/settings.gradle'}), whose file name is enough. */
+    private static final java.util.regex.Pattern ABSOLUTE_PATH =
+            java.util.regex.Pattern.compile("(?:[A-Za-z]:)?[\\\\/](?:[^'\"\\s\\\\/]+[\\\\/])+([^'\"\\s\\\\/]+)");
+
     /**
      * The line of a failed import's message that names the cause: Gradle ends a script that does not compile with
      * "1 error" under a caret line, so the line saying what is wrong ("Unexpected input", "Unresolved reference"),
-     * with its "Line N:" when Kotlin gives one, beats the last line (eleventh review CM3).
+     * with its "Line N:" when Kotlin gives one, beats the last line (eleventh review CM3). The first such line, the
+     * one Problems lists, and a script's path as its file name (twelfth review CM3).
      */
     static @Nullable String reasonLine(String message) {
-        List<String> lines =
-                message.lines().map(String::strip).filter(l -> !l.isEmpty()).toList();
+        List<String> lines = message.lines()
+                .map(String::strip)
+                .filter(l -> !l.isEmpty())
+                .map(l -> ABSOLUTE_PATH.matcher(l).replaceAll("$1"))
+                .toList();
         if (lines.isEmpty()) {
             return null;
         }
-        java.util.regex.Pattern cause = java.util.regex.Pattern.compile(
-                "(?i)unexpected input|unresolved reference|expecting|could not|cannot|unexpected token|not found");
+        for (int i = 0; i < lines.size(); i++) {
+            if (SPECIFIC_CAUSE.matcher(lines.get(i)).find()) {
+                return withLine(lines, i);
+            }
+        }
         for (int i = lines.size() - 1; i >= 0; i--) {
-            String l = lines.get(i);
-            if (cause.matcher(l).find()) {
-                String text = l.replaceFirst("^\\^\\s*", "");
-                java.util.regex.Matcher at =
-                        i > 0 ? java.util.regex.Pattern.compile("^(Line \\d+):").matcher(lines.get(i - 1)) : null;
-                return at != null && at.find() && !text.startsWith("Line ") ? at.group(1) + ": " + text : text;
+            if (GENERAL_CAUSE.matcher(lines.get(i)).find()) {
+                return withLine(lines, i);
             }
         }
         for (int i = lines.size() - 1; i >= 0; i--) {
@@ -141,5 +171,13 @@ final class JavaImportCheck {
             }
         }
         return lines.get(lines.size() - 1);
+    }
+
+    /** Line {@code i} of {@code lines} without a caret, after the Kotlin "Line N:" of the line before it. */
+    private static String withLine(List<String> lines, int i) {
+        String text = lines.get(i).replaceFirst("^\\^\\s*", "");
+        java.util.regex.Matcher at =
+                i > 0 ? java.util.regex.Pattern.compile("^(Line \\d+):").matcher(lines.get(i - 1)) : null;
+        return at != null && at.find() && !text.startsWith("Line ") ? at.group(1) + ": " + text : text;
     }
 }

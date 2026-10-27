@@ -523,4 +523,50 @@ class JavaRuntimesTest {
         java.nio.file.Files.writeString(dir.resolve("conv/build.gradle.kts"), "plugins { id(\"java-conventions\") }\n");
         assertEquals(21, JavaRuntimes.statedRelease(dir.resolve("conv")), "a convention plugin's");
     }
+
+    /**
+     * A multi-line include, a convention plugin beside buildSrc's own build file, a Gradle property, and a Boot module
+     * whose folder above is an aggregator, not its parent (twelfth review CM5, CL3).
+     */
+    @Test
+    void theStatedReleaseReadsTheTwelfthReviewsLayouts(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path multi = java.nio.file.Files.createDirectories(dir.resolve("gincml/lib"));
+        java.nio.file.Files.createDirectories(dir.resolve("gincml/app"));
+        java.nio.file.Files.writeString(
+                multi.getParent().resolve("settings.gradle.kts"), "include(\n    \"app\",\n    \"lib\",\n)\n");
+        java.nio.file.Files.writeString(
+                multi.resolve("build.gradle.kts"),
+                "java { toolchain { languageVersion = JavaLanguageVersion.of(17) } }");
+        assertEquals(17, JavaRuntimes.statedRelease(multi.getParent()), "an include over several lines");
+        java.nio.file.Path bsrc = java.nio.file.Files.createDirectories(dir.resolve("gbsrc/buildSrc/src/main/kotlin"));
+        java.nio.file.Path gbsrc = dir.resolve("gbsrc");
+        java.nio.file.Files.writeString(gbsrc.resolve("settings.gradle.kts"), "\n");
+        java.nio.file.Files.writeString(gbsrc.resolve("build.gradle.kts"), "plugins { id(\"java-conventions\") }\n");
+        java.nio.file.Files.writeString(
+                gbsrc.resolve("buildSrc/build.gradle.kts"), "plugins { `kotlin-dsl` }\nkotlin { jvmToolchain(17) }\n");
+        java.nio.file.Files.writeString(
+                bsrc.resolve("java-conventions.gradle.kts"),
+                "plugins { java }\njava { toolchain { languageVersion = JavaLanguageVersion.of(21) } }\n");
+        assertEquals(21, JavaRuntimes.statedRelease(gbsrc), "the convention plugin's, not buildSrc's own");
+        java.nio.file.Path props = java.nio.file.Files.createDirectories(dir.resolve("gprops"));
+        java.nio.file.Files.writeString(props.resolve("settings.gradle"), "\n");
+        java.nio.file.Files.writeString(
+                props.resolve("gradle.properties"), "org.gradle.caching=true\njavaVersion=21\n");
+        java.nio.file.Files.writeString(
+                props.resolve("build.gradle"),
+                "java { toolchain { languageVersion = JavaLanguageVersion.of(providers.gradleProperty('javaVersion')"
+                        + ".get()) } }\n");
+        assertEquals(21, JavaRuntimes.statedRelease(props), "a Gradle property");
+        java.nio.file.Path app = java.nio.file.Files.createDirectories(dir.resolve("aggnotparent/app"));
+        java.nio.file.Files.writeString(
+                app.getParent().resolve("pom.xml"),
+                "<groupId>demo</groupId><artifactId>aggregator</artifactId><modules><module>app</module></modules>"
+                        + "<properties><maven.compiler.release>11</maven.compiler.release></properties>");
+        java.nio.file.Files.writeString(
+                app.resolve("pom.xml"),
+                "<parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId>"
+                        + "<version>3.3.4</version></parent><artifactId>app</artifactId>");
+        assertEquals(17, JavaRuntimes.statedRelease(app), "Boot 3's, not the aggregator's");
+    }
 }

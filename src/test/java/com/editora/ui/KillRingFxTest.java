@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import java.util.List;
+
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
 
@@ -224,6 +226,42 @@ class KillRingFxTest {
         assertEquals("newer", text(b));
         run("edit.yankPop");
         assertEquals("older", text(b), "M-y swaps in the previous entry rather than inserting alongside");
+    }
+
+    /**
+     * A kill in a Java file records where the text came from, as a cut does, and M-y asks for the swapped-in text's
+     * imports, as a yank does (twelfth review AL4).
+     */
+    @Test
+    void killsRecordTheirFileAndYankPopAsksForImports(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path src = java.nio.file.Files.writeString(dir.resolve("Src.java"), "class Src {}\n");
+        List<int[]> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            ring.clear();
+            setClipboard("");
+            EditorBuffer buffer = new EditorBuffer() {
+                @Override
+                public void requestLspPasteImports(int start, int end) {
+                    asked.add(new int[] {start, end});
+                }
+            };
+            buffer.setContent("Duration d;\n");
+            buffer.setPath(src);
+            FxTestSupport.call(
+                    fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, buffer, true);
+            buffer.getArea().moveTo(0, 0);
+            return buffer;
+        });
+        run("edit.killLine");
+        assertEquals(src, FxTestSupport.callOnFx(() -> com.editora.lsp.JdtlsPaste.copiedFrom("Duration d;")));
+        FxTestSupport.runOnFx(() -> ring.kill("older", KillRing.Direction.FORWARD, false));
+        run("edit.paste");
+        asked.clear();
+        run("edit.yankPop");
+        assertEquals(1, asked.size(), "M-y asks once");
+        assertEquals(0, asked.get(0)[0]);
+        assertEquals(text(b).length() - 1, asked.get(0)[1], "the swapped-in text's span");
     }
 
     @Test

@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** What the import verdict reads from text (eleventh review CO2, CM3, CM4). */
+/** What the import verdict reads from text (eleventh review CO2, CM3, CM4; twelfth review CM3, CL4). */
 class JavaImportCheckTest {
 
     private static LspDiagnostic warning(String message) {
@@ -39,8 +39,9 @@ class JavaImportCheckTest {
         String groovy = "build file '/x/build.gradle': 1: Unexpected input: '{' @ line 1, column 10.\n   foo {\n"
                 + "       ^\n\n1 error\n";
         assertEquals(
-                "build file '/x/build.gradle': 1: Unexpected input: '{' @ line 1, column 10.",
-                JavaImportCheck.reasonLine(groovy));
+                "build file 'build.gradle': 1: Unexpected input: '{' @ line 1, column 10.",
+                JavaImportCheck.reasonLine(groovy),
+                "the script by its file name");
         String kotlin = "Script compilation error:\n\n  Line 5: notAThing()\n          ^ Unresolved reference "
                 + "'notAThing'.\n\n1 error\n";
         assertEquals("Line 5: Unresolved reference 'notAThing'.", JavaImportCheck.reasonLine(kotlin));
@@ -50,12 +51,28 @@ class JavaImportCheckTest {
     }
 
     @Test
+    void aSettingsFileAndTheFirstOfTwoErrorsAreNamed() {
+        String settings = "Could not compile settings file '/tmp/p/settings.gradle'.\n"
+                + "startup failed:\nsettings file '/tmp/p/settings.gradle': 2: Unexpected character: '\\'' @ line 2, "
+                + "column 9.\n   include 'a\n           ^\n\n1 error\n";
+        assertEquals(
+                "settings file 'settings.gradle': 2: Unexpected character: '\\'' @ line 2, column 9.",
+                JavaImportCheck.reasonLine(settings),
+                "the cause, not the wrapper");
+        String two =
+                "Script compilation errors:\n\n  Line 5: notAThing()\n          ^ Unresolved reference 'notAThing'.\n"
+                        + "\n  Line 6: alsoNotAThing()\n          ^ Unresolved reference 'alsoNotAThing'.\n\n2 errors\n";
+        assertEquals("Line 5: Unresolved reference 'notAThing'.", JavaImportCheck.reasonLine(two), "the first");
+    }
+
+    @Test
     void aPomThatDoesNotParseIsNamedWithWhere(@TempDir Path dir) throws Exception {
         Path good = Files.writeString(dir.resolve("good.xml"), "<project><modelVersion>4.0.0</modelVersion></project>");
         assertNull(JavaImportCheck.unreadablePom(good));
         Path broken = Files.writeString(dir.resolve("broken.xml"), "<project>\n  <brokenTag>\n</project>\n");
-        String why = JavaImportCheck.unreadablePom(broken);
-        assertTrue(why != null && why.contains("(line 3, column"), why);
+        JavaImportCheck.PomError why = JavaImportCheck.unreadablePom(broken);
+        assertTrue(why != null && why.line() == 3 && why.column() > 0, String.valueOf(why));
+        assertTrue(!why.message().endsWith(".") && !why.message().contains("(line"), why.message());
         Path empty = Files.writeString(dir.resolve("empty.xml"), "");
         assertTrue(JavaImportCheck.unreadablePom(empty) != null, "an empty pom");
         assertNull(JavaImportCheck.unreadablePom(dir.resolve("none.xml")));

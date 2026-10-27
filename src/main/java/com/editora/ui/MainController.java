@@ -2428,10 +2428,8 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     void activateAndFocusTab(Tab tab) {
         editorArea.select(tab);
-        EditorBuffer buffer = bufferOf(tab);
-        if (buffer != null) {
-            Platform.runLater(() -> buffer.getArea().requestFocus());
-        }
+        Platform.runLater(
+                () -> TabFocus.focusTab(tab, MainController::bufferOf)); // a page tab: its page (twelfth review AL1)
     }
 
     /**
@@ -9127,7 +9125,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (count > 1) {
             int idx = (editorArea.selectedIndex() + 1) % count;
             editorArea.select(idx);
-            Platform.runLater(() -> TabFocus.focus(activeBuffer())); // as a tab chosen any other way (AQ2)
+            Platform.runLater(() -> TabFocus.focusTab(editorArea.selectedTab(), MainController::bufferOf)); // AQ2, AL1
         }
     }
 
