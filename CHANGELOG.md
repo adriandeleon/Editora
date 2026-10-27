@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **XML: the lemminx install is pinned and checked.** Install… downloads vscode-xml 0.29.3's lemminx (0.31.2) instead
+  of whatever `releases/latest` was, refuses a zip or a program whose SHA-256 is not the release's, takes exactly
+  the program (not any file whose name starts with "lemminx"), and no longer asks for `tar` (every asset is a zip).
+  It writes an install receipt, so Settings and Doctor show the version and Doctor offers Update when a later Editora
+  moves the pin; a copy installed before receipts is offered Update once.
+- **XML: Reset no longer disconnects Editora's lemminx.** The install leaves the XML command blank, and a blank
+  command (or a stale path into Editora's own XML folder) runs Editora's copy before anything on PATH.
+- **XML: a lemminx that cannot run here says why.** Install asks the new server to answer a request first; on a
+  system whose C library is too old (lemminx needs glibc 2.34) it installs nothing and says so — or, when the pom.xml
+  server is installed, XML runs its Java lemminx instead. A server that exits as soon as it starts now gives its own
+  first words in the crash notice, Settings and Doctor, instead of "found" and "OK", and Install treats it as missing.
+- **XML install banner.** Not offered while the XML server is switched off; a configured XML command that is
+  missing leads to Settings instead of an Install that would overwrite it; it says what the server adds and what
+  Install downloads (about 17 MB, from Red Hat's vscode-xml release on GitHub); and "Not now" holds for every XML
+  file of the window, not one tab. With language servers off, the first XML file asks once whether to turn them on.
 - **Java: Go to Super Method reads type arguments.** In `interface StrStore extends Store<String>`, `save(Integer)`
   opened `Store.save(T)`, and `Multi.accept(Integer)` offered a second, wrong branch; `T` now stands for `String`
   there, so neither does, and `take(T[])` takes only a `String[]`. It also works on a method reference
