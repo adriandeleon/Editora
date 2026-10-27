@@ -108,18 +108,23 @@ class StructureClickFramesFxTest {
     @Test
     void aSelectionChangeKeepsTheRowsItsCellsShow() throws Exception {
         TreeView<?> tree = FxTestSupport.field(panel, "tree");
-        Map<Integer, Node> before = FxTestSupport.callOnFx(() -> graphics(tree));
-        assertFalse(before.isEmpty(), "the tree shows rows");
-
         // JavaFX re-runs updateItem for the cells whose selection changed from their layout, after the CSS pass:
-        // a graphic built there paints black text for a frame.
-        Map<Integer, Node> after = FxTestSupport.callOnFx(() -> {
+        // a graphic built there paints black text for a frame. Both looks are taken in one FX turn, so nothing but
+        // the selection change runs between them: a pulse in between could carry a late outline rebuild (the fold
+        // scan finishing on a slow runner) that replaces every cell for its own reasons.
+        List<Map<Integer, Node>> looks = FxTestSupport.callOnFx(() -> {
+            tree.applyCss();
+            tree.layout();
+            Map<Integer, Node> first = graphics(tree);
             tree.getSelectionModel().select(3);
             tree.getSelectionModel().select(5);
             tree.applyCss();
             tree.layout();
-            return graphics(tree);
+            return List.of(first, graphics(tree));
         });
+        Map<Integer, Node> before = looks.get(0);
+        Map<Integer, Node> after = looks.get(1);
+        assertFalse(before.isEmpty(), "the tree shows rows");
 
         for (var row : before.entrySet()) {
             assertSame(row.getValue(), after.get(row.getKey()), "row " + row.getKey() + " kept its graphic");
