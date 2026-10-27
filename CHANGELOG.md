@@ -51,6 +51,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **pom.xml and the Maven server (XML/pom review 2).** A pom.xml served by the plain XML server now offers the
+  Maven server (what it adds, about 16 MB), or Settings… when your own command for it is missing; a pom in a folder
+  you have not trusted is left to the trust offer. "Reset to default" on the Maven server command keeps Editora's
+  installed copy instead of asking for a second download. A Maven project beside the open one gets one server, not
+  one per module, and an SSH/WSL/container host is never sent this machine's classpath (its plain XML server serves
+  the pom unless the host has an `lsp.maven-pom` tool). The Structure window names dependencies and plugins by
+  `groupId:artifactId` with the Maven server on; a plugin's "managed in" hover link opens, and hover links go to
+  the line they name (`#L28,22`). "Extract as new property in parent" works while the parent is open (unsaved
+  parent: refused with a reason). When one malformed pom stops dependency completion, the status bar names it.
+  XML: Revalidate File and lemminx's client commands work on a pom; a model diagnostic no longer shows the pom's
+  path as its source.
 - **Terminal: a selection keeps its text when the terminal is resized.** JediTerm moves a selection itself when a
   shorter window pushes rows into history, and the terminal moved it again: after a splitter drag the highlight sat
   rows above the selected text, and Copy copied those rows. A block selection is dropped on a resize, whose reflow
