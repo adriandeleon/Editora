@@ -1377,9 +1377,15 @@ public final class LspManager {
 
     /** The no-I/O half of planning: the mapped edit with every server-open target's request-time text
      *  attached, plus the targets the server did not have open (still to be checked against the disk). */
-    private record EditDraft(WorkspaceEditMapper.Mapped mapped, List<Path> closedTargets) {}
+    record EditDraft(WorkspaceEditMapper.Mapped mapped, List<Path> closedTargets) {}
 
-    private static @Nullable EditDraft draftWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis) {
+    /**
+     * Maps {@code edit} and attaches each target's request-time text. A file the same edit creates starts empty,
+     * and a version the server gives it is dropped: the session never opened it, so no version was ever sent
+     * for it to name. lemminx's "Generate … and bind" fixes address their new grammar file with version 0, and
+     * comparing that against a version that cannot exist refused every one of them (XML review C1).
+     */
+    static @Nullable EditDraft draftWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis) {
         WorkspaceEditMapper.Mapped mapped = WorkspaceEditMapper.map(edit, basis.uris()::toPath);
         if (mapped == null) {
             return null;
@@ -1396,12 +1402,13 @@ public final class LspManager {
             if (expected == null) {
                 expected = documents.get(com.editora.config.PathKeys.canonical(fileEdit.file()));
             }
+            Integer version = fileEdit.version();
             if (expected == null && created.contains(com.editora.config.PathKeys.key(fileEdit.file()))) {
                 expected = "";
+                version = null;
             }
             if (expected != null) {
-                edits.add(new WorkspaceEditMapper.FileEdit(
-                        fileEdit.file(), fileEdit.edits(), fileEdit.version(), expected, null));
+                edits.add(new WorkspaceEditMapper.FileEdit(fileEdit.file(), fileEdit.edits(), version, expected, null));
             } else {
                 edits.add(fileEdit);
                 closedTargets.add(fileEdit.file());
@@ -4574,6 +4581,7 @@ public final class LspManager {
     public void applyCodeAction(Path file, Object raw, Consumer<Boolean> cb) {
         lastCodeActionFailure = null;
         lastCodeActionEmpty = false;
+        lastEditUnresolvedUri = null;
         LanguageServerSession s = sessionFor(file);
         // No request time: an edit already inside this action was computed at some earlier, unknown moment,
         // so nothing can show a closed file is still what the server saw.
@@ -4641,6 +4649,14 @@ public final class LspManager {
         return lastCodeActionFailure;
     }
 
+    /** A URI naming no placeable file in the last refused server edit (lemminx's relative paths), or null. */
+    private volatile @Nullable String lastEditUnresolvedUri;
+
+    /** Why the last code action's edit was refused when it named a file this client cannot place (XML review B1). */
+    public @Nullable String lastEditUnresolvedUri() {
+        return lastEditUnresolvedUri;
+    }
+
     /** Whether the last code action resolved to neither an edit nor a command: nothing to apply (ET1). */
     private volatile boolean lastCodeActionEmpty;
 
@@ -4652,6 +4668,7 @@ public final class LspManager {
     public void applyCodeAction(Path file, CodeActionItem item, Consumer<Boolean> cb) {
         lastCodeActionFailure = null;
         lastCodeActionEmpty = false;
+        lastEditUnresolvedUri = null;
         if (item == null) {
             Platform.runLater(() -> cb.accept(false));
             return;
@@ -4757,6 +4774,7 @@ public final class LspManager {
             Consumer<Boolean> done) {
         EditDraft draft = draftWorkspaceEdit(edit, basis);
         if (draft == null) {
+            lastEditUnresolvedUri = WorkspaceEditMapper.unresolvedUri(edit, basis.uris()::toPath);
             done.accept(false);
             return;
         }

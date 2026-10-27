@@ -7041,7 +7041,12 @@ final class LspCoordinator {
                                         lspManager.lastCodeActionFailure())
                                 : lspManager.lastCodeActionEmpty() // resolved to no change at all (ET1)
                                         ? tr("status.lsp.codeActionNoChange", applied.title())
-                                        : tr("status.lsp.codeActionFailed", applied.title())));
+                                        : lspManager.lastEditUnresolvedUri() != null // XML review B1
+                                                ? tr(
+                                                        "status.lsp.codeActionBadUri",
+                                                        applied.title(),
+                                                        lspManager.lastEditUnresolvedUri())
+                                                : tr("status.lsp.codeActionFailed", applied.title())));
     }
 
     /**
@@ -7749,9 +7754,13 @@ final class LspCoordinator {
      */
     void applyWorkspaceEditsAsync(
             com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> whenDone) {
-        openBeforeEdit.put(mapped, openBuffers());
+        java.util.Set<EditorBuffer> before = openBuffers();
+        openBeforeEdit.put(mapped, before);
         java.util.function.Consumer<Boolean> done = ok -> {
             openBeforeEdit.remove(mapped);
+            if (!committedEdits.remove(mapped) && !ok) {
+                WorkspaceEditTabs.discardOpened(mapped, before, this::bufferForLspPath, ops::closeBackgroundBuffer);
+            }
             whenDone.accept(ok);
         };
         if (!resourceTargetsSafe(mapped)) {
@@ -7921,9 +7930,13 @@ final class LspCoordinator {
             return false;
         }
         invalidateResourceWrites(mapped);
+        java.util.Set<EditorBuffer> before = openBuffers();
         WorkspaceTransactionStatus transaction = beginTransaction(mapped);
         boolean applied = applyWorkspaceEdits(mapped, transaction);
         endTransaction(transaction);
+        if (!committedEdits.remove(mapped) && !applied) {
+            WorkspaceEditTabs.discardOpened(mapped, before, this::bufferForLspPath, ops::closeBackgroundBuffer);
+        }
         return applied;
     }
 
@@ -8007,6 +8020,7 @@ final class LspCoordinator {
         // The filesystem transaction completed before any text changed. Now remap open buffers/session state
         // in protocol order; this part is in-memory and cannot leave a failed disk move behind.
         transaction.journal.committed();
+        committedEdits.add(mapped);
         List<Path> orphaned = remapRenamedBuffers(staged, targets);
         for (StagedCreate created : creates) {
             ops.fileCreated(created.operation().file());
@@ -8092,6 +8106,7 @@ final class LspCoordinator {
             return;
         }
         transaction.journal.committed();
+        committedEdits.add(mapped);
         List<Path> orphaned = remapRenamedBuffers(renames, targets);
         creates.forEach(created -> ops.fileCreated(created.operation().file()));
         retireDeleted(deletes, targets);
@@ -8140,6 +8155,10 @@ final class LspCoordinator {
     /** The buffers open when each asynchronous workspace edit began; the others it opened itself. */
     private final Map<com.editora.lsp.WorkspaceEditMapper.Mapped, java.util.Set<EditorBuffer>> openBeforeEdit =
             new java.util.IdentityHashMap<>();
+
+    /** Edits whose text went in: a later failure (a tab not remapped) must not close the tabs they opened. */
+    private final java.util.Set<com.editora.lsp.WorkspaceEditMapper.Mapped> committedEdits =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     private java.util.Set<EditorBuffer> openBuffers() {
         java.util.Set<EditorBuffer> out = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());

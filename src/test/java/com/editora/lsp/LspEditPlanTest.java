@@ -98,4 +98,46 @@ class LspEditPlanTest {
         assertEquals(original, plan.mapped());
         assertTrue(plan.blocked().isEmpty());
     }
+
+    /**
+     * lemminx's "Generate 'nogrammar.dtd' and bind with DOCTYPE", verbatim (XML review C1): the new DTD is addressed
+     * with {@code version: 0}, which no client ever sent, so it must not be compared — while the XML document keeps
+     * its version and request-time text, the guards for the file the user is looking at.
+     */
+    @Test
+    void aFileTheEditCreatesLosesTheServersVersionAndStartsEmpty() {
+        Path folder = Path.of("/project/misc").toAbsolutePath();
+        Path xml = folder.resolve("nogrammar.xml");
+        Path dtd = folder.resolve("nogrammar.dtd");
+        var basis = new LspManager.EditBasis(Map.of(xml, LemminxPayloads.NOGRAMMAR_XML), 1_000, WireUris.LOCAL);
+
+        var draft = LspManager.draftWorkspaceEdit(LemminxPayloads.generateDtdAndBind(folder), basis);
+
+        assertNotNull(draft);
+        assertTrue(draft.closedTargets().isEmpty(), "the created file is known to be empty, not read from disk");
+        assertEquals(
+                List.of(dtd),
+                draft.mapped().creates().stream().map(c -> c.file()).toList());
+        var created = draft.mapped().edits().get(0);
+        assertEquals(dtd, created.file());
+        assertNull(created.version(), "the server's 0 names a document version this client never sent");
+        assertEquals("", created.expectedText());
+        var bound = draft.mapped().edits().get(1);
+        assertEquals(xml, bound.file());
+        assertEquals(1, bound.version());
+        assertEquals(LemminxPayloads.NOGRAMMAR_XML, bound.expectedText());
+    }
+
+    /** lemminx's "Generate missing file" names its target relatively; the refusal says which URI (XML review B1). */
+    @Test
+    void aRelativeUriIsNamedAsTheReasonAnEditCannotBePlaced() {
+        var edit = new org.eclipse.lsp4j.WorkspaceEdit();
+        edit.setDocumentChanges(List.of(org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(
+                new org.eclipse.lsp4j.CreateFile("tmp/xmlprobe/nothere.xsd"))));
+
+        assertNull(WorkspaceEditMapper.map(edit));
+        assertEquals("tmp/xmlprobe/nothere.xsd", WorkspaceEditMapper.unresolvedUri(edit, WireUris.LOCAL::toPath));
+        assertNull(WorkspaceEditMapper.unresolvedUri(
+                LemminxPayloads.generateDtdAndBind(Path.of("/project").toAbsolutePath()), WireUris.LOCAL::toPath));
+    }
 }
