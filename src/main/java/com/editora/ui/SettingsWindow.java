@@ -49,6 +49,7 @@ import com.editora.config.Settings;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.editor.spell.SpellDictionaries;
+import com.editora.terminal.TerminalThemes;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
@@ -3524,6 +3525,39 @@ public class SettingsWindow {
         return check;
     }
 
+    /**
+     * Terminal ▸ Theme: "Editor theme" (blank, the default), then the terminal's own colour schemes under the Light
+     * and Dark headings the theme pickers use. A change recolours open terminals at once.
+     */
+    private void terminalThemeRow(Card card, Category cat) {
+        ComboBox<String> combo = new ComboBox<>();
+        List<String> choices = new ArrayList<>();
+        choices.add(TerminalThemes.FOLLOW_EDITOR);
+        choices.addAll(ThemeGroups.grouped(TerminalThemes.NAMES, TerminalThemes::isDark, Set.of()));
+        combo.getItems().setAll(choices);
+        combo.setPrefWidth(220);
+        java.util.function.Function<String, String> label =
+                name -> name.isEmpty() ? tr("settings.terminal.theme.editor") : name;
+        ThemeGroups.install(combo, label);
+        combo.setButtonCell(labelledCell(label));
+        settingControls.put("terminal.theme", combo);
+        combo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null || ThemeGroups.isHeading(now)) {
+                return;
+            }
+            config.getSettings().setTerminalTheme(now);
+            apply();
+        });
+        controlRow(
+                card,
+                cat,
+                tr("settings.terminal.theme"),
+                tr("settings.terminal.theme.desc"),
+                combo,
+                "terminal theme colour color scheme palette ansi solarized dracula nord gruvbox tango campbell dark light");
+        settingSyncs.add(st -> combo.setValue(TerminalThemes.normalize(st.getTerminalTheme())));
+    }
+
     /** A row choosing one of {@code values}, each labelled {@code settings.<key>.<value>}. */
     private void choiceRow(
             Card card,
@@ -4191,6 +4225,7 @@ public class SettingsWindow {
                 Settings::setTerminalUseExternal,
                 "terminal open in terminal here external system application gnome konsole iterm");
         Card display = card(p, tr("settings.section.terminalDisplay"));
+        terminalThemeRow(display, cat);
         intRow(
                 display,
                 cat,

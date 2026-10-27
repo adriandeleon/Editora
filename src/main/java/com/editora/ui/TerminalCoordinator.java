@@ -27,7 +27,9 @@ import com.editora.terminal.RunningProgram;
 import com.editora.terminal.ShellIntegration;
 import com.editora.terminal.TerminalConnector;
 import com.editora.terminal.TerminalCursor;
+import com.editora.terminal.TerminalPalette;
 import com.editora.terminal.TerminalPalettes;
+import com.editora.terminal.TerminalThemes;
 import com.editora.vfs.Vfs;
 import org.jspecify.annotations.Nullable;
 
@@ -240,9 +242,18 @@ final class TerminalCoordinator {
         }
     }
 
-    /** The editor or app theme changed: read the colours again. */
+    /**
+     * The editor theme, the app theme or the terminal theme changed: a terminal colour scheme of its own when one is
+     * chosen, else the editor theme's colours read again.
+     */
     void applyTheme() {
-        if (panel != null) {
+        if (panel == null) {
+            return;
+        }
+        TerminalPalette own = TerminalThemes.palette(host.settings().getTerminalTheme());
+        if (own != null) {
+            panel.usePalette(own);
+        } else {
             panel.refreshPalette(host.appThemeDark() ? TerminalPalettes.EDITORA_DARK : TerminalPalettes.EDITORA_LIGHT);
         }
     }
