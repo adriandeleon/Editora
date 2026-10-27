@@ -48,7 +48,6 @@ final class FxTestSupport {
         booted = true;
     }
 
-    /** Run {@code task} on the FX thread and block until it finishes, rethrowing any failure. */
     /**
      * {@link #runOnFx} without the checked exception, for use inside a lambda that cannot declare one.
      * A failure still fails the test — it is rethrown unchecked rather than swallowed.
@@ -61,6 +60,7 @@ final class FxTestSupport {
         }
     }
 
+    /** Run {@code task} on the FX thread and block until it finishes, rethrowing any failure. */
     static void runOnFx(Runnable task) throws Exception {
         if (Platform.isFxApplicationThread()) {
             task.run();
@@ -103,7 +103,6 @@ final class FxTestSupport {
         return result.get();
     }
 
-    /** Invoke a private no-arg method by name (walks up the class hierarchy). */
     /** Calls a private one-argument method, searching the class hierarchy like {@link #invoke}. */
     static Object invokeWith(Object target, String method, Class<?> paramType, Object arg) {
         for (Class<?> c = target.getClass(); c != null; c = c.getSuperclass()) {

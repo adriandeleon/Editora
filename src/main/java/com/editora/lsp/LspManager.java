@@ -3597,8 +3597,9 @@ public final class LspManager {
             return;
         }
         String document = libraryUri != null ? libraryUri : uri(file != null ? file : anchor);
-        Map<String, List<MemberSpan>> cache =
-                libraryUri == null ? null : libraryOutlines.computeIfAbsent(s, k -> new ConcurrentHashMap<>());
+        Map<String, List<MemberSpan>> cache = libraryUri == null || !jdkClassFile(libraryUri)
+                ? null
+                : libraryOutlines.computeIfAbsent(s, k -> new ConcurrentHashMap<>());
         List<MemberSpan> cached = cache == null ? null : cache.get(libraryUri);
         if (cached != null) {
             Platform.runLater(() -> cb.accept(cached));
@@ -3608,13 +3609,21 @@ public final class LspManager {
             List<MemberSpan> members =
                     error == null && result != null ? DocumentSymbolMapper.members(result) : List.of();
             if (cache != null && !members.isEmpty()) {
-                cache.put(libraryUri, members); // a class file does not change while its server runs (BP5)
+                cache.put(libraryUri, members); // a JDK class does not change while its server runs (BP5)
             }
             Platform.runLater(() -> cb.accept(members));
         });
     }
 
-    /** Library class files' outlines per session, read once: a Go to Super Method walk reads many (ninth review BP5). */
+    /**
+     * Whether {@code libraryUri} is a JDK class ({@code jdt://contents/java.base/…jrt-fs.jar…}): a dependency's jar can
+     * be rebuilt in place ({@code mvn install} of a SNAPSHOT) under the same URI (tenth review DO4).
+     */
+    static boolean jdkClassFile(String libraryUri) {
+        return libraryUri.contains("jrt-fs.jar");
+    }
+
+    /** JDK class files' outlines per session, read once: a Go to Super Method walk reads many (ninth review BP5). */
     private final Map<LanguageServerSession, Map<String, List<MemberSpan>>> libraryOutlines =
             java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 

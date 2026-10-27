@@ -433,10 +433,18 @@ method (empty means none: a static, private or overloading method, unless it is 
 an inner class of a generic class), but skips interface methods, a second interface and some anonymous classes. The
 walk matches override-equivalent signatures (`JavaMembers.overridden`: parameter types, a type variable matching any
 reference type; the type variables are those the type and the types around it declare in their outline names, plus
-any one-letter-shaped name for a method's own), drops a hit whose type another hit's type extends, reads
-`Object` only for its own methods' names, and caches library outlines per session. A hierarchy item's line can
-differ from the outline's for the same type, so a type is also found by name. Class-file outlines have no anonymous
-classes or initializers: `JavaMembers.anonymousMethod` finds them in the text. Every `java/*` request
+any one-letter-shaped name for a method's own). A type variable the subtype's header binds (`extends Store<String>`,
+read with `JavaMembers.typeArguments` from each project file's text, an anonymous class's `<>` from its field's type)
+matches that type alone; through a class file, whose text the walk does not read, it matches any. The walk drops a
+hit whose type another hit's type extends and the method asked about itself, reads `Object` only for its own
+methods' names, and caches JDK outlines per session (a dependency's jar can be rebuilt in place under the same URI).
+A hierarchy item's line can differ from the outline's for the same type, so a type is also found by name; for
+`new pkg.Type<>()` jdtls prepares the hierarchy at the anonymous class itself, and the walk starts above it.
+Class-file outlines have no anonymous classes or initializers: `JavaMembers.anonymousMethod` finds them in the text,
+and their method is named from it (`JavaMembers.signatureAt`) for the same walk. Modifiers and `@Override` are read
+from the declaration's own start (`declarationHead`), not its line's, so a one-line class or field initializer does
+not lend the method its `static` or `private`. A method reference or a lambda's parameters go to Go to Definition at
+the `::` or the arrow, as a lambda's body does. Every `java/*` request
 sent through `rawRequest` must be declared on `JdtLanguageServer`: LSP4J types a response by that registry and
 turns an undeclared method's answer into null (`JdtLanguageServerProtocolTest` checks every literal).
 
@@ -444,6 +452,12 @@ A Java save while another Java file of the project is open (or Problems shows th
 quiet recheck. Problems over the whole project, or a Maven project, gets an incremental `java/buildWorkspace`; other
 projects get each other open Java document re-sent unchanged (`LanguageServerSession.revalidateOtherJavaDocuments`),
 which jdtls reconciles at once. A build would compile a Gradle project into Buildship's `bin/` (re-review CN3).
+
+m2e skips a pom.xml that does not parse at the first import with a `ProjectStatus` of OK, and jdtls then calls each
+source file "a non-project file" (syntax only). A file under `src/main/java` or `src/test/java` of a root with a build
+file that gets that warning marks the import failed (`LspCoordinator.noteNonProjectFile`): said once with that
+reason, then the ready line's "did not import" and each counter's "Not checked". A loose file elsewhere in the
+project is a non-project file by rights and is not counted.
 
 ### jdtls preferences
 

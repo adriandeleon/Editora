@@ -406,4 +406,51 @@ class JavaRuntimesTest {
                 reactor.resolve("pom.xml"), "<maven.compiler.release>11</maven.compiler.release>");
         assertEquals(11, JavaRuntimes.statedRelease(reactor.getParent()));
     }
+
+    /**
+     * Maven's precedence: the compiler plugin's release over a property, no profile's property, a parent's property;
+     * Spring Boot's default; a Gradle {@code prerelease} is no release, and a sub-project's build counts (tenth review
+     * CO3, DP4).
+     */
+    @Test
+    void theStatedReleaseFollowsTheBuildsPrecedence(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path plugin = java.nio.file.Files.createDirectories(dir.resolve("plugin"));
+        java.nio.file.Files.writeString(
+                plugin.resolve("pom.xml"),
+                "<properties><maven.compiler.release>21</maven.compiler.release></properties><build><plugins><plugin>"
+                        + "<artifactId>maven-compiler-plugin</artifactId><configuration><release>17</release>"
+                        + "</configuration></plugin></plugins></build>");
+        assertEquals(17, JavaRuntimes.statedRelease(plugin), "the plugin's own release");
+        java.nio.file.Path profile = java.nio.file.Files.createDirectories(dir.resolve("profile"));
+        java.nio.file.Files.writeString(
+                profile.resolve("pom.xml"),
+                "<profiles><profile><properties><maven.compiler.release>8</maven.compiler.release></properties>"
+                        + "</profile></profiles><properties><maven.compiler.release>21</maven.compiler.release>"
+                        + "</properties>");
+        assertEquals(21, JavaRuntimes.statedRelease(profile), "a profile may not be active");
+        java.nio.file.Path child = java.nio.file.Files.createDirectories(dir.resolve("parent/child"));
+        java.nio.file.Files.writeString(
+                child.getParent().resolve("pom.xml"), "<properties><jdk.level>21</jdk.level></properties>");
+        java.nio.file.Files.writeString(
+                child.resolve("pom.xml"),
+                "<parent><artifactId>parent</artifactId></parent>"
+                        + "<properties><maven.compiler.release>${jdk.level}</maven.compiler.release></properties>");
+        assertEquals(21, JavaRuntimes.statedRelease(child), "the parent's property");
+        java.nio.file.Path boot = java.nio.file.Files.createDirectories(dir.resolve("boot3"));
+        java.nio.file.Files.writeString(
+                boot.resolve("pom.xml"),
+                "<parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId>"
+                        + "<version>3.4.1</version><relativePath/></parent>");
+        assertEquals(17, JavaRuntimes.statedRelease(boot), "Spring Boot 3's default");
+        java.nio.file.Path pre = java.nio.file.Files.createDirectories(dir.resolve("pre"));
+        java.nio.file.Files.writeString(pre.resolve("build.gradle.kts"), "val prerelease = 1\n");
+        assertEquals(0, JavaRuntimes.statedRelease(pre), "no release");
+        java.nio.file.Path app = java.nio.file.Files.createDirectories(dir.resolve("multi/app"));
+        java.nio.file.Files.writeString(app.getParent().resolve("settings.gradle.kts"), "include(\"app\")\n");
+        java.nio.file.Files.writeString(app.getParent().resolve("build.gradle.kts"), "plugins { base }\n");
+        java.nio.file.Files.writeString(
+                app.resolve("build.gradle.kts"), "java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }");
+        assertEquals(21, JavaRuntimes.statedRelease(app.getParent()), "the included project's");
+    }
 }

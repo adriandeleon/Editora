@@ -1199,7 +1199,6 @@ class ProjectMapLayoutFxTest {
         return false;
     }
 
-    /** Ink count and height of the status mark just before a file row's preview strip. */
     /** The status marks of a source file's row: left of its Structure icon (24) and eye (29), at 100%. */
     private static int[] markBounds(Image shot, Object row, Color fill) {
         int right = (int) (edge(row, "x", "width") - 31 - 24);

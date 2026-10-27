@@ -53,12 +53,6 @@ class TypingLatencyBenchmarkTest {
     }
 
     /**
-     * Control: the same KEY_TYPED into a <em>bare</em> {@link CodeArea} with no Editora wiring at all, in
-     * its own scene. Whatever this costs is RichTextFX + the headless software pipeline, not Editora — so
-     * only the difference between this and {@link #typingLatencyDistribution()} is attributable to us.
-     */
-
-    /**
      * Regression guard for the per-keystroke {@code Timeline} leak (the reason this class exists).
      *
      * <p>A zero-width {@code getCharacterBoundsOnScreen(x, x)} makes {@code GenericStyledArea} allocate a
@@ -232,6 +226,11 @@ class TypingLatencyBenchmarkTest {
         }
     }
 
+    /**
+     * Control: the same KEY_TYPED into a <em>bare</em> {@link CodeArea} with no Editora wiring at all, in
+     * its own scene. Whatever this costs is RichTextFX + the headless software pipeline, not Editora — so
+     * only the difference between this and {@link #typingLatencyDistribution()} is attributable to us.
+     */
     @Test
     @Disabled(
             "measurement harness, not a check; run explicitly with -Dtest=TypingLatencyBenchmarkTest#bareCodeAreaControl")

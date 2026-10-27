@@ -5,6 +5,7 @@ import java.util.function.Supplier;
 import javafx.application.Platform;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 import javafx.scene.input.MouseEvent;
 
@@ -35,11 +36,11 @@ final class TabFocus {
                         focus(active.get());
                     }
                 }));
-        area.node().sceneProperty().addListener((o, was, scene) -> watch(scene, active));
-        watch(area.node().getScene(), active);
+        area.node().sceneProperty().addListener((o, was, scene) -> watch(scene, area, active));
+        watch(area.node().getScene(), area, active);
     }
 
-    private static void watch(@Nullable Scene scene, Supplier<@Nullable EditorBuffer> active) {
+    private static void watch(@Nullable Scene scene, EditorArea area, Supplier<@Nullable EditorBuffer> active) {
         if (scene == null || scene.getProperties().containsKey(TabFocus.class)) {
             return;
         }
@@ -56,6 +57,14 @@ final class TabFocus {
                     // editor, which stays in the scene) is no choice of the user's
                     if (buffer != null && owner != buffer.getFocusedArea() && owner != buffer.getArea()) {
                         focus(buffer);
+                    } else if (buffer == null && editorLeft) {
+                        // the Welcome tab, Doctor or a viewer is left: its page, not the toolbar's New button, where
+                        // a Space opened a new buffer (tenth review AP1)
+                        Tab tab = area.selectedTab();
+                        Node page = tab == null ? null : tab.getContent();
+                        if (page != null && !within(owner, page)) {
+                            page.requestFocus();
+                        }
                     }
                 });
             }
@@ -72,25 +81,20 @@ final class TabFocus {
         return true;
     }
 
+    /** Whether {@code node} is {@code ancestor} or inside it. */
+    private static boolean within(@Nullable Node node, Node ancestor) {
+        for (Node n = node; n != null; n = n.getParent()) {
+            if (n == ancestor) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Puts keyboard focus in {@code buffer}'s editor, its last-focused split view. */
     static void focus(@Nullable EditorBuffer buffer) {
         if (buffer != null) {
             buffer.getFocusedArea().requestFocus();
         }
-    }
-
-    /** Whether {@code target} is (in) a tab's header, not its close button. */
-    static boolean onTabHeader(@Nullable Object target) {
-        for (Node n = target instanceof Node node ? node : null; n != null; n = n.getParent()) {
-            if (n.getStyleClass().contains("tab-close-button")) {
-                return false;
-            }
-            if (n.getStyleClass().contains("tab")
-                    && n.getParent() != null
-                    && n.getParent().getStyleClass().contains("headers-region")) {
-                return true;
-            }
-        }
-        return false;
     }
 }

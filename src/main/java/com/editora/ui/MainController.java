@@ -7784,6 +7784,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     void focusNextEditorGroup() {
         if (!editorArea.focusNextGroup()) {
             setStatus(tr("status.editorGroupNotSplit"));
+        } else {
+            TabFocus.focus(activeBuffer()); // its editor, not the tab's container (tenth review AO1)
         }
     }
 

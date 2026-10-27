@@ -752,7 +752,6 @@ class WindowManagerLaunchFxTest {
         });
     }
 
-    /** Small enough that a cascade step stays on the (small) headless screen. */
     /** Returns once a whole pulse has run, so bounds set on a showing stage have been applied. */
     private static void awaitPulse() throws Exception {
         java.util.concurrent.CountDownLatch pulsed = new java.util.concurrent.CountDownLatch(1);
@@ -770,6 +769,7 @@ class WindowManagerLaunchFxTest {
         assertTrue(pulsed.await(10, java.util.concurrent.TimeUnit.SECONDS), "a pulse ran");
     }
 
+    /** Small enough that a cascade step stays on the (small) headless screen. */
     private static void small(Stage stage) {
         stage.setWidth(320);
         stage.setHeight(240);

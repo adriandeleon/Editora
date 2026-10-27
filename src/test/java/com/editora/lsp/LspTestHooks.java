@@ -58,7 +58,6 @@ public final class LspTestHooks {
         manager.shareServersForTest(other);
     }
 
-    /** The project root of the server serving {@code file}. */
     /** Opens a question from {@code file}'s server (an import to choose), answered when the result completes. */
     public static java.util.concurrent.CompletableFuture<Object> openQuestion(
             LspManager manager, java.nio.file.Path file) {
@@ -70,6 +69,7 @@ public final class LspTestHooks {
         return DocumentUris.of(file);
     }
 
+    /** The project root of the server serving {@code file}. */
     public static java.nio.file.Path sessionRoot(LspManager manager, java.nio.file.Path file) {
         return manager.sessionForTest(file).root();
     }

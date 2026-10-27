@@ -207,7 +207,6 @@ class TestRunCoordinatorActionsFxTest {
         FxTestSupport.drainFx();
     }
 
-    /** A finished, filtered Gradle run of {@code com.x.FooTest} whose report was written during the run. */
     /**
      * A Gradle debug run of {@code tests}: an init script that debugs the test task's JVMs on ports the system
      * picks, where {@code --debug-jvm} always used 5005 (follow-up to review A15).
@@ -221,6 +220,7 @@ class TestRunCoordinatorActionsFxTest {
         assertTrue(text.contains("address=127.0.0.1:0"), text);
     }
 
+    /** A finished, filtered Gradle run of {@code com.x.FooTest} whose report was written during the run. */
     private void finishedGradleRun() throws Exception {
         List<String> task = List.of("test", "--tests", "com.x.FooTest");
         FxTestSupport.runOnFx(() -> assertTrue(

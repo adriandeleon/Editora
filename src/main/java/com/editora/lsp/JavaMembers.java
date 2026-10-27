@@ -154,6 +154,56 @@ public final class JavaMembers {
     }
 
     /**
+     * The offset of the {@code ->} of the lambda whose parameters hold {@code caret} ({@code (String item) ->},
+     * {@code x ->}), reading from {@code from} (the enclosing member's start); -1 when the caret is in no lambda's
+     * parameters (tenth review BO3).
+     */
+    public static int lambdaParameterArrow(String text, int from, int caret) {
+        String code = code(text);
+        int start = Math.min(Math.max(0, caret), code.length());
+        while (start > from && Character.isJavaIdentifierPart(code.charAt(start - 1))) {
+            start--; // the caret anywhere in a parameter's name
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("[\\w$\\s,.<>\\[\\]@?&]*?(\\))?\\s*->")
+                .matcher(code)
+                .region(start, code.length());
+        if (!m.lookingAt()) {
+            return -1;
+        }
+        int arrow = m.end() - 2;
+        boolean parenthesized = m.group(1) != null;
+        if (!parenthesized && code.substring(start, arrow).strip().matches(".*[\\s,].*")) {
+            return -1; // an argument list before a one-parameter lambda: call(a, x -> ...)
+        }
+        return lambdaArrow(text, from, arrow + 2) == arrow ? arrow : -1;
+    }
+
+    /**
+     * The offset of the {@code ::} of the method reference the caret is in ({@code String::length}), else -1 (tenth
+     * review BO3).
+     */
+    public static int methodReference(String text, int caret) {
+        String code = code(text);
+        int from = Math.max(0, caret - 200);
+        int to = Math.min(code.length(), caret + 200);
+        for (int k = code.indexOf("::", from); k >= 0 && k < to; k = code.indexOf("::", k + 2)) {
+            int left = k;
+            while (left > 0
+                    && (Character.isJavaIdentifierPart(code.charAt(left - 1)) || code.charAt(left - 1) == '.')) {
+                left--;
+            }
+            int right = k + 2;
+            while (right < code.length() && Character.isJavaIdentifierPart(code.charAt(right))) {
+                right++;
+            }
+            if (left <= caret && caret <= right) {
+                return k;
+            }
+        }
+        return -1;
+    }
+
+    /**
      * The offset of the {@code super} of the {@code super(...)} call between {@code from} and {@code to} (a
      * constructor's text), outside comments and strings; -1 when it calls none.
      */
@@ -183,7 +233,7 @@ public final class JavaMembers {
      */
     public static java.util.Set<String> modifiers(String text, int from, int name) {
         String code = code(text);
-        String head = code.substring(Math.max(0, from), Math.max(Math.max(0, from), Math.min(name, code.length())));
+        String head = declarationHead(code, from, name);
         head = head.replaceAll("@[\\w.]+\\s*(\\([^()]*\\))?", " ");
         java.util.Set<String> out = new java.util.HashSet<>();
         java.util.regex.Matcher m = java.util.regex.Pattern.compile(
@@ -196,12 +246,34 @@ public final class JavaMembers {
     }
 
     /**
+     * The code before a declaration's name at {@code name}, from {@code from} (its line's start) or from what ends the
+     * statement or block before it on that line, outside parentheses: {@code private static class V { void v()} gives
+     * {@code  void } (tenth review DO1).
+     */
+    private static String declarationHead(String code, int from, int name) {
+        int start = Math.max(0, from);
+        int end = Math.max(start, Math.min(name, code.length()));
+        int depth = 0;
+        for (int i = end - 1; i >= start; i--) {
+            char c = code.charAt(i);
+            if (c == ')') {
+                depth++;
+            } else if (c == '(') {
+                depth--;
+            } else if (depth == 0 && (c == '{' || c == '}' || c == ';')) {
+                return code.substring(i + 1, end);
+            }
+        }
+        return code.substring(start, end);
+    }
+
+    /**
      * Whether the declaration from {@code from} to its name at {@code name} is annotated {@code @annotation}, by its
      * simple or qualified name ({@code @Override}, {@code @java.lang.Override}).
      */
     public static boolean annotated(String text, int from, int name, String annotation) {
         String code = code(text);
-        String head = code.substring(Math.max(0, from), Math.max(Math.max(0, from), Math.min(name, code.length())));
+        String head = declarationHead(code, from, name);
         return java.util.regex.Pattern.compile("@(?:\\w+\\s*\\.\\s*)*" + annotation + "\\b")
                 .matcher(head)
                 .find();
@@ -297,6 +369,19 @@ public final class JavaMembers {
      */
     public static List<MemberSpan> overridden(
             List<MemberSpan> members, String method, java.util.Set<String> typeVariables) {
+        return overridden(members, method, typeVariables, java.util.Map.of());
+    }
+
+    /**
+     * As {@link #overridden(List, String, java.util.Set)}, where a type variable in {@code bindings} stands for the
+     * type the subtype gives it ({@code Store<String>}: {@code T} is String), and matches that type alone (tenth review
+     * DO2).
+     */
+    public static List<MemberSpan> overridden(
+            List<MemberSpan> members,
+            String method,
+            java.util.Set<String> typeVariables,
+            java.util.Map<String, String> bindings) {
         String name = methodName(method);
         List<String> params = parameters(method);
         List<MemberSpan> out = new ArrayList<>();
@@ -307,7 +392,7 @@ public final class JavaMembers {
                 boolean same = theirs.size() == params.size();
                 boolean equal = same;
                 for (int i = 0; same && i < params.size(); i++) {
-                    same = sameParameter(params.get(i), theirs.get(i), typeVariables);
+                    same = sameParameter(params.get(i), theirs.get(i), typeVariables, bindings);
                     equal = equal && bare(params.get(i)).equals(bare(theirs.get(i)));
                 }
                 if (same) {
@@ -332,12 +417,21 @@ public final class JavaMembers {
      * type's outline name).
      */
     static boolean sameParameter(String mine, String theirs, java.util.Set<String> typeVariables) {
+        return sameParameter(mine, theirs, typeVariables, java.util.Map.of());
+    }
+
+    static boolean sameParameter(
+            String mine, String theirs, java.util.Set<String> typeVariables, java.util.Map<String, String> bindings) {
         String a = bare(mine);
         String b = bare(theirs);
         if (a.equals(b)) {
             return true;
         }
         String array = b.replaceAll("[\\[\\]]|\\.\\.\\.", "");
+        String bound = bindings.get(array);
+        if (bound != null) {
+            return a.equals(bare(bound) + "[]".repeat(dims(b)));
+        }
         boolean primitive = dims(a) == dims(b)
                 && a.replaceAll("[\\[\\]]", "").matches("boolean|byte|char|short|int|long|float|double");
         boolean typeVariable = !primitive && (typeVariables.contains(array) || array.matches("[A-Z][A-Z0-9]?"));
@@ -384,6 +478,106 @@ public final class JavaMembers {
     }
 
     /**
+     * The type arguments a declaration's header gives {@code type} ({@code Store} in {@code class S implements
+     * Store<String>}, or in {@code new Store<String>() {}}), reading {@code text} from {@code from} to the first
+     * {@code {}; empty when it gives none (a raw type, {@code <>}) or does not name it. The last mention wins, so a
+     * bound in the header's own type parameters ({@code <T extends Comparable<T>>}) does not (tenth review DO2).
+     */
+    public static List<String> typeArguments(String text, int from, String type) {
+        String code = code(text);
+        int start = Math.max(0, Math.min(from, code.length()));
+        int brace = code.indexOf('{', start);
+        int end = brace < 0 ? code.length() : brace;
+        String simple = type.replaceAll("<.*", "").strip();
+        simple = simple.substring(simple.lastIndexOf('.') + 1);
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                        "(?<![\\w$])(?:[\\w$]+\\s*\\.\\s*)*" + java.util.regex.Pattern.quote(simple) + "\\s*<")
+                .matcher(code)
+                .region(start, end);
+        List<String> found = List.of();
+        while (m.find()) {
+            List<String> args = new ArrayList<>();
+            int depth = 0;
+            int arg = m.end();
+            for (int i = m.end(); i < end; i++) {
+                char c = code.charAt(i);
+                if (c == '<') {
+                    depth++;
+                } else if ((c == '>' && depth-- == 0) || (c == ',' && depth == 0)) {
+                    if (!code.substring(arg, i).isBlank()) {
+                        args.add(code.substring(arg, i).strip());
+                    }
+                    arg = i + 1;
+                    if (c == '>') {
+                        break;
+                    }
+                }
+            }
+            if (!args.isEmpty()) {
+                found = args;
+            }
+        }
+        return found;
+    }
+
+    /**
+     * A method's symbol name read from its declaration in {@code text}, the name at {@code name}: {@code compare(String,
+     * String)}, as jdtls names it in an outline (for a method no outline holds, tenth review BO2).
+     */
+    public static String signatureAt(String text, int name) {
+        String code = code(text);
+        int end = name;
+        while (end < code.length() && Character.isJavaIdentifierPart(code.charAt(end))) {
+            end++;
+        }
+        int open = code.indexOf('(', end);
+        List<String> params = new ArrayList<>();
+        if (open >= 0) {
+            int depth = 0;
+            int arg = open + 1;
+            for (int i = open + 1; i < code.length(); i++) {
+                char c = code.charAt(i);
+                if (c == '<' || c == '(') {
+                    depth++;
+                } else if (c == '>') {
+                    depth--;
+                } else if ((c == ')' && depth-- == 0) || (c == ',' && depth == 0)) {
+                    String param = code.substring(arg, i)
+                            .replaceAll("@[\\w.]+(\\s*\\([^)]*\\))?", " ")
+                            .replaceAll("\\bfinal\\b", " ")
+                            .strip()
+                            .replaceAll("\\s*[\\w$]+(\\s*\\[\\s*\\])*$", "")
+                            .strip();
+                    if (!param.isEmpty()) {
+                        params.add(param.replaceAll("\\s+", " "));
+                    }
+                    arg = i + 1;
+                    if (c == ')') {
+                        break;
+                    }
+                }
+            }
+        }
+        return code.substring(name, end) + "(" + String.join(", ", params) + ")";
+    }
+
+    /** {@code type} with each type variable in {@code bindings} replaced by what it stands for. */
+    public static String substitute(String type, java.util.Map<String, String> bindings) {
+        if (bindings.isEmpty()) {
+            return type;
+        }
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile("[A-Za-z_$][\\w$]*").matcher(type);
+        StringBuilder out = new StringBuilder();
+        while (m.find()) {
+            String bound = bindings.get(m.group());
+            m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(bound != null ? bound : m.group()));
+        }
+        m.appendTail(out);
+        return out.toString();
+    }
+
+    /**
      * The type variables {@code type} sees: its own and its enclosing types', from their outline names
      * ({@code Store<Item>}, {@code EnumMap<K extends Enum<K>, V>}; tenth review EO1).
      */
@@ -410,7 +604,7 @@ public final class JavaMembers {
             java.util.regex.Pattern.compile("^\\s*(?:@[\\w.]+\\s*)*([A-Za-z_$][\\w$]*)");
 
     /** The type parameter names in a type's outline name: {@code KeyStore<Key, Val>} gives Key and Val. */
-    static List<String> typeParameters(String typeName) {
+    public static List<String> typeParameters(String typeName) {
         int open = typeName.indexOf('<');
         int close = typeName.lastIndexOf('>');
         List<String> out = new ArrayList<>();
