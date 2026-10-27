@@ -58,7 +58,38 @@ public record TerminalPalette(Color background, Color foreground, Color[] ansi) 
             return fallback;
         }
         com.jediterm.core.Color rgb = color.toColor();
-        return rgb == null ? fallback : Color.rgb(rgb.getRed(), rgb.getGreen(), rgb.getBlue());
+        return rgb == null ? fallback : TrueColors.of(rgb.getRed(), rgb.getGreen(), rgb.getBlue());
+    }
+
+    /**
+     * Truecolour {@link Color}s, made once per value rather than once per run per frame. A program painting a
+     * gradient asks for thousands of colours a frame, each one an allocation; a small direct-mapped table keeps the
+     * ones in use. A collision just makes a new one. Racy by design: the renderer is the only caller, and a lost
+     * write is a colour made twice.
+     */
+    static final class TrueColors {
+
+        private static final int SLOTS = 4096;
+        private static final @Nullable Color[] CACHE = new Color[SLOTS];
+
+        private TrueColors() {}
+
+        static Color of(int red, int green, int blue) {
+            int key = (red & 0xff) << 16 | (green & 0xff) << 8 | (blue & 0xff);
+            int slot = (key ^ (key >>> 12)) & (SLOTS - 1);
+            Color cached = CACHE[slot];
+            if (cached != null && matches(cached, key)) return cached;
+            Color made = Color.rgb(red & 0xff, green & 0xff, blue & 0xff);
+            CACHE[slot] = made;
+            return made;
+        }
+
+        private static boolean matches(Color color, int key) {
+            int r = (int) Math.round(color.getRed() * 255);
+            int g = (int) Math.round(color.getGreen() * 255);
+            int b = (int) Math.round(color.getBlue() * 255);
+            return (r << 16 | g << 8 | b) == key;
+        }
     }
 
     /**

@@ -43,7 +43,15 @@ final class RunColumns {
         // for this line. Falling back to x is what the renderer did before and is never worse.
         if (column < 0) column = x;
         slots = x + run.length();
-        cells = column + CellWidth.cells(run.toString());
+        lastCells = CellWidth.cells(run);
+        cells = column + lastCells;
         return column;
     }
+
+    /** Cells the run just placed occupies, so the renderer need not count it a second time. */
+    int lastCells() {
+        return lastCells;
+    }
+
+    private int lastCells;
 }

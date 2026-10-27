@@ -45,6 +45,12 @@ public final class KeyEncoding {
             Map.entry(KeyCode.UP, 38),
             Map.entry(KeyCode.RIGHT, 39),
             Map.entry(KeyCode.DOWN, 40),
+            // The keypad's arrows with Num Lock off: JediTerm's table knows AWT's VK_KP_* and encodes them as the
+            // arrows, cursor-key mode included. Unmapped, they typed nothing at all.
+            Map.entry(KeyCode.KP_UP, 224),
+            Map.entry(KeyCode.KP_DOWN, 225),
+            Map.entry(KeyCode.KP_LEFT, 226),
+            Map.entry(KeyCode.KP_RIGHT, 227),
             Map.entry(KeyCode.INSERT, 155),
             Map.entry(KeyCode.DELETE, 127),
             Map.entry(KeyCode.F1, 112),

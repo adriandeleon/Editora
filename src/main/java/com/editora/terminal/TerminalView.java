@@ -130,6 +130,13 @@ public final class TerminalView extends Region {
     private Font boldFont;
     private Font italicFont;
     private Font boldItalicFont;
+
+    /** Faces for private-use code points (Nerd Font icons), null when the terminal face should draw them: see IconFont. */
+    private @Nullable Font iconFont;
+
+    private @Nullable Font boldIconFont;
+    private @Nullable Font italicIconFont;
+    private @Nullable Font boldItalicIconFont;
     private double fontSize;
     private double charWidth;
     private double lineHeight;
@@ -264,13 +271,22 @@ public final class TerminalView extends Region {
         display.setSelectionSupplier(() -> selection);
         // Visual bell. An audible one would mean java.awt.Toolkit.beep(), which initialises AWT —
         // see App.main for why that is off the table.
+        //
+        // Coalesced: `cat` of a binary file rings the bell thousands of times in one read, and each
+        // used to queue its own runLater and its own transition. One flash is pending at a time;
+        // the rest are the same flash.
         display.setOnBell(() -> {
-            if (bellEnabled) Platform.runLater(this::flashBell);
+            if (bellPending.compareAndSet(false, true)) Platform.runLater(this::onBell);
         });
+        bellClear.setOnFinished(e -> markDirty());
         display.setOnAlternateScreenChanged(() -> {
             // Scrollback belongs to the primary buffer; entering or leaving the alternate screen
-            // must snap back to the live view or a full-screen program renders at an offset.
+            // must snap back to the live view or a full-screen program renders at an offset. The
+            // selection goes with it: its coordinates named text on the other screen, and left in
+            // place it was drawn over vim and copied vim's cells.
             scrollOrigin = 0;
+            selection = null;
+            selectionAnchor = null;
             markDirty();
         });
     }
@@ -415,23 +431,40 @@ public final class TerminalView extends Region {
         }
     }
 
+    /** Whether a bell is queued for the FX thread; the ones that ring meanwhile are the same bell. */
+    private final java.util.concurrent.atomic.AtomicBoolean bellPending =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** Clears the bell's wash; restarted by a bell that rings while it shows. */
+    private final javafx.animation.PauseTransition bellClear =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(80));
+
+    /** One coalesced bell: the tab's mark, and the flash if it is on. */
+    private void onBell() {
+        bellPending.set(false);
+        if (!bellEnabled) return;
+        if (onBellRung != null) onBellRung.run();
+        flashBell();
+    }
+
     /** Visual bell: a brief wash over the canvas, cleared by the next frame. */
     private void flashBell() {
-        if (onBellRung != null) onBellRung.run();
         GraphicsContext g = canvas.getGraphicsContext2D();
         // The text's own colour: a white wash vanished on a light theme.
         Color fg = palette.foreground();
         g.setFill(Color.color(fg.getRed(), fg.getGreen(), fg.getBlue(), 0.18));
         g.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
-        javafx.animation.PauseTransition clear = new javafx.animation.PauseTransition(javafx.util.Duration.millis(80));
-        clear.setOnFinished(e -> markDirty());
-        clear.play();
+        bellClear.playFromStart();
     }
 
     // ---------------------------------------------------------------- font & layout
 
     public void setFontSize(double size) {
-        this.fontSize = Math.max(6, size);
+        double next = Math.max(6, size);
+        // Every settings change re-applies every setting to every terminal, so most calls here change nothing —
+        // and an unchanged font rebuilt four faces, re-measured and re-laid out the view.
+        if (next == fontSize && font != null) return;
+        this.fontSize = next;
         applyFont();
     }
 
@@ -441,7 +474,9 @@ public final class TerminalView extends Region {
      * face, which would misalign every column.
      */
     public void setFontFamily(String family) {
-        this.fontFamily = family == null || family.isBlank() ? DEFAULT_FONT_FAMILY : family.strip();
+        String next = family == null || family.isBlank() ? DEFAULT_FONT_FAMILY : family.strip();
+        if (next.equals(fontFamily) && font != null) return; // see setFontSize
+        this.fontFamily = next;
         applyFont();
     }
 
@@ -456,8 +491,20 @@ public final class TerminalView extends Region {
         italicFont = Font.font(family, FontWeight.NORMAL, javafx.scene.text.FontPosture.ITALIC, fontSize);
         boldItalicFont = Font.font(family, FontWeight.BOLD, javafx.scene.text.FontPosture.ITALIC, fontSize);
         measureFont();
+        applyIconFont(IconFont.familyFor(family).orElse(null));
         markDirty();
         requestLayout();
+    }
+
+    private void applyIconFont(@Nullable String icons) {
+        if (icons == null) {
+            iconFont = boldIconFont = italicIconFont = boldItalicIconFont = null;
+            return;
+        }
+        iconFont = Font.font(icons, fontSize);
+        boldIconFont = Font.font(icons, FontWeight.BOLD, fontSize);
+        italicIconFont = Font.font(icons, FontWeight.NORMAL, javafx.scene.text.FontPosture.ITALIC, fontSize);
+        boldItalicIconFont = Font.font(icons, FontWeight.BOLD, javafx.scene.text.FontPosture.ITALIC, fontSize);
     }
 
     /** Applies a theme's colours and repaints. */
@@ -572,7 +619,11 @@ public final class TerminalView extends Region {
         // it is why a proportional fallback would misalign every column.
         charWidth = probe.getLayoutBounds().getWidth();
         ascent = probe.getBaselineOffset();
-        lineHeight = Math.ceil(fontSize * LINE_SPACING);
+        // The taller of the leading we want and the height the face needs. A fixed ratio alone clipped faces
+        // with deep descenders — JetBrains Mono wants about 1.32 em — and the row below, drawn after, painted its
+        // background over the tails of every g and y above it.
+        double measured = Math.ceil(probe.getLayoutBounds().getHeight());
+        lineHeight = Math.max(Math.ceil(fontSize * LINE_SPACING), measured > 0 ? measured : 0);
         if (charWidth <= 0) charWidth = fontSize * 0.6;
     }
 
@@ -667,7 +718,8 @@ public final class TerminalView extends Region {
             buffer.processHistoryAndScreenLines(scrollOrigin, rows, new StyledTextConsumer() {
                 @Override
                 public void consume(int x, int y, TextStyle style, CharBuffer characters, int startRow) {
-                    drawRun(g, columns.columnOf(y, x, characters), y - startRow, style, characters);
+                    int column = columns.columnOf(y, x, characters);
+                    drawRun(g, column, columns.lastCells(), y - startRow, style, characters);
                 }
 
                 @Override
@@ -715,7 +767,7 @@ public final class TerminalView extends Region {
         return Math.round(column * charWidth);
     }
 
-    private void drawRun(GraphicsContext g, int column, int row, TextStyle style, CharBuffer characters) {
+    private void drawRun(GraphicsContext g, int column, int cells, int row, TextStyle style, CharBuffer characters) {
         if (row < 0 || row >= rows) return;
         String text = characters.toString();
         if (text.isEmpty()) return;
@@ -727,11 +779,11 @@ public final class TerminalView extends Region {
         double y = row * lineHeight;
         // Cells, not characters: an astral code point is two array slots and one column, so a run
         // holding one would otherwise be painted a column too wide.
-        double width = CellWidth.cells(text) * charWidth;
+        double width = cells * charWidth;
 
         if (!bg.equals(palette.background())) {
             g.setFill(bg);
-            fillCells(g, column, column + CellWidth.cells(text), y, lineHeight);
+            fillCells(g, column, column + cells, y, lineHeight);
         }
 
         if (style.hasOption(TextStyle.Option.HIDDEN)) return;
@@ -739,7 +791,7 @@ public final class TerminalView extends Region {
         g.setFont(fontFor(style));
         g.setFill(fg);
         g.setTextBaseline(VPos.BASELINE);
-        drawGlyphs(g, text, x, y + ascent);
+        drawGlyphs(g, text, x, y + ascent, iconFontFor(style));
 
         if (style.hasOption(TextStyle.Option.UNDERLINED)) {
             double underlineY = Math.floor(y + ascent + Math.max(1, fontSize * 0.12)) + 0.5;
@@ -758,14 +810,22 @@ public final class TerminalView extends Region {
      * bar between every pair of CJK characters, and drawing the run with one {@code fillText} also
      * lets the wide glyph's natural advance push the rest of the line off the grid.
      *
-     * <p>The all-ASCII fast path is the one that matters for throughput: it is what almost every
-     * run is, and it stays a single draw call.
+     * <p>The one-cell-per-char fast path is the one that matters for throughput: it is what almost
+     * every run is — including every box-drawing border and braille bar a TUI draws, which an
+     * ASCII-only test sent down the slow path — and it stays a single draw call. It trusts the face,
+     * or its fallback, to give those glyphs a one-cell advance.
+     *
+     * <p>A run with a private-use code point in it is drawn per glyph when {@code iconFace} is set,
+     * so the icon is drawn in that face and the text around it in the run's own.
+     *
+     * @param iconFace the face for private-use code points, or null to leave them to the run's
      */
-    private void drawGlyphs(GraphicsContext g, String text, double x, double baseline) {
-        if (isPlainAscii(text)) {
+    private void drawGlyphs(GraphicsContext g, String text, double x, double baseline, @Nullable Font iconFace) {
+        if (CellWidth.isOneCellPerChar(text) && (iconFace == null || !IconFont.containsPrivateUse(text))) {
             g.fillText(text, x, baseline);
             return;
         }
+        Font face = g.getFont();
         int cell = 0;
         int i = 0;
         while (i < text.length()) {
@@ -779,7 +839,7 @@ public final class TerminalView extends Region {
             int codePoint = text.codePointAt(i);
             int slots = Character.charCount(codePoint);
             if (codePoint != 0 && c != ' ') {
-                g.fillText(new String(Character.toChars(codePoint)), x + cell * charWidth, baseline);
+                drawCodePoint(g, codePoint, x + cell * charWidth, baseline, face, iconFace);
             }
             // Columns per code point, not per UTF-16 slot. Advancing by slots gave every narrow
             // astral character — every Nerd Font icon in an `ls` listing — a second, empty column,
@@ -791,12 +851,31 @@ public final class TerminalView extends Region {
         }
     }
 
-    private static boolean isPlainAscii(String text) {
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (c < 0x20 || c > 0x7e) return false;
+    /**
+     * Draws one code point in {@code face}, which the context is already set to — or, for a private-use one when
+     * {@code iconFace} is set, in the icon face, leaving {@code face} set after.
+     */
+    private static void drawCodePoint(
+            GraphicsContext g, int codePoint, double x, double baseline, Font face, @Nullable Font iconFace) {
+        String glyph = new String(Character.toChars(codePoint));
+        if (iconFace == null || !IconFont.isPrivateUse(codePoint)) {
+            g.fillText(glyph, x, baseline);
+            return;
         }
-        return true;
+        g.setFont(iconFace);
+        g.fillText(glyph, x, baseline);
+        g.setFont(face);
+    }
+
+    /** The face for private-use code points in this style, or null to draw them in {@link #fontFor}. */
+    private @Nullable Font iconFontFor(TextStyle style) {
+        if (iconFont == null) return null;
+        boolean bold = style.hasOption(TextStyle.Option.BOLD);
+        boolean italic = style.hasOption(TextStyle.Option.ITALIC);
+        if (bold && italic) return boldItalicIconFont;
+        if (bold) return boldIconFont;
+        if (italic) return italicIconFont;
+        return iconFont;
     }
 
     private Font fontFor(TextStyle style) {
@@ -872,7 +951,7 @@ public final class TerminalView extends Region {
             g.setFont(font);
             g.setFill(palette.ansi()[8]);
             g.setTextBaseline(VPos.BASELINE);
-            drawGlyphs(g, predicted.substring(from), x, y + ascent);
+            drawGlyphs(g, predicted.substring(from), x, y + ascent, iconFont);
         }
     }
 
@@ -888,8 +967,11 @@ public final class TerminalView extends Region {
         // and one. Mapped through the row's text, as every other overlay is.
         String text = p == null ? lineTextAt(display.getCursorY() - 1) : p.text();
         int slot = p == null || live == null ? display.getCursorX() : live.typeAheadCursorColumn();
-        int column = ColumnMap.columnAt(text, slot);
-        if (row < 0 || row >= rows || column < 0 || column >= columns) return;
+        // After a line is written to exactly its full width the cursor is *at* the width, pending the wrap that the
+        // next character will cause. xterm draws it on the last column; bailing on it made the cursor vanish on
+        // every exactly-full line.
+        int column = Math.min(ColumnMap.columnAt(text, slot), columns - 1);
+        if (row < 0 || row >= rows || column < 0) return;
 
         double x = column * charWidth;
         double y = row * lineHeight;
@@ -911,15 +993,30 @@ public final class TerminalView extends Region {
                         ? 2
                         : codePoint > 0 ? CellWidth.of(codePoint) : 1;
                 g.fillRect(x, y, width * charWidth, lineHeight);
-                // Re-draw the glyph underneath in the background colour so a block cursor does not
-                // hide the character it is sitting on.
+                // Re-draw the glyph underneath in the cell's background colour so a block cursor does not hide the
+                // character it is sitting on — in the cell's own font, or a bold character under the cursor came
+                // back regular for the duration. A prediction has no styles of its own yet.
                 if (codePoint > 0 && codePoint != ' ') {
-                    g.setFill(palette.background());
-                    g.setFont(font);
+                    TextStyle style = p == null ? styleAt(slot, display.getCursorY() - 1) : null;
+                    g.setFill(style == null ? palette.background() : backgroundOf(style));
+                    Font face = style == null ? font : fontFor(style);
+                    g.setFont(face);
                     g.setTextBaseline(VPos.BASELINE);
-                    g.fillText(new String(Character.toChars(codePoint)), x, y + ascent);
+                    drawCodePoint(g, codePoint, x, y + ascent, face, style == null ? iconFont : iconFontFor(style));
                 }
             }
+        }
+    }
+
+    /** The style of a cell, or null when the row is not there. Caller holds the lock. */
+    private @Nullable TextStyle styleAt(int slot, int row) {
+        TerminalTextBuffer buf = buffer;
+        if (buf == null) return null;
+        try {
+            var line = buf.getLine(row);
+            return line == null || slot < 0 || slot >= line.length() ? null : line.getStyleAt(slot);
+        } catch (RuntimeException e) {
+            return null;
         }
     }
 
@@ -2198,6 +2295,10 @@ public final class TerminalView extends Region {
         }
 
         if (reportMouse(e, com.jediterm.core.input.MouseEvent.Type.PRESSED)) {
+            // The program has this press, so nothing local may grow out of it. In mode 1000 the program hears press
+            // and release only, the drag between them is not reported, and a drag that falls through to selection
+            // must not find an anchor from some earlier plain click waiting for it.
+            selectionAnchor = null;
             e.consume();
             return;
         }

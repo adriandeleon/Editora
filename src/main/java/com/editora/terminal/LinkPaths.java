@@ -79,8 +79,9 @@ public final class LinkPaths {
         try {
             URI uri = new URI(target);
             String host = uri.getHost();
-            // file://host/share is someone else's filesystem. Not ours to open.
-            if (host != null && !host.isEmpty() && !"localhost".equalsIgnoreCase(host)) return null;
+            // file://host/share is someone else's filesystem. Not ours to open — unless the host is this machine,
+            // which is how ls --hyperlink and every OSC 7 spell a local file.
+            if (host != null && !ShellIntegration.isThisMachine(host)) return null;
             if (uri.getPath() == null) return null;
             return Paths.get(uri.getPath()).normalize();
         } catch (Exception e) {
