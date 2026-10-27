@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Campbell and the Editora pair are fixed schemes that stay the same whichever editor theme is active. Open
   terminals recolour at once. Settings schema 147 → 148 (additive).
 
+### Changed
+
+- **Project Map: Structure columns have their own colour.** A file's Structure column, and the columns of
+  declarations opened from it, sit on a faint violet card with violet-tinted rows, so they no longer look like
+  folder columns (the overview tints them too). Themes can retune it with `.project-map-probe-structure`.
+
 ### Fixed
 
 - **Java: Go to Super Method reads type arguments.** In `interface StrStore extends Store<String>`, `save(Integer)`

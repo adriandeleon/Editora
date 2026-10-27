@@ -2429,6 +2429,10 @@ final class ProjectMapView extends VBox {
         private static final double MIN_AUTO_FIT_ZOOM = 0.85;
         /** Rows that do not match an active filter keep this much of their ink. */
         private static final double DIMMED_ALPHA = 0.38;
+        /** How far a Structure column's card, and its declaration rows, lean toward the structure tint. */
+        private static final double STRUCTURE_COLUMN_TINT = 0.16;
+
+        private static final double STRUCTURE_ROW_TINT = 0.07;
 
         /** White space around the map on paper, in world pixels. */
         private static final double OUTPUT_MARGIN = 12;
@@ -2480,6 +2484,9 @@ final class ProjectMapView extends VBox {
         private final Rectangle fileProbe = probe("project-map-probe-file");
         private final Rectangle oliveProbe = probe("project-map-probe-olive");
         private final Rectangle violetProbe = probe("project-map-probe-violet");
+        /** The tint that sets a file's Structure columns (and their rows) apart from the folder columns. */
+        private final Rectangle structureProbe = probe("project-map-probe-structure");
+
         private final Tooltip nodeTooltip = new Tooltip();
         private final Text textMeasurer = new Text();
         private final List<NodeBox> boxes = new ArrayList<>();
@@ -2632,7 +2639,8 @@ final class ProjectMapView extends VBox {
                             folderProbe,
                             fileProbe,
                             oliveProbe,
-                            violetProbe);
+                            violetProbe,
+                            structureProbe);
             setMinSize(80, 100);
             setFocusTraversable(true);
             setAccessibleRole(AccessibleRole.TREE_VIEW);
@@ -2663,7 +2671,8 @@ final class ProjectMapView extends VBox {
                     folderProbe,
                     fileProbe,
                     oliveProbe,
-                    violetProbe)) {
+                    violetProbe,
+                    structureProbe)) {
                 probe.fillProperty().addListener((obs, old, value) -> {
                     iconImages.clear();
                     repaint();
@@ -3254,6 +3263,7 @@ final class ProjectMapView extends VBox {
             palette.put(fileProbe, Color.web("#59636e"));
             palette.put(oliveProbe, Color.web("#6e7b25"));
             palette.put(violetProbe, Color.web("#8250df"));
+            palette.put(structureProbe, Color.web("#8250df"));
             return palette;
         }
 
@@ -4148,8 +4158,10 @@ final class ProjectMapView extends VBox {
             g.setStroke(rowBorder());
             g.setLineWidth(1);
             g.strokeRoundRect(x, y, overviewWidth, overviewHeight, 8, 8);
-            g.setFill(color(mutedProbe, Color.web("#8b949e")));
+            Color muted = color(mutedProbe, Color.web("#8b949e"));
+            Color structureMuted = mix(muted, structureTint(), 0.6);
             for (ColumnBox box : columnBoxes) {
+                g.setFill(isStructureColumn(box.column().id()) ? structureMuted : muted);
                 g.fillRoundRect(
                         x + 5 + (box.x() - minX) * scale,
                         y + 5 + (box.y() - minY) * scale,
@@ -4181,16 +4193,19 @@ final class ProjectMapView extends VBox {
         private void drawColumns(GraphicsContext g) {
             Color surface = color(surfaceProbe, Color.web("#161d27"));
             Color border = color(borderProbe, Color.web("#303946"));
+            Color structureSurface = mix(surface, structureTint(), STRUCTURE_COLUMN_TINT);
+            Color structureBorder = mix(border, structureTint(), 0.35);
             for (ColumnBox box : columnBoxes) {
                 ProjectMapModel.Column column = box.column();
                 double x = box.x();
                 double y = box.y();
                 double w = box.width();
                 double h = box.height();
+                boolean structure = isStructureColumn(column.id());
                 g.setGlobalAlpha(0.64);
-                g.setFill(surface);
+                g.setFill(structure ? structureSurface : surface);
                 g.fillRoundRect(x, y, w, h, 12 * zoom, 12 * zoom);
-                g.setStroke(border);
+                g.setStroke(structure ? structureBorder : border);
                 g.setLineWidth(1);
                 g.strokeRoundRect(x, y, w, h, 12 * zoom, 12 * zoom);
 
@@ -4274,6 +4289,9 @@ final class ProjectMapView extends VBox {
             g.setGlobalAlpha(alpha);
             Color accent = color(accentProbe, Color.web("#388bfd"));
             Color surface = color(surfaceProbe, Color.web("#202938"));
+            if (entry.isSymbol()) {
+                surface = mix(surface, structureTint(), STRUCTURE_ROW_TINT);
+            }
             Color fill = focusedSelection
                     ? accent
                     : isSelected ? color(accentSubtleProbe, mix(surface, accent, 0.22)) : surface;
@@ -5761,6 +5779,10 @@ final class ProjectMapView extends VBox {
             probe.setManaged(false);
             probe.setMouseTransparent(true);
             return probe;
+        }
+
+        private Color structureTint() {
+            return color(structureProbe, Color.web("#8250df"));
         }
 
         /** Text, glyphs and markers drawn over the selected node's accent fill. */
