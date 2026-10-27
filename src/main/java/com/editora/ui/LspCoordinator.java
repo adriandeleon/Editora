@@ -547,7 +547,7 @@ final class LspCoordinator {
         lspManager.setOnRefreshRequested(this::refreshRequested);
         lspManager.setOpenDocumentDiagnosticsOnly(!projectWideProblems); // the Problems window's default scope
         lspManager.setOnDiagnosticsUnchanged(this::diagnosticsUnchanged);
-        lspManager.setClientUi(new ServerPrompts()); // a server's questions (Metals' "Import build?") get asked
+        lspManager.setClientUi(serverPrompts()); // a server's questions (Metals' "Import build?") get asked
         xml = new XmlLspActions(
                 host, lspManager, ops::openAndGoto, this::activeLspBuffer, this::lspPath, () -> findReferences(true));
     }
@@ -1301,15 +1301,11 @@ final class LspCoordinator {
 
     private void noteNonProjectFile(Path file, List<LspDiagnostic> diagnostics) {
         Path root = file.toString().endsWith(".java") ? lspManager.javaSessionRoot(file) : null;
-        if (root == null || !hasJavaBuildFile(root) || !inSourceFolder(root, file)) {
+        if (root == null || !hasJavaBuildFile(root) || !JavaImportCheck.inSourceFolder(root, file)) {
             return; // a loose file in a project's other folders is a non-project file by rights
         }
         String key = importKey(LspServerRegistry.JAVA_SERVER_ID, root);
-        String message = diagnostics.stream()
-                .map(LspDiagnostic::message)
-                .filter(m -> m.contains("is a non-project file"))
-                .findFirst()
-                .orElse(null);
+        String message = JavaImportCheck.nonProjectMessage(diagnostics);
         Map<Path, String> files = nonProjectFiles.computeIfAbsent(key, k -> new java.util.HashMap<>());
         if (message == null) {
             files.remove(file);
@@ -1321,21 +1317,79 @@ final class LspCoordinator {
         }
     }
 
-    /** Whether {@code file} is under a Maven or Gradle source folder of {@code root}. */
-    private static boolean inSourceFolder(Path root, Path file) {
-        String rel = "/" + root.relativize(file).toString().replace('\\', '/');
-        return rel.contains("/src/main/java/") || rel.contains("/src/test/java/");
-    }
-
-    /** Marks {@code root}'s import failed for a non-project file's {@code message}, said once as the reason. */
-    private void nonProjectImport(Path root, String message) {
-        if (importFailed.add(importKey(LspServerRegistry.JAVA_SERVER_ID, root))) {
+    /**
+     * Marks {@code folder}'s import failed (a module's in a reactor), said once with the build file's parse error when
+     * it does not parse (eleventh review CM4), else jdtls's {@code message}.
+     */
+    private void nonProjectImport(Path folder, String message) {
+        if (importFailed.add(importKey(LspServerRegistry.JAVA_SERVER_ID, folder))) {
+            Path root = lspManager.javaSessionRoot(folder);
+            Path sessionRoot = root != null ? root : folder;
+            String pomError = JavaImportCheck.unreadablePom(folder.resolve("pom.xml"));
+            String pom =
+                    sessionRoot.relativize(folder.resolve("pom.xml")).toString().replace('\\', '/');
+            String reason = pomError != null ? tr("status.lsp.pomUnreadable", pom, pomError) : message;
+            if (pomError != null) {
+                java.util.logging.Logger.getLogger(LspCoordinator.class.getName())
+                        .info(folder.resolve("pom.xml") + " does not parse: " + pomError); // the Debug Log's details
+            }
             host.setError(tr(
                     "status.lsp.importProblemWhy",
-                    statusServerName(LspServerRegistry.JAVA_SERVER_ID, root),
-                    message.replaceFirst("[.\\s]+$", "")));
+                    statusServerName(LspServerRegistry.JAVA_SERVER_ID, sessionRoot),
+                    reason.replaceFirst("[.\\s]+$", "")));
             refreshImportNotes();
         }
+    }
+
+    /**
+     * A reactor's module whose pom.xml does not parse: jdtls imports the others and leaves its files without a project
+     * or diagnostics, under "Loaded and ready" (eleventh review CO2).
+     */
+    private void checkModulePoms(Path root) {
+        for (Path module : JavaImportCheck.mavenModules(root)) {
+            if (JavaImportCheck.unreadablePom(module.resolve("pom.xml")) != null) {
+                nonProjectImport(module, "");
+            }
+        }
+    }
+
+    /**
+     * Whether the import of {@code folder}, or of a folder above it (its project, the session's root), failed: a build
+     * beside others under one root fails on its own (eleventh review CM2).
+     */
+    private boolean importFailedAt(@Nullable Path folder) {
+        if (importFailed.contains(importKey(LspServerRegistry.JAVA_SERVER_ID, null))) {
+            return true;
+        }
+        for (Path p = folder == null ? null : folder.toAbsolutePath().normalize(); p != null; p = p.getParent()) {
+            if (importFailed.contains(importKey(LspServerRegistry.JAVA_SERVER_ID, p))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether the import of {@code root} or of a folder under it its server imports (a module, a build beside others)
+     * failed; a project under it with a server of its own fails on its own.
+     */
+    private boolean importFailedUnder(@Nullable Path root) {
+        String prefix = importKey(LspServerRegistry.JAVA_SERVER_ID, root);
+        return importFailed.stream().anyMatch(k -> k.equals(prefix) || (root != null && sameSessionUnder(k, root)));
+    }
+
+    /** Whether import key {@code key} is a folder under {@code root} that {@code root}'s server imports. */
+    private boolean sameSessionUnder(String key, Path root) {
+        String prefix = importKey(LspServerRegistry.JAVA_SERVER_ID, root) + java.io.File.separator;
+        if (!key.startsWith(prefix)) {
+            return false;
+        }
+        Path folder = Path.of(key.substring(key.indexOf('\u0000') + 1));
+        Path served = lspManager.javaSessionRoot(folder);
+        return served == null
+                || served.toAbsolutePath()
+                        .normalize()
+                        .equals(root.toAbsolutePath().normalize());
     }
 
     /** Project-level problems already said in the status line, by folder and message. */
@@ -1398,7 +1452,7 @@ final class LspCoordinator {
                     // in a window that joins later the replayed diagnostic comes before the replayed import line:
                     // the server's logged error says the import failed already (tenth review CP3)
                     boolean failedImport = project != null
-                            && (importFailed.contains(importKey(LspServerRegistry.JAVA_SERVER_ID, project))
+                            && (importFailedAt(project)
                                     || lspManager.lastServerError(LspServerRegistry.JAVA_SERVER_ID, project) != null);
                     if (d.severity() == LspDiagnostic.Severity.ERROR && !failedImport) {
                         host.setError(text);
@@ -1419,11 +1473,13 @@ final class LspCoordinator {
             // The project's error comes after jdtls said the import failed: say the reason again in its words
             // ("Could not find method …", not the Gradle wrapper's "Could not fetch model") (third review CT7).
             Path project = java.nio.file.Files.isDirectory(file) ? file : file.getParent();
-            String reason = project == null ? null : projectReason(project);
+            JavaImportCheck.Reason why = project == null ? null : JavaImportCheck.projectReason(problems, project);
+            String reason = why == null ? null : why.line();
             String failedKey = importKey(LspServerRegistry.JAVA_SERVER_ID, project);
             if (reason != null
-                    && importFailed.contains(failedKey)
+                    && importFailedAt(project)
                     && !reason.equals(saidImportReason.put(failedKey, reason))) { // once, not per publish
+                narrowFailure(project);
                 host.setError(tr(
                         "status.lsp.importProblemWhy",
                         statusServerName(LspServerRegistry.JAVA_SERVER_ID, project), // named with its folder (CV4)
@@ -3147,6 +3203,12 @@ final class LspCoordinator {
         return path != null && untitledLspPaths.containsValue(path);
     }
 
+    /** An open file's text, as jdtls has it; null when {@code path} is open in no tab (eleventh review BM3). */
+    private @Nullable String openText(Path path) {
+        EditorBuffer b = bufferForLspPath(path);
+        return b == null ? null : b.getContent();
+    }
+
     /** The buffer a server's path means: an untitled buffer's made-up path, else the open file. */
     private @Nullable EditorBuffer bufferForLspPath(@Nullable Path path) {
         if (path != null && !untitledLspPaths.isEmpty()) {
@@ -3335,6 +3397,7 @@ final class LspCoordinator {
         String source = statusSource(serverId, root);
         if (serverId != null && root != null) {
             if ("Launching".equalsIgnoreCase(type)) {
+                lspManager.forgetServerError(serverId, root); // its import's errors are its own (eleventh review CM1)
                 saidReady.remove(source); // a new process: its ready line is owed again
                 // and what its files had is not known again until it has checked them (sixth review AS1)
                 Path launched = root;
@@ -3350,6 +3413,7 @@ final class LspCoordinator {
             if ("ProjectStatus".equalsIgnoreCase(type) && "OK".equalsIgnoreCase(message)) {
                 // that folder imported: its earlier failure no longer stands (third review CT3)
                 String key = importKey(serverId, root);
+                lspManager.forgetServerError(serverId, root); // an error before it was no import failure (CM1)
                 boolean was = importFailed.remove(key) | importWarned.remove(key) | warnedAtReady.remove(key);
                 if ((was && saidReady.contains(source)) || reloadOwed.remove(source)) {
                     // a fixed build file re-imported cleanly: say so, or "Updating…" was the last word (CF4)
@@ -3537,11 +3601,16 @@ final class LspCoordinator {
      */
     private boolean forgetImport(@Nullable Path root) {
         boolean failed = false;
-        for (String key : root == null
-                ? java.util.List.of(importKey(LspServerRegistry.JAVA_SERVER_ID, null))
-                : java.util.List.of(
-                        importKey(LspServerRegistry.JAVA_SERVER_ID, root),
-                        importKey(LspServerRegistry.JAVA_SERVER_ID, null))) {
+        java.util.Set<String> keys = new java.util.LinkedHashSet<>();
+        keys.add(importKey(LspServerRegistry.JAVA_SERVER_ID, null));
+        if (root != null) {
+            String prefix = importKey(LspServerRegistry.JAVA_SERVER_ID, root);
+            keys.add(prefix);
+            importFailed.stream()
+                    .filter(k -> sameSessionUnder(k, root))
+                    .forEach(keys::add); // a module's, a build's beside others (CO2, CM2)
+        }
+        for (String key : keys) {
             failed |= importFailed.remove(key);
             importWarned.remove(key);
             warnedAtReady.remove(key);
@@ -3555,34 +3624,21 @@ final class LspCoordinator {
     }
 
     /**
-     * Why {@code root}'s import failed, in the project's own words: the last line of the error jdtls put on the
-     * project (a Gradle build's "Could not find method …"), which beats the generic wrapper its log says first
-     * (third review CT7). Null when there is none yet.
+     * Moves a failed import from the session's root to {@code folder}, the build that failed, when the root has no build
+     * file of its own: a Maven build beside a failed Gradle one stays checked (eleventh review CM2).
      */
-    private @Nullable String projectReason(@Nullable Path root) {
-        if (root == null) {
-            return null;
+    private void narrowFailure(@Nullable Path folder) {
+        if (folder == null) {
+            return;
         }
-        Path r = root.toAbsolutePath().normalize();
-        for (Map.Entry<Path, List<LspDiagnostic>> e : problems.entrySet()) {
-            Path p = e.getKey().toAbsolutePath().normalize();
-            if (!LspManager.projectLevel(p) || !(p.equals(r) || r.equals(p.getParent()))) {
-                continue;
-            }
-            for (LspDiagnostic d : e.getValue()) {
-                if (d.severity() == LspDiagnostic.Severity.ERROR) {
-                    List<String> lines = d.message()
-                            .lines()
-                            .map(String::strip)
-                            .filter(l -> !l.isEmpty())
-                            .toList();
-                    if (!lines.isEmpty()) {
-                        return lines.get(lines.size() - 1);
-                    }
-                }
-            }
+        Path root = lspManager.javaSessionRoot(folder);
+        if (root == null || folder.equals(root) || hasJavaBuildFile(root)) {
+            return;
         }
-        return null;
+        if (importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))) {
+            importFailed.add(importKey(LspServerRegistry.JAVA_SERVER_ID, folder));
+            refreshImportNotes();
+        }
     }
 
     /**
@@ -3595,9 +3651,7 @@ final class LspCoordinator {
             if (p == null || !LspServerRegistry.JAVA_SERVER_ID.equals(serverIdForBuffer(b))) {
                 return;
             }
-            Path root = lspManager.javaSessionRoot(p);
-            boolean failed = importFailed.contains(importKey(LspServerRegistry.JAVA_SERVER_ID, root))
-                    || importFailed.contains(importKey(LspServerRegistry.JAVA_SERVER_ID, null));
+            boolean failed = importFailedAt(p);
             b.problemCounter().setNote(failed ? tr("editor.problemCounter.notImported") : null);
         });
     }
@@ -3638,6 +3692,7 @@ final class LspCoordinator {
                 nonProjectFiles.getOrDefault(key, Map.of()).values().stream()
                         .findFirst()
                         .ifPresent(message -> nonProjectImport(root, message)); // CO2
+                checkModulePoms(root);
             }
             if (line.problem()) {
                 // jdtls says WARNING both for an import that threw (a Gradle build that does not run: it logs the
@@ -3654,19 +3709,22 @@ final class LspCoordinator {
                     // the project's diagnostic, with the real cause, comes a moment after jdtls's WARNING: wait for
                     // it, and say the failure once ("Could not find method …", not "Could not fetch model …") (CP3)
                     Runnable say = () -> {
-                        String reason = projectReason(root);
+                        JavaImportCheck.Reason why = JavaImportCheck.projectReason(problems, root);
+                        String reason = why == null ? null : why.line();
                         if (reason != null && reason.equals(saidImportReason.get(key))) {
                             return; // the diagnostic said it already
                         }
-                        if (reason != null) {
+                        if (why != null) {
                             saidImportReason.put(key, reason);
+                            saidImportReason.put(importKey(LspServerRegistry.JAVA_SERVER_ID, why.folder()), reason);
+                            narrowFailure(why.folder());
                         }
                         host.setError(tr(
                                 "status.lsp.importProblemWhy",
                                 server,
                                 (reason != null ? reason : logged).replaceFirst("[.\\s]+$", "")));
                     };
-                    if (projectReason(root) != null) {
+                    if (JavaImportCheck.projectReason(problems, root) != null) {
                         say.run();
                     } else {
                         var wait = new javafx.animation.PauseTransition(javafx.util.Duration.millis(600));
@@ -3674,7 +3732,7 @@ final class LspCoordinator {
                         wait.play();
                     }
                 }
-            } else if (line.ready() && importFailed.contains(key)) {
+            } else if (line.ready() && (root != null ? importFailedUnder(root) : importFailed.contains(key))) {
                 host.setStatus(tr("status.lsp.readyNotImported", server)); // not "Loaded and ready"; said as error
             } else if (line.ready() && importWarned.remove(key)) {
                 warnedAtReady.add(key);
@@ -3732,7 +3790,7 @@ final class LspCoordinator {
                 && path.getFileName() != null
                 && JAVA_BUILD_FILES.contains(path.getFileName().toString())) {
             Path root = lspManager.javaSessionRoot(path);
-            if (root != null && importFailed.contains(importKey(LspServerRegistry.JAVA_SERVER_ID, root))) {
+            if (root != null && importFailedUnder(root)) {
                 // The build file of a project that did not import was saved, presumably fixed: import it again,
                 // as a saved pom.xml re-syncs a project that did (fourth review CT1).
                 forgetImport(root);
@@ -4062,7 +4120,18 @@ final class LspCoordinator {
             if (path != null && lspManager.isManaged(path)) {
                 com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
                 lspManager.handlePasteEvent(
-                        path, sl, sc, el, ec, text, indent.tabSize(), indent.insertSpaces(), stillValid, applied -> {});
+                        path,
+                        sl,
+                        sc,
+                        el,
+                        ec,
+                        text,
+                        indent.tabSize(),
+                        indent.insertSpaces(),
+                        com.editora.lsp.JdtlsPaste.copiedFrom(text), // its imports name the text's types (A11)
+                        stillValid,
+                        true,
+                        applied -> {});
             }
         });
         // Smart-semicolon detection (#746): where does a ';' typed here belong?
@@ -4114,112 +4183,6 @@ final class LspCoordinator {
         buffer.addLanguageListener(() -> syncBufferWhenShown(buffer));
         // Only the visible buffer starts its server now; a restored background tab waits for its first show.
         syncBufferWhenShown(buffer);
-    }
-
-    /**
-     * Asks the user what a language server asks ({@code window/showMessageRequest}, Metals' input box and quick
-     * pick) and carries out the editor actions it requests. Every method runs on the FX thread and returns at
-     * once; the dialog completes the answer when the user closes it.
-     */
-    private final class ServerPrompts implements com.editora.lsp.LspClientUi {
-
-        @Override
-        public java.util.concurrent.CompletableFuture<String> chooseAction(
-                String serverId, org.eclipse.lsp4j.MessageType type, String message, List<String> actions) {
-            var answer = new java.util.concurrent.CompletableFuture<String>();
-            List<javafx.scene.control.ButtonType> buttons = new java.util.ArrayList<>();
-            for (String action : actions) {
-                buttons.add(
-                        new javafx.scene.control.ButtonType(action, javafx.scene.control.ButtonBar.ButtonData.OTHER));
-            }
-            buttons.add(javafx.scene.control.ButtonType.CLOSE);
-            javafx.scene.control.Alert alert = Dialogs.styled(new javafx.scene.control.Alert(
-                    alertType(type), message, buttons.toArray(javafx.scene.control.ButtonType[]::new)));
-            alert.initOwner(host.window());
-            alert.initModality(javafx.stage.Modality.NONE); // the editor stays usable while it is asked
-            alert.setTitle(serverLabel(serverId));
-            alert.setHeaderText(null);
-            alert.getDialogPane().setMinWidth(480);
-            alert.setOnHidden(e -> {
-                javafx.scene.control.ButtonType chosen = alert.getResult();
-                answer.complete(
-                        chosen == null || chosen == javafx.scene.control.ButtonType.CLOSE ? null : chosen.getText());
-            });
-            alert.show();
-            return answer;
-        }
-
-        @Override
-        public java.util.concurrent.CompletableFuture<String> inputBox(
-                String serverId, @Nullable String prompt, @Nullable String value, @Nullable String placeHolder) {
-            var answer = new java.util.concurrent.CompletableFuture<String>();
-            javafx.scene.control.TextInputDialog dialog =
-                    Dialogs.styled(new javafx.scene.control.TextInputDialog(value == null ? "" : value));
-            dialog.initOwner(host.window());
-            dialog.setTitle(serverLabel(serverId));
-            dialog.setHeaderText(prompt == null || prompt.isBlank() ? null : prompt);
-            if (placeHolder != null) {
-                dialog.getEditor().setPromptText(placeHolder);
-            }
-            dialog.setOnHidden(e -> answer.complete(dialog.getResult()));
-            dialog.show();
-            return answer;
-        }
-
-        @Override
-        public java.util.concurrent.CompletableFuture<String> quickPick(
-                String serverId, @Nullable String placeHolder, List<PickItem> items) {
-            var answer = new java.util.concurrent.CompletableFuture<String>();
-            // The question goes in the title: as the field's placeholder it hid while the field had focus, so a
-            // run of import choices asked nothing anyone could see (third review AT4).
-            String question = placeHolder == null || placeHolder.isBlank() ? null : placeHolder;
-            QuickOpen<PickItem> picker = new QuickOpen<>(
-                    question == null ? serverLabel(serverId) : question + "  ·  " + serverLabel(serverId),
-                    question == null ? tr("palette.setting.pick") : question,
-                    () -> items,
-                    PickItem::label,
-                    item -> item.description() == null ? "" : item.description(),
-                    chosen -> answer.complete(chosen == null ? null : chosen.id()));
-            // No preview; the cancel hook is what tells the server the user chose nothing.
-            picker.setPreview(item -> {}, () -> answer.complete(null));
-            picker.setOverlayHost(host.overlayHost());
-            picker.show(host.window());
-            // Cancelled: the request that asked has ended, so the question goes too (fifth review DV1).
-            answer.whenComplete((value, error) -> {
-                if (answer.isCancelled()) {
-                    Platform.runLater(picker::hide);
-                }
-            });
-            return answer;
-        }
-
-        @Override
-        public java.util.concurrent.CompletableFuture<String> chooseImport(
-                String serverId, String simpleName, int line, List<PickItem> items) {
-            return quickPick(serverId, tr("picker.lsp.chooseImport", simpleName, line + 1), items);
-        }
-
-        @Override
-        public void openLocation(String serverId, Path file, int line, int column) {
-            ops.openAndGoto(file, line, column);
-        }
-
-        @Override
-        public java.util.concurrent.CompletableFuture<Object> clientCommand(
-                String serverId, String command, List<Object> arguments) {
-            return xml.clientCommand(serverId, command, arguments);
-        }
-
-        private javafx.scene.control.Alert.AlertType alertType(org.eclipse.lsp4j.MessageType type) {
-            if (type == null) {
-                return javafx.scene.control.Alert.AlertType.INFORMATION;
-            }
-            return switch (type) {
-                case Error -> javafx.scene.control.Alert.AlertType.ERROR;
-                case Warning -> javafx.scene.control.Alert.AlertType.WARNING;
-                default -> javafx.scene.control.Alert.AlertType.INFORMATION;
-            };
-        }
     }
 
     /** Palette picker over the LSP servers: toggles the chosen server's per-server enable ({@code lsp.toggleServer}). */
@@ -5211,12 +5174,17 @@ final class LspCoordinator {
         }
     }
 
+    /** What a language server asks, asked in this window. */
+    private LspServerPrompts serverPrompts() {
+        return new LspServerPrompts(host, this::serverLabel, ops::openAndGoto);
+    }
+
     /** Java roots already offered a Lombok download in this window. */
     private final java.util.Set<Path> lombokOffered = new java.util.HashSet<>();
 
     /** Asks whether to download Lombok for the project at a root; a field so a test can answer. */
     java.util.function.Function<Path, java.util.concurrent.CompletableFuture<Boolean>> lombokAsker =
-            root -> new ServerPrompts()
+            root -> serverPrompts()
                     .chooseAction(
                             LspServerRegistry.JAVA_SERVER_ID,
                             org.eclipse.lsp4j.MessageType.Info,
@@ -5901,7 +5869,10 @@ final class LspCoordinator {
 
     private void superAt(
             SuperAsk ask, String text, int line, int column, int caret, List<com.editora.lsp.MemberSpan> members) {
-        List<com.editora.lsp.MemberSpan> chain = com.editora.lsp.JavaMembers.enclosing(members, line);
+        List<com.editora.lsp.MemberSpan> chain = com.editora.lsp.JavaMembers.enclosing(members, line, column);
+        if (caret > 0 && caret < text.length() && text.startsWith("->", caret - 1)) {
+            caret++; // the caret inside a lambda's "->": the lambda's (eleventh review EM7)
+        }
         int at = chain.size() - 1;
         while (at >= 0 && !chain.get(at).isType() && !chain.get(at).isCallable()) {
             at--;
@@ -6053,7 +6024,7 @@ final class LspCoordinator {
                         openOneOrPick(ask, labelled(linked), "picker.superMethod.title", "status.lsp.noSuperMethod");
                         return;
                     }
-                    new SuperMethodWalk(lspManager, ask, text, method, found -> {
+                    new SuperMethodWalk(lspManager, ask, text, method, this::openText, found -> {
                                 slow.stop();
                                 openOneOrPick(
                                         ask,
@@ -6134,6 +6105,7 @@ final class LspCoordinator {
                                     ask,
                                     text,
                                     method,
+                                    this::openText,
                                     found -> openOneOrPick(
                                             ask, found, "picker.superMethod.title", "status.lsp.noSuperMethod"))
                             .start(anonymousClass);

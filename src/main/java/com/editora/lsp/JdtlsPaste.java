@@ -54,6 +54,23 @@ public final class JdtlsPaste {
             String pastedText,
             int tabSize,
             boolean insertSpaces) {
+        return paramsJson(uri, startLine, startChar, endLine, endChar, pastedText, tabSize, insertSpaces, null);
+    }
+
+    /**
+     * As above, with {@code copiedUri}: the Java file the text was copied from, whose imports jdtls then resolves its
+     * names by, so an ambiguous {@code Duration} is the copied file's (eleventh review A11).
+     */
+    public static String paramsJson(
+            String uri,
+            int startLine,
+            int startChar,
+            int endLine,
+            int endChar,
+            String pastedText,
+            int tabSize,
+            boolean insertSpaces,
+            @Nullable String copiedUri) {
         JsonObject start = new JsonObject();
         start.addProperty("line", startLine);
         start.addProperty("character", startChar);
@@ -73,7 +90,26 @@ public final class JdtlsPaste {
         params.add("location", location);
         params.addProperty("text", pastedText);
         params.add("formattingOptions", fmt);
+        if (copiedUri != null) {
+            params.addProperty("copiedDocumentUri", copiedUri);
+        }
         return params.toString();
+    }
+
+    /** The text last copied or cut from a Java file, and that file. */
+    private record Copy(String text, java.nio.file.Path file) {}
+
+    private static volatile @Nullable Copy lastCopy;
+
+    /** Records that {@code text} was copied or cut from {@code file} (any file; only a Java one is kept). */
+    public static void copied(String text, java.nio.file.@Nullable Path file) {
+        lastCopy = file != null && file.toString().endsWith(".java") ? new Copy(text, file) : null;
+    }
+
+    /** The Java file {@code pasted} was copied from, when it is the text last copied in Editora; else null. */
+    public static java.nio.file.@Nullable Path copiedFrom(String pasted) {
+        Copy c = lastCopy;
+        return c != null && c.text().replace("\r\n", "\n").equals(pasted.replace("\r\n", "\n")) ? c.file() : null;
     }
 
     /**

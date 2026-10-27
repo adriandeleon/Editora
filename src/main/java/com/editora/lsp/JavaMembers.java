@@ -20,13 +20,27 @@ public final class JavaMembers {
      * (ninth review DP2). Empty when the line is outside every symbol.
      */
     public static List<MemberSpan> enclosing(List<MemberSpan> members, int line) {
+        return enclosing(members, line, Integer.MAX_VALUE);
+    }
+
+    /**
+     * As {@link #enclosing(List, int)} at {@code column} of {@code line}: a member that starts on its parent's name line
+     * ({@code class V { void v() {} }}, or a class line ending in a comment jdtls gives the first member) holds the
+     * caret only from its start column on, so the class name is the class's (eleventh review DM3).
+     */
+    public static List<MemberSpan> enclosing(List<MemberSpan> members, int line, int column) {
         List<MemberSpan> chain = new ArrayList<>();
         List<MemberSpan> level = members;
         boolean descended = true;
         while (descended) {
             descended = false;
+            MemberSpan parent = chain.isEmpty() ? null : chain.get(chain.size() - 1);
             for (MemberSpan m : level) {
-                if (m.startLine() <= line && line <= m.endLine() && !m.kind().equals("package")) {
+                boolean beforeIt = parent != null
+                        && line == m.startLine()
+                        && m.startLine() == parent.nameLine()
+                        && column < m.startColumn();
+                if (m.startLine() <= line && line <= m.endLine() && !m.kind().equals("package") && !beforeIt) {
                     chain.add(m);
                     level = m.children();
                     descended = true;
@@ -164,6 +178,10 @@ public final class JavaMembers {
         while (start > from && Character.isJavaIdentifierPart(code.charAt(start - 1))) {
             start--; // the caret anywhere in a parameter's name
         }
+        boolean beforeParen = start < code.length() && code.charAt(start) == '(';
+        if (beforeParen) {
+            start++; // the caret just before the parameters' "(" (eleventh review BO3)
+        }
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("[\\w$\\s,.<>\\[\\]@?&]*?(\\))?\\s*->")
                 .matcher(code)
                 .region(start, code.length());
@@ -172,6 +190,9 @@ public final class JavaMembers {
         }
         int arrow = m.end() - 2;
         boolean parenthesized = m.group(1) != null;
+        if (beforeParen && !parenthesized) {
+            return -1;
+        }
         if (!parenthesized && code.substring(start, arrow).strip().matches(".*[\\s,].*")) {
             return -1; // an argument list before a one-parameter lambda: call(a, x -> ...)
         }
@@ -188,16 +209,49 @@ public final class JavaMembers {
         int to = Math.min(code.length(), caret + 200);
         for (int k = code.indexOf("::", from); k >= 0 && k < to; k = code.indexOf("::", k + 2)) {
             int left = k;
-            while (left > 0
-                    && (Character.isJavaIdentifierPart(code.charAt(left - 1)) || code.charAt(left - 1) == '.')) {
-                left--;
+            while (left > 0) {
+                char c = code.charAt(left - 1);
+                if (Character.isJavaIdentifierPart(c) || c == '.') {
+                    left--;
+                } else if (c == ']' || c == '>') { // String[]::new, List<String>::new (eleventh review BO3)
+                    int open = matching(code, left - 1, c == ']' ? '[' : '<', c);
+                    if (open < 0) {
+                        break;
+                    }
+                    left = open;
+                } else {
+                    break;
+                }
             }
             int right = k + 2;
+            while (right < code.length() && Character.isWhitespace(code.charAt(right))) {
+                right++;
+            }
+            if (right < code.length() && code.charAt(right) == '<') { // Collections::<String>emptyList
+                int close = code.indexOf('>', right);
+                right = close < 0 ? right : close + 1;
+            }
             while (right < code.length() && Character.isJavaIdentifierPart(code.charAt(right))) {
                 right++;
             }
             if (left <= caret && caret <= right) {
                 return k;
+            }
+        }
+        return -1;
+    }
+
+    /** The offset of the {@code open} matching the {@code close} at {@code at}, reading back; -1 if none. */
+    private static int matching(String code, int at, char open, char close) {
+        int depth = 0;
+        for (int i = at; i >= 0 && at - i < 200; i--) {
+            char c = code.charAt(i);
+            if (c == close) {
+                depth++;
+            } else if (c == open && --depth == 0) {
+                return i;
+            } else if (c == ';' || c == '{' || c == '}') {
+                return -1;
             }
         }
         return -1;
@@ -294,7 +348,11 @@ public final class JavaMembers {
             char c = code.charAt(i);
             if (c == '{') {
                 java.util.regex.Matcher m = anonymous.matcher(code.substring(Math.max(from, i - 300), i));
-                int type = m.find() ? Math.max(from, i - 300) + m.start(1) : -1;
+                // the name's last segment: jdtls prepares Comparator's hierarchy there, the anonymous class's at
+                // "java" of java.util.Comparator (eleventh review BM1)
+                int type = m.find()
+                        ? Math.max(from, i - 300) + m.start(1) + m.group(1).lastIndexOf('.') + 1
+                        : -1;
                 braces.push(new int[] {i, type});
             } else if (c == '}' && !braces.isEmpty()) {
                 braces.pop();
@@ -302,6 +360,13 @@ public final class JavaMembers {
         }
         // innermost: a method body directly inside an anonymous class body
         List<int[]> open = new ArrayList<>(braces); // innermost first
+        if (!open.isEmpty() && open.get(0)[1] >= 0) {
+            // in an anonymous class's body, outside its methods: on a method's header (its name, modifiers,
+            // annotations),
+            // that method, as IntelliJ takes the member the caret's leaf is in (eleventh review EM2)
+            int name = methodHeaderName(code, open.get(0)[0] + 1, end);
+            return name < 0 ? null : new int[] {open.get(0)[1], name};
+        }
         for (int k = 0; k + 1 < open.size(); k++) {
             if (open.get(k)[1] >= 0) {
                 return null; // in an anonymous class's body, outside its methods
@@ -321,6 +386,59 @@ public final class JavaMembers {
             return null;
         }
         return null;
+    }
+
+    /**
+     * The offset of the name of the method whose header holds {@code caret}, in a class body opened at {@code bodyStart}:
+     * the header runs from what ends the member before it (outside parentheses, so an annotation's {@code {"a"}} does
+     * not) to the method's {@code {}; -1 when the caret is in no method header.
+     */
+    private static int methodHeaderName(String code, int bodyStart, int caret) {
+        int start = bodyStart;
+        int depth = 0;
+        for (int i = Math.min(caret, code.length()) - 1; i >= bodyStart; i--) {
+            char c = code.charAt(i);
+            if (c == ')') {
+                depth++;
+            } else if (c == '(') {
+                depth--;
+            } else if (depth == 0 && (c == '{' || c == '}' || c == ';')) {
+                start = i + 1;
+                break;
+            }
+        }
+        int first = start;
+        while (first < code.length() && Character.isWhitespace(code.charAt(first))) {
+            first++;
+        }
+        if (caret < first) {
+            return -1; // between members, not on one
+        }
+        int brace = -1;
+        depth = 0;
+        for (int i = Math.max(start, Math.min(caret, code.length())); i < code.length(); i++) {
+            char c = code.charAt(i);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+            } else if (depth == 0 && (c == ';' || c == '}' || c == '=')) {
+                return -1; // a field, or the body's end
+            } else if (depth == 0 && c == '{') {
+                brace = i;
+                break;
+            }
+        }
+        if (brace < 0) {
+            return -1;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                        "([\\w$]+)\\s*\\([^(){};]*\\)\\s*(throws\\s+[\\w.,\\s]+)?\\s*$")
+                .matcher(code.substring(start, brace));
+        if (!m.find() || code.substring(start, start + m.start(1)).matches("(?s).*\\bnew\\s.*")) {
+            return -1; // no method, or an anonymous class's own header
+        }
+        return start + m.start(1);
     }
 
     /** A method symbol's simple name: {@code label} of {@code label()} or {@code map(T) : R}. */
@@ -382,6 +500,20 @@ public final class JavaMembers {
             String method,
             java.util.Set<String> typeVariables,
             java.util.Map<String, String> bindings) {
+        return overridden(members, method, typeVariables, bindings, m -> java.util.Map.of());
+    }
+
+    /**
+     * As {@link #overridden(List, String, java.util.Set, java.util.Map)}, with each candidate's own method type
+     * variables from {@code ownTypeVariables}: each key is a type variable of that method, bound to the asked method's
+     * type variable at its position, or to null (any type) when the two do not pair up (eleventh review BM2).
+     */
+    public static List<MemberSpan> overridden(
+            List<MemberSpan> members,
+            String method,
+            java.util.Set<String> typeVariables,
+            java.util.Map<String, String> bindings,
+            java.util.function.Function<MemberSpan, java.util.Map<String, @Nullable String>> ownTypeVariables) {
         String name = methodName(method);
         List<String> params = parameters(method);
         List<MemberSpan> out = new ArrayList<>();
@@ -391,8 +523,24 @@ public final class JavaMembers {
                 List<String> theirs = parameters(m.name());
                 boolean same = theirs.size() == params.size();
                 boolean equal = same;
+                java.util.Map<String, @Nullable String> own = same ? ownTypeVariables.apply(m) : java.util.Map.of();
+                java.util.Set<String> vars = typeVariables;
+                java.util.Map<String, String> bound = bindings;
+                if (!own.isEmpty()) {
+                    vars = new java.util.HashSet<>(typeVariables);
+                    vars.addAll(own.keySet());
+                    java.util.Map<String, String> withOwn = new java.util.HashMap<>(bindings);
+                    own.forEach((k, v) -> {
+                        if (v != null) {
+                            withOwn.put(k, v);
+                        } else {
+                            withOwn.remove(k); // the method's own, so not the type's of the same name
+                        }
+                    });
+                    bound = withOwn;
+                }
                 for (int i = 0; same && i < params.size(); i++) {
-                    same = sameParameter(params.get(i), theirs.get(i), typeVariables, bindings);
+                    same = sameParameter(params.get(i), theirs.get(i), vars, bound);
                     equal = equal && bare(params.get(i)).equals(bare(theirs.get(i)));
                 }
                 if (same) {
@@ -480,44 +628,181 @@ public final class JavaMembers {
     /**
      * The type arguments a declaration's header gives {@code type} ({@code Store} in {@code class S implements
      * Store<String>}, or in {@code new Store<String>() {}}), reading {@code text} from {@code from} to the first
-     * {@code {}; empty when it gives none (a raw type, {@code <>}) or does not name it. The last mention wins, so a
-     * bound in the header's own type parameters ({@code <T extends Comparable<T>>}) does not (tenth review DO2).
+     * {@code {}; empty when it gives none (a raw type, {@code <>}) or does not name it. Only a mention outside every
+     * {@code <…>} counts, the first that gives arguments: not a bound in the header's own type parameters
+     * ({@code <T extends Comparable<T>>}), nor an argument of it or of another supertype ({@code List<List<Double>>},
+     * {@code Comparable<Store<Integer>>}) (tenth review DO2, eleventh review DM1).
      */
     public static List<String> typeArguments(String text, int from, String type) {
+        return typeArguments(text, from, type, false);
+    }
+
+    /** As {@link #typeArguments(String, int, String)}; {@code ownName}: {@code from} is the declared type's own name. */
+    public static List<String> typeArguments(String text, int from, String type, boolean ownName) {
+        List<String> found = new ArrayList<>();
+        mentions(text, from, type, ownName, (code, after) -> {
+            if (after < code.length() && code.charAt(after) == '<') {
+                List<String> args = arguments(code, after);
+                if (!args.isEmpty()) {
+                    found.addAll(args);
+                    return true;
+                }
+            }
+            return false;
+        });
+        return found;
+    }
+
+    /**
+     * Whether a declaration's header names {@code type} raw ({@code interface R extends Store}), outside every
+     * {@code <…>}: its type variables are then their erasure (eleventh review BM4). A {@code <>} is no raw type.
+     */
+    public static boolean namesRaw(String text, int from, String type, boolean ownName) {
+        boolean[] raw = {false};
+        mentions(text, from, type, ownName, (code, after) -> {
+            raw[0] = after >= code.length() || (code.charAt(after) != '<' && code.charAt(after) != '.');
+            return raw[0];
+        });
+        return raw[0];
+    }
+
+    /**
+     * Calls {@code at} with the offset after each mention of {@code type}'s simple name (and the blanks after it)
+     * outside every {@code <…>}, from {@code from} to the header's {@code {}, until it answers true.
+     */
+    private static void mentions(
+            String text, int from, String type, boolean ownName, java.util.function.BiPredicate<String, Integer> at) {
         String code = code(text);
         int start = Math.max(0, Math.min(from, code.length()));
         int brace = code.indexOf('{', start);
         int end = brace < 0 ? code.length() : brace;
         String simple = type.replaceAll("<.*", "").strip();
         simple = simple.substring(simple.lastIndexOf('.') + 1);
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
-                        "(?<![\\w$])(?:[\\w$]+\\s*\\.\\s*)*" + java.util.regex.Pattern.quote(simple) + "\\s*<")
-                .matcher(code)
-                .region(start, end);
-        List<String> found = List.of();
-        while (m.find()) {
-            List<String> args = new ArrayList<>();
-            int depth = 0;
-            int arg = m.end();
-            for (int i = m.end(); i < end; i++) {
-                char c = code.charAt(i);
-                if (c == '<') {
-                    depth++;
-                } else if ((c == '>' && depth-- == 0) || (c == ',' && depth == 0)) {
-                    if (!code.substring(arg, i).isBlank()) {
-                        args.add(code.substring(arg, i).strip());
-                    }
-                    arg = i + 1;
-                    if (c == '>') {
-                        break;
-                    }
-                }
-            }
-            if (!args.isEmpty()) {
-                found = args;
+        int i = start;
+        if (ownName) { // the declared type's own name, and its own type parameters
+            while (i < end && Character.isJavaIdentifierPart(code.charAt(i))) {
+                i++;
             }
         }
-        return found;
+        int depth = 0;
+        while (i < end) {
+            char c = code.charAt(i);
+            if (c == '<') {
+                depth++;
+                i++;
+            } else if (c == '>') {
+                depth = Math.max(0, depth - 1);
+                i++;
+            } else if (Character.isJavaIdentifierStart(c)
+                    && (i == 0 || !Character.isJavaIdentifierPart(code.charAt(i - 1)))) {
+                int j = i;
+                while (j < end && Character.isJavaIdentifierPart(code.charAt(j))) {
+                    j++;
+                }
+                if (depth == 0 && code.substring(i, j).equals(simple)) {
+                    int after = j;
+                    while (after < end && Character.isWhitespace(code.charAt(after))) {
+                        after++;
+                    }
+                    if (at.test(code, after)) {
+                        return;
+                    }
+                }
+                i = j;
+            } else {
+                i++;
+            }
+        }
+    }
+
+    /**
+     * The offset of the last segment of the (qualified) type name at {@code at}, after an optional {@code new}:
+     * {@code Comparator} of {@code new java.util.Comparator<>()} (eleventh review BM1).
+     */
+    public static int lastSegment(String text, int at) {
+        String code = code(text);
+        int i = Math.max(0, Math.min(at, code.length()));
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:new\\s+)?([\\w$]+(?:\\s*\\.\\s*[\\w$]+)*)")
+                .matcher(code)
+                .region(i, code.length());
+        if (!m.lookingAt()) {
+            return i;
+        }
+        String name = m.group(1);
+        int dot = name.lastIndexOf('.');
+        int last = m.start(1) + dot + 1;
+        while (last < code.length() && Character.isWhitespace(code.charAt(last))) {
+            last++;
+        }
+        return last;
+    }
+
+    /** The comma-separated arguments of the {@code <…>} opening at {@code open}. */
+    private static List<String> arguments(String code, int open) {
+        List<String> args = new ArrayList<>();
+        int depth = 0;
+        int arg = open + 1;
+        for (int i = open + 1; i < code.length(); i++) {
+            char c = code.charAt(i);
+            if (c == '<') {
+                depth++;
+            } else if ((c == '>' && depth-- == 0) || (c == ',' && depth == 0)) {
+                if (!code.substring(arg, i).isBlank()) {
+                    args.add(code.substring(arg, i).strip().replaceAll("\\s+", " "));
+                }
+                arg = i + 1;
+                if (c == '>') {
+                    break;
+                }
+            }
+        }
+        return args;
+    }
+
+    /**
+     * A method's own type parameters ({@code <K, V>} of {@code public <K, V> Map<K, V> f()}), read from its declaration
+     * in {@code text} from {@code from} (its line's start) to its name at {@code name} (eleventh review BM2).
+     */
+    public static List<String> methodTypeParameters(String text, int from, int name) {
+        String head = declarationHead(code(text), from, name)
+                .replaceAll("@[\\w.]+(\\s*\\([^)]*\\))?", " ")
+                .replaceFirst(
+                        "^\\s*((public|protected|private|static|abstract|final|default|synchronized|native|strictfp)"
+                                + "\\s+)*",
+                        "")
+                .strip();
+        if (!head.startsWith("<")) {
+            return List.of();
+        }
+        int depth = 0;
+        for (int i = 0; i < head.length(); i++) {
+            if (head.charAt(i) == '<') {
+                depth++;
+            } else if (head.charAt(i) == '>' && --depth == 0) {
+                return typeParameters("m" + head.substring(0, i + 1));
+            }
+        }
+        return List.of();
+    }
+
+    /** Each type parameter's erasure in a type's outline name: {@code Narrow<T extends Number>} gives T as Number. */
+    public static java.util.Map<String, String> typeParameterErasures(String typeName) {
+        java.util.Map<String, String> out = new java.util.HashMap<>();
+        int open = typeName.indexOf('<');
+        int close = typeName.lastIndexOf('>');
+        if (open < 0 || close < open) {
+            return out;
+        }
+        for (String p : arguments(typeName.substring(0, close + 1), open)) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                            "^(?:@[\\w.]+\\s*)*([A-Za-z_$][\\w$]*)(?:\\s+extends\\s+([\\w$.]+))?")
+                    .matcher(p);
+            if (m.find()) {
+                String bound = m.group(2) == null ? "Object" : m.group(2);
+                out.put(m.group(1), bound.substring(bound.lastIndexOf('.') + 1));
+            }
+        }
+        return out;
     }
 
     /**

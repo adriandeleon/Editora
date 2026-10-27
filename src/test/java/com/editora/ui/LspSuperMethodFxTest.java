@@ -805,4 +805,100 @@ class LspSuperMethodFxTest {
 
         assertEquals(List.of(new LspCoordinatorFixture.Jump(task, 1, 9)), fx.ops.jumps);
     }
+
+    /**
+     * An anonymous {@code new java.util.Comparator<>()} is prepared at its name's last segment, where jdtls answers
+     * with Comparator, and a wildcard field type binds nothing (eleventh review BM1, EM1).
+     */
+    @Test
+    void aQualifiedDiamondWithAWildcardFieldIsWalkedFromItsLastSegment() throws Exception {
+        Path comparator = Files.writeString(
+                root.resolve("Comparator.java"), "interface Comparator<T> {\n    int compare(T a, T b);\n}\n");
+        String source =
+                "class A {\n    void f() {\n        Comparator<? super String> c = new java.util.Comparator<>() {\n"
+                        + "            public int compare(String a, String b) {\n                return 3;\n            }\n"
+                        + "        };\n    }\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        int nameColumn = source.split("\n")[2].indexOf("java.util");
+        DocumentSymbol a = member("A", SymbolKind.Class, 0, 8, 0, 6);
+        DocumentSymbol f = member("f()", SymbolKind.Method, 1, 7, 1, 9);
+        DocumentSymbol anonymous = member("new Comparator<>() {...}", SymbolKind.Class, 2, 6, 2, nameColumn);
+        anonymous.getChildren().add(member("compare(String, String)", SymbolKind.Method, 3, 5, 3, 23));
+        f.getChildren().add(anonymous);
+        a.getChildren().add(f);
+        fx.server().documentSymbolResponse = List.of(Either.forRight(a));
+        DocumentSymbol comparatorType = member("Comparator<T>", SymbolKind.Interface, 0, 2, 0, 10);
+        comparatorType.getChildren().add(member("compare(T, T)", SymbolKind.Method, 1, 1, 1, 8));
+        fx.server()
+                .documentSymbolByUri
+                .put(com.editora.lsp.LspTestHooks.uri(comparator), List.of(Either.forRight(comparatorType)));
+        fx.server().typeHierarchyResponse = List.of(new TypeHierarchyItem(
+                "Comparator", SymbolKind.Interface, comparator.toUri().toString(), range(0, 0, 1), range(0, 10, 20)));
+        fx.server().supertypesByName.put("Comparator", List.of());
+        fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString("[]");
+        fx.caret(b, 4, 16);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        Position prepared = fx.server().typeHierarchyPrepares.get(0).getPosition();
+        assertEquals(new Position(2, source.split("\n")[2].indexOf("Comparator<>")), prepared, "at Comparator");
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(comparator, 1, 8)), fx.ops.jumps);
+    }
+
+    /**
+     * An open supertype file is read as its buffer has it, which jdtls's positions follow: unsaved lines above its
+     * header misread the disk text (eleventh review BM3).
+     */
+    @Test
+    void anOpenSupertypeIsReadFromItsBuffer() throws Exception {
+        Path store = Files.writeString(root.resolve("Store.java"), "interface Store<T> {\n    void save(T item);\n}\n");
+        Path mid = Files.writeString(
+                root.resolve("Mid.java"),
+                "interface Mid<X> extends Store<X> {}\ninterface Wrong<Y> extends Store<java.util.List<Y>> {}\n");
+        fx.open(
+                "Mid.java",
+                "\n\n\ninterface Mid<X> extends Store<X> {}\ninterface Wrong<Y> extends Store<java.util.List<Y>> {}\n");
+        String source = "interface Leaf extends Mid<String> {\n    void save(String s);\n}\n";
+        EditorBuffer b = fx.open("Leaf.java", source);
+        DocumentSymbol leaf = member("Leaf", SymbolKind.Interface, 0, 2, 0, 10);
+        leaf.getChildren().add(member("save(String)", SymbolKind.Method, 1, 1, 1, 9));
+        fx.server().documentSymbolResponse = List.of(Either.forRight(leaf));
+        DocumentSymbol midType = member("Mid<X>", SymbolKind.Interface, 3, 3, 3, 10); // the buffer's line
+        fx.server().documentSymbolByUri.put(com.editora.lsp.LspTestHooks.uri(mid), List.of(Either.forRight(midType)));
+        DocumentSymbol storeType = member("Store<T>", SymbolKind.Interface, 0, 2, 0, 10);
+        storeType.getChildren().add(member("save(T)", SymbolKind.Method, 1, 1, 1, 9));
+        fx.server()
+                .documentSymbolByUri
+                .put(com.editora.lsp.LspTestHooks.uri(store), List.of(Either.forRight(storeType)));
+        String uri = root.resolve("Leaf.java").toUri().toString();
+        fx.server().typeHierarchyResponse =
+                List.of(new TypeHierarchyItem("Leaf", SymbolKind.Interface, uri, range(0, 0, 1), range(0, 10, 14)));
+        fx.server()
+                .supertypesByName
+                .put(
+                        "Leaf",
+                        List.of(new TypeHierarchyItem(
+                                "Mid",
+                                SymbolKind.Interface,
+                                mid.toUri().toString(),
+                                range(3, 0, 1),
+                                range(3, 10, 13))));
+        fx.server()
+                .supertypesByName
+                .put(
+                        "Mid",
+                        List.of(new TypeHierarchyItem(
+                                "Store",
+                                SymbolKind.Interface,
+                                store.toUri().toString(),
+                                range(0, 0, 1),
+                                range(0, 10, 15))));
+        fx.server().supertypesByName.put("Store", List.of());
+        fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString("[]");
+        fx.caret(b, 1, 10);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(store, 1, 9)), fx.ops.jumps, "T is String through Mid");
+    }
 }

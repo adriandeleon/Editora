@@ -336,4 +336,91 @@ class JavaMembersTest {
         assertEquals("Poly", JavaMembers.typeAt(OUTLINE, 7, "Poly").name());
         assertNull(JavaMembers.typeAt(OUTLINE, 7, "Missing"));
     }
+
+    /**
+     * A member that starts on its parent's name line holds the caret only from its start column: jdtls starts the first
+     * member's range at a comment ending the class line (eleventh review DM3).
+     */
+    @Test
+    void aClassLinesCommentIsNotItsFirstMember() {
+        MemberSpan area = new MemberSpan("area()", "method", 0, 1, 1, 18, List.of(), 52);
+        MemberSpan sub = new MemberSpan("Sub", "class", 0, 2, 0, 17, List.of(area), 4);
+        assertEquals(List.of(sub), JavaMembers.enclosing(List.of(sub), 0, 18), "on the class name");
+        assertEquals(List.of(sub, area), JavaMembers.enclosing(List.of(sub), 0, 60), "in the comment, the member's");
+        assertEquals(List.of(sub, area), JavaMembers.enclosing(List.of(sub), 1, 0), "a later line");
+    }
+
+    /**
+     * On an anonymous class method's header (its name, modifiers, annotation) that method is the anchor, as in its
+     * body; between members, none (eleventh review EM2, BP2).
+     */
+    @Test
+    void anAnonymousMethodsHeaderIsThatMethod() {
+        String text = "static {\n    BY = new java.util.Comparator<String>() {\n        int seen = 0;\n\n"
+                + "        @Override\n        public int compare(String a, String b) {\n            return 0;\n"
+                + "        }\n    };\n}\n";
+        int type = text.indexOf("Comparator<String>");
+        int name = text.indexOf("compare(");
+        for (String at : List.of("compare(", "public int", "@Override", "return 0")) {
+            int[] found = JavaMembers.anonymousMethod(text, 0, text.indexOf(at) + 2);
+            assertEquals(type, found[0], at + ": the name's last segment");
+            assertEquals(name, found[1], at);
+        }
+        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("seen")), "a field");
+        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("\n\n") + 1), "between members");
+        String annotated = "new Runnable() {\n    @SuppressWarnings({\"a\"}) public void run() {}\n}";
+        int[] run = JavaMembers.anonymousMethod(annotated, 0, annotated.indexOf("Suppress"));
+        assertEquals(annotated.indexOf("run()"), run[1], "an annotation's braces are no member's end");
+    }
+
+    /** Method references with arrays and explicit type arguments, and a caret before a lambda's "(" (BO3, EM7). */
+    @Test
+    void referencesAndParametersAtTheirEdges() {
+        String text =
+                "void f() {\n    Supplier<String[]> s = n -> new String[n];\n    IntFunction<String[]> g = String[]::new;\n"
+                        + "    Supplier<List<String>> e = java.util.Collections::<String>emptyList;\n    run((x) -> x);\n"
+                        + "    run(() -> 1);\n}\n";
+        int ref = text.indexOf("::new");
+        assertEquals(ref, JavaMembers.methodReference(text, text.indexOf("String[]::")));
+        assertEquals(ref, JavaMembers.methodReference(text, text.indexOf("[]::") + 1));
+        int typed = text.indexOf("::<String>");
+        assertEquals(typed, JavaMembers.methodReference(text, text.indexOf("emptyList")));
+        int paren = text.indexOf("(x)");
+        assertEquals(text.indexOf("->", paren), JavaMembers.lambdaParameterArrow(text, 0, paren));
+        int empty = text.indexOf("() -> 1");
+        assertEquals(text.indexOf("->", empty), JavaMembers.lambdaParameterArrow(text, 0, empty));
+    }
+
+    /**
+     * Type arguments from a supertype's top-level mention only; raw and erased; a method's own type parameters
+     * (eleventh review DM1, BM4, BM2).
+     */
+    @Test
+    void headersAreReadAtTheirTopLevel() {
+        String matrix = "interface Matrix extends List<List<Double>> {";
+        assertEquals(List.of("List<Double>"), JavaMembers.typeArguments(matrix, 10, "List<E>", true));
+        String odd = "interface Odd extends Store<String>, Comparable<Store<Integer>> {";
+        assertEquals(List.of("String"), JavaMembers.typeArguments(odd, 10, "Store<T>", true));
+        String same = "class Box<T> extends other.Box<String> {";
+        assertEquals(List.of("String"), JavaMembers.typeArguments(same, 6, "Box<T>", true), "not its own name");
+        assertTrue(JavaMembers.namesRaw("interface R extends Store {", 10, "Store<T>", true));
+        assertFalse(JavaMembers.namesRaw("interface R extends Store<String> {", 10, "Store<T>", true));
+        assertFalse(JavaMembers.namesRaw("x = new Comparator<>() {", 8, "Comparator<T>", false), "a diamond");
+        assertEquals(java.util.Map.of("T", "Number"), JavaMembers.typeParameterErasures("Narrow<T extends Number>"));
+        assertEquals(java.util.Map.of("T", "Object"), JavaMembers.typeParameterErasures("Store<T>"));
+        String conv = "    @Override <U> U conv(String s, U o);";
+        assertEquals(List.of("U"), JavaMembers.methodTypeParameters(conv, 0, conv.indexOf("conv")));
+        String two = "    public static <K, V extends Comparable<V>> Map<K, V> f() {}";
+        assertEquals(List.of("K", "V"), JavaMembers.methodTypeParameters(two, 0, two.indexOf("f()")));
+        assertTrue(JavaMembers.methodTypeParameters("    void g(T t) {}", 0, 9).isEmpty());
+        assertEquals(18, JavaMembers.lastSegment("x = new java.util.Comparator<>()", 4));
+        List<MemberSpan> generic = List.of(span("conv(String, Out)", "method", 1, 1, 1));
+        java.util.Map<String, String> outIsU = new java.util.HashMap<>();
+        outIsU.put("Out", "U");
+        assertEquals(
+                generic,
+                JavaMembers.overridden(
+                        generic, "conv(String, U)", java.util.Set.of(), java.util.Map.of(), m -> outIsU));
+        assertTrue(JavaMembers.overridden(generic, "conv(String, U)").isEmpty(), "Out is no shape");
+    }
 }
