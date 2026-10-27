@@ -50,6 +50,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   All Open Files and XML: Bind to Grammar…; the "Bind to existing grammar/schema" quick fix picks an XSD, DTD or
   RELAX NG file and binds it with `xsi:noNamespaceSchemaLocation`, a DOCTYPE or `xml-model`; lemminx's buttons on
   its notifications and its client commands are carried out.
+- **XML: "Generate … and bind" quick fixes work.** Each of lemminx's fixes that writes an XSD, DTD or RelaxNG
+  grammar for a file without one failed with "Could not apply" and left an empty tab for the grammar file; the
+  grammar is now written and bound. Any refused edit closes the tabs it opened, and one that names a path Editora
+  cannot place says which.
+- **XML completion lists the schema's elements and values first.** "Insert Comment" and "Insert CDATA" were
+  preselected after `<`, so Enter inserted a comment; completion now orders the server's sort keys ignoring case,
+  as VS Code does.
+- **XML: Tab re-indents a line while the XML server runs**, and falls back to the usual smart Tab when the server
+  gives no indent; it did nothing on a non-blank line.
+- **XML: a close tag typed by hand joins the one tag auto-close inserted** instead of leaving `<from>x</</from>`.
+- **Show Documentation and Show Problem at Caret show the whole problem at the caret**, above any documentation:
+  lemminx's list of the allowed elements or values was cut off in the status line, and hover said there was
+  nothing.
+- **XML: no dangling "Code:" at the end of problem messages**, and Rename says it cannot rename where the server
+  declines instead of opening a dialog that does nothing.
+- **XML: "Minify XML" is no longer offered as the fix for a problem**; it stays under Generate, and in Code Actions
+  on a line without one.
+- **XML: a schema changed outside Editora revalidates the XML files that use it**, also in a collapsed Project
+  folder; the errors stayed until the next keystroke.
 
 - **Java: Go to Super Method reads type arguments.** In `interface StrStore extends Store<String>`, `save(Integer)`
   opened `Store.save(T)`, and `Multi.accept(Integer)` offered a second, wrong branch; `T` now stands for `String`

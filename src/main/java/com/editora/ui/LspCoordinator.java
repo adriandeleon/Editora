@@ -6706,6 +6706,10 @@ final class LspCoordinator {
         long generation = ++hoverGeneration;
         long version = b.docVersion();
         int caret = area.getCaretPosition();
+        // The problems here lead the card: a lemminx error's list of what is allowed reached no keyboard user (C6).
+        List<LspDiagnostic> here = path == null
+                ? List.of()
+                : CaretProblems.at(problemsOf(path), area.getCurrentParagraph(), area.getCaretColumn());
         java.util.function.BooleanSupplier stale = () -> b != host.activeBuffer()
                 || b.isDisposed()
                 || area != b.getFocusedArea()
@@ -6720,16 +6724,19 @@ final class LspCoordinator {
                 area.getCaretColumn(),
                 text -> {
                     if (stale.getAsBoolean()) return;
-                    if (text == null || text.isBlank()) {
+                    if ((text == null || text.isBlank()) && here.isEmpty()) {
                         host.setStatus(tr("status.lsp.noHover"));
                     } else {
-                        showHoverPopup(area, text);
+                        showHoverPopup(area, text == null ? "" : text, here);
                     }
                 },
                 failure -> {
                     if (stale.getAsBoolean()) return;
                     // The server failed, which is not "nothing here": say so (Maven review C2).
                     host.setStatus(tr("status.lsp.hoverFailed", failure));
+                    if (!here.isEmpty()) {
+                        showHoverPopup(area, "", here);
+                    }
                 });
     }
 
@@ -6820,12 +6827,16 @@ final class LspCoordinator {
      */
     void codeActions() {
         // jdtls lists every generator at every caret; they have their own command (Generate), so the quick-fix
-        // list is about the caret (Java review A4). Other servers' source actions stay in it.
+        // list is about the caret (Java review A4). Other servers' source actions stay in it, except on a line
+        // with a problem, where a whole-file rewrite (lemminx's Minify XML) is no fix (XML review B14).
+        EditorBuffer b = host.activeBuffer(); // showCodeActions reports a file with no server, once
+        Path path = b == null ? null : lspPath(b);
+        boolean onProblem = b != null
+                && path != null
+                && CaretProblems.onLine(problemsOf(path), b.getFocusedArea().getCurrentParagraph());
         showCodeActions(
-                (serverId, item) -> !LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
-                        || (com.editora.lsp.CodeActionKinds.group(item.kind())
-                                        != com.editora.lsp.CodeActionKinds.Group.SOURCE
-                                && !com.editora.lsp.CodeActionKinds.isJavaGeneratorAssist(item)),
+                (serverId, item) -> com.editora.lsp.CodeActionKinds.inQuickFixList(
+                        LspServerRegistry.JAVA_SERVER_ID.equals(serverId), item, onProblem),
                 "status.lsp.noCodeActions",
                 null);
     }
@@ -7056,29 +7067,17 @@ final class LspCoordinator {
             return;
         }
         CodeArea area = b.getFocusedArea();
-        int line = area.getCurrentParagraph();
-        int col = area.getCaretColumn();
-        LspDiagnostic best = null;
-        for (LspDiagnostic d : problems.getOrDefault(ops.canonicalize(path), List.of())) {
-            boolean onLine = d.startLine() <= line && line <= d.endLine();
-            boolean atCaret = onLine
-                    && (d.startLine() < line || d.startCol() <= col)
-                    && (d.endLine() > line || col <= d.endCol());
-            if (onLine
-                    && (best == null
-                            || atCaret
-                            || d.severity().ordinal() < best.severity().ordinal())) {
-                best = d;
-                if (atCaret) {
-                    break;
-                }
-            }
-        }
+        LspDiagnostic best = CaretProblems.nearest(problemsOf(path), area.getCurrentParagraph(), area.getCaretColumn());
         if (best == null) {
             host.setStatus(tr("status.lsp.noProblemHere"));
         } else {
             sayProblem(best);
+            showHoverPopup(area, "", List.of(best)); // the whole message, which the status line cuts (XML review C6)
         }
+    }
+
+    private List<LspDiagnostic> problemsOf(Path path) {
+        return problems.getOrDefault(ops.canonicalize(path), List.of());
     }
 
     private void sayProblem(LspDiagnostic d) {
@@ -7133,7 +7132,12 @@ final class LspCoordinator {
                                         lspManager.lastCodeActionFailure())
                                 : lspManager.lastCodeActionEmpty() // resolved to no change at all (ET1)
                                         ? tr("status.lsp.codeActionNoChange", applied.title())
-                                        : tr("status.lsp.codeActionFailed", applied.title())));
+                                        : lspManager.lastEditUnresolvedUri() != null // XML review B1
+                                                ? tr(
+                                                        "status.lsp.codeActionBadUri",
+                                                        applied.title(),
+                                                        lspManager.lastEditUnresolvedUri())
+                                                : tr("status.lsp.codeActionFailed", applied.title())));
     }
 
     /**
@@ -7841,9 +7845,13 @@ final class LspCoordinator {
      */
     void applyWorkspaceEditsAsync(
             com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> whenDone) {
-        openBeforeEdit.put(mapped, openBuffers());
+        java.util.Set<EditorBuffer> before = openBuffers();
+        openBeforeEdit.put(mapped, before);
         java.util.function.Consumer<Boolean> done = ok -> {
             openBeforeEdit.remove(mapped);
+            if (!committedEdits.remove(mapped) && !ok) {
+                WorkspaceEditTabs.discardOpened(mapped, before, this::bufferForLspPath, ops::closeBackgroundBuffer);
+            }
             whenDone.accept(ok);
         };
         if (!resourceTargetsSafe(mapped)) {
@@ -8013,9 +8021,13 @@ final class LspCoordinator {
             return false;
         }
         invalidateResourceWrites(mapped);
+        java.util.Set<EditorBuffer> before = openBuffers();
         WorkspaceTransactionStatus transaction = beginTransaction(mapped);
         boolean applied = applyWorkspaceEdits(mapped, transaction);
         endTransaction(transaction);
+        if (!committedEdits.remove(mapped) && !applied) {
+            WorkspaceEditTabs.discardOpened(mapped, before, this::bufferForLspPath, ops::closeBackgroundBuffer);
+        }
         return applied;
     }
 
@@ -8099,6 +8111,7 @@ final class LspCoordinator {
         // The filesystem transaction completed before any text changed. Now remap open buffers/session state
         // in protocol order; this part is in-memory and cannot leave a failed disk move behind.
         transaction.journal.committed();
+        committedEdits.add(mapped);
         List<Path> orphaned = remapRenamedBuffers(staged, targets);
         for (StagedCreate created : creates) {
             ops.fileCreated(created.operation().file());
@@ -8184,6 +8197,7 @@ final class LspCoordinator {
             return;
         }
         transaction.journal.committed();
+        committedEdits.add(mapped);
         List<Path> orphaned = remapRenamedBuffers(renames, targets);
         creates.forEach(created -> ops.fileCreated(created.operation().file()));
         retireDeleted(deletes, targets);
@@ -8232,6 +8246,10 @@ final class LspCoordinator {
     /** The buffers open when each asynchronous workspace edit began; the others it opened itself. */
     private final Map<com.editora.lsp.WorkspaceEditMapper.Mapped, java.util.Set<EditorBuffer>> openBeforeEdit =
             new java.util.IdentityHashMap<>();
+
+    /** Edits whose text went in: a later failure (a tab not remapped) must not close the tabs they opened. */
+    private final java.util.Set<com.editora.lsp.WorkspaceEditMapper.Mapped> committedEdits =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     private java.util.Set<EditorBuffer> openBuffers() {
         java.util.Set<EditorBuffer> out = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
@@ -9506,20 +9524,27 @@ final class LspCoordinator {
      * Shows LSP hover markdown in a dismissable popup at the caret (rendered via the Markdown renderer).
      * Closes on Escape, a click elsewhere (auto-hide), caret movement, scrolling, or another hover.
      */
-    private void showHoverPopup(CodeArea area, String markdown) {
+    private void showHoverPopup(CodeArea area, String markdown, List<LspDiagnostic> problemsHere) {
         hideHoverPopup();
         Node content;
-        try {
-            // Links in a hover (documentation URLs) open through the window's link choke point.
-            content = MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseForRender(markdown),
-                    null,
-                    host::openExternalUrl,
-                    MarkdownRenderer.ImagePolicy.DATA_ONLY);
-        } catch (RuntimeException e) {
-            Label label = new Label(markdown);
-            label.setWrapText(true);
-            content = label;
+        Node problemsNode = CaretProblems.node(problemsHere);
+        if (markdown.isBlank()) {
+            content = problemsNode != null ? problemsNode : new Label();
+        } else
+            try {
+                // Links in a hover (documentation URLs) open through the window's link choke point.
+                content = MarkdownRenderer.renderDocument(
+                        MarkdownRenderer.parseForRender(markdown),
+                        null,
+                        host::openExternalUrl,
+                        MarkdownRenderer.ImagePolicy.DATA_ONLY);
+            } catch (RuntimeException e) {
+                Label label = new Label(markdown);
+                label.setWrapText(true);
+                content = label;
+            }
+        if (problemsNode != null && content != problemsNode) {
+            content = new VBox(10, problemsNode, new javafx.scene.control.Separator(), content);
         }
         // In a scroll pane no taller than part of the window: a command's hover from bash-language-server is
         // its whole man page (8 KB for `ls`), which made a popup thousands of pixels tall with most of it

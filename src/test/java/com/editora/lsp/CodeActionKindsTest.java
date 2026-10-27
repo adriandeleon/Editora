@@ -44,4 +44,16 @@ class CodeActionKindsTest {
                 java.util.List.of(variable, tryCatch, iface),
                 CodeActionKinds.arrange(java.util.List.of(iface, tryCatch, variable), i -> true));
     }
+
+    /** lemminx's "Minify XML" sat in every quick-fix list, and was the only "fix" on an error (XML review B14). */
+    @Test
+    void anotherServersSourceActionsLeaveTheQuickFixesOnALineWithAProblem() {
+        var minify = new LspManager.CodeActionItem("Minify XML", "source.minify", false, "m");
+        var fix = new LspManager.CodeActionItem("Replace with 'low'", "quickfix", false, "f");
+        assertTrue(CodeActionKinds.inQuickFixList(false, minify, false), "on a clean line it is still offered");
+        assertFalse(CodeActionKinds.inQuickFixList(false, minify, true), "not as a fix for a problem");
+        assertTrue(CodeActionKinds.inQuickFixList(false, fix, true));
+        assertFalse(CodeActionKinds.inQuickFixList(true, minify, false), "jdtls's source actions: Generate only");
+        assertTrue(CodeActionKinds.inQuickFixList(true, fix, true));
+    }
 }

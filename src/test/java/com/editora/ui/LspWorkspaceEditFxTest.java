@@ -854,6 +854,56 @@ class LspWorkspaceEditFxTest {
         assertEquals("keep", Files.readString(occupied));
     }
 
+    /**
+     * lemminx's "Generate 'nogrammar.dtd' and bind with DOCTYPE" end to end, with the server's exact edit (XML
+     * review C1): the created DTD carries {@code version: 0}, which named no document this client sent, and every
+     * grammar-generation fix failed with "Could not apply".
+     */
+    @Test
+    void lemminxsGenerateGrammarFixWritesTheGrammarAndBindsIt() throws Exception {
+        ops.host = host;
+        manager.configure(true, Map.of("xml", "lemminx"));
+        EditorBuffer xml = openBuffer("nogrammar.xml", com.editora.lsp.LemminxPayloads.NOGRAMMAR_XML);
+        manager.openDocument(xml.getPath(), root, "xml", com.editora.lsp.LemminxPayloads.NOGRAMMAR_XML);
+        Path dtd = root.resolve("nogrammar.dtd");
+        var action = new org.eclipse.lsp4j.CodeAction("Generate 'nogrammar.dtd' and bind with DOCTYPE");
+        action.setEdit(com.editora.lsp.LemminxPayloads.generateDtdAndBind(root));
+        var result = new CompletableFuture<Boolean>();
+
+        FxTestSupport.runOnFx(() -> manager.applyCodeAction(xml.getPath(), (Object) action, result::complete));
+
+        assertTrue(result.get(10, java.util.concurrent.TimeUnit.SECONDS), "the fix applies");
+        assertEquals(com.editora.lsp.LemminxPayloads.NOGRAMMAR_DTD, Files.readString(dtd));
+        assertEquals(
+                "<!DOCTYPE config SYSTEM \"nogrammar.dtd\">",
+                FxTestSupport.callOnFx(xml::getContent)
+                        .lines()
+                        .skip(1)
+                        .findFirst()
+                        .orElseThrow());
+    }
+
+    /** A refused edit leaves no tab behind for a file it opened or was to create (XML review C1's phantom tab). */
+    @Test
+    void aRolledBackEditClosesTheTabsItOpened() throws Exception {
+        ops.host = host;
+        manager.configure(true, Map.of("xml", "lemminx"));
+        EditorBuffer xml = openBuffer("nogrammar.xml", com.editora.lsp.LemminxPayloads.NOGRAMMAR_XML);
+        manager.openDocument(xml.getPath(), root, "xml", com.editora.lsp.LemminxPayloads.NOGRAMMAR_XML);
+        Path dtd = root.resolve("nogrammar.dtd");
+        // Unplanned, the server's version 0 for the new file still stands, and the applier must refuse it.
+        WorkspaceEditMapper.Mapped mapped =
+                WorkspaceEditMapper.map(com.editora.lsp.LemminxPayloads.generateDtdAndBind(root));
+
+        assertFalse(applyAsync(mapped).get(10, java.util.concurrent.TimeUnit.SECONDS));
+
+        assertFalse(Files.exists(dtd), "the created file is rolled back");
+        assertEquals(List.of(dtd), ops.closed, "its background tab goes with it");
+        assertEquals(List.of(xml), FxTestSupport.callOnFx(() -> List.copyOf(host.buffers)), "the user's tab stays");
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.applyWorkspaceEdits(mapped)), "the sync path too");
+        assertEquals(List.of(dtd, dtd), ops.closed);
+    }
+
     private enum StagedInterference {
         EDIT,
         READ_ONLY,
