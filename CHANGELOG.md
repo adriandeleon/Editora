@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-10-26
+
 ### Added
 
 - **Help → Report a Problem…** (`help.reportProblem`, also a button in the Debug Log window) and **`editora
@@ -65,7 +67,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Not checked when its project did not import. Shown while a language server checks the file and the
   code pane is at least 520 px wide; a setting beside the lightbulb's turns it off.
   Settings schema 146→147, additive.
-
 - **Doctor: Check for Newer Versions.** A button in Doctor's header asks npm, the Go module proxy, GitHub and
   HashiCorp for the latest release of each working language server or tool that Editora installs at its latest
   release (Pyright, typescript-language-server, the JSON/HTML/CSS, Bash, YAML, Dockerfile, TOML and Astro servers,
@@ -89,7 +90,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Go to Implementation lists library implementations.** When an implementation lives in the JDK or a dependency,
   every implementation is listed in a picker with its package, instead of one being opened with no word of the
   others.
-
 - **Doctor: Update for servers and tools older than Editora's.** Editora installs jdtls, the JavaScript debugger,
   the Maven pom.xml server, Groovy's gls, Metals, the Kotlin server, clojure-lsp, ShellCheck and shfmt at the
   exact release it is tested with. When a new Editora moves to a newer release, Doctor now marks a copy installed
@@ -147,7 +147,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Java: Go to Symbol in Workspace finds methods and JDK or library types.** jdtls was never asked for method
   symbols, and its matches inside JDK or dependency classes (`jdt://`) were dropped. They are listed after the
   project's own, labelled with their module or jar, and open as library source.
-
 - **File structure in the Project Map.** A file row whose language the Structure tool window can outline
   (Java, Python, JavaScript/TypeScript, Kotlin, Markdown headings, Typst, `.http` requests, Clojure, poms…)
   gets a Structure icon before its preview eye. It opens a column of the file's declarations, the way a
@@ -170,7 +169,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `latestReleaseUrl`, `lastUpdateCheckOkEpoch`; settings schema 142→143, additive), so it survives a restart: the
   status-bar update notice now also comes back after a restart until the release is opened or installed, instead
   of waiting for the next day's check.
-
 - **Java: Undo Last Refactoring.** A rename, move or other refactoring that changed several files can be undone in
   all of them at once: Undo in one of its files asks whether to undo it everywhere, and **LSP: Undo Last
   Refactoring** does it from the palette. Renamed files move back and created ones are removed. Before, Undo
@@ -178,7 +176,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Java: renaming a `.java` file or a package folder in the Project tree renames the class or package.** The
   tree asks jdtls (`workspace/willRenameFiles`) for the edits first, so references, `package` lines and imports
   follow; before, the class kept its old name and the project stopped compiling.
-
 - **Java: Generate, Refactor This and a command per refactoring.** **LSP: Generate…** lists the generators
   (getters/setters, constructors, toString, equals/hashCode, overrides, delegates), **LSP: Refactor This…** the
   refactorings at the caret, and Extract Variable / Constant / Field / Method, Introduce Parameter, Inline, Move,
@@ -194,7 +191,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   equivalents). F2 is no longer Rename and Alt+Insert no longer New File (now Ctrl+Alt+Insert) in that keymap.
   The default Emacs keymap gains a `C-c l` prefix for the language-server commands, `M-g M-n`/`M-g M-p` for
   problems and `M-,`/`C-M-,` for back/forward; every keymap now binds Back and Forward.
-
 - **LSP: Clean Java Workspace and Restart.** Stops the project's Java server, deletes its index and the classpath
   and source folders it worked out, and imports the project afresh — the cure for a stale or corrupt jdtls
   workspace, which Restart Language Servers kept and Clear Java Index Caches skipped while in use.
@@ -239,7 +235,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   row does, as they already dropped "LSP:".
 - **Completion matches camel humps first:** `vO` puts `valueOf` first and `st` finds `toString`; two typed
   letters no longer match letters scattered through a name.
-
 - **IntelliJ keymap (macOS): ⌘N is Generate in the editor**, as in IntelliJ, and New in the Project tree; New File
   moves to ⌃⌘N. ⌃I is Override/Implement Methods, and ⌘[ / ⌘] go back and forward. On Linux and Windows,
   Alt+Insert is New in the Project tree too.
@@ -254,7 +249,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changing it while jdtls runs says to restart the language servers.
 - **Plurals:** "1 file", "1 change", "1 reference", "1 item" in the References, Problems, hierarchy, rename
   preview and refactoring-undo counts, in all six languages.
-
 - **Project Map preview and note cards move and zoom with the map.** Panning carries a card along with the
   columns under it, zooming scales it with them (the card's − / + still sizes its text on top), and a card can
   be dragged past the edge of the visible canvas the way a column can, instead of stopping at the panel's edge. Its resize grip now allows up to the panel's
@@ -292,7 +286,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inside one, the peek window shows the library source, on the declaration, instead of opening a tab.
 - **A member called more than once is one row in Call Hierarchy,** with the count ("append(String) ×2").
 - **The References window marks the references that write** — an assignment, `+=`, `++` — with "(write)".
-
 - **Refactor: the text model the editor shares with other packages moved to a new `com.editora.text`.** The LSP value types (`LspTextEdit`, `LspDiagnostic`, `SemanticToken`, `OccurrenceSpan`), `FoldRegions`, the search matcher with `CaseFold` and `SearchMatches`, all of language detection (`LanguageRegistry`, `LanguageNames`, `ConfigFileType`, `ShellFiles`, `ShellScripts`, `Shebang`, `Modeline`) and `EncryptedNames` leave the editor sub-packages, with 13 tests. `lsp`, `search`, `crypto`, `template` and `editops` no longer depend on the editor; `editor.language` is gone, its classes having no presentation in them. `text` has its own 0.95 coverage floor. Internal-only — no behavior, dependency, or `module-info` change.
 - **Refactor: the editor's toolkit-free helpers moved to the core packages they belong to.** `AceLabels`,
   `LineEndings`, `RegexLiterals`, `TextNav`, `TextFingerprint` and `WholeDocumentEdit` go to `com.editora.editops`;
@@ -313,7 +306,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A crash's log is no longer erased by the launch after it.** Each start truncated `editora-session.log`, so the
   log that recorded a crash was gone by the time Editora was reopened to report it. The previous session's file is
   now kept as `editora-session.prev.log` (left out of config exports, like the session log).
-
 - **Java: a jdtls Update no longer leaves other windows without a server.** Doctor's Update stopped jdtls in every
   window but started it again only in the one that ran it. Every window now says the server is paused while it is
   updated, and reopens its Java files when it is done (failed or not); none of them restarts the old server
@@ -401,13 +393,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Interface. Postfix completion rows match past the shared qualifier, and the camel-hump matcher no longer slows
   down on long many-word texts. Settings no longer logs an error after an install when its Mermaid page was never
   opened.
-
 - **Java: a failed import names the real cause** (a Gradle build's "Could not find method …", not the generic
   "Could not fetch model"), and belongs to its own project: in a window of several projects one failed import no
   longer marks the others, and it clears once that project imports.
 - **Doctor's Update no longer half-deletes an install that is in use.** When another window or program still holds
   the old jdtls open (on Windows), the update is refused with a reason and the old copy stays whole.
-
 - **Java: dragging a `.java` file or package in the Project tree moves the class**: its package line and the
   imports of its users are updated, and Undo Move takes both back. It used to move the file only, and the project
   stopped compiling.
@@ -434,7 +424,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Smaller fixes:** the rename and move preview fits its rows; the import chooser asks its question in its title;
   Problems groups project problems under "Project"; the Hierarchy window's count; status lines after a tree rename
   and a Move; plurals in "the rename left 1 new error"; Portuguese terms.
-
 - **Java: refactorings no longer leave the language server behind.** A file a rename or move wrote without a tab
   is announced to jdtls, so the next rename finds it; a file it creates is announced too.
 - **Java: renaming or moving a file in the Project tree saves and undoes as one refactoring.** The class is renamed
@@ -465,7 +454,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lambda type hints keep their space (`String s ->`); completion matches a method on its name, not its parameter
   list; signature help shows the active parameter's own description; "Initialize the field in" shows translated
   choices; a second file opened while jdtls starts no longer says "Starting…" again.
-
 - **Java: a folder of `.java` files with packages but no build file is no longer red everywhere.** jdtls guessed
   each file's own folder as its source folder, so `src/demo/Main.java` declaring `package demo` was flagged as
   being in the wrong package and nothing in it resolved. Editora now tells jdtls the source folder the package
@@ -516,7 +504,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Percentages past 100 ("1100% Starting Java Language Server") are dropped, and a failed import ("WARNING") is
   reported as an error that says where to look. Opening another file into a server that is already running no
   longer says "Starting Java language server…".
-
 - **Java: the completion documentation popup shows Javadoc.** jdtls computes an item's Javadoc in
   `completionItem/resolve` only when the client lists `documentation` among the properties it resolves; Editora
   listed only `additionalTextEdits`, so the popup showed the return type and nothing else.
@@ -557,7 +544,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   folder, and only a build produced them: a project expecting Java 8 on a machine without one showed odd errors
   and no reason until Build Project. One quiet build now follows each Maven or Gradle import, and such a problem is
   said in the status line and listed in Problems in either scope.
-
+- **The Run Configurations window reopens from the Run dropdown and fits its form.** Picking Edit
+  Configurations… a second time did nothing when there were no configurations yet (the dropdown's list stayed on
+  that row). The window now opens large enough for its form at a bigger desktop text scale, up to 90% of the
+  screen, and the form scrolls above a pinned Save / Close row when the window is shorter.
 
 ## [0.24.0] - 2026-10-24
 
