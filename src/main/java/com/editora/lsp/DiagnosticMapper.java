@@ -47,7 +47,7 @@ public final class DiagnosticMapper {
                     r.getEnd().getLine(),
                     r.getEnd().getCharacter(),
                     severity(d.getSeverity()),
-                    message(d),
+                    xmlMessage(d.getSource(), message(d)),
                     code(d),
                     d.getSource(),
                     href(d),
@@ -86,6 +86,23 @@ public final class DiagnosticMapper {
         }
         MarkupContent mc = m.getRight();
         return mc == null || mc.getValue() == null ? "" : mc.getValue();
+    }
+
+    /** lemminx's message tail that VS Code completes with the rendered code: "…\n\nCode:", "…\nwith code:". */
+    private static final java.util.regex.Pattern XML_CODE_TAIL = java.util.regex.Pattern.compile(
+            "\\s*\\R[ \\t]*(?:with[ \\t]+)?code[ \\t]*:\\s*$", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /**
+     * lemminx ends its enhanced messages with "Code:" or "with code:", written for VS Code, which puts
+     * {@code xml(cvc-…)} after the message. Here the code has its own place (the Problems row's brackets, the
+     * tooltip), so the dangling tail is cut (XML review B16, C10). Messages from other servers are untouched.
+     */
+    static String xmlMessage(@Nullable String source, String message) {
+        if (!"xml".equalsIgnoreCase(source == null ? "" : source.strip())) {
+            return message;
+        }
+        java.util.regex.Matcher tail = XML_CODE_TAIL.matcher(message);
+        return tail.find() ? message.substring(0, tail.start()) : message;
     }
 
     /**

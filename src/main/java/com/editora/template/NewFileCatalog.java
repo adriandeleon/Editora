@@ -149,6 +149,45 @@ public final class NewFileCatalog {
             {cursor}
             """;
 
+    // XML family (XML review C14): a declaration and a root to type into, rather than an empty file. The root is
+    // not the file name, which need not be a valid XML name ("my notes", "2026-plan").
+    private static final String XML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <root>
+                {cursor}
+            </root>
+            """;
+
+    private static final String SVG = """
+            <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+                {cursor}
+            </svg>
+            """;
+
+    private static final String XSD = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+                <xs:element name="root">
+                    {cursor}
+                </xs:element>
+            </xs:schema>
+            """;
+
+    private static final String XSLT = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+                <xsl:output method="xml" indent="yes"/>
+
+                <xsl:template match="@*|node()">
+                    <xsl:copy>
+                        <xsl:apply-templates select="@*|node()"/>
+                    </xsl:copy>
+                </xsl:template>
+
+                {cursor}
+            </xsl:stylesheet>
+            """;
+
     private static final String HTML = """
             <!doctype html>
             <html lang="en">
@@ -211,8 +250,13 @@ public final class NewFileCatalog {
                             NewFileType.named("web.typescript", "TypeScript", "script", "ts"),
                             NewFileType.named("web.jsx", "JavaScript (JSX)", "Component", "jsx"),
                             NewFileType.named("web.tsx", "TypeScript (TSX)", "Component", "tsx"),
-                            NewFileType.named("web.xml", "XML", "untitled", "xml"),
-                            NewFileType.named("web.svg", "SVG", "image", "svg"))),
+                            NewFileType.named("web.xml", "XML", "untitled", "xml")
+                                    .withTemplate(XML),
+                            NewFileType.named("web.xsd", "XML Schema", "schema", "xsd")
+                                    .withTemplate(XSD),
+                            NewFileType.named("web.xslt", "XSLT", "transform", "xsl")
+                                    .withTemplate(XSLT),
+                            NewFileType.named("web.svg", "SVG", "image", "svg").withTemplate(SVG))),
             new Category(
                     "scripts",
                     List.of(

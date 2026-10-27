@@ -448,4 +448,15 @@ class KeymapsTest {
             }
         }
     }
+
+    /** VS Code formats a document with Shift+Alt+F (Shift+Option+F on macOS); its keymap used to have no chord (XML C16). */
+    @org.junit.jupiter.api.Test
+    void vsCodeFormatsWithShiftAltF() {
+        for (boolean mac : new boolean[] {false, true}) {
+            KeymapManager km = new KeymapManager();
+            km.loadNamed("vscode", mac);
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    "lsp.formatDocument", km.commandFor("M-S-f"), "vscode" + (mac ? " mac" : ""));
+        }
+    }
 }

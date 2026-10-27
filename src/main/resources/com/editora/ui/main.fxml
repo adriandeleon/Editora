@@ -57,9 +57,9 @@
                         <Button fx:id="splitHorizontalButton" onAction="#onSplitHorizontal"/>
                         <Separator orientation="VERTICAL"/>
                         <Button fx:id="paletteButton" onAction="#onPalette"/>
-                        <Separator orientation="VERTICAL"/>
+                        <!-- Like the run-configuration widgets above, declared here only for injection:
+                             appendFixedTail pins both at the right end of the tail. -->
                         <Button fx:id="simpleModeButton" onAction="#onToggleSimpleMode"/>
-                        <Separator orientation="VERTICAL"/>
                         <Button fx:id="settingsButton" onAction="#onSettings"/>
                     </items>
                 </ToolBar>

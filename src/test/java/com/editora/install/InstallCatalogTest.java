@@ -235,9 +235,44 @@ class InstallCatalogTest {
         assertEquals(Platform.WIN_X64, InstallCatalog.platformKey("Windows 11", "aarch64")); // win-arm → x64
     }
 
+    /**
+     * XML review A2/D10/A14/A15: lemminx is vscode-xml's pinned release, one zip per platform with GitHub's SHA-256
+     * of the zip and the release's own {@code .sha256} of the program inside, named exactly; a zip needs no tar.
+     */
+    @Test
+    void lemminxIsAPinnedReleaseWithBothHashesForEveryPlatform() {
+        Step step = InstallCatalog.serverInstall("xml").orElseThrow().get(0);
+        assertEquals(Kind.PINNED_TOOL, step.kind());
+        assertEquals(InstallCatalog.LEMMINX_STEP, step.id());
+        assertEquals("plugins/lsp/xml", step.destSubpath());
+        assertTrue(step.prereqs().isEmpty(), "every asset is a zip, unpacked in-process: no tar (A15)");
+        var tool = InstallCatalog.pinnedTool(InstallCatalog.LEMMINX_STEP).orElseThrow();
+        assertEquals(InstallCatalog.LEMMINX_VERSION, tool.version());
+        assertEquals("lemminx", tool.binaryName());
+        java.util.Set<String> hashes = new java.util.HashSet<>();
+        for (Platform p : Platform.values()) {
+            var asset = tool.assetFor(p);
+            assertNotNull(asset, "no lemminx for " + p);
+            assertTrue(
+                    asset.url()
+                            .startsWith("https://github.com/redhat-developer/vscode-xml/releases/download/"
+                                    + InstallCatalog.LEMMINX_VERSION + "/lemminx-"),
+                    asset.url());
+            assertTrue(asset.url().endsWith(".zip"), asset.url());
+            assertEquals(InstallCatalog.Packing.ZIP, asset.packing());
+            assertTrue(asset.sha256().matches("[0-9a-f]{64}"), p + " zip hash");
+            assertTrue(asset.memberSha256().matches("[0-9a-f]{64}"), p + " program hash");
+            assertTrue(asset.member().startsWith("lemminx-"), asset.member());
+            assertTrue(InstallCatalog.isTrustedDownloadUrl(asset.url()), asset.url());
+            assertTrue(hashes.add(asset.sha256()) && hashes.add(asset.memberSha256()), "hashes are distinct");
+        }
+        assertEquals("lemminx-win32.exe", tool.assetFor(Platform.WIN_X64).member());
+        assertEquals("lemminx-linux-x86_64", tool.assetFor(Platform.LINUX_X64).member());
+    }
+
     @Test
     void archiveSpecsCoverEveryPlatformAndTheRightBinary() {
-        for (String id : new String[] {"clangd", "lua", "xml", "terraform"}) {
+        for (String id : new String[] {"clangd", "lua", "terraform"}) {
             // It's an ARCHIVE step with a recipe.
             assertEquals(
                     Kind.ARCHIVE,
@@ -249,7 +284,6 @@ class InstallCatalogTest {
         }
         assertEquals(
                 "clangd", InstallCatalog.archiveSpec("clangd").orElseThrow().binaryName());
-        assertTrue(InstallCatalog.archiveSpec("xml").orElseThrow().binaryPrefix()); // lemminx-osx-x86_64, etc.
         assertEquals(
                 " serve", InstallCatalog.archiveSpec("terraform").orElseThrow().commandSuffix());
         assertEquals(
@@ -258,6 +292,7 @@ class InstallCatalogTest {
                         .orElseThrow()
                         .assetByPlatform()
                         .get(Platform.MAC_ARM));
+        assertTrue(InstallCatalog.archiveSpec("xml").isEmpty(), "lemminx is pinned, not releases/latest (A2)");
         assertTrue(InstallCatalog.archiveSpec("unknown").isEmpty());
         assertTrue(InstallCatalog.archiveSpec("kotlin").isEmpty(), "fwcd's server is no longer installed");
     }

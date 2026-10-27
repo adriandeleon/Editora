@@ -47,6 +47,7 @@
   "C-k C-i": "lsp.hover",
   "C-.": "lsp.codeActions",
   "f2": "lsp.rename",
+  "M-S-f": "lsp.formatDocument",
   "f5": "debug.start",
   "S-f5": "debug.stop",
   "C-S-f5": "debug.restart",

@@ -142,9 +142,16 @@ class DoctorCatalogFxTest {
 
         final Map<String, String> failures = new HashMap<>();
 
+        /** Servers that exit before they are ready, by id → what they said (XML review A4). */
+        final Map<String, String> crashes = new HashMap<>();
+
         @Override
-        public String lspServerFailure(String serverId) {
-            return failures.get(serverId);
+        public LspCoordinator.ServerTrouble lspServerFailure(String serverId) {
+            if (crashes.containsKey(serverId)) {
+                return new LspCoordinator.ServerTrouble(crashes.get(serverId), true);
+            }
+            String failing = failures.get(serverId);
+            return failing == null ? null : new LspCoordinator.ServerTrouble(failing, false);
         }
 
         @Override
@@ -775,5 +782,13 @@ class DoctorCatalogFxTest {
         assertEquals(DoctorStatus.WARN, failing.status());
         assertEquals("doctor.tip.serverFailing", failing.tipKey());
         assertEquals("Internal error. — java.lang.NoClassDefFoundError: x", failing.detail());
+
+        // A server found on disk that exits as soon as it starts is not "OK" either: it says why (XML review A4).
+        ops.failures.clear();
+        ops.crashes.put("json", "version `GLIBC_2.34' not found");
+        DoctorCheck crashing = spec(specs(host, ops), "lsp.json").probe().get();
+        assertEquals(DoctorStatus.WARN, crashing.status());
+        assertEquals("doctor.tip.serverCrashing", crashing.tipKey());
+        assertEquals("version `GLIBC_2.34' not found", crashing.detail());
     }
 }

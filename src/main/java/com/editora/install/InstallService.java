@@ -170,15 +170,21 @@ public final class InstallService {
     Result installSync(List<Step> steps, Path configDir, Consumer<String> onStepStart) {
         try {
             String installedCommand = null;
+            String note = "";
             for (Step s : steps) {
                 onStepStart.accept(s.id());
+                fellBackTo = null;
                 String cmd = runStep(s, configDir);
-                writeReceipt(s, configDir);
+                if (fellBackTo == null) { // a fallback installed nothing of its own to describe
+                    writeReceipt(s, configDir);
+                } else {
+                    note = fellBackTo;
+                }
                 if (cmd != null) {
                     installedCommand = cmd;
                 }
             }
-            return new Result(true, "", installedCommand);
+            return new Result(true, note, installedCommand);
         } catch (InstallException e) {
             return new Result(false, e.getMessage());
         } catch (Exception e) {
@@ -284,7 +290,78 @@ public final class InstallService {
                     + asset.sha256() + ", got " + actual + ") — not installed");
         }
         String fileName = InstallCatalog.toolFileName(tool.id(), platform);
+        // The program inside an archive: the asset's own name for it (lemminx's zips name it per platform),
+        // matched exactly — a prefix took any sibling such as "lemminx.log" for the server (review A14).
+        String member = asset.member() != null ? withoutExe(asset.member()) : tool.binaryName();
+        boolean smoke = InstallCatalog.LEMMINX_STEP.equals(tool.id());
         Path dest = configDir.resolve(s.destSubpath());
+        try {
+            installPinnedProgram(s, asset, data, member, fileName, dest, smoke);
+        } catch (Unrunnable e) {
+            String fallback = javaLemminx(configDir);
+            if (fallback == null) {
+                throw new InstallException(s.id() + ": the downloaded server cannot run on this system (" + e.reason
+                        + ") — not installed. The pom.xml (Maven) server runs lemminx on Java: once it is"
+                        + " installed, installing XML again uses it instead.");
+            }
+            LOG.warning(s.id() + " cannot run here (" + e.reason + "); XML uses the Java lemminx instead");
+            fellBackTo = e.reason;
+            return fallback;
+        }
+        return dest.resolve(fileName).toString();
+    }
+
+    /** Set by a step that installed nothing of its own but pointed its server at another (the reason why). */
+    private @Nullable String fellBackTo;
+
+    /** A program that was unpacked and checked but does not run here (an old glibc, another architecture). */
+    private static final class Unrunnable extends Exception {
+        private static final long serialVersionUID = 1L;
+
+        final String reason;
+
+        Unrunnable(String reason) {
+            super(reason, null, false, false);
+            this.reason = reason;
+        }
+    }
+
+    /**
+     * The Java lemminx the pom.xml server's bundle holds, as a launch command, when that bundle is installed and
+     * complete under {@code configDir}; else null. It serves plain XML as well as the native build does (the
+     * Maven extension only takes part on a pom.xml) — what vscode-xml falls back to where its binary cannot run.
+     */
+    static @Nullable String javaLemminx(Path configDir) {
+        String sub = InstallCatalog.serverInstall("maven-pom").orElse(List.of()).stream()
+                .map(Step::destSubpath)
+                .findFirst()
+                .orElse(null);
+        if (sub == null) {
+            return null;
+        }
+        Path dir = configDir.resolve(sub);
+        return Files.isDirectory(dir) && MavenServerInstall.complete(dir)
+                ? InstallCatalog.jvmClasspathCommand(dir, InstallCatalog.LEMMINX_MAIN_CLASS)
+                : null;
+    }
+
+    private static String withoutExe(String name) {
+        return name.endsWith(".exe") ? name.substring(0, name.length() - 4) : name;
+    }
+
+    /**
+     * Unpacks a checked download into a staging folder as {@code <dest>/<fileName>}, checks the program's own
+     * hash where the recipe has one and, with {@code smoke}, that it answers a request, then swaps it in.
+     */
+    private void installPinnedProgram(
+            Step s,
+            InstallCatalog.PinnedAsset asset,
+            byte[] data,
+            String member,
+            String fileName,
+            Path dest,
+            boolean smoke)
+            throws Exception {
         replaceInstall(dest, staged -> {
             Path program = staged.resolve(fileName);
             if (asset.packing() == InstallCatalog.Packing.RAW) {
@@ -295,17 +372,49 @@ public final class InstallService {
                 Path unpacked = Files.createDirectory(staged.resolve(".unpacked"));
                 String suffix = asset.packing() == InstallCatalog.Packing.ZIP ? ".zip" : ".tar.gz";
                 extractArchive(s, suffix, data, unpacked);
-                Path found = findBinary(unpacked, tool.binaryName(), false);
+                Path found = findBinary(unpacked, member, false);
                 if (found == null) {
-                    throw new InstallException(s.id() + ": '" + tool.binaryName() + "' not found in the download");
+                    throw new InstallException(s.id() + ": '" + member + "' not found in the download");
                 }
                 Files.copy(found, program);
                 deleteRecursively(unpacked);
             }
+            if (asset.memberSha256() != null) {
+                String actual = sha256Of(program);
+                if (!actual.equalsIgnoreCase(asset.memberSha256())) {
+                    throw new InstallException(s.id() + ": the unpacked program does not match its published checksum"
+                            + " (expected " + asset.memberSha256() + ", got " + actual + ") — not installed");
+                }
+            }
             makeExecutable(program);
+            if (smoke) {
+                // A native build can be the right file and still not run here — lemminx needs glibc 2.34, so it
+                // installed "fine" on older Linux and then crash-looped on every XML file (review A4).
+                java.util.Optional<String> failed = nativeLspSmoke.check(List.of(program.toString()), staged);
+                if (failed.isPresent()) {
+                    throw new Unrunnable(failed.get());
+                }
+            }
             return null;
         });
-        return dest.resolve(fileName).toString();
+    }
+
+    /** Lower-case hex SHA-256 of a file, read in chunks. */
+    private static String sha256Of(Path file) throws IOException {
+        java.security.MessageDigest sha;
+        try {
+            sha = java.security.MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is always available", e);
+        }
+        try (InputStream in = Files.newInputStream(file)) {
+            byte[] buf = new byte[1 << 16];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                sha.update(buf, 0, n);
+            }
+        }
+        return java.util.HexFormat.of().formatHex(sha.digest());
     }
 
     /** The jars a {@link InstallCatalog.Kind#JVM_LSP_ZIP} step adds beside its bundle, by step id; a test supplies its own. */
@@ -324,6 +433,15 @@ public final class InstallService {
     /** Test seam for {@link #jvmLspExtraJars}: recipes whose hashes match a test's own bytes, or none. */
     void setJvmLspExtraJarsForTest(java.util.function.Function<String, List<InstallCatalog.JvmLspJar>> recipes) {
         this.jvmLspExtraJars = recipes;
+    }
+
+    /** The request a freshly unpacked native server must answer (initialize: does it run here?); a test supplies its own. */
+    private JvmLspSmokeCheck nativeLspSmoke =
+            (argv, dir) -> JvmLspSmoke.initializeCheck(argv, java.time.Duration.ofSeconds(30));
+
+    /** Test seam for {@link #nativeLspSmoke}: a verdict without a process. */
+    void setNativeLspSmokeForTest(JvmLspSmokeCheck smoke) {
+        this.nativeLspSmoke = smoke;
     }
 
     /** Test seam for {@link #jvmLspSmoke}: a verdict without a process. */

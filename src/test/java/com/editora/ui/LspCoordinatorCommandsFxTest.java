@@ -1008,6 +1008,34 @@ class LspCoordinatorCommandsFxTest {
         assertEquals(SOURCE, fx.server().opened.get(0).getTextDocument().getText());
     }
 
+    /**
+     * XML review A4: a server that exits before it is ready at every start — lemminx's native build on too old a
+     * glibc — says why when it is given up on, and Doctor and Install hear it as given up on, not as installed.
+     */
+    @Test
+    void aServerThatKeepsDyingAtStartSaysWhy() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        String why = "lemminx: version `GLIBC_2.34' not found";
+        String loop = tr("status.lsp.crashLoopReason", tr("install.lang.java"), why);
+        for (int i = 0; i < 12 && !fx.host.statuses.contains(loop); i++) {
+            FxTestSupport.runOnFx(() -> {
+                if (fx.manager.isManaged(b.getPath())) {
+                    LspTestHooks.simulateStartupDeath(fx.manager, b.getPath(), why);
+                }
+            });
+            fx.settle();
+        }
+
+        assertTrue(fx.host.statuses.contains(loop), "the crash loop is reported with the server's own words");
+        assertEquals(why, FxTestSupport.callOnFx(() -> fx.coordinator.serverCrash("java")));
+        LspCoordinator.ServerTrouble trouble = FxTestSupport.callOnFx(() -> fx.coordinator.serverTrouble("java"));
+        assertTrue(trouble.crashed());
+        assertEquals(why, trouble.detail());
+        fx.run(() -> fx.coordinator.restartServers());
+        assertNull(
+                FxTestSupport.callOnFx(() -> fx.coordinator.serverCrash("java")), "a restart gives it a fresh chance");
+    }
+
     @Test
     void aCrashedServerIsRestartedUntilItKeepsCrashing() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);
@@ -1307,6 +1335,65 @@ class LspCoordinatorCommandsFxTest {
         fx.caret(b, 3, 0);
         fx.run(() -> fx.coordinator.problemAtCaret());
         assertEquals(tr("status.lsp.noProblemHere"), fx.host.lastStatus());
+    }
+
+    /** All of the text in a popup, labels and rendered Markdown alike. */
+    private static String popupText(Popup popup) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            StringBuilder out = new StringBuilder();
+            java.util.ArrayDeque<javafx.scene.Node> todo = new java.util.ArrayDeque<>(popup.getContent());
+            while (!todo.isEmpty()) {
+                javafx.scene.Node n = todo.pop();
+                if (n instanceof javafx.scene.control.Labeled l) {
+                    out.append(l.getText()).append('\n');
+                } else if (n instanceof javafx.scene.text.Text t) {
+                    out.append(t.getText()).append('\n');
+                }
+                if (n instanceof javafx.scene.control.ScrollPane sp && sp.getContent() != null) {
+                    todo.push(sp.getContent());
+                }
+                if (n instanceof javafx.scene.Parent p) {
+                    todo.addAll(p.getChildrenUnmodifiable());
+                }
+            }
+            return out.toString();
+        });
+    }
+
+    /**
+     * lemminx's message lists what is allowed over several lines; the status line cut it at the first and
+     * hover said there was no documentation, so no keyboard user read it (XML review C6).
+     */
+    @Test
+    void theWholeProblemAtTheCaretLeadsTheHoverCard() throws Exception {
+        EditorBuffer b = fx.open("A.java", PROBLEMS);
+        String message = "Invalid element name:\n - from\n\nOne of the following is expected:\n - to";
+        var x = new com.editora.text.LspDiagnostic(
+                1, 12, 1, 13, com.editora.text.LspDiagnostic.Severity.ERROR, message, "cvc-complex-type.2.4.a", "xml");
+        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(x)));
+
+        fx.caret(b, 1, 12);
+        fx.run(() -> fx.coordinator.problemAtCaret());
+        Popup shown = hoverPopup();
+        assertNotNull(shown, "Show Problem at Caret shows the whole message, not only the cut status line");
+        assertTrue(popupText(shown).contains("One of the following is expected:\n - to [cvc-complex-type.2.4.a]"));
+
+        fx.server().hoverResponse = null; // lemminx has no documentation on an invalid element
+        fx.run(() -> fx.coordinator.showHover());
+        Popup hover = hoverPopup();
+        assertNotNull(hover, "a problem here is something to show");
+        assertTrue(popupText(hover).contains(tr("lsp.problem.severity.error") + ": Invalid element name:"));
+
+        fx.server().hoverResponse = new Hover(new MarkupContent("markdown", "The `to` element"));
+        fx.run(() -> fx.coordinator.showHover());
+        String both = popupText(hoverPopup());
+        assertTrue(both.contains("The"), "and the documentation: " + both);
+        assertTrue(both.indexOf("Invalid element name") < both.indexOf("The"), "the problem first: " + both);
+
+        fx.caret(b, 3, 0);
+        fx.server().hoverResponse = null;
+        fx.run(() -> fx.coordinator.showHover());
+        assertEquals(tr("status.lsp.noHover"), fx.host.lastStatus(), "away from it, nothing as before");
     }
 
     // --- Format Selection (Java review A13) ----------------------------------------------------------

@@ -111,6 +111,20 @@ public final class CodeActionKinds {
         return 2;
     }
 
+    /**
+     * Whether Code Actions (the caret's quick-fix list) shows {@code item}. jdtls's generators and other source
+     * actions have the Generate command (Java review A4). Another server's source actions are listed too, except
+     * on a line with a problem: there lemminx's "Minify XML" sat beside every fix, and on an enumeration error was
+     * the only "fix" offered (XML review B14). Generate still lists them.
+     */
+    public static boolean inQuickFixList(boolean java, LspManager.CodeActionItem item, boolean onProblem) {
+        boolean source = group(item.kind()) == Group.SOURCE;
+        if (java) {
+            return !source && !isJavaGeneratorAssist(item);
+        }
+        return !source || !onProblem;
+    }
+
     /** {@code items} that {@code keep} accepts, grouped and de-duplicated as the class comment says. */
     public static List<LspManager.CodeActionItem> arrange(
             List<LspManager.CodeActionItem> items, Predicate<LspManager.CodeActionItem> keep) {

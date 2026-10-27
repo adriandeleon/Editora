@@ -203,7 +203,8 @@ public final class LspManager {
      * The one root every loose JavaScript/TypeScript file (no project, no tsconfig/jsconfig/package.json/.git
      * above it) shares, so ten scripts in ten folders run one server instead of ten (Node review B7). A folder
      * of Editora's own that holds none of them: the server then gives each file an inferred project of its own.
-     * Null until the coordinator sets it.
+     * Every XML file outside the open project shares it too, markers or not: lemminx keeps no project model
+     * (XML review A7, {@link XmlServer#sharedRoot}). Null until the coordinator sets it.
      */
     private volatile @Nullable Path looseRoot;
 
@@ -480,6 +481,40 @@ public final class LspManager {
         }
     }
 
+    /** The XML servers' settings (Settings → LSP → XML); each session gets them for its own root. */
+    private volatile XmlServerSettings xmlServerSettings = XmlServerSettings.defaults();
+
+    /**
+     * Sets the XML servers' (lemminx's) settings and hands every running XML and pom server its {@code xml} object,
+     * which it gets pushed when that changed (XML review D3). Called on every settings apply and project reload, so
+     * a folder trusted since is read again here: with "trusted" schema downloads, trusting a folder turns them on.
+     */
+    public void setXmlSettings(XmlServerSettings settings) {
+        xmlServerSettings = settings == null ? XmlServerSettings.defaults() : settings;
+        sessionsByRoot.forEach((key, session) -> {
+            for (String id : List.of(XmlServerSettings.SERVER_ID, LspServerRegistry.MAVEN_POM_SERVER_ID)) {
+                if (key.startsWith(sessionKeyPrefix(id))) {
+                    session.setXmlSettings(xmlSectionFor(id, session.root()));
+                }
+            }
+        });
+    }
+
+    /**
+     * The {@code xml} object for {@code serverId} on {@code root}: the user's XML settings with that folder's trust,
+     * and for the pom server lemminx-maven's own {@code maven} object, which a push must carry too (the extension
+     * reads the pushed object whole).
+     */
+    Map<String, Object> xmlSectionFor(String serverId, Path root) {
+        boolean local = com.editora.process.ExecTargets.runsHere(root);
+        Map<String, Object> xml =
+                new java.util.LinkedHashMap<>(xmlServerSettings.section(root, folderTrust.test(root), local));
+        if (LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
+            xml.put("maven", Map.of("central", Map.of("skip", !mavenCentralIndex)));
+        }
+        return Map.copyOf(xml);
+    }
+
     /**
      * Sets bash-language-server's {@code bashIde} configuration: answered when a Bash server asks for it, and
      * pushed to the running ones when it changed (they re-read it and re-lint).
@@ -556,8 +591,32 @@ public final class LspManager {
         watchRoot = watch == null ? root -> false : watch;
     }
 
-    /** Starts watching {@code root} when it should be and is not yet (any thread). */
-    private void ensureRootWatcher(Path root) {
+    /**
+     * The grammar files lemminx registers to be told of ({@code **}{@code /*.xsd}, {@code *.dtd}, {@code *.rng},
+     * {@code *.rnc}), plus the DTD fragments it reads ({@code .ent}, {@code .mod}).
+     */
+    private static final java.util.Set<String> XML_GRAMMAR_EXTENSIONS =
+            java.util.Set.of("xsd", "dtd", "rng", "rnc", "ent", "mod");
+
+    /** Whether a file is one an XML server revalidates its documents against when it changes (XML review B9). */
+    static boolean xmlGrammarFile(Path file) {
+        Path name = file.getFileName();
+        String n = name == null ? "" : name.toString();
+        int dot = n.lastIndexOf('.');
+        return dot > 0 && XML_GRAMMAR_EXTENSIONS.contains(n.substring(dot + 1).toLowerCase(java.util.Locale.ROOT));
+    }
+
+    /** Root → a watcher that reports only grammar files, for an XML server inside a watched project (B9). */
+    private final Map<Path, RootWatcher> grammarWatchers = new ConcurrentHashMap<>();
+
+    /**
+     * Starts watching {@code root} when it should be and is not yet (any thread). A root the Project panel's
+     * watcher covers still gets a grammar-only watcher for an XML server: the panel watches only its expanded
+     * folders, so a schema regenerated in a collapsed one left lemminx's errors stale until the next keystroke
+     * (XML review B9). lemminx registers those globs dynamically, which this client does not offer for every
+     * server (jdtls would then expect its own registrations honoured), so they are watched here by name.
+     */
+    private void ensureRootWatcher(Path root, String serverId) {
         if (closed
                 || root == null
                 || !com.editora.process.ExecTargets.runsHere(root)
@@ -565,11 +624,16 @@ public final class LspManager {
             return;
         }
         Path key = root.toAbsolutePath().normalize();
-        if (rootWatchers.containsKey(key) || rootWatchers.size() >= MAX_ROOT_WATCHERS || !watchRoot.test(key)) {
+        boolean whole = watchRoot.test(key);
+        boolean grammar = !whole && XmlServer.SERVER_ID.equals(serverId);
+        Map<Path, RootWatcher> watchers = whole ? rootWatchers : grammar ? grammarWatchers : null;
+        if (watchers == null || watchers.containsKey(key) || watchers.size() >= MAX_ROOT_WATCHERS) {
             return;
         }
-        RootWatcher w = RootWatcher.start(key, batch -> Platform.runLater(() -> notifyWatchedFiles(batch)));
-        if (w != null && rootWatchers.putIfAbsent(key, w) != null) {
+        java.util.function.Consumer<List<WatchedFile>> sink =
+                batch -> Platform.runLater(() -> notifyWatchedFiles(batch));
+        RootWatcher w = whole ? RootWatcher.start(key, sink) : RootWatcher.start(key, sink, LspManager::xmlGrammarFile);
+        if (w != null && watchers.putIfAbsent(key, w) != null) {
             w.close(); // another start won
         }
         if (closed) {
@@ -580,6 +644,13 @@ public final class LspManager {
     private void closeRootWatchers() {
         rootWatchers.values().forEach(RootWatcher::close);
         rootWatchers.clear();
+        grammarWatchers.values().forEach(RootWatcher::close);
+        grammarWatchers.clear();
+    }
+
+    /** The roots watched for grammar files only (tests). */
+    java.util.Set<Path> grammarWatchedRoots() {
+        return java.util.Set.copyOf(grammarWatchers.keySet());
     }
 
     /** The roots watched by this manager itself (tests). */
@@ -764,6 +835,27 @@ public final class LspManager {
                     ui.openLocation(serverId, file, line, column);
                 }
             });
+        }
+
+        @Override
+        public java.util.concurrent.CompletableFuture<Object> clientCommand(
+                String serverId, String command, List<Object> arguments) {
+            var answer = new java.util.concurrent.CompletableFuture<Object>();
+            Platform.runLater(() -> {
+                LspClientUi ui = clientUi;
+                if (ui == null || closed) {
+                    answer.complete(null);
+                    return;
+                }
+                try {
+                    ui.clientCommand(serverId, command, arguments)
+                            .whenComplete((v, e) -> answer.complete(e == null ? v : null));
+                } catch (RuntimeException e) {
+                    LOG.log(java.util.logging.Level.FINE, "client command not run: " + command, e);
+                    answer.complete(null);
+                }
+            });
+            return answer;
         }
 
         private java.util.concurrent.CompletableFuture<String> onFx(
@@ -981,7 +1073,7 @@ public final class LspManager {
                 session.alias(uri, DocumentUris.of(shadow), JavaScriptShadow::wireText);
             }
         }
-        session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId), text, this);
+        session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId, file), text, this);
     }
 
     /** Where the stand-in {@code .java} files for Java scripts live (see {@link JavaScriptShadow}); lazily made. */
@@ -1388,9 +1480,15 @@ public final class LspManager {
 
     /** The no-I/O half of planning: the mapped edit with every server-open target's request-time text
      *  attached, plus the targets the server did not have open (still to be checked against the disk). */
-    private record EditDraft(WorkspaceEditMapper.Mapped mapped, List<Path> closedTargets) {}
+    record EditDraft(WorkspaceEditMapper.Mapped mapped, List<Path> closedTargets) {}
 
-    private static @Nullable EditDraft draftWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis) {
+    /**
+     * Maps {@code edit} and attaches each target's request-time text. A file the same edit creates starts empty,
+     * and a version the server gives it is dropped: the session never opened it, so no version was ever sent
+     * for it to name. lemminx's "Generate … and bind" fixes address their new grammar file with version 0, and
+     * comparing that against a version that cannot exist refused every one of them (XML review C1).
+     */
+    static @Nullable EditDraft draftWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis) {
         WorkspaceEditMapper.Mapped mapped = WorkspaceEditMapper.map(edit, basis.uris()::toPath);
         if (mapped == null) {
             return null;
@@ -1407,12 +1505,13 @@ public final class LspManager {
             if (expected == null) {
                 expected = documents.get(com.editora.config.PathKeys.canonical(fileEdit.file()));
             }
+            Integer version = fileEdit.version();
             if (expected == null && created.contains(com.editora.config.PathKeys.key(fileEdit.file()))) {
                 expected = "";
+                version = null;
             }
             if (expected != null) {
-                edits.add(new WorkspaceEditMapper.FileEdit(
-                        fileEdit.file(), fileEdit.edits(), fileEdit.version(), expected, null));
+                edits.add(new WorkspaceEditMapper.FileEdit(fileEdit.file(), fileEdit.edits(), version, expected, null));
             } else {
                 edits.add(fileEdit);
                 closedTargets.add(fileEdit.file());
@@ -1588,7 +1687,7 @@ public final class LspManager {
             return prev;
         }
         clientOf.put(session, client);
-        ensureRootWatcher(session.root());
+        ensureRootWatcher(session.root(), session.serverId());
         if (session.isInitialized()) {
             // the project's own problems first, so its verdict can name them (seventh review CR2)
             session.projectDiagnostics().forEach(client.diagnostics::accept);
@@ -1691,6 +1790,9 @@ public final class LspManager {
         if (TypeScriptServer.SERVER_ID.equals(serverId)) {
             session.setTypeScriptSettings(typeScriptSettings);
         }
+        if (XmlServerSettings.isLemminx(serverId)) {
+            session.setXmlSettings(xmlSectionFor(serverId, root)); // trust read here, where the trust list is edited
+        }
         if (claimedWorkspace != null) {
             jdtlsWorkspaceBySession.put(session, claimedWorkspace);
         }
@@ -1728,7 +1830,7 @@ public final class LspManager {
             if (PYTHON_SERVER_ID.equals(serverId)) {
                 session.setPythonPath(resolvePythonPath(root)); // as the production start does, before initialize
             }
-            ensureRootWatcher(root);
+            ensureRootWatcher(root, serverId);
             sessionStarterForTest.accept(session); // TEST SEAM (see the field): attach a fake, never fork
             return session;
         }
@@ -1881,7 +1983,7 @@ public final class LspManager {
                 session.setPythonPath(resolvePythonPath(root));
             }
             if (!remote) {
-                ensureRootWatcher(root); // file changes nobody else reports reach this server (B7)
+                ensureRootWatcher(root, serverId); // file changes nobody else reports reach this server (B7)
             }
             session.configureStart(
                     startCommand,
@@ -1890,17 +1992,20 @@ public final class LspManager {
                             ? TypeScriptServer.initializationOptions(tsserverPath, typeAcquisition, loose)
                             : TypeScriptServer.SERVER_ID.equals(serverId)
                                     ? TypeScriptServer.initializationOptions(null, typeAcquisition, false)
-                                    : withProjectSettings(
+                                    : withXmlSettings(
                                             serverId,
-                                            initOptionsFor(
+                                            withProjectSettings(
                                                     serverId,
-                                                    startBundles,
-                                                    astroTsdk,
-                                                    onTypeFormatting,
-                                                    jdks,
-                                                    centralIndex,
-                                                    javaPreferredHome),
-                                            remote ? null : root));
+                                                    initOptionsFor(
+                                                            serverId,
+                                                            startBundles,
+                                                            astroTsdk,
+                                                            onTypeFormatting,
+                                                            jdks,
+                                                            centralIndex,
+                                                            javaPreferredHome),
+                                                    remote ? null : root),
+                                            session.xmlSettings()));
             if (!session.start()) {
                 dropSession(key, session);
                 if (session.startFailed()) {
@@ -2004,6 +2109,18 @@ public final class LspManager {
      */
     public void setOnServerStatus(ServerStatusListener listener) {
         this.onServerStatus = listener;
+    }
+
+    /** Per server: what its last session that died before answering {@code initialize} wrote to stderr first. */
+    private final Map<String, String> crashReasons = new ConcurrentHashMap<>();
+
+    /**
+     * Why {@code serverId}'s last session died, when it died before it was ever ready and said something on
+     * stderr ("version `GLIBC_2.34' not found"); else null. A crash after it served is not explained here: its
+     * stderr is a log by then, not a reason (XML review A4).
+     */
+    public @Nullable String crashReason(String serverId) {
+        return crashReasons.get(serverId);
     }
 
     /** Sets the session-crashed callback (see {@link #onSessionCrashed}); marshaled to the FX thread. */
@@ -2138,6 +2255,12 @@ public final class LspManager {
                 repairAfterExit(key, session.exited(), workspaceName);
             } else {
                 releaseJdtlsWorkspaceName(workspaceName);
+            }
+            String said = session.initializedOnce() ? null : session.firstStderrLine();
+            if (said == null) {
+                crashReasons.remove(session.serverId());
+            } else {
+                crashReasons.put(session.serverId(), said);
             }
             Platform.runLater(() -> onSessionCrashed.accept(session.serverId(), session.root()));
         } else {
@@ -3322,7 +3445,10 @@ public final class LspManager {
                     range == null ? 0 : range.getEnd().getCharacter());
         }
         if (r.isThird() && r.getThird() != null) {
-            return new RenamePrep(true, "", 0, 0, 0, 0); // default behavior: rename the word at the caret
+            // {defaultBehavior: true}: rename the word at the caret. lemminx answers {defaultBehavior: false} where
+            // nothing can be renamed (an attribute value), which VS Code's client reports as "can't be renamed"
+            // instead of opening a dialog that leads nowhere (XML review B11).
+            return r.getThird().isDefaultBehavior() ? new RenamePrep(true, "", 0, 0, 0, 0) : RenamePrep.REFUSED;
         }
         return RenamePrep.REFUSED;
     }
@@ -4344,7 +4470,10 @@ public final class LspManager {
             int line,
             int character,
             Consumer<List<Target>> cb) {
-        requestLocations(s, documentUri, line, character, LanguageServerSession::definition, cb, null);
+        // XML: the grammar declaration instead of the element's own other tag, else the linked schema (B5, B10).
+        LocationRequest request =
+                s != null && XmlServer.isXml(s.serverId()) ? XmlServer::definition : LanguageServerSession::definition;
+        requestLocations(s, documentUri, line, character, request, cb, null);
     }
 
     private void requestLocations(
@@ -4585,6 +4714,7 @@ public final class LspManager {
     public void applyCodeAction(Path file, Object raw, Consumer<Boolean> cb) {
         lastCodeActionFailure = null;
         lastCodeActionEmpty = false;
+        lastEditUnresolvedUri = null;
         LanguageServerSession s = sessionFor(file);
         // No request time: an edit already inside this action was computed at some earlier, unknown moment,
         // so nothing can show a closed file is still what the server saw.
@@ -4652,6 +4782,14 @@ public final class LspManager {
         return lastCodeActionFailure;
     }
 
+    /** A URI naming no placeable file in the last refused server edit (lemminx's relative paths), or null. */
+    private volatile @Nullable String lastEditUnresolvedUri;
+
+    /** Why the last code action's edit was refused when it named a file this client cannot place (XML review B1). */
+    public @Nullable String lastEditUnresolvedUri() {
+        return lastEditUnresolvedUri;
+    }
+
     /** Whether the last code action resolved to neither an edit nor a command: nothing to apply (ET1). */
     private volatile boolean lastCodeActionEmpty;
 
@@ -4663,6 +4801,7 @@ public final class LspManager {
     public void applyCodeAction(Path file, CodeActionItem item, Consumer<Boolean> cb) {
         lastCodeActionFailure = null;
         lastCodeActionEmpty = false;
+        lastEditUnresolvedUri = null;
         if (item == null) {
             Platform.runLater(() -> cb.accept(false));
             return;
@@ -4768,6 +4907,7 @@ public final class LspManager {
             Consumer<Boolean> done) {
         EditDraft draft = draftWorkspaceEdit(edit, basis);
         if (draft == null) {
+            lastEditUnresolvedUri = WorkspaceEditMapper.unresolvedUri(edit, basis.uris()::toPath);
             done.accept(false);
             return;
         }
@@ -5070,6 +5210,18 @@ public final class LspManager {
     }
 
     /**
+     * {@code options} with lemminx's {@code settings.xml} object ({@code xml}, null = none) for an XML or pom server,
+     * so its very first validation already runs with them — no schema download before the first push; anything
+     * else unchanged.
+     */
+    static @Nullable Object withXmlSettings(
+            String serverId, @Nullable Object options, @Nullable Map<String, Object> xml) {
+        return xml == null || !XmlServerSettings.isLemminx(serverId)
+                ? options
+                : XmlServerSettings.withSection(options, xml);
+    }
+
+    /**
      * {@code options} (jdtls's) with the preferences {@code root}'s own files state ({@link JavaProjectSettings})
      * merged into {@code settings.java}; anything else unchanged.
      */
@@ -5166,6 +5318,9 @@ public final class LspManager {
             case "scala" -> metalsInitOptions();
             case ASTRO_SERVER_ID ->
                 astroTsdk == null ? null : Map.of("typescript", Map.of("tsdk", astroTsdk.toString()));
+            // lemminx's protocol extensions Editora carries out (XML review D6). The xml settings object is
+            // the Settings → LSP → XML section's (merge it in beside this key).
+            case XmlServer.SERVER_ID -> Map.of("extendedClientCapabilities", XmlServer.extendedClientCapabilities());
             case LspServerRegistry.MAVEN_POM_SERVER_ID ->
                 Map.of(
                         "settings",
@@ -6839,6 +6994,35 @@ public final class LspManager {
     public String serverUri(Path file) {
         LanguageServerSession s = sessionFor(file);
         return (s == null ? WireUris.LOCAL : s.uris()).toWire(uri(file));
+    }
+
+    /**
+     * Binds the XML document {@code file} to {@code grammar} with lemminx's {@link XmlServer#ASSOCIATE_GRAMMAR}
+     * ({@code bindingType} one of {@link XmlServer#bindingTypes}) and applies the edit it answers — the
+     * {@code xsi:noNamespaceSchemaLocation}, DOCTYPE or {@code xml-model} lemminx writes, with a path relative to
+     * the document (XML review D6). {@code cb} hears on the FX thread whether the edit landed.
+     */
+    public void xmlAssociateGrammar(Path file, Path grammar, String bindingType, Consumer<Boolean> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || !XmlServer.isXml(s.serverId())) {
+            Platform.runLater(() -> cb.accept(false));
+            return;
+        }
+        List<Object> args =
+                List.of(Map.of("uri", s.uris().toWire(uri(file))), s.uris().toWire(uri(grammar)), bindingType);
+        s.executeCommand(XmlServer.ASSOCIATE_GRAMMAR, args).whenComplete((result, error) -> {
+            org.eclipse.lsp4j.WorkspaceEdit edit = error == null ? XmlServer.associateEdit(result) : null;
+            if (error != null) {
+                lastCodeActionFailure = failureReason(error);
+            }
+            Platform.runLater(() -> {
+                if (edit == null) {
+                    cb.accept(false);
+                } else {
+                    applyWorkspaceEdit(edit, versionedBasis(s, edit), cb);
+                }
+            });
+        });
     }
 
     /**

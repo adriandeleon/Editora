@@ -154,6 +154,9 @@ class LspMappedTargetProcessTest {
             assertEquals(List.of("pid null"), lines(log, "pid "), "this machine's pid means nothing there");
             assertEquals(List.of("open " + DocumentUris.of(alias.resolve("A.java"))), lines(log, "open "));
             assertFalse(target.started().isEmpty(), "started on the mapped target");
+            // No pid to watch there, and lemminx ignores the end of its stdin: started long-lived, so on an SSH
+            // host the PosixShell watchdog ends it with the connection that started it (XML review A11).
+            assertEquals(List.of(true), target.longLived(), "a server is started long-lived on another target");
             assertEquals(List.of(), target.leaks());
         } finally {
             session.dispose();

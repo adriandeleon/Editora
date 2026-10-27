@@ -48,4 +48,13 @@ public interface LspClientUi {
 
     /** Opens {@code file} at the 0-based {@code line} and {@code column} ({@code metals-goto-location}). */
     void openLocation(String serverId, Path file, int line, int column);
+
+    /**
+     * Carries out the client command {@code command} a server asks for (lemminx's {@code xml/executeClientCommand},
+     * or a button of its actionable notification); completes with what the server is answered, null by default.
+     * {@code arguments} are as the server sent them (raw JSON).
+     */
+    default CompletableFuture<Object> clientCommand(String serverId, String command, List<Object> arguments) {
+        return CompletableFuture.completedFuture(null);
+    }
 }

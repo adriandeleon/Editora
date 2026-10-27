@@ -645,4 +645,48 @@ class TextMateHighlighterTest {
         }
         assertEquals("keyword", TextMateHighlighter.styleForScopes(List.of("keyword.control.brand-new-scope")));
     }
+
+    /**
+     * A DOCTYPE's internal subset highlights every declaration, not only {@code <!ENTITY>} (XML review C17): the
+     * {@code <!ELEMENT>}, {@code <!ATTLIST>} and {@code <!NOTATION>} lines were plain text. A bare {@code .dtd}-style
+     * declaration outside a DOCTYPE is highlighted too.
+     */
+    @Test
+    void xmlDoctypeDeclarationsAreHighlighted() {
+        String text = "<?xml version=\"1.0\"?>\n"
+                + "<!DOCTYPE note [\n"
+                + "  <!ENTITY corp \"Acme\">\n"
+                + "  <!ELEMENT note (to, body?)>\n"
+                + "  <!ELEMENT to (#PCDATA)>\n"
+                + "  <!ATTLIST note priority CDATA #REQUIRED>\n"
+                + "  <!NOTATION gif SYSTEM \"image/gif\">\n"
+                + "]>\n"
+                + "<note><to>&corp;</to></note>\n";
+        assertEquals("keyword", styleOf("hl.xml", text, "ENTITY"));
+        assertEquals("keyword", styleOf("hl.xml", text, "ELEMENT"));
+        assertEquals("keyword", styleOf("hl.xml", text, "ATTLIST"));
+        assertEquals("keyword", styleOf("hl.xml", text, "NOTATION"));
+        assertEquals("constant", styleOf("hl.xml", text, "#PCDATA"));
+        assertEquals("keyword", styleOf("hl.xml", text, "#REQUIRED"));
+        assertEquals("type", styleOf("hl.xml", text, "CDATA #"));
+        assertEquals("string", styleOf("hl.xml", text, "\"image/gif\""));
+        assertEquals("tag", styleOf("hl.xml", text, "note>"), "the document after the subset is still markup");
+        String dtd = "<!ELEMENT catalog (book*)>\n<!ATTLIST book id ID #IMPLIED>\n";
+        assertEquals("keyword", styleOf("catalog.xml", dtd, "ELEMENT"));
+        assertEquals("keyword", styleOf("catalog.xml", dtd, "#IMPLIED"));
+    }
+
+    /** A namespaced XML tag is named whole in the outline symbols — {@code xs:element}, not {@code xs} (C4). */
+    @Test
+    void aNamespacedXmlTagIsOneSymbol() {
+        List<TextMateHighlighter.Symbol> symbols = symbolsOf(
+                "note.xsd",
+                "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n"
+                        + "  <xs:element name=\"note\">\n"
+                        + "  </xs:element>\n"
+                        + "</xs:schema>\n");
+        assertTrue(hasSymbol(symbols, "xs:schema", "tag"), symbols.toString());
+        assertTrue(hasSymbol(symbols, "xs:element", "tag"), symbols.toString());
+        assertTrue(symbols.stream().noneMatch(s -> s.name().equals("xs")), symbols.toString());
+    }
 }

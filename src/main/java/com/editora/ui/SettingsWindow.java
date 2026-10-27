@@ -110,7 +110,7 @@ public class SettingsWindow {
     }
 
     /** Settings categories shown in the sidebar, each grouped under a {@link Group} header (declaration order). */
-    private enum Category {
+    enum Category {
         // General
         APPEARANCE(tr("settings.cat.appearance"), Group.GENERAL, SettingsIcons::appearance),
         INTERFACE(tr("settings.cat.interface"), Group.GENERAL, SettingsIcons::interfaceWindow),
@@ -3510,7 +3510,7 @@ public class SettingsWindow {
      * An on/off row for one boolean setting: titled {@code settings.<key>} (described by
      * {@code settings.<key>.desc} when {@code described}), written on change, shown again on every sync.
      */
-    private CheckBox switchRow(
+    CheckBox switchRow(
             Card card,
             Category cat,
             String key,
@@ -3559,7 +3559,7 @@ public class SettingsWindow {
     }
 
     /** A row choosing one of {@code values}, each labelled {@code settings.<key>.<value>}. */
-    private void choiceRow(
+    void choiceRow(
             Card card,
             Category cat,
             String key,
@@ -3596,7 +3596,7 @@ public class SettingsWindow {
     }
 
     /** A row for a size in pixels where 0 means "the built-in one" (described by {@code settings.<key>.desc}). */
-    private void intRow(
+    void intRow(
             Card card,
             Category cat,
             String key,
@@ -3629,7 +3629,7 @@ public class SettingsWindow {
     }
 
     /** A row for a short text value, committed on Enter or when focus leaves (described by {@code .desc}). */
-    private void textRow(
+    void textRow(
             Card card,
             Category cat,
             String key,
@@ -3644,7 +3644,7 @@ public class SettingsWindow {
      * As above, with {@code problem} saying why typed text cannot be kept (null when it can). Text it rejects
      * is not saved: the field turns red with the reason as its tooltip and keeps the text until it is fixed.
      */
-    private void textRow(
+    void textRow(
             Card card,
             Category cat,
             String key,
@@ -7172,6 +7172,8 @@ public class SettingsWindow {
             }
             if ("bash".equals(srv.id())) {
                 bashServerRows(c);
+            } else if (com.editora.lsp.XmlServerSettings.SERVER_ID.equals(srv.id())) {
+                SettingsXmlRows.add(this, c);
             } else if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(srv.id())) {
                 typeScriptServerRows(c);
             }
@@ -7964,7 +7966,8 @@ public class SettingsWindow {
         // Probe the commands this page shows, without configuring the manager. This window must not
         // (re)configure it: doing so with the global commands replaced a trusted project's override and
         // shut its running server down every time Settings was merely opened.
-        java.util.Map<String, String> shown = LspCoordinator.commandsForAllServers(config.getSettings());
+        java.util.Map<String, String> shown =
+                LspCoordinator.launchCommandsForAllServers(config.getSettings(), config.getConfigDir());
         for (LspServerUi srv : lspServerUis()) {
             ToolStatusRow status = lspStatusLabels.get(srv.id());
             if (status == null) {
@@ -7994,10 +7997,16 @@ public class SettingsWindow {
                                     lspCheck.isSelected());
                             return;
                         }
-                        status.show(
-                                found,
-                                found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "",
-                                lspCheck.isSelected());
+                        String crash = found && projectLsp != null ? projectLsp.serverCrash(srv.id()) : null;
+                        if (crash != null) { // found, but it exits before it is ready: not "Installed" (XML A4)
+                            String name = lspToolName(srv.id(), argv);
+                            status.showProblem(tr("settings.lsp.crashing", name, crash), lspCheck.isSelected());
+                            return;
+                        }
+                        String where = found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "";
+                        where = com.editora.install.PinnedVersions.withVersion(
+                                srv.id(), argv, config.getConfigDir(), where);
+                        status.show(found, where, lspCheck.isSelected());
                     });
         }
     }
@@ -8034,7 +8043,7 @@ public class SettingsWindow {
     /** The argv the LSP page shows for {@code serverId}: its global command, blank ⇒ the default. */
     private List<String> lspArgv(String serverId) {
         return com.editora.lsp.LspServerRegistry.commandFor(
-                serverId, LspCoordinator.commandsForAllServers(config.getSettings()));
+                serverId, LspCoordinator.launchCommandsForAllServers(config.getSettings(), config.getConfigDir()));
     }
 
     /** The program a server runs, as its pill names it: the display-name table first (the pom.xml server runs
@@ -8354,7 +8363,7 @@ public class SettingsWindow {
     // above are unchanged, so an unmigrated page renders exactly as before.
 
     /** A card and the box its rows are appended to (the title, if any, sits above that box). */
-    private record Card(VBox box, VBox body) {}
+    record Card(VBox box, VBox body) {}
 
     private Card card(VBox page, @Nullable String title) {
         VBox body = new VBox();

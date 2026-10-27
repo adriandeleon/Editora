@@ -233,6 +233,45 @@ public final class WorkspaceEditMapper {
         return new Mapped(out, List.copyOf(renames), List.copyOf(creates), List.copyOf(deletes));
     }
 
+    /**
+     * The first URI in {@code edit} that names no file this client can place — lemminx's "Generate missing file"
+     * sends a relative {@code tmp/…/nothere.xsd} — or null when every URI resolves. Lets a refused edit say why
+     * instead of only "Could not apply" (XML review B1).
+     */
+    static @Nullable String unresolvedUri(@Nullable WorkspaceEdit edit, Function<String, @Nullable Path> toPath) {
+        if (edit == null) {
+            return null;
+        }
+        List<String> uris = new ArrayList<>();
+        if (edit.getDocumentChanges() != null) {
+            for (var change : edit.getDocumentChanges()) {
+                if (change == null) {
+                    continue;
+                }
+                if (change.isLeft()) {
+                    if (change.getLeft().getTextDocument() != null) {
+                        uris.add(change.getLeft().getTextDocument().getUri());
+                    }
+                } else if (change.getRight() instanceof org.eclipse.lsp4j.RenameFile rf) {
+                    uris.add(rf.getOldUri());
+                    uris.add(rf.getNewUri());
+                } else if (change.getRight() instanceof org.eclipse.lsp4j.CreateFile cf) {
+                    uris.add(cf.getUri());
+                } else if (change.getRight() instanceof org.eclipse.lsp4j.DeleteFile df) {
+                    uris.add(df.getUri());
+                }
+            }
+        } else if (edit.getChanges() != null) {
+            uris.addAll(edit.getChanges().keySet());
+        }
+        for (String uri : uris) {
+            if (uri == null || toPath.apply(uri) == null) {
+                return String.valueOf(uri);
+            }
+        }
+        return null;
+    }
+
     /** Grouped execution can preserve only renames whose source and destination paths are disjoint. */
     private static boolean independentRenames(List<FileRename> renames) {
         Set<String> touched = new HashSet<>();

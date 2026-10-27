@@ -429,7 +429,7 @@ final class LspCoordinator {
                 host.setStatus(message);
             }
         });
-        this.pythonFormat = new PythonFormatCoordinator(new PythonFormatCoordinator.Host() {
+        PythonFormatCoordinator.Host formatHost = new PythonFormatCoordinator.Host() {
             @Override
             public @Nullable EditorBuffer activeBuffer() {
                 return host.activeBuffer();
@@ -459,7 +459,9 @@ final class LspCoordinator {
             public void setError(@Nullable String message) {
                 host.setError(message);
             }
-        });
+        };
+        this.pythonFormat = new PythonFormatCoordinator(formatHost);
+        this.xmlFormat = new XmlFormatCoordinator(formatHost); // XML without a formatting server (C8)
         this.workspaceFiles = java.util.Objects.requireNonNull(workspaceFiles, "workspaceFiles");
         this.workspaceExecutor = java.util.Objects.requireNonNull(workspaceExecutor, "workspaceExecutor");
         this.problemsActions = new ProblemsPanel.Actions() {
@@ -546,6 +548,15 @@ final class LspCoordinator {
         lspManager.setOpenDocumentDiagnosticsOnly(!projectWideProblems); // the Problems window's default scope
         lspManager.setOnDiagnosticsUnchanged(this::diagnosticsUnchanged);
         lspManager.setClientUi(serverPrompts()); // a server's questions (Metals' "Import build?") get asked
+        xml = new XmlLspActions(
+                host, lspManager, ops::openAndGoto, this::activeLspBuffer, this::lspPath, () -> findReferences(true));
+    }
+
+    /** The XML server's commands and client commands (XML review B15, D6). */
+    private final XmlLspActions xml;
+
+    XmlLspActions xml() {
+        return xml;
     }
 
     /**
@@ -892,10 +903,21 @@ final class LspCoordinator {
             return;
         }
         boolean restart = shouldAutoRestart(crashKey(serverId, root), System.nanoTime());
+        // What it said before it ever answered (a native build on too old a glibc), shown rather than left in the
+        // Debug Log, and kept for Doctor and the install path while it is given up on (XML review A4).
+        String reason = lspManager.crashReason(serverId);
         if (!restart) {
             startBlocked.add(crashKey(serverId, root)); // E5: given up — opening another tab must not fork it again
+            if (reason != null) {
+                crashedServers.put(serverId, reason);
+            }
         }
-        host.setStatus(tr(restart ? "status.lsp.crashed" : "status.lsp.crashLoop", serverLabel(serverId)));
+        host.setStatus(
+                restart
+                        ? tr("status.lsp.crashed", serverLabel(serverId))
+                        : reason == null
+                                ? tr("status.lsp.crashLoop", serverLabel(serverId))
+                                : tr("status.lsp.crashLoopReason", serverLabel(serverId), reason));
         forEachCrashedBuffer(serverId, root, b -> {
             Path p = lspPath(b);
             b.setLspActive(false); // drop the dead session's squiggles/stripes immediately
@@ -1108,6 +1130,32 @@ final class LspCoordinator {
     String serverFailure(String serverId) {
         return failingServers.get(serverId);
     }
+
+    /** Servers given up on after crashing at every start, by id → what they said first (see {@link #sessionCrashed}). */
+    private final Map<String, String> crashedServers = new java.util.HashMap<>();
+
+    /**
+     * Why {@code serverId} keeps exiting before it is ready ("version `GLIBC_2.34' not found"), while it is given
+     * up on; else null. Doctor and Settings show it, and Install treats such a server as not installed.
+     */
+    @Nullable
+    String serverCrash(String serverId) {
+        return crashedServers.get(serverId);
+    }
+
+    /** {@link #serverFailure} or {@link #serverCrash}, whichever says why {@code serverId} is given up on. */
+    @Nullable
+    ServerTrouble serverTrouble(String serverId) {
+        String crash = crashedServers.get(serverId);
+        if (crash != null) {
+            return new ServerTrouble(crash, true);
+        }
+        String failing = failingServers.get(serverId);
+        return failing == null ? null : new ServerTrouble(failing, false);
+    }
+
+    /** Why a server is given up on: what it said, and whether it crashed at start rather than failed requests. */
+    record ServerTrouble(String detail, boolean crashed) {}
 
     /** The user-facing name of an LSP request, for the echo line ("internal error on hover"). */
     static String methodLabel(String method) {
@@ -1365,6 +1413,13 @@ final class LspCoordinator {
         if (buffer != null) {
             buffer.setLspDiagnostics(diagnostics);
             noteNonProjectFile(file, diagnostics);
+            String blocked = xmlNotices.onDiagnostics(diagnostics); // a schema not downloaded: say where it is decided
+            if (blocked != null) {
+                // After the opening's own lines ("Opened …", the server's ready line), which replaced it at once.
+                var later = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(2));
+                later.setOnFinished(e -> host.setStatus(blocked));
+                later.play();
+            }
         }
         // Key the map by the canonical path so it agrees with setProblemsActiveFile (given the canonical
         // active path) and clearDiagnostics (given the buffer's path) — the server may report a symlink URI.
@@ -1567,6 +1622,7 @@ final class LspCoordinator {
     void applySupport() {
         startBlocked.clear(); // a settings change (an install, a trust decision) may be what the server lacked
         failingServers.clear();
+        crashedServers.clear();
         boolean on = ops.lspFeatureEnabled(); // effective: off in Simple UI mode
         // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
         // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
@@ -1585,6 +1641,7 @@ final class LspCoordinator {
         // committed override was shown in the status bar and Doctor but never run.
         lspManager.configure(on, effectiveCommands());
         applyBashIde();
+        applyXmlSettings();
         appliedProjectRoot = ops.lspProjectRoot();
         appliedProjectOverrides = projectOverrideSignature();
         offerInterruptedEdits();
@@ -1674,7 +1731,7 @@ final class LspCoordinator {
     Map<String, String> effectiveCommands() {
         Map<String, String> commands = commandsForAllServers(host.settings());
         for (String serverId : SERVER_IDS) {
-            commands.put(serverId, serverCommand(serverId));
+            commands.put(serverId, launchCommand(serverId));
         }
         return commands;
     }
@@ -1870,6 +1927,9 @@ final class LspCoordinator {
         if (command == null || command.isBlank()) {
             return null;
         }
+        if ("xml".equals(serverId) && com.editora.install.XmlServerInstall.editorasOwn(command, configDir())) {
+            return null; // what an earlier install wrote: Install replaces it, it is not the user's own (review A6)
+        }
         String normalized = String.join(" ", com.editora.lsp.LspServerRegistry.tokenize(command));
         String fallback = com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId);
         return normalized.equals(String.join(" ", com.editora.lsp.LspServerRegistry.tokenize(fallback)))
@@ -1880,6 +1940,31 @@ final class LspCoordinator {
     /** The configured command for a server id (blank ⇒ the server's default). */
     private String serverCommand(String serverId) {
         return projectSettings().commandFor(serverId, serverCommand(host.settings(), serverId), projectTrusted());
+    }
+
+    /** The command a server is started with: {@link #serverCommand(String)}, a blank one filled in with
+     *  Editora's own copy where it keeps one outside PATH (lemminx, review A9). */
+    private String launchCommand(String serverId) {
+        return withOwnCopy(serverId, serverCommand(serverId), configDir());
+    }
+
+    /** {@code command} for {@code serverId}, Editora's own copy standing in for a blank XML command. Pure but
+     *  for file lookups. */
+    static String withOwnCopy(String serverId, @Nullable String command, @Nullable Path configDir) {
+        String raw = command == null ? "" : command;
+        return "xml".equals(serverId) ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir) : raw;
+    }
+
+    /** {@link #commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
+    static Map<String, String> launchCommandsForAllServers(com.editora.config.Settings s, @Nullable Path configDir) {
+        Map<String, String> commands = commandsForAllServers(s);
+        commands.replaceAll((id, command) -> withOwnCopy(id, command, configDir));
+        return commands;
+    }
+
+    private @Nullable Path configDir() {
+        com.editora.config.ConfigManager config = ops.config();
+        return config == null ? null : config.getConfigDir();
     }
 
     /** Whether the user (or a trusted project) set this server's command, rather than leaving the default (Doctor). */
@@ -2012,6 +2097,17 @@ final class LspCoordinator {
         return "shfmt".equals(toolId) ? c.effectiveShfmt() : c.effectiveShellcheck();
     }
 
+    /** What lemminx says that needs saying the Editora way (its symbol-limit notice, a blocked schema download). */
+    private final XmlServerNotices xmlNotices = new XmlServerNotices();
+
+    /** Hands the XML servers their settings (Settings → LSP → XML), each folder's trust read again (XML review D3). */
+    void applyXmlSettings() {
+        com.editora.config.ConfigManager config = ops.config();
+        lspManager.setXmlSettings(
+                com.editora.lsp.XmlServerSettings.of(host.settings(), config == null ? null : config.getConfigDir()));
+        xmlNotices.reset();
+    }
+
     /** Hands the current {@link #bashIdeConfig()} to the manager, which pushes it to running Bash servers. */
     void applyBashIde() {
         lspManager.setBashIde(bashIdeConfig());
@@ -2030,7 +2126,7 @@ final class LspCoordinator {
         lspManager.setLooseRoot(config == null ? null : config.getConfigDir().resolve(LOOSE_ROOT));
     }
 
-    /** The shared root of loose JavaScript/TypeScript files, under the config folder. */
+    /** The shared root of loose JavaScript/TypeScript (and XML) files, under the config folder. */
     static final String LOOSE_ROOT = "lsp/loose-files";
 
     /** The project root whose withheld overrides were last announced, so a gating pass does not repeat it. */
@@ -2239,6 +2335,7 @@ final class LspCoordinator {
         projectScope.reload();
         applyOnTypeFormatting();
         applyBashIde();
+        applyXmlSettings();
         appliedProjectRoot = ops.lspProjectRoot();
         offerInterruptedEdits();
         if (ops.lspFeatureEnabled() && !projectOverrideSignature().equals(appliedProjectOverrides)) {
@@ -2252,7 +2349,8 @@ final class LspCoordinator {
         return switch (serverId) {
             case "typescript" -> s.getTypescriptLspCommand();
             case "python" -> s.getPythonLspCommand();
-            case "xml" -> s.getXmlLspCommand();
+            // A Java lemminx (the pom.xml server's, where the native build cannot run) runs on the Maven JDK too.
+            case "xml" -> com.editora.lsp.JvmServerCommand.withJdk(s.getXmlLspCommand(), s.getMavenJdkHome());
             case "json" -> s.getJsonLspCommand();
             case "bash" -> s.getBashLspCommand();
             case "yaml" -> s.getYamlLspCommand();
@@ -2292,7 +2390,7 @@ final class LspCoordinator {
      * default; empty for a server with neither (an uninstalled {@code maven-pom}). Doctor-screen read.
      */
     java.util.List<String> serverArgv(String serverId) {
-        String raw = serverCommand(serverId);
+        String raw = launchCommand(serverId);
         return com.editora.lsp.LspServerRegistry.commandFor(
                 serverId, raw == null ? java.util.Map.of() : java.util.Map.of(serverId, raw));
     }
@@ -2855,6 +2953,9 @@ final class LspCoordinator {
             return origin.root(); // a library file reached from the project: read in the project's server (B4)
         }
         Path loose = lspManager.looseRoot();
+        if (loose != null && com.editora.lsp.XmlServer.isXml(serverId)) {
+            return com.editora.lsp.XmlServer.sharedRoot(ops.lspProjectRoot(), file, loose); // one lemminx (A7)
+        }
         if (loose != null
                 && com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)
                 && com.editora.lsp.RootResolver.isLoose(
@@ -3162,13 +3263,16 @@ final class LspCoordinator {
     /** Ruff/Black Format Document for Python files no language server formats (adl's decision 4). */
     final PythonFormatCoordinator pythonFormat;
 
+    private final XmlFormatCoordinator xmlFormat;
+
     /**
-     * {@code lsp.formatDocument} for a Python file: Ruff or Black when no running server formats it. True when
-     * this took the command — then it works with the language server off too.
+     * {@code lsp.formatDocument} for a Python file: Ruff or Black when no running server formats it; for an XML
+     * file, the built-in {@link XmlFormatCoordinator}. True when this took the command — then it works with the
+     * language server off too.
      */
     boolean formatPythonExternally() {
         pythonInterpreters.captureSnapshot();
-        return pythonFormat.formatActive();
+        return pythonFormat.formatActive() || xmlFormat.formatActive();
     }
 
     /** For Doctor (FX thread): resolves, off the FX thread, the interpreter of the active Python file or project. */
@@ -3289,6 +3393,7 @@ final class LspCoordinator {
         if (!ops.lspFeatureEnabled()) {
             return;
         }
+        message = XmlServerNotices.rewrite(serverId, message); // lemminx's symbol limit names Editora's setting
         String source = statusSource(serverId, root);
         if (serverId != null && root != null) {
             if ("Launching".equalsIgnoreCase(type)) {
@@ -3646,6 +3751,7 @@ final class LspCoordinator {
      */
     void stopServer(String serverId) {
         failingServers.remove(serverId); // the new copy gets a fresh chance
+        crashedServers.remove(serverId);
         clearDiagnosticsForServer(serverId); // before shutdown: after it, nothing would re-publish an empty list
         lspManager.shutdownServer(serverId);
     }
@@ -3654,6 +3760,7 @@ final class LspCoordinator {
     void restartServers() {
         startBlocked.clear();
         failingServers.clear();
+        crashedServers.clear();
         importFailed.clear();
         nonProjectFiles.clear();
         refreshImportNotes();
@@ -4787,15 +4894,15 @@ final class LspCoordinator {
                     com.editora.lsp.WorkspaceEditMapper.Mapped,
                     java.util.function.Consumer<com.editora.lsp.WorkspaceEditMapper.Mapped>>
             refactorPreview(String title) {
-        return (mapped, apply) -> withDiskView(resourcePaths(mapped), files -> {
-            if (!com.editora.lsp.RenamePreview.worthPreviewing(mapped, workspaceDisk(files))) {
+        return (mapped, apply) -> withDiskView(WorkspaceEditFiles.resourcePaths(mapped), files -> {
+            if (!com.editora.lsp.RenamePreview.worthPreviewing(mapped, WorkspaceEditFiles.workspaceDisk(files))) {
                 apply.accept(mapped);
                 return;
             }
             java.util.List<MultiSelectPicker.Item<Path>> rows = new java.util.ArrayList<>();
             java.util.Set<Path> listed = new java.util.LinkedHashSet<>();
             for (com.editora.lsp.RenamePreview.FileChange change :
-                    com.editora.lsp.RenamePreview.summarise(mapped, workspaceDisk(files))) {
+                    com.editora.lsp.RenamePreview.summarise(mapped, WorkspaceEditFiles.workspaceDisk(files))) {
                 rows.add(new MultiSelectPicker.Item<>(previewLabel(change), true, change.file()));
                 listed.add(change.file());
             }
@@ -6592,6 +6699,10 @@ final class LspCoordinator {
         long generation = ++hoverGeneration;
         long version = b.docVersion();
         int caret = area.getCaretPosition();
+        // The problems here lead the card: a lemminx error's list of what is allowed reached no keyboard user (C6).
+        List<LspDiagnostic> here = path == null
+                ? List.of()
+                : CaretProblems.at(problemsOf(path), area.getCurrentParagraph(), area.getCaretColumn());
         java.util.function.BooleanSupplier stale = () -> b != host.activeBuffer()
                 || b.isDisposed()
                 || area != b.getFocusedArea()
@@ -6606,16 +6717,19 @@ final class LspCoordinator {
                 area.getCaretColumn(),
                 text -> {
                     if (stale.getAsBoolean()) return;
-                    if (text == null || text.isBlank()) {
+                    if ((text == null || text.isBlank()) && here.isEmpty()) {
                         host.setStatus(tr("status.lsp.noHover"));
                     } else {
-                        showHoverPopup(area, text);
+                        showHoverPopup(area, text == null ? "" : text, here);
                     }
                 },
                 failure -> {
                     if (stale.getAsBoolean()) return;
                     // The server failed, which is not "nothing here": say so (Maven review C2).
                     host.setStatus(tr("status.lsp.hoverFailed", failure));
+                    if (!here.isEmpty()) {
+                        showHoverPopup(area, "", here);
+                    }
                 });
     }
 
@@ -6706,12 +6820,16 @@ final class LspCoordinator {
      */
     void codeActions() {
         // jdtls lists every generator at every caret; they have their own command (Generate), so the quick-fix
-        // list is about the caret (Java review A4). Other servers' source actions stay in it.
+        // list is about the caret (Java review A4). Other servers' source actions stay in it, except on a line
+        // with a problem, where a whole-file rewrite (lemminx's Minify XML) is no fix (XML review B14).
+        EditorBuffer b = host.activeBuffer(); // showCodeActions reports a file with no server, once
+        Path path = b == null ? null : lspPath(b);
+        boolean onProblem = b != null
+                && path != null
+                && CaretProblems.onLine(problemsOf(path), b.getFocusedArea().getCurrentParagraph());
         showCodeActions(
-                (serverId, item) -> !LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
-                        || (com.editora.lsp.CodeActionKinds.group(item.kind())
-                                        != com.editora.lsp.CodeActionKinds.Group.SOURCE
-                                && !com.editora.lsp.CodeActionKinds.isJavaGeneratorAssist(item)),
+                (serverId, item) -> com.editora.lsp.CodeActionKinds.inQuickFixList(
+                        LspServerRegistry.JAVA_SERVER_ID.equals(serverId), item, onProblem),
                 "status.lsp.noCodeActions",
                 null);
     }
@@ -6942,29 +7060,17 @@ final class LspCoordinator {
             return;
         }
         CodeArea area = b.getFocusedArea();
-        int line = area.getCurrentParagraph();
-        int col = area.getCaretColumn();
-        LspDiagnostic best = null;
-        for (LspDiagnostic d : problems.getOrDefault(ops.canonicalize(path), List.of())) {
-            boolean onLine = d.startLine() <= line && line <= d.endLine();
-            boolean atCaret = onLine
-                    && (d.startLine() < line || d.startCol() <= col)
-                    && (d.endLine() > line || col <= d.endCol());
-            if (onLine
-                    && (best == null
-                            || atCaret
-                            || d.severity().ordinal() < best.severity().ordinal())) {
-                best = d;
-                if (atCaret) {
-                    break;
-                }
-            }
-        }
+        LspDiagnostic best = CaretProblems.nearest(problemsOf(path), area.getCurrentParagraph(), area.getCaretColumn());
         if (best == null) {
             host.setStatus(tr("status.lsp.noProblemHere"));
         } else {
             sayProblem(best);
+            showHoverPopup(area, "", List.of(best)); // the whole message, which the status line cuts (XML review C6)
         }
+    }
+
+    private List<LspDiagnostic> problemsOf(Path path) {
+        return problems.getOrDefault(ops.canonicalize(path), List.of());
     }
 
     private void sayProblem(LspDiagnostic d) {
@@ -7001,8 +7107,8 @@ final class LspCoordinator {
         if (runGeneratePrompt(path, item)) {
             return; // a jdtls generate prompt: we drive it, not the server (#741)
         }
-        if (runRefactorCommand(path, item)) {
-            return; // likewise a refactoring that asks the user where to, or what
+        if (runRefactorCommand(path, item) || xml.runsCodeAction(path, item)) {
+            return; // likewise a refactoring that asks the user where to, or what; or lemminx's binding wizard
         }
         LspManager.CodeActionItem applied = item;
         beginReportedEdit();
@@ -7019,7 +7125,12 @@ final class LspCoordinator {
                                         lspManager.lastCodeActionFailure())
                                 : lspManager.lastCodeActionEmpty() // resolved to no change at all (ET1)
                                         ? tr("status.lsp.codeActionNoChange", applied.title())
-                                        : tr("status.lsp.codeActionFailed", applied.title())));
+                                        : lspManager.lastEditUnresolvedUri() != null // XML review B1
+                                                ? tr(
+                                                        "status.lsp.codeActionBadUri",
+                                                        applied.title(),
+                                                        lspManager.lastEditUnresolvedUri())
+                                                : tr("status.lsp.codeActionFailed", applied.title())));
     }
 
     /**
@@ -7079,8 +7190,9 @@ final class LspCoordinator {
                                     : tr("status.lsp.renameFailedWhy", name, why));
                     return;
                 }
-                withDiskView(resourcePaths(mapped), files -> {
-                    if (!com.editora.lsp.RenamePreview.worthPreviewing(mapped, workspaceDisk(files))) {
+                withDiskView(WorkspaceEditFiles.resourcePaths(mapped), files -> {
+                    if (!com.editora.lsp.RenamePreview.worthPreviewing(
+                            mapped, WorkspaceEditFiles.workspaceDisk(files))) {
                         // Confined to this file: visible on screen and one undo away, so a confirmation step
                         // here would be friction with nothing to confirm.
                         applyRename(mapped, name);
@@ -7105,7 +7217,7 @@ final class LspCoordinator {
         java.util.List<MultiSelectPicker.Item<java.nio.file.Path>> rows = new java.util.ArrayList<>();
         java.util.Set<Path> listed = new java.util.LinkedHashSet<>();
         for (com.editora.lsp.RenamePreview.FileChange change :
-                com.editora.lsp.RenamePreview.summarise(mapped, workspaceDisk(files))) {
+                com.editora.lsp.RenamePreview.summarise(mapped, WorkspaceEditFiles.workspaceDisk(files))) {
             rows.add(new MultiSelectPicker.Item<>(previewLabel(change), true, change.file()));
             listed.add(change.file());
         }
@@ -7174,21 +7286,7 @@ final class LspCoordinator {
 
     /** The filesystem as the workspace-edit transaction sees it, for classifying destructive operations. */
     private com.editora.lsp.WorkspaceEditHazards.Disk workspaceDisk() {
-        return workspaceDisk(workspaceFiles);
-    }
-
-    private static com.editora.lsp.WorkspaceEditHazards.Disk workspaceDisk(WorkspaceFileOperations files) {
-        return new com.editora.lsp.WorkspaceEditHazards.Disk() {
-            @Override
-            public boolean exists(Path path) {
-                return files.exists(path);
-            }
-
-            @Override
-            public boolean isDirectory(Path path) {
-                return files.isDirectory(path);
-            }
-        };
+        return WorkspaceEditFiles.workspaceDisk(workspaceFiles);
     }
 
     /**
@@ -7207,30 +7305,6 @@ final class LspCoordinator {
             WorkspaceFileSnapshot snapshot = WorkspaceFileSnapshot.of(workspaceFiles, paths);
             Platform.runLater(() -> next.accept(snapshot));
         });
-    }
-
-    /** Every path {@code mapped}'s create, rename and delete operations name. */
-    private static List<Path> resourcePaths(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
-        List<Path> out = new java.util.ArrayList<>();
-        mapped.creates().forEach(c -> out.add(c.file()));
-        mapped.renames().forEach(r -> {
-            out.add(r.from());
-            out.add(r.to());
-        });
-        mapped.deletes().forEach(d -> out.add(d.file()));
-        return out;
-    }
-
-    /** Where {@link #staleDiskTargets} will look: each disk-preimage target, at the place a staged rename put it. */
-    private static List<Path> preimagePaths(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, Map<Path, Path> movedTo) {
-        List<Path> out = new java.util.ArrayList<>();
-        for (var edit : mapped.edits()) {
-            if (edit.diskPreimageAt() != null) {
-                out.add(movedTo.getOrDefault(edit.file().toAbsolutePath().normalize(), edit.file()));
-            }
-        }
-        return out;
     }
 
     /** Applies a (possibly filtered) rename edit and reports the outcome. */
@@ -7629,9 +7703,10 @@ final class LspCoordinator {
      */
     void applyWorkspaceEditsConfirmed(
             com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> done) {
-        withDiskView(resourcePaths(mapped), files -> {
+        withDiskView(WorkspaceEditFiles.resourcePaths(mapped), files -> {
             List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards =
-                    com.editora.lsp.WorkspaceEditHazards.needingConfirmation(mapped, workspaceDisk(files));
+                    com.editora.lsp.WorkspaceEditHazards.needingConfirmation(
+                            mapped, WorkspaceEditFiles.workspaceDisk(files));
             if (!hazards.isEmpty() && !destructiveEditConfirmer.test(hazards)) {
                 editRefused(
                         hazards.stream()
@@ -7656,7 +7731,7 @@ final class LspCoordinator {
      */
     private void captureBeforeDestruction(
             com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> done) {
-        withDiskView(resourcePaths(mapped), disk -> captureBeforeDestruction(mapped, disk, done));
+        withDiskView(WorkspaceEditFiles.resourcePaths(mapped), disk -> captureBeforeDestruction(mapped, disk, done));
     }
 
     private void captureBeforeDestruction(
@@ -7664,7 +7739,7 @@ final class LspCoordinator {
             WorkspaceFileOperations disk,
             java.util.function.Consumer<Boolean> done) {
         List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards =
-                com.editora.lsp.WorkspaceEditHazards.of(mapped, workspaceDisk(disk));
+                com.editora.lsp.WorkspaceEditHazards.of(mapped, WorkspaceEditFiles.workspaceDisk(disk));
         if (hazards.isEmpty()) {
             done.accept(true);
             return;
@@ -7727,9 +7802,13 @@ final class LspCoordinator {
      */
     void applyWorkspaceEditsAsync(
             com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> whenDone) {
-        openBeforeEdit.put(mapped, openBuffers());
+        java.util.Set<EditorBuffer> before = openBuffers();
+        openBeforeEdit.put(mapped, before);
         java.util.function.Consumer<Boolean> done = ok -> {
             openBeforeEdit.remove(mapped);
+            if (!committedEdits.remove(mapped) && !ok) {
+                WorkspaceEditTabs.discardOpened(mapped, before, this::bufferForLspPath, ops::closeBackgroundBuffer);
+            }
             whenDone.accept(ok);
         };
         if (!resourceTargetsSafe(mapped)) {
@@ -7748,7 +7827,7 @@ final class LspCoordinator {
                 createdPaths,
                 0,
                 buffers,
-                () -> withDiskView(preimagePaths(mapped, Map.of()), files -> {
+                () -> withDiskView(WorkspaceEditFiles.preimagePaths(mapped, Map.of()), files -> {
                     // Before anything is staged: a target the server did not have open must still be the file
                     // it read. Afterwards the same question is asked again where a staged rename moved it.
                     List<Path> stale = staleDiskTargets(mapped, buffers, Map.of(), true, files);
@@ -7784,7 +7863,7 @@ final class LspCoordinator {
             out.add(item.operation().file());
             out.add(item.stage());
         });
-        out.addAll(preimagePaths(mapped, movedTo(renames)));
+        out.addAll(WorkspaceEditFiles.preimagePaths(mapped, movedTo(renames)));
         return out;
     }
 
@@ -7899,9 +7978,13 @@ final class LspCoordinator {
             return false;
         }
         invalidateResourceWrites(mapped);
+        java.util.Set<EditorBuffer> before = openBuffers();
         WorkspaceTransactionStatus transaction = beginTransaction(mapped);
         boolean applied = applyWorkspaceEdits(mapped, transaction);
         endTransaction(transaction);
+        if (!committedEdits.remove(mapped) && !applied) {
+            WorkspaceEditTabs.discardOpened(mapped, before, this::bufferForLspPath, ops::closeBackgroundBuffer);
+        }
         return applied;
     }
 
@@ -7974,7 +8057,7 @@ final class LspCoordinator {
             reportIncompleteRollback(transaction);
             return false;
         }
-        Map<EditorBuffer, String> before = textsOf(buffers);
+        Map<EditorBuffer, String> before = WorkspaceEditFiles.textsOf(buffers);
         if (!applyWorkspaceTextEdits(mapped, buffers, transaction)) {
             rollbackDeletes(deletes, transaction);
             rollbackRenames(staged, transaction);
@@ -7985,6 +8068,7 @@ final class LspCoordinator {
         // The filesystem transaction completed before any text changed. Now remap open buffers/session state
         // in protocol order; this part is in-memory and cannot leave a failed disk move behind.
         transaction.journal.committed();
+        committedEdits.add(mapped);
         List<Path> orphaned = remapRenamedBuffers(staged, targets);
         for (StagedCreate created : creates) {
             ops.fileCreated(created.operation().file());
@@ -8064,12 +8148,13 @@ final class LspCoordinator {
                 return;
             }
         }
-        Map<EditorBuffer, String> before = textsOf(buffers);
+        Map<EditorBuffer, String> before = WorkspaceEditFiles.textsOf(buffers);
         if (!applyWorkspaceTextEdits(mapped, buffers, transaction)) {
             rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
             return;
         }
         transaction.journal.committed();
+        committedEdits.add(mapped);
         List<Path> orphaned = remapRenamedBuffers(renames, targets);
         creates.forEach(created -> ops.fileCreated(created.operation().file()));
         retireDeleted(deletes, targets);
@@ -8119,19 +8204,13 @@ final class LspCoordinator {
     private final Map<com.editora.lsp.WorkspaceEditMapper.Mapped, java.util.Set<EditorBuffer>> openBeforeEdit =
             new java.util.IdentityHashMap<>();
 
+    /** Edits whose text went in: a later failure (a tab not remapped) must not close the tabs they opened. */
+    private final java.util.Set<com.editora.lsp.WorkspaceEditMapper.Mapped> committedEdits =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
     private java.util.Set<EditorBuffer> openBuffers() {
         java.util.Set<EditorBuffer> out = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         host.forEachBuffer(out::add);
-        return out;
-    }
-
-    private static Map<EditorBuffer, String> textsOf(java.util.List<EditorBuffer> buffers) {
-        Map<EditorBuffer, String> out = new java.util.IdentityHashMap<>();
-        for (EditorBuffer b : buffers) {
-            if (b != null) {
-                out.putIfAbsent(b, b.getContent());
-            }
-        }
         return out;
     }
 
@@ -8661,7 +8740,7 @@ final class LspCoordinator {
                 if (made != null) {
                     // Move ▸ New package's folder goes with it (BT4), and jdtls hears it is gone: the next Move
                     // still offered the package (fourth review BF4)
-                    lspManager.notifyWatchedFiles(removeEmptyFolders(made[0], made[1]).stream()
+                    lspManager.notifyWatchedFiles(WorkspaceEditFiles.removeEmptyFolders(made[0], made[1]).stream()
                             .map(f -> new com.editora.lsp.LspManager.WatchedFile(
                                     f, com.editora.lsp.LspManager.WatchedKind.DELETED))
                             .toList());
@@ -8673,29 +8752,6 @@ final class LspCoordinator {
 
     /** Folders Move ▸ New package created, by the refactoring that filled them, with their source root. */
     private final Map<AppliedEdit, Path[]> newPackageFolders = new java.util.IdentityHashMap<>();
-
-    /**
-     * Deletes {@code folder} and its parents up to (not including) {@code root} while they are empty, and returns
-     * the folders it deleted.
-     */
-    static java.util.List<Path> removeEmptyFolders(Path folder, Path root) {
-        java.util.List<Path> deleted = new java.util.ArrayList<>();
-        @Nullable Path at = folder.toAbsolutePath().normalize();
-        Path stop = root.toAbsolutePath().normalize();
-        while (at != null && at.startsWith(stop) && !at.equals(stop)) {
-            try (var entries = java.nio.file.Files.list(at)) {
-                if (entries.findAny().isPresent()) {
-                    break;
-                }
-                java.nio.file.Files.delete(at);
-                deleted.add(at);
-            } catch (java.io.IOException | RuntimeException e) {
-                break;
-            }
-            at = at.getParent();
-        }
-        return deleted;
-    }
 
     /** The position just past the end of {@code text}, in LSP's UTF-16 units. */
     static org.eclipse.lsp4j.Position endOf(String text) {
@@ -8794,7 +8850,7 @@ final class LspCoordinator {
                 Path from = item.rename().from().toAbsolutePath().normalize();
                 Path to = item.rename().to().toAbsolutePath().normalize();
                 // After a case-only rename on a case-insensitive volume the old spelling still "exists".
-                if ((files.exists(from) && !sameFileInAnotherCase(files, from, to))
+                if ((files.exists(from) && !WorkspaceEditFiles.sameFileInAnotherCase(files, from, to))
                         || !files.exists(to)
                         || !java.util.Objects.equals(item.identity(), files.identity(to))) {
                     return false;
@@ -9303,30 +9359,7 @@ final class LspCoordinator {
      * such a rename needs.
      */
     private boolean sameFileInAnotherCase(Path from, Path to) {
-        return sameFileInAnotherCase(workspaceFiles, from, to);
-    }
-
-    private static boolean sameFileInAnotherCase(WorkspaceFileOperations files, Path from, Path to) {
-        if (!from.toString().equalsIgnoreCase(to.toString())) {
-            return false;
-        }
-        try {
-            WorkspaceFileIdentity fromIdentity = files.identity(from);
-            if (fromIdentity == null) {
-                return false;
-            }
-            WorkspaceFileIdentity toIdentity = files.identity(to);
-            if (toIdentity == null) {
-                return false;
-            }
-            Object source = fromIdentity.fileKey();
-            Object destination = toIdentity.fileKey();
-            // No file keys (Windows): the names differ only in case and both resolve, which is the same file
-            // on every volume but a case-sensitive directory.
-            return source == null || destination == null || source.equals(destination);
-        } catch (java.io.IOException | RuntimeException e) {
-            return false;
-        }
+        return WorkspaceEditFiles.sameFileInAnotherCase(workspaceFiles, from, to);
     }
 
     private void commitRenames(java.util.List<StagedRename> staged) {
@@ -9392,20 +9425,27 @@ final class LspCoordinator {
      * Shows LSP hover markdown in a dismissable popup at the caret (rendered via the Markdown renderer).
      * Closes on Escape, a click elsewhere (auto-hide), caret movement, scrolling, or another hover.
      */
-    private void showHoverPopup(CodeArea area, String markdown) {
+    private void showHoverPopup(CodeArea area, String markdown, List<LspDiagnostic> problemsHere) {
         hideHoverPopup();
         Node content;
-        try {
-            // Links in a hover (documentation URLs) open through the window's link choke point.
-            content = MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseForRender(markdown),
-                    null,
-                    host::openExternalUrl,
-                    MarkdownRenderer.ImagePolicy.DATA_ONLY);
-        } catch (RuntimeException e) {
-            Label label = new Label(markdown);
-            label.setWrapText(true);
-            content = label;
+        Node problemsNode = CaretProblems.node(problemsHere);
+        if (markdown.isBlank()) {
+            content = problemsNode != null ? problemsNode : new Label();
+        } else
+            try {
+                // Links in a hover (documentation URLs) open through the window's link choke point.
+                content = MarkdownRenderer.renderDocument(
+                        MarkdownRenderer.parseForRender(markdown),
+                        null,
+                        host::openExternalUrl,
+                        MarkdownRenderer.ImagePolicy.DATA_ONLY);
+            } catch (RuntimeException e) {
+                Label label = new Label(markdown);
+                label.setWrapText(true);
+                content = label;
+            }
+        if (problemsNode != null && content != problemsNode) {
+            content = new VBox(10, problemsNode, new javafx.scene.control.Separator(), content);
         }
         // In a scroll pane no taller than part of the window: a command's hover from bash-language-server is
         // its whole man page (8 KB for `ls`), which made a popup thousands of pixels tall with most of it
