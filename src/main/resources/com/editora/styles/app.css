@@ -1783,6 +1783,7 @@
 .project-map-probe-file { -fx-fill: -project-file-color; }
 .project-map-probe-olive { -fx-fill: -state-olive; }
 .project-map-probe-violet { -fx-fill: -state-violet; }
+.project-map-probe-structure { -fx-fill: -state-violet; }
 .project-tree .tree-cell {
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;
