@@ -127,9 +127,16 @@ public final class CompletionEngine {
 
     /**
      * Orders language-server completions by the server's relevance — preselected first, then by
-     * {@code sortText}, falling back to the label when absent. A stable sort means equal keys keep the
+     * {@code sortText}, falling back to the label when absent (as the LSP spec says). Sort texts compare
+     * ignoring case first, as VS Code compares them, and by exact text only to break a tie: lemminx sends its
+     * comment and CDATA snippets {@code "ZZa"}/{@code "ZZb"} to put them last, and an ordinal compare put
+     * {@code 'Z'} before every lower-case element name (XML review B3). Servers whose sort texts are digits
+     * (jdtls, tsserver, rust-analyzer) order exactly as before. A stable sort means equal keys keep the
      * server's order. Returns a new list (the input is left untouched).
      */
+    private static final java.util.Comparator<String> SORT_TEXT_ORDER =
+            String.CASE_INSENSITIVE_ORDER.thenComparing(java.util.Comparator.naturalOrder());
+
     public static List<Completion> sortLspByRelevance(List<Completion> items) {
         if (items == null || items.size() < 2) {
             return items == null ? List.of() : items;
@@ -141,7 +148,7 @@ public final class CompletionEngine {
             }
             String sa = a.sortText() == null ? a.label() : a.sortText();
             String sb = b.sortText() == null ? b.label() : b.sortText();
-            return (sa == null ? "" : sa).compareTo(sb == null ? "" : sb);
+            return SORT_TEXT_ORDER.compare(sa == null ? "" : sa, sb == null ? "" : sb);
         });
         return out;
     }

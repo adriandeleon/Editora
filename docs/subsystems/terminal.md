@@ -288,7 +288,7 @@ to open terminals. Scrollback and shell apply from the next tab. Schema 131 adds
 adds `terminalShellIntegration`, which applies from the next tab; 133 adds `terminalTypeAhead` (applies at
 once) and Debug's `debugProgramInTerminal`. 135 adds `terminalMacOptionIsMeta` and
 `terminalConfirmMultilinePaste`, and lowers the scrollback maximum to 50,000 lines (about 94 MB a tab at the old
-100,000); the migration clamps a larger value. 149 adds `terminalCopyOnSelect` (off), `terminalClipboardWrites`
+100,000); the migration clamps a larger value. 150 adds `terminalCopyOnSelect` (off), `terminalClipboardWrites`
 (on: OSC 52) and `terminalNotifications` (on: OSC 9 / 777), all applying at once. The terminal's font size
 follows the editor's text zoom.
 

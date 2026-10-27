@@ -396,6 +396,10 @@ class LspManagerTest {
                 new org.eclipse.lsp4j.PrepareRenameDefaultBehavior(true)));
         assertTrue(fromDefault.allowed());
         assertEquals("", fromDefault.placeholder());
+        // lemminx on an attribute value (XML review B11): the server declines, as VS Code's client reads it.
+        assertFalse(LspManager.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forThird(
+                        new org.eclipse.lsp4j.PrepareRenameDefaultBehavior(false)))
+                .allowed());
     }
 
     // --- Document highlight (#675) -------------------------------------------------------------

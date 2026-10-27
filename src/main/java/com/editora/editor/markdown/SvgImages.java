@@ -48,7 +48,13 @@ public final class SvgImages {
             double width,
             double height,
             @Nullable String error,
-            int sourceChars) {
+            int sourceChars,
+            int errorLine,
+            int errorColumn) {
+
+        Cached(@Nullable SVGDocument document, double width, double height, @Nullable String error, int sourceChars) {
+            this(document, width, height, error, sourceChars, 0, 0);
+        }
 
         /** Estimated heap the parsed document holds (nodes, attributes, path data), per character of source. */
         long weight() {
@@ -84,26 +90,57 @@ public final class SvgImages {
      * SVG's logical width to the displayed width (a standalone preview multiplies by the zoom).
      */
     public static Node node(String source, java.util.function.DoubleUnaryOperator sizer) {
+        return node(source, sizer, null);
+    }
+
+    /**
+     * As {@link #node(String, java.util.function.DoubleUnaryOperator)}; a parse failure names where the source
+     * stops being well-formed XML, as a link that runs {@code jump} (XML review C15).
+     */
+    public static Node node(
+            String source,
+            java.util.function.DoubleUnaryOperator sizer,
+            com.editora.editor.structured.ParseErrorView.@Nullable Jump jump) {
         StackPane host = new StackPane();
         host.getStyleClass().add("md-svg");
-        fill(host, source, sizer);
+        fill(host, source, sizer, jump);
         return host;
     }
 
-    private static void fill(StackPane host, String source, java.util.function.DoubleUnaryOperator sizer) {
+    private static void fill(
+            StackPane host,
+            String source,
+            java.util.function.DoubleUnaryOperator sizer,
+            com.editora.editor.structured.ParseErrorView.@Nullable Jump jump) {
         String key = key(source);
         Cached hit = CACHE.get(key);
         if (hit != null) {
-            applyCached(host, hit, sizer);
+            applyCached(host, hit, sizer, jump);
             return;
         }
         host.getChildren().setAll(placeholder(Messages.tr("svg.rendering")));
         EXEC.submit(() -> {
             SVGDocument doc = PreviewImageLoader.parseSvg(source.getBytes(StandardCharsets.UTF_8));
-            Cached result = cachedFor(doc, source.length());
+            Cached result = cachedFor(doc, source);
             remember(key, result);
-            Platform.runLater(() -> applyCached(host, result, sizer));
+            Platform.runLater(() -> applyCached(host, result, sizer, jump));
         });
+    }
+
+    /**
+     * As {@link #cachedFor(SVGDocument, int)}, a failure carrying the XML parser's message and position when the
+     * source is not well-formed (JSVG itself only gives up). Off the FX thread.
+     */
+    static Cached cachedFor(@Nullable SVGDocument doc, String source) {
+        if (doc != null) {
+            return cachedFor(doc, source.length());
+        }
+        com.editora.structured.XmlParser.Parsed problem = com.editora.structured.XmlParser.firstError(source);
+        if (problem == null || problem.error() == null) {
+            return cachedFor(null, source.length());
+        }
+        String message = Messages.tr("svg.renderFailed") + "\n" + problem.error();
+        return new Cached(null, 0, 0, message, source.length(), problem.line(), problem.column());
     }
 
     /** Caches {@code result}, then trims the cache to its byte budget (the newest entry is always kept). */
@@ -142,9 +179,13 @@ public final class SvgImages {
 
     private static final double DEFAULT_HEIGHT = 20;
 
-    private static void applyCached(StackPane host, Cached c, java.util.function.DoubleUnaryOperator sizer) {
+    private static void applyCached(
+            StackPane host,
+            Cached c,
+            java.util.function.DoubleUnaryOperator sizer,
+            com.editora.editor.structured.ParseErrorView.@Nullable Jump jump) {
         if (c.document() == null) {
-            host.getChildren().setAll(errorNode(c.error()));
+            host.getChildren().setAll(errorNode(c, jump));
             return;
         }
         host.getChildren().setAll(canvasFor(c, sizer));
@@ -190,12 +231,14 @@ public final class SvgImages {
         return label;
     }
 
-    private static Label errorNode(@Nullable String message) {
-        Label label = new Label(message == null || message.isBlank() ? Messages.tr("svg.renderFailed") : message);
-        label.getStyleClass().add("svg-error");
-        label.setWrapText(true);
-        label.setMaxWidth(Double.MAX_VALUE);
-        return label;
+    private static Node errorNode(Cached c, com.editora.editor.structured.ParseErrorView.@Nullable Jump jump) {
+        String message = c.error();
+        return com.editora.editor.structured.ParseErrorView.of(
+                message == null || message.isBlank() ? Messages.tr("svg.renderFailed") : message,
+                c.errorLine(),
+                c.errorColumn(),
+                jump,
+                "svg-error");
     }
 
     /** Cache key = sha-256 of the SVG source, so editing invalidates but a re-render of the same text hits. */

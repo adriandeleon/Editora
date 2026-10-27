@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 149;
+    public static final int SCHEMA_VERSION = 150;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -946,6 +946,27 @@ public class Settings {
     /** Whether lemminx-maven may download and use the Maven Central index for pom.xml completion (a large
      *  one-time download); off = completion from the local repository ({@code ~/.m2}) only. */
     private boolean mavenPomCentralIndex = false;
+    /**
+     * Whether the XML server (lemminx) may download the schemas, DTDs and RelaxNG grammars a file names over the
+     * network: {@code never}, {@code trusted} (only for a file in a trusted folder) or {@code always}.
+     */
+    private String xmlSchemaDownloads = "trusted";
+    /** How lemminx reports an XML file with no grammar: {@code ignore}, {@code hint} or {@code warning}. */
+    private String xmlNoGrammar = "ignore";
+    /** OASIS XML catalogs lemminx resolves schemas through (paths; a relative one is under each project root). */
+    private java.util.List<String> xmlCatalogs = new java.util.ArrayList<>();
+    /** File pattern (glob) → the schema/DTD/RelaxNG grammar lemminx binds such files to (a path or a URL). */
+    private java.util.Map<String, String> xmlFileAssociations = new java.util.LinkedHashMap<>();
+    /** XML Format Document wraps long text content at the fill column; off = text is left on its lines. */
+    private boolean xmlFormatWrap = false;
+    /** How XML Format Document lays out attributes: {@code preserve}, {@code splitNewLine}, {@code alignWithFirstAttr}. */
+    private String xmlFormatSplitAttributes = "preserve";
+    /** What XML Format Document does with empty elements: {@code ignore}, {@code collapse} or {@code expand}. */
+    private String xmlFormatEmptyElements = "ignore";
+    /** XML Format Document writes {@code <a />} (on) or {@code <a/>} (off). */
+    private boolean xmlFormatSpaceBeforeEmptyCloseTag = true;
+    /** The most XML elements Structure and folding list for one file ({@code xml.symbols.maxItemsComputed}). */
+    private int xmlSymbolLimit = XML_SYMBOL_LIMIT_DEFAULT;
     /** PDF export: include the line-number gutter (code PDFs). */
     private boolean pdfLineNumbers = true;
     /** PDF export: apply syntax-highlighting colors (code PDFs); off = plain monospace. */
@@ -4171,6 +4192,106 @@ public class Settings {
 
     public void setMavenPomCentralIndex(boolean mavenPomCentralIndex) {
         this.mavenPomCentralIndex = mavenPomCentralIndex;
+    }
+
+    public static final java.util.List<String> XML_SCHEMA_DOWNLOADS = java.util.List.of("never", "trusted", "always");
+    public static final java.util.List<String> XML_NO_GRAMMAR = java.util.List.of("ignore", "hint", "warning");
+    public static final java.util.List<String> XML_SPLIT_ATTRIBUTES =
+            java.util.List.of("preserve", "splitNewLine", "alignWithFirstAttr");
+    public static final java.util.List<String> XML_EMPTY_ELEMENTS = java.util.List.of("ignore", "collapse", "expand");
+    public static final int XML_SYMBOL_LIMIT_DEFAULT = 5_000;
+    public static final int XML_SYMBOL_LIMIT_MAX = 1_000_000;
+
+    private static String oneOf(@Nullable String value, java.util.List<String> allowed) {
+        return value != null && allowed.contains(value) ? value : allowed.get(0);
+    }
+
+    public String getXmlSchemaDownloads() {
+        return xmlSchemaDownloads != null && XML_SCHEMA_DOWNLOADS.contains(xmlSchemaDownloads)
+                ? xmlSchemaDownloads
+                : "trusted";
+    }
+
+    public void setXmlSchemaDownloads(@Nullable String mode) {
+        this.xmlSchemaDownloads = mode != null && XML_SCHEMA_DOWNLOADS.contains(mode) ? mode : "trusted";
+    }
+
+    public String getXmlNoGrammar() {
+        return oneOf(xmlNoGrammar, XML_NO_GRAMMAR);
+    }
+
+    public void setXmlNoGrammar(@Nullable String severity) {
+        this.xmlNoGrammar = oneOf(severity, XML_NO_GRAMMAR);
+    }
+
+    public java.util.List<String> getXmlCatalogs() {
+        return xmlCatalogs == null ? java.util.List.of() : xmlCatalogs;
+    }
+
+    public void setXmlCatalogs(java.util.@Nullable List<String> catalogs) {
+        this.xmlCatalogs = new java.util.ArrayList<>();
+        if (catalogs != null) {
+            catalogs.stream()
+                    .filter(c -> c != null && !c.isBlank())
+                    .map(String::strip)
+                    .forEach(xmlCatalogs::add);
+        }
+    }
+
+    public java.util.Map<String, String> getXmlFileAssociations() {
+        return xmlFileAssociations == null ? java.util.Map.of() : xmlFileAssociations;
+    }
+
+    public void setXmlFileAssociations(java.util.@Nullable Map<String, String> associations) {
+        this.xmlFileAssociations = new java.util.LinkedHashMap<>();
+        if (associations != null) {
+            associations.forEach((pattern, schema) -> {
+                if (pattern != null && !pattern.isBlank() && schema != null && !schema.isBlank()) {
+                    xmlFileAssociations.put(pattern.strip(), schema.strip());
+                }
+            });
+        }
+    }
+
+    public boolean isXmlFormatWrap() {
+        return xmlFormatWrap;
+    }
+
+    public void setXmlFormatWrap(boolean wrap) {
+        this.xmlFormatWrap = wrap;
+    }
+
+    public String getXmlFormatSplitAttributes() {
+        return oneOf(xmlFormatSplitAttributes, XML_SPLIT_ATTRIBUTES);
+    }
+
+    public void setXmlFormatSplitAttributes(@Nullable String mode) {
+        this.xmlFormatSplitAttributes = oneOf(mode, XML_SPLIT_ATTRIBUTES);
+    }
+
+    public String getXmlFormatEmptyElements() {
+        return oneOf(xmlFormatEmptyElements, XML_EMPTY_ELEMENTS);
+    }
+
+    public void setXmlFormatEmptyElements(@Nullable String mode) {
+        this.xmlFormatEmptyElements = oneOf(mode, XML_EMPTY_ELEMENTS);
+    }
+
+    public boolean isXmlFormatSpaceBeforeEmptyCloseTag() {
+        return xmlFormatSpaceBeforeEmptyCloseTag;
+    }
+
+    public void setXmlFormatSpaceBeforeEmptyCloseTag(boolean space) {
+        this.xmlFormatSpaceBeforeEmptyCloseTag = space;
+    }
+
+    /** At least 1; a stored 0 or less (hand-edited) reads as the default. */
+    public int getXmlSymbolLimit() {
+        return xmlSymbolLimit < 1 ? XML_SYMBOL_LIMIT_DEFAULT : Math.min(xmlSymbolLimit, XML_SYMBOL_LIMIT_MAX);
+    }
+
+    public void setXmlSymbolLimit(int limit) {
+        this.xmlSymbolLimit = limit < 1 ? XML_SYMBOL_LIMIT_DEFAULT : Math.min(limit, XML_SYMBOL_LIMIT_MAX);
     }
 
     public boolean isPdfLineNumbers() {

@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PowerShell toast). One per terminal every two seconds; Settings ▸ Terminal ▸ Desktop notifications turns the
   desktop half off.
 - **Terminal: programs can copy to the clipboard** (OSC 52), as tmux and editors do over SSH. A program can never
-  read the clipboard. Settings ▸ Terminal ▸ Let programs copy to the clipboard (on). Settings schema 148 → 149
+  read the clipboard. Settings ▸ Terminal ▸ Let programs copy to the clipboard (on). Settings schema 149 → 150
   (additive).
 - **Terminal tabs name the program running in them** (vim, npm, ssh) when the shell set no title, before the
   folder's name.
@@ -53,7 +53,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   character in the cell's own font and colour; a binary file's flood of bells is one flash; entering or leaving a
   full-screen program drops a selection made on the other screen; `file://` links naming this machine open as
   local files; the keypad's arrow keys work; box drawing and other one-cell text is drawn in one call per run.
-
+- **XML: the lemminx install is pinned and checked.** Install… downloads vscode-xml 0.29.3's lemminx (0.31.2) instead
+  of whatever `releases/latest` was, refuses a zip or a program whose SHA-256 is not the release's, takes exactly
+  the program (not any file whose name starts with "lemminx"), and no longer asks for `tar` (every asset is a zip).
+  It writes an install receipt, so Settings and Doctor show the version and Doctor offers Update when a later Editora
+  moves the pin; a copy installed before receipts is offered Update once.
+- **XML: Reset no longer disconnects Editora's lemminx.** The install leaves the XML command blank, and a blank
+  command (or a stale path into Editora's own XML folder) runs Editora's copy before anything on PATH.
+- **XML: a lemminx that cannot run here says why.** Install asks the new server to answer a request first; on a
+  system whose C library is too old (lemminx needs glibc 2.34) it installs nothing and says so — or, when the pom.xml
+  server is installed, XML runs its Java lemminx instead. A server that exits as soon as it starts now gives its own
+  first words in the crash notice, Settings and Doctor, instead of "found" and "OK", and Install treats it as missing.
+- **XML install banner.** Not offered while the XML server is switched off; a configured XML command that is
+  missing leads to Settings instead of an Install that would overwrite it; it says what the server adds and what
+  Install downloads (about 17 MB, from Red Hat's vscode-xml release on GitHub); and "Not now" holds for every XML
+  file of the window, not one tab. With language servers off, the first XML file asks once whether to turn them on.
+- **XML: DTDs, RELAX NG schemas and other XML dialects are XML.** `.dtd .ent .mod .rng .fo .xspec .sch .csproj
+  .vbproj .fsproj .props .targets .nuspec .resx .xaml .xlf .xliff .plist .xul .kml .gpx .tld .jnlp .xmi .ditamap
+  .dita` open with XML highlighting, folding, comments and the XML language server instead of as spell-checked
+  plain text, and a file with no telling extension that starts with `<?xml` (an `AndroidManifest`) is XML too.
+  `go.mod` stays plain text; `.xhtml` stays HTML.
+- **XML: Go to Definition opens the schema.** On a `schemaLocation`, a DOCTYPE's DTD, an `xml-model` href or an
+  `xsl:include`, Go to Definition and Ctrl/Cmd-click open the referenced file; on an element or attribute name they
+  go to its XSD declaration instead of the element's own end tag.
+- **XML: one language server per window.** XML files outside the project, in any number of folders or Maven
+  modules, share one lemminx instead of starting one each.
+- **XML: files up to 100,000 lines keep the language server** (it stopped at 10,000), and the large-file notice
+  now says that folding, Structure, spell check and the language server are off too; Structure says why it is
+  empty.
+- **XML: lemminx's commands and quick fixes work.** New palette commands XML: Revalidate File, XML: Revalidate
+  All Open Files and XML: Bind to Grammar…; the "Bind to existing grammar/schema" quick fix picks an XSD, DTD or
+  RELAX NG file and binds it with `xsi:noNamespaceSchemaLocation`, a DOCTYPE or `xml-model`; lemminx's buttons on
+  its notifications and its client commands are carried out.
+- **XML: "Generate … and bind" quick fixes work.** Each of lemminx's fixes that writes an XSD, DTD or RelaxNG
+  grammar for a file without one failed with "Could not apply" and left an empty tab for the grammar file; the
+  grammar is now written and bound. Any refused edit closes the tabs it opened, and one that names a path Editora
+  cannot place says which.
+- **XML completion lists the schema's elements and values first.** "Insert Comment" and "Insert CDATA" were
+  preselected after `<`, so Enter inserted a comment; completion now orders the server's sort keys ignoring case,
+  as VS Code does.
+- **XML: Tab re-indents a line while the XML server runs**, and falls back to the usual smart Tab when the server
+  gives no indent; it did nothing on a non-blank line.
+- **XML: a close tag typed by hand joins the one tag auto-close inserted** instead of leaving `<from>x</</from>`.
+- **Show Documentation and Show Problem at Caret show the whole problem at the caret**, above any documentation:
+  lemminx's list of the allowed elements or values was cut off in the status line, and hover said there was
+  nothing.
+- **XML: no dangling "Code:" at the end of problem messages**, and Rename says it cannot rename where the server
+  declines instead of opening a dialog that does nothing.
+- **XML: "Minify XML" is no longer offered as the fix for a problem**; it stays under Generate, and in Code Actions
+  on a line without one.
+- **XML: a schema changed outside Editora revalidates the XML files that use it**, also in a collapsed Project
+  folder; the errors stayed until the next keystroke.
+- **XML server settings** (Settings ▸ LSP, the XML card): Editora now sends lemminx its settings at start, pushes a
+  change to the running server and answers its configuration questions, where before it sent nothing at all.
+  **Download schemas** (`xmlSchemaDownloads`: never / only in trusted folders, the default / always), **Files without
+  a grammar** (`xmlNoGrammar`: nothing, the default / hint / warning), **XML catalogs** (`xmlCatalogs`; a relative
+  path is looked for in each project's root), **Schema associations** (`xmlFileAssociations`,
+  `*.myconf.xml=schemas/myconf.xsd`), formatting (**Wrap long text**, off by default, wraps at the fill column;
+  **Attributes**; **Empty elements**; **Space before />**) and the **Structure element limit** (`xmlSymbolLimit`,
+  5,000). Settings schema 148 → 149 (additive).
+- **Doctor ▸ XML schema cache**: the size and folder of the schemas the XML server downloaded, with **Clear**.
+- **XML: opening a file no longer downloads every schema it names from any host.** lemminx fetched each
+  `xsi:schemaLocation`, DOCTYPE and `xml-model` grammar over http or https as soon as a file opened, in any folder.
+  Downloads now happen only in trusted folders by default; elsewhere the file says the download is off and the status
+  line says where to change it. External entities are never resolved.
+- **XML: downloaded schemas are kept under Editora's config folder** (`cache/lemminx`), not in `~/.lemminx`, so a
+  portable or test configuration no longer shares the user's cache, and settings export leaves it out.
+- **XML: a file without a schema or DTD no longer adds "No grammar constraints" to Problems** (SVG, XSLT, FXML, plain
+  config files); Settings can bring the hint back.
+- **XML: quick fixes and generated grammars are indented like the file**: lemminx's tab-size and spaces questions were
+  answered with nothing.
+- **XML: the "document symbols have been limited to 5000 items" notice names the setting that raises the limit.**
+- **XML: Format Document no longer wraps text at a fixed 100 columns.** Text is left on its lines unless Wrap long
+  text is on, which wraps at the editor's fill column; XSD and DTD files get lemminx's reference code lenses when
+  Code Lens is on.
 - **Java: Go to Super Method reads type arguments.** In `interface StrStore extends Store<String>`, `save(Integer)`
   opened `Store.save(T)`, and `Multi.accept(Integer)` offered a second, wrong branch; `T` now stands for `String`
   there, so neither does, and `take(T[])` takes only a `String[]`. It also works on a method reference
@@ -74,6 +147,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   typed keys went nowhere and the arrows switched tabs.
 - **Closing the last file tab beside the Welcome tab leaves the keyboard on the Welcome page**, not on the toolbar's
   New button, where a Space opened a new buffer.
+- **XML: Structure outlines every element, named by its attribute.** Without the XML server an XSD or XSLT outline
+  listed only the namespace prefix (`xs line 2`, `xs line 3`) and no one-line elements; every element is now listed
+  as `xs:element name="note"` or `xsl:template match="/"`. With the server, the outline loses lemminx's "Grammars",
+  "Cache: false" and "Binding: …" rows and schema rows carry their `name`.
+- **XML: Format Document works without the XML server**: a built-in formatter puts one element per line in the
+  file's own indentation and leaves text, CDATA and `xml:space="preserve"` content exactly as written.
+- **XML and SVG previews say where they fail**: the parser's message with a "Line 2, column 5" link that jumps there,
+  instead of "Could not render this SVG".
+- **New File ▸ XML and SVG start with a skeleton, and XML Schema and XSLT are new entries**; New From Template adds
+  "XML Schema (XSD)", "XSLT Stylesheet" and "XML Bound to a Schema". XML has 25 snippets (was 6), and element,
+  comment, CDATA and the XSLT/XSD containers wrap the selection, so Surround With works in XML.
+- **XML: `<!ELEMENT>`, `<!ATTLIST>` and `<!NOTATION>` declarations are highlighted**, like `<!ENTITY>`, in a
+  DOCTYPE's internal subset and in a bare DTD.
+- **VS Code keymap: Shift+Alt+F (Shift+Option+F on macOS) formats the document**, as in VS Code.
+- **A jump shows its own column**: Go to Definition, Structure clicks and search hits kept the old horizontal
+  scroll, so after the end of a long line a jump near a line start landed with the first characters cut off, and a
+  jump far along a long line left the caret off screen.
 
 ## [0.25.0] - 2026-10-26
 

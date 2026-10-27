@@ -25,6 +25,36 @@ public final class LanguageRegistry {
             Map.entry("pom", "xml"),
             Map.entry("rss", "xml"),
             Map.entry("wsdl", "xml"),
+            // XML dialects, so they reach the XML grammar and server (XML review A8): DTDs and their entity and
+            // module files (lemminx tells a DTD by its URI), RELAX NG, XSLT-FO, XSpec and Schematron, MSBuild and
+            // NuGet project files, .NET resources and XAML, XLIFF, property lists, Mozilla XUL, KML and GPX, JSP
+            // tag libraries, Java Web Start, XMI and DITA. A go.mod is not a DTD module: see forFileName.
+            Map.entry("dtd", "xml"),
+            Map.entry("ent", "xml"),
+            Map.entry("mod", "xml"),
+            Map.entry("rng", "xml"),
+            Map.entry("fo", "xml"),
+            Map.entry("xspec", "xml"),
+            Map.entry("sch", "xml"),
+            Map.entry("csproj", "xml"),
+            Map.entry("vbproj", "xml"),
+            Map.entry("fsproj", "xml"),
+            Map.entry("props", "xml"),
+            Map.entry("targets", "xml"),
+            Map.entry("nuspec", "xml"),
+            Map.entry("resx", "xml"),
+            Map.entry("xaml", "xml"),
+            Map.entry("xlf", "xml"),
+            Map.entry("xliff", "xml"),
+            Map.entry("plist", "xml"),
+            Map.entry("xul", "xml"),
+            Map.entry("kml", "xml"),
+            Map.entry("gpx", "xml"),
+            Map.entry("tld", "xml"),
+            Map.entry("jnlp", "xml"),
+            Map.entry("xmi", "xml"),
+            Map.entry("ditamap", "xml"),
+            Map.entry("dita", "xml"),
             Map.entry("html", "html"),
             Map.entry("htm", "html"),
             Map.entry("xhtml", "html"),
@@ -213,7 +243,15 @@ public final class LanguageRegistry {
             return PLAINTEXT;
         }
         String ext = base.substring(dot + 1).toLowerCase(Locale.ROOT);
+        if (isGoModule(base)) {
+            return PLAINTEXT; // .mod is a DTD module, but Go's go.mod is not XML
+        }
         return ShellFiles.isShellExtension(ext) ? "shell" : BY_EXTENSION.getOrDefault(ext, PLAINTEXT);
+    }
+
+    /** Whether {@code baseName} is Go's module file, whose {@code .mod} extension otherwise reads as a DTD module. */
+    public static boolean isGoModule(String baseName) {
+        return baseName != null && baseName.equalsIgnoreCase("go.mod");
     }
 
     public static String plaintext() {

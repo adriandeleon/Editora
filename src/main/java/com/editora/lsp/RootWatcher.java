@@ -49,21 +49,33 @@ final class RootWatcher implements AutoCloseable {
     private final WatchService ws;
     private final Map<WatchKey, Path> dirs = new HashMap<>();
     private final Consumer<List<LspManager.WatchedFile>> sink;
+    private final java.util.function.Predicate<Path> reported;
     private volatile boolean closed;
 
-    private RootWatcher(Path root, WatchService ws, Consumer<List<LspManager.WatchedFile>> sink) {
+    private RootWatcher(
+            Path root,
+            WatchService ws,
+            Consumer<List<LspManager.WatchedFile>> sink,
+            java.util.function.Predicate<Path> reported) {
         this.root = root;
         this.ws = ws;
         this.sink = sink;
+        this.reported = reported;
     }
 
     /** Starts watching {@code root}; {@code sink} gets each coalesced batch on the watcher's thread. Null on failure. */
     static @Nullable RootWatcher start(Path root, Consumer<List<LspManager.WatchedFile>> sink) {
+        return start(root, sink, path -> true);
+    }
+
+    /** As above, reporting only the paths {@code reported} accepts (a grammar watcher's {@code *.xsd}, …). */
+    static @Nullable RootWatcher start(
+            Path root, Consumer<List<LspManager.WatchedFile>> sink, java.util.function.Predicate<Path> reported) {
         try {
             if (!Files.isDirectory(root) || root.getFileSystem() != FileSystems.getDefault()) {
                 return null;
             }
-            RootWatcher w = new RootWatcher(root, com.editora.io.WatchServices.open(), sink);
+            RootWatcher w = new RootWatcher(root, com.editora.io.WatchServices.open(), sink, reported);
             try {
                 w.registerTree(root);
             } catch (IOException | RuntimeException e) {
@@ -154,8 +166,14 @@ final class RootWatcher implements AutoCloseable {
                 }
                 if (!batch.isEmpty() && !closed) {
                     List<LspManager.WatchedFile> out = new ArrayList<>();
-                    batch.forEach((p, k) -> out.add(new LspManager.WatchedFile(p, k)));
-                    sink.accept(out);
+                    batch.forEach((p, k) -> {
+                        if (reported.test(p)) {
+                            out.add(new LspManager.WatchedFile(p, k));
+                        }
+                    });
+                    if (!out.isEmpty()) {
+                        sink.accept(out);
+                    }
                 }
             }
         } catch (InterruptedException | java.nio.file.ClosedWatchServiceException e) {

@@ -364,8 +364,13 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return narrowedRoots;
         }
         // LSP-served file: precise hierarchy + kinds; fallback: fold-region nesting + TextMate-scope names.
+        CodeArea area = buffer.getArea();
         return lspSymbols != null
-                ? StructureOutline.fromLsp(lspSymbols)
+                ? StructureOutline.fromLsp(
+                        lspSymbols,
+                        buffer.getLanguage(),
+                        i -> area.getParagraph(i).getText(),
+                        area.getParagraphs().size())
                 : StructureOutline.build(StructureOutline.Source.area(buffer));
     }
 
@@ -1483,7 +1488,10 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         if (root.getChildren().isEmpty()) {
             String message = buffer == null
                     ? tr("structure.noFileOpen")
-                    : (q.isEmpty() ? tr("structure.noStructure") : tr("structure.noMatches"));
+                    : !q.isEmpty()
+                            ? tr("structure.noMatches")
+                            // say why a large file has none, not just that (XML review C18)
+                            : tr(buffer.isLargeFile() ? "structure.largeFile" : "structure.noStructure");
             root.getChildren().add(new TreeItem<>(new StructureNode(null, message, null, -1)));
             tree.setRoot(root);
         } else {

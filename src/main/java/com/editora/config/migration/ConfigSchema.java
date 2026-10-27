@@ -329,9 +329,14 @@ public enum ConfigSchema {
                     // v147→148: + terminalTheme ("" = the editor theme's colours, as before; else a terminal colour
                     // scheme's name). Additive: absent is the default.
                     Map.entry(147, (Migration) ConfigMigrations::identity),
-                    // v148→149: + terminalCopyOnSelect (off), terminalClipboardWrites (on: OSC 52) and
+                    // v148→149: + the XML server's settings: xmlSchemaDownloads ("trusted"), xmlNoGrammar ("ignore"),
+                    // xmlCatalogs ([]), xmlFileAssociations ({}), xmlFormatWrap (off), xmlFormatSplitAttributes
+                    // ("preserve"), xmlFormatEmptyElements ("ignore"), xmlFormatSpaceBeforeEmptyCloseTag (on) and
+                    // xmlSymbolLimit (5000). Additive: absent is the default. Until now lemminx got no settings at all.
+                    Map.entry(148, (Migration) ConfigMigrations::identity),
+                    // v149→150: + terminalCopyOnSelect (off), terminalClipboardWrites (on: OSC 52) and
                     // terminalNotifications (on: OSC 9 / 777). Additive: absent is the default.
-                    Map.entry(148, (Migration) ConfigMigrations::identity)),
+                    Map.entry(149, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

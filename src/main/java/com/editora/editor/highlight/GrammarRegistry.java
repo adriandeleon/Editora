@@ -178,7 +178,7 @@ public final class GrammarRegistry {
             return null;
         }
         String ext = base.substring(dot + 1).toLowerCase(Locale.ROOT);
-        return extensionToScope.get(ext);
+        return com.editora.text.LanguageRegistry.isGoModule(base) ? null : extensionToScope.get(ext);
     }
 
     private void registerGrammars() {
@@ -256,7 +256,44 @@ public final class GrammarRegistry {
 
         // file extension -> scope name
         mapExtensions("source.java", "java");
-        mapExtensions("text.xml", "xml", "xsd", "xsl", "xslt", "svg", "fxml", "pom", "rss", "wsdl");
+        // XML dialects too, as LanguageRegistry lists them (XML review A8).
+        mapExtensions(
+                "text.xml",
+                "xml",
+                "xsd",
+                "xsl",
+                "xslt",
+                "svg",
+                "fxml",
+                "pom",
+                "rss",
+                "wsdl",
+                "dtd",
+                "ent",
+                "mod",
+                "rng",
+                "fo",
+                "xspec",
+                "sch",
+                "csproj",
+                "vbproj",
+                "fsproj",
+                "props",
+                "targets",
+                "nuspec",
+                "resx",
+                "xaml",
+                "xlf",
+                "xliff",
+                "plist",
+                "xul",
+                "kml",
+                "gpx",
+                "tld",
+                "jnlp",
+                "xmi",
+                "ditamap",
+                "dita");
         mapExtensions("source.shell", ShellFiles.EXTENSIONS.toArray(String[]::new)); // the table LanguageRegistry reads
         mapExtensions("source.powershell", "ps1", "psm1", "psd1");
         mapExtensions("source.batchfile", "bat", "cmd");

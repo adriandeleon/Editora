@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import java.util.List;
+
 import javafx.scene.control.Button;
 import javafx.scene.control.MenuBar;
 
@@ -95,6 +97,40 @@ class SimpleModeFxTest {
         assertFalse(
                 FxTestSupport.callOnFx(() -> simpleButton.getPseudoClassStates().contains(open)),
                 "and clears again when it is switched off");
+    }
+
+    /**
+     * The toggle is pinned at the right end of the bar, immediately left of Settings, in the fixed tail rather
+     * than the customizable cluster: it is the way back out of a mode that hides much of that cluster, and the
+     * cluster is what overflows into the chevron on a narrow window. The catalog must not offer it as well —
+     * it is one node, so an entry that put it back in the cluster would pull it out of the tail on the next
+     * rebuild. And the pair sits clear of the project switcher's Open-Folder icon, not hard against it.
+     */
+    @Test
+    void theToggleIsPinnedBesideSettingsClearOfTheProjectControls() throws Exception {
+        Button simpleButton = FxTestSupport.field(fx.controller, "simpleModeButton");
+        Button settingsButton = FxTestSupport.field(fx.controller, "settingsButton");
+        Button openFolder = FxTestSupport.field(fx.controller, "openFolderButton");
+        javafx.scene.layout.HBox tail = FxTestSupport.field(fx.controller, "toolbarTail");
+        javafx.scene.control.ToolBar bar = FxTestSupport.field(fx.controller, "toolBar");
+
+        assertFalse(com.editora.toolbar.ToolbarCatalog.isKnownId("view.toggleSimpleMode"));
+        assertFalse(FxTestSupport.callOnFx(() -> bar.getItems().contains(simpleButton)), "not in the cluster");
+        List<javafx.scene.Node> tailNodes = FxTestSupport.callOnFx(() -> List.copyOf(tail.getChildren()));
+        assertEquals(
+                List.of(simpleButton, settingsButton),
+                tailNodes.subList(tailNodes.size() - 2, tailNodes.size()),
+                "the tail should end with the Simple-mode toggle then Settings");
+
+        double gap = FxTestSupport.callOnFx(() -> {
+            javafx.scene.Parent root = tail.getScene().getRoot();
+            root.resize(1600, 800);
+            root.applyCss();
+            root.layout();
+            return simpleButton.localToScene(simpleButton.getBoundsInLocal()).getMinX()
+                    - openFolder.localToScene(openFolder.getBoundsInLocal()).getMaxX();
+        });
+        assertTrue(gap >= 40, "the toggle is only " + Math.round(gap) + "px right of the Open-Folder icon");
     }
 
     /**

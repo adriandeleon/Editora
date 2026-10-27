@@ -63,6 +63,10 @@ The following grammars were instead obtained from the Eclipse tm4e
 
     XML, shell, C, C++, Rust, Ruby, Markdown.
 
+The XML grammar (xml.tmLanguage.json) is extended locally: rules for the DTD
+<!ELEMENT>, <!ATTLIST> and <!NOTATION> declarations (in a DOCTYPE's internal
+subset and in a bare .dtd file) beside the upstream <!ENTITY> rule.
+
 The TypeScript and TypeScriptReact grammars (typescript.tmLanguage.json,
 typescriptreact.tmLanguage.json — also used for JavaScript/JSX) were obtained
 from Microsoft Visual Studio Code under the MIT License:

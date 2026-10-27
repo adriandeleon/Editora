@@ -85,6 +85,7 @@ public final class PinnedVersions {
             new Pin("metals", InstallCatalog.METALS_VERSION, "scala", null, false),
             new Pin(InstallCatalog.KOTLIN_LSP_STEP, InstallCatalog.KOTLIN_LSP_VERSION, "kotlin", null, false),
             new Pin(InstallCatalog.CLOJURE_LSP_ID, InstallCatalog.CLOJURE_LSP_VERSION, "clojure", null, false),
+            new Pin(InstallCatalog.LEMMINX_STEP, InstallCatalog.LEMMINX_VERSION, "xml", null, false),
             new Pin("shellcheck", InstallCatalog.SHELLCHECK_VERSION, null, null, true),
             new Pin("shfmt", InstallCatalog.SHFMT_VERSION, null, null, true));
 
@@ -141,6 +142,24 @@ public final class PinnedVersions {
         return freshness(pin, installedVersion(pin, dir));
     }
 
+    /**
+     * {@code where} (a server's path, as Settings shows it) led by the version of Editora's own copy of
+     * {@code serverId}'s server when {@code argv} runs that copy and its install receipt says which release it is —
+     * {@code 0.31.2 · vscode-xml 0.29.3 — <path>}; else {@code where} as it is. File reads only (XML review A3: the
+     * XML row said only "found").
+     */
+    public static String withVersion(String serverId, List<String> argv, @Nullable Path configDir, String where) {
+        Pin pin = forServer(serverId).orElse(null);
+        if (pin == null || configDir == null || argv.isEmpty() || where.isEmpty()) {
+            return where;
+        }
+        Path dir = configDir.resolve(pin.destSubpath());
+        InstallReceipt receipt = anyInside(argv, dir) ? InstallReceipt.read(dir) : null;
+        return receipt != null && receipt.id().equals(pin.stepId())
+                ? label(pin.stepId(), receipt.version()) + " — " + where
+                : where;
+    }
+
     private static final Pattern LEMMINX_MAVEN_JAR = Pattern.compile("lemminx-maven-(\\d[\\w.-]*)\\.jar");
     private static final Pattern GLS_JAR = Pattern.compile("gls-(\\d[\\w.-]*)\\.jar");
     private static final Pattern METALS_JAR = Pattern.compile("metals_2\\.13-(\\d[\\w.-]*)\\.jar");
@@ -193,8 +212,16 @@ public final class PinnedVersions {
         return "shfmt".equals(stepId) ? Versions.firstNumber(output) : null;
     }
 
-    /** {@code version} as shown to the user: jdtls's build stamp as a date, everything else as it is. Pure. */
+    /**
+     * {@code version} as shown to the user: jdtls's build stamp as a date, lemminx's vscode-xml release with the
+     * lemminx it ships ({@code 0.31.2 · vscode-xml 0.29.3}), everything else as it is. Pure.
+     */
     public static String label(String stepId, String version) {
+        if (InstallCatalog.LEMMINX_STEP.equals(stepId)) {
+            return version.equals(InstallCatalog.LEMMINX_VERSION)
+                    ? InstallCatalog.LEMMINX_SERVER_VERSION + " · vscode-xml " + version
+                    : "vscode-xml " + version;
+        }
         if ("jdtls".equals(stepId)) {
             String[] parts = version.split("\\.");
             if (parts.length == 4) {

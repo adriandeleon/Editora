@@ -80,8 +80,11 @@ final class DoctorCoordinator {
         /** The server's tokenized launch argv (configured command, blank ⇒ default; empty = unconfigured). */
         List<String> lspServerArgv(String serverId);
 
-        /** Why the server was given up on after failing its requests (Maven review C2), or null while it is not. */
-        default @Nullable String lspServerFailure(String serverId) {
+        /**
+         * Why the server was given up on — it failed its requests (Maven review C2), or it exits before it is ready
+         * at every start (XML review A4) — or null while it is not.
+         */
+        default LspCoordinator.@Nullable ServerTrouble lspServerFailure(String serverId) {
             return null;
         }
 
@@ -214,6 +217,11 @@ final class DoctorCoordinator {
             @Override
             public void checkNewer() {
                 DoctorCoordinator.this.checkNewer();
+            }
+
+            @Override
+            public void clear(DoctorCheck check) {
+                clearCache(check);
             }
         });
     }
@@ -626,6 +634,10 @@ final class DoctorCoordinator {
                     continue;
                 }
                 specs.add(serverRow(serverId, needs));
+                Path configDir = host.configDir();
+                if (com.editora.lsp.XmlServerSettings.SERVER_ID.equals(serverId) && configDir != null) {
+                    specs.add(xmlCacheRow(com.editora.lsp.XmlServerSettings.cacheDir(configDir)));
+                }
                 if ("bash".equals(serverId)) {
                     // What bash-language-server lints and formats with. Without them a shell script silently
                     // gets no diagnostics and Format Document changes nothing.
@@ -1064,7 +1076,7 @@ final class DoctorCoordinator {
         }
         boolean python = "python".equals(serverId);
         boolean configured = ops.lspServerCommandSet(serverId);
-        String failing = ops.lspServerFailure(serverId);
+        LspCoordinator.ServerTrouble failing = ops.lspServerFailure(serverId);
         PinnedVersions.Pin pin = PinnedVersions.forServer(serverId).orElse(null);
         Path config = host.configDir();
         String latest = latestFor(row.id());
@@ -1103,7 +1115,9 @@ final class DoctorCoordinator {
                 }
             }
             if (failing != null) {
-                return base.warn(failing, "doctor.tip.serverFailing"); // it starts, then fails every request (C2)
+                // it starts, then fails every request (C2); or it exits before it is ready, saying why (XML A4)
+                return base.warn(
+                        failing.detail(), failing.crashed() ? "doctor.tip.serverCrashing" : "doctor.tip.serverFailing");
             }
             if (pin != null) {
                 // Which release, and whether it is older than the one Editora installs and is tested with (D8).
@@ -1510,6 +1524,40 @@ final class DoctorCoordinator {
         List<String> cmd = new ArrayList<>(base);
         cmd.addAll(List.of(args));
         return cmd;
+    }
+
+    /** The row id of the XML server's schema cache. */
+    static final String XML_CACHE_ID = DoctorCheck.CACHE_PREFIX + "xml";
+
+    /**
+     * The XML server's schema cache under the config folder: how much it holds and where, with Clear (XML review
+     * D4). The grammars lemminx downloaded used to pile up in {@code ~/.lemminx}, out of sight.
+     */
+    static DoctorService.CheckSpec xmlCacheRow(Path dir) {
+        DoctorCheck row = DoctorCheck.checking(XML_CACHE_ID, "lsp", tr("doctor.label.xmlCache"), "")
+                .withSettings("lsp");
+        return probe(row, base -> {
+            long size = com.editora.lsp.XmlSchemaCache.size(dir);
+            return size == 0
+                    ? base.ok(tr("doctor.xmlCache.empty"))
+                    : base.ok(StatusBar.formatSize(size) + " — " + dir.toAbsolutePath());
+        });
+    }
+
+    /** Empties the cache a row reports, off the FX thread, then says how much went and checks again. */
+    private void clearCache(DoctorCheck check) {
+        Path config = host.configDir();
+        if (!XML_CACHE_ID.equals(check.id()) || config == null) {
+            return;
+        }
+        Path dir = com.editora.lsp.XmlServerSettings.cacheDir(config);
+        Thread.ofVirtual().name("doctor-clear-cache").start(() -> {
+            long freed = com.editora.lsp.XmlSchemaCache.clear(dir);
+            javafx.application.Platform.runLater(() -> {
+                host.setStatus(tr("doctor.xmlCache.cleared", StatusBar.formatSize(freed)));
+                runChecks();
+            });
+        });
     }
 
     private static DoctorService.CheckSpec probe(DoctorCheck placeholder, UnaryOperator<DoctorCheck> probe) {

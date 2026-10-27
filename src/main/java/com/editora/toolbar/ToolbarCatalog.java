@@ -19,10 +19,12 @@ import org.jspecify.annotations.Nullable;
  * <p>The customizable region is the toolbar's <em>left icon cluster</em> — literally the {@code ToolBar},
  * which is what overflows into a chevron when the window is narrow. The fixed tail is a separate
  * container beside it, so it is not part of this catalog and cannot be pushed into that overflow — the
- * run-configuration group, the project-combo group with the Open-Folder icon, the dev badge, then Settings.
- * Settings lives there rather than here because its position is relative to tail items — pinned to the right
- * end, where its glyph lines up with the right tool stripe — which a customizable-cluster entry cannot
- * express (see {@code MainController.appendFixedTail}). Recent used to be pinned there too, beside the
+ * run-configuration group, the project-combo group with the Open-Folder icon, the dev badge, then the
+ * Simple-mode toggle and Settings. Settings lives there rather than here because its position is relative to
+ * tail items — pinned to the right end, where its glyph lines up with the right tool stripe — which a
+ * customizable-cluster entry cannot express (see {@code MainController.appendFixedTail}). The Simple-mode
+ * toggle sits beside it for the same reason: it is the way back out of a mode that hides much of the
+ * cluster, so it must not be one a narrow window can push into the overflow chevron. Recent used to be pinned there too, beside the
  * project controls; it is a file action ("open one I had open before"), so it now sits with New/Open/Save in
  * the file group where its neighbours are the other ways to get a file on screen.
  */
@@ -74,7 +76,6 @@ public final class ToolbarCatalog {
         add("view.splitVertical", "splitVertical", "view.splitVertical");
         add("view.splitHorizontal", "splitHorizontal", "view.splitHorizontal");
         add("palette.show", "palette", "palette.show");
-        add("view.toggleSimpleMode", "simpleMode", "view.toggleSimpleMode");
         // --- Extra command-backed icons (addable, not on the default toolbar) ---
         add("git.commit", "git", "git.commit");
         add("tool.gitLog", "gitLog", "tool.gitLog");
@@ -136,10 +137,10 @@ public final class ToolbarCatalog {
         // The run-configuration group is NOT here: it is pinned in the fixed tail beside the project
         // switcher (MainController.appendFixedTail), where it sits at the right end of the bar and cannot
         // be pushed into the overflow chevron — starting a run is not something to lose to a narrow window.
-        // View — the three chrome/layout toggles together rather than scattered behind lone separators.
+        // View — the two split toggles together rather than scattered behind lone separators. The Simple-mode
+        // toggle used to close this group; it is pinned in the fixed tail beside Settings now.
         l.add("view.splitVertical");
         l.add("view.splitHorizontal");
-        l.add("view.toggleSimpleMode");
         l.add(SEPARATOR);
         l.add("palette.show");
         // Settings is appended by the fixed tail, not listed here.

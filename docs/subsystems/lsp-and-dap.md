@@ -120,6 +120,16 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   server's `css`/`html`/`javascript`, whose validators throw on `null`; and `null` for everything else —
   including the HTML server's `js/ts`, where `{}` makes its JavaScript mode throw. A new server's sections
   must be checked against the real server before anything other than `null` is answered.
+- **lemminx's settings** (`lsp/XmlServerSettings`, Settings → LSP, the XML card) go to the `xml` and `maven-pom`
+  servers through all three channels: `initializationOptions.settings.xml` (so the first validation already
+  has them), a push on change (`LspManager.setXmlSettings`, run by every `LspCoordinator.applySupport`, so a
+  trust decision is read again), and `workspace/configuration` answers by dotted path. The object is built per
+  session root: `xml.downloadExternalResources.enabled` follows `xmlSchemaDownloads` (`trusted` = that root's
+  folder trust; the shared loose-files root is never trusted), relative catalogs and grammar paths resolve under
+  the root, and `xml.server.workDir` puts lemminx's cache at `<config>/cache/lemminx` (a GraalVM native lemminx
+  takes `user.home` from passwd, so neither `$HOME` nor a test's `user.home` reached it). The pom server's push
+  repeats lemminx-maven's own `xml.maven` object, which it reads whole. `xml.format.tabSize`/`insertSpaces`
+  are answered from the document's indentation, as jdtls's `java.format.*` are.
 - **Startup preparation** runs on `lsp-start`: per-project JDT workspace directory creation and installed-JDK
   discovery never execute on the JavaFX routing path.
 - **One ordered writer.** LSP4J writes a message on the calling thread, and most callers are the FX thread.
@@ -628,6 +638,24 @@ share one session rooted at `<config>/lsp/loose-files`, with no separate syntax 
 file an inferred project of its own because none lies under that root. The server's PATH starts with the bin
 folder of the Node.js `NodeRuntimes` resolves.
 
+**The XML server (lemminx) is one process per window.** `XmlServer.sharedRoot` roots every XML file outside the
+open project at the same `<config>/lsp/loose-files`, markers or not, since lemminx keeps no project model (a folder
+of configs or a Maven reactor opened file by file used to start one native process per folder or module). Files
+that only XML reads reach it: `LanguageRegistry` and `GrammarRegistry` map the XML dialects (`.dtd .ent .mod .rng
+.xsl .xslt .xsd .wsdl .xlf .xliff .plist .csproj …`, a `go.mod` excepted) to `xml`, and `Modeline.detect` makes a
+file whose name says nothing XML when it opens with `<?xml` (not a `.txt`). A DTD opens as language id `dtd` and a
+stylesheet as `xsl`, as vscode-xml sends them. lemminx keeps its server in the large-source tier up to
+`XmlServer.HEAVY_FILE_LINE_LIMIT` lines. Its protocol extensions: `initializationOptions.extendedClientCapabilities`
+(reference code lenses, the binding wizard, actionable notifications), `xml/actionableNotification` (handled like
+jdtls's), `xml/executeClientCommand` and the binding wizard's quick fix (`XmlLspActions`: `xml.open.uri`,
+`xml.show.references`, `xml.open.binding.wizard` → `xml.associate.grammar.insert`). It registers its commands only
+for a client with dynamic `workspace/executeCommand` registration, which `clientCapabilities("xml")` alone
+declares; registrations add up (`withCommands`). Go to Definition (and so Ctrl/Cmd-click and Peek) on the XML
+server goes through `XmlServer.definition`: lemminx's own answer, unless that is only the element's other tag, then
+`typeDefinition` (the XSD declaration), then the `documentLink` at the caret (`schemaLocation`, DOCTYPE system id,
+`xml-model` href, `xsl:include`). Editora's own auto-close and auto-rename tag stay; lemminx's `xml/closeTag` and
+`linkedEditingRange` are not requested.
+
 **A refused `initialize` is not a crash.** A server that answers `initialize` with an error (its message kept as
 `LanguageServerSession.initializeRefusal`; the exit is reported only after LSP4J has read the server's last
 output) is dropped without the crash path and reported through `onStartRefused` with its own words. Such roots,
@@ -944,9 +972,20 @@ found, via `lspCoordinator.isServerAvailable("java")`; python/js = their enable 
 ## Installed versions: pins, receipts and floors
 
 Editora installs some servers and tools at an **exact release** (jdtls, vscode-js-debug, lemminx-maven, gls,
-Metals, JetBrains' Kotlin LSP, clojure-lsp, ShellCheck, shfmt): the version constants in `InstallCatalog`, listed
-with their steps in `install/PinnedVersions`. Every other installer takes whatever is latest (npm, pip, `go
+Metals, JetBrains' Kotlin LSP, clojure-lsp, lemminx, ShellCheck, shfmt): the version constants in `InstallCatalog`,
+listed with their steps in `install/PinnedVersions`. Every other installer takes whatever is latest (npm, pip, `go
 install …@latest`, rustup, the GitHub `releases/latest` archives).
+
+- **lemminx (XML).** vscode-xml's native build (`LEMMINX_VERSION`, which ships `LEMMINX_SERVER_VERSION`), one zip
+  per platform: the zip is checked against GitHub's SHA-256 for the asset and the program inside against the
+  release's own `lemminx-<platform>.sha256` (`PinnedAsset.member`/`memberSha256`), installed as plain `lemminx` in
+  `plugins/lsp/xml`, and asked to answer `initialize` (`JvmLspSmoke.initializeCheck`) before it is swapped in — it
+  needs glibc 2.34. One that cannot run installs nothing; when the pom.xml server's bundle is complete the XML
+  command becomes its Java lemminx instead (`InstallService.javaLemminx`). The installer leaves the XML command
+  blank: `XmlServerInstall.effectiveCommand` makes a blank (or bare `lemminx`, or a stale path into that folder)
+  command run Editora's copy, including one from before the pin (`lemminx-<platform>`). A server that dies before
+  `initialize` at every start reports its first stderr line (`LspManager.crashReason`) in the crash-loop notice,
+  Settings and Doctor (`LspCoordinator.serverTrouble`).
 
 - **Receipts.** After a pinned step installs, `InstallService` writes `.editora-install` (`InstallReceipt`: step id,
   version, time) into its folder. A dot file and not a jar, so neither a `<dir>/*` classpath nor `findBinary` sees

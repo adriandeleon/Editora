@@ -448,15 +448,19 @@ final class ProjectMapStructure {
     /** Off the FX thread: the outline of {@code text}, the file's content. */
     private static Outline outline(Path file, String text, @Nullable List<SymbolNode> server, boolean buffer) {
         List<StructureNode> roots;
+        List<String> lines = List.of(text.split("\n", -1));
         try {
             roots = server != null
-                    ? StructureOutline.fromLsp(server)
+                    ? StructureOutline.fromLsp(
+                            server,
+                            com.editora.text.LanguageRegistry.forFileName(PathDisplay.fileName(file)),
+                            lines::get,
+                            lines.size())
                     : StructureOutline.build(StructureOutline.Source.file(PathDisplay.fileName(file), text)
                             .analyzed());
         } catch (RuntimeException | LinkageError failed) {
             roots = List.of(); // a grammar that would not compile: no structure rather than no map
         }
-        List<String> lines = List.of(text.split("\n", -1));
         Map<Path, Node> byPath = new LinkedHashMap<>();
         List<Node> nodes = nodes(file, file, roots, lines, lines.size() - 1, byPath);
         Stamp stamp = buffer ? new Stamp(-1, -1, text.hashCode(), text.length(), true) : null;

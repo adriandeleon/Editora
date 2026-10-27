@@ -293,13 +293,19 @@ class PreviewReadingOptionsFxTest {
             text.append("Paragraph ").append(i).append(".\n\n");
         }
         open(text.toString(), null);
+        // The editor's first layout scrolls to its caret (the text's end) and the preview, still in sync, may follow
+        // it a pulse later: the preview "stays" wherever it is once that has settled, not necessarily at the top.
+        EditorFx.drain();
+        EditorFx.drain();
+        double[] before = new double[1];
         EditorFx.onFx(() -> {
+            before[0] = pane.preview().scrollY();
             PreviewScrollSync.setEnabled(false);
-            buffer.getArea().showParagraphAtTop(300);
+            buffer.getArea().showParagraphAtTop(before[0] > 0 ? 0 : 300);
         });
         EditorFx.drain();
         EditorFx.drain();
-        EditorFx.onFx(() -> assertEquals(0, pane.preview().scrollY(), 0.5, "switched off: the preview stays"));
+        EditorFx.onFx(() -> assertEquals(before[0], pane.preview().scrollY(), 0.5, "switched off: the preview stays"));
         EditorFx.onFx(() -> PreviewScrollSync.setEnabled(true));
         // Scroll again until the preview follows: on a loaded machine the first scroll can land before the
         // area has laid out, and then no scroll event reaches the sync at all.

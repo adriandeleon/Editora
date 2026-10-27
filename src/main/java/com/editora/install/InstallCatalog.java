@@ -457,6 +457,7 @@ public final class InstallCatalog {
                 // per-OS/arch binary archives (download + extract; needs only network + tar/unzip).
                 "clangd",
                 "lua",
+                // a pinned native binary per OS/arch, its SHA-256 checked: lemminx, from vscode-xml's release.
                 "xml",
                 "terraform",
                 "typst",
@@ -506,7 +507,21 @@ public final class InstallCatalog {
                 java.util.Optional.of(List.of(toolStep(
                         "phpactor", Prereq.COMPOSER, List.of("composer", "global", "require", "phpactor/phpactor"))));
             // --- per-OS/arch binary archives (download + extract into the config dir) ---
-            case "clangd", "lua", "xml", "terraform", "typst" -> java.util.Optional.of(List.of(archiveStep(serverId)));
+            case "clangd", "lua", "terraform", "typst" -> java.util.Optional.of(List.of(archiveStep(serverId)));
+            // --- lemminx (XML): vscode-xml's native build, pinned per OS/arch with its SHA-256 (review A2) ---
+            case "xml" ->
+                java.util.Optional.of(List.of(new Step(
+                        LEMMINX_STEP,
+                        Kind.PINNED_TOOL,
+                        Set.of(),
+                        List.of(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        false,
+                        LEMMINX_DIR,
+                        null)));
             // --- JetBrains' Kotlin LSP: a pinned per-platform distribution, streamed to disk (needs tar) ---
             case "kotlin" ->
                 java.util.Optional.of(List.of(new Step(
@@ -695,7 +710,7 @@ public final class InstallCatalog {
     }
 
     /**
-     * The per-OS binary-archive recipe for a server id (clangd/kotlin/lua/xml/terraform/typst), or empty.
+     * The per-OS binary-archive recipe for a server id (clangd/lua/terraform/typst), or empty.
      * {@code apiUrl} returns JSON whose asset/download URLs we match by the per-{@link Platform} substring;
      * the extracted tree is searched for {@code binaryName} (a prefix when {@code binaryPrefix}) and the
      * server's command is set to that path + {@code commandSuffix}. Pure.
@@ -728,18 +743,6 @@ public final class InstallCatalog {
                                 Platform.WIN_X64, "win32-x64"),
                         "lua-language-server",
                         false,
-                        ""));
-            case "xml" ->
-                java.util.Optional.of(new ArchiveSpec(
-                        "https://api.github.com/repos/redhat-developer/vscode-xml/releases/latest",
-                        java.util.Map.of(
-                                Platform.MAC_ARM, "osx-aarch_64",
-                                Platform.MAC_X64, "osx-x86_64",
-                                Platform.LINUX_X64, "linux-x86_64",
-                                Platform.LINUX_ARM, "linux-aarch_64",
-                                Platform.WIN_X64, "win32"),
-                        "lemminx",
-                        true,
                         ""));
             case "terraform" ->
                 java.util.Optional.of(new ArchiveSpec(
@@ -904,6 +907,29 @@ public final class InstallCatalog {
     private static final String CLOJURE_LSP_BASE = "https://github.com/clojure-lsp/clojure-lsp/releases/download/"
             + CLOJURE_LSP_VERSION + "/clojure-lsp-native-";
 
+    /**
+     * The vscode-xml release whose native lemminx Editora installs for XML (github.com/redhat-developer/vscode-xml,
+     * EPL-2.0). <b>Pinned</b>, with a hash per platform, instead of following {@code releases/latest}: a new
+     * lemminx is adopted deliberately, and a replaced or tampered upload is refused (review A2/D10). Bump it with
+     * every hash in {@link #pinnedTool} and {@link #LEMMINX_SERVER_VERSION}.
+     */
+    public static final String LEMMINX_VERSION = "0.29.3";
+
+    /** The lemminx (the server itself) that vscode-xml {@link #LEMMINX_VERSION} ships. */
+    public static final String LEMMINX_SERVER_VERSION = "0.31.2";
+
+    /** The size of {@link #LEMMINX_VERSION}'s download in MB, rounded up (every platform's zip is 16–17 MB). */
+    public static final int LEMMINX_DOWNLOAD_MB = 17;
+
+    /** The install step (and {@link #pinnedTool} recipe) id of the XML server, installed for server "xml". */
+    public static final String LEMMINX_STEP = "lemminx";
+
+    /** Where Editora installs lemminx, relative to the config dir. */
+    public static final String LEMMINX_DIR = "plugins/lsp/xml";
+
+    private static final String LEMMINX_BASE =
+            "https://github.com/redhat-developer/vscode-xml/releases/download/" + LEMMINX_VERSION + "/lemminx-";
+
     /** The tools {@link #pinnedTool} knows, in display order. */
     public static final List<String> PINNED_TOOL_IDS = List.of("shellcheck", "shfmt");
 
@@ -919,8 +945,23 @@ public final class InstallCatalog {
         GZ
     }
 
-    /** One platform's download: where it is, its SHA-256 (lower-case hex), and how it is packed. */
-    public record PinnedAsset(String url, String sha256, Packing packing) {}
+    /**
+     * One platform's download: where it is, its SHA-256 (lower-case hex), and how it is packed. An archive may
+     * also name the {@code member} that is the program (when its name differs from the tool's) and that
+     * program's own SHA-256, checked once it is unpacked — vscode-xml publishes both.
+     */
+    public record PinnedAsset(
+            String url,
+            String sha256,
+            Packing packing,
+            @Nullable String member,
+            @Nullable String memberSha256) {
+
+        /** An asset whose program is the tool's {@code binaryName} and is checked only as a download. */
+        public PinnedAsset(String url, String sha256, Packing packing) {
+            this(url, sha256, packing, null, null);
+        }
+    }
 
     /**
      * A tool installed from a pinned upstream release.
@@ -1052,6 +1093,51 @@ public final class InstallCatalog {
                                         "63bb6567a2280a563a8de22c3eb833a69159e054b6545a29d25ab588c1b749b1",
                                         Packing.ZIP)),
                         "clojure-lsp"));
+            // lemminx's GraalVM native builds from the vscode-xml release: each zip's hash is its SHA-256 as GitHub
+            // publishes it for the tag, and each program's is the release's own lemminx-<platform>.sha256, so
+            // what is unpacked is checked too. The program is renamed to plain "lemminx" (the zips name it per
+            // platform). No Windows-on-ARM build; the x64 one runs under emulation there.
+            case LEMMINX_STEP ->
+                Optional.of(new PinnedTool(
+                        LEMMINX_STEP,
+                        LEMMINX_VERSION,
+                        java.util.Map.of(
+                                Platform.LINUX_X64,
+                                new PinnedAsset(
+                                        LEMMINX_BASE + "linux-x86_64.zip",
+                                        "1acc44e24201c1d2f5ccb4e43e7426ed0df6909207a81ff199810e2808104d89",
+                                        Packing.ZIP,
+                                        "lemminx-linux-x86_64",
+                                        "84cbbe3c31eb158799327d5f68a0dc876e81c431da596747b92eecffe956b3f2"),
+                                Platform.LINUX_ARM,
+                                new PinnedAsset(
+                                        LEMMINX_BASE + "linux-aarch_64.zip",
+                                        "0b88a49e83c2611282672f5123ce33abf1371c8e3c55cad6ee45ea00626ffa1b",
+                                        Packing.ZIP,
+                                        "lemminx-linux-aarch_64",
+                                        "e706d10fbda4fa354952edb604800d067518401521d4d1e491b8bee7cf4cbcdb"),
+                                Platform.MAC_X64,
+                                new PinnedAsset(
+                                        LEMMINX_BASE + "osx-x86_64.zip",
+                                        "9e56123194b5c1fdc7d87f1bd21c83cc996ba7be913def3a2836a13305bcd273",
+                                        Packing.ZIP,
+                                        "lemminx-osx-x86_64",
+                                        "e13b4c135f56f906a7450bc9f64f49718bf743c5c4df8003a5610e1fb8772a55"),
+                                Platform.MAC_ARM,
+                                new PinnedAsset(
+                                        LEMMINX_BASE + "osx-aarch_64.zip",
+                                        "185db5630ce85be43ea0fab034e7841b1327c2793db05ab481e029cf493d86ce",
+                                        Packing.ZIP,
+                                        "lemminx-osx-aarch_64",
+                                        "c5e9e2aee768eb69d041e9541cd0568a432ebd51c7fe9c1d7b7a1130b759475a"),
+                                Platform.WIN_X64,
+                                new PinnedAsset(
+                                        LEMMINX_BASE + "win32.zip",
+                                        "7eaefaac68253b0ec8e0ad1f1c0f2d0755423d4e99e52497428b52f80df28eb7",
+                                        Packing.ZIP,
+                                        "lemminx-win32.exe",
+                                        "25f571c0f07d0ad76be60a86c1b864d46cf7bf94773dc21e5d5da646478aac79")),
+                        "lemminx"));
             default -> Optional.empty();
         };
     }

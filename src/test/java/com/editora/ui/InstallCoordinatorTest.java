@@ -21,7 +21,6 @@ class InstallCoordinatorTest {
         Map<String, Function<Settings, String>> readers = Map.of(
                 "clangd", Settings::getClangdLspCommand,
                 "lua", Settings::getLuaLspCommand,
-                "xml", Settings::getXmlLspCommand,
                 "terraform", Settings::getTerraformLspCommand,
                 "typst", Settings::getTypstLspCommand);
         readers.forEach((id, reader) -> {
@@ -33,6 +32,15 @@ class InstallCoordinatorTest {
             assertEquals(
                     true, com.editora.install.InstallCatalog.archiveSpec(id).isPresent(), id + ": no archiveSpec");
         });
+        // lemminx: Editora's own copy needs no setting — blank finds it, so Reset no longer disconnects it (XML A9);
+        // the Java lemminx it falls back to where the native one cannot run is kept as a command of its own (A4).
+        Settings xml = new Settings();
+        xml.setXmlLspCommand("/old/path/lemminx-linux-x86_64");
+        InstallCoordinator.applyServerCommand(xml, "xml", "/home/u/.editora/plugins/lsp/xml/lemminx");
+        assertEquals("", xml.getXmlLspCommand());
+        String java = "java -cp \"/home/u/.editora/plugins/lsp/maven/*\" org.eclipse.lemminx.XMLServerLauncher";
+        InstallCoordinator.applyServerCommand(xml, "xml", java);
+        assertEquals(java, xml.getXmlLspCommand());
         // JetBrains' Kotlin LSP is a pinned distribution, not an archive recipe: its launcher persists the same way.
         Settings s = new Settings();
         InstallCoordinator.applyServerCommand(s, "kotlin", "/cfg/plugins/lsp/kotlin/bin/intellij-server --stdio");

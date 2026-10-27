@@ -780,13 +780,12 @@ class ExternalRenderFxTest {
             buffer.refreshPreview();
             broken[0] = imageHost(buffer, "md-svg");
         });
-        EditorFx.awaitUntil(
-                broken[0]::getChildren,
-                () -> broken[0].getChildren().get(0).getStyleClass().contains("svg-error"));
+        EditorFx.awaitUntil(broken[0]::getChildren, () -> broken[0].lookup(".svg-error") != null);
         EditorFx.onFx(() -> {
-            assertEquals(
-                    Messages.tr("svg.renderFailed"),
-                    ((Label) broken[0].getChildren().get(0)).getText());
+            // the failure leads, then the parser's message, under the position it gave (XML review C15)
+            String said = ((Label) broken[0].lookup(".svg-error")).getText();
+            assertTrue(said.startsWith(Messages.tr("svg.renderFailed")), said);
+            assertNotNull(broken[0].lookup(".preview-error-position"), "where the source stops parsing");
             buffer.setSvgPreviewEnabled(false);
             assertEquals(MarkdownViewMode.EDITOR, buffer.getMarkdownViewMode());
             buffer.dispose();

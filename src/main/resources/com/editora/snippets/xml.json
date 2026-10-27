@@ -6,8 +6,8 @@
   },
   "Element": {
     "prefix": "tag",
-    "body": "<${1:element}>$0</${1:element}>",
-    "description": "Open/close element (name mirrored)"
+    "body": "<${1:element}>${TM_SELECTED_TEXT}$0</${1:element}>",
+    "description": "Open/close element (name mirrored); wraps the selection"
   },
   "Self-closing element": {
     "prefix": "tagc",
@@ -21,12 +21,157 @@
   },
   "Comment": {
     "prefix": "comment",
-    "body": "<!-- $0 -->",
-    "description": "XML comment"
+    "body": "<!-- ${TM_SELECTED_TEXT}$0 -->",
+    "description": "XML comment; wraps the selection"
   },
   "CDATA": {
     "prefix": "cdata",
-    "body": "<![CDATA[$0]]>",
-    "description": "CDATA section"
+    "body": "<![CDATA[${TM_SELECTED_TEXT}$0]]>",
+    "description": "CDATA section; wraps the selection"
+  },
+  "Element with attribute": {
+    "prefix": "taga",
+    "body": "<${1:element} ${2:name}=\"${3:value}\">${TM_SELECTED_TEXT}$0</${1:element}>",
+    "description": "Element with one attribute; wraps the selection"
+  },
+  "Element on its own lines": {
+    "prefix": "tagb",
+    "body": [
+      "<${1:element}>",
+      "\t${TM_SELECTED_TEXT}$0",
+      "</${1:element}>"
+    ],
+    "description": "Element whose content is indented on its own lines; wraps the selection"
+  },
+  "Schema binding": {
+    "prefix": "xsi",
+    "body": "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"${1:schema.xsd}\"$0",
+    "description": "Bind the root to an XSD with no target namespace (attributes)"
+  },
+  "Schema binding with namespace": {
+    "prefix": "xsins",
+    "body": "xmlns=\"${1:urn:example}\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"${1:urn:example} ${2:schema.xsd}\"$0",
+    "description": "Bind the root to an XSD with a target namespace (attributes)"
+  },
+  "xml-model": {
+    "prefix": "xml-model",
+    "body": "<?xml-model href=\"${1:schema.rng}\" type=\"application/xml\" schematypens=\"${2:http://relaxng.org/ns/structure/1.0}\"?>\n$0",
+    "description": "Associate a RELAX NG (or other) schema with the document"
+  },
+  "DOCTYPE": {
+    "prefix": "doctype",
+    "body": "<!DOCTYPE ${1:root} SYSTEM \"${2:root.dtd}\">\n$0",
+    "description": "Document type declaration naming an external DTD"
+  },
+  "Processing instruction": {
+    "prefix": "pi",
+    "body": "<?${1:target} ${2:data}?>$0",
+    "description": "Processing instruction"
+  },
+  "XSD schema": {
+    "prefix": "xsschema",
+    "body": [
+      "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"",
+      "           targetNamespace=\"${1:urn:example}\"",
+      "           xmlns=\"${1:urn:example}\"",
+      "           elementFormDefault=\"qualified\">",
+      "\t$0",
+      "</xs:schema>"
+    ],
+    "description": "XSD root element"
+  },
+  "XSD element": {
+    "prefix": "xselement",
+    "body": "<xs:element name=\"${1:name}\" type=\"${2:xs:string}\"/>$0",
+    "description": "XSD element declaration"
+  },
+  "XSD complex element": {
+    "prefix": "xscomplex",
+    "body": [
+      "<xs:element name=\"${1:name}\">",
+      "\t<xs:complexType>",
+      "\t\t<xs:sequence>",
+      "\t\t\t${TM_SELECTED_TEXT}$0",
+      "\t\t</xs:sequence>",
+      "\t</xs:complexType>",
+      "</xs:element>"
+    ],
+    "description": "XSD element with a complex type and a sequence; wraps the selection"
+  },
+  "XSD attribute": {
+    "prefix": "xsattribute",
+    "body": "<xs:attribute name=\"${1:name}\" type=\"${2:xs:string}\" use=\"${3|optional,required|}\"/>$0",
+    "description": "XSD attribute declaration"
+  },
+  "XSD simple type": {
+    "prefix": "xssimple",
+    "body": [
+      "<xs:simpleType name=\"${1:name}\">",
+      "\t<xs:restriction base=\"${2:xs:string}\">",
+      "\t\t<xs:enumeration value=\"${3:value}\"/>$0",
+      "\t</xs:restriction>",
+      "</xs:simpleType>"
+    ],
+    "description": "XSD simple type restricted to an enumeration"
+  },
+  "XSLT stylesheet": {
+    "prefix": "xslstylesheet",
+    "body": [
+      "<xsl:stylesheet version=\"${1:1.0}\" xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\">",
+      "\t<xsl:output method=\"${2|xml,html,text|}\" indent=\"yes\"/>",
+      "\t$0",
+      "</xsl:stylesheet>"
+    ],
+    "description": "XSLT root element"
+  },
+  "XSLT template": {
+    "prefix": "xsltemplate",
+    "body": [
+      "<xsl:template match=\"${1:/}\">",
+      "\t${TM_SELECTED_TEXT}$0",
+      "</xsl:template>"
+    ],
+    "description": "XSLT template rule; wraps the selection"
+  },
+  "XSLT value-of": {
+    "prefix": "xslvalue",
+    "body": "<xsl:value-of select=\"${1:.}\"/>$0",
+    "description": "XSLT value-of"
+  },
+  "XSLT for-each": {
+    "prefix": "xslforeach",
+    "body": [
+      "<xsl:for-each select=\"${1:item}\">",
+      "\t${TM_SELECTED_TEXT}$0",
+      "</xsl:for-each>"
+    ],
+    "description": "XSLT for-each; wraps the selection"
+  },
+  "XSLT if": {
+    "prefix": "xslif",
+    "body": [
+      "<xsl:if test=\"${1:condition}\">",
+      "\t${TM_SELECTED_TEXT}$0",
+      "</xsl:if>"
+    ],
+    "description": "XSLT if; wraps the selection"
+  },
+  "XSLT choose": {
+    "prefix": "xslchoose",
+    "body": [
+      "<xsl:choose>",
+      "\t<xsl:when test=\"${1:condition}\">",
+      "\t\t${TM_SELECTED_TEXT}$0",
+      "\t</xsl:when>",
+      "\t<xsl:otherwise>",
+      "\t</xsl:otherwise>",
+      "</xsl:choose>"
+    ],
+    "description": "XSLT choose/when/otherwise; wraps the selection"
+  },
+  "XSLT apply-templates": {
+    "prefix": "xslapply",
+    "body": "<xsl:apply-templates select=\"${1:node()}\"/>$0",
+    "description": "XSLT apply-templates"
   }
 }

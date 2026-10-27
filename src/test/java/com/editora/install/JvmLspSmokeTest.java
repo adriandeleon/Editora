@@ -153,6 +153,33 @@ class JvmLspSmokeTest {
         assertTrue(why.contains("no.such.Main"), why);
     }
 
+    /** The native lemminx is asked only whether it runs: its hover on the one-line pom fails even where it works. */
+    @Test
+    void anInitializeCheckAsksForNoHover() {
+        assertEquals(Optional.empty(), JvmLspSmoke.initializeCheck(fakeServer("error"), Duration.ofSeconds(60)));
+    }
+
+    /**
+     * A program that exits before it reads a byte (a native build on too old a glibc, XML review A4) is reported by
+     * its exit and its stderr, not by the "Stream closed" of the first write.
+     */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS)
+    void aProgramThatExitsAtOnceSaysWhyNotStreamClosed(@org.junit.jupiter.api.io.TempDir Path dir) throws IOException {
+        Path program = dir.resolve("lemminx");
+        java.nio.file.Files.writeString(
+                program, "#!/bin/sh\necho \"lemminx: version \\`GLIBC_2.34' not found\" >&2\nexit 1\n");
+        program.toFile().setExecutable(true);
+
+        String why = JvmLspSmoke.initializeCheck(List.of(program.toString()), Duration.ofSeconds(30))
+                .orElseThrow();
+
+        assertEquals(
+                "the server exited with code 1 before answering initialize: lemminx: version `GLIBC_2.34' not"
+                        + " found",
+                why);
+    }
+
     private static List<String> fakeServer(String mode) {
         Assumptions.assumeTrue(onPath("java"), "needs java on PATH (the stand-in runs through the source launcher)");
         URL url = JvmLspSmokeTest.class.getResource("FakeStdioServer.java");
