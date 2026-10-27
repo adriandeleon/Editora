@@ -7749,10 +7749,16 @@ public class EditorBuffer implements TabContent {
      * behaves exactly like a file of that type. Never overrides a real extension or the user's pick.
      */
     private void maybeApplyShebang() {
+        int len = area.getLength(); // a shebang, else a vim/emacs modeline in the first or last lines
+        String sniffed = languageUserOverride || path == null // a .mod/.sch/… is XML only if it reads so (C13)
+                ? null
+                : LanguageRegistry.sniffedXmlLanguage(path, language, () -> area.getText(0, Math.min(len, 1024)));
+        if (sniffed != null && path != null) {
+            applyLanguageFor(sniffed, "xml".equals(sniffed) ? path.toString() : null);
+        }
         if (languageUserOverride || !LanguageRegistry.plaintext().equals(language)) {
             return; // a real extension or the user's pick already decided the language
         }
-        int len = area.getLength(); // a shebang, else a vim/emacs modeline in the first or last lines
         Shebang.Result r =
                 Modeline.detect(area.getText(0, Math.min(len, 1024)), area.getText(Math.max(0, len - 1024), len), path);
         if (r == null) {

@@ -1191,8 +1191,8 @@ public final class StatusBar extends HBox {
 
     /** A language id as it reads in the status bar ({@code "java"} → {@code "Java"}; see {@code LanguageNames}). */
     private static String displayLanguage(String name) {
-        if (name == null || name.isEmpty()) {
-            return tr("statusbar.plainText");
+        if (name == null || name.isEmpty() || com.editora.text.LanguageRegistry.PLAINTEXT.equals(name)) {
+            return tr("statusbar.plainText"); // not "Plaintext"
         }
         return com.editora.text.LanguageNames.display(name);
     }
