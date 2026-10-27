@@ -1147,6 +1147,10 @@ final class LanguageServerSession implements LanguageClient {
         java.util.Map<String, Object> settings = TypeScriptServer.SERVER_ID.equals(serverId)
                 ? typeScriptSettings
                 : LspServerSettings.push(serverId, javaOnTypeFormatting, effectiveBashIde(), pythonPath);
+        java.util.Map<String, Object> xml = xmlSettings;
+        if (xml != null && XmlServerSettings.isLemminx(serverId)) {
+            settings = Map.of(XmlServerSettings.SECTION, xml); // lemminx's own; for a pom, with lemminx-maven's
+        }
         if (settings == null) {
             return;
         }
@@ -1173,6 +1177,23 @@ final class LanguageServerSession implements LanguageClient {
         } catch (RuntimeException e) {
             LOG.log(Level.FINE, "didChangeConfiguration failed", e);
         }
+    }
+
+    /** lemminx's {@code xml} object for this session's root ({@link XmlServerSettings#section}; null: none yet). */
+    private volatile java.util.@Nullable Map<String, Object> xmlSettings;
+
+    /** Sets lemminx's {@code xml} object; a running XML server gets it pushed when it changed. */
+    void setXmlSettings(java.util.Map<String, Object> settings) {
+        boolean changed = !java.util.Objects.equals(xmlSettings, settings);
+        xmlSettings = settings;
+        if (changed && XmlServerSettings.isLemminx(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
+    /** The {@code xml} object this session was last given (null: none). */
+    java.util.@Nullable Map<String, Object> xmlSettings() {
+        return xmlSettings;
     }
 
     /** typescript-language-server's {@code javascript}/{@code typescript} settings (null: none to send). */
@@ -2819,6 +2840,12 @@ final class LanguageServerSession implements LanguageClient {
         Object answer = LspServerSettings.answer(serverId, item.getSection(), effectiveBashIde(), pythonPath);
         if (answer == null && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && item.getScopeUri() != null) {
             answer = LspServerSettings.javaFormatAnswer(item.getSection(), indentForUri(item.getScopeUri()));
+        }
+        if (answer == null && XmlServerSettings.isLemminx(serverId)) {
+            answer = XmlServerSettings.answer(
+                    xmlSettings,
+                    item.getSection(),
+                    item.getScopeUri() == null ? null : indentForUri(item.getScopeUri()));
         }
         return answer;
     }

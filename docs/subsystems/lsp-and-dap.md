@@ -120,6 +120,16 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   server's `css`/`html`/`javascript`, whose validators throw on `null`; and `null` for everything else —
   including the HTML server's `js/ts`, where `{}` makes its JavaScript mode throw. A new server's sections
   must be checked against the real server before anything other than `null` is answered.
+- **lemminx's settings** (`lsp/XmlServerSettings`, Settings → LSP, the XML card) go to the `xml` and `maven-pom`
+  servers through all three channels: `initializationOptions.settings.xml` (so the first validation already
+  has them), a push on change (`LspManager.setXmlSettings`, run by every `LspCoordinator.applySupport`, so a
+  trust decision is read again), and `workspace/configuration` answers by dotted path. The object is built per
+  session root: `xml.downloadExternalResources.enabled` follows `xmlSchemaDownloads` (`trusted` = that root's
+  folder trust; the shared loose-files root is never trusted), relative catalogs and grammar paths resolve under
+  the root, and `xml.server.workDir` puts lemminx's cache at `<config>/cache/lemminx` (a GraalVM native lemminx
+  takes `user.home` from passwd, so neither `$HOME` nor a test's `user.home` reached it). The pom server's push
+  repeats lemminx-maven's own `xml.maven` object, which it reads whole. `xml.format.tabSize`/`insertSpaces`
+  are answered from the document's indentation, as jdtls's `java.format.*` are.
 - **Startup preparation** runs on `lsp-start`: per-project JDT workspace directory creation and installed-JDK
   discovery never execute on the JavaFX routing path.
 - **One ordered writer.** LSP4J writes a message on the calling thread, and most callers are the FX thread.

@@ -110,7 +110,7 @@ public class SettingsWindow {
     }
 
     /** Settings categories shown in the sidebar, each grouped under a {@link Group} header (declaration order). */
-    private enum Category {
+    enum Category {
         // General
         APPEARANCE(tr("settings.cat.appearance"), Group.GENERAL, SettingsIcons::appearance),
         INTERFACE(tr("settings.cat.interface"), Group.GENERAL, SettingsIcons::interfaceWindow),
@@ -3510,7 +3510,7 @@ public class SettingsWindow {
      * An on/off row for one boolean setting: titled {@code settings.<key>} (described by
      * {@code settings.<key>.desc} when {@code described}), written on change, shown again on every sync.
      */
-    private CheckBox switchRow(
+    CheckBox switchRow(
             Card card,
             Category cat,
             String key,
@@ -3559,7 +3559,7 @@ public class SettingsWindow {
     }
 
     /** A row choosing one of {@code values}, each labelled {@code settings.<key>.<value>}. */
-    private void choiceRow(
+    void choiceRow(
             Card card,
             Category cat,
             String key,
@@ -3596,7 +3596,7 @@ public class SettingsWindow {
     }
 
     /** A row for a size in pixels where 0 means "the built-in one" (described by {@code settings.<key>.desc}). */
-    private void intRow(
+    void intRow(
             Card card,
             Category cat,
             String key,
@@ -3629,7 +3629,7 @@ public class SettingsWindow {
     }
 
     /** A row for a short text value, committed on Enter or when focus leaves (described by {@code .desc}). */
-    private void textRow(
+    void textRow(
             Card card,
             Category cat,
             String key,
@@ -3644,7 +3644,7 @@ public class SettingsWindow {
      * As above, with {@code problem} saying why typed text cannot be kept (null when it can). Text it rejects
      * is not saved: the field turns red with the reason as its tooltip and keeps the text until it is fixed.
      */
-    private void textRow(
+    void textRow(
             Card card,
             Category cat,
             String key,
@@ -7172,6 +7172,8 @@ public class SettingsWindow {
             }
             if ("bash".equals(srv.id())) {
                 bashServerRows(c);
+            } else if (com.editora.lsp.XmlServerSettings.SERVER_ID.equals(srv.id())) {
+                SettingsXmlRows.add(this, c);
             } else if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(srv.id())) {
                 typeScriptServerRows(c);
             }
@@ -8354,7 +8356,7 @@ public class SettingsWindow {
     // above are unchanged, so an unmigrated page renders exactly as before.
 
     /** A card and the box its rows are appended to (the title, if any, sits above that box). */
-    private record Card(VBox box, VBox body) {}
+    record Card(VBox box, VBox body) {}
 
     private Card card(VBox page, @Nullable String title) {
         VBox body = new VBox();

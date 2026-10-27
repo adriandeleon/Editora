@@ -64,6 +64,14 @@ public record DoctorCheck(
         this(id, sectionKey, label, command, status, "", "", List.of(), Install.NONE, "", "", "", "", false);
     }
 
+    /** The id prefix of a row that reports a cache Editora can empty (the pane offers Clear on it). */
+    public static final String CACHE_PREFIX = "cache.";
+
+    /** Whether this row reports a cache the pane offers to clear ({@link #CACHE_PREFIX}). */
+    public boolean clearable() {
+        return id.startsWith(CACHE_PREFIX);
+    }
+
     /** A fresh row in the transient {@link DoctorStatus#CHECKING} state (shown while its probe runs). */
     public static DoctorCheck checking(String id, String sectionKey, String label, String command) {
         return new DoctorCheck(id, sectionKey, label, command, DoctorStatus.CHECKING);
