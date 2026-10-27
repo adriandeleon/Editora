@@ -319,6 +319,14 @@ the UI's darkness is used. Each tab's content wrapper is painted the terminal's 
 below the grid matches. The selected tab uses the app-wide `-editor-surface` fill, so it merges into the
 terminal as it does into the editor.
 
+The `terminalTheme` setting (Settings ▸ Terminal ▸ Theme) gives the terminal colours of its own. Blank, the
+default, is everything above. Any other value names a fixed scheme in `TerminalThemes` — Solarized, Dracula,
+Nord, Gruvbox, One Half, Tango, Campbell with their published sixteen colours, and the two derived Editora
+palettes — and `TerminalCoordinator.applyTheme` hands it to `TerminalPanel.usePalette` without sampling the
+scene, so it stays put when the editor theme changes. A name this version does not know follows the editor
+theme. Published values are kept as they are (Solarized's bright black is its own background); the view's
+`MIN_CONTRAST` pass keeps drawn text readable.
+
 ## Performance
 
 - **The FX thread never waits for the buffer lock.** Painting, hover, the accessibility text and the find bar

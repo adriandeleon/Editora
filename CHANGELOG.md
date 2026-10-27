@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Terminal theme** (Settings ▸ Terminal ▸ Theme, `terminalTheme`): the integrated terminal's colours, chosen
+  apart from the editor theme. **Editor theme**, the default, keeps today's palette derived from the editor's
+  syntax colours; Solarized Dark/Light, Dracula, Nord, Gruvbox Dark/Light, One Half Dark/Light, Tango Dark/Light,
+  Campbell and the Editora pair are fixed schemes that stay the same whichever editor theme is active. Open
+  terminals recolour at once. Settings schema 147 → 148 (additive).
+
 ### Fixed
 
 - **Java: Go to Super Method reads type arguments.** In `interface StrStore extends Store<String>`, `save(Integer)`

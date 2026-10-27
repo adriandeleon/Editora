@@ -27,7 +27,9 @@ import com.editora.terminal.FakeConnector;
 import com.editora.terminal.LocalShell;
 import com.editora.terminal.RunningProgram;
 import com.editora.terminal.TerminalCursor;
+import com.editora.terminal.TerminalPalette;
 import com.editora.terminal.TerminalPalettes;
+import com.editora.terminal.TerminalThemes;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -224,6 +226,25 @@ class TerminalPanelFxTest {
 
         assertEquals(Color.web("#171a24"), fx(() -> panel.palette().background()), "Editora Dark's editor surface");
         assertEquals(Color.web("#ff7b72"), fx(() -> panel.palette().ansi()[1]), "its keyword colour as ANSI red");
+    }
+
+    @Test
+    void aTerminalSchemeOfItsOwnRecoloursOpenTerminalsAndTheirGround() throws Exception {
+        show(fakeShells(), (title, programs) -> true, null);
+        fx(() -> {
+            panel.newTerminal();
+            return null;
+        });
+        TerminalPalette solarized = TerminalThemes.palette("Solarized Dark");
+        assertNotNull(solarized);
+        fx(() -> {
+            panel.usePalette(solarized);
+            return null;
+        });
+        assertEquals(solarized, fx(panel::palette));
+        assertTrue(
+                fx(() -> panel.activeView().getParent().getStyle()).contains("#002b36"),
+                "the area around the terminal takes the scheme's background");
     }
 
     @Test

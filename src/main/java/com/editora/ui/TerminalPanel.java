@@ -832,7 +832,12 @@ final class TerminalPanel extends StackPane implements ToolWindowContent {
     void refreshPalette(TerminalPalette fallback) {
         fallbackPalette = fallback == null ? TerminalPalettes.EDITORA_DARK : fallback;
         SyntaxColors colors = ThemeSampler.sample(this);
-        palette = colors == null ? fallbackPalette : TerminalPalettes.derive(colors);
+        usePalette(colors == null ? fallbackPalette : TerminalPalettes.derive(colors));
+    }
+
+    /** Recolours every terminal, and those opened later, with {@code next}: the terminal's own colour scheme. */
+    void usePalette(TerminalPalette next) {
+        palette = next;
         views.values().forEach(v -> {
             v.setPalette(palette);
             if (v.getParent() != null) {

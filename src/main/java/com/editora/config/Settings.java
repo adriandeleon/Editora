@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 147;
+    public static final int SCHEMA_VERSION = 148;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -802,6 +802,11 @@ public class Settings {
     private boolean terminalMacOptionIsMeta = false;
     /** Ask before pasting several lines into a program that has not turned on bracketed paste. */
     private boolean terminalConfirmMultilinePaste = true;
+    /**
+     * Integrated terminal: its colour scheme, by name ({@code TerminalThemes.NAMES}); blank uses the editor theme's
+     * colours. A name this version does not know also follows the editor theme.
+     */
+    private String terminalTheme = "";
 
     /** The most scrollback a terminal keeps: about a megabyte per thousand lines, per tab. */
     public static final int TERMINAL_SCROLLBACK_MAX = 50_000;
@@ -3516,6 +3521,14 @@ public class Settings {
 
     public void setTerminalConfirmMultilinePaste(boolean terminalConfirmMultilinePaste) {
         this.terminalConfirmMultilinePaste = terminalConfirmMultilinePaste;
+    }
+
+    public String getTerminalTheme() {
+        return terminalTheme == null ? "" : terminalTheme;
+    }
+
+    public void setTerminalTheme(String terminalTheme) {
+        this.terminalTheme = terminalTheme == null ? "" : terminalTheme.strip();
     }
 
     public java.util.List<String> getTerminalIdeCommands() {
