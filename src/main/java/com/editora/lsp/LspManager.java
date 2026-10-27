@@ -545,8 +545,35 @@ public final class LspManager {
         watchRoot = watch == null ? root -> false : watch;
     }
 
-    /** Starts watching {@code root} when it should be and is not yet (any thread). */
-    private void ensureRootWatcher(Path root) {
+    /**
+     * The grammar files lemminx registers to be told of ({@code **}{@code /*.xsd}, {@code *.dtd}, {@code *.rng},
+     * {@code *.rnc}), plus the DTD fragments it reads ({@code .ent}, {@code .mod}).
+     */
+    private static final java.util.Set<String> XML_GRAMMAR_EXTENSIONS =
+            java.util.Set.of("xsd", "dtd", "rng", "rnc", "ent", "mod");
+
+    /** The plain XML server's id (lemminx). */
+    private static final String XML_SERVER_ID = "xml";
+
+    /** Whether a file is one an XML server revalidates its documents against when it changes (XML review B9). */
+    static boolean xmlGrammarFile(Path file) {
+        Path name = file.getFileName();
+        String n = name == null ? "" : name.toString();
+        int dot = n.lastIndexOf('.');
+        return dot > 0 && XML_GRAMMAR_EXTENSIONS.contains(n.substring(dot + 1).toLowerCase(java.util.Locale.ROOT));
+    }
+
+    /** Root → a watcher that reports only grammar files, for an XML server inside a watched project (B9). */
+    private final Map<Path, RootWatcher> grammarWatchers = new ConcurrentHashMap<>();
+
+    /**
+     * Starts watching {@code root} when it should be and is not yet (any thread). A root the Project panel's
+     * watcher covers still gets a grammar-only watcher for an XML server: the panel watches only its expanded
+     * folders, so a schema regenerated in a collapsed one left lemminx's errors stale until the next keystroke
+     * (XML review B9). lemminx registers those globs dynamically, which this client does not offer for every
+     * server (jdtls would then expect its own registrations honoured), so they are watched here by name.
+     */
+    private void ensureRootWatcher(Path root, String serverId) {
         if (closed
                 || root == null
                 || !com.editora.process.ExecTargets.runsHere(root)
@@ -554,11 +581,16 @@ public final class LspManager {
             return;
         }
         Path key = root.toAbsolutePath().normalize();
-        if (rootWatchers.containsKey(key) || rootWatchers.size() >= MAX_ROOT_WATCHERS || !watchRoot.test(key)) {
+        boolean whole = watchRoot.test(key);
+        boolean grammar = !whole && XML_SERVER_ID.equals(serverId);
+        Map<Path, RootWatcher> watchers = whole ? rootWatchers : grammar ? grammarWatchers : null;
+        if (watchers == null || watchers.containsKey(key) || watchers.size() >= MAX_ROOT_WATCHERS) {
             return;
         }
-        RootWatcher w = RootWatcher.start(key, batch -> Platform.runLater(() -> notifyWatchedFiles(batch)));
-        if (w != null && rootWatchers.putIfAbsent(key, w) != null) {
+        java.util.function.Consumer<List<WatchedFile>> sink =
+                batch -> Platform.runLater(() -> notifyWatchedFiles(batch));
+        RootWatcher w = whole ? RootWatcher.start(key, sink) : RootWatcher.start(key, sink, LspManager::xmlGrammarFile);
+        if (w != null && watchers.putIfAbsent(key, w) != null) {
             w.close(); // another start won
         }
         if (closed) {
@@ -569,6 +601,13 @@ public final class LspManager {
     private void closeRootWatchers() {
         rootWatchers.values().forEach(RootWatcher::close);
         rootWatchers.clear();
+        grammarWatchers.values().forEach(RootWatcher::close);
+        grammarWatchers.clear();
+    }
+
+    /** The roots watched for grammar files only (tests). */
+    java.util.Set<Path> grammarWatchedRoots() {
+        return java.util.Set.copyOf(grammarWatchers.keySet());
     }
 
     /** The roots watched by this manager itself (tests). */
@@ -1584,7 +1623,7 @@ public final class LspManager {
             return prev;
         }
         clientOf.put(session, client);
-        ensureRootWatcher(session.root());
+        ensureRootWatcher(session.root(), session.serverId());
         if (session.isInitialized()) {
             // the project's own problems first, so its verdict can name them (seventh review CR2)
             session.projectDiagnostics().forEach(client.diagnostics::accept);
@@ -1724,7 +1763,7 @@ public final class LspManager {
             if (PYTHON_SERVER_ID.equals(serverId)) {
                 session.setPythonPath(resolvePythonPath(root)); // as the production start does, before initialize
             }
-            ensureRootWatcher(root);
+            ensureRootWatcher(root, serverId);
             sessionStarterForTest.accept(session); // TEST SEAM (see the field): attach a fake, never fork
             return session;
         }
@@ -1877,7 +1916,7 @@ public final class LspManager {
                 session.setPythonPath(resolvePythonPath(root));
             }
             if (!remote) {
-                ensureRootWatcher(root); // file changes nobody else reports reach this server (B7)
+                ensureRootWatcher(root, serverId); // file changes nobody else reports reach this server (B7)
             }
             session.configureStart(
                     startCommand,
