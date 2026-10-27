@@ -72,17 +72,18 @@ class XmlBundledSchemasTest {
 
     @Test
     void bothLemminxServersGetTheCatalogFirstWhenTheyRunHere() {
+        // absolute on every OS (a POSIX "/etc/xml/catalog.xml" is relative on Windows and is left out)
+        String own =
+                config.toAbsolutePath().resolveSibling("etc-xml-catalog.xml").toString();
         Settings s = new Settings();
-        s.setXmlCatalogs(List.of("/etc/xml/catalog.xml"));
+        s.setXmlCatalogs(List.of(own));
         XmlServerSettings settings = XmlServerSettings.of(s, config);
-        assertEquals(List.of("/etc/xml/catalog.xml"), catalogs(settings.section(config, false, true)), "not written");
+        assertEquals(List.of(own), catalogs(settings.section(config, false, true)), "not written");
 
         Path catalog = XmlBundledSchemas.ensure(config);
+        assertEquals(List.of(String.valueOf(catalog), own), catalogs(settings.section(config, false, true)));
         assertEquals(
-                List.of(String.valueOf(catalog), "/etc/xml/catalog.xml"),
-                catalogs(settings.section(config, false, true)));
-        assertEquals(
-                List.of("/etc/xml/catalog.xml"),
+                List.of(own),
                 catalogs(settings.section(config, false, false)),
                 "a remote server cannot read this machine's files");
     }
