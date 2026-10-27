@@ -470,6 +470,40 @@ public final class LspManager {
         }
     }
 
+    /** The XML servers' settings (Settings → LSP → XML); each session gets them for its own root. */
+    private volatile XmlServerSettings xmlServerSettings = XmlServerSettings.defaults();
+
+    /**
+     * Sets the XML servers' (lemminx's) settings and hands every running XML and pom server its {@code xml} object,
+     * which it gets pushed when that changed (XML review D3). Called on every settings apply and project reload, so
+     * a folder trusted since is read again here: with "trusted" schema downloads, trusting a folder turns them on.
+     */
+    public void setXmlSettings(XmlServerSettings settings) {
+        xmlServerSettings = settings == null ? XmlServerSettings.defaults() : settings;
+        sessionsByRoot.forEach((key, session) -> {
+            for (String id : List.of(XmlServerSettings.SERVER_ID, LspServerRegistry.MAVEN_POM_SERVER_ID)) {
+                if (key.startsWith(sessionKeyPrefix(id))) {
+                    session.setXmlSettings(xmlSectionFor(id, session.root()));
+                }
+            }
+        });
+    }
+
+    /**
+     * The {@code xml} object for {@code serverId} on {@code root}: the user's XML settings with that folder's trust,
+     * and for the pom server lemminx-maven's own {@code maven} object, which a push must carry too (the extension
+     * reads the pushed object whole).
+     */
+    Map<String, Object> xmlSectionFor(String serverId, Path root) {
+        boolean local = com.editora.process.ExecTargets.runsHere(root);
+        Map<String, Object> xml =
+                new java.util.LinkedHashMap<>(xmlServerSettings.section(root, folderTrust.test(root), local));
+        if (LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
+            xml.put("maven", Map.of("central", Map.of("skip", !mavenCentralIndex)));
+        }
+        return Map.copyOf(xml);
+    }
+
     /**
      * Sets bash-language-server's {@code bashIde} configuration: answered when a Bash server asks for it, and
      * pushed to the running ones when it changed (they re-read it and re-lint).
@@ -1747,6 +1781,9 @@ public final class LspManager {
         if (TypeScriptServer.SERVER_ID.equals(serverId)) {
             session.setTypeScriptSettings(typeScriptSettings);
         }
+        if (XmlServerSettings.isLemminx(serverId)) {
+            session.setXmlSettings(xmlSectionFor(serverId, root)); // trust read here, where the trust list is edited
+        }
         if (claimedWorkspace != null) {
             jdtlsWorkspaceBySession.put(session, claimedWorkspace);
         }
@@ -1946,17 +1983,20 @@ public final class LspManager {
                             ? TypeScriptServer.initializationOptions(tsserverPath, typeAcquisition, loose)
                             : TypeScriptServer.SERVER_ID.equals(serverId)
                                     ? TypeScriptServer.initializationOptions(null, typeAcquisition, false)
-                                    : withProjectSettings(
+                                    : withXmlSettings(
                                             serverId,
-                                            initOptionsFor(
+                                            withProjectSettings(
                                                     serverId,
-                                                    startBundles,
-                                                    astroTsdk,
-                                                    onTypeFormatting,
-                                                    jdks,
-                                                    centralIndex,
-                                                    javaPreferredHome),
-                                            remote ? null : root));
+                                                    initOptionsFor(
+                                                            serverId,
+                                                            startBundles,
+                                                            astroTsdk,
+                                                            onTypeFormatting,
+                                                            jdks,
+                                                            centralIndex,
+                                                            javaPreferredHome),
+                                                    remote ? null : root),
+                                            session.xmlSettings()));
             if (!session.start()) {
                 dropSession(key, session);
                 if (session.startFailed()) {
@@ -5158,6 +5198,18 @@ public final class LspManager {
         // Imports) and waits for the answer; LanguageServerSession.executeClientCommand gives it (review A3).
         caps.put("executeClientCommandSupport", true);
         return Map.copyOf(caps);
+    }
+
+    /**
+     * {@code options} with lemminx's {@code settings.xml} object ({@code xml}, null = none) for an XML or pom server,
+     * so its very first validation already runs with them — no schema download before the first push; anything
+     * else unchanged.
+     */
+    static @Nullable Object withXmlSettings(
+            String serverId, @Nullable Object options, @Nullable Map<String, Object> xml) {
+        return xml == null || !XmlServerSettings.isLemminx(serverId)
+                ? options
+                : XmlServerSettings.withSection(options, xml);
     }
 
     /**

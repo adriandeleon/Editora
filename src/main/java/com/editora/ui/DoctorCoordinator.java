@@ -218,6 +218,11 @@ final class DoctorCoordinator {
             public void checkNewer() {
                 DoctorCoordinator.this.checkNewer();
             }
+
+            @Override
+            public void clear(DoctorCheck check) {
+                clearCache(check);
+            }
         });
     }
 
@@ -629,6 +634,10 @@ final class DoctorCoordinator {
                     continue;
                 }
                 specs.add(serverRow(serverId, needs));
+                Path configDir = host.configDir();
+                if (com.editora.lsp.XmlServerSettings.SERVER_ID.equals(serverId) && configDir != null) {
+                    specs.add(xmlCacheRow(com.editora.lsp.XmlServerSettings.cacheDir(configDir)));
+                }
                 if ("bash".equals(serverId)) {
                     // What bash-language-server lints and formats with. Without them a shell script silently
                     // gets no diagnostics and Format Document changes nothing.
@@ -1515,6 +1524,40 @@ final class DoctorCoordinator {
         List<String> cmd = new ArrayList<>(base);
         cmd.addAll(List.of(args));
         return cmd;
+    }
+
+    /** The row id of the XML server's schema cache. */
+    static final String XML_CACHE_ID = DoctorCheck.CACHE_PREFIX + "xml";
+
+    /**
+     * The XML server's schema cache under the config folder: how much it holds and where, with Clear (XML review
+     * D4). The grammars lemminx downloaded used to pile up in {@code ~/.lemminx}, out of sight.
+     */
+    static DoctorService.CheckSpec xmlCacheRow(Path dir) {
+        DoctorCheck row = DoctorCheck.checking(XML_CACHE_ID, "lsp", tr("doctor.label.xmlCache"), "")
+                .withSettings("lsp");
+        return probe(row, base -> {
+            long size = com.editora.lsp.XmlSchemaCache.size(dir);
+            return size == 0
+                    ? base.ok(tr("doctor.xmlCache.empty"))
+                    : base.ok(StatusBar.formatSize(size) + " — " + dir.toAbsolutePath());
+        });
+    }
+
+    /** Empties the cache a row reports, off the FX thread, then says how much went and checks again. */
+    private void clearCache(DoctorCheck check) {
+        Path config = host.configDir();
+        if (!XML_CACHE_ID.equals(check.id()) || config == null) {
+            return;
+        }
+        Path dir = com.editora.lsp.XmlServerSettings.cacheDir(config);
+        Thread.ofVirtual().name("doctor-clear-cache").start(() -> {
+            long freed = com.editora.lsp.XmlSchemaCache.clear(dir);
+            javafx.application.Platform.runLater(() -> {
+                host.setStatus(tr("doctor.xmlCache.cleared", StatusBar.formatSize(freed)));
+                runChecks();
+            });
+        });
     }
 
     private static DoctorService.CheckSpec probe(DoctorCheck placeholder, UnaryOperator<DoctorCheck> probe) {

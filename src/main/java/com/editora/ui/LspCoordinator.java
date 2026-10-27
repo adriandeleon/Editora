@@ -1359,6 +1359,13 @@ final class LspCoordinator {
         if (buffer != null) {
             buffer.setLspDiagnostics(diagnostics);
             noteNonProjectFile(file, diagnostics);
+            String blocked = xmlNotices.onDiagnostics(diagnostics); // a schema not downloaded: say where it is decided
+            if (blocked != null) {
+                // After the opening's own lines ("Opened …", the server's ready line), which replaced it at once.
+                var later = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(2));
+                later.setOnFinished(e -> host.setStatus(blocked));
+                later.play();
+            }
         }
         // Key the map by the canonical path so it agrees with setProblemsActiveFile (given the canonical
         // active path) and clearDiagnostics (given the buffer's path) — the server may report a symlink URI.
@@ -1578,6 +1585,7 @@ final class LspCoordinator {
         // committed override was shown in the status bar and Doctor but never run.
         lspManager.configure(on, effectiveCommands());
         applyBashIde();
+        applyXmlSettings();
         appliedProjectRoot = ops.lspProjectRoot();
         appliedProjectOverrides = projectOverrideSignature();
         offerInterruptedEdits();
@@ -2033,6 +2041,17 @@ final class LspCoordinator {
         return "shfmt".equals(toolId) ? c.effectiveShfmt() : c.effectiveShellcheck();
     }
 
+    /** What lemminx says that needs saying the Editora way (its symbol-limit notice, a blocked schema download). */
+    private final XmlServerNotices xmlNotices = new XmlServerNotices();
+
+    /** Hands the XML servers their settings (Settings → LSP → XML), each folder's trust read again (XML review D3). */
+    void applyXmlSettings() {
+        com.editora.config.ConfigManager config = ops.config();
+        lspManager.setXmlSettings(
+                com.editora.lsp.XmlServerSettings.of(host.settings(), config == null ? null : config.getConfigDir()));
+        xmlNotices.reset();
+    }
+
     /** Hands the current {@link #bashIdeConfig()} to the manager, which pushes it to running Bash servers. */
     void applyBashIde() {
         lspManager.setBashIde(bashIdeConfig());
@@ -2260,6 +2279,7 @@ final class LspCoordinator {
         projectScope.reload();
         applyOnTypeFormatting();
         applyBashIde();
+        applyXmlSettings();
         appliedProjectRoot = ops.lspProjectRoot();
         offerInterruptedEdits();
         if (ops.lspFeatureEnabled() && !projectOverrideSignature().equals(appliedProjectOverrides)) {
@@ -3311,6 +3331,7 @@ final class LspCoordinator {
         if (!ops.lspFeatureEnabled()) {
             return;
         }
+        message = XmlServerNotices.rewrite(serverId, message); // lemminx's symbol limit names Editora's setting
         String source = statusSource(serverId, root);
         if (serverId != null && root != null) {
             if ("Launching".equalsIgnoreCase(type)) {

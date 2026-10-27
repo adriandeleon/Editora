@@ -70,6 +70,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **XML: a schema changed outside Editora revalidates the XML files that use it**, also in a collapsed Project
   folder; the errors stayed until the next keystroke.
 
+- **XML server settings** (Settings ▸ LSP, the XML card): Editora now sends lemminx its settings at start, pushes a
+  change to the running server and answers its configuration questions, where before it sent nothing at all.
+  **Download schemas** (`xmlSchemaDownloads`: never / only in trusted folders, the default / always), **Files without
+  a grammar** (`xmlNoGrammar`: nothing, the default / hint / warning), **XML catalogs** (`xmlCatalogs`; a relative
+  path is looked for in each project's root), **Schema associations** (`xmlFileAssociations`,
+  `*.myconf.xml=schemas/myconf.xsd`), formatting (**Wrap long text**, off by default, wraps at the fill column;
+  **Attributes**; **Empty elements**; **Space before />**) and the **Structure element limit** (`xmlSymbolLimit`,
+  5,000). Settings schema 148 → 149 (additive).
+- **Doctor ▸ XML schema cache**: the size and folder of the schemas the XML server downloaded, with **Clear**.
+- **XML: opening a file no longer downloads every schema it names from any host.** lemminx fetched each
+  `xsi:schemaLocation`, DOCTYPE and `xml-model` grammar over http or https as soon as a file opened, in any folder.
+  Downloads now happen only in trusted folders by default; elsewhere the file says the download is off and the status
+  line says where to change it. External entities are never resolved.
+- **XML: downloaded schemas are kept under Editora's config folder** (`cache/lemminx`), not in `~/.lemminx`, so a
+  portable or test configuration no longer shares the user's cache, and settings export leaves it out.
+- **XML: a file without a schema or DTD no longer adds "No grammar constraints" to Problems** (SVG, XSLT, FXML, plain
+  config files); Settings can bring the hint back.
+- **XML: quick fixes and generated grammars are indented like the file**: lemminx's tab-size and spaces questions were
+  answered with nothing.
+- **XML: the "document symbols have been limited to 5000 items" notice names the setting that raises the limit.**
+- **XML: Format Document no longer wraps text at a fixed 100 columns.** Text is left on its lines unless Wrap long
+  text is on, which wraps at the editor's fill column; XSD and DTD files get lemminx's reference code lenses when
+  Code Lens is on.
 - **Java: Go to Super Method reads type arguments.** In `interface StrStore extends Store<String>`, `save(Integer)`
   opened `Store.save(T)`, and `Multi.accept(Integer)` offered a second, wrong branch; `T` now stands for `String`
   there, so neither does, and `take(T[])` takes only a `String[]`. It also works on a method reference
