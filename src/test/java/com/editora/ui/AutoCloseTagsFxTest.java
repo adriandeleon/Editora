@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import java.util.List;
+
 import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
@@ -90,5 +92,49 @@ class AutoCloseTagsFxTest {
             typeKey(area, ">");
         });
         assertEquals("<body>", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    /** With auto-close on, a habitual hand-typed close tag left {@code <from>x</</from>} (XML review B17). */
+    @Test
+    void aCloseTagTypedByHandJoinsTheOneAutoCloseInserted() throws Exception {
+        EditorBuffer b = htmlBuffer("");
+        FxTestSupport.runOnFx(() -> {
+            b.setLanguageOverride("xml");
+            b.typeString("<from>x</from>");
+        });
+        assertEquals("<from>x</from>", FxTestSupport.callOnFx(b::getContent));
+        assertEquals(14, (int) FxTestSupport.callOnFx(() -> b.getArea().getCaretPosition()), "after the tag");
+
+        // Through the key filter, then on past the tag: typing goes on normally.
+        EditorBuffer keys = htmlBuffer("<p>a</p>");
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = FxTestSupport.field(keys, "area");
+            area.moveTo(4);
+            for (String ch : List.of("<", "/", "p", ">", "!")) {
+                typeKey(area, ch);
+            }
+        });
+        assertEquals("<p>a</p>!", FxTestSupport.callOnFx(keys::getContent));
+
+        // A different name typed after the join is the user's: it is not stepped over.
+        EditorBuffer other = htmlBuffer("<p>a</p>");
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = FxTestSupport.field(other, "area");
+            area.moveTo(4);
+            for (String ch : List.of("<", "/", "q", "p")) {
+                typeKey(area, ch);
+            }
+        });
+        assertEquals("<p>a</qpp>", FxTestSupport.callOnFx(other::getContent), "the step-over ended at the q");
+
+        // No tag after the caret: "</" is typed as it is.
+        EditorBuffer plain = htmlBuffer("<p>a");
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = FxTestSupport.field(plain, "area");
+            area.moveTo(4);
+            typeKey(area, "<");
+            typeKey(area, "/");
+        });
+        assertEquals("<p>a</", FxTestSupport.callOnFx(plain::getContent));
     }
 }
