@@ -51,6 +51,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Language servers get the whole file when it opens.** Python, Java and XML files reached their server empty and
+  were then filled in, so an XML file flashed a false "Premature end of file" error, the file was analysed twice,
+  and quick fixes and generated schemas used a four-space indent in a two-space file. The indent a server is told
+  now also follows the file as you edit it.
+- **XML: code lenses refresh after a settings change**, and lemminx's refresh request no longer logs an internal
+  error.
+- **XML: a relative schema association no longer applies to files outside the project**, where it failed with an
+  error naming an internal Editora folder.
+- **XML is no longer guessed from `.mod`, `.sch`, `.props`, `.targets` and `.fo` alone**: such a file is XML only
+  when its text starts with `<`, so a Modula-2 module or a KiCad schematic opens as plain text.
+- **The status bar and Problems say XML, JSON, YAML, HTML, CSS, SQL, TOML, C++, C#** (and other acronyms) instead
+  of "Xml" or "Cpp", and plain text reads "Plain Text".
+
 - **Terminal: a selection keeps its text when the terminal is resized.** JediTerm moves a selection itself when a
   shorter window pushes rows into history, and the terminal moved it again: after a splitter drag the highlight sat
   rows above the selected text, and Copy copied those rows. A block selection is dropped on a resize, whose reflow
@@ -113,8 +126,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   go to its XSD declaration instead of the element's own end tag.
 - **XML: one language server per window.** XML files outside the project, in any number of folders or Maven
   modules, share one lemminx instead of starting one each.
-- **XML: files up to 100,000 lines keep the language server** (it stopped at 10,000), and the large-file notice
-  now says that folding, Structure, spell check and the language server are off too; Structure says why it is
+- **XML: files up to 100,000 lines and 5 MB keep the language server** (it stopped at 10,000), and the large-file
+  notice now says that folding, Structure, spell check and the language server are off too; Structure says why it is
   empty.
 - **XML: lemminx's commands and quick fixes work.** New palette commands XML: Revalidate File, XML: Revalidate
   All Open Files and XML: Bind to Grammar…; the "Bind to existing grammar/schema" quick fix picks an XSD, DTD or
