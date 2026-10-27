@@ -43,7 +43,43 @@ class LineIndentTest {
     void multiLineOrOffLineEditsAreUnusable() {
         assertNull(LineIndent.formattedIndent("x", List.of(new LspTextEdit(LINE, 0, LINE, 0, "\n  ")), LINE));
         assertNull(LineIndent.formattedIndent("x", List.of(new LspTextEdit(LINE, 0, LINE + 1, 0, "  ")), LINE));
-        assertNull(LineIndent.formattedIndent("x", List.of(new LspTextEdit(LINE - 1, 0, LINE - 1, 0, "  ")), LINE));
+        assertNull(LineIndent.formattedIndent("x", List.of(new LspTextEdit(LINE - 2, 0, LINE - 2, 0, "  ")), LINE));
+        assertNull(
+                LineIndent.formattedIndent("  x", List.of(new LspTextEdit(LINE - 1, 4, LINE, 0, "")), LINE),
+                "joins the lines");
+        assertNull(
+                LineIndent.formattedIndent("  x", List.of(new LspTextEdit(LINE - 1, 4, LINE, 3, "\n  ")), LINE),
+                "eats past the indent");
+    }
+
+    /**
+     * lemminx answers a range from the previous line's end with one edit replacing the break and the indent,
+     * plus in-line edits elsewhere; and nothing at all for a one-line range (XML review B4).
+     */
+    @Test
+    void anIndentGivenFromThePreviousLinesEndIsAdopted() {
+        // `  <a>` then `<b>1</b>` at column 0: lemminx's {prev:5 → this:0, "\n    "}
+        assertEquals(
+                "    ",
+                LineIndent.formattedIndent("<b>1</b>", List.of(new LspTextEdit(LINE - 1, 5, LINE, 0, "\n    ")), LINE));
+        // over-indented, with the previous line's trailing blanks trimmed and an in-line edit further right
+        assertEquals(
+                "  ",
+                LineIndent.formattedIndent(
+                        "        <c x=\"1\"   y=\"2\"/>",
+                        List.of(
+                                new LspTextEdit(LINE - 1, 1, LINE - 1, 2, ""),
+                                new LspTextEdit(LINE - 1, 6, LINE, 8, "\n  "),
+                                new LspTextEdit(LINE, 15, LINE, 18, " ")),
+                        LINE));
+        assertNull(
+                LineIndent.formattedIndent(
+                        "  x",
+                        List.of(
+                                new LspTextEdit(LINE - 1, 4, LINE, 2, "\n "),
+                                new LspTextEdit(LINE - 1, 4, LINE, 2, "\n ")),
+                        LINE),
+                "two of them contradict");
     }
 
     @Test

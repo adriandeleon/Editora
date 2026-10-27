@@ -18,10 +18,13 @@ public final class LineIndent {
     private LineIndent() {}
 
     /**
-     * The leading whitespace of {@code line} after applying {@code edits} (all expected to lie on line
-     * {@code lineIndex}), or {@code null} when the result is unusable for an indent-only change — an edit
-     * touches another line, or inserts a newline (the formatter would merge/split lines). Edits are applied
-     * right-to-left so earlier columns stay valid; out-of-range columns are clamped.
+     * The leading whitespace of {@code line} after applying {@code edits}, or {@code null} when the result is
+     * unusable for an indent-only change — an edit reaches further back, joins or splits lines, or rewrites
+     * text past the indent. Edits on line {@code lineIndex} apply as they are. lemminx (and others) express an
+     * indent as one edit from the previous line's end, {@code "\n" + indent} replacing the line break and the
+     * old indent: that one is read as the new indent (XML review B4). Edits wholly on the previous line (its
+     * trailing whitespace) do not touch this line's indent and are ignored. Edits are applied right-to-left so
+     * earlier columns stay valid; out-of-range columns are clamped.
      */
     public static @Nullable String formattedIndent(String line, List<LspTextEdit> edits, int lineIndex) {
         if (line == null) {
@@ -31,8 +34,25 @@ public final class LineIndent {
             return leadingWhitespace(line);
         }
         List<LspTextEdit> sameLine = new ArrayList<>();
+        int indentLength = leadingWhitespace(line).length();
+        boolean lineBreak = false;
         for (LspTextEdit e : edits) {
             if (e == null) {
+                continue;
+            }
+            if (e.startLine() == lineIndex - 1 && e.endLine() == lineIndex - 1) {
+                continue; // the previous line's own whitespace
+            }
+            int newline = e.newText().lastIndexOf('\n');
+            if (e.startLine() == lineIndex - 1
+                    && e.endLine() == lineIndex
+                    && newline >= 0
+                    && e.endCol() <= indentLength
+                    && !lineBreak
+                    && e.newText().substring(0, newline).isBlank()) {
+                lineBreak = true; // the break and this line's indent, rewritten: keep what follows the break
+                sameLine.add(new LspTextEdit(
+                        lineIndex, 0, lineIndex, e.endCol(), e.newText().substring(newline + 1)));
                 continue;
             }
             if (e.startLine() != lineIndex

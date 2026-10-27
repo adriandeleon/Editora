@@ -8476,14 +8476,17 @@ public class EditorBuffer implements TabContent {
         }
         int caret = a.getCaretPosition();
         long gen = ++reindentGen;
-        lspRangeFormatter.format(par, 0, par, line.length(), edits -> {
+        int from = Math.max(0, par - 1); // from the line break: lemminx indents by editing it (XML review B4)
+        lspRangeFormatter.format(from, par == 0 ? 0 : a.getParagraphLength(from), par, line.length(), edits -> {
             if (gen != reindentGen
                     || a.getScene() == null
                     || a.getCurrentParagraph() != par
                     || !a.getParagraph(par).getText().equals(line)) {
                 return; // stale, detached, or the line changed under us
             }
-            applyLspLineIndent(a, par, line, caret, edits, true);
+            if (!applyLspLineIndent(a, par, line, caret, edits, true) && a.getCaretPosition() == caret) {
+                applySmartTab(a, false); // no usable indent: Tab still does what it does without a server
+            }
         });
         return true;
     }
@@ -8494,13 +8497,13 @@ public class EditorBuffer implements TabContent {
      * <p>{@code fromTab} distinguishes the two callers, and only matters when the indent is already right:
      * a Tab pressed from inside the leading whitespace must still put the caret where typing starts (the
      * same rule the re-indent below applies), whereas on-type formatting fires while the user is typing and
-     * must never move the caret out from under them.
+     * must never move the caret out from under them. False when the answer gives no usable indent.
      */
-    private void applyLspLineIndent(
+    private boolean applyLspLineIndent(
             CodeArea a, int par, String line, int caret, java.util.List<LspTextEdit> edits, boolean fromTab) {
         String newIndent = LineIndent.formattedIndent(line, edits, par);
         if (newIndent == null) {
-            return; // unusable (multi-line) result → leave the line untouched
+            return false; // unusable (multi-line) result → leave the line untouched
         }
         String oldIndent = LineIndent.leadingWhitespace(line);
         if (newIndent.equals(oldIndent)) {
@@ -8510,7 +8513,7 @@ public class EditorBuffer implements TabContent {
             if (fromTab && caret < indentEnd && indentEnd <= a.getLength()) {
                 a.moveTo(indentEnd);
             }
-            return;
+            return true;
         }
         int lineStart = a.getAbsolutePosition(par, 0);
         int oldEnd = lineStart + oldIndent.length();
@@ -8521,6 +8524,7 @@ public class EditorBuffer implements TabContent {
         a.moveTo(newCaret);
         // Re-indenting isn't the user typing a word — don't let the edit we just made pop the completion.
         completionActions.suppressCompletionAt(docVersion);
+        return true;
     }
 
     /**
