@@ -7627,7 +7627,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             Label snapshotBadge = new Label(tr("badge.snapshot"));
             snapshotBadge.getStyleClass().add("snapshot-badge");
             snapshotBadge.setTooltip(new Tooltip(tr("badge.snapshot.tip", com.editora.AppInfo.VERSION)));
-            items.addAll(toolbarGap(), snapshotBadge);
+            items.addAll(toolbarGap(14), snapshotBadge);
         }
 
         // Dev-mode badge (just left of Settings) when running with --dev, so a development instance is
@@ -7637,19 +7637,16 @@ public class MainController implements com.editora.mcp.McpBridge {
             devBadge.getStyleClass().add("dev-mode-badge");
             devBadge.setTooltip(
                     new Tooltip(tr("badge.devMode.tip", config.getConfigDir().toString())));
-            items.addAll(toolbarGap(), devBadge);
+            items.addAll(toolbarGap(14), devBadge);
         }
 
-        // The Simple-mode toggle and Settings close the bar as one pair of app-level controls. The toggle
-        // used to be a customizable cluster item, but it is the way back out of a mode that empties much of
-        // that cluster, and the cluster is what overflows into the chevron on a narrow window — so it is
-        // pinned here instead, beside the other "how the app looks" control. The wider gap keeps the project
-        // combo and its Open-Folder icon from reading as part of the pair.
-        // About and Quit were removed from the bar: both live in the Help/File menus and the palette,
-        // neither is an action anyone takes mid-edit, and Quit in particular sat in the top-right corner
-        // directly under the window's own close button — a one-icon-high miss between "minimise this
-        // window" and "exit the application".
-        items.addAll(appControlsGap(), simpleModeButton, settingsButton);
+        // The Simple-mode toggle and Settings close the bar as a pair, set ~2 icons clear of the project
+        // controls. The toggle is pinned here, not in the cluster, because it is the way back out of a mode
+        // that empties much of that cluster, which a narrow window would overflow. About and Quit were
+        // removed: both live in the Help/File menus and the palette, neither is an action anyone takes
+        // mid-edit, and Quit sat directly under the window's own close button — a one-icon-high miss
+        // between "minimise this window" and "exit the application".
+        items.addAll(toolbarGap(40), simpleModeButton, settingsButton);
     }
 
     /**
@@ -7725,18 +7722,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** A fixed-width blank gap used to separate the trailing toolbar group without a separator line. */
-    private static Region toolbarGap() {
+    private static Region toolbarGap(double width) {
         Region gap = new Region();
-        gap.setMinWidth(14);
-        gap.setPrefWidth(14);
-        return gap;
-    }
-
-    /** The gap ahead of the Simple-mode/Settings pair: about two toolbar-icon widths, so the pair stands apart. */
-    private static Region appControlsGap() {
-        Region gap = new Region();
-        gap.setMinWidth(40);
-        gap.setPrefWidth(40);
+        gap.setMinWidth(width);
+        gap.setPrefWidth(width);
         return gap;
     }
 
