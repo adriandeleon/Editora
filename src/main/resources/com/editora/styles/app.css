@@ -3363,6 +3363,13 @@
 .settings-row {
     -fx-padding: 13 0 13 0;
 }
+/* A heading inside a card over a group of its rows (the XML server card's Validation / Formatting / Structure). */
+.settings-row.settings-card-subheading {
+    -fx-font-size: 0.786em; /* 11px at the 14px root */
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 14 0 0 0;
+}
 /* "Restart Editora to apply": a setting chosen now that the running app is not using yet. */
 .settings-restart-note {
     -fx-text-fill: -state-amber;
