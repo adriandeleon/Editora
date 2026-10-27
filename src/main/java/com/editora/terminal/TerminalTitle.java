@@ -32,9 +32,26 @@ final class TerminalTitle {
         return isSet(path) ? path : UNTITLED;
     }
 
-    /** The tab: the directory's own name, which is as much as fits and as much as identifies it. */
+    /** The tab, for a shell with nothing running in it. */
     static String tab(String shellTitle, String cwd, String home) {
+        return tab(shellTitle, "", cwd, home);
+    }
+
+    /**
+     * The tab: the directory's own name, which is as much as fits and as much as identifies it — unless something is
+     * running, in which case that is what the tab is <em>for</em>.
+     *
+     * <p>The program comes before the directory because the directory is the same in every tab opened from the same
+     * project: three tabs all reading {@code Editora} told nobody which one held the editor and which the build. The
+     * shell's own title still comes first, being an explicit instruction; most prompts never set one, which is why
+     * this fallback exists. The window title keeps the directory, since it has the room for a path and a path is what
+     * distinguishes two checkouts.
+     *
+     * @param program what the shell is running, or empty for an idle prompt
+     */
+    static String tab(String shellTitle, String program, String cwd, String home) {
         if (isSet(shellTitle)) return shellTitle;
+        if (isSet(program)) return program.trim();
         String collapsed = collapseHome(cwd, home);
         if (!isSet(collapsed)) return UNTITLED;
         // "~" is a name in its own right; reducing it to its last segment would print the user's

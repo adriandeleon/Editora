@@ -4,6 +4,8 @@ import com.jediterm.terminal.util.CharUtils;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Buffer text measured in columns rather than in array slots. */
 class CellWidthTest {
@@ -41,5 +43,29 @@ class CellWidthTest {
         assertEquals(2, CellWidth.cells(emoji));
         assertEquals(5, CellWidth.cells(emoji + emoji + "x"));
         assertEquals(2, CellWidth.of(0x20000), "a CJK extension B ideograph is wide too");
+    }
+
+    @Test
+    void narrowBmpTextStaysOnTheFastPath() {
+        // Every TUI border, bar and accent. An ASCII-only test sent all of these per glyph.
+        assertTrue(CellWidth.isOneCellPerChar("hello"));
+        assertTrue(CellWidth.isOneCellPerChar("┌──┐")); // box drawing
+        assertTrue(CellWidth.isOneCellPerChar("█▓▒░")); // block elements
+        assertTrue(CellWidth.isOneCellPerChar("⣿⣷⣧")); // braille
+        assertTrue(CellWidth.isOneCellPerChar("café naïve"));
+        assertTrue(CellWidth.isOneCellPerChar(""));
+    }
+
+    @Test
+    void astralAndWideCellsNeedPerGlyphDrawing() {
+        assertFalse(CellWidth.isOneCellPerChar(new String(Character.toChars(0xF0219))));
+        assertFalse(CellWidth.isOneCellPerChar("日" + DWC));
+        assertFalse(CellWidth.isOneCellPerChar("ab" + new String(Character.toChars(0x1F600))));
+    }
+
+    @Test
+    void controlCharactersAreNotBatchedEither() {
+        assertFalse(CellWidth.isOneCellPerChar("a\u0000b"));
+        assertFalse(CellWidth.isOneCellPerChar("a\u001bb"));
     }
 }

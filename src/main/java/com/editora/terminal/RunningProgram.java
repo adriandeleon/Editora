@@ -24,13 +24,16 @@ public final class RunningProgram {
 
     /** The programs a shell is running, innermost name first, or empty for an idle prompt. */
     public static List<String> in(long pid) {
-        return ProcessHandle.of(pid)
-                .map(shell -> shell.children()
-                        .map(child -> displayName(child.info().command().orElse("")))
-                        .filter(name -> !name.isBlank())
-                        .distinct()
-                        .toList())
-                .orElse(List.of());
+        // Children by parent, not ProcessHandle.children(): that walks the whole process table, and this is asked per
+        // terminal, every watcher tick. See ChildProcesses.
+        return ChildProcesses.of(pid).stream()
+                .map(child -> ProcessHandle.of(child)
+                        .flatMap(handle -> handle.info().command())
+                        .map(RunningProgram::displayName)
+                        .orElse(""))
+                .filter(name -> !name.isBlank())
+                .distinct()
+                .toList();
     }
 
     /**

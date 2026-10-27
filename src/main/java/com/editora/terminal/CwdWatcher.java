@@ -39,9 +39,11 @@ public final class CwdWatcher implements AutoCloseable {
 
     private final ScheduledFuture<?> task;
     private volatile @Nullable String last;
+    private volatile @Nullable String lastProgram;
 
-    private CwdWatcher(long pid, Consumer<String> onChange) {
-        task = Pool.INSTANCE.scheduleWithFixedDelay(() -> poll(pid, onChange), 0, INTERVAL_MS, TimeUnit.MILLISECONDS);
+    private CwdWatcher(long pid, Consumer<String> onChange, @Nullable Consumer<String> onProgramChange) {
+        task = Pool.INSTANCE.scheduleWithFixedDelay(
+                () -> poll(pid, onChange, onProgramChange), 0, INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -51,23 +53,44 @@ public final class CwdWatcher implements AutoCloseable {
      *     forever, so it belongs on the same path that disposes the session
      */
     public static CwdWatcher watch(long pid, Consumer<String> onChange) {
-        return new CwdWatcher(pid, onChange);
+        return new CwdWatcher(pid, onChange, null);
     }
 
-    private void poll(long pid, Consumer<String> onChange) {
+    /**
+     * As {@link #watch(long, Consumer)}, also reporting what the shell is running — its first child's name, or empty
+     * at an idle prompt — immediately and then on every change. The directory half runs only where {@link
+     * ProcessCwd#isSupported} says the OS can answer; the program half needs only {@link ProcessHandle}.
+     */
+    public static CwdWatcher watch(long pid, Consumer<String> onChange, Consumer<String> onProgramChange) {
+        return new CwdWatcher(pid, onChange, onProgramChange);
+    }
+
+    private void poll(long pid, Consumer<String> onChange, @Nullable Consumer<String> onProgramChange) {
         try {
-            Optional<String> cwd = ProcessCwd.of(pid);
-            // Empty means the process is gone, or this platform cannot say. Neither is a reason to
-            // wipe a directory already on screen: a tab whose shell has exited should keep reading
-            // as the place it was, not blank out.
-            if (cwd.isEmpty()) return;
-            String value = cwd.get();
-            if (value.equals(last)) return;
-            last = value;
-            onChange.accept(value);
+            if (ProcessCwd.isSupported()) pollCwd(pid, onChange);
+            if (onProgramChange != null) pollProgram(pid, onProgramChange);
         } catch (Throwable t) {
             // A throw here would cancel the scheduled task silently and stop the watch for good.
         }
+    }
+
+    private void pollCwd(long pid, Consumer<String> onChange) {
+        Optional<String> cwd = ProcessCwd.of(pid);
+        // Empty means the process is gone, or this platform cannot say. Neither is a reason to
+        // wipe a directory already on screen: a tab whose shell has exited should keep reading
+        // as the place it was, not blank out.
+        if (cwd.isEmpty()) return;
+        String value = cwd.get();
+        if (value.equals(last)) return;
+        last = value;
+        onChange.accept(value);
+    }
+
+    private void pollProgram(long pid, Consumer<String> onProgramChange) {
+        String program = RunningProgram.first(pid).orElse("");
+        if (program.equals(lastProgram)) return;
+        lastProgram = program;
+        onProgramChange.accept(program);
     }
 
     @Override

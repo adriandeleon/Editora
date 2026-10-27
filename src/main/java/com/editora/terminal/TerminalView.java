@@ -373,16 +373,19 @@ public final class TerminalView extends Region {
             if (onSessionEnded != null) onSessionEnded.run();
         }));
         session.start();
-        // Started here rather than inside the session: what the directory is *for* is a UI
-        // question. The term layer reports the shell's state; it does not decide what a tab is
-        // called. Skipped outright where the OS cannot answer, or the shell is not on this machine,
-        // so no thread runs to find out.
-        if (ProcessCwd.isSupported() && session.pid() > 0) {
-            cwdWatch = CwdWatcher.watch(session.pid(), cwd -> {
-                if (!shellReportsCwd) {
-                    display.setCwd(cwd);
-                }
-            });
+        // Started here rather than inside the session: what the directory and the program are
+        // *for* is a UI question. The term layer reports the shell's state; it does not decide what
+        // a tab is called. Skipped outright when the shell is not on this machine, so no thread runs
+        // to find out; the directory half also where the OS cannot answer (see CwdWatcher).
+        if (session.pid() > 0) {
+            cwdWatch = CwdWatcher.watch(
+                    session.pid(),
+                    cwd -> {
+                        if (!shellReportsCwd) {
+                            display.setCwd(cwd);
+                        }
+                    },
+                    display::setProgram);
         }
         markDirty();
         if (columns != openColumns || rows != openRows) {
