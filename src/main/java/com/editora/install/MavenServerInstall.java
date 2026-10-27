@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * What a complete install of the Maven-aware pom.xml server looks like on disk, read from its launch command.
  *
@@ -113,5 +115,85 @@ public final class MavenServerInstall {
      */
     public static List<String> missingJars(List<String> argv) {
         return classpathDir(argv).map(MavenServerInstall::missingJars).orElse(List.of());
+    }
+    // --- Editora's own copy (XML/pom review 2, A3) ---------------------------------------------------------------
+
+    /** Where Editora installs the pom.xml server under {@code configDir}. */
+    public static Path folder(Path configDir) {
+        return configDir.resolve(InstallCatalog.LEMMINX_MAVEN_DIR);
+    }
+
+    /**
+     * The launch command of Editora's own complete pom.xml server under {@code configDir}
+     * ({@code java -cp "<dir>/*" …}, a bare {@code java} the Maven JDK then replaces), or null when it has none.
+     */
+    public static @Nullable String ownCommand(@Nullable Path configDir) {
+        if (configDir == null) {
+            return null;
+        }
+        Path dir = folder(configDir);
+        return Files.isDirectory(dir) && complete(dir)
+                ? InstallCatalog.jvmClasspathCommand(dir, InstallCatalog.LEMMINX_MAIN_CLASS)
+                : null;
+    }
+
+    /**
+     * The pom.xml server command that runs: {@code configured} as it is, unless it is blank — then Editora's own
+     * complete bundle, when there is one. The installer used to store its absolute {@code java -cp} command as an
+     * override of a blank default, so "Reset to default" (or settings imported from another machine) disconnected
+     * a bundle still sitting in the config folder and only a second download brought it back (review 2, A3).
+     */
+    public static String effectiveCommand(@Nullable String configured, @Nullable Path configDir) {
+        String raw = configured == null ? "" : configured.strip();
+        if (!raw.isEmpty()) {
+            return raw;
+        }
+        String own = ownCommand(configDir);
+        return own == null ? raw : own;
+    }
+
+    /**
+     * Whether {@code configured} is not the user's own choice of pom server: blank, or a {@code java -cp} into
+     * Editora's own folder (what an earlier install wrote). Install replaces such a command, so the install banner
+     * may offer it; any other command is the user's, and a missing one leads to Settings instead.
+     */
+    public static boolean editorasOwn(@Nullable String configured, @Nullable Path configDir) {
+        String raw = configured == null ? "" : configured.strip();
+        if (raw.isEmpty()) {
+            return true;
+        }
+        if (configDir == null) {
+            return false;
+        }
+        return classpathDir(com.editora.run.ProgramArgs.commandLine(raw))
+                .map(dir -> sameFolder(dir, folder(configDir)))
+                .orElse(false);
+    }
+
+    /**
+     * Whether an installer's command for the pom server is Editora's own bundle (a {@code java -cp} into a
+     * {@code plugins/lsp/maven} folder), which the setting need not hold. Pure.
+     */
+    public static boolean isOwnInstall(@Nullable String installedCommand) {
+        if (installedCommand == null || installedCommand.isBlank()) {
+            return false;
+        }
+        return classpathDir(com.editora.run.ProgramArgs.commandLine(installedCommand))
+                .map(dir -> {
+                    try {
+                        return dir.endsWith(Path.of(InstallCatalog.LEMMINX_MAVEN_DIR));
+                    } catch (RuntimeException e) {
+                        return false;
+                    }
+                })
+                .orElse(false);
+    }
+
+    private static boolean sameFolder(Path a, Path b) {
+        try {
+            return a.toAbsolutePath().normalize().equals(b.toAbsolutePath().normalize());
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 }

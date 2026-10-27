@@ -542,6 +542,7 @@ final class LspCoordinator {
         lspManager.setOnStartFailed(this::onStartFailed);
         lspManager.setOnStartRefused(this::onStartRefused);
         lspManager.setOnRequestError(this::onRequestError);
+        pomCompletionNotice = new PomServerSupport(host::setStatus);
         lspManager.setApplyEditHandler(this::applyWorkspaceEditsConfirmed); // server quick-fix edits land here (#670)
         lspManager.setOnEditBlocked(this::editBlocked);
         lspManager.setOnRefreshRequested(this::refreshRequested);
@@ -1013,6 +1014,17 @@ final class LspCoordinator {
     private boolean folderTrusted(Path folder) {
         com.editora.config.ConfigManager config = ops.config();
         return config != null && config.getTrustStore().isTrusted(folder);
+    }
+
+    /**
+     * Whether {@code b} is a pom.xml kept on the plain XML server because its folder is not trusted: the Maven
+     * server resolves and runs the build's plugins, so it starts only in a trusted folder (review 2, E1). The pom
+     * install banner leaves such a file to the trust offer.
+     */
+    boolean pomWithheldUntrusted(EditorBuffer b) {
+        Path p = b == null ? null : lspPath(b);
+        Path dir = p == null ? null : p.toAbsolutePath().getParent();
+        return dir != null && isPomBuffer(b) && !folderTrusted(dir);
     }
 
     /**
@@ -1930,6 +1942,10 @@ final class LspCoordinator {
         if ("xml".equals(serverId) && com.editora.install.XmlServerInstall.editorasOwn(command, configDir())) {
             return null; // what an earlier install wrote: Install replaces it, it is not the user's own (review A6)
         }
+        if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)
+                && com.editora.install.MavenServerInstall.editorasOwn(command, configDir())) {
+            return null; // likewise for the pom server's own bundle (review 2, A1)
+        }
         String normalized = String.join(" ", com.editora.lsp.LspServerRegistry.tokenize(command));
         String fallback = com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId);
         return normalized.equals(String.join(" ", com.editora.lsp.LspServerRegistry.tokenize(fallback)))
@@ -1943,22 +1959,28 @@ final class LspCoordinator {
     }
 
     /** The command a server is started with: {@link #serverCommand(String)}, a blank one filled in with
-     *  Editora's own copy where it keeps one outside PATH (lemminx, review A9). */
+     *  Editora's own copy where it keeps one outside PATH (lemminx, review A9; the pom server, review 2 A3). */
     private String launchCommand(String serverId) {
-        return withOwnCopy(serverId, serverCommand(serverId), configDir());
+        return withOwnCopy(
+                serverId, serverCommand(serverId), configDir(), host.settings().getMavenJdkHome());
     }
 
-    /** {@code command} for {@code serverId}, Editora's own copy standing in for a blank XML command. Pure but
-     *  for file lookups. */
-    static String withOwnCopy(String serverId, @Nullable String command, @Nullable Path configDir) {
+    /** {@code command} for {@code serverId}, Editora's own copy standing in for a blank XML or pom command — the
+     *  pom server's on the Maven JDK ({@code jdkHome}), as a stored one is. Pure but for file lookups. */
+    static String withOwnCopy(
+            String serverId, @Nullable String command, @Nullable Path configDir, @Nullable String jdkHome) {
         String raw = command == null ? "" : command;
+        if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId) && raw.isBlank()) {
+            String own = com.editora.install.MavenServerInstall.effectiveCommand(raw, configDir);
+            return own.isBlank() ? raw : com.editora.lsp.JvmServerCommand.withJdk(own, jdkHome == null ? "" : jdkHome);
+        }
         return "xml".equals(serverId) ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir) : raw;
     }
 
     /** {@link #commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
     static Map<String, String> launchCommandsForAllServers(com.editora.config.Settings s, @Nullable Path configDir) {
         Map<String, String> commands = commandsForAllServers(s);
-        commands.replaceAll((id, command) -> withOwnCopy(id, command, configDir));
+        commands.replaceAll((id, command) -> withOwnCopy(id, command, configDir, s.getMavenJdkHome()));
         return commands;
     }
 
@@ -3095,7 +3117,9 @@ final class LspCoordinator {
             if (mavenOk == null) {
                 return null; // not yet probed — don't open on the plain XML server first; wait for the probe
             }
-            if (mavenOk) {
+            // A host runs the pom server only with a command of its own (lsp.maven-pom in its tools): the local one
+            // loads this machine's jars (review 2, A5). Without one the host's plain lemminx serves the pom.
+            if (mavenOk && PomServerSupport.pomServerRunsFor(p, serverCommand(pomServer))) {
                 return pomServer;
             }
             // probed and absent → fall through to the plain XML server (base-XML LSP still works)
@@ -3133,15 +3157,23 @@ final class LspCoordinator {
                 ? buffer.getArea().getParagraph(line).getText()
                 : "";
         String prefix = com.editora.lsp.MavenPomServer.elementPrefix(lineText, column);
+        String coordinate = PomServerSupport.coordinateElement(lineText, column);
         return result -> {
             var items = com.editora.lsp.MavenPomServer.filterCompletion(
                     prefix, result.items(), com.editora.completion.Completion::label);
+            pomCompletionNotice.onCompletion( // a malformed pom elsewhere empties it: say which (review 2, E3)
+                    coordinate,
+                    items.stream().map(com.editora.completion.Completion::label).toList(),
+                    lspRootFor(buffer, com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID),
+                    () -> PomServerSupport.openPoms(host::forEachBuffer));
             cb.accept(
                     items == result.items()
                             ? result
                             : new com.editora.completion.CompletionResult(items, result.incomplete()));
         };
     }
+
+    private final PomServerSupport pomCompletionNotice;
 
     /** The accept hook for a completion item: resolve it + apply any additional edits (a TypeScript
      *  auto-import's {@code import} line). Returns null when the item can't carry extra edits. */

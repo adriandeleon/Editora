@@ -111,4 +111,49 @@ class MavenServerInstallTest {
                 MavenServerInstall.REQUIRED_JAR_PREFIXES.size(),
                 MavenServerInstall.missingJars(argv).size());
     }
+
+    /** A complete bundle under {@code config}'s own folder. */
+    private Path ownBundle(Path config) throws IOException {
+        Path dir = Files.createDirectories(MavenServerInstall.folder(config));
+        for (String name : List.of(
+                "org.eclipse.lemminx-0.30.1.jar",
+                "lemminx-maven-0.12.0.jar",
+                "guava-33.7.2-jre.jar",
+                "commons-lang3-3.21.0.jar",
+                "jsoup-1.23.2.jar")) {
+            Files.createFile(dir.resolve(name));
+        }
+        return dir;
+    }
+
+    /** Review 2, A3: a blank pom command runs Editora's own complete bundle, as a blank XML command runs lemminx. */
+    @Test
+    void aBlankCommandRunsEditorasOwnCompleteBundle() throws IOException {
+        Path config = tmp.resolve("cfg");
+        assertEquals("", MavenServerInstall.effectiveCommand("", config), "nothing installed: still blank");
+        Path dir = ownBundle(config);
+        String own = InstallCatalog.jvmClasspathCommand(dir, InstallCatalog.LEMMINX_MAIN_CLASS);
+        assertEquals(own, MavenServerInstall.effectiveCommand("", config));
+        assertEquals(own, MavenServerInstall.effectiveCommand("  ", config));
+        assertEquals(own, MavenServerInstall.ownCommand(config));
+        assertEquals("my-pom-server", MavenServerInstall.effectiveCommand(" my-pom-server ", config), "the user's own");
+        Files.delete(dir.resolve("guava-33.7.2-jre.jar"));
+        assertEquals("", MavenServerInstall.effectiveCommand("", config), "an incomplete bundle is not run");
+    }
+
+    @Test
+    void editorasOwnCommandsAreBlankOrIntoItsOwnFolder() {
+        Path config = tmp.resolve("cfg");
+        String own = InstallCatalog.jvmClasspathCommand(
+                MavenServerInstall.folder(config), InstallCatalog.LEMMINX_MAIN_CLASS);
+        assertTrue(MavenServerInstall.editorasOwn("", config));
+        assertTrue(MavenServerInstall.editorasOwn(own, config));
+        assertTrue(MavenServerInstall.editorasOwn(
+                "/jdk/bin/java -cp \"" + MavenServerInstall.folder(config) + "/*\" X", config));
+        assertFalse(MavenServerInstall.editorasOwn("/opt/nope/bin/java -cp /opt/nope/* X", config));
+        assertFalse(MavenServerInstall.editorasOwn("my-pom-server", config));
+        assertTrue(MavenServerInstall.isOwnInstall(own));
+        assertFalse(MavenServerInstall.isOwnInstall("java -cp \"/opt/lemminx-maven/*\" X"));
+        assertFalse(MavenServerInstall.isOwnInstall(""));
+    }
 }
