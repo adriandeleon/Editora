@@ -24,7 +24,8 @@ import org.jspecify.annotations.Nullable;
  * Editora declares ({@code extendedClientCapabilities}), the client commands lemminx may ask for, and Go to
  * Definition's XML fallbacks — lemminx's {@code definition} answers an element with its own other tag, while its
  * {@code typeDefinition} goes to the XSD/DTD declaration and its {@code documentLink} names the schema a
- * {@code schemaLocation}, {@code DOCTYPE} system id, {@code xml-model} href or {@code xsl:include} refers to.
+ * {@code schemaLocation}, {@code DOCTYPE} system id or {@code xml-model} href refers to; the stylesheet an
+ * {@code xsl:include} or {@code xsl:import} names, which lemminx does not link, Editora resolves itself.
  *
  * <p>Pure apart from {@link #definition}, which composes a session's requests.
  */
@@ -282,8 +283,9 @@ public final class XmlServer {
      * Go to Definition on the XML server (XML review B5, B10): lemminx's {@code definition}; when that finds nothing
      * or only the element's own other tag, the grammar declaration ({@code typeDefinition}) instead; and when that
      * finds nothing either, the file a document link at the position names — the schema of a {@code schemaLocation},
-     * the DTD of a DOCTYPE, an {@code xml-model} href, an {@code xsl:include}. A link to a web page is not followed
-     * (there is no file to open); the definition's own answer then stands.
+     * the DTD of a DOCTYPE, an {@code xml-model} href. Last, on the {@code href} of an {@code xsl:include} or
+     * {@code xsl:import}, the stylesheet it names: lemminx has no link for those (XML review 2 B3). A link to a web
+     * page is not followed (there is no file to open); the definition's own answer then stands.
      */
     static CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
             LanguageServerSession s, String key, Position pos) {
@@ -298,11 +300,13 @@ public final class XmlServer {
                         if (!isEmpty(types)) {
                             return CompletableFuture.completedFuture(types);
                         }
-                        return linkLocation(s, key, pos)
-                                .thenApply(link -> link == null
-                                        ? found
-                                        : Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(
-                                                List.of(link)));
+                        return linkLocation(s, key, pos).thenApply(link -> {
+                            Location to = link != null ? link : includeLocation(s, key, pos);
+                            return to == null
+                                    ? found
+                                    : Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(
+                                            List.of(to));
+                        });
                     });
         });
     }
@@ -328,5 +332,77 @@ public final class XmlServer {
                     return new Location(target, new Range(new Position(0, 0), new Position(0, 0)));
                 })
                 .exceptionally(t -> null);
+    }
+
+    /** An {@code href} attribute's value, quoted either way, with its value group. */
+    private static final java.util.regex.Pattern HREF =
+            java.util.regex.Pattern.compile("\\bhref\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')");
+
+    /**
+     * The {@code href} value {@code offset} is in, when it is the {@code href} of an {@code include} or
+     * {@code import} element with a prefix — {@code xsl:include}, {@code xsl:import}, XInclude's {@code xi:include}
+     * — else null. An XSD's {@code xs:include} names its file by {@code schemaLocation}, which lemminx links itself.
+     */
+    static @Nullable String includeHref(String text, int offset) {
+        if (offset < 0 || offset > text.length()) {
+            return null;
+        }
+        int lt = text.lastIndexOf('<', Math.max(0, offset - 1));
+        int gt = lt < 0 ? -1 : text.indexOf('>', lt);
+        if (lt < 0 || (gt >= 0 && gt < offset)) {
+            return null;
+        }
+        int tagEnd = gt < 0 ? text.length() : gt;
+        int nameEnd = lt + 1;
+        while (nameEnd < tagEnd && isNameChar(text.charAt(nameEnd))) {
+            nameEnd++;
+        }
+        String name = text.substring(lt + 1, nameEnd);
+        int colon = name.indexOf(':');
+        String local = colon < 0 ? "" : name.substring(colon + 1);
+        if (colon <= 0 || !(local.equals("include") || local.equals("import"))) {
+            return null;
+        }
+        java.util.regex.Matcher m = HREF.matcher(text).region(nameEnd, tagEnd);
+        while (m.find()) {
+            int group = m.group(1) != null ? 1 : 2;
+            if (m.start(group) <= offset && offset <= m.end(group)) {
+                String href = m.group(group).trim();
+                return href.isEmpty() ? null : href;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The file a relative {@code href} names, resolved against the wire URI {@code documentUri}: its wire URI, or
+     * null for an absolute URL, a reference that cannot be parsed, or (on this machine) a file that is not there.
+     */
+    static @Nullable String resolveInclude(String documentUri, String href, WireUris uris) {
+        java.net.URI relative;
+        try {
+            relative = new java.net.URI(null, null, href.replace('\\', '/'), null);
+            if (href.contains(":")) {
+                return null; // http:, file:, a drive letter: not a relative reference
+            }
+            String target = java.net.URI.create(documentUri).resolve(relative).toString();
+            Path file = uris.toPath(target);
+            if (file == null
+                    || (file.getFileSystem() == java.nio.file.FileSystems.getDefault()
+                            && !java.nio.file.Files.isRegularFile(file))) {
+                return null;
+            }
+            return target;
+        } catch (java.net.URISyntaxException | IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /** The stylesheet the {@code xsl:include}/{@code xsl:import} href at {@code pos} names, at its start; or null. */
+    private static @Nullable Location includeLocation(LanguageServerSession s, String key, Position pos) {
+        String text = s.documentSnapshots().get(key);
+        String href = text == null ? null : includeHref(text, offset(text, pos));
+        String target = href == null ? null : resolveInclude(s.uris().toWire(key), href, s.uris());
+        return target == null ? null : new Location(target, new Range(new Position(0, 0), new Position(0, 0)));
     }
 }

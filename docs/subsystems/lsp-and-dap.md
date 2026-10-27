@@ -674,7 +674,8 @@ for a client with dynamic `workspace/executeCommand` registration, which `client
 declares; registrations add up (`withCommands`). Go to Definition (and so Ctrl/Cmd-click and Peek) on the XML
 server goes through `XmlServer.definition`: lemminx's own answer, unless that is only the element's other tag, then
 `typeDefinition` (the XSD declaration), then the `documentLink` at the caret (`schemaLocation`, DOCTYPE system id,
-`xml-model` href, `xsl:include`). Editora's own auto-close and auto-rename tag stay; lemminx's `xml/closeTag` and
+`xml-model` href), then, since lemminx links no stylesheet, a relative `href` of an `xsl:include`/`xsl:import` (or
+`xi:include`) resolved by Editora itself (`XmlServer.includeHref`). Editora's own auto-close and auto-rename tag stay; lemminx's `xml/closeTag` and
 `linkedEditingRange` are not requested.
 
 **A refused `initialize` is not a crash.** A server that answers `initialize` with an error (its message kept as
