@@ -1008,6 +1008,34 @@ class LspCoordinatorCommandsFxTest {
         assertEquals(SOURCE, fx.server().opened.get(0).getTextDocument().getText());
     }
 
+    /**
+     * XML review A4: a server that exits before it is ready at every start — lemminx's native build on too old a
+     * glibc — says why when it is given up on, and Doctor and Install hear it as given up on, not as installed.
+     */
+    @Test
+    void aServerThatKeepsDyingAtStartSaysWhy() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        String why = "lemminx: version `GLIBC_2.34' not found";
+        String loop = tr("status.lsp.crashLoopReason", tr("install.lang.java"), why);
+        for (int i = 0; i < 12 && !fx.host.statuses.contains(loop); i++) {
+            FxTestSupport.runOnFx(() -> {
+                if (fx.manager.isManaged(b.getPath())) {
+                    LspTestHooks.simulateStartupDeath(fx.manager, b.getPath(), why);
+                }
+            });
+            fx.settle();
+        }
+
+        assertTrue(fx.host.statuses.contains(loop), "the crash loop is reported with the server's own words");
+        assertEquals(why, FxTestSupport.callOnFx(() -> fx.coordinator.serverCrash("java")));
+        LspCoordinator.ServerTrouble trouble = FxTestSupport.callOnFx(() -> fx.coordinator.serverTrouble("java"));
+        assertTrue(trouble.crashed());
+        assertEquals(why, trouble.detail());
+        fx.run(() -> fx.coordinator.restartServers());
+        assertNull(
+                FxTestSupport.callOnFx(() -> fx.coordinator.serverCrash("java")), "a restart gives it a fresh chance");
+    }
+
     @Test
     void aCrashedServerIsRestartedUntilItKeepsCrashing() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);

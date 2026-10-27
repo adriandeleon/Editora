@@ -944,9 +944,20 @@ found, via `lspCoordinator.isServerAvailable("java")`; python/js = their enable 
 ## Installed versions: pins, receipts and floors
 
 Editora installs some servers and tools at an **exact release** (jdtls, vscode-js-debug, lemminx-maven, gls,
-Metals, JetBrains' Kotlin LSP, clojure-lsp, ShellCheck, shfmt): the version constants in `InstallCatalog`, listed
-with their steps in `install/PinnedVersions`. Every other installer takes whatever is latest (npm, pip, `go
+Metals, JetBrains' Kotlin LSP, clojure-lsp, lemminx, ShellCheck, shfmt): the version constants in `InstallCatalog`,
+listed with their steps in `install/PinnedVersions`. Every other installer takes whatever is latest (npm, pip, `go
 install …@latest`, rustup, the GitHub `releases/latest` archives).
+
+- **lemminx (XML).** vscode-xml's native build (`LEMMINX_VERSION`, which ships `LEMMINX_SERVER_VERSION`), one zip
+  per platform: the zip is checked against GitHub's SHA-256 for the asset and the program inside against the
+  release's own `lemminx-<platform>.sha256` (`PinnedAsset.member`/`memberSha256`), installed as plain `lemminx` in
+  `plugins/lsp/xml`, and asked to answer `initialize` (`JvmLspSmoke.initializeCheck`) before it is swapped in — it
+  needs glibc 2.34. One that cannot run installs nothing; when the pom.xml server's bundle is complete the XML
+  command becomes its Java lemminx instead (`InstallService.javaLemminx`). The installer leaves the XML command
+  blank: `XmlServerInstall.effectiveCommand` makes a blank (or bare `lemminx`, or a stale path into that folder)
+  command run Editora's copy, including one from before the pin (`lemminx-<platform>`). A server that dies before
+  `initialize` at every start reports its first stderr line (`LspManager.crashReason`) in the crash-loop notice,
+  Settings and Doctor (`LspCoordinator.serverTrouble`).
 
 - **Receipts.** After a pinned step installs, `InstallService` writes `.editora-install` (`InstallReceipt`: step id,
   version, time) into its folder. A dot file and not a jar, so neither a `<dir>/*` classpath nor `findBinary` sees

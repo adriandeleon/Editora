@@ -892,10 +892,21 @@ final class LspCoordinator {
             return;
         }
         boolean restart = shouldAutoRestart(crashKey(serverId, root), System.nanoTime());
+        // What it said before it ever answered (a native build on too old a glibc), shown rather than left in the
+        // Debug Log, and kept for Doctor and the install path while it is given up on (XML review A4).
+        String reason = lspManager.crashReason(serverId);
         if (!restart) {
             startBlocked.add(crashKey(serverId, root)); // E5: given up — opening another tab must not fork it again
+            if (reason != null) {
+                crashedServers.put(serverId, reason);
+            }
         }
-        host.setStatus(tr(restart ? "status.lsp.crashed" : "status.lsp.crashLoop", serverLabel(serverId)));
+        host.setStatus(
+                restart
+                        ? tr("status.lsp.crashed", serverLabel(serverId))
+                        : reason == null
+                                ? tr("status.lsp.crashLoop", serverLabel(serverId))
+                                : tr("status.lsp.crashLoopReason", serverLabel(serverId), reason));
         forEachCrashedBuffer(serverId, root, b -> {
             Path p = lspPath(b);
             b.setLspActive(false); // drop the dead session's squiggles/stripes immediately
@@ -1108,6 +1119,32 @@ final class LspCoordinator {
     String serverFailure(String serverId) {
         return failingServers.get(serverId);
     }
+
+    /** Servers given up on after crashing at every start, by id → what they said first (see {@link #sessionCrashed}). */
+    private final Map<String, String> crashedServers = new java.util.HashMap<>();
+
+    /**
+     * Why {@code serverId} keeps exiting before it is ready ("version `GLIBC_2.34' not found"), while it is given
+     * up on; else null. Doctor and Settings show it, and Install treats such a server as not installed.
+     */
+    @Nullable
+    String serverCrash(String serverId) {
+        return crashedServers.get(serverId);
+    }
+
+    /** {@link #serverFailure} or {@link #serverCrash}, whichever says why {@code serverId} is given up on. */
+    @Nullable
+    ServerTrouble serverTrouble(String serverId) {
+        String crash = crashedServers.get(serverId);
+        if (crash != null) {
+            return new ServerTrouble(crash, true);
+        }
+        String failing = failingServers.get(serverId);
+        return failing == null ? null : new ServerTrouble(failing, false);
+    }
+
+    /** Why a server is given up on: what it said, and whether it crashed at start rather than failed requests. */
+    record ServerTrouble(String detail, boolean crashed) {}
 
     /** The user-facing name of an LSP request, for the echo line ("internal error on hover"). */
     static String methodLabel(String method) {
@@ -1511,6 +1548,7 @@ final class LspCoordinator {
     void applySupport() {
         startBlocked.clear(); // a settings change (an install, a trust decision) may be what the server lacked
         failingServers.clear();
+        crashedServers.clear();
         boolean on = ops.lspFeatureEnabled(); // effective: off in Simple UI mode
         // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
         // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
@@ -1618,7 +1656,7 @@ final class LspCoordinator {
     Map<String, String> effectiveCommands() {
         Map<String, String> commands = commandsForAllServers(host.settings());
         for (String serverId : SERVER_IDS) {
-            commands.put(serverId, serverCommand(serverId));
+            commands.put(serverId, launchCommand(serverId));
         }
         return commands;
     }
@@ -1814,6 +1852,9 @@ final class LspCoordinator {
         if (command == null || command.isBlank()) {
             return null;
         }
+        if ("xml".equals(serverId) && com.editora.install.XmlServerInstall.editorasOwn(command, configDir())) {
+            return null; // what an earlier install wrote: Install replaces it, it is not the user's own (review A6)
+        }
         String normalized = String.join(" ", com.editora.lsp.LspServerRegistry.tokenize(command));
         String fallback = com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId);
         return normalized.equals(String.join(" ", com.editora.lsp.LspServerRegistry.tokenize(fallback)))
@@ -1824,6 +1865,31 @@ final class LspCoordinator {
     /** The configured command for a server id (blank ⇒ the server's default). */
     private String serverCommand(String serverId) {
         return projectSettings().commandFor(serverId, serverCommand(host.settings(), serverId), projectTrusted());
+    }
+
+    /** The command a server is started with: {@link #serverCommand(String)}, a blank one filled in with
+     *  Editora's own copy where it keeps one outside PATH (lemminx, review A9). */
+    private String launchCommand(String serverId) {
+        return withOwnCopy(serverId, serverCommand(serverId), configDir());
+    }
+
+    /** {@code command} for {@code serverId}, Editora's own copy standing in for a blank XML command. Pure but
+     *  for file lookups. */
+    static String withOwnCopy(String serverId, @Nullable String command, @Nullable Path configDir) {
+        String raw = command == null ? "" : command;
+        return "xml".equals(serverId) ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir) : raw;
+    }
+
+    /** {@link #commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
+    static Map<String, String> launchCommandsForAllServers(com.editora.config.Settings s, @Nullable Path configDir) {
+        Map<String, String> commands = commandsForAllServers(s);
+        commands.replaceAll((id, command) -> withOwnCopy(id, command, configDir));
+        return commands;
+    }
+
+    private @Nullable Path configDir() {
+        com.editora.config.ConfigManager config = ops.config();
+        return config == null ? null : config.getConfigDir();
     }
 
     /** Whether the user (or a trusted project) set this server's command, rather than leaving the default (Doctor). */
@@ -2196,7 +2262,8 @@ final class LspCoordinator {
         return switch (serverId) {
             case "typescript" -> s.getTypescriptLspCommand();
             case "python" -> s.getPythonLspCommand();
-            case "xml" -> s.getXmlLspCommand();
+            // A Java lemminx (the pom.xml server's, where the native build cannot run) runs on the Maven JDK too.
+            case "xml" -> com.editora.lsp.JvmServerCommand.withJdk(s.getXmlLspCommand(), s.getMavenJdkHome());
             case "json" -> s.getJsonLspCommand();
             case "bash" -> s.getBashLspCommand();
             case "yaml" -> s.getYamlLspCommand();
@@ -2236,7 +2303,7 @@ final class LspCoordinator {
      * default; empty for a server with neither (an uninstalled {@code maven-pom}). Doctor-screen read.
      */
     java.util.List<String> serverArgv(String serverId) {
-        String raw = serverCommand(serverId);
+        String raw = launchCommand(serverId);
         return com.editora.lsp.LspServerRegistry.commandFor(
                 serverId, raw == null ? java.util.Map.of() : java.util.Map.of(serverId, raw));
     }
@@ -3588,6 +3655,7 @@ final class LspCoordinator {
      */
     void stopServer(String serverId) {
         failingServers.remove(serverId); // the new copy gets a fresh chance
+        crashedServers.remove(serverId);
         clearDiagnosticsForServer(serverId); // before shutdown: after it, nothing would re-publish an empty list
         lspManager.shutdownServer(serverId);
     }
@@ -3596,6 +3664,7 @@ final class LspCoordinator {
     void restartServers() {
         startBlocked.clear();
         failingServers.clear();
+        crashedServers.clear();
         importFailed.clear();
         nonProjectFiles.clear();
         refreshImportNotes();

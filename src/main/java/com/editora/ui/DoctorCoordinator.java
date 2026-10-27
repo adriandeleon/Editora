@@ -80,8 +80,11 @@ final class DoctorCoordinator {
         /** The server's tokenized launch argv (configured command, blank ⇒ default; empty = unconfigured). */
         List<String> lspServerArgv(String serverId);
 
-        /** Why the server was given up on after failing its requests (Maven review C2), or null while it is not. */
-        default @Nullable String lspServerFailure(String serverId) {
+        /**
+         * Why the server was given up on — it failed its requests (Maven review C2), or it exits before it is ready
+         * at every start (XML review A4) — or null while it is not.
+         */
+        default LspCoordinator.@Nullable ServerTrouble lspServerFailure(String serverId) {
             return null;
         }
 
@@ -1064,7 +1067,7 @@ final class DoctorCoordinator {
         }
         boolean python = "python".equals(serverId);
         boolean configured = ops.lspServerCommandSet(serverId);
-        String failing = ops.lspServerFailure(serverId);
+        LspCoordinator.ServerTrouble failing = ops.lspServerFailure(serverId);
         PinnedVersions.Pin pin = PinnedVersions.forServer(serverId).orElse(null);
         Path config = host.configDir();
         String latest = latestFor(row.id());
@@ -1103,7 +1106,9 @@ final class DoctorCoordinator {
                 }
             }
             if (failing != null) {
-                return base.warn(failing, "doctor.tip.serverFailing"); // it starts, then fails every request (C2)
+                // it starts, then fails every request (C2); or it exits before it is ready, saying why (XML A4)
+                return base.warn(
+                        failing.detail(), failing.crashed() ? "doctor.tip.serverCrashing" : "doctor.tip.serverFailing");
             }
             if (pin != null) {
                 // Which release, and whether it is older than the one Editora installs and is tested with (D8).

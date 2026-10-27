@@ -7964,7 +7964,8 @@ public class SettingsWindow {
         // Probe the commands this page shows, without configuring the manager. This window must not
         // (re)configure it: doing so with the global commands replaced a trusted project's override and
         // shut its running server down every time Settings was merely opened.
-        java.util.Map<String, String> shown = LspCoordinator.commandsForAllServers(config.getSettings());
+        java.util.Map<String, String> shown =
+                LspCoordinator.launchCommandsForAllServers(config.getSettings(), config.getConfigDir());
         for (LspServerUi srv : lspServerUis()) {
             ToolStatusRow status = lspStatusLabels.get(srv.id());
             if (status == null) {
@@ -7994,10 +7995,16 @@ public class SettingsWindow {
                                     lspCheck.isSelected());
                             return;
                         }
-                        status.show(
-                                found,
-                                found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "",
-                                lspCheck.isSelected());
+                        String crash = found && projectLsp != null ? projectLsp.serverCrash(srv.id()) : null;
+                        if (crash != null) { // found, but it exits before it is ready: not "Installed" (XML A4)
+                            String name = lspToolName(srv.id(), argv);
+                            status.showProblem(tr("settings.lsp.crashing", name, crash), lspCheck.isSelected());
+                            return;
+                        }
+                        String where = found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "";
+                        where = com.editora.install.PinnedVersions.withVersion(
+                                srv.id(), argv, config.getConfigDir(), where);
+                        status.show(found, where, lspCheck.isSelected());
                     });
         }
     }
@@ -8034,7 +8041,7 @@ public class SettingsWindow {
     /** The argv the LSP page shows for {@code serverId}: its global command, blank ⇒ the default. */
     private List<String> lspArgv(String serverId) {
         return com.editora.lsp.LspServerRegistry.commandFor(
-                serverId, LspCoordinator.commandsForAllServers(config.getSettings()));
+                serverId, LspCoordinator.launchCommandsForAllServers(config.getSettings(), config.getConfigDir()));
     }
 
     /** The program a server runs, as its pill names it: the display-name table first (the pom.xml server runs

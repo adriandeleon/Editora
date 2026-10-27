@@ -1995,6 +1995,18 @@ public final class LspManager {
         this.onServerStatus = listener;
     }
 
+    /** Per server: what its last session that died before answering {@code initialize} wrote to stderr first. */
+    private final Map<String, String> crashReasons = new ConcurrentHashMap<>();
+
+    /**
+     * Why {@code serverId}'s last session died, when it died before it was ever ready and said something on
+     * stderr ("version `GLIBC_2.34' not found"); else null. A crash after it served is not explained here: its
+     * stderr is a log by then, not a reason (XML review A4).
+     */
+    public @Nullable String crashReason(String serverId) {
+        return crashReasons.get(serverId);
+    }
+
     /** Sets the session-crashed callback (see {@link #onSessionCrashed}); marshaled to the FX thread. */
     public void setOnSessionCrashed(BiConsumer<String, Path> callback) {
         this.onSessionCrashed = callback == null ? (id, root) -> {} : callback;
@@ -2127,6 +2139,12 @@ public final class LspManager {
                 repairAfterExit(key, session.exited(), workspaceName);
             } else {
                 releaseJdtlsWorkspaceName(workspaceName);
+            }
+            String said = session.initializedOnce() ? null : session.firstStderrLine();
+            if (said == null) {
+                crashReasons.remove(session.serverId());
+            } else {
+                crashReasons.put(session.serverId(), said);
             }
             Platform.runLater(() -> onSessionCrashed.accept(session.serverId(), session.root()));
         } else {

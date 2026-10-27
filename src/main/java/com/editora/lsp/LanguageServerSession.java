@@ -608,6 +608,7 @@ final class LanguageServerSession implements LanguageClient {
             // refusal, not as a crash that a restart would repeat (Node review B3).
             process.onExit().thenRunAsync(() -> {
                 awaitReaderDrained();
+                awaitStderrDrained(); // what it said on the way out is the reason a crash notice gives
                 markDead();
             });
             // Drain the server's stderr on a daemon thread (LSP traffic is on stdout). It MUST be drained —
@@ -669,6 +670,10 @@ final class LanguageServerSession implements LanguageClient {
                             p.getErrorStream(), java.nio.charset.StandardCharsets.UTF_8))) {
                         String line;
                         while ((line = r.readLine()) != null) {
+                            if (firstStderrLine == null && !line.isBlank()) {
+                                String first = line.strip();
+                                firstStderrLine = first.length() > 240 ? first.substring(0, 240) + "…" : first;
+                            }
                             if (logged < STDERR_LOG_CAP) {
                                 LOG.info("[" + command.get(0) + " stderr] " + line);
                                 if (++logged == STDERR_LOG_CAP) {
@@ -683,7 +688,37 @@ final class LanguageServerSession implements LanguageClient {
                 },
                 "lsp-stderr-" + command.get(0));
         t.setDaemon(true);
+        stderrDrain = t;
         t.start();
+    }
+
+    /** The thread reading the server's stderr, once started. */
+    private volatile @Nullable Thread stderrDrain;
+
+    /** The first non-blank line the server wrote to stderr, or null while it has written none. */
+    private volatile @Nullable String firstStderrLine;
+
+    /**
+     * The first non-blank line the server wrote to stderr (cut to 240 characters), or null. For a server that
+     * exits before it answers {@code initialize} this is the reason: a native build on too old a C library says
+     * "version `GLIBC_2.34' not found" there and nowhere else (XML review A4).
+     */
+    @Nullable
+    String firstStderrLine() {
+        return firstStderrLine;
+    }
+
+    /** Waits briefly for the stderr reader to reach the end of a process that has exited. */
+    private void awaitStderrDrained() {
+        Thread t = stderrDrain;
+        if (t == null) {
+            return;
+        }
+        try {
+            t.join(500);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static final int STDERR_LOG_CAP = 200;
@@ -1323,6 +1358,14 @@ final class LanguageServerSession implements LanguageClient {
      *  via {@code process.onExit()}. Distinct from {@link #dispose()}: a session that died but was never
      *  disposed is what the auto-restart keys on (#666), and that distinction had no test. */
     void simulateServerDeathForTest() {
+        markDead();
+    }
+
+    /** TEST SEAM — {@link #simulateServerDeathForTest} for a server that died before it ever answered
+     *  {@code initialize}, having said {@code stderr} first (a native build on too old a glibc). */
+    void simulateStartupDeathForTest(String stderr) {
+        initializedOnce = false;
+        firstStderrLine = stderr;
         markDead();
     }
 
