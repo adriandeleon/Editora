@@ -1848,7 +1848,8 @@ class LspWorkspaceEditFxTest {
         assertEquals("class Canvas {}\n", applied.files().get(0).before(), "the text before the whole drag");
 
         FxTestSupport.runOnFx(coordinator::undoRefactoring);
-        for (int i = 0; i < 100 && !Files.exists(big); i++) {
+        // The moves back and Canvas's text land separately; under CI load the files were back before the text was.
+        for (int i = 0; i < 250 && !(Files.exists(big) && "class Canvas {}\n".equals(Files.readString(canvas))); i++) {
             Thread.sleep(20);
             FxTestSupport.drainFx();
         }
