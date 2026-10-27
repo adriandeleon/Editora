@@ -1947,8 +1947,11 @@ class LspCoordinatorCommandsFxTest {
         String said = fx.host.lastError();
         assertTrue(
                 said.startsWith(tr("status.lsp.importProblemWhy", "jdtls", "").replaceFirst(":.*", "")), said);
-        assertTrue(said.contains(tr("status.lsp.pomUnreadable", "pom.xml", "")), said);
-        assertTrue(said.contains("(line 1, column"), said);
+        // its line and column through the catalog, not English glued on (twelfth review CL4)
+        assertTrue(
+                said.contains(
+                        tr("status.lsp.pomUnreadableAt", "pom.xml", "", 1, 99).replaceFirst("99.*", "")),
+                said);
     }
 
     /**
@@ -1996,7 +1999,11 @@ class LspCoordinatorCommandsFxTest {
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
         awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
         String said = fx.host.lastError();
-        assertTrue(said != null && said.contains(tr("status.lsp.pomUnreadable", "app/pom.xml", "")), said);
+        assertTrue(
+                said != null
+                        && said.contains(tr("status.lsp.pomUnreadableAt", "app/pom.xml", "", 3, 99)
+                                .replaceFirst("99.*", "")),
+                said);
         assertEquals(
                 tr("editor.problemCounter.notImported"),
                 FxTestSupport.callOnFx(() -> FxTestSupport.field(app.problemCounter(), "note")));
@@ -2064,6 +2071,132 @@ class LspCoordinatorCommandsFxTest {
                 "gb's build failed");
         Object besideNote = FxTestSupport.callOnFx(() -> FxTestSupport.field(beside.problemCounter(), "note"));
         assertEquals(null, besideNote, "the file beside it is checked");
+    }
+
+    /**
+     * A failed Gradle build in tools/ under a Maven root whose own pom parses is tools/'s: the root's files stay
+     * checked (twelfth review CM2).
+     */
+    @Test
+    void aFailedBuildUnderARootWithItsOwnBuildIsItsFoldersOwn() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project/>");
+        java.nio.file.Files.createDirectories(root.resolve("tools"));
+        EditorBuffer main = fx.open("A.java", SOURCE);
+        LspTestHooks.logError(fx.manager, main.getPath(), "Could not fetch model of type 'Map'");
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING"));
+        var cause = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.ERROR,
+                "The supplied phased action failed.\nCould not find method nope()",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("tools"), List.of(cause)));
+        awaitError(tr("status.lsp.importProblemWhy", "jdtls", "Could not find method nope()"));
+        Object note = FxTestSupport.callOnFx(() -> FxTestSupport.field(main.problemCounter(), "note"));
+        assertEquals(null, note, "the root's files stay checked");
+    }
+
+    /**
+     * Beside another build under a root with no build file, a pom.xml that does not parse makes its files non-project
+     * files: that build's import failed, named by its pom (twelfth review CL2).
+     */
+    @Test
+    void aBrokenPomBesideAnotherBuildIsAFailedImport() throws Exception {
+        java.nio.file.Files.createDirectories(root.resolve("shelf/src/main/java"));
+        java.nio.file.Files.writeString(root.resolve("shelf/pom.xml"), "<project>\n<brokenTag>\n</project>\n");
+        java.nio.file.Files.createDirectories(root.resolve("gradle2"));
+        java.nio.file.Files.writeString(root.resolve("gradle2/build.gradle"), "plugins { id 'java' }\n");
+        asProject(); // opened as the project: the server's root has no build file of its own
+        EditorBuffer b = fx.open("shelf/src/main/java/Main.java", "class Main {}\n");
+        assertEquals(root, FxTestSupport.callOnFx(() -> fx.manager.javaSessionRoot(b.getPath())), "precondition");
+        var warning = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.WARNING,
+                "Main.java is a non-project file, only syntax errors are reported",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(warning)));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        for (int i = 0; i < 200 && fx.host.lastError() == null; i++) {
+            Thread.sleep(10);
+            fx.settle();
+        }
+        String said = fx.host.lastError();
+        assertTrue(
+                said != null
+                        && said.contains(tr("status.lsp.pomUnreadableAt", "shelf/pom.xml", "", 3, 99)
+                                .replaceFirst("99.*", "")),
+                said);
+        assertEquals(
+                tr("editor.problemCounter.notImported"),
+                FxTestSupport.callOnFx(() -> FxTestSupport.field(b.problemCounter(), "note")));
+    }
+
+    /**
+     * jdtls logs a Java Model Exception for each request on a file outside the source folders: no import failure, so
+     * a later pom break is "the build has problems" (twelfth review CM1).
+     */
+    @Test
+    void aJavaModelExceptionIsNoImportFailure() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "OK"));
+        LspTestHooks.logError(
+                fx.manager,
+                b.getPath(),
+                "Java Model Exception: Java Model Status [scripts [in shelf-debug-demo] does not exist]");
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING"));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.readyWithProblems", "jdtls"));
+        assertEquals(null, fx.host.lastError());
+    }
+
+    /**
+     * Inside the project the Project panel watches only expanded folders: a module's pom.xml changed in a collapsed
+     * one still reaches jdtls, from a build-file watcher of the server root (twelfth review CL1).
+     */
+    @Test
+    void aModulesBuildFileChangeReachesTheServer() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project/>");
+        java.nio.file.Path app = java.nio.file.Files.createDirectories(root.resolve("app"));
+        java.nio.file.Files.writeString(app.resolve("pom.xml"), "<project/>");
+        asProject(); // inside the project: the Project panel's watcher, not the server's, covers the tree
+        fx.open("A.java", SOURCE);
+        String uri = app.resolve("pom.xml").toUri().toString();
+        boolean seen = false;
+        for (int i = 0; i < 300 && !seen; i++) {
+            if (i % 50 == 0) {
+                java.nio.file.Files.writeString(app.resolve("pom.xml"), "<project><!-- " + i + " --></project>");
+            }
+            Thread.sleep(20);
+            fx.settle();
+            seen = FxTestSupport.callOnFx(() -> List.copyOf(fx.server().watchedFiles)).stream()
+                    .flatMap(p -> p.getChanges().stream())
+                    .anyMatch(e -> e.getUri().equals(uri));
+        }
+        assertTrue(seen, "app/pom.xml's change was sent");
+    }
+
+    /**
+     * Makes {@code root} this window's project, as already applied: a project learnt later re-detects the server
+     * commands, which finds no jdtls on a machine without one, and no file would open on the fake server.
+     */
+    private void asProject() throws Exception {
+        fx.ops.projectRoot = root;
+        FxTestSupport.runOnFx(() -> {
+            try {
+                java.lang.reflect.Field applied = LspCoordinator.class.getDeclaredField("appliedProjectRoot");
+                applied.setAccessible(true);
+                applied.set(fx.coordinator, root);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(e);
+            }
+        });
     }
 
     /** A Java file in no source folder of the project is a non-project file by rights: ready (CO2). */

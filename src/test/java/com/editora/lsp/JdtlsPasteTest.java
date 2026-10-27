@@ -135,7 +135,7 @@ class JdtlsPasteTest {
 
     /** The copied file, sent so jdtls names the text's types by its imports (eleventh review A11). */
     @org.junit.jupiter.api.Test
-    void theCopiedFileIsSent() {
+    void theCopiedFileIsSent(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
         String json =
                 JdtlsPaste.paramsJson("file:///x/B.java", 0, 0, 1, 0, "Duration d;\n", 4, true, "file:///x/A.java");
         org.junit.jupiter.api.Assertions.assertEquals(
@@ -144,11 +144,54 @@ class JdtlsPasteTest {
                         .getAsJsonObject()
                         .get("copiedDocumentUri")
                         .getAsString());
-        java.nio.file.Path a = java.nio.file.Path.of("/x/A.java");
+        java.nio.file.Path a = java.nio.file.Files.writeString(dir.resolve("A.java"), "class A {}\n");
         JdtlsPaste.copied("Duration d;\n", a);
         org.junit.jupiter.api.Assertions.assertEquals(a, JdtlsPaste.copiedFrom("Duration d;\r\n"));
         org.junit.jupiter.api.Assertions.assertNull(JdtlsPaste.copiedFrom("other"), "not what was copied");
+        java.nio.file.Files.delete(a);
+        org.junit.jupiter.api.Assertions.assertNull(
+                JdtlsPaste.copiedFrom("Duration d;\n"), "deleted since: jdtls would answer nothing (twelfth AL3)");
         JdtlsPaste.copied("x", java.nio.file.Path.of("/x/notes.md"));
         org.junit.jupiter.api.Assertions.assertNull(JdtlsPaste.copiedFrom("x"), "only a Java file");
+    }
+
+    /** An import edit above the pasted text applies though the user typed after it (twelfth review AL2). */
+    @org.junit.jupiter.api.Test
+    void anImportEditAboveThePasteIsAbove() {
+        var imports = new org.eclipse.lsp4j.WorkspaceEdit(java.util.Map.of(
+                "file:///x/B.java",
+                java.util.List.of(new org.eclipse.lsp4j.TextEdit(
+                        new org.eclipse.lsp4j.Range(
+                                new org.eclipse.lsp4j.Position(1, 0), new org.eclipse.lsp4j.Position(1, 0)),
+                        "import java.time.Instant;\n"))));
+        org.junit.jupiter.api.Assertions.assertTrue(JdtlsPaste.above(imports, 5, 4));
+        org.junit.jupiter.api.Assertions.assertFalse(JdtlsPaste.above(imports, 0, 3), "below the paste");
+        org.junit.jupiter.api.Assertions.assertFalse(
+                JdtlsPaste.above(new org.eclipse.lsp4j.WorkspaceEdit(java.util.Map.of()), 5, 0), "nothing");
+    }
+
+    /**
+     * jdtls's Errors that are no import's failure: a build's compile error, a request on a file outside the source
+     * folders (eleventh and twelfth review CM1).
+     */
+    @org.junit.jupiter.api.Test
+    void requestErrorsAreNoImportFailure() {
+        org.junit.jupiter.api.Assertions.assertFalse(
+                LanguageServerSession.importError("Error occured while building workspace. Details: …"));
+        org.junit.jupiter.api.Assertions.assertFalse(LanguageServerSession.importError(
+                "Java Model Exception: Java Model Status [scripts [in shelf-debug-demo] does not exist]"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                LanguageServerSession.importError("Project build error: Non-parseable POM /x/pom.xml"));
+        org.junit.jupiter.api.Assertions.assertFalse(LanguageServerSession.importError(null));
+    }
+
+    /** The files a server's own watcher reports beside the Project panel: grammars and Java build files (CL1). */
+    @org.junit.jupiter.api.Test
+    void buildFilesAreModelFiles() {
+        org.junit.jupiter.api.Assertions.assertTrue(LspManager.modelFile(java.nio.file.Path.of("app/pom.xml")));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                LspManager.modelFile(java.nio.file.Path.of("lib/build.gradle.kts")));
+        org.junit.jupiter.api.Assertions.assertTrue(LspManager.modelFile(java.nio.file.Path.of("x/note.xsd")));
+        org.junit.jupiter.api.Assertions.assertFalse(LspManager.modelFile(java.nio.file.Path.of("src/A.java")));
     }
 }

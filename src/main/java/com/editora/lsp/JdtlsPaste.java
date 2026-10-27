@@ -96,6 +96,35 @@ public final class JdtlsPaste {
         return params.toString();
     }
 
+    /**
+     * Whether every text edit in {@code edit} ends at or before {@code (line, character)}: the imports a paste needs,
+     * above the pasted text, whatever was typed after it (twelfth review AL2). False for an edit with none, or with a
+     * file operation.
+     */
+    public static boolean above(org.eclipse.lsp4j.WorkspaceEdit edit, int line, int character) {
+        java.util.List<org.eclipse.lsp4j.Range> ranges = new java.util.ArrayList<>();
+        if (edit.getChanges() != null) {
+            edit.getChanges().values().forEach(edits -> edits.forEach(e -> ranges.add(e.getRange())));
+        }
+        if (edit.getDocumentChanges() != null) {
+            for (var change : edit.getDocumentChanges()) {
+                if (!change.isLeft()) {
+                    return false;
+                }
+                change.getLeft()
+                        .getEdits()
+                        .forEach(e -> ranges.add(
+                                e.isLeft()
+                                        ? e.getLeft().getRange()
+                                        : e.getRight().getRange()));
+            }
+        }
+        return !ranges.isEmpty()
+                && ranges.stream()
+                        .allMatch(r -> r.getEnd().getLine() < line
+                                || (r.getEnd().getLine() == line && r.getEnd().getCharacter() <= character));
+    }
+
     /** The text last copied or cut from a Java file, and that file. */
     private record Copy(String text, java.nio.file.Path file) {}
 
@@ -106,10 +135,17 @@ public final class JdtlsPaste {
         lastCopy = file != null && file.toString().endsWith(".java") ? new Copy(text, file) : null;
     }
 
-    /** The Java file {@code pasted} was copied from, when it is the text last copied in Editora; else null. */
+    /**
+     * The Java file {@code pasted} was copied from, when it is the text last copied in Editora and the file is still
+     * there; else null: jdtls answers nothing for a copied file that was deleted or moved (twelfth review AL3).
+     */
     public static java.nio.file.@Nullable Path copiedFrom(String pasted) {
         Copy c = lastCopy;
-        return c != null && c.text().replace("\r\n", "\n").equals(pasted.replace("\r\n", "\n")) ? c.file() : null;
+        return c != null
+                        && c.text().replace("\r\n", "\n").equals(pasted.replace("\r\n", "\n"))
+                        && java.nio.file.Files.isRegularFile(c.file())
+                ? c.file()
+                : null;
     }
 
     /**

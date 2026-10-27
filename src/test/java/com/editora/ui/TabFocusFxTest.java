@@ -123,6 +123,45 @@ class TabFocusFxTest {
         assertSame(now.getFocusedArea(), focusOwner());
     }
 
+    /**
+     * Buffer: Next and the Switcher onto a page tab (Welcome) focus its page: the toolbar's New button or the Project
+     * panel's Float button had it, and Space opened a buffer or floated the panel (twelfth review AL1).
+     */
+    @Test
+    void nextTabAndTheSwitcherOntoAPageFocusThePage() throws Exception {
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "addWelcomeTab", new Class<?>[] {}));
+        settle();
+        EditorArea area = FxTestSupport.field(fx.controller, "editorArea");
+        javafx.scene.control.Tab page = null;
+        for (int i = 0; i < 6 && page == null; i++) {
+            FxTestSupport.runOnFx(() -> reg.run("buffer.next"));
+            settle();
+            javafx.scene.control.Tab tab = FxTestSupport.callOnFx(area::selectedTab);
+            page = MainController.bufferOf(tab) == null ? tab : null;
+        }
+        assertTrue(page != null, "a page tab reached");
+        javafx.scene.control.Tab welcome = page;
+        assertTrue(FxTestSupport.callOnFx(() -> within(welcome.getContent())), "Buffer: Next: the page has focus");
+
+        FxTestSupport.runOnFx(() -> reg.run("buffer.next"));
+        settle();
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                fx.controller, "activateAndFocusTab", new Class<?>[] {javafx.scene.control.Tab.class}, welcome));
+        settle();
+        assertTrue(FxTestSupport.callOnFx(() -> within(welcome.getContent())), "the Switcher: the page has focus");
+    }
+
+    /** Whether the window's focus owner is {@code page} or inside it. */
+    private boolean within(Node page) {
+        Node owner = page.getScene() == null ? null : page.getScene().getFocusOwner();
+        for (Node n = owner; n != null; n = n.getParent()) {
+            if (n == page) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Whether {@code target} is (in) a tab's header, not its close button. */
     private static boolean onTabHeader(Node target) {
         for (Node n = target; n != null; n = n.getParent()) {

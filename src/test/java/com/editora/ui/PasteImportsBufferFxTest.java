@@ -94,6 +94,31 @@ class PasteImportsBufferFxTest {
         assertFalse(valid.get().getAsBoolean(), "an edit after the request must invalidate the answer");
     }
 
+    /** Typing after the pasted text keeps the answer: Enter right after a paste no longer loses its imports (AL2). */
+    @Test
+    void typingAfterThePasteKeepsItValid() throws Exception {
+        var captured = new AtomicReference<Captured>();
+        var valid = new AtomicReference<java.util.function.BooleanSupplier>();
+        EditorBuffer b = buffer(captured, valid);
+
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = FxTestSupport.field(b, "area");
+            area.replaceText("class A {\n}\n");
+            area.insertText(10, "    Instant i;\n");
+            b.requestLspPasteImports(10, 25);
+        });
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = FxTestSupport.field(b, "area");
+            area.insertText(25, "\n    "); // Enter after the paste
+        });
+        assertTrue(valid.get().getAsBoolean(), "an edit after the pasted text keeps it");
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = FxTestSupport.field(b, "area");
+            area.insertText(12, "x"); // inside it
+        });
+        assertFalse(valid.get().getAsBoolean(), "an edit inside the pasted text drops it");
+    }
+
     @Test
     void theGatesKeepItSilent() throws Exception {
         var captured = new AtomicReference<Captured>();

@@ -1301,7 +1301,8 @@ final class LspCoordinator {
 
     private void noteNonProjectFile(Path file, List<LspDiagnostic> diagnostics) {
         Path root = file.toString().endsWith(".java") ? lspManager.javaSessionRoot(file) : null;
-        if (root == null || !hasJavaBuildFile(root) || !JavaImportCheck.inSourceFolder(root, file)) {
+        Path build = root == null ? null : buildFolder(root, file); // a build beside others: its own (twelfth CL2)
+        if (build == null || !JavaImportCheck.inSourceFolder(build, file)) {
             return; // a loose file in a project's other folders is a non-project file by rights
         }
         String key = importKey(LspServerRegistry.JAVA_SERVER_ID, root);
@@ -1312,9 +1313,25 @@ final class LspCoordinator {
         } else {
             files.put(file, message);
             if (saidReady.contains(statusSource(LspServerRegistry.JAVA_SERVER_ID, root))) {
-                nonProjectImport(root, message);
+                nonProjectImport(build, message);
             }
         }
+    }
+
+    /**
+     * The folder of {@code file}'s build under {@code root}: the root when it has a build file, else the nearest folder
+     * above the file that has one; null for none.
+     */
+    private static @Nullable Path buildFolder(Path root, Path file) {
+        if (hasJavaBuildFile(root)) {
+            return root;
+        }
+        for (Path p = file.getParent(); p != null && p.startsWith(root) && !p.equals(root); p = p.getParent()) {
+            if (hasJavaBuildFile(p)) {
+                return p;
+            }
+        }
+        return null;
     }
 
     /**
@@ -1325,13 +1342,22 @@ final class LspCoordinator {
         if (importFailed.add(importKey(LspServerRegistry.JAVA_SERVER_ID, folder))) {
             Path root = lspManager.javaSessionRoot(folder);
             Path sessionRoot = root != null ? root : folder;
-            String pomError = JavaImportCheck.unreadablePom(folder.resolve("pom.xml"));
+            JavaImportCheck.PomError pomError = JavaImportCheck.unreadablePom(folder.resolve("pom.xml"));
             String pom =
                     sessionRoot.relativize(folder.resolve("pom.xml")).toString().replace('\\', '/');
-            String reason = pomError != null ? tr("status.lsp.pomUnreadable", pom, pomError) : message;
+            String reason = pomError == null
+                    ? message
+                    : pomError.line() < 1
+                            ? tr("status.lsp.pomUnreadable", pom, pomError.message())
+                            : tr(
+                                    "status.lsp.pomUnreadableAt",
+                                    pom,
+                                    pomError.message(),
+                                    pomError.line(),
+                                    pomError.column());
             if (pomError != null) {
                 java.util.logging.Logger.getLogger(LspCoordinator.class.getName())
-                        .info(folder.resolve("pom.xml") + " does not parse: " + pomError); // the Debug Log's details
+                        .info(folder.resolve("pom.xml") + " does not parse: " + pomError.describe()); // Debug Log
             }
             host.setError(tr(
                     "status.lsp.importProblemWhy",
@@ -3624,15 +3650,16 @@ final class LspCoordinator {
     }
 
     /**
-     * Moves a failed import from the session's root to {@code folder}, the build that failed, when the root has no build
-     * file of its own: a Maven build beside a failed Gradle one stays checked (eleventh review CM2).
+     * Moves a failed import from the session's root to {@code folder}, the build that failed, unless the root's own
+     * build failed too (its pom.xml does not parse): a Maven build beside a failed Gradle one stays checked, under a
+     * root with no build file (eleventh review CM2) or with one of its own (twelfth review CM2).
      */
     private void narrowFailure(@Nullable Path folder) {
         if (folder == null) {
             return;
         }
         Path root = lspManager.javaSessionRoot(folder);
-        if (root == null || folder.equals(root) || hasJavaBuildFile(root)) {
+        if (root == null || folder.equals(root) || JavaImportCheck.unreadablePom(root.resolve("pom.xml")) != null) {
             return;
         }
         if (importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))) {
@@ -3689,9 +3716,11 @@ final class LspCoordinator {
                 saidReady.add(line.serverId());
             }
             if (line.ready() && root != null && LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
-                nonProjectFiles.getOrDefault(key, Map.of()).values().stream()
+                nonProjectFiles.getOrDefault(key, Map.of()).entrySet().stream()
                         .findFirst()
-                        .ifPresent(message -> nonProjectImport(root, message)); // CO2
+                        .ifPresent(e -> nonProjectImport(
+                                java.util.Objects.requireNonNullElse(buildFolder(root, e.getKey()), root),
+                                e.getValue())); // CO2, CL2
                 checkModulePoms(root);
             }
             if (line.problem()) {
@@ -3796,6 +3825,12 @@ final class LspCoordinator {
                 forgetImport(root);
                 restartJavaServer(path);
                 host.setStatus(tr("status.lsp.projectReimporting"));
+            } else if (root != null
+                    && !LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))
+                    && !lspManager.watchesModelFile(path)) {
+                // jdtls updates a module's classpath only when told its build file changed (twelfth review CL1)
+                lspManager.notifyWatchedFiles(java.util.List.of(new com.editora.lsp.LspManager.WatchedFile(
+                        path, com.editora.lsp.LspManager.WatchedKind.CHANGED)));
             }
         }
         if (buffer != null && path != null && lspManager.isManaged(path)) {
@@ -4130,6 +4165,7 @@ final class LspCoordinator {
                         indent.insertSpaces(),
                         com.editora.lsp.JdtlsPaste.copiedFrom(text), // its imports name the text's types (A11)
                         stillValid,
+                        buffer::getContent, // typed after the paste: imports still land above it (AL2)
                         true,
                         applied -> {});
             }
@@ -5869,7 +5905,7 @@ final class LspCoordinator {
 
     private void superAt(
             SuperAsk ask, String text, int line, int column, int caret, List<com.editora.lsp.MemberSpan> members) {
-        List<com.editora.lsp.MemberSpan> chain = com.editora.lsp.JavaMembers.enclosing(members, line, column);
+        List<com.editora.lsp.MemberSpan> chain = com.editora.lsp.JavaMembers.enclosing(members, line, column, text);
         if (caret > 0 && caret < text.length() && text.startsWith("->", caret - 1)) {
             caret++; // the caret inside a lambda's "->": the lambda's (eleventh review EM7)
         }
@@ -5910,7 +5946,9 @@ final class LspCoordinator {
             int[] anonymous =
                     com.editora.lsp.JavaMembers.anonymousMethod(text, offsetOf(text, member.startLine()), caret);
             int lambda = com.editora.lsp.JavaMembers.lambdaArrow(text, offsetOf(text, member.nameLine()), caret);
-            if (anonymous != null && anonymous[1] > lambda) {
+            if (anonymous != null
+                    && (anonymous[1] >= 0 || !member.isAnonymous()) // an outlined one: its supertypes, below
+                    && Math.max(anonymous[0], anonymous[1]) > lambda) {
                 anonymousSuper(ask, text, anonymous);
                 return;
             }
@@ -6075,6 +6113,10 @@ final class LspCoordinator {
      * {@code findLinks}, else the walk from the type it instantiates, as for one the outline holds (tenth review BO2).
      */
     private void anonymousSuper(SuperAsk ask, String text, int[] anonymous) {
+        if (anonymous[1] < 0) { // its header or a field: the anonymous class, whose super is the type it instantiates
+            definitionAsSuper(ask, text, anonymous[0]); // (twelfth review EL2)
+            return;
+        }
         int[] name = lineColumn(text, anonymous[1]);
         int[] type = lineColumn(text, anonymous[0]);
         lspManager.superMethodAt(
@@ -6279,7 +6321,7 @@ final class LspCoordinator {
                 if (ask.current().getAsBoolean()) {
                     openOneOrPick(
                             ask,
-                            typeTargets(superclassFirst(supers)),
+                            typeTargets(superclassFirst(SuperMethodWalk.withoutObject(supers))),
                             "picker.superTypes.title",
                             "status.lsp.noSuperType");
                 }
@@ -8316,10 +8358,28 @@ final class LspCoordinator {
         AppliedEdit previous = lastApplied;
         lastRenameRefused = false;
         renamesInFlight++;
+        willRenameFile(from, to, previous, proceed, true);
+    }
+
+    private void willRenameFile(
+            Path from,
+            Path to,
+            @Nullable AppliedEdit previous,
+            java.util.function.Consumer<Boolean> proceed,
+            boolean retry) {
         lspManager.willRenameFile(
                 from,
                 to,
                 ok -> {
+                    if (!ok && retry && !lastRenameRefused && java.nio.file.Files.exists(from)) {
+                        // jdtls's edit no longer applied: a file it edits was opened a moment before, and the edit
+                        // named a document it had not read yet. Asked once more, it answers for the open one
+                        // (twelfth review BL4).
+                        var later = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(1));
+                        later.setOnFinished(e -> willRenameFile(from, to, previous, proceed, false));
+                        later.play();
+                        return;
+                    }
                     try {
                         proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
                         AppliedEdit edit = lastApplied;
@@ -9779,7 +9839,11 @@ final class LspCoordinator {
             return;
         }
         List<com.editora.lsp.LspManager.WatchedFile> batch = new java.util.ArrayList<>(pendingWatched.size());
-        pendingWatched.forEach((path, kind) -> batch.add(new com.editora.lsp.LspManager.WatchedFile(path, kind)));
+        pendingWatched.forEach((path, kind) -> {
+            if (!lspManager.watchesModelFileBesidePanel(path)) { // its own watcher reports it: not twice (CL1)
+                batch.add(new com.editora.lsp.LspManager.WatchedFile(path, kind));
+            }
+        });
         pendingWatched.clear();
         lspManager.notifyWatchedFiles(batch);
     }

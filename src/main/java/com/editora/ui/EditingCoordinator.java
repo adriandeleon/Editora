@@ -1172,6 +1172,9 @@ final class EditingCoordinator {
         }
         killRing.kill(text, dir, merge);
         setClipboardString(killRing.current()); // the whole accumulated entry, as Emacs does
+        // a yank into Java asks jdtls with this file's imports, as a cut's paste does (twelfth review AL4)
+        com.editora.lsp.JdtlsPaste.copied(
+                java.util.Objects.requireNonNullElse(killRing.current(), text), buffer.getPath());
         lastKillBuffer = new WeakReference<>(buffer);
         lastKillDocVersion = buffer.docVersion();
         lastKillCaret = area.getCaretPosition();
@@ -1311,6 +1314,7 @@ final class EditingCoordinator {
         recordYank(buffer, lastYankStart, lastYankStart + text.length());
         setClipboardString(text);
         host.refreshPasteState();
+        buffer.requestLspPasteImports(lastYankStart, lastYankStart + text.length()); // as a yank's (twelfth AL4)
         host.setStatus(tr("status.yankPop", killRing.yankIndex() + 1, killRing.size()));
         area.requestFocus();
     }

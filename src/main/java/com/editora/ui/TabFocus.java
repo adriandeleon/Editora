@@ -104,6 +104,23 @@ final class TabFocus {
         return false;
     }
 
+    /**
+     * Puts keyboard focus in a just-selected tab: its buffer's editor, or a page tab's page (Doctor, Welcome, an
+     * image). Deselecting the editor hid its focused CodeArea, and JavaFX had moved focus to the toolbar's New button,
+     * where Space opened a buffer (twelfth review AL1).
+     */
+    static void focusTab(@Nullable Tab tab, java.util.function.Function<Tab, @Nullable EditorBuffer> bufferOf) {
+        if (tab == null) {
+            return;
+        }
+        EditorBuffer buffer = bufferOf.apply(tab);
+        if (buffer != null) {
+            focus(buffer);
+        } else if (tab.getContent() != null) {
+            focusPage(tab.getContent());
+        }
+    }
+
     /** Puts keyboard focus in {@code buffer}'s editor, its last-focused split view. */
     static void focus(@Nullable EditorBuffer buffer) {
         if (buffer != null) {

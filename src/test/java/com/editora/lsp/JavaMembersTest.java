@@ -165,7 +165,8 @@ class JavaMembersTest {
         int[] found = JavaMembers.anonymousMethod(text, 0, text.indexOf("cursor != size"));
         assertEquals(text.indexOf("ListIterator<E>() {"), found[0], "the instantiated type");
         assertEquals(text.indexOf("hasNext"), found[1], "the method");
-        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("int cursor")), "in its body, not a method");
+        int[] field = JavaMembers.anonymousMethod(text, 0, text.indexOf("int cursor"));
+        assertEquals(-1, field[1], "in its body, not a method: the anonymous class itself (twelfth review EL2)");
         assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("return new")), "outside it");
     }
 
@@ -366,8 +367,8 @@ class JavaMembersTest {
             assertEquals(type, found[0], at + ": the name's last segment");
             assertEquals(name, found[1], at);
         }
-        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("seen")), "a field");
-        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("\n\n") + 1), "between members");
+        assertEquals(-1, JavaMembers.anonymousMethod(text, 0, text.indexOf("seen"))[1], "a field: the class (EL2)");
+        assertEquals(-1, JavaMembers.anonymousMethod(text, 0, text.indexOf("\n\n") + 1)[1], "between members");
         String annotated = "new Runnable() {\n    @SuppressWarnings({\"a\"}) public void run() {}\n}";
         int[] run = JavaMembers.anonymousMethod(annotated, 0, annotated.indexOf("Suppress"));
         assertEquals(annotated.indexOf("run()"), run[1], "an annotation's braces are no member's end");
@@ -422,5 +423,71 @@ class JavaMembersTest {
                 JavaMembers.overridden(
                         generic, "conv(String, U)", java.util.Set.of(), java.util.Map.of(), m -> outIsU));
         assertTrue(JavaMembers.overridden(generic, "conv(String, U)").isEmpty(), "Out is no shape");
+    }
+
+    /**
+     * An anonymous method's parameter list (a two-line one, an annotated parameter) and its Javadoc are that method's,
+     * and in a class body outside every method the anonymous class itself answers (twelfth review DL1, EM2, EL2).
+     */
+    @Test
+    void anAnonymousMethodsParametersAndJavadocAreThatMethod() {
+        String text = "static {\n    C1 = new Comparator<>() {\n        /** Compares. */\n"
+                + "        public int compare(@SuppressWarnings(\"unused\") String a,\n                String b) {\n"
+                + "            return 0;\n        }\n    };\n}\n";
+        int name = text.indexOf("compare(");
+        for (String at : List.of("String a", "String b", "unused", "Compares", "compare(")) {
+            int[] found = JavaMembers.anonymousMethod(text, 0, text.indexOf(at) + 1);
+            assertEquals(name, found[1], at);
+        }
+        int[] call = JavaMembers.anonymousMethod(
+                "new Runnable() {\n    Object o = new Object();\n    public void run() {}\n}", 0, 30);
+        assertEquals(-1, call[1], "a field's new Object(): no method header");
+    }
+
+    /**
+     * A member holds the caret only up to its end column, and a range jdtls starts at a comment ending the header's
+     * second line is not the member's on that line (twelfth review BL3, DM3).
+     */
+    @Test
+    void aOneLineClassAndAWrappedHeaderPlaceTheCaret() {
+        // class Hdr12c extends AbstractShape { /* H4 */ Hdr12c() { super("c"); } public double area() { return 3; } }
+        MemberSpan ctor = new MemberSpan("Hdr12c()", "constructor", 0, 0, 0, 48, List.of(), 37, 71);
+        MemberSpan area = new MemberSpan("area()", "method", 0, 0, 0, 86, List.of(), 72, 106);
+        MemberSpan one = new MemberSpan("Hdr12c", "class", 0, 0, 0, 6, List.of(ctor, area), 0, 108);
+        assertEquals(List.of(one, area), JavaMembers.enclosing(List.of(one), 0, 88), "a later member");
+        assertEquals(List.of(one, ctor), JavaMembers.enclosing(List.of(one), 0, 50), "the first");
+        assertEquals(List.of(one), JavaMembers.enclosing(List.of(one), 0, 107), "after both");
+        String text = "class Hdr12b\n        extends AbstractShape { // H3\n    Hdr12b() { super(\"b\"); }\n}\n";
+        int comment = "        extends AbstractShape { ".length();
+        MemberSpan wrappedCtor = new MemberSpan("Hdr12b()", "constructor", 1, 2, 2, 4, List.of(), comment, 28);
+        MemberSpan wrapped = new MemberSpan("Hdr12b", "class", 0, 3, 0, 6, List.of(wrappedCtor), 0, 1);
+        assertEquals(List.of(wrapped), JavaMembers.enclosing(List.of(wrapped), 1, 10, text), "on AbstractShape");
+        assertEquals(List.of(wrapped), JavaMembers.enclosing(List.of(wrapped), 1, comment + 3, text), "the comment");
+        assertEquals(List.of(wrapped, wrappedCtor), JavaMembers.enclosing(List.of(wrapped), 2, 6, text));
+        String javadoc = "class J {\n    /** Doc. */\n    void f() {}\n}\n";
+        MemberSpan f = new MemberSpan("f()", "method", 1, 2, 2, 9, List.of(), 4, 16);
+        MemberSpan j = new MemberSpan("J", "class", 0, 3, 0, 6, List.of(f), 0, 1);
+        assertEquals(List.of(j, f), JavaMembers.enclosing(List.of(j), 1, 8, javadoc), "its own Javadoc stays its");
+    }
+
+    /** Nested type arguments of a method reference, a decompiled header's type parameters, a qualified name (BO3, DL2, BL1). */
+    @Test
+    void nestedTypeArgumentsAndQualifiedNames() {
+        String text = "Supplier<List<List<String>>> e = java.util.Collections::<List<String>>emptyList;";
+        assertEquals(text.indexOf("::<"), JavaMembers.methodReference(text, text.indexOf("emptyList")));
+        String keyed = "public interface LKeyed<Key> {\n    void use(Key k);\n}\n";
+        assertEquals("LKeyed<Key>", JavaMembers.withTypeParameters(keyed, keyed.indexOf("LKeyed"), "LKeyed"));
+        String mid = "public interface LMid<T extends Comparable<T>> extends LStore<T> {";
+        assertEquals("LMid<T extends Comparable<T>>", JavaMembers.withTypeParameters(mid, mid.indexOf("LMid"), "LMid"));
+        assertEquals("A", JavaMembers.withTypeParameters("class A {", 6, "A"));
+        String sink = "Mid.Sink<String> s = new Wrong12.Mid.Sink<>() {";
+        var name = JavaMembers.qualifiedName(sink, sink.lastIndexOf("Sink"));
+        assertEquals(sink.indexOf("Wrong12"), name.getKey());
+        assertEquals(List.of("Wrong12", "Mid", "Sink"), name.getValue());
+        MemberSpan inner = span("Sink<V>", "interface", 2, 2, 2);
+        MemberSpan middle = span("Mid", "class", 1, 3, 1, inner);
+        MemberSpan top = span("Wrong12", "class", 0, 4, 0, middle);
+        assertEquals(inner, JavaMembers.nestedType(top, List.of("Mid", "Sink")));
+        assertNull(JavaMembers.nestedType(top, List.of("Other")));
     }
 }

@@ -102,7 +102,9 @@ class LspSuperMethodFxTest {
         DocumentSymbol s = new DocumentSymbol(
                 name,
                 kind,
-                new Range(new Position(start, 0), new Position(end, 1)),
+                new Range(
+                        new Position(start, 0),
+                        new Position(end, 200)), // to its line's end (BL3: an end column counts)
                 range(nameLine, nameCol, nameCol + 1));
         s.setChildren(new java.util.ArrayList<>());
         return s;
@@ -900,5 +902,119 @@ class LspSuperMethodFxTest {
         fx.settle();
 
         assertEquals(List.of(new LspCoordinatorFixture.Jump(store, 1, 9)), fx.ops.jumps, "T is String through Mid");
+    }
+
+    /** A class's supertypes leave out java.lang.Object, as IntelliJ does: one left opens directly (twelfth review EL1). */
+    @Test
+    void aClassesSupertypesLeaveOutObject() throws Exception {
+        Path task = Files.writeString(root.resolve("Task.java"), "interface Task {\n    void run();\n}\n");
+        EditorBuffer b = fx.open("A.java", "class A implements Task {\n    public void run() {}\n}\n");
+        DocumentSymbol a = member("A", SymbolKind.Class, 0, 2, 0, 6);
+        fx.server().documentSymbolResponse = List.of(Either.forRight(a));
+        String uri = root.resolve("A.java").toUri().toString();
+        fx.server().typeHierarchyResponse =
+                List.of(new TypeHierarchyItem("A", SymbolKind.Class, uri, range(0, 0, 1), range(0, 6, 7)));
+        TypeHierarchyItem object = new TypeHierarchyItem(
+                "Object",
+                SymbolKind.Class,
+                "jdt://contents/java.base/java.lang/Object.class?=demo",
+                range(37, 0, 1),
+                range(37, 13, 19));
+        object.setDetail("java.lang");
+        TypeHierarchyItem taskType = new TypeHierarchyItem(
+                "Task", SymbolKind.Interface, task.toUri().toString(), range(0, 0, 1), range(0, 10, 14));
+        fx.server().supertypesResponse = List.of(object, taskType);
+        fx.caret(b, 0, 7);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(task, 0, 10)), fx.ops.jumps, "no picker with Object in it");
+
+        fx.server().supertypesResponse = List.of(object);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+        assertEquals(1, fx.ops.jumps.size(), "a plain class: nothing to open");
+        assertEquals(tr("status.lsp.noSuperType"), fx.host.lastStatus());
+    }
+
+    /**
+     * A raw anonymous class assigned to a parameterized variable is raw: save(Object) overrides Store.save, the
+     * variable's Store<String> does not count (twelfth review BM4).
+     */
+    @Test
+    void aRawAnonymousClassIsRawWhateverItsVariableSays() throws Exception {
+        Path store = Files.writeString(root.resolve("Store.java"), "interface Store<T> {\n    void save(T item);\n}\n");
+        String source = "class A {\n    void f() {\n        Store<String> raw = new Store() {\n"
+                + "            public void save(Object o) {}\n        };\n    }\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        DocumentSymbol a = member("A", SymbolKind.Class, 0, 6, 0, 6);
+        DocumentSymbol f = member("f()", SymbolKind.Method, 1, 5, 1, 9);
+        int name = source.split("\n")[2].indexOf("Store()");
+        DocumentSymbol anonymous = member("new Store() {...}", SymbolKind.Class, 2, 4, 2, name);
+        anonymous.getChildren().add(member("save(Object)", SymbolKind.Method, 3, 3, 3, 24));
+        f.getChildren().add(anonymous);
+        a.getChildren().add(f);
+        fx.server().documentSymbolResponse = List.of(Either.forRight(a));
+        DocumentSymbol storeType = member("Store<T>", SymbolKind.Interface, 0, 2, 0, 10);
+        storeType.getChildren().add(member("save(T)", SymbolKind.Method, 1, 1, 1, 9));
+        fx.server()
+                .documentSymbolByUri
+                .put(com.editora.lsp.LspTestHooks.uri(store), List.of(Either.forRight(storeType)));
+        fx.server().typeHierarchyResponse = List.of(new TypeHierarchyItem(
+                "Store", SymbolKind.Interface, store.toUri().toString(), range(0, 0, 1), range(0, 10, 15)));
+        fx.server().supertypesByName.put("Store", List.of());
+        fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString("[]");
+        fx.caret(b, 3, 26);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(store, 1, 9)), fx.ops.jumps);
+    }
+
+    /**
+     * A jar class without sources names no type parameters in its outline: its decompiled header gives them, so a
+     * descriptive type variable binds (LKeyed<Key>) and an overload with another type is none (twelfth review DL2,
+     * DO2).
+     */
+    @Test
+    void aJarClassesTypeParametersAreReadFromItsDecompiledHeader() throws Exception {
+        String keyed = "jdt://contents/libbase.jar/lib/LKeyed.class?=demo";
+        String source = "interface MyKeyed extends lib.LKeyed<String> {\n    void use(String k);\n"
+                + "    void use(Integer k);\n}\n";
+        EditorBuffer b = fx.open("MyKeyed.java", source);
+        DocumentSymbol mine = member("MyKeyed", SymbolKind.Interface, 0, 3, 0, 10);
+        mine.getChildren().add(member("use(String)", SymbolKind.Method, 1, 1, 1, 9));
+        mine.getChildren().add(member("use(Integer)", SymbolKind.Method, 2, 2, 2, 9));
+        fx.server().documentSymbolResponse = List.of(Either.forRight(mine));
+        DocumentSymbol lib = member("LKeyed", SymbolKind.Interface, 0, 2, 0, 17);
+        lib.getChildren().add(member("use(Key)", SymbolKind.Method, 1, 1, 1, 9));
+        fx.server().documentSymbolByUri.put(keyed, List.of(Either.forRight(lib)));
+        String uri = root.resolve("MyKeyed.java").toUri().toString();
+        fx.server().typeHierarchyResponse =
+                List.of(new TypeHierarchyItem("MyKeyed", SymbolKind.Interface, uri, range(0, 0, 1), range(0, 10, 17)));
+        fx.server()
+                .supertypesByName
+                .put(
+                        "MyKeyed",
+                        List.of(new TypeHierarchyItem(
+                                "LKeyed", SymbolKind.Interface, keyed, range(0, 0, 1), range(0, 17, 23))));
+        fx.server().supertypesByName.put("LKeyed", List.of());
+        List<String> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        fx.server().rawHandler = raw -> {
+            asked.add(raw.method());
+            return raw.method().equals("java/classFileContents")
+                    ? new com.google.gson.JsonPrimitive("public interface LKeyed<Key> {\n    void use(Key k);\n}\n")
+                    : com.google.gson.JsonParser.parseString("[]");
+        };
+        fx.caret(b, 2, 10);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+        assertTrue(asked.contains("java/classFileContents"), "the header read: " + asked);
+        assertEquals(tr("status.lsp.noSuperMethod"), fx.host.lastStatus(), "Key is String: use(Integer) is none");
+        assertTrue(fx.ops.readOnlyDocs.isEmpty());
+
+        fx.caret(b, 1, 10);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+        assertEquals(1, fx.ops.readOnlyDocs.size(), "use(String) opens LKeyed.use");
     }
 }

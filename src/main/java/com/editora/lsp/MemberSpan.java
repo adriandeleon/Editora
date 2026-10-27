@@ -17,6 +17,8 @@ import java.util.List;
  * @param startColumn 0-based column the full range starts at, on {@code startLine}: jdtls starts a member's range at a
  *                    comment ending the line before it, so a class line's {@code // comment} is its first member's
  *                    (eleventh review DM3)
+ * @param endColumn  0-based column the full range ends at, on {@code endLine}: a one-line type's later member starts
+ *                   after it (twelfth review BL3)
  */
 public record MemberSpan(
         String name,
@@ -26,7 +28,21 @@ public record MemberSpan(
         int nameLine,
         int nameColumn,
         List<MemberSpan> children,
-        int startColumn) {
+        int startColumn,
+        int endColumn) {
+
+    /** A member whose range ends at its last line's end. */
+    public MemberSpan(
+            String name,
+            String kind,
+            int startLine,
+            int endLine,
+            int nameLine,
+            int nameColumn,
+            List<MemberSpan> children,
+            int startColumn) {
+        this(name, kind, startLine, endLine, nameLine, nameColumn, children, startColumn, Integer.MAX_VALUE);
+    }
 
     /** A member whose range starts at its line's start. */
     public MemberSpan(
@@ -37,7 +53,7 @@ public record MemberSpan(
             int nameLine,
             int nameColumn,
             List<MemberSpan> children) {
-        this(name, kind, startLine, endLine, nameLine, nameColumn, children, 0);
+        this(name, kind, startLine, endLine, nameLine, nameColumn, children, 0, Integer.MAX_VALUE);
     }
 
     /** Whether this is a class, interface, enum, record or anonymous class. */
