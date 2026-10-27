@@ -642,4 +642,27 @@ class SnippetManagerTest {
         assertNotNull(m.byPrefix("clojure", "ns"));
         assertNotNull(m.byPrefix("clojure", "deftest"));
     }
+
+    /**
+     * XML's bundled snippets wrap a selection — element, comment, CDATA, XSLT template — so Surround With works in
+     * an XML file; it used to say "No snippet wraps this selection" (XML review D9). The XSD and XSLT starters are
+     * there too (C14).
+     */
+    @Test
+    void xmlSnippetsWrapASelectionAndCoverSchemasAndStylesheets(@TempDir Path dir) {
+        SnippetManager m = manager(dir);
+        List<Snippet> xml = m.forLanguage("xml");
+        String text = "<note>\n  <to>Tove</to>\n</note>\n";
+        int start = text.indexOf("<to>");
+        int end = text.indexOf("</note>");
+        List<String> wrapping = SurroundSnippets.forSelection(xml, text, start, end).stream()
+                .map(Snippet::prefix)
+                .toList();
+        for (String prefix : List.of("tag", "tagb", "comment", "cdata", "xsltemplate", "xslforeach")) {
+            assertTrue(wrapping.contains(prefix), prefix + " wraps a selection: " + wrapping);
+        }
+        for (String prefix : List.of("xsi", "xsins", "xml-model", "xsschema", "xselement", "xslstylesheet")) {
+            assertNotNull(m.byPrefix("xml", prefix), prefix);
+        }
+    }
 }

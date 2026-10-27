@@ -1,0 +1,25 @@
+{
+  "name": "XML Schema (XSD)",
+  "description": "An XSD with a target namespace and one element whose type lists child elements and an attribute",
+  "language": "xml",
+  "fileName": "${baseName:schema}.xsd",
+  "body": [
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+    "<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"",
+    "           targetNamespace=\"${namespace:urn:example:notes}\"",
+    "           xmlns=\"${namespace:urn:example:notes}\"",
+    "           elementFormDefault=\"qualified\">",
+    "",
+    "  <xs:element name=\"${rootElement:note}\">",
+    "    <xs:complexType>",
+    "      <xs:sequence>",
+    "        <xs:element name=\"title\" type=\"xs:string\"/>",
+    "        <xs:element name=\"body\" type=\"xs:string\" minOccurs=\"0\"/>",
+    "        ${cursor}",
+    "      </xs:sequence>",
+    "      <xs:attribute name=\"id\" type=\"xs:ID\" use=\"required\"/>",
+    "    </xs:complexType>",
+    "  </xs:element>",
+    "</xs:schema>"
+  ]
+}

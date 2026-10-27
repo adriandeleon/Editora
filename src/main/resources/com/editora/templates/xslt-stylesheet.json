@@ -1,0 +1,23 @@
+{
+  "name": "XSLT Stylesheet",
+  "description": "An XSLT 1.0 stylesheet with the identity template, ready to override one element",
+  "language": "xml",
+  "fileName": "${baseName:transform}.xsl",
+  "body": [
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+    "<xsl:stylesheet version=\"1.0\" xmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\">",
+    "  <xsl:output method=\"xml\" indent=\"yes\"/>",
+    "",
+    "  <!-- Identity: copy every node and attribute as it is. -->",
+    "  <xsl:template match=\"@*|node()\">",
+    "    <xsl:copy>",
+    "      <xsl:apply-templates select=\"@*|node()\"/>",
+    "    </xsl:copy>",
+    "  </xsl:template>",
+    "",
+    "  <xsl:template match=\"${rootElement:note}\">",
+    "    ${cursor}",
+    "  </xsl:template>",
+    "</xsl:stylesheet>"
+  ]
+}

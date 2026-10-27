@@ -171,4 +171,21 @@ class NewFileCatalogTest {
         NewFileContent.Rendered main = NewFileContent.render(NewFileCatalog.byId("lang.scala"), "App", "");
         assertTrue(main.text().startsWith("object App:\n  def main(args: Array[String]): Unit =\n"), main.text());
     }
+
+    /**
+     * New ▸ XML, XML Schema, XSLT and SVG start as well-formed documents with the caret inside the root, not as an
+     * empty file (XML review C14).
+     */
+    @Test
+    void theXmlFamilyStartsWellFormed() {
+        for (String id : List.of("web.xml", "web.xsd", "web.xslt", "web.svg")) {
+            NewFileType type = NewFileCatalog.byId(id);
+            org.junit.jupiter.api.Assertions.assertNotNull(type, id);
+            NewFileContent.Rendered r = NewFileContent.render(type, "my notes", "");
+            String text = r.text();
+            assertTrue(com.editora.structured.XmlParser.firstError(text) == null, id + " is well-formed:\n" + text);
+            assertTrue(r.caret() > 0 && r.caret() < text.length(), id + ": the caret is inside the document");
+            assertTrue(!LanguageRegistry.PLAINTEXT.equals(LanguageRegistry.forFileName(type.suggestedFileName())), id);
+        }
+    }
 }
