@@ -179,6 +179,13 @@ final class XmlFolderTrust {
         }
     }
 
+    /** The status line when a server's start was withheld for trust: an untrusted pom's, else astro-ls's SDK. */
+    static String withheldStatus(String serverId) {
+        return LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)
+                ? tr("xml.trust.pomNotice")
+                : tr("status.lsp.astroSdkUntrusted", tr("command.lsp.trustProjectSettings"));
+    }
+
     // --- trusting ------------------------------------------------------------------------------------
 
     /**

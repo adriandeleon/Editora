@@ -80,6 +80,14 @@ public final class XmlServerInstall {
     }
 
     /**
+     * {@link #effectiveCommand(String, Path)}, a bare {@code java} (the Java lemminx a fallback left) run on {@code
+     * jdkHome}, as a configured Java XML command is (A8).
+     */
+    public static String effectiveCommand(@Nullable String configured, @Nullable Path configDir, String jdkHome) {
+        return com.editora.lsp.JvmServerCommand.withJdk(effectiveCommand(configured, configDir), jdkHome);
+    }
+
+    /**
      * The file in Editora's lemminx folder that says the native build cannot run on this system and XML runs on the
      * pom server's Java lemminx instead; it holds the reason. A later native install replaces the folder, and it.
      */

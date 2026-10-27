@@ -1034,10 +1034,7 @@ final class LspCoordinator {
                 b.setLspActive(false);
             }
         });
-        host.setStatus(
-                com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)
-                        ? tr("xml.trust.pomNotice")
-                        : tr("status.lsp.astroSdkUntrusted", tr("command.lsp.trustProjectSettings")));
+        host.setStatus(XmlFolderTrust.withheldStatus(serverId)); // astro-ls's SDK, or an untrusted pom (E1)
         updateStatusBar();
     }
 
@@ -1961,9 +1958,8 @@ final class LspCoordinator {
      *  for file lookups. */
     static String withOwnCopy(String serverId, @Nullable String command, @Nullable Path configDir, String jdk) {
         String raw = command == null ? "" : command;
-        return "xml".equals(serverId) // Editora's copy may be the Java lemminx (A8): on the Maven JDK, as a set one is
-                ? com.editora.lsp.JvmServerCommand.withJdk(
-                        com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir), jdk)
+        return "xml".equals(serverId)
+                ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir, jdk)
                 : raw;
     }
 
@@ -2362,14 +2358,9 @@ final class LspCoordinator {
         return xmlTrust.pomWithheldUntrusted(b);
     }
 
-    /** {@code workspace.trustFolder}: trusts the active XML file's folder, then tells every window (E1, C6). */
-    void trustFolder() {
-        xmlTrust.trustFolder();
-    }
-
-    /** How a trust decision reaches every window: the window manager's broadcast (default: this window only). */
-    void setTrustBroadcast(Runnable broadcast) {
-        xmlTrust.broadcast = broadcast;
+    /** Folder trust for the lemminx servers: {@code workspace.trustFolder} and its broadcast (E1, C6). */
+    XmlFolderTrust xmlTrust() {
+        return xmlTrust;
     }
 
     /** Pure: {@code serverId}'s configured command from {@code s} — the id→Settings-field mapping, kept
@@ -3628,11 +3619,10 @@ final class LspCoordinator {
         if (root == null || folders < 2 || root.getFileName() == null) {
             return name;
         }
-        boolean loose = root.toAbsolutePath().normalize().equals(lspManager.looseRoot()); // its internal folder (A6)
-        return tr(
-                "status.lsp.serverInFolder",
-                name,
-                loose ? tr("status.lsp.looseFiles") : root.getFileName().toString());
+        String folder = root.toAbsolutePath().normalize().equals(lspManager.looseRoot())
+                ? tr("status.lsp.looseFiles") // not Editora's internal folder's name (A6)
+                : root.getFileName().toString();
+        return tr("status.lsp.serverInFolder", name, folder);
     }
 
     /**
