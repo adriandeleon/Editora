@@ -28,4 +28,28 @@ class JvmServerCommandTest {
         assertEquals("javac x", JvmServerCommand.withJdk("javac x", JDK));
         assertEquals("", JvmServerCommand.withJdk(null, JDK));
     }
+
+    /** A JVM server keeps its files under Editora's user.home, not the passwd home (XML/pom review 2, D14). */
+    @Test
+    void aJavaLauncherGetsEditorasUserHome() {
+        assertEquals(
+                List.of("java", "-Duser.home=/fake", "-cp", "/x/*", "Main"),
+                JvmServerCommand.withUserHome(List.of("java", "-cp", "/x/*", "Main"), "/fake"));
+        assertEquals(
+                List.of("/opt/jdk/bin/java", "-Duser.home=/fake", "-cp", "x", "M"),
+                JvmServerCommand.withUserHome(List.of("/opt/jdk/bin/java", "-cp", "x", "M"), "/fake"));
+        assertEquals(
+                List.of("C:\\jdk\\bin\\java.exe", "-Duser.home=/fake", "M"),
+                JvmServerCommand.withUserHome(List.of("C:\\jdk\\bin\\java.exe", "M"), "/fake"));
+    }
+
+    @Test
+    void anythingElseOrAnExplicitUserHomeIsKept() {
+        List<String> own = List.of("java", "-Duser.home=/probe", "-cp", "x", "M");
+        assertEquals(own, JvmServerCommand.withUserHome(own, "/fake"), "the command's own choice wins");
+        assertEquals(List.of("lemminx"), JvmServerCommand.withUserHome(List.of("lemminx"), "/fake"));
+        assertEquals(List.of("javac", "x"), JvmServerCommand.withUserHome(List.of("javac", "x"), "/fake"));
+        assertEquals(List.of("java", "M"), JvmServerCommand.withUserHome(List.of("java", "M"), ""));
+        assertEquals(List.of(), JvmServerCommand.withUserHome(List.of(), "/fake"));
+    }
 }

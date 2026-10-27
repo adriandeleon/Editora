@@ -3,6 +3,7 @@ package com.editora.install;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -98,5 +99,37 @@ class XmlServerInstallTest {
         assertFalse(XmlServerInstall.isNativeInstall("java -cp \"" + config.resolve("plugins/lsp/maven") + "/*\" X"));
         assertFalse(XmlServerInstall.isNativeInstall("lemminx"));
         assertFalse(XmlServerInstall.isNativeInstall(null));
+    }
+
+    /**
+     * After the install fell back to the pom server's Java lemminx (the native build cannot run here), the native
+     * copy is gone and a blank command keeps the Java lemminx: "Reset to default" switched back to the binary that
+     * crash-looped (XML/pom review 2, A8).
+     */
+    @Test
+    void afterTheJavaFallbackABlankCommandKeepsTheJavaLemminx() throws IOException {
+        program(legacyName());
+        Path maven = Files.createDirectories(config.resolve(
+                InstallCatalog.serverInstall("maven-pom").orElseThrow().get(0).destSubpath()));
+        for (String jar : List.of("org.eclipse.lemminx-0.31.0.jar", "lemminx-maven-0.12.0.jar")) {
+            Files.writeString(maven.resolve(jar), "");
+        }
+        for (InstallCatalog.JvmLspJar jar : InstallCatalog.LEMMINX_MAVEN_EXTRA_JARS) {
+            Files.writeString(maven.resolve(jar.fileName()), "");
+        }
+
+        XmlServerInstall.recordJavaFallback(XmlServerInstall.folder(config), "GLIBC_2.34 not found");
+
+        assertNull(XmlServerInstall.ownCopy(config), "the unrunnable copy is removed");
+        String java = InstallCatalog.jvmClasspathCommand(maven, InstallCatalog.LEMMINX_MAIN_CLASS);
+        assertEquals(java, XmlServerInstall.effectiveCommand("", config));
+        assertEquals(java, XmlServerInstall.effectiveCommand("lemminx", config));
+        assertEquals("/usr/bin/lemminx", XmlServerInstall.effectiveCommand("/usr/bin/lemminx", config));
+
+        program(pinnedName()); // a later native install (here: the program reappearing) wins again
+        assertEquals(
+                InstallCatalog.quoteCommandPath(
+                        config.resolve("plugins/lsp/xml").resolve(pinnedName()).toString()),
+                XmlServerInstall.effectiveCommand("", config));
     }
 }

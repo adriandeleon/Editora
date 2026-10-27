@@ -36,4 +36,17 @@ class SettingsOutdatedPinTest {
         assertNull(SettingsWindow.outdatedPin("java", List.of(own.toString()), null));
         assertNull(SettingsWindow.outdatedPin("json", List.of("vscode-json-language-server"), config), "no pin");
     }
+
+    /** An install from before Editora recorded versions is said in Settings too, as Doctor says it (review 2, A7). */
+    @Test
+    void anInstallFromBeforeThePinIsSaidToo(@TempDir Path dir) throws Exception {
+        Path config = dir.resolve("config");
+        var pin = PinnedVersions.forServer("xml").orElseThrow();
+        Path lemminx =
+                Files.createDirectories(config.resolve(pin.destSubpath())).resolve("lemminx-linux-x86_64");
+        Files.writeString(lemminx, "");
+        assertEquals(pin.label(), SettingsWindow.unknownPin("xml", List.of(lemminx.toString()), config));
+        assertNull(SettingsWindow.outdatedPin("xml", List.of(lemminx.toString()), config), "not known to be older");
+        assertNull(SettingsWindow.unknownPin("xml", List.of("/usr/bin/lemminx"), config), "not Editora's copy");
+    }
 }

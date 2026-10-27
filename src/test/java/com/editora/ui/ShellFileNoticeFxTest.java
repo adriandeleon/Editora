@@ -104,6 +104,23 @@ class ShellFileNoticeFxTest {
         }
     }
 
+    /** A clean load hides only the shell notice: another feature's notice on the file stays (XML/pom review 2). */
+    @Test
+    void aCleanLoadHidesOnlyItsOwnNotice() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            EditorBuffer pom = new EditorBuffer();
+            pom.showFileNotice("Maven-aware editing is off", "Trust Folder", "Not now", () -> {});
+            ShellFileNotice.offer(pom, "pom.xml", com.editora.editops.LineEndings.LF, "UTF-8", s -> {});
+            assertEquals("Maven-aware editing is off", pom.fileNoticeText());
+
+            EditorBuffer sh = new EditorBuffer();
+            ShellFileNotice.offer(sh, "w.sh", com.editora.editops.LineEndings.CRLF, "UTF-8", s -> {});
+            assertNotNull(sh.fileNoticeText());
+            ShellFileNotice.offer(sh, "w.sh", com.editora.editops.LineEndings.LF, "UTF-8", s -> {});
+            assertNull(sh.fileNoticeText(), "fixed on reload: its own notice goes");
+        });
+    }
+
     @Test
     void aNewShellFileStaysLfUnderACrlfEditorConfig(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve(".editorconfig"), "root = true\n[*]\nend_of_line = crlf\ncharset = utf-8-bom\n");

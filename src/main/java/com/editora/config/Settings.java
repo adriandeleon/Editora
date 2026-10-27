@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 151;
+    public static final int SCHEMA_VERSION = 152;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -943,8 +943,8 @@ public class Settings {
     /** Whether the Maven-aware pom.xml server is enabled (only effective once installed — see
      *  {@link #mavenPomLspCommand} — and under the global LSP enable). */
     private boolean mavenPomLspEnabled = true;
-    /** Whether lemminx-maven may download and use the Maven Central index for pom.xml completion (a large
-     *  one-time download); off = completion from the local repository ({@code ~/.m2}) only. */
+    /** Whether lemminx-maven may search Maven Central (search.maven.org, sent what is typed) when completing
+     *  pom.xml coordinates; off = completion from the local repository ({@code ~/.m2}) only (review 2, D13). */
     private boolean mavenPomCentralIndex = false;
     /**
      * Whether the XML server (lemminx) may download the schemas, DTDs and RelaxNG grammars a file names over the

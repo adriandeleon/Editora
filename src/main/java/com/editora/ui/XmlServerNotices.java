@@ -45,7 +45,7 @@ final class XmlServerNotices {
         for (LspDiagnostic d : diagnostics) {
             if (DOWNLOAD_DISABLED.equals(d.code())) {
                 downloadsOffSaid = true;
-                return tr("status.lsp.xmlDownloadsOff");
+                return tr("status.lsp.xmlDownloadsOff", tr("command.workspace.trustFolder"));
             }
         }
         return null;

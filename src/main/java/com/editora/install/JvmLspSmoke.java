@@ -376,7 +376,7 @@ public final class JvmLspSmoke {
         JsonObject xml = new JsonObject();
         JsonObject maven = new JsonObject();
         JsonObject central = new JsonObject();
-        central.addProperty("skip", true); // a smoke must not start a Central index download
+        central.addProperty("skip", true); // a smoke must not send completion queries to search.maven.org
         maven.add("central", central);
         xml.add("maven", maven);
         init.add("settings", wrap("xml", xml));

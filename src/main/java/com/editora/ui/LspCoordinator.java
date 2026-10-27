@@ -301,6 +301,9 @@ final class LspCoordinator {
     private final CoordinatorHost host;
     private final LspManager lspManager;
     private final Ops ops;
+    /** Folder trust for the lemminx servers: which pom may reach lemminx-maven, and Trust Folder (E1, C6). */
+    private final XmlFolderTrust xmlTrust;
+
     private final WorkspaceFileOperations workspaceFiles;
     private final Executor workspaceExecutor;
 
@@ -393,6 +396,7 @@ final class LspCoordinator {
         this.host = host;
         this.lspManager = lspManager;
         this.ops = ops;
+        this.xmlTrust = new XmlFolderTrust(this, host, lspManager, ops);
         this.pythonInterpreters = new PythonInterpreterCoordinator(new PythonInterpreterCoordinator.Host() {
             @Override
             public @Nullable Path projectRoot() {
@@ -1025,17 +1029,6 @@ final class LspCoordinator {
     }
 
     /**
-     * Whether {@code b} is a pom.xml kept on the plain XML server because its folder is not trusted: the Maven
-     * server resolves and runs the build's plugins, so it starts only in a trusted folder (review 2, E1). The pom
-     * install banner leaves such a file to the trust offer.
-     */
-    boolean pomWithheldUntrusted(EditorBuffer b) {
-        Path p = b == null ? null : lspPath(b);
-        Path dir = p == null ? null : p.toAbsolutePath().getParent();
-        return dir != null && isPomBuffer(b) && !folderTrusted(dir);
-    }
-
-    /**
      * A server was deliberately not started because it could only run with code from an untrusted folder
      * (astro-ls and the folder's own TypeScript SDK). Unlike a crash nothing is retried: the buffers go
      * inactive and the status line says why and names the command that trusts the folder.
@@ -1050,7 +1043,7 @@ final class LspCoordinator {
                 b.setLspActive(false);
             }
         });
-        host.setStatus(tr("status.lsp.astroSdkUntrusted", tr("command.lsp.trustProjectSettings")));
+        host.setStatus(XmlFolderTrust.withheldStatus(serverId)); // astro-ls's SDK, or an untrusted pom (E1)
         updateStatusBar();
     }
 
@@ -1433,6 +1426,7 @@ final class LspCoordinator {
         if (buffer != null) {
             buffer.setLspDiagnostics(diagnostics);
             noteNonProjectFile(file, diagnostics);
+            xmlTrust.onDiagnostics(buffer, diagnostics); // a schema not downloaded: Trust Folder on the file (C6)
             String blocked = xmlNotices.onDiagnostics(diagnostics); // a schema not downloaded: say where it is decided
             if (blocked != null) {
                 // After the opening's own lines ("Opened …", the server's ready line), which replaced it at once.
@@ -1973,16 +1967,20 @@ final class LspCoordinator {
                 serverId, serverCommand(serverId), configDir(), host.settings().getMavenJdkHome());
     }
 
-    /** {@code command} for {@code serverId}, Editora's own copy standing in for a blank XML or pom command — the
-     *  pom server's on the Maven JDK ({@code jdkHome}), as a stored one is. Pure but for file lookups. */
+    /** {@code command} for {@code serverId}, Editora's own copy standing in for a blank XML or pom command (the
+     *  Java lemminx after a fallback, the pom server's bundle) on the Maven JDK ({@code jdkHome}). Pure but for
+     *  file lookups. */
     static String withOwnCopy(
             String serverId, @Nullable String command, @Nullable Path configDir, @Nullable String jdkHome) {
         String raw = command == null ? "" : command;
+        String jdk = jdkHome == null ? "" : jdkHome;
         if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId) && raw.isBlank()) {
             String own = com.editora.install.MavenServerInstall.effectiveCommand(raw, configDir);
-            return own.isBlank() ? raw : com.editora.lsp.JvmServerCommand.withJdk(own, jdkHome == null ? "" : jdkHome);
+            return own.isBlank() ? raw : com.editora.lsp.JvmServerCommand.withJdk(own, jdk);
         }
-        return "xml".equals(serverId) ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir) : raw;
+        return "xml".equals(serverId)
+                ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir, jdk)
+                : raw;
     }
 
     /** {@link #commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
@@ -2133,6 +2131,7 @@ final class LspCoordinator {
     /** Hands the XML servers their settings (Settings → LSP → XML), each folder's trust read again (XML review D3). */
     void applyXmlSettings() {
         com.editora.config.ConfigManager config = ops.config();
+        com.editora.lsp.XmlBundledSchemas.ensure(config == null ? null : config.getConfigDir()); // the POM XSDs (D12)
         lspManager.setXmlSettings(
                 com.editora.lsp.XmlServerSettings.of(host.settings(), config == null ? null : config.getConfigDir()));
         XmlOutline.setLimit(host.settings().getXmlSymbolLimit()); // the outline without the server too (C9)
@@ -2367,11 +2366,22 @@ final class LspCoordinator {
         applyOnTypeFormatting();
         applyBashIde();
         applyXmlSettings();
+        xmlTrust.trustChanged(); // a pom moves to or off lemminx-maven with its folder's trust (E1)
         appliedProjectRoot = ops.lspProjectRoot();
         offerInterruptedEdits();
         if (ops.lspFeatureEnabled() && !projectOverrideSignature().equals(appliedProjectOverrides)) {
             applySupport();
         }
+    }
+
+    /** Whether {@code b} is a pom.xml served by plain lemminx because its folder is not trusted (E1). */
+    boolean pomWithheldUntrusted(EditorBuffer b) {
+        return xmlTrust.pomWithheldUntrusted(b);
+    }
+
+    /** Folder trust for the lemminx servers: {@code workspace.trustFolder} and its broadcast (E1, C6). */
+    XmlFolderTrust xmlTrust() {
+        return xmlTrust;
     }
 
     /** Pure: {@code serverId}'s configured command from {@code s} — the id→Settings-field mapping, kept
@@ -2933,6 +2943,7 @@ final class LspCoordinator {
                 clearDiagnostics(path);
             }
         }
+        xmlTrust.afterSync(buffer); // an untrusted pom says why it is not Maven-aware (E1)
         if (buffer == host.activeBuffer()) {
             // The "LSP: <server>" segment and the Problems stripe follow whether the active file is managed,
             // which only changes here. Every other refresh (a tab switch, a server detected) runs before a
@@ -2965,7 +2976,8 @@ final class LspCoordinator {
 
     /** Workspace root for a buffer under {@code serverId}: active project (if Projects on), else nearest build
      *  file (that server's markers), else the file's dir. */
-    private @Nullable Path lspRootFor(EditorBuffer buffer, String serverId) {
+    @Nullable
+    Path lspRootFor(EditorBuffer buffer, String serverId) {
         Path file = lspPath(buffer);
         if (file == null) {
             return null; // every caller has checked lspPath already
@@ -3116,7 +3128,8 @@ final class LspCoordinator {
      * (not yet probed) this returns null so the buffer is <i>not</i> opened on the plain XML server first
      * (which {@link #syncBuffer} would then never switch away from). Once probed: available → {@code maven-pom};
      * absent → fall back to the language's normal server, so a {@code pom.xml} still gets base-XML LSP when
-     * lemminx-maven isn't installed. Disabling {@code maven-pom} skips the routing entirely (pure native XML).
+     * lemminx-maven isn't installed. Disabling {@code maven-pom} skips the routing entirely (pure native XML), and
+     * a pom whose folder is not trusted never reaches lemminx-maven, which would resolve and load what it names.
      */
     @Nullable
     String serverIdForBuffer(EditorBuffer b) {
@@ -3125,7 +3138,10 @@ final class LspCoordinator {
         String pomServer = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;
         String fileName =
                 p == null || p.getFileName() == null ? null : p.getFileName().toString();
-        if (fileName != null && com.editora.lsp.LspServerRegistry.isPomFile(fileName) && serverEnabled(pomServer)) {
+        if (fileName != null
+                && com.editora.lsp.LspServerRegistry.isPomFile(fileName)
+                && serverEnabled(pomServer)
+                && xmlTrust.pomTrusted(b)) { // an untrusted pom stays on plain lemminx (E1)
             Boolean mavenOk = serverAvailable.get(pomServer);
             if (mavenOk == null) {
                 return null; // not yet probed — don't open on the plain XML server first; wait for the probe
@@ -3635,9 +3651,13 @@ final class LspCoordinator {
         long folders = statusSources.values().stream()
                 .filter(src -> src.serverId().equals(serverId) && lspManager.hasLiveSession(serverId, src.root()))
                 .count(); // live servers only (CV4), starting ones too: their first lines were unnamed (sixth CS3)
-        return root == null || folders < 2 || root.getFileName() == null
-                ? name
-                : tr("status.lsp.serverInFolder", name, root.getFileName().toString());
+        if (root == null || folders < 2 || root.getFileName() == null) {
+            return name;
+        }
+        String folder = root.toAbsolutePath().normalize().equals(lspManager.looseRoot())
+                ? tr("status.lsp.looseFiles") // not Editora's internal folder's name (A6)
+                : root.getFileName().toString();
+        return tr("status.lsp.serverInFolder", name, folder);
     }
 
     /**
@@ -3958,61 +3978,11 @@ final class LspCoordinator {
         if (buffer.isDisposed() || buffer.getContent().equals(saved) || !buffer.isDirty()) {
             return;
         }
-        foldIntoOneUndo(buffer, saved);
+        SaveActionUndo.foldIntoOneUndo(buffer, saved);
         savingAfterActions.add(buffer);
         if (!ops.saveBuffer(buffer)) {
             savingAfterActions.remove(buffer);
         }
-    }
-
-    /** Clean-up, Organize Imports and Format, each of which may be an undo step of its own. */
-    private static final int SAVE_ACTION_STEPS = 3;
-
-    /**
-     * Makes what the actions on save did one undo step: undoing it took one Undo per action, and the states in
-     * between were never on disk (re-review AN7). Undoes the actions' steps back to {@code saved}, then puts
-     * their result back as a single edit. The history is left as it was when those steps cannot be told apart
-     * from the user's own (they do not lead back to {@code saved}) or the buffer shows only part of its text.
-     */
-    static void foldIntoOneUndo(EditorBuffer buffer, String saved) {
-        CodeArea area = buffer.getArea();
-        String result = area.getText();
-        if (!result.equals(buffer.getContent())) {
-            return; // narrowed or filtered: the area is not the whole document
-        }
-        var undo = area.getUndoManager();
-        int caret = area.getCaretPosition();
-        int undone = 0;
-        while (!area.getText().equals(saved) && undo.isUndoAvailable() && undone < SAVE_ACTION_STEPS) {
-            undo.undo();
-            undone++;
-        }
-        if (!area.getText().equals(saved)) {
-            for (int i = 0; i < undone && undo.isRedoAvailable(); i++) {
-                undo.redo();
-            }
-            return;
-        }
-        if (undone < 2) {
-            if (undone == 1) {
-                undo.redo(); // already one step
-            }
-            return;
-        }
-        int prefix = 0;
-        int max = Math.min(saved.length(), result.length());
-        while (prefix < max && saved.charAt(prefix) == result.charAt(prefix)) {
-            prefix++;
-        }
-        int suffix = 0;
-        while (suffix < max - prefix
-                && saved.charAt(saved.length() - 1 - suffix) == result.charAt(result.length() - 1 - suffix)) {
-            suffix++;
-        }
-        undo.preventMerge();
-        area.replaceText(prefix, saved.length() - suffix, result.substring(prefix, result.length() - suffix));
-        undo.preventMerge();
-        area.moveTo(Math.min(caret, area.getLength()));
     }
 
     /** The file whose save asked for {@link #projectRecheck}; the build goes to its project's server. */

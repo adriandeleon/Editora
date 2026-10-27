@@ -332,7 +332,7 @@ class LspCoordinatorCommandsFxTest {
             EditorBuffer b = new EditorBuffer();
             b.setContent("class A {}\n");
             b.getArea().appendText("// typed\n");
-            LspCoordinator.foldIntoOneUndo(b, "something else entirely");
+            SaveActionUndo.foldIntoOneUndo(b, "something else entirely");
             assertEquals("class A {}\n// typed\n", b.getContent(), "steps that do not lead back are redone");
         });
     }

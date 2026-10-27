@@ -339,7 +339,11 @@ public enum ConfigSchema {
                     Map.entry(149, (Migration) ConfigMigrations::identity),
                     // v150→151: + xmlFormatPreserveSpace (vscode-xml's list), the elements whose text the XML
                     // server's Format Document keeps as written. Additive: absent is the default list.
-                    Map.entry(150, (Migration) ConfigMigrations::identity)),
+                    Map.entry(150, (Migration) ConfigMigrations::identity),
+                    // v151→152: an XML command that is the path an install from before the pin wrote (Editora's
+                    // own plugins/lsp/xml/lemminx-<platform>) is blanked: blank runs that same copy, and the stale
+                    // path no longer counts as a modified setting (XML/pom review 2, A7).
+                    Map.entry(151, (Migration) ConfigMigrations::blankPrePinXmlCommand)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
