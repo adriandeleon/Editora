@@ -2358,13 +2358,18 @@ final class LspCoordinator {
     }
 
     /** Whether {@code b} is a pom.xml served by plain lemminx because its folder is not trusted (E1). */
-    boolean pomAwaitsTrust(EditorBuffer b) {
-        return xmlTrust.pomAwaitsTrust(b);
+    boolean pomWithheldUntrusted(EditorBuffer b) {
+        return xmlTrust.pomWithheldUntrusted(b);
     }
 
-    /** {@code workspace.trustFolder}: trusts the active XML file's folder; {@code broadcast} tells every window. */
-    void trustFolder(@Nullable Runnable broadcast) {
-        xmlTrust.trustFolder(broadcast);
+    /** {@code workspace.trustFolder}: trusts the active XML file's folder, then tells every window (E1, C6). */
+    void trustFolder() {
+        xmlTrust.trustFolder();
+    }
+
+    /** How a trust decision reaches every window: the window manager's broadcast (default: this window only). */
+    void setTrustBroadcast(Runnable broadcast) {
+        xmlTrust.broadcast = broadcast;
     }
 
     /** Pure: {@code serverId}'s configured command from {@code s} — the id→Settings-field mapping, kept

@@ -80,7 +80,6 @@ class XmlFolderTrustFxTest {
     private static final class FakeOps extends LspOpsStub {
         ConfigManager config;
         Path projectRoot;
-        final List<String> commands = new ArrayList<>();
 
         @Override
         public ConfigManager config() {
@@ -95,11 +94,6 @@ class XmlFolderTrustFxTest {
         @Override
         public boolean lspFeatureEnabled() {
             return true;
-        }
-
-        @Override
-        public void executeCommand(String id) {
-            commands.add(id);
         }
     }
 
@@ -118,7 +112,7 @@ class XmlFolderTrustFxTest {
             coordinator = new LspCoordinator(host, manager, ops);
             coordinator.setServerAvailableForTest("xml", true);
             coordinator.setServerAvailableForTest("maven-pom", true);
-            trust = new XmlFolderTrust(coordinator, host, manager, ops);
+            trust = FxTestSupport.field(coordinator, "xmlTrust"); // the window's own: its notices' button
         });
         // The project is already applied: the first sync would otherwise re-configure and re-probe every server.
         java.lang.reflect.Field applied = LspCoordinator.class.getDeclaredField("appliedProjectRoot");
@@ -156,7 +150,7 @@ class XmlFolderTrustFxTest {
         FxTestSupport.runOnFx(() -> coordinator.syncBuffer(pom));
 
         assertEquals("xml", FxTestSupport.callOnFx(() -> coordinator.serverIdForBuffer(pom)));
-        assertTrue(FxTestSupport.callOnFx(() -> coordinator.pomAwaitsTrust(pom)));
+        assertTrue(FxTestSupport.callOnFx(() -> coordinator.pomWithheldUntrusted(pom)));
         assertFalse(manager.hasSession("maven-pom", project), "lemminx-maven is never started for it");
         assertEquals("xml", manager.managedServerId(pom.getPath()));
         assertEquals(tr("xml.trust.pomNotice"), FxTestSupport.callOnFx(pom::fileNoticeText));
@@ -169,13 +163,13 @@ class XmlFolderTrustFxTest {
         List<Path> asked = new ArrayList<>();
         trust.confirmer = (owner, root) -> asked.add(root);
 
-        FxTestSupport.runOnFx(() -> trust.trustFolder(null));
+        FxTestSupport.runOnFx(() -> trust.trustFolder());
 
         assertEquals(List.of(project), asked, "the project the pom is in, after the prompt");
         assertTrue(config.getTrustStore().isTrusted(project));
         assertEquals("maven-pom", FxTestSupport.callOnFx(() -> coordinator.serverIdForBuffer(pom)));
         assertEquals("maven-pom", manager.managedServerId(pom.getPath()));
-        assertFalse(FxTestSupport.callOnFx(() -> coordinator.pomAwaitsTrust(pom)));
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.pomWithheldUntrusted(pom)));
         assertNull(FxTestSupport.callOnFx(pom::fileNoticeText), "the offer goes once it is done");
 
         config.getTrustStore().revoke(project);
@@ -190,7 +184,7 @@ class XmlFolderTrustFxTest {
         FxTestSupport.runOnFx(() -> coordinator.syncBuffer(pom));
         trust.confirmer = (owner, root) -> false;
 
-        FxTestSupport.runOnFx(() -> trust.trustFolder(null));
+        FxTestSupport.runOnFx(() -> trust.trustFolder());
 
         assertFalse(config.getTrustStore().isTrusted(project));
         assertEquals("xml", manager.managedServerId(pom.getPath()));
@@ -215,7 +209,7 @@ class XmlFolderTrustFxTest {
         host.settings.setMavenPomLspEnabled(false);
         EditorBuffer pom = open(project.resolve("pom.xml"), "<project/>");
         FxTestSupport.runOnFx(() -> coordinator.syncBuffer(pom));
-        assertFalse(FxTestSupport.callOnFx(() -> coordinator.pomAwaitsTrust(pom)));
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.pomWithheldUntrusted(pom)));
         assertNull(FxTestSupport.callOnFx(pom::fileNoticeText));
     }
 
@@ -250,25 +244,31 @@ class XmlFolderTrustFxTest {
     @Test
     void trustFolderSaysSoWhenThereIsNothingOrItIsAlreadyTrusted() throws Exception {
         ops.projectRoot = null;
-        FxTestSupport.runOnFx(() -> trust.trustFolder(null));
+        FxTestSupport.runOnFx(() -> trust.trustFolder());
         assertEquals(tr("xml.trust.noFolder"), host.lastStatus);
 
         ops.projectRoot = project;
         config.getTrustStore().trust(project);
-        FxTestSupport.runOnFx(() -> trust.trustFolder(null));
+        FxTestSupport.runOnFx(() -> trust.trustFolder());
         assertEquals(tr("xml.trust.already", "app"), host.lastStatus);
     }
 
     @Test
-    void theNoticeButtonRunsTheCommandThatTellsEveryWindow() throws Exception {
+    void theNoticeButtonTrustsAndTellsEveryWindow() throws Exception {
         EditorBuffer pom = open(project.resolve("pom.xml"), "<project/>");
         FxTestSupport.runOnFx(() -> coordinator.syncBuffer(pom));
+        List<Path> asked = new ArrayList<>();
+        trust.confirmer = (owner, root) -> asked.add(root);
+        List<String> told = new ArrayList<>();
+        trust.broadcast = () -> told.add("broadcast");
         javafx.scene.control.Button action = FxTestSupport.callOnFx(() -> {
             Object bar = FxTestSupport.field(pom, "fileNotice");
             return (javafx.scene.control.Button) FxTestSupport.field(bar, "action");
         });
         FxTestSupport.runOnFx(action::fire);
-        assertEquals(List.of(XmlFolderTrust.COMMAND), ops.commands);
+        assertEquals(List.of(project), asked);
+        assertEquals(List.of("broadcast"), told);
+        assertTrue(config.getTrustStore().isTrusted(project));
     }
 
     @Test

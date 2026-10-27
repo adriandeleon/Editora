@@ -38,7 +38,7 @@ import static com.editora.i18n.Messages.tr;
  */
 final class XmlFolderTrust {
 
-    /** The palette command that trusts the active file's folder; the notices' button runs it. */
+    /** The palette command that trusts the active file's folder; the notices' button does the same. */
     static final String COMMAND = "workspace.trustFolder";
 
     private final LspCoordinator lsp;
@@ -54,6 +54,12 @@ final class XmlFolderTrust {
 
     private record Answer(int trustList, @Nullable Path project, boolean trusted) {}
 
+    /**
+     * Tells every window that trust changed (the window manager's broadcast, which reaches this one too); until the
+     * window wires it, only this window re-reads its trust.
+     */
+    Runnable broadcast;
+
     /** Asks before trusting (TEST SEAM: a test answers without a dialog). */
     BiPredicate<Window, Path> confirmer = (owner, root) -> {
         TrustPrompts.Prompt prompt = TrustPrompts.folder(owner, root);
@@ -65,6 +71,7 @@ final class XmlFolderTrust {
         this.host = host;
         this.lspManager = lspManager;
         this.ops = ops;
+        this.broadcast = lsp::reloadProjectSettings;
     }
 
     // --- routing -------------------------------------------------------------------------------------
@@ -97,7 +104,7 @@ final class XmlFolderTrust {
      * Maven server is on, but this pom may not reach it. The pom install banner offers nothing for such a pom (trust
      * comes first); this class offers Trust Folder.
      */
-    boolean pomAwaitsTrust(EditorBuffer b) {
+    boolean pomWithheldUntrusted(EditorBuffer b) {
         Path file = b == null ? null : lsp.lspPath(b);
         Path name = file == null ? null : file.getFileName();
         return name != null
@@ -111,7 +118,7 @@ final class XmlFolderTrust {
 
     /** After {@code b} was (re)routed: an untrusted pom says, once per tab, why it is not Maven-aware. */
     void afterSync(EditorBuffer b) {
-        if (pomAwaitsTrust(b)) {
+        if (pomWithheldUntrusted(b)) {
             if (offered.add(b)) {
                 show(b, tr("xml.trust.pomNotice"));
             }
@@ -158,7 +165,7 @@ final class XmlFolderTrust {
     private void show(EditorBuffer b, String message) {
         b.showFileNotice(message, tr("xml.trust.button"), tr("xml.trust.notNow"), () -> {
             if (b == host.activeBuffer()) {
-                ops.executeCommand(COMMAND); // the command broadcasts the decision to every window
+                trustFolder(); // what the command does (not through executeCommand: that is the MCP bridge's)
             }
         });
     }
@@ -203,10 +210,9 @@ final class XmlFolderTrust {
 
     /**
      * {@code workspace.trustFolder}: trusts the folder the active file's XML server runs on — the project, or a
-     * pom's own Maven root outside it — after the trust prompt (Cancel is its default). {@code broadcast} tells
-     * every window (null: only this one re-reads its trust).
+     * pom's own Maven root outside it — after the trust prompt (Cancel is its default), then tells every window.
      */
-    void trustFolder(@Nullable Runnable broadcast) {
+    void trustFolder() {
         ConfigManager config = ops.config();
         EditorBuffer b = host.activeBuffer();
         Path root = b == null ? ops.lspProjectRoot() : target(b);
@@ -225,11 +231,7 @@ final class XmlFolderTrust {
         }
         config.getTrustStore().trust(root);
         config.saveTrust(); // durable: a security decision must survive a crash
-        if (broadcast != null) {
-            broadcast.run(); // every window, this one included, re-reads its trust (reloadProjectSettings)
-        } else {
-            lsp.reloadProjectSettings();
-        }
+        broadcast.run(); // every window, this one included, re-reads its trust (reloadProjectSettings)
         host.syncSettingsWindow(); // the Workspace page's trusted-folders list
         host.setStatus(tr("xml.trust.trusted", shown));
     }
