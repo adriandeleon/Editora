@@ -225,6 +225,21 @@ class PreviewRenderFxTest {
         });
     }
 
+    /** XML review 2 C11: a DTD opens as XML, but it has no tree — its preview said it was not well-formed. */
+    @Test
+    void aDtdHasNoXmlTreePreview() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer dtd = buffer("xml", "<!ELEMENT catalog (item*)>\n");
+            dtd.setDisplayName("catalog.dtd");
+            dtd.setStructuredPreviewEnabled(true);
+            assertFalse(dtd.isXml());
+            assertFalse(dtd.hasXmlPreview());
+            dtd.setDisplayName("catalog.xml");
+            assertTrue(dtd.hasXmlPreview(), "the same text named as an XML document keeps its preview");
+            dtd.dispose();
+        });
+    }
+
     @Test
     void anXmlDocumentShowsItsTreeAndAMalformedOneShowsTheError() throws Exception {
         EditorBuffer[] ref = new EditorBuffer[1];
