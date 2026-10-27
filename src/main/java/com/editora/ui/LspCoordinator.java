@@ -301,6 +301,9 @@ final class LspCoordinator {
     private final CoordinatorHost host;
     private final LspManager lspManager;
     private final Ops ops;
+    /** Folder trust for the lemminx servers: which pom may reach lemminx-maven, and Trust Folder (E1, C6). */
+    private final XmlFolderTrust xmlTrust;
+
     private final WorkspaceFileOperations workspaceFiles;
     private final Executor workspaceExecutor;
 
@@ -393,6 +396,7 @@ final class LspCoordinator {
         this.host = host;
         this.lspManager = lspManager;
         this.ops = ops;
+        this.xmlTrust = new XmlFolderTrust(this, host, lspManager, ops);
         this.pythonInterpreters = new PythonInterpreterCoordinator(new PythonInterpreterCoordinator.Host() {
             @Override
             public @Nullable Path projectRoot() {
@@ -1030,7 +1034,10 @@ final class LspCoordinator {
                 b.setLspActive(false);
             }
         });
-        host.setStatus(tr("status.lsp.astroSdkUntrusted", tr("command.lsp.trustProjectSettings")));
+        host.setStatus(
+                com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)
+                        ? tr("xml.trust.pomNotice")
+                        : tr("status.lsp.astroSdkUntrusted", tr("command.lsp.trustProjectSettings")));
         updateStatusBar();
     }
 
@@ -1413,6 +1420,7 @@ final class LspCoordinator {
         if (buffer != null) {
             buffer.setLspDiagnostics(diagnostics);
             noteNonProjectFile(file, diagnostics);
+            xmlTrust.onDiagnostics(buffer, diagnostics); // a schema not downloaded: Trust Folder on the file (C6)
             String blocked = xmlNotices.onDiagnostics(diagnostics); // a schema not downloaded: say where it is decided
             if (blocked != null) {
                 // After the opening's own lines ("Opened …", the server's ready line), which replaced it at once.
@@ -1945,20 +1953,24 @@ final class LspCoordinator {
     /** The command a server is started with: {@link #serverCommand(String)}, a blank one filled in with
      *  Editora's own copy where it keeps one outside PATH (lemminx, review A9). */
     private String launchCommand(String serverId) {
-        return withOwnCopy(serverId, serverCommand(serverId), configDir());
+        return withOwnCopy(
+                serverId, serverCommand(serverId), configDir(), host.settings().getMavenJdkHome());
     }
 
     /** {@code command} for {@code serverId}, Editora's own copy standing in for a blank XML command. Pure but
      *  for file lookups. */
-    static String withOwnCopy(String serverId, @Nullable String command, @Nullable Path configDir) {
+    static String withOwnCopy(String serverId, @Nullable String command, @Nullable Path configDir, String jdk) {
         String raw = command == null ? "" : command;
-        return "xml".equals(serverId) ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir) : raw;
+        return "xml".equals(serverId) // Editora's copy may be the Java lemminx (A8): on the Maven JDK, as a set one is
+                ? com.editora.lsp.JvmServerCommand.withJdk(
+                        com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir), jdk)
+                : raw;
     }
 
     /** {@link #commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
     static Map<String, String> launchCommandsForAllServers(com.editora.config.Settings s, @Nullable Path configDir) {
         Map<String, String> commands = commandsForAllServers(s);
-        commands.replaceAll((id, command) -> withOwnCopy(id, command, configDir));
+        commands.replaceAll((id, command) -> withOwnCopy(id, command, configDir, s.getMavenJdkHome()));
         return commands;
     }
 
@@ -2103,6 +2115,7 @@ final class LspCoordinator {
     /** Hands the XML servers their settings (Settings → LSP → XML), each folder's trust read again (XML review D3). */
     void applyXmlSettings() {
         com.editora.config.ConfigManager config = ops.config();
+        com.editora.lsp.XmlBundledSchemas.ensure(config == null ? null : config.getConfigDir()); // the POM XSDs (D12)
         lspManager.setXmlSettings(
                 com.editora.lsp.XmlServerSettings.of(host.settings(), config == null ? null : config.getConfigDir()));
         xmlNotices.reset();
@@ -2336,11 +2349,22 @@ final class LspCoordinator {
         applyOnTypeFormatting();
         applyBashIde();
         applyXmlSettings();
+        xmlTrust.trustChanged(); // a pom moves to or off lemminx-maven with its folder's trust (E1)
         appliedProjectRoot = ops.lspProjectRoot();
         offerInterruptedEdits();
         if (ops.lspFeatureEnabled() && !projectOverrideSignature().equals(appliedProjectOverrides)) {
             applySupport();
         }
+    }
+
+    /** Whether {@code b} is a pom.xml served by plain lemminx because its folder is not trusted (E1). */
+    boolean pomAwaitsTrust(EditorBuffer b) {
+        return xmlTrust.pomAwaitsTrust(b);
+    }
+
+    /** {@code workspace.trustFolder}: trusts the active XML file's folder; {@code broadcast} tells every window. */
+    void trustFolder(@Nullable Runnable broadcast) {
+        xmlTrust.trustFolder(broadcast);
     }
 
     /** Pure: {@code serverId}'s configured command from {@code s} — the id→Settings-field mapping, kept
@@ -2898,6 +2922,7 @@ final class LspCoordinator {
                 clearDiagnostics(path);
             }
         }
+        xmlTrust.afterSync(buffer); // an untrusted pom says why it is not Maven-aware (E1)
         if (buffer == host.activeBuffer()) {
             // The "LSP: <server>" segment and the Problems stripe follow whether the active file is managed,
             // which only changes here. Every other refresh (a tab switch, a server detected) runs before a
@@ -2930,7 +2955,8 @@ final class LspCoordinator {
 
     /** Workspace root for a buffer under {@code serverId}: active project (if Projects on), else nearest build
      *  file (that server's markers), else the file's dir. */
-    private @Nullable Path lspRootFor(EditorBuffer buffer, String serverId) {
+    @Nullable
+    Path lspRootFor(EditorBuffer buffer, String serverId) {
         Path file = lspPath(buffer);
         if (file == null) {
             return null; // every caller has checked lspPath already
@@ -3081,7 +3107,8 @@ final class LspCoordinator {
      * (not yet probed) this returns null so the buffer is <i>not</i> opened on the plain XML server first
      * (which {@link #syncBuffer} would then never switch away from). Once probed: available → {@code maven-pom};
      * absent → fall back to the language's normal server, so a {@code pom.xml} still gets base-XML LSP when
-     * lemminx-maven isn't installed. Disabling {@code maven-pom} skips the routing entirely (pure native XML).
+     * lemminx-maven isn't installed. Disabling {@code maven-pom} skips the routing entirely (pure native XML), and
+     * a pom whose folder is not trusted never reaches lemminx-maven, which would resolve and load what it names.
      */
     @Nullable
     String serverIdForBuffer(EditorBuffer b) {
@@ -3090,7 +3117,10 @@ final class LspCoordinator {
         String pomServer = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;
         String fileName =
                 p == null || p.getFileName() == null ? null : p.getFileName().toString();
-        if (fileName != null && com.editora.lsp.LspServerRegistry.isPomFile(fileName) && serverEnabled(pomServer)) {
+        if (fileName != null
+                && com.editora.lsp.LspServerRegistry.isPomFile(fileName)
+                && serverEnabled(pomServer)
+                && xmlTrust.pomTrusted(b)) { // an untrusted pom stays on plain lemminx (E1)
             Boolean mavenOk = serverAvailable.get(pomServer);
             if (mavenOk == null) {
                 return null; // not yet probed — don't open on the plain XML server first; wait for the probe
@@ -3590,9 +3620,14 @@ final class LspCoordinator {
         long folders = statusSources.values().stream()
                 .filter(src -> src.serverId().equals(serverId) && lspManager.hasLiveSession(serverId, src.root()))
                 .count(); // live servers only (CV4), starting ones too: their first lines were unnamed (sixth CS3)
-        return root == null || folders < 2 || root.getFileName() == null
-                ? name
-                : tr("status.lsp.serverInFolder", name, root.getFileName().toString());
+        if (root == null || folders < 2 || root.getFileName() == null) {
+            return name;
+        }
+        boolean loose = root.toAbsolutePath().normalize().equals(lspManager.looseRoot()); // its internal folder (A6)
+        return tr(
+                "status.lsp.serverInFolder",
+                name,
+                loose ? tr("status.lsp.looseFiles") : root.getFileName().toString());
     }
 
     /**

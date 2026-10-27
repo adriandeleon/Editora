@@ -16,7 +16,8 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * The folder-trust prompts: trusting a folder to send its secrets from a {@code .http} request, to run the response
- * handlers of its {@code .http} files, and to run its build (wrapper, pom plugins, build scripts). Both open by themselves while the user may still be typing (the HTTP one after the run has started), and
+ * handlers of its {@code .http} files, to run its build (wrapper, pom plugins, build scripts), and the plain Trust
+ * Folder (Maven-aware pom editing, schema downloads, and all of the above). The first three open by themselves while the user may still be typing (the HTTP one after the run has started), and
  * trusting is remembered, so <b>Cancel is the default and focused button</b>: a stray Enter or Space never trusts a
  * folder. Built here, on the FX thread, so a test can check the real dialog without showing a window of its own.
  */
@@ -83,7 +84,21 @@ final class TrustPrompts {
         return finish(confirm, owner, trust);
     }
 
-    private static Prompt finish(Alert confirm, Window owner, ButtonType trust) {
+    /**
+     * The prompt of Trust Folder ({@code workspace.trustFolder}, and the button on an XML file's notice): what a
+     * trusted {@code root} may do, Maven-aware pom editing and schema downloads first (XML/pom review 2: E1, C6).
+     */
+    static Prompt folder(@Nullable Window owner, Path root) {
+        Path name = root.getFileName();
+        ButtonType trust = new ButtonType(tr("dialog.folderTrust.accept"), ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = new Alert(
+                Alert.AlertType.WARNING, tr("dialog.folderTrust.body", root.toString()), ButtonType.CANCEL, trust);
+        confirm.setTitle(tr("dialog.trust.title"));
+        confirm.setHeaderText(tr("dialog.folderTrust.header", name == null ? root.toString() : name.toString()));
+        return finish(confirm, owner, trust);
+    }
+
+    private static Prompt finish(Alert confirm, @Nullable Window owner, ButtonType trust) {
         if (owner != null) {
             confirm.initOwner(owner);
         }

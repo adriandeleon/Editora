@@ -69,7 +69,43 @@ public final class XmlServerInstall {
             return raw;
         }
         Path own = ownCopy(configDir);
+        if (own == null
+                && configDir != null
+                && Files.isRegularFile(folder(configDir).resolve(JAVA_FALLBACK))) {
+            // The native build cannot run here and the install fell back to the Java lemminx: blank keeps it (A8).
+            String java = InstallService.javaLemminx(configDir);
+            return java == null ? raw : java;
+        }
         return own == null ? raw : InstallCatalog.quoteCommandPath(own.toString());
+    }
+
+    /**
+     * The file in Editora's lemminx folder that says the native build cannot run on this system and XML runs on the
+     * pom server's Java lemminx instead; it holds the reason. A later native install replaces the folder, and it.
+     */
+    static final String JAVA_FALLBACK = "java-fallback.txt";
+
+    /**
+     * Records that the native lemminx cannot run here ({@code reason}): removes the unrunnable program from {@code
+     * dir} — the pinned name and the per-platform name an install from before the pin kept, which a blank command ran
+     * again (XML/pom review 2, A8) — and writes {@link #JAVA_FALLBACK}. Best effort.
+     */
+    static void recordJavaFallback(Path dir, String reason) {
+        try {
+            Files.createDirectories(dir);
+            InstallCatalog.Platform platform = InstallCatalog.currentPlatform();
+            Files.deleteIfExists(dir.resolve(InstallCatalog.toolFileName(InstallCatalog.LEMMINX_STEP, platform)));
+            String legacy = InstallCatalog.pinnedTool(InstallCatalog.LEMMINX_STEP)
+                    .map(t -> t.assetFor(platform))
+                    .map(InstallCatalog.PinnedAsset::member)
+                    .orElse(null);
+            if (legacy != null) {
+                Files.deleteIfExists(dir.resolve(legacy));
+            }
+            Files.writeString(dir.resolve(JAVA_FALLBACK), reason == null ? "" : reason);
+        } catch (java.io.IOException | InvalidPathException e) {
+            // the command the install stores still runs the Java lemminx; only a later blank would not
+        }
     }
 
     /**

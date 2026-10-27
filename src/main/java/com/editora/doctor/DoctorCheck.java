@@ -72,6 +72,18 @@ public record DoctorCheck(
         return id.startsWith(CACHE_PREFIX);
     }
 
+    /** The tips of a server that is installed but crashes or fails, which tell the user to click Install…. */
+    private static final java.util.Set<String> REINSTALL_TIPS =
+            java.util.Set.of("doctor.tip.serverCrashing", "doctor.tip.serverFailing");
+
+    /**
+     * Whether the pane offers Install on this warning: an installable server whose tip says to reinstall it because it
+     * crashes or fails its requests (XML/pom review 2, A2) — the row used to say "Click Install…" with no such button.
+     */
+    public boolean reinstallable() {
+        return status == DoctorStatus.WARN && install != Install.NONE && REINSTALL_TIPS.contains(tipKey);
+    }
+
     /** A fresh row in the transient {@link DoctorStatus#CHECKING} state (shown while its probe runs). */
     public static DoctorCheck checking(String id, String sectionKey, String label, String command) {
         return new DoctorCheck(id, sectionKey, label, command, DoctorStatus.CHECKING);

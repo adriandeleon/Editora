@@ -125,6 +125,11 @@ public record XmlServerSettings(
         // Explicit, though it is lemminx's default: an external entity would be another fetch (or a local read).
         xml.put("validation", Map.of("noGrammar", noGrammar, "resolveExternalEntities", false));
         List<String> resolvedCatalogs = new ArrayList<>();
+        // Editora's own grammars first (the POM schemas, D12), so a pom validates and completes with downloads off.
+        Path bundled = local ? XmlBundledSchemas.catalogBeside(workDir) : null;
+        if (bundled != null) {
+            resolvedCatalogs.add(bundled.toString());
+        }
         for (String catalog : catalogs) {
             String path = resolve(catalog, root, local, true);
             if (path != null) {

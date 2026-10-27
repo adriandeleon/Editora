@@ -917,6 +917,10 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("plugins.installFromDisk", host.pluginCoordinator()::installFromDisk));
         host.registry().register(Command.of("workspace.manageTrust", host::showTrustedFolders));
         host.registry().register(Command.of("workspace.revokeTrust", host::revokeTrustForActiveRoot));
+        host.registry().register(Command.of(XmlFolderTrust.COMMAND, () -> {
+            WindowManager windows = host.windowManager();
+            host.lspCoordinator().trustFolder(windows == null ? null : windows::broadcastTrustChanged);
+        }));
         host.registry().register(Command.of("config.export", host::exportConfig));
         host.registry().register(Command.of("config.import", host::importConfig));
         // Settings sync is one service for the whole process; each window's Settings window holds it.

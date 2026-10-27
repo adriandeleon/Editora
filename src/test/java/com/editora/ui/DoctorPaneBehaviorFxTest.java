@@ -132,23 +132,37 @@ class DoctorPaneBehaviorFxTest {
         }
     }
 
-    /** An install older than its pin keeps its install action, labelled Update; a plain warning gets none. */
+    /**
+     * An install older than its pin keeps its install action, labelled Update; a server that crashes or fails its
+     * requests offers the Install… its tip names (XML/pom review 2, A2); any other warning gets none.
+     */
     @Test
-    void anOutdatedInstallOffersUpdateAndAPlainWarningDoesNot() throws Exception {
+    void anOutdatedInstallOffersUpdateAFailingOneInstallAndAPlainWarningNeither() throws Exception {
         DoctorCheck outdated = DoctorCheck.checking("lsp.groovy", "lsp", "Groovy", "gls")
                 .withInstall(DoctorCheck.Install.SERVER, "groovy")
                 .outdated("0.4.1 — /x/gls", "doctor.tip.pinOutdated", "0.4.1", "0.4.8");
         DoctorCheck failing = DoctorCheck.checking("lsp.xml", "lsp", "XML", "lemminx")
                 .withInstall(DoctorCheck.Install.SERVER, "xml")
                 .warn("lemminx", "doctor.tip.serverFailing");
-        Shown s = show(List.of(outdated, failing));
+        DoctorCheck crashing = DoctorCheck.checking("lsp.yaml", "lsp", "YAML", "yaml-language-server")
+                .withInstall(DoctorCheck.Install.SERVER, "yaml")
+                .warn("GLIBC_2.34 not found", "doctor.tip.serverCrashing");
+        DoctorCheck plain = DoctorCheck.checking("lsp.json", "lsp", "JSON", "vscode-json-language-server")
+                .withInstall(DoctorCheck.Install.SERVER, "json")
+                .warn("", "doctor.tip.pinUnknown", "1.0");
+        Shown s = show(List.of(outdated, failing, crashing, plain));
         try {
             Button update = FxTestSupport.callOnFx(() -> button(row(s.pane(), "lsp.groovy"), "install"));
             assertNotNull(update, "Update is offered");
             assertEquals(com.editora.i18n.Messages.tr("doctor.action.update"), update.getText());
+            for (String id : List.of("lsp.xml", "lsp.yaml")) {
+                Button install = FxTestSupport.callOnFx(() -> button(row(s.pane(), id), "install"));
+                assertNotNull(install, id + ": the Install… its tip names is there");
+                assertEquals(com.editora.i18n.Messages.tr("doctor.action.install"), install.getText());
+            }
             assertNull(
-                    FxTestSupport.callOnFx(() -> button(row(s.pane(), "lsp.xml"), "install")),
-                    "a server that fails is not reinstalled by a warning's button");
+                    FxTestSupport.callOnFx(() -> button(row(s.pane(), "lsp.json"), "install")),
+                    "another warning is not reinstalled by its button");
 
             FxTestSupport.runOnFx(() -> s.pane().installStarted("lsp.groovy"));
             FxTestSupport.drainFx();
@@ -227,6 +241,32 @@ class DoctorPaneBehaviorFxTest {
             assertFalse(FxTestSupport.callOnFx(s.pane()::isRunning));
             assertFalse(FxTestSupport.callOnFx(
                     () -> row(s.pane(), "git").getStyleClass().contains("doctor-stale")));
+        } finally {
+            FxTestSupport.runOnFx(s.stage()::hide);
+        }
+    }
+
+    /**
+     * A cache row stays right after its server's row (XML/pom review 2, A9): with XML in "Needs attention" the XML
+     * schema cache used to sit among the healthy rows, between two other servers.
+     */
+    @Test
+    void aCacheRowFollowsItsServerIntoNeedsAttention() throws Exception {
+        DoctorCheck python =
+                DoctorCheck.checking("lsp.python", "lsp", "Python", "pyright").ok("pyright");
+        DoctorCheck cache = DoctorCheck.checking(DoctorCoordinator.XML_CACHE_ID, "lsp", "XML schema cache", "")
+                .ok("2.0 kB — /tmp/x");
+        DoctorCheck json =
+                DoctorCheck.checking("lsp.json", "lsp", "JSON", "json").ok("json");
+        Shown s = show(List.of(python, xmlMissing(), cache, json));
+        try {
+            List<Object> ids = FxTestSupport.callOnFx(() -> body(s.pane()).getChildren().stream()
+                    .map(n -> n.getProperties().get("doctor.id"))
+                    .filter(java.util.Objects::nonNull)
+                    .toList());
+            int xml = ids.indexOf("lsp.xml");
+            assertEquals(xml + 1, ids.indexOf(DoctorCoordinator.XML_CACHE_ID), ids.toString());
+            assertEquals(0, xml, "both in Needs attention, first: " + ids);
         } finally {
             FxTestSupport.runOnFx(s.stage()::hide);
         }

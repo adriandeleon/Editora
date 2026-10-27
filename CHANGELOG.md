@@ -51,6 +51,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **XML and pom.xml: folder trust.** A pom.xml in a folder you have not trusted no longer reaches the Maven pom
+  server (lemminx-maven), which fetched the parents, plugins and extensions it named — from repositories the pom
+  itself named — and could run their code. It is edited with the plain XML server until you trust the folder; its
+  tab says "Maven-aware editing is off until you trust this folder" with **Trust Folder**, which moves it to the
+  Maven server. Revoking trust stops that server on the folder. A pom outside every trusted folder stays on the XML
+  server.
+  - **Workspace: Trust This Folder** (palette) trusts the active file's folder, and an XML file whose schema was not
+    downloaded because its folder is not trusted offers Trust Folder on the file: an XML-only folder had no way to
+    be trusted. Downloads turn on without a restart.
+  - The Maven POM schemas (4.0.0 and 4.1.0) are bundled: a pom validates and completes with schema downloads off,
+    without the two errors on line 2.
+  - "Use the Maven Central index" is now **Search Maven Central when completing pom.xml coordinates**, and says that
+    what you type is sent to search.maven.org (there is no index download).
+  - Doctor: a crashing or failing server's row has the Install… its tip names; the XML schema cache sits under its
+    server and is shown when only the pom server is on; lemminx-maven's artifact store (`~/.m2/.lemminx-maven`) has
+    its own row with Clear and Reveal, and the pom server keeps it under Editora's home.
+  - The status bar says "files outside the project" rather than Editora's internal `loose-files` folder.
+  - Settings says when Editora's own server copy predates version records, as Doctor does; a stored path to an
+    old per-platform lemminx copy is cleared (Settings schema 150 → 151), since a blank command runs that copy.
+  - After the XML install falls back to the Java lemminx, the native copy that cannot run is removed and a blank
+    XML command keeps the Java one.
+
 - **Terminal: a selection keeps its text when the terminal is resized.** JediTerm moves a selection itself when a
   shorter window pushes rows into history, and the terminal moved it again: after a splitter drag the highlight sat
   rows above the selected text, and Copy copied those rows. A block selection is dropped on a resize, whose reflow

@@ -465,11 +465,14 @@ public final class LspManager {
         });
     }
 
-    /** Whether lemminx-maven may use the Maven Central index (Settings → LSP; off = local repository only). */
+    /**
+     * Whether lemminx-maven may search Maven Central (search.maven.org) when completing pom.xml coordinates (Settings →
+     * LSP; off = the local repository only). Each completion sends what was typed; nothing is downloaded up front.
+     */
     private volatile boolean mavenCentralIndex;
 
     /**
-     * Pushes the Settings → LSP "Maven Central index" choice (Maven review C10). It is sent at {@code
+     * Pushes the Settings → LSP "Search Maven Central" choice (Maven review C10, review 2 D13). It is sent at {@code
      * initialize}, so a running Maven server is shut down when the choice changes; the coordinator's gating
      * reopens the pom buffers on a server started with the new options.
      */
@@ -1857,6 +1860,9 @@ public final class LspManager {
         Path sdkCeiling = ASTRO_SERVER_ID.equals(serverId) || TypeScriptServer.SERVER_ID.equals(serverId)
                 ? trustedCeiling(root, folderTrust)
                 : null;
+        // lemminx-maven resolves and loads what a pom names (parents, plugins, extensions, its repositories): never
+        // on a folder that is not trusted. The coordinator routes such a pom to plain lemminx; this is the backstop.
+        boolean pomUntrusted = LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId) && !folderTrust.test(root);
         boolean typeAcquisition = typeScriptTypeAcquisition;
         String nodeSetting = nodePathSetting;
         boolean loose = root.toAbsolutePath().normalize().equals(looseRoot);
@@ -1912,6 +1918,11 @@ public final class LspManager {
                             remoteEnvironment,
                             exe -> JavaServerEnvironment.isRemoteJdtlsLauncher(root, exe))
                     : resolvedSpec.command();
+            if (!remote && XmlServerSettings.isLemminx(serverId)) {
+                // A Java lemminx (the pom server's, or XML's fallback) keeps lemminx-maven's artifact store under
+                // user.home: Editora's, not the passwd home the JVM would read (review D14).
+                startCommand = JvmServerCommand.withUserHome(startCommand, System.getProperty("user.home", ""));
+            }
             if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && !remote && !startCommand.isEmpty()) {
                 // the Java this jdtls's bundles need: 25 for 1.63, though its launcher only checks for 21 (DS1)
                 int minJava = JavaRuntimes.serverMinMajor(startCommand.get(0));
@@ -1939,6 +1950,12 @@ public final class LspManager {
                     // Declared, but no build has downloaded it yet: the window offers to fetch it.
                     Platform.runLater(() -> onLombokMissing.accept(root));
                 }
+            }
+            if (pomUntrusted) {
+                endHere(session); // deliberate: no crash notice, no restart
+                dropSession(key, session);
+                Platform.runLater(() -> onStartWithheld.accept(serverId, root));
+                return;
             }
             Path astroTsdk = ASTRO_SERVER_ID.equals(serverId) && !remote
                     ? astroTypeScriptSdk(root, sdkCeiling, startCommand)
@@ -5260,10 +5277,11 @@ public final class LspManager {
      *       initialization without it, so with neither the server is not started.</li>
      *   <li><b>maven-pom</b> (JVM lemminx + lemminx-maven): {@code settings.xml.maven.central.skip=true} —
      *       the lemminx-maven settings live under an {@code xml.maven} object (schema verified against the
-     *       extension's {@code XMLMavenSettings}). {@code central.skip=true} disables the heavy Maven Central
-     *       <i>index</i> download so completion is served from the local {@code ~/.m2} repository only —
-     *       offline-friendly and network-conservative, matching how Git/LSP/update-check are gated — unless
-     *       Settings → LSP "Use the Maven Central index" is on ({@link #setMavenCentralIndex}, review C10).
+     *       extension's {@code XMLMavenSettings}). {@code central.skip=true} keeps lemminx-maven from asking
+     *       search.maven.org (its {@code RemoteCentralRepositorySearcher}; there is no index download since 0.5)
+     *       as completion is typed, so coordinates come from the local {@code ~/.m2} repository only —
+     *       network-conservative, matching how Git/LSP/update-check are gated — unless Settings → LSP "Search Maven
+     *       Central when completing pom.xml coordinates" is on ({@link #setMavenCentralIndex}, review C10, D13).
      *       Sending any {@code xml.maven} object is also what activates the extension's POM awareness in the
      *       first place.</li>
      * </ul>
@@ -5288,7 +5306,7 @@ public final class LspManager {
         return initOptionsFor(serverId, debugBundles, astroTsdk, javaOnTypeFormatting, jdks, false);
     }
 
-    /** As above; {@code mavenCentralIndex} lets lemminx-maven download and use the Maven Central index. */
+    /** As above; {@code mavenCentralIndex} lets lemminx-maven search Maven Central as coordinates are completed. */
     static @Nullable Object initOptionsFor(
             String serverId,
             List<String> debugBundles,
@@ -5684,6 +5702,21 @@ public final class LspManager {
             }
         }
         return any;
+    }
+
+    /**
+     * Stops {@code serverId}'s sessions on folders that are no longer trusted (a revoke, here or in another window):
+     * the pom server must not keep resolving a folder's poms once its trust is gone (XML/pom review 2, E1).
+     */
+    public void shutdownUntrusted(String serverId) {
+        String prefix = sessionKeyPrefix(serverId);
+        List<Path> untrusted = new ArrayList<>();
+        sessionsByRoot.forEach((key, session) -> {
+            if (key.startsWith(prefix) && !folderTrust.test(session.root())) {
+                untrusted.add(session.root());
+            }
+        });
+        untrusted.forEach(root -> shutdownServerAt(serverId, root));
     }
 
     /** Shuts down every session for {@code serverId} (e.g. when that server's per-server toggle goes off). */

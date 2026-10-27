@@ -195,7 +195,14 @@ class InstallServiceLemminxTest {
                 InstallCatalog.jvmClasspathCommand(maven, InstallCatalog.LEMMINX_MAIN_CLASS),
                 result.installedCommand());
         assertEquals("version `GLIBC_2.34' not found", result.message(), "the reason, for the status line");
-        assertFalse(Files.exists(config.resolve("plugins/lsp/xml")), "nothing of the native server is left");
+        assertNull(XmlServerInstall.ownCopy(config), "nothing of the native server is left");
+        // Only the note that XML runs on the Java lemminx: a blank command keeps it (XML/pom review 2, A8).
+        try (var left = Files.list(config.resolve("plugins/lsp/xml"))) {
+            assertEquals(
+                    List.of(XmlServerInstall.JAVA_FALLBACK),
+                    left.map(p -> p.getFileName().toString()).toList());
+        }
+        assertEquals(result.installedCommand(), XmlServerInstall.effectiveCommand("", config));
         assertFalse(XmlServerInstall.isNativeInstall(result.installedCommand()));
     }
 }

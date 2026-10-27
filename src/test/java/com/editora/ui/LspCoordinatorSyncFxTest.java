@@ -80,6 +80,14 @@ class LspCoordinatorSyncFxTest {
 
     private static final class FakeOps extends LspOpsStub {
         boolean featureEnabled = true;
+        /** The window's configuration (its trust list); null as in a window without one. */
+        com.editora.config.ConfigManager config;
+
+        @Override
+        public com.editora.config.ConfigManager config() {
+            return config;
+        }
+
         final List<Boolean> problemsAvailable = new ArrayList<>();
         final List<String> statusBarLabels = new ArrayList<>();
 
@@ -396,6 +404,10 @@ class LspCoordinatorSyncFxTest {
             host.active = x;
             return x;
         });
+
+        // Only a pom in a trusted folder may reach lemminx-maven (XML/pom review 2, E1; see XmlFolderTrustFxTest).
+        ops.config = new com.editora.config.ConfigManager(root.resolve("config"));
+        ops.config.getTrustStore().trust(root);
 
         // Unprobed: no routing decision yet.
         assertEquals(null, FxTestSupport.callOnFx(() -> coordinator.serverIdForBuffer(b)));

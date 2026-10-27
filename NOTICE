@@ -229,6 +229,20 @@ batchfile, groovy, scala, clojure, json, yaml, ini, global) are original to
 Editora and covered by Editora's own MIT License.
 
 ================================================================================
+Bundled Maven POM schemas
+================================================================================
+
+The POM schemas under src/main/resources/com/editora/lsp/schemas/
+(maven-4.0.0.xsd and maven-4.1.0.xsd, as published at
+https://maven.apache.org/xsd/) are redistributed unmodified under the Apache
+License 2.0. They let the XML language servers validate and complete pom.xml
+files without downloading the schema.
+
+    Apache Maven — https://maven.apache.org/
+    Copyright The Apache Software Foundation
+    License: Apache-2.0
+
+================================================================================
 Third-party libraries
 ================================================================================
 
