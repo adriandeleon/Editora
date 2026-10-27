@@ -26,12 +26,12 @@ class LspCoordinatorServerIdsTest {
 
     @Test
     void everyServerIdGetsItsCommandInTheConfigureMap() {
-        var commands = LspCoordinator.commandsForAllServers(new Settings());
-        for (String id : LspCoordinator.serverIds()) {
+        var commands = LspServerCommands.commandsForAllServers(new Settings());
+        for (String id : LspServerCommands.serverIds()) {
             assertTrue(commands.containsKey(id), "no command mapped for server id: " + id);
         }
         assertEquals(
-                LspCoordinator.serverIds().size(),
+                LspServerCommands.serverIds().size(),
                 commands.size(),
                 "the configure map must cover exactly SERVER_IDS — no more, no fewer");
     }
@@ -44,11 +44,11 @@ class LspCoordinatorServerIdsTest {
     @Test
     void eachServerIdReadsItsOwnSettingsFieldNotJavasByDefault() {
         Settings s = new Settings();
-        List<String> ids = LspCoordinator.serverIds();
+        List<String> ids = LspServerCommands.serverIds();
         for (String id : ids) {
             setCommand(s, id, "cmd-for-" + id);
         }
-        var commands = LspCoordinator.commandsForAllServers(s);
+        var commands = LspServerCommands.commandsForAllServers(s);
         for (String id : ids) {
             assertEquals("cmd-for-" + id, commands.get(id), "server id " + id + " reads the wrong Settings field");
         }
@@ -59,7 +59,7 @@ class LspCoordinatorServerIdsTest {
     /** Every id the coordinator drives must be a server the registry actually knows. */
     @Test
     void everyServerIdIsKnownToTheRegistry() {
-        for (String id : LspCoordinator.serverIds()) {
+        for (String id : LspServerCommands.serverIds()) {
             assertNotNull(LspServerRegistry.defaultCommandFor(id), "registry does not know server id: " + id);
             assertTrue(!LspServerRegistry.rootMarkersForServer(id).isEmpty(), "no root markers for server id: " + id);
         }
@@ -77,7 +77,7 @@ class LspCoordinatorServerIdsTest {
                 LspServerRegistry.defaultCommandFor(LspServerRegistry.MAVEN_POM_SERVER_ID),
                 "precondition: maven-pom has no built-in default command");
         s.setMavenPomLspCommand("java -cp /opt/lemminx/* org.eclipse.lemminx.XMLServerLauncher");
-        var commands = LspCoordinator.commandsForAllServers(s);
+        var commands = LspServerCommands.commandsForAllServers(s);
         assertEquals(
                 "java -cp /opt/lemminx/* org.eclipse.lemminx.XMLServerLauncher",
                 commands.get(LspServerRegistry.MAVEN_POM_SERVER_ID));

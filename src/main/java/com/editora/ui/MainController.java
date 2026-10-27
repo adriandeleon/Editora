@@ -6962,7 +6962,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public java.util.List<String> lspServerIds() {
-                    return LspCoordinator.serverIds();
+                    return LspServerCommands.serverIds();
                 }
 
                 @Override

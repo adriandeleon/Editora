@@ -41,7 +41,7 @@ import static com.editora.i18n.Messages.tr;
  *   <li>the <em>diagnostics routing</em> — the per-open-file {@code problems} map, the {@link ProblemsPanel},
  *       and the {@code publishDiagnostics} callback ({@link #onDiagnostics});
  *   <li>the <em>configure/detect/gating + per-buffer lifecycle</em> — {@link #applySupport} (mirrors
- *       {@link MermaidCoordinator}), per-server detection ({@code serverAvailable}/{@code SERVER_IDS}), the
+ *       {@link MermaidCoordinator}), per-server detection ({@code serverAvailable}/{@code LspServerCommands.SERVER_IDS}), the
  *       per-server enable/command switches, {@link #syncBuffer} (open/activate/close), the status-bar
  *       {@code LSP:} segment ({@link #updateStatusBar}), the Structure outline ({@link #requestStructureSymbols}),
  *       semantic tokens, the server-ready callback ({@link #onServerStatus}), the {@link #wireBuffer} hook set,
@@ -327,37 +327,6 @@ final class LspCoordinator {
 
     /** serverId → whether that server's command was found on this machine (per-server availability). */
     private final Map<String, Boolean> serverAvailable = new java.util.HashMap<>();
-
-    /** Known LSP server ids (the configure/detect/gating loops iterate these). */
-    private static final String[] SERVER_IDS = {
-        "java",
-        "typescript",
-        "python",
-        "xml",
-        "json",
-        "bash",
-        "yaml",
-        "go",
-        "rust",
-        "php",
-        "ruby",
-        "clangd",
-        "html",
-        "css",
-        "kotlin",
-        "groovy",
-        "scala",
-        "clojure",
-        "lua",
-        "dockerfile",
-        "sql",
-        "terraform",
-        "toml",
-        "csharp",
-        "typst",
-        "astro",
-        com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID
-    };
 
     /** Lines of over-scan above/below the viewport when requesting semantic tokens (small scrolls stay covered). */
     private static final int SEMANTIC_WINDOW_PAD = 200;
@@ -1697,7 +1666,7 @@ final class LspCoordinator {
             updateStatusBar();
             return;
         }
-        for (String serverId : SERVER_IDS) {
+        for (String serverId : LspServerCommands.SERVER_IDS) {
             // Stop any server whose per-server toggle is off (frees its process); buffers deactivate below.
             if (!serverEnabled(serverId)) {
                 // Clear this server's buffers' diagnostics BEFORE shutting it down. After shutdown
@@ -1714,7 +1683,7 @@ final class LspCoordinator {
 
     /**
      * One server's probe result: recorded, then the buffers it can change are re-gated. Not every open
-     * buffer — each of the {@link #SERVER_IDS} answers on its own, so a buffer whose server had just failed to
+     * buffer — each of the {@link LspServerCommands#SERVER_IDS} answers on its own, so a buffer whose server had just failed to
      * start was re-opened, and its start failed again, once for every other server's answer.
      */
     void serverDetected(String serverId, boolean ok) {
@@ -1742,35 +1711,11 @@ final class LspCoordinator {
                 && com.editora.lsp.LspServerRegistry.isPomFile(p.getFileName().toString());
     }
 
-    /**
-     * Every known server's configured command, keyed by server id — what {@link LspManager#configure} needs.
-     *
-     * <p><b>Derived from {@link #SERVER_IDS}, never hand-listed.</b> This used to be a literal
-     * {@code Map.ofEntries(...)} of 22 entries against a 23-entry {@code SERVER_IDS}, and the one it omitted
-     * was {@code maven-pom} — whose registry default command is deliberately blank (it is only known after
-     * install). So {@code commandFor} returned an empty argv, {@code available()} said false, and the
-     * Maven-aware {@code pom.xml} server could <em>never</em> start, while the Settings row, the in-app
-     * installer and Doctor (which all read {@code Settings} directly) reported it present and configured
-     * (#723). Building the map from the same array the detect/gating loops walk makes that drift
-     * unrepresentable; {@code LspCoordinatorServerIdsTest} pins it.
-     *
-     * <p>A {@code HashMap} rather than {@code Map.ofEntries} on purpose: it tolerates a null command from a
-     * config where the field was explicitly nulled, which {@code Map.ofEntries} would turn into an NPE
-     * escaping {@code applySupport} — i.e. LSP silently dead for the session.
-     */
-    static Map<String, String> commandsForAllServers(com.editora.config.Settings s) {
-        Map<String, String> commands = new java.util.HashMap<>();
-        for (String serverId : SERVER_IDS) {
-            commands.put(serverId, serverCommand(s, serverId));
-        }
-        return commands;
-    }
-
-    /** Every server's effective launch command: {@link #commandsForAllServers} with the project overrides
+    /** Every server's effective launch command: {@link LspServerCommands#commandsForAllServers} with the project overrides
      *  that this window's trust allows ({@link #serverCommand(String)}) laid over it. */
     Map<String, String> effectiveCommands() {
-        Map<String, String> commands = commandsForAllServers(host.settings());
-        for (String serverId : SERVER_IDS) {
+        Map<String, String> commands = LspServerCommands.commandsForAllServers(host.settings());
+        for (String serverId : LspServerCommands.SERVER_IDS) {
             commands.put(serverId, launchCommand(serverId));
         }
         return commands;
@@ -1983,7 +1928,8 @@ final class LspCoordinator {
 
     /** The configured command for a server id (blank ⇒ the server's default). */
     private String serverCommand(String serverId) {
-        return projectSettings().commandFor(serverId, serverCommand(host.settings(), serverId), projectTrusted());
+        return projectSettings()
+                .commandFor(serverId, LspServerCommands.serverCommand(host.settings(), serverId), projectTrusted());
     }
 
     /** The command a server is started with: {@link #serverCommand(String)}, a blank one filled in with
@@ -2009,9 +1955,9 @@ final class LspCoordinator {
                 : raw;
     }
 
-    /** {@link #commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
+    /** {@link LspServerCommands#commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
     static Map<String, String> launchCommandsForAllServers(com.editora.config.Settings s, @Nullable Path configDir) {
-        Map<String, String> commands = commandsForAllServers(s);
+        Map<String, String> commands = LspServerCommands.commandsForAllServers(s);
         commands.replaceAll((id, command) -> withOwnCopy(id, command, configDir, s.getMavenJdkHome()));
         return commands;
     }
@@ -2095,8 +2041,8 @@ final class LspCoordinator {
 
     /** What the project file asks for that needs trust (see {@code ProjectSettings.trustRequests}). */
     private List<String> projectTrustRequests() {
-        List<String> requests = new java.util.ArrayList<>(
-                projectSettings().trustRequests(id -> serverCommand(host.settings(), id), this::globalServerEnabled));
+        List<String> requests = new java.util.ArrayList<>(projectSettings()
+                .trustRequests(id -> LspServerCommands.serverCommand(host.settings(), id), this::globalServerEnabled));
         requests.addAll(
                 com.editora.lsp.BashIdeConfig.trustRequests(projectSettings().getBashIde()));
         projectSettings().valueOverrides().forEach((key, value) -> requests.add(scopeLabel(key) + ": " + value));
@@ -2370,7 +2316,7 @@ final class LspCoordinator {
     /** Everything a re-configure depends on: the project's effective commands and enables, as one string. */
     private String projectOverrideSignature() {
         StringBuilder signature = new StringBuilder();
-        for (String serverId : SERVER_IDS) {
+        for (String serverId : LspServerCommands.SERVER_IDS) {
             signature
                     .append(serverId)
                     .append('=')
@@ -2408,48 +2354,6 @@ final class LspCoordinator {
     /** Folder trust for the lemminx servers: {@code workspace.trustFolder} and its broadcast (E1, C6). */
     XmlFolderTrust xmlTrust() {
         return xmlTrust;
-    }
-
-    /** Pure: {@code serverId}'s configured command from {@code s} — the id→Settings-field mapping, kept
-     *  static so {@link #commandsForAllServers} (and its guard test) need no window/host (#723). */
-    static String serverCommand(com.editora.config.Settings s, String serverId) {
-        return switch (serverId) {
-            case "typescript" -> s.getTypescriptLspCommand();
-            case "python" -> s.getPythonLspCommand();
-            // A Java lemminx (the pom.xml server's, where the native build cannot run) runs on the Maven JDK too.
-            case "xml" -> com.editora.lsp.JvmServerCommand.withJdk(s.getXmlLspCommand(), s.getMavenJdkHome());
-            case "json" -> s.getJsonLspCommand();
-            case "bash" -> s.getBashLspCommand();
-            case "yaml" -> s.getYamlLspCommand();
-            case "go" -> s.getGoLspCommand();
-            case "rust" -> s.getRustLspCommand();
-            case "php" -> s.getPhpLspCommand();
-            case "ruby" -> s.getRubyLspCommand();
-            case "clangd" -> s.getClangdLspCommand();
-            case "html" -> s.getHtmlLspCommand();
-            case "css" -> s.getCssLspCommand();
-            case "kotlin" -> s.getKotlinLspCommand();
-            case "groovy" -> com.editora.lsp.JvmServerCommand.withJdk(s.getGroovyLspCommand(), s.getMavenJdkHome());
-            case "scala" -> com.editora.lsp.JvmServerCommand.withJdk(s.getScalaLspCommand(), s.getMavenJdkHome());
-            case "clojure" -> s.getClojureLspCommand();
-            case "lua" -> s.getLuaLspCommand();
-            case "dockerfile" -> s.getDockerfileLspCommand();
-            case "sql" -> s.getSqlLspCommand();
-            case "terraform" -> s.getTerraformLspCommand();
-            case "toml" -> s.getTomlLspCommand();
-            case "csharp" -> s.getCsharpLspCommand();
-            case "typst" -> s.getTypstLspCommand();
-            case "astro" -> s.getAstroLspCommand();
-            // The stored command starts with a bare `java`: run it on the Maven JDK like groovy/scala (review C4).
-            case "maven-pom" ->
-                com.editora.lsp.JvmServerCommand.withJdk(s.getMavenPomLspCommand(), s.getMavenJdkHome());
-            default -> s.getJavaLspCommand();
-        };
-    }
-
-    /** Known server ids in Settings-page order (read by the Doctor screen's check catalog). */
-    static java.util.List<String> serverIds() {
-        return java.util.List.of(SERVER_IDS);
     }
 
     /**
@@ -4244,7 +4148,7 @@ final class LspCoordinator {
         QuickOpen<String> picker = new QuickOpen<>(
                 tr("command.lsp.toggleServer"),
                 tr("palette.setting.pick"),
-                () -> List.of(SERVER_IDS),
+                () -> List.of(LspServerCommands.SERVER_IDS),
                 id -> id + "  —  " + tr(serverEnabled(id) ? "common.on" : "common.off"),
                 this::serverLabel,
                 id -> {
@@ -4267,7 +4171,7 @@ final class LspCoordinator {
         QuickOpen<String> picker = new QuickOpen<>(
                 tr("command.lsp.setServerCommand"),
                 tr("palette.setting.pick"),
-                () -> List.of(SERVER_IDS),
+                () -> List.of(LspServerCommands.SERVER_IDS),
                 id -> id,
                 this::serverLabel,
                 id -> {
@@ -4276,14 +4180,18 @@ final class LspCoordinator {
                     }
                     // Prefill with the GLOBAL value: this prompt writes the persistent global setting, so
                     // showing the project's override here would copy a repository's command into it.
-                    host.promptText(id, tr("palette.setting.value"), serverCommand(host.settings(), id), v -> {
-                        String value = v.trim();
-                        setServerCommand(id, value);
-                        host.requestSave();
-                        applySupport();
-                        host.syncSettingsWindow();
-                        host.setStatus(tr("status.settingChanged", id, value));
-                    });
+                    host.promptText(
+                            id,
+                            tr("palette.setting.value"),
+                            LspServerCommands.serverCommand(host.settings(), id),
+                            v -> {
+                                String value = v.trim();
+                                setServerCommand(id, value);
+                                host.requestSave();
+                                applySupport();
+                                host.syncSettingsWindow();
+                                host.setStatus(tr("status.settingChanged", id, value));
+                            });
                 });
         picker.setOverlayHost(host.overlayHost());
         picker.show(host.window());

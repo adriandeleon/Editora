@@ -515,7 +515,7 @@ class WindowOpsFxTest {
     void theDoctorReadsTheServersAsConfiguredAndOpensTheSettingsPageOfARow() throws Exception {
         DoctorCoordinator.Ops doctor = ops(DoctorCoordinator.Ops.class);
         FxTestSupport.runOnFx(() -> {
-            assertEquals(LspCoordinator.serverIds(), doctor.lspServerIds());
+            assertEquals(LspServerCommands.serverIds(), doctor.lspServerIds());
             settings.setLspSupport(true);
             settings.setJsonLspEnabled(true);
             settings.setJsonLspCommand("/opt/json-ls --stdio");

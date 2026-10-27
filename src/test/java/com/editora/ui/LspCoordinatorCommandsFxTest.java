@@ -1184,11 +1184,11 @@ class LspCoordinatorCommandsFxTest {
     @Test
     void theTogglePickerFlipsOneServerAndSavesTheSetting() throws Exception {
         assertTrue(fx.host.settings.isPythonLspEnabled());
-        int python = LspCoordinator.serverIds().indexOf("python");
+        int python = LspServerCommands.serverIds().indexOf("python");
 
         FxTestSupport.runOnFx(() -> {
             fx.coordinator.chooseServerToggle();
-            assertEquals(LspCoordinator.serverIds(), fx.pickerRows());
+            assertEquals(LspServerCommands.serverIds(), fx.pickerRows());
             fx.choose(python);
         });
 
@@ -1214,7 +1214,7 @@ class LspCoordinatorCommandsFxTest {
     @Test
     void theCommandPickerPromptsWithTheGlobalValueAndStoresTheAnswerTrimmed() throws Exception {
         fx.host.settings.setRustLspCommand("rust-analyzer --old");
-        int rust = LspCoordinator.serverIds().indexOf("rust");
+        int rust = LspServerCommands.serverIds().indexOf("rust");
 
         FxTestSupport.runOnFx(() -> {
             fx.coordinator.chooseServerCommand();
@@ -1243,7 +1243,7 @@ class LspCoordinatorCommandsFxTest {
     /** Every server id has its own pair of settings: none may fall through to another server's. */
     @Test
     void everyServerIdTogglesAndStoresItsOwnSetting() throws Exception {
-        List<String> ids = LspCoordinator.serverIds();
+        List<String> ids = LspServerCommands.serverIds();
         for (int i = 0; i < ids.size(); i++) {
             int index = i;
             String id = ids.get(i);
