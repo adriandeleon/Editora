@@ -120,6 +120,37 @@ class CompletionEngineTest {
         assertEquals("noSort2", sorted.get(2).label());
     }
 
+    /**
+     * lemminx's answer after {@code <} (XML review B3): the comment and CDATA snippets carry sortText "ZZa"/"ZZb"
+     * to sort last, the schema's element carries its own name and an enumeration value none (so its label).
+     * Compared ignoring case, as VS Code does, the element and the values come first; exact text breaks ties.
+     */
+    @Test
+    void relevanceSortComparesSortTextIgnoringCaseAsVsCodeDoes() {
+        List<Completion> afterLt = CompletionEngine.sortLspByRelevance(List.of(
+                lsp("<!--", "ZZa", false),
+                lsp("<![CDATA[", "ZZb", false),
+                lsp("priority", "priority", false),
+                lsp("heading", "heading", false)));
+        assertEquals(
+                List.of("heading", "priority", "<!--", "<![CDATA["),
+                afterLt.stream().map(Completion::label).toList());
+
+        List<Completion> values = CompletionEngine.sortLspByRelevance(List.of(
+                lsp("<!--", "ZZa", false),
+                lsp("normal", null, false),
+                lsp("high", null, false),
+                lsp("<![CDATA[", "ZZb", false),
+                lsp("low", null, false)));
+        assertEquals(
+                List.of("high", "low", "normal", "<!--", "<![CDATA["),
+                values.stream().map(Completion::label).toList());
+
+        List<Completion> tie = CompletionEngine.sortLspByRelevance(
+                List.of(lsp("b", "Name", false), lsp("a", "name", false), lsp("c", "0009", false)));
+        assertEquals(List.of("c", "b", "a"), tie.stream().map(Completion::label).toList(), "digits first; then exact");
+    }
+
     @Test
     void rankCompareIsAntisymmetric() {
         // The "very close match" nudge used to be decided from the first operand alone, so a close match and
