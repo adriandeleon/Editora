@@ -78,6 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Find References from a call lists that call and leaves out the definition; a function used once no longer jumps
     to its definition.
   - On a line with emoji, ShellCheck squiggles sit under the right characters and "Apply fix" quotes the right word.
+
 - **Language servers hear of file changes in collapsed folders.** Each server's project folder is watched as a whole
   (skipping hidden, dependency and `.gitignore`d folders), not only the folders the Project panel shows expanded, so a
   `git checkout` no longer leaves jdtls, Pyright or lemminx with a stale model.
