@@ -547,6 +547,11 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public final List<org.eclipse.lsp4j.TypeHierarchyItem> supertypeRequests = new ArrayList<>();
     public final List<org.eclipse.lsp4j.TypeHierarchyItem> subtypeRequests = new ArrayList<>();
     public List<org.eclipse.lsp4j.TypeHierarchyItem> typeHierarchyResponse = List.of();
+    /** When set, answers each prepare by its document and position, ahead of {@link #typeHierarchyResponse}. */
+    public volatile java.util.function.@org.jspecify.annotations.Nullable Function<
+                    org.eclipse.lsp4j.TypeHierarchyPrepareParams, List<org.eclipse.lsp4j.TypeHierarchyItem>>
+            typeHierarchyHandler;
+
     public List<org.eclipse.lsp4j.TypeHierarchyItem> supertypesResponse = List.of();
     /** Per type name, ahead of {@link #supertypesResponse}: a hierarchy several levels deep. */
     public final java.util.Map<String, List<org.eclipse.lsp4j.TypeHierarchyItem>> supertypesByName =
@@ -558,7 +563,10 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public CompletableFuture<List<org.eclipse.lsp4j.TypeHierarchyItem>> prepareTypeHierarchy(
             org.eclipse.lsp4j.TypeHierarchyPrepareParams params) {
         typeHierarchyPrepares.add(params);
-        return failEverything ? failed() : CompletableFuture.completedFuture(typeHierarchyResponse);
+        var handler = typeHierarchyHandler;
+        return failEverything
+                ? failed()
+                : CompletableFuture.completedFuture(handler != null ? handler.apply(params) : typeHierarchyResponse);
     }
 
     @Override

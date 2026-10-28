@@ -354,6 +354,11 @@ final class EditorArea {
         return true;
     }
 
+    /** The number of tabs in the focused group. */
+    int focusedSize() {
+        return focused.getTabs().size();
+    }
+
     /** The total number of open tabs across all groups. */
     int size() {
         int n = 0;

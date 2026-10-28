@@ -490,4 +490,69 @@ class JavaMembersTest {
         assertEquals(inner, JavaMembers.nestedType(top, List.of("Mid", "Sink")));
         assertNull(JavaMembers.nestedType(top, List.of("Other")));
     }
+
+    /**
+     * On an anonymous class's header, from its type's name to its body's brace, the class itself, also wrapped and with
+     * arguments; on {@code new} the enclosing member's (thirteenth review BK2, EL2, DK4).
+     */
+    @Test
+    void anAnonymousClassesHeaderIsTheClass() {
+        String text = "static {\n    A = new Comparator<>() {\n        public int compare(String a, String b) {\n"
+                + "            return 0;\n        }\n    };\n    S = new AbstractShape(\"x\") { int f; };\n"
+                + "    W = new Wrong13.Mid\n            .Sink<>() { int g; };\n}\n";
+        int comparator = text.indexOf("Comparator<>");
+        for (String at : List.of("Comparator<>", "<>()", "() {")) {
+            int[] found = JavaMembers.anonymousMethod(text, 0, text.indexOf(at) + 1);
+            assertEquals(comparator, found[0], at);
+            assertEquals(-1, found[1], at);
+        }
+        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("new Comparator")), "on new: the initializer's");
+        int[] shape = JavaMembers.anonymousMethod(text, 0, text.indexOf("\"x\"") + 1);
+        assertEquals(text.indexOf("AbstractShape"), shape[0], "in its arguments");
+        int[] wrapped = JavaMembers.anonymousMethod(text, 0, text.indexOf("Mid\n"));
+        assertEquals(text.indexOf("Sink<>"), wrapped[0], "a wrapped name's last segment");
+        assertEquals(text.indexOf("Sink<>"), JavaMembers.anonymousMethod(text, 0, text.indexOf("int g"))[0]);
+    }
+
+    /**
+     * A comment right above an anonymous method's header is the method's: a {@code //} line with no blank line before
+     * the header, and a Javadoc with a line comment after it; a trailing comment or one after a blank line is not
+     * (thirteenth review BK6, EM2).
+     */
+    @Test
+    void aCommentAboveAnAnonymousMethodIsTheMethods() {
+        String text = "new Comparator<>() {\n    int seen; // after a field\n    // C1 right above\n"
+                + "    /** Compares. */ // note\n    public int compare(String a, String b) {\n        return 0;\n"
+                + "    }\n    // far above\n\n    public boolean equals(Object o) {\n        return false;\n    }\n}\n";
+        int compare = text.indexOf("compare(");
+        for (String at : List.of("C1 right", "Compares", "note")) {
+            assertEquals(compare, JavaMembers.anonymousMethod(text, 0, text.indexOf(at) + 1)[1], at);
+        }
+        assertEquals(-1, JavaMembers.anonymousMethod(text, 0, text.indexOf("after a field") + 1)[1], "a field's");
+        assertEquals(-1, JavaMembers.anonymousMethod(text, 0, text.indexOf("far above") + 1)[1], "a blank line before");
+        assertTrue(JavaMembers.inLeadingComment("\n    /* a */\n    // b\n    ", 6));
+    }
+
+    /**
+     * A class file's member types are listed flat beside their outer type, nested only by range, and are found there;
+     * of several types on one line, the one at the column or of the name (thirteenth review DK1, BK4).
+     */
+    @Test
+    void aFlatOutlinesAndAOneLineTypesMemberTypesAreFound() {
+        MemberSpan outer = new MemberSpan("LOuter", "class", 3, 15, 3, 13, List.of());
+        MemberSpan mid = new MemberSpan("Mid", "class", 7, 14, 7, 17, List.of());
+        MemberSpan sink = new MemberSpan("Sink<V>", "interface", 11, 13, 11, 20, List.of());
+        List<MemberSpan> flat = List.of(outer, mid, sink);
+        assertNull(JavaMembers.nestedType(outer, List.of("Mid", "Sink")), "not among its children");
+        assertEquals(sink, JavaMembers.nestedType(flat, outer, List.of("Mid", "Sink")));
+        // class One13 { static class Mid { interface Sink<V> {} } }
+        MemberSpan s1 = new MemberSpan("Sink<V>", "interface", 0, 0, 0, 45, List.of());
+        MemberSpan m1 = new MemberSpan("Mid", "class", 0, 0, 0, 27, List.of(s1));
+        MemberSpan one = new MemberSpan("One13", "class", 0, 0, 0, 6, List.of(m1));
+        assertEquals(m1, JavaMembers.typeAt(List.of(one), 0, 27));
+        assertEquals(s1, JavaMembers.typeAt(List.of(one), 0, "Sink"));
+        MemberSpan ctor = new MemberSpan("A()", "constructor", 2, 2, 2, 4, List.of());
+        MemberSpan a = new MemberSpan("A", "class", 0, 4, 0, 6, List.of(ctor));
+        assertEquals(a, JavaMembers.typeAt(List.of(a), 2, 4), "a constructor's line: its class (BK3)");
+    }
 }

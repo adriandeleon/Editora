@@ -128,6 +128,23 @@ class KillRingFxTest {
         assertEquals("HEAD\nOLDTAIL-0123456789\n", text(b));
     }
 
+    /**
+     * An import a paste needs, landing above the yank, moves it: M-y still replaces the yanked text, where it said
+     * "Yank pop only works immediately after a yank" (thirteenth review AK4).
+     */
+    @Test
+    void yankPopAfterThePastesImportLandedReplacesTheYank() throws Exception {
+        EditorBuffer b = open("package p;\n\nclass A {\n    \n}\n", 3, 4);
+        FxTestSupport.runOnFx(() -> {
+            ring.save("OLD");
+            setClipboard("Instant i;");
+        });
+        run("edit.paste");
+        FxTestSupport.runOnFx(() -> b.getArea().insertText(11, "import java.time.Instant;\n")); // the import's edit
+        run("edit.yankPop");
+        assertEquals("package p;\nimport java.time.Instant;\n\nclass A {\n    OLD\n}\n", text(b));
+    }
+
     @Test
     void pastingCrlfClipboardTextAtTheEndOfTheDocumentKeepsTheCaretInside() throws Exception {
         EditorBuffer b = open("end", 0, 3);

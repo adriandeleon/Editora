@@ -153,6 +153,11 @@ class JdtlsPasteTest {
                 JdtlsPaste.copiedFrom("Duration d;\n"), "deleted since: jdtls would answer nothing (twelfth AL3)");
         JdtlsPaste.copied("x", java.nio.file.Path.of("/x/notes.md"));
         org.junit.jupiter.api.Assertions.assertNull(JdtlsPaste.copiedFrom("x"), "only a Java file");
+        // an older kill keeps its file, as M-y pastes it (thirteenth review AL4)
+        java.nio.file.Path older = java.nio.file.Files.writeString(dir.resolve("Older.java"), "class Older {}");
+        JdtlsPaste.copied("Instant i;", older);
+        JdtlsPaste.copied("Duration d;", a);
+        org.junit.jupiter.api.Assertions.assertEquals(older, JdtlsPaste.copiedFrom("Instant i;"));
     }
 
     /** An import edit above the pasted text applies though the user typed after it (twelfth review AL2). */
@@ -182,7 +187,15 @@ class JdtlsPasteTest {
                 "Java Model Exception: Java Model Status [scripts [in shelf-debug-demo] does not exist]"));
         org.junit.jupiter.api.Assertions.assertTrue(
                 LanguageServerSession.importError("Project build error: Non-parseable POM /x/pom.xml"));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                LanguageServerSession.importError("scripts [in shelf-debug-demo] does not exist"));
         org.junit.jupiter.api.Assertions.assertFalse(LanguageServerSession.importError(null));
+        // Gradle's own "does not exist" is a failed import (thirteenth review CK1)
+        org.junit.jupiter.api.Assertions.assertTrue(LanguageServerSession.importError(
+                "Configuring project ':lib' without an existing directory is not allowed. The configured"
+                        + " projectDirectory '/x/lib' does not exist, can't be written to or is not a directory."));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                LanguageServerSession.importError("Included build '/x/nope-build' does not exist."));
     }
 
     /** The files a server's own watcher reports beside the Project panel: grammars and Java build files (CL1). */

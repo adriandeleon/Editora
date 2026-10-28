@@ -30,12 +30,26 @@ final class JavaImportCheck {
     static @Nullable String nonProjectMessage(List<LspDiagnostic> diagnostics) {
         for (LspDiagnostic d : diagnostics) {
             String m = d.message();
-            if (m.contains("is a non-project file")
-                    || m.matches("(?s).*is not on the classpath of project \\S+_[0-9a-f]{8}\\b.*")) {
-                return m;
+            if (m.contains("is a non-project file") || m.contains("is not on the classpath of project ")) {
+                return m; // also the build's own project, kept without source folders (thirteenth review CK2)
             }
         }
         return null;
+    }
+
+    /** Whether {@code build}'s build file names its own source folders, so its {@code src/main/java} may be none. */
+    static boolean ownSources(Path build) {
+        for (String name : List.of("pom.xml", "build.gradle", "build.gradle.kts")) {
+            try {
+                String text = Files.readString(build.resolve(name));
+                if (text.contains("<sourceDirectory>") || text.contains("srcDir")) {
+                    return true;
+                }
+            } catch (java.io.IOException | RuntimeException e) {
+                // not this build file
+            }
+        }
+        return false;
     }
 
     /** Whether {@code file} is under a Maven or Gradle source folder of {@code root}. */

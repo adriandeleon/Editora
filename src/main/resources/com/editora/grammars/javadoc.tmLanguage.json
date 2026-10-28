@@ -1,0 +1,32 @@
+{
+  "name": "Javadoc",
+  "scopeName": "text.html.javadoc",
+  "comment": "Editora's own: the Javadoc comment other grammars (Groovy's) include by this scope.",
+  "patterns": [
+    {
+      "begin": "(/\\*\\*)(?!/)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.comment.begin.javadoc"
+        }
+      },
+      "end": "\\*/",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.comment.end.javadoc"
+        }
+      },
+      "name": "comment.block.documentation.javadoc",
+      "patterns": [
+        {
+          "match": "\\{@\\w+",
+          "name": "keyword.other.documentation.inline.javadoc"
+        },
+        {
+          "match": "(?<=^|\\s|\\*)@\\w+",
+          "name": "keyword.other.documentation.javadoc"
+        }
+      ]
+    }
+  ]
+}

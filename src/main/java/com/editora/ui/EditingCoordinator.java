@@ -335,6 +335,7 @@ final class EditingCoordinator {
             host.setStatus(tr("status.cutLine"));
             return;
         }
+        noteLiteralCopy(b, area);
         area.cut();
         if (had) {
             adoptClipboardAsKill(); // Emacs kill-region: the cut text joins the kill ring
@@ -377,6 +378,7 @@ final class EditingCoordinator {
         }
         // Copy the selection as plain text plus, when enabled, a syntax-highlighted HTML flavor; fall back
         // to RichTextFX's own copy when there's no selection or no buffer.
+        noteLiteralCopy(b, area);
         if (b == null || !copySelectionRich(area, b, false)) {
             area.copy();
         }
@@ -1211,6 +1213,10 @@ final class EditingCoordinator {
         lastYankDocVersion = -1;
         lastYankStart = -1;
         lastYankEnd = -1;
+        if (yankWatch != null) {
+            yankWatch.unsubscribe();
+            yankWatch = null;
+        }
     }
 
     void recordYank(EditorBuffer buffer, int start, int end) {
@@ -1218,6 +1224,30 @@ final class EditingCoordinator {
         lastYankDocVersion = buffer.docVersion();
         lastYankStart = start;
         lastYankEnd = end;
+        if (yankWatch != null) {
+            yankWatch.unsubscribe();
+        }
+        // a paste's imports landing above the yank move it, and M-y still replaces it (thirteenth review AK4)
+        yankWatch = buffer.getArea().plainTextChanges().subscribe(c -> {
+            if (buffer == lastYankBuffer.get()
+                    && lastYankDocVersion == buffer.docVersion() - 1
+                    && c.getPosition() + c.getRemoved().length() <= lastYankStart
+                    && importsOnly(c.getRemoved())
+                    && importsOnly(c.getInserted())) {
+                int delta = c.getInserted().length() - c.getRemoved().length();
+                lastYankStart += delta;
+                lastYankEnd += delta;
+                lastYankDocVersion = buffer.docVersion();
+            }
+        });
+    }
+
+    /** The watch {@link #recordYank} keeps on the yank's buffer, or null. */
+    private org.reactfx.@Nullable Subscription yankWatch;
+
+    /** Whether {@code text} is only Java import lines and blanks: a paste-imports edit. */
+    static boolean importsOnly(String text) {
+        return text.lines().allMatch(l -> l.isBlank() || l.strip().matches("import\\s+(static\\s+)?[\\w.$*]+\\s*;"));
     }
 
     void setClipboardString(@Nullable String text) {
@@ -1276,11 +1306,31 @@ final class EditingCoordinator {
         }
         var sel = area.getSelection();
         int start = sel.getStart();
+        text = forJavaLiteral(buffer, area, start, text);
         area.replaceText(start, sel.getEnd(), text);
         area.moveTo(start + text.length());
         recordYank(buffer, start, start + text.length());
         resetKillAccumulation();
         return true;
+    }
+
+    /** {@code text} pasted at {@code at} of a Java file: escaped inside a string literal (thirteenth review AK2). */
+    private static String forJavaLiteral(EditorBuffer buffer, CodeArea area, int at, String text) {
+        return buffer.getPath() != null && buffer.getPath().toString().endsWith(".java")
+                ? com.editora.editops.JavaStringPaste.forPaste(area.getText(), at, text)
+                : text;
+    }
+
+    /** Remembers whether the selection about to be copied is inside one Java string literal: escaped already (AK2). */
+    private static void noteLiteralCopy(@Nullable EditorBuffer b, CodeArea area) {
+        var sel = area.getSelection();
+        com.editora.editops.JavaStringPaste.copied(
+                area.getSelectedText(),
+                b != null
+                        && b.getPath() != null
+                        && b.getPath().toString().endsWith(".java")
+                        && com.editora.editops.JavaStringPaste.withinLiteral(
+                                area.getText(), sel.getStart(), sel.getEnd()));
     }
 
     /**
@@ -1305,14 +1355,15 @@ final class EditingCoordinator {
             host.setStatus(tr("status.yankPop.ringEmpty"));
             return;
         }
-        String text = killRing.rotate();
-        if (text == null) {
+        String entry = killRing.rotate();
+        if (entry == null) {
             return;
         }
+        String text = forJavaLiteral(buffer, area, lastYankStart, entry);
         area.replaceText(lastYankStart, lastYankEnd, text);
         area.moveTo(lastYankStart + text.length());
         recordYank(buffer, lastYankStart, lastYankStart + text.length());
-        setClipboardString(text);
+        setClipboardString(entry);
         host.refreshPasteState();
         buffer.requestLspPasteImports(lastYankStart, lastYankStart + text.length()); // as a yank's (twelfth AL4)
         host.setStatus(tr("status.yankPop", killRing.yankIndex() + 1, killRing.size()));

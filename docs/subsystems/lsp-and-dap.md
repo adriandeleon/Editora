@@ -467,17 +467,27 @@ methods' names, and caches JDK outlines per session (a dependency's jar can be r
 A hierarchy item's line can differ from the outline's for the same type, so a type is also found by name; for
 `new pkg.Type<>()` jdtls prepares the hierarchy at the anonymous class itself, which it may give no supertypes, so an
 anonymous class is prepared at its name's last segment (`JavaMembers.lastSegment`: `Comparator`), where jdtls answers
-with the type itself for a package-qualified name. For a nested type (`new Wrong12.Mid.Sink<>()`, `new Holder.Pair<>()`)
-it may not: at the last segment it resolved a JDK type of the same simple name (`java.util.stream.Sink`) or the enclosing
-class, and its Go to Definition does too. So a qualified name (`JavaMembers.qualifiedName`) is resolved from its first
-segment by Go to Definition, the nested type found in that type's outline (`JavaMembers.nestedType`), and the hierarchy
-prepared there. A nested type named by its simple name alone (an imported `Sink<>`) is still asked at that name.
+with the type itself for most names. In a `<>` anonymous creation it may not: it resolves a JDK type of the same simple
+name (`java.util.stream.Sink`) or the enclosing class there, at a package-qualified name it may answer the enclosing
+class, and its Go to Definition does the same. So nothing jdtls answers for the instantiated type is used unchecked
+(`InstantiatedType`, for the method walk, the class-level routes and Go to Definition on that name alike): an answer
+must have the written simple name and a package the file sees it in (its own, an import's, `java.lang`, the one it is
+qualified with). A simple name is asked where it is written, then at the variable's declared type when it is written
+the same (there jdtls resolves it), then through the type its import names; a qualified one
+(`JavaMembers.qualifiedName`) from its first segment's type, found by Go to Definition at the file's import of it, at
+the declared type or where it is written, and checked by name, then the rest in that type's outline
+(`JavaMembers.nestedType`, which also takes a class file's flat outline of member types nested only by range) or a
+supertype's (an inherited member type), the hierarchy prepared there. When nothing checks out, it says none.
 Class-file outlines have no anonymous classes or initializers: `JavaMembers.anonymousMethod` finds them in the text,
 and their method is named from it (`JavaMembers.signatureAt`) for the same walk. Modifiers and `@Override` are read
 from the declaration's own start (`declarationHead`), not its line's, so a one-line class or field initializer does
 not lend the method its `static` or `private`. With the caret on such a method's header (its name, modifiers,
-annotations, parameter list, Javadoc) `anonymousMethod` reads ahead to the method's `{`; on the anonymous class's own
-header or a field in it, it answers the class itself, whose super is the type it instantiates.
+annotations, parameter list, Javadoc, a `//` comment right above it) `anonymousMethod` reads ahead to the method's
+`{`; on the anonymous class's own header, from its type's name to its `{` (also wrapped), or a field in it, it answers
+the class itself, whose super is the type it instantiates (prepared, so not that type's constructor). An interface's
+anonymous class's `hashCode()` reaches `Object.hashCode` through the library type search, as the walk from an
+interface does not. A target in a file open only in another window, unsaved, is given the same line in the disk copy
+that opens here.
 `MemberSpan.startColumn` and `endColumn` keep the outline's columns: a member holds the caret from its start column on
 its first line to its end column on its last, so a one-line class's later member is itself, and jdtls's habit of
 starting a member at a comment ending the line before it (a class line, a wrapped header's second line) does not give
@@ -497,7 +507,9 @@ source file "a non-project file" (syntax only). A file under `src/main/java` or 
 file, or of the nearest folder with one under a root that has none (a build beside others), that gets that warning
 marks that build's import failed (`LspCoordinator.noteNonProjectFile`): said once with that
 reason, then the ready line's "did not import" and each counter's "Not checked". So does "not on the classpath of
-project <folder>_<hash>", the invisible project jdtls makes when a loose file was opened first, and a reactor module
+project <name>", the invisible project jdtls makes when a loose file was opened first or the build's own one, kept
+without source folders by a model error such as a dependency with no version (unless the build file names its own
+source folders, `JavaImportCheck.ownSources`), and a reactor module
 whose pom.xml does not parse (checked at the ready line, `JavaImportCheck.mavenModules`); a pom that does not parse
 is named with its parse error's line and column (`JavaImportCheck.unreadablePom`). A loose file elsewhere in the
 project is a non-project file by rights and is not counted.
@@ -505,19 +517,26 @@ project is a non-project file by rights and is not counted.
 "Did the import fail" reads jdtls's last logged Error; the session forgets it at a launch and at `ProjectStatus` OK,
 and "Error occured while building workspace" (a compile error a build found) is never one, nor a Java Model Exception
 ("… does not exist", logged for each request on a file outside the source folders), so a build problem after a good
-import is "the build has problems". A failure is keyed by the folder of the build that failed unless the root's own
+import is "the build has problems"; only that element's shape is skipped (`[in …] does not exist`), as Gradle's own
+"Included build '…' does not exist" is a failed import. A `language/status` Error before jdtls says it is ready is an
+import that threw (m2e on a dependency without an artifactId): the ready line then says the project did not import,
+with the pom's "Project build error" when Problems has it. A failure is keyed by the folder of the build that failed
+unless the root's own
 pom.xml does not parse (a Maven and a Gradle build side by side, or a Gradle build in `tools/` of a Maven root), and
 counters, the ready line
 and Reload look at the folder and the folders under it that the same session serves; the reason is the project
 diagnostic's first line that names the cause (`JavaImportCheck.reasonLine`: "Unexpected input", "Unexpected
 character", "Unresolved reference", a "@ line N, column M"), with a script's path cut to its file name, not Gradle's
-closing "1 error" nor its "Could not compile settings file" wrapper.
+closing "1 error" nor its "Could not compile settings file" wrapper. A failure that is one folder's under the root is
+said with that folder's name ("jdtls (tools)").
 
 jdtls updates a project's classpath from a build file only when told it changed. Inside the project the Project panel
 reports changes from its expanded folders alone, so a Java server's root also gets a watcher for build files
-(`LspManager.modelFile`: `pom.xml`, `build.gradle(.kts)`, `settings.gradle(.kts)`, beside lemminx's grammar files);
-the panel's own event for a file that watcher reports is not sent again. A build file saved here that no watcher
-covers (an SSH project) is sent as a watched-file change on save.
+(`LspManager.modelFile`: `pom.xml`, `build.gradle(.kts)`, `settings.gradle(.kts)`, beside lemminx's grammar files),
+which skips a build's output folders (`target`, `build`, `out`, `bin` beside a build file). A watcher registers at most
+2,000 folders, so it reports a file only when its own folder is registered (`RootWatcher.watches`), not anything under
+its root; the panel's own event for a file that watcher reports is not sent again. A build file saved here that no
+watcher covers (an SSH project, or one past the folder cap) is sent as a watched-file change on save.
 
 ### jdtls preferences
 

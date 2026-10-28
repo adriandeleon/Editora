@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,12 +27,21 @@ class JavaImportCheckTest {
         String invisible =
                 "Main.java is not on the classpath of project project_d15135a6, only syntax errors are reported";
         assertEquals(invisible, JavaImportCheck.nonProjectMessage(List.of(warning(invisible))), "an invisible project");
+        // the build's own project, kept without source folders by a model error: only a file in a source folder is
+        // asked (a real project's other folder is not), and a build naming its own sources is not (thirteenth CK2)
+        String own = "Main.java is not on the classpath of project shelf-debug-demo, only syntax errors are reported";
+        assertEquals(own, JavaImportCheck.nonProjectMessage(List.of(warning(own))), "the build's own project");
         assertNull(
-                JavaImportCheck.nonProjectMessage(
-                        List.of(
-                                warning(
-                                        "Tool.java is not on the classpath of project shelf-debug-demo, only syntax errors are reported"))),
-                "a real project's other folder");
+                JavaImportCheck.nonProjectMessage(List.of(warning("The import java.util.Lisst cannot be resolved"))));
+    }
+
+    @Test
+    void aBuildNamingItsOwnSourcesIsTold(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("pom.xml"), "<project><build></build></project>");
+        assertFalse(JavaImportCheck.ownSources(dir));
+        Files.writeString(
+                dir.resolve("pom.xml"), "<project><build><sourceDirectory>src</sourceDirectory></build></project>");
+        assertTrue(JavaImportCheck.ownSources(dir));
     }
 
     @Test

@@ -149,11 +149,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   any name (`<Out>`) pairs with the override's, a raw supertype's (`extends Store`) stands for its erasure, type
   arguments carry through a library interface (`Names extends List<String>`: `add(Integer)` overrides nothing), and
   an open supertype file is read with its unsaved edits.
-- **Java: Go to Super Method never opens a wrong file.** A `<>` anonymous class of a nested type
-  (`new Outer.Mid.Sink<>() {…}`) opened an unrelated JDK method (`Consumer.accept`) or said nothing: the nested type is
-  now found through its outer one. In an initializer's or a library class's anonymous method, the caret in the
-  parameter list (an annotated or a wrapped one) or the Javadoc opened `Object.java`; it is that method's now, and the
-  anonymous class's header or a field in it goes to the type it instantiates. On a one-line class a later method is
+- **Java: Go to Super Method checks the type an anonymous class instantiates.** A `<>` anonymous class of a nested
+  type (`new Outer.Mid.Sink<>() {…}`) opened an unrelated JDK type or method (`java.util.stream.Sink`,
+  `Consumer.accept`) or the outer class, from its methods and from its own header, brace or fields. What jdtls answers
+  there is now checked against the name as written, and the type is found through the file's import, the variable's
+  declared type, its outer type's outline (also a jar class's without sources) or a supertype's (an inherited member
+  type); when nothing checks out, it says so. Go to Definition on such a type name opens the checked type too. In an
+  initializer's or a library class's anonymous method, the caret in the parameter list (an annotated or a wrapped
+  one), the Javadoc or a `//` comment right above opened `Object.java`; it is that method's now. The anonymous class's
+  header, from its type's name to its `{`, or a field in it goes to the type it instantiates (not that type's
+  constructor), and an interface's anonymous `hashCode()` to `Object.hashCode`. On a one-line class a later method is
   itself, a wrapped class header with a trailing comment is the class's, and `Collections::<List<String>>emptyList`
   goes to `Supplier.get`. A class's supertypes leave out `java.lang.Object`, as in IntelliJ: `class X implements
   Runnable` opens `Runnable.java`, and a plain class says "No supertype found".
@@ -292,17 +297,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its files are "Not checked" rather than "Loaded and ready". A module's pom.xml saved or changed (a `git pull`) in a
   collapsed folder now reaches jdtls, so its classpath updates without Reload Project Configuration. A broken Gradle
   settings file names its cause, two Kotlin script errors name the first, a script is named by its file name, and a
-  pom's line and column read in the interface's language.
+  pom's line and column read in the interface's language. A settings file that `include`s a folder that does not
+  exist, or `includeBuild`s one, is a failed import again; a pom with a dependency missing its `<version>` or
+  `<artifactId>` says the project did not import, naming the pom's error, rather than "Loaded and ready" over files
+  that were never checked; and a build that failed in one folder of a project is named with that folder. In a tree of
+  more than 2,000 folders, a module's pom.xml past the watched ones still reaches jdtls when saved or seen in the
+  Project panel, and build output folders (`target`, `build`) no longer use up the build-file watcher's share.
 - **Focus and paste.** Window ▸ Buffer: Next and the Switcher onto the Welcome, Doctor or an image tab focus that page;
   the toolbar's New button had the focus, and Space opened a buffer. A paste's imports no longer depend on a pause
   after it: typing right after the pasted text keeps them. Code copied from a file that was deleted or moved since
   still imports what the text alone needs. In the Emacs keymap, a kill (C-k, M-d, zap) records its file as a cut does,
-  and M-y adds the imports the swapped-in text needs.
-- **Small fixes.** Doctor's JDK reading follows a multi-line Gradle `include(…)`, a convention plugin rather than
-  buildSrc's own toolchain, and `providers.gradleProperty("javaVersion")`, and no longer takes an aggregator above a
+  and M-y adds the imports the swapped-in text needs, with an older ring entry's own file; once those imports land,
+  M-y still works. View ▸ Doctor or Welcome on a tab already open, and an image or PDF opened again, focus that tab.
+  Buffer: Next goes round the split group it is in. A paste into a Java string literal is escaped, as in IntelliJ: a
+  pasted `C:\temp "x"` becomes `C:\\temp \"x\"`, and pasted lines are joined with `+`; text copied from inside a
+  string literal pastes as it is.
+- **Small fixes.** Doctor's JDK reading follows a multi-line Gradle `include(…)` or Groovy `include 'a',` list, a
+  convention plugin rather than buildSrc's own toolchain, `providers.gradleProperty("javaVersion")` and a bare
+  `JavaLanguageVersion.of(javaVersion)`, and no longer takes an aggregator above a
   Spring Boot module for its parent. A drag-move right after opening a file the move edits is asked of jdtls once more
   instead of failing with "the file changed". The bundled grammars' "character class has ']' without escape" warnings
-  no longer reach the Debug Log.
+  no longer reach the Debug Log, and a Gradle build file no longer logs two missing-grammar warnings: its Javadoc
+  comments are highlighted. Go to Super Method into a file open only in another window, with unsaved edits, lands on
+  the method's line in the copy it opens, and it no longer re-reads a JDK class's source for every supertype.
 
 ## [0.25.0] - 2026-10-26
 

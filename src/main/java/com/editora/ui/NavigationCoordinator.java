@@ -286,11 +286,7 @@ final class NavigationCoordinator {
         }
         Tab existing = host.tabForPath(target);
         if (existing != null) {
-            host.editorArea().select(existing);
-            EditorBuffer existingBuffer = host.bufferOf(existing);
-            if (existingBuffer != null) {
-                existingBuffer.getArea().requestFocus();
-            }
+            TabFocus.select(host.editorArea(), existing); // an image or PDF too (thirteenth review AK1)
             return;
         }
         EditorBuffer buffer = new EditorBuffer();

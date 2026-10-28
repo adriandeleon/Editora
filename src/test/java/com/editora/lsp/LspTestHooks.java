@@ -80,6 +80,14 @@ public final class LspTestHooks {
                 .logMessage(new org.eclipse.lsp4j.MessageParams(org.eclipse.lsp4j.MessageType.Error, message));
     }
 
+    /** Plays jdtls's {@code language/status} Error for {@code file}'s server: an import that threw. */
+    public static void statusError(LspManager manager, java.nio.file.Path file, String message) {
+        LanguageServerSession.LanguageStatus status = new LanguageServerSession.LanguageStatus();
+        status.type = "Error";
+        status.message = message;
+        manager.sessionForTest(file).languageStatus(status);
+    }
+
     /** Plays the server serving {@code file} dying on its own — a crash, not a shutdown the editor asked for. */
     public static void simulateServerDeath(LspManager manager, java.nio.file.Path file) {
         manager.sessionForTest(file).simulateServerDeathForTest();

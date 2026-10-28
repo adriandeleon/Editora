@@ -125,27 +125,36 @@ public final class JdtlsPaste {
                                 || (r.getEnd().getLine() == line && r.getEnd().getCharacter() <= character));
     }
 
-    /** The text last copied or cut from a Java file, and that file. */
-    private record Copy(String text, java.nio.file.Path file) {}
+    /** How many copies keep their Java file: a kill ring's worth, so M-y's older entries do (thirteenth AL4). */
+    private static final int COPIES = 60;
 
-    private static volatile @Nullable Copy lastCopy;
+    /** The texts recently copied or cut from a Java file, oldest first, each with that file. */
+    private static final java.util.Map<String, java.nio.file.Path> copies = new java.util.LinkedHashMap<>();
 
     /** Records that {@code text} was copied or cut from {@code file} (any file; only a Java one is kept). */
     public static void copied(String text, java.nio.file.@Nullable Path file) {
-        lastCopy = file != null && file.toString().endsWith(".java") ? new Copy(text, file) : null;
+        String key = text.replace("\r\n", "\n");
+        synchronized (copies) {
+            copies.remove(key);
+            if (file != null && file.toString().endsWith(".java")) {
+                copies.put(key, file);
+                if (copies.size() > COPIES) {
+                    copies.remove(copies.keySet().iterator().next());
+                }
+            }
+        }
     }
 
     /**
-     * The Java file {@code pasted} was copied from, when it is the text last copied in Editora and the file is still
+     * The Java file {@code pasted} was copied from, when it is a text recently copied in Editora and the file is still
      * there; else null: jdtls answers nothing for a copied file that was deleted or moved (twelfth review AL3).
      */
     public static java.nio.file.@Nullable Path copiedFrom(String pasted) {
-        Copy c = lastCopy;
-        return c != null
-                        && c.text().replace("\r\n", "\n").equals(pasted.replace("\r\n", "\n"))
-                        && java.nio.file.Files.isRegularFile(c.file())
-                ? c.file()
-                : null;
+        java.nio.file.Path file;
+        synchronized (copies) {
+            file = copies.get(pasted.replace("\r\n", "\n"));
+        }
+        return file != null && java.nio.file.Files.isRegularFile(file) ? file : null;
     }
 
     /**

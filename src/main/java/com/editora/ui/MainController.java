@@ -1213,7 +1213,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         welcomePane.refresh();
         welcomePane.setFontScale(config.getSettings().getFontZoom()); // match the current text zoom (#540)
         if (welcomeTab != null && editorArea.contains(welcomeTab)) {
-            editorArea.select(welcomeTab);
+            TabFocus.select(editorArea, welcomeTab); // its page, not the toolbar's New button (thirteenth review AK1)
             return;
         }
         Tab tab = addContentTab(welcomePane, true);
@@ -1238,7 +1238,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     void showDoctor() {
         if (doctorTab != null && editorArea.contains(doctorTab)) {
-            editorArea.select(doctorTab);
+            TabFocus.select(editorArea, doctorTab); // (thirteenth review AK1)
             doctorCoordinator.runChecks();
             return;
         }
@@ -5576,7 +5576,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 public boolean selectTabOf(com.editora.editor.TabContent pane) {
                     for (Tab t : editorArea.tabs()) {
                         if (t.getUserData() == pane) {
-                            editorArea.select(t);
+                            TabFocus.select(editorArea, t);
                             return true;
                         }
                     }
@@ -8415,7 +8415,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void openPathPreview(Path file) {
         Tab existing = tabForPath(file);
         if (existing != null) {
-            editorArea.select(existing);
+            TabFocus.select(editorArea, existing);
             return;
         }
         Tab previous = previewTab;
@@ -9121,7 +9121,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private boolean sessionClosed;
 
     void nextBuffer() {
-        int count = editorArea.size();
+        int count = editorArea.focusedSize(); // within the split group, as IntelliJ's (thirteenth review AK3)
         if (count > 1) {
             int idx = (editorArea.selectedIndex() + 1) % count;
             editorArea.select(idx);

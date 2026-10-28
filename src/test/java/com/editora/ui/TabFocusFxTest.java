@@ -151,6 +151,35 @@ class TabFocusFxTest {
         assertTrue(FxTestSupport.callOnFx(() -> within(welcome.getContent())), "the Switcher: the page has focus");
     }
 
+    /**
+     * View ▸ Welcome on a Welcome tab already open, from an editor, focuses the page: the focus stayed where JavaFX had
+     * moved it, on the toolbar's New button (thirteenth review AK1).
+     */
+    @Test
+    void reSelectingAnOpenPageFocusesThePage() throws Exception {
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "addWelcomeTab", new Class<?>[] {}));
+        settle();
+        EditorArea area = FxTestSupport.field(fx.controller, "editorArea");
+        javafx.scene.control.Tab welcome = FxTestSupport.callOnFx(area::selectedTab);
+        EditorBuffer editor = null;
+        for (int i = 0; i < 6 && editor == null; i++) {
+            FxTestSupport.runOnFx(() -> reg.run("buffer.next"));
+            settle();
+            editor = FxTestSupport.callOnFx(() -> MainController.bufferOf(area.selectedTab()));
+        }
+        assertTrue(editor != null, "an editor reached");
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(fx.controller, "addWelcomeTab", new Class<?>[] {}));
+        settle();
+        assertSame(welcome, FxTestSupport.callOnFx(area::selectedTab));
+        assertTrue(FxTestSupport.callOnFx(() -> within(welcome.getContent())), "the page has focus");
+        for (int i = 0;
+                i < 6 && FxTestSupport.callOnFx(() -> MainController.bufferOf(area.selectedTab())) == null;
+                i++) {
+            FxTestSupport.runOnFx(() -> reg.run("buffer.next")); // back on an editor, for the other tests
+            settle();
+        }
+    }
+
     /** Whether the window's focus owner is {@code page} or inside it. */
     private boolean within(Node page) {
         Node owner = page.getScene() == null ? null : page.getScene().getFocusOwner();

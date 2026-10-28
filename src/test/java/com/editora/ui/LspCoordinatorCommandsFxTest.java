@@ -1997,7 +1997,8 @@ class LspCoordinatorCommandsFxTest {
         java.nio.file.Files.writeString(root.resolve("app/pom.xml"), "<project>\n<brokenTag>\n</project>\n");
         EditorBuffer app = fx.open("app/src/main/java/App.java", "class App {}\n");
         fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
-        awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
+        // the module that failed is named, not the whole project (thirteenth review CK5)
+        awaitStatus(tr("status.lsp.readyNotImported", tr("status.lsp.serverInFolder", "jdtls", "app")));
         String said = fx.host.lastError();
         assertTrue(
                 said != null
@@ -2097,6 +2098,62 @@ class LspCoordinatorCommandsFxTest {
         awaitError(tr("status.lsp.importProblemWhy", "jdtls", "Could not find method nope()"));
         Object note = FxTestSupport.callOnFx(() -> FxTestSupport.field(main.problemCounter(), "note"));
         assertEquals(null, note, "the root's files stay checked");
+    }
+
+    /**
+     * An import that threw before jdtls said it was ready (a dependency without an artifactId) is a failed import, its
+     * files not checked: it read "Loaded and ready" (thirteenth review CK2).
+     */
+    @Test
+    void anImportThatThrewBeforeReadyIsAFailedImport() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project/>");
+        java.nio.file.Files.createDirectories(root.resolve("src/main/java"));
+        EditorBuffer b = fx.open("src/main/java/Main.java", "class Main {}\n");
+        LspTestHooks.statusError(fx.manager, b.getPath(), "artifactId can neither be null, empty nor blank");
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
+        assertEquals(
+                tr("status.lsp.importProblemWhy", "jdtls", "artifactId can neither be null, empty nor blank"),
+                fx.host.lastError());
+        assertEquals(
+                tr("editor.problemCounter.notImported"),
+                FxTestSupport.callOnFx(() -> FxTestSupport.field(b.problemCounter(), "note")));
+    }
+
+    /**
+     * A file of a source folder that jdtls says is not on its own project's classpath (a pom with a dependency without
+     * a version keeps a project without source folders): a failed import, named by the pom's error (thirteenth CK2).
+     */
+    @Test
+    void aSourceFileOffItsOwnProjectsClasspathIsAFailedImport() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project/>");
+        java.nio.file.Files.createDirectories(root.resolve("src/main/java"));
+        EditorBuffer b = fx.open("src/main/java/Main.java", "class Main {}\n");
+        var pom = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.ERROR,
+                "Project build error: 'dependencies.dependency.version' for g:a:jar is missing.",
+                null,
+                "jdtls");
+        var warning = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.WARNING,
+                "Main.java is not on the classpath of project shelf-debug-demo, only syntax errors are reported",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("pom.xml"), List.of(pom)));
+        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(warning)));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitError(tr(
+                "status.lsp.importProblemWhy",
+                "jdtls",
+                "Project build error: 'dependencies.dependency.version' for g:a:jar is missing"));
     }
 
     /**

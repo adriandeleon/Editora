@@ -50,32 +50,46 @@ final class RootWatcher implements AutoCloseable {
     private final Map<WatchKey, Path> dirs = new HashMap<>();
     private final Consumer<List<LspManager.WatchedFile>> sink;
     private final java.util.function.Predicate<Path> reported;
+    private final boolean skipOutputs;
     private volatile boolean closed;
 
     private RootWatcher(
             Path root,
             WatchService ws,
             Consumer<List<LspManager.WatchedFile>> sink,
-            java.util.function.Predicate<Path> reported) {
+            java.util.function.Predicate<Path> reported,
+            boolean skipOutputs) {
         this.root = root;
         this.ws = ws;
         this.sink = sink;
         this.reported = reported;
+        this.skipOutputs = skipOutputs;
     }
 
     /** Starts watching {@code root}; {@code sink} gets each coalesced batch on the watcher's thread. Null on failure. */
     static @Nullable RootWatcher start(Path root, Consumer<List<LspManager.WatchedFile>> sink) {
-        return start(root, sink, path -> true);
+        return start(root, sink, path -> true, false);
     }
 
-    /** As above, reporting only the paths {@code reported} accepts (a grammar watcher's {@code *.xsd}, …). */
+    /**
+     * As above, reporting only the paths {@code reported} accepts (a grammar watcher's {@code *.xsd}, …), and not
+     * watching a build's output folders, which hold no build files and used up the folder cap (thirteenth review CK3).
+     */
     static @Nullable RootWatcher start(
             Path root, Consumer<List<LspManager.WatchedFile>> sink, java.util.function.Predicate<Path> reported) {
+        return start(root, sink, reported, true);
+    }
+
+    private static @Nullable RootWatcher start(
+            Path root,
+            Consumer<List<LspManager.WatchedFile>> sink,
+            java.util.function.Predicate<Path> reported,
+            boolean skipOutputs) {
         try {
             if (!Files.isDirectory(root) || root.getFileSystem() != FileSystems.getDefault()) {
                 return null;
             }
-            RootWatcher w = new RootWatcher(root, com.editora.io.WatchServices.open(), sink, reported);
+            RootWatcher w = new RootWatcher(root, com.editora.io.WatchServices.open(), sink, reported, skipOutputs);
             try {
                 w.registerTree(root);
             } catch (IOException | RuntimeException e) {
@@ -102,6 +116,27 @@ final class RootWatcher implements AutoCloseable {
     }
 
     /**
+     * Whether {@code dir} itself is watched: a tree past {@link #MAX_DIRS} folders is watched only in part, so a file
+     * under the root is not reported for that alone (thirteenth review CK3).
+     */
+    boolean watches(Path dir) {
+        synchronized (dirs) {
+            return dirs.containsValue(dir);
+        }
+    }
+
+    /** Whether {@code dir} is a build's output folder: {@code target}, {@code build}, {@code out} or {@code bin} beside a build file. */
+    static boolean buildOutput(Path dir) {
+        Path name = dir.getFileName();
+        Path parent = dir.getParent();
+        return name != null
+                && parent != null
+                && java.util.Set.of("target", "build", "out", "bin").contains(name.toString())
+                && java.util.stream.Stream.of("pom.xml", "build.gradle", "build.gradle.kts")
+                        .anyMatch(f -> Files.isRegularFile(parent.resolve(f)));
+    }
+
+    /**
      * Whether a folder is one a language server never analyses: hidden, packages, caches, environments. Pure.
      * Eclipse's {@code .settings} is watched: a formatter profile kept there and edited outside Editora was never
      * re-read (fourth review DN4).
@@ -119,11 +154,12 @@ final class RootWatcher implements AutoCloseable {
         Files.walkFileTree(start, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                if (!dir.equals(root) && skipped(dir)) {
+                if (!dir.equals(root) && (skipped(dir) || (skipOutputs && buildOutput(dir)))) {
                     return FileVisitResult.SKIP_SUBTREE;
                 }
                 synchronized (dirs) {
                     if (dirs.size() >= (com.editora.io.WatchServices.isPolling(ws) ? MAX_POLLED_DIRS : MAX_DIRS)) {
+                        LOG.fine(() -> "watching only part of " + root + ": " + dirs.size() + " folders");
                         return FileVisitResult.TERMINATE;
                     }
                     try {
@@ -198,7 +234,10 @@ final class RootWatcher implements AutoCloseable {
                     : ev.kind() == StandardWatchEventKinds.ENTRY_DELETE
                             ? LspManager.WatchedKind.DELETED
                             : LspManager.WatchedKind.CHANGED;
-            if (kind == LspManager.WatchedKind.CREATED && Files.isDirectory(path) && !skipped(path)) {
+            if (kind == LspManager.WatchedKind.CREATED
+                    && Files.isDirectory(path)
+                    && !skipped(path)
+                    && !(skipOutputs && buildOutput(path))) {
                 try {
                     registerTree(path); // a new package folder: watch it (and say what is already in it)
                     try (var children = Files.list(path)) {

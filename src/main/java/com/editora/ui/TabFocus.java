@@ -121,6 +121,15 @@ final class TabFocus {
         }
     }
 
+    /**
+     * Selects {@code tab} and puts the focus in it: re-selecting a tab already open (View ▸ Doctor, an image opened
+     * again) left the focus where JavaFX moved it, on the toolbar's New button (thirteenth review AK1).
+     */
+    static void select(EditorArea area, Tab tab) {
+        area.select(tab);
+        Platform.runLater(() -> focusTab(tab, MainController::bufferOf));
+    }
+
     /** Puts keyboard focus in {@code buffer}'s editor, its last-focused split view. */
     static void focus(@Nullable EditorBuffer buffer) {
         if (buffer != null) {

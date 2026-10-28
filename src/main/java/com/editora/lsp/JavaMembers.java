@@ -77,6 +77,11 @@ public final class JavaMembers {
     }
 
     /** {@code text} with comments and string, character and text-block contents as spaces; offsets and lines kept. */
+    /** {@code text} with its comments and string contents blanked, offsets kept. */
+    public static String codeOf(String text) {
+        return code(text);
+    }
+
     static String code(String text) {
         StringBuilder out = new StringBuilder(text);
         int i = 0;
@@ -366,18 +371,18 @@ public final class JavaMembers {
     public static int @Nullable [] anonymousMethod(String text, int from, int caret) {
         String code = code(text);
         int end = Math.min(caret, code.length());
+        int header = anonymousHeader(code, from, end);
+        if (header >= 0) {
+            return new int[] {header, -1}; // on its header, from the type's name to its '{': the class (thirteenth BK2)
+        }
         java.util.ArrayDeque<int[]> braces = new java.util.ArrayDeque<>(); // {offset of '{', anonymous type name or -1}
-        java.util.regex.Pattern anonymous =
-                java.util.regex.Pattern.compile("new\\s+([\\w.]+)\\s*(<[^{};]*?>)?\\s*\\([^{};]*\\)\\s*$");
         for (int i = Math.max(0, from); i < end; i++) {
             char c = code.charAt(i);
             if (c == '{') {
-                java.util.regex.Matcher m = anonymous.matcher(code.substring(Math.max(from, i - 300), i));
+                java.util.regex.Matcher m = ANONYMOUS.matcher(code.substring(Math.max(from, i - 300), i));
                 // the name's last segment: jdtls prepares Comparator's hierarchy there, the anonymous class's at
                 // "java" of java.util.Comparator (eleventh review BM1)
-                int type = m.find()
-                        ? Math.max(from, i - 300) + m.start(1) + m.group(1).lastIndexOf('.') + 1
-                        : -1;
+                int type = m.find() ? lastSegmentIn(code, Math.max(from, i - 300) + m.start(1)) : -1;
                 braces.push(new int[] {i, type});
             } else if (c == '}' && !braces.isEmpty()) {
                 braces.pop();
@@ -414,6 +419,34 @@ public final class JavaMembers {
         return null;
     }
 
+    /** An anonymous class's header before its body's {@code '{'}: {@code new}, its (wrapped) name, type arguments and arguments. */
+    private static final java.util.regex.Pattern ANONYMOUS = java.util.regex.Pattern.compile(
+            "new\\s+([\\w$]+(?:\\s*\\.\\s*[\\w$]+)*)\\s*(<[^{};]*?>)?\\s*\\([^{};]*\\)\\s*$");
+
+    /**
+     * The offset of the last segment of the type an anonymous class instantiates when {@code caret} is on its header,
+     * from the type's name to the body's {@code '{'} ({@code new} itself is the enclosing member's, as in IntelliJ);
+     * else -1 (thirteenth review BK2, EL2).
+     */
+    private static int anonymousHeader(String code, int from, int caret) {
+        int depth = 0;
+        for (int i = caret; i < code.length() && i < caret + 2000; i++) {
+            char c = code.charAt(i);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+            } else if (depth <= 0 && (c == ';' || c == '}')) {
+                return -1;
+            } else if (depth <= 0 && c == '{') {
+                int window = Math.max(from, i - 300);
+                java.util.regex.Matcher m = ANONYMOUS.matcher(code.substring(window, i));
+                return m.find() && window + m.start(1) <= caret ? lastSegmentIn(code, window + m.start(1)) : -1;
+            }
+        }
+        return -1;
+    }
+
     /**
      * The offset of the name of the method whose header holds {@code caret}, in a class body opened at {@code bodyStart}:
      * the header runs from what ends the member before it to the method's {@code {}, its parameter list and the
@@ -441,14 +474,8 @@ public final class JavaMembers {
         while (first < code.length() && Character.isWhitespace(code.charAt(first))) {
             first++;
         }
-        if (at < first) {
-            // blanks before the header: a caret in the comment right above it (its Javadoc) is the method's
-            String gap = text.substring(start, Math.min(first, text.length()));
-            int open = gap.lastIndexOf("/*", Math.max(0, at - start));
-            int close = gap.indexOf("*/", Math.max(0, at - start));
-            if (open < 0 || close < 0 || !gap.substring(close + 2).isBlank()) {
-                return -1; // between members, not on one
-            }
+        if (at < first && !inLeadingComment(text.substring(start, Math.min(first, text.length())), at - start)) {
+            return -1; // between members, not on one
         }
         int brace = -1;
         depth = 0;
@@ -503,6 +530,36 @@ public final class JavaMembers {
             }
         }
         return -1;
+    }
+
+    /**
+     * Whether {@code rel} is in a comment of {@code gap}, the blanks and comments before a member's header, that the
+     * member owns, as IntelliJ binds it: its Javadoc or a block comment, with other comments after it too (thirteenth
+     * review EM2), or a {@code //} comment on lines of its own with no blank line before the header (BK6).
+     */
+    static boolean inLeadingComment(String gap, int rel) {
+        for (int i = 0; i < gap.length(); ) {
+            boolean line = gap.startsWith("//", i);
+            if (!line && !gap.startsWith("/*", i)) {
+                i++;
+                continue;
+            }
+            int end = line ? gap.indexOf('\n', i) : gap.indexOf("*/", i + 2);
+            end = end < 0 ? gap.length() : line ? end : end + 2;
+            if (rel >= i && rel <= end) {
+                int lineStart = gap.lastIndexOf('\n', i);
+                return !line
+                        || (lineStart >= 0
+                                && gap.substring(lineStart, i)
+                                        .replaceAll("(?s)/\\*.*?\\*/", "")
+                                        .isBlank() // its own line, or after a Javadoc
+                                && !java.util.regex.Pattern.compile("\n[ \t]*\n")
+                                        .matcher(gap.substring(end))
+                                        .find());
+            }
+            i = end;
+        }
+        return false;
     }
 
     /** The offset of the {@code close} matching the {@code open} at {@code at}, reading on; {@code limit} if none. */
@@ -683,8 +740,26 @@ public final class JavaMembers {
      * (ninth review DP3).
      */
     public static @Nullable MemberSpan typeAt(List<MemberSpan> members, int line, String name) {
-        MemberSpan at = typeAt(members, line);
-        return at != null ? at : typeNamed(members, name.replaceAll("<.*", "").strip());
+        String simple = name.replaceAll("<.*", "").strip();
+        MemberSpan named = typeNamedAt(members, line, simple); // one of several types on a line (thirteenth BK4)
+        MemberSpan at = named != null ? named : typeAt(members, line);
+        return at != null ? at : typeNamed(members, simple);
+    }
+
+    private static @Nullable MemberSpan typeNamedAt(List<MemberSpan> members, int line, String name) {
+        for (MemberSpan m : members) {
+            if (m.isType()
+                    && m.nameLine() == line
+                    && m.name().replaceAll("<.*", "").strip().equals(name)) {
+                return m;
+            }
+            MemberSpan inner =
+                    m.startLine() <= line && line <= m.endLine() ? typeNamedAt(m.children(), line, name) : null;
+            if (inner != null) {
+                return inner;
+            }
+        }
+        return null;
     }
 
     private static @Nullable MemberSpan typeNamed(List<MemberSpan> members, String name) {
@@ -797,7 +872,10 @@ public final class JavaMembers {
      * {@code Comparator} of {@code new java.util.Comparator<>()} (eleventh review BM1).
      */
     public static int lastSegment(String text, int at) {
-        String code = code(text);
+        return lastSegmentIn(code(text), at);
+    }
+
+    private static int lastSegmentIn(String code, int at) {
         int i = Math.max(0, Math.min(at, code.length()));
         java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?:new\\s+)?([\\w$]+(?:\\s*\\.\\s*[\\w$]+)*)")
                 .matcher(code)
@@ -857,6 +935,14 @@ public final class JavaMembers {
 
     /** The nested type {@code path} names under {@code outer} ({@code Mid}, {@code Sink}), or null. */
     public static @Nullable MemberSpan nestedType(MemberSpan outer, List<String> path) {
+        return nestedType(List.of(), outer, path);
+    }
+
+    /**
+     * As above, also among {@code members}, the outline {@code outer} is in: jdtls lists a class file's member types
+     * flat, beside their outer type, nested only by range (thirteenth review DK1).
+     */
+    public static @Nullable MemberSpan nestedType(List<MemberSpan> members, MemberSpan outer, List<String> path) {
         MemberSpan at = outer;
         for (String name : path) {
             MemberSpan next = null;
@@ -866,12 +952,52 @@ public final class JavaMembers {
                     break;
                 }
             }
+            for (int i = 0; next == null && i < members.size(); i++) {
+                MemberSpan m = members.get(i);
+                if (m != at
+                        && m.isType()
+                        && m.name().replaceAll("<.*", "").strip().equals(name)
+                        && m.startLine() >= at.startLine()
+                        && m.endLine() <= at.endLine()
+                        && m.nameLine() > at.nameLine()) {
+                    next = m;
+                }
+            }
             if (next == null) {
                 return null;
             }
             at = next;
         }
         return at;
+    }
+
+    /**
+     * The type whose name starts at {@code line} and {@code column}: one of several types declared on one line
+     * (thirteenth review BK4); else the type whose name is on {@code line}, else the innermost type holding it, the
+     * class of a constructor a definition answered (BK3). Null for none.
+     */
+    public static @Nullable MemberSpan typeAt(List<MemberSpan> members, int line, int column) {
+        for (MemberSpan m : members) {
+            if (m.isType() && m.nameLine() == line && m.nameColumn() == column) {
+                return m;
+            }
+            MemberSpan inner = m.startLine() <= line && line <= m.endLine() ? typeAt(m.children(), line, column) : null;
+            if (inner != null && inner.nameLine() == line && inner.nameColumn() == column) {
+                return inner;
+            }
+        }
+        MemberSpan named = typeAt(members, line);
+        return named != null ? named : holding(members, line);
+    }
+
+    private static @Nullable MemberSpan holding(List<MemberSpan> members, int line) {
+        for (MemberSpan m : members) {
+            if (m.startLine() <= line && line <= m.endLine()) {
+                MemberSpan inner = holding(m.children(), line);
+                return inner != null ? inner : m.isType() ? m : null;
+            }
+        }
+        return null;
     }
 
     /** The comma-separated arguments of the {@code <…>} opening at {@code open}. */
