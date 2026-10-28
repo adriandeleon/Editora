@@ -59,5 +59,10 @@
   "S-escape": "terminal.focusEditor",
   "C-S-back-quote": "terminal.new",
   "C-M-left": "nav.back",
-  "C-M-right": "nav.forward"
+  "C-M-right": "nav.forward",
+  "f2": "lsp.rename",
+  "f12": "lsp.gotoDefinition",
+  "S-f12": "lsp.findReferences",
+  "C-.": "lsp.codeActions",
+  "M-S-f": "lsp.formatDocument"
 }
