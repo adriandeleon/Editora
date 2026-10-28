@@ -266,6 +266,9 @@ class LspCoordinatorHooksFxTest {
         var onType = new AtomicReference<List<LspTextEdit>>();
 
         fx.run(() -> {
+            // a one-line re-indent never carries the save rules: no final newline mid-typing (D3)
+            buffer.setEditorConfigProps(new com.editora.editorconfig.EditorConfigProperties(
+                    null, null, null, null, null, true, true, null));
             buffer.setContent("class A {\n    void go() { }\n}\n"); // typed, not yet sent
             buffer.rangeFormatter.format(1, 0, 1, 18, formatted::set);
         });
@@ -278,6 +281,9 @@ class LspCoordinatorHooksFxTest {
                 FakeLanguageServer.last(fx.server().rangeFormattings)
                         .getOptions()
                         .getTabSize());
+        assertFalse(FakeLanguageServer.last(fx.server().rangeFormattings)
+                .getOptions()
+                .containsKey("insertFinalNewline"));
         assertTrue(
                 fx.server().changed.stream()
                         .anyMatch(c -> c.getContentChanges().stream()

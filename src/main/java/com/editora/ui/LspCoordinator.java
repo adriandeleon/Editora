@@ -3879,8 +3879,7 @@ final class LspCoordinator {
             }
             String before = buffer.getContent();
             lspManager.changeDocument(path, buffer.text()); // the formatter must see what Organize Imports left
-            com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
-            lspManager.formatDocument(path, indent.tabSize(), indent.insertSpaces(), edits -> {
+            lspManager.formatDocument(path, formatRequestIndent(buffer), edits -> {
                 if (!edits.isEmpty() && buffer.getContent().equals(before) && !buffer.isDisposed()) {
                     buffer.applyLspEdits(edits);
                 }
@@ -6713,6 +6712,15 @@ final class LspCoordinator {
         return com.editora.lsp.FormattingIndent.of(buffer.indentUnit(), buffer.getTabSize());
     }
 
+    /** As {@link #formattingIndent}, with the trim / final-newline rules saving applies to {@code buffer} (D3). */
+    private com.editora.lsp.FormattingIndent formatRequestIndent(EditorBuffer buffer) {
+        com.editora.editorconfig.EditorConfigProperties rules = projectScope.saveRules(
+                host.settings().isEditorConfigSupport()
+                        ? buffer.getEditorConfigProps()
+                        : com.editora.editorconfig.EditorConfigProperties.EMPTY);
+        return formattingIndent(buffer).withSaveRules(rules.trimTrailingWhitespace(), rules.insertFinalNewline());
+    }
+
     /** Reformats the whole active file via its language server ({@code textDocument/formatting}), if the
      *  server is running and advertises formatting. Edits apply through the undoable buffer. */
     void formatDocument() {
@@ -6728,7 +6736,7 @@ final class LspCoordinator {
         }
         // The document's own indentation, not the global tab size: a formatter given the global width
         // re-indents every line of a file indented differently (shfmt -i=4 over a two-space script).
-        com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
+        com.editora.lsp.FormattingIndent indent = formatRequestIndent(buffer);
         host.setStatus(tr("status.lsp.formatting"));
         // Sync the latest text first (like gotoDefinition/findReferences/showHover): the didChange debounce
         // can leave the server's copy ~300 ms behind, and formatting the STALE server text yields edits whose
@@ -6773,17 +6781,9 @@ final class LspCoordinator {
             var end = area.offsetToPosition(sel.getEnd(), org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
             // Whole lines; a selection ending at a line's start doesn't take that line.
             int endLine = end.getMinor() == 0 && end.getMajor() > startLine ? end.getMajor() - 1 : end.getMajor();
-            lspManager.rangeFormatting(
-                    path,
-                    startLine,
-                    0,
-                    endLine,
-                    area.getParagraphLength(endLine),
-                    indent.tabSize(),
-                    indent.insertSpaces(),
-                    onEdits);
+            lspManager.rangeFormatting(path, startLine, 0, endLine, area.getParagraphLength(endLine), indent, onEdits);
         } else {
-            lspManager.formatDocument(path, indent.tabSize(), indent.insertSpaces(), onEdits);
+            lspManager.formatDocument(path, indent, onEdits);
         }
     }
 

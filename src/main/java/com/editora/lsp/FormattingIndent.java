@@ -1,5 +1,7 @@
 package com.editora.lsp;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The {@code tabSize}/{@code insertSpaces} pair a formatting request ({@code textDocument/formatting},
  * range and on-type formatting) carries for one document. Pure.
@@ -10,13 +12,46 @@ package com.editora.lsp;
  * into {@code shfmt -i}, and shfmt ignores {@code .editorconfig} once that flag is given, so a two-space
  * script came back indented by four.
  *
+ * <p>A Format Document or Format Selection request also carries the file's save rules (EditorConfig
+ * {@code trim_trailing_whitespace} / {@code insert_final_newline}, or the project's), so the server's answer
+ * already looks like what saving writes: lemminx adds the final newline only when the request asks for it. Tab
+ * re-indent and on-type formatting leave them out — they touch one line while the user types.
+ *
  * @param tabSize the indent width in columns (for a tab-indented file: the width a tab is shown with)
  * @param insertSpaces whether the document indents with spaces
+ * @param trimTrailingWhitespace the file's {@code trim_trailing_whitespace}; null when unset (not sent)
+ * @param insertFinalNewline the file's {@code insert_final_newline}; null when unset (not sent)
  */
-public record FormattingIndent(int tabSize, boolean insertSpaces) {
+public record FormattingIndent(
+        int tabSize,
+        boolean insertSpaces,
+        @Nullable Boolean trimTrailingWhitespace,
+        @Nullable Boolean insertFinalNewline) {
 
     /** What is sent when nothing better is known. */
     static final int DEFAULT_TAB_SIZE = 4;
+
+    /** Indentation only, with no save rules. */
+    public FormattingIndent(int tabSize, boolean insertSpaces) {
+        this(tabSize, insertSpaces, null, null);
+    }
+
+    /** This indentation with the file's save rules (each null when the file leaves it unset). */
+    public FormattingIndent withSaveRules(@Nullable Boolean trim, @Nullable Boolean finalNewline) {
+        return new FormattingIndent(tabSize, insertSpaces, trim, finalNewline);
+    }
+
+    /** The request's {@code FormattingOptions}: the indentation, plus each save rule the file sets. */
+    public org.eclipse.lsp4j.FormattingOptions options() {
+        org.eclipse.lsp4j.FormattingOptions options = new org.eclipse.lsp4j.FormattingOptions(tabSize, insertSpaces);
+        if (trimTrailingWhitespace != null) {
+            options.setTrimTrailingWhitespace(trimTrailingWhitespace);
+        }
+        if (insertFinalNewline != null) {
+            options.setInsertFinalNewline(insertFinalNewline);
+        }
+        return options;
+    }
 
     /**
      * The options for a document whose indent unit is {@code indentUnit} (its literal one-level indent: spaces
