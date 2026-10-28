@@ -158,7 +158,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   initializer's or a library class's anonymous method, the caret in the parameter list (an annotated or a wrapped
   one), the Javadoc or a `//` comment right above opened `Object.java`; it is that method's now. The anonymous class's
   header, from its type's name to its `{`, or a field in it goes to the type it instantiates (not that type's
-  constructor), and an interface's anonymous `hashCode()` to `Object.hashCode`. On a one-line class a later method is
+  constructor, and not `Object`'s), and an interface's anonymous `hashCode()` to `Object.hashCode`. A paste into a
+  text block escapes its backslashes, and into a char literal its backslash and quote. On a one-line class a later method is
   itself, a wrapped class header with a trailing comment is the class's, and `Collections::<List<String>>emptyList`
   goes to `Supplier.get`. A class's supertypes leave out `java.lang.Object`, as in IntelliJ: `class X implements
   Runnable` opens `Runnable.java`, and a plain class says "No supertype found".

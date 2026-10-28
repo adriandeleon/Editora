@@ -291,6 +291,25 @@ final class InstantiatedType {
         }
         String detail = node.detail() == null ? "" : node.detail().replace('$', '.');
         String outer = String.join(".", segments.subList(0, segments.size() - 1));
+        if (!outer.isEmpty()) {
+            // jdtls names a member type by its $-path (Wrong12$Mid$Sink, Map$Entry): it must be the written one, or
+            // end with it under an outer type the file imports; else, written after a package, that package
+            // (fourteenth check RJ1, RJ2)
+            String written = String.join(".", segments);
+            String path = node.name().replaceAll("<.*", "").replace('$', '.').strip();
+            String above = path.endsWith("." + written) ? path.substring(0, path.length() - written.length()) : null;
+            return path.equals(written)
+                    || detail.isEmpty()
+                    || (above != null
+                            && java.util.regex.Pattern.compile("(?m)^\\s*import\\s+"
+                                            + java.util.regex.Pattern.quote(detail + "." + above + segments.get(0))
+                                            + "\\s*;")
+                                    .matcher(code)
+                                    .find())
+                    || (written.endsWith("." + path)
+                            && written.substring(0, written.length() - path.length() - 1)
+                                    .equals(detail));
+        }
         java.util.regex.Matcher pkg = java.util.regex.Pattern.compile("(?m)^\\s*package\\s+([\\w.]+)\\s*;")
                 .matcher(code);
         String own = pkg.find() ? pkg.group(1) : "";
@@ -336,8 +355,33 @@ final class InstantiatedType {
         return found;
     }
 
-    private static String simple(String name) {
-        return name.replaceAll("<.*", "").strip();
+    /** A type's simple name: jdtls names a member type by its $-path ({@code Holder$Pair}) (fourteenth check RJ1). */
+    static String simple(String name) {
+        return name.replaceAll("<.*", "").replaceAll(".*[$.]", "").strip();
+    }
+
+    /**
+     * Where to open {@code root}, an anonymous class's instantiated type, for Go to Super Method on the class: its
+     * name, not a constructor jdtls placed it at, and none for {@code java.lang.Object}, whose supertypes IntelliJ
+     * never offers (fourteenth check RJ5).
+     */
+    static void typeTarget(
+            LspManager lspManager,
+            LspCoordinator.SuperAsk ask,
+            LspManager.@Nullable HierarchyNode root,
+            Consumer<LspManager.@Nullable Target> done) {
+        if (root == null || (simple(root.name()).equals("Object") && "java.lang".equals(root.detail()))) {
+            done.accept(null);
+            return;
+        }
+        lspManager.memberSpans(ask.path(), root.file(), root.libraryUri(), members -> {
+            MemberSpan type = JavaMembers.typeAt(members, root.line(), root.col());
+            done.accept(
+                    type == null || type.nameLine() == root.line()
+                            ? new LspManager.Target(root.file(), root.line(), root.col(), root.libraryUri())
+                            : new LspManager.Target(
+                                    root.file(), type.nameLine(), type.nameColumn(), root.libraryUri()));
+        });
     }
 
     private int[] lineColumn(int offset) {

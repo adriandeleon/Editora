@@ -315,7 +315,7 @@ final class SuperMethodWalk {
                                     onDisk(type.file(), hit.nameLine()),
                                     hit.nameColumn(),
                                     type.libraryUri()),
-                            type.name() + "." + com.editora.lsp.JavaMembers.methodName(hit.name())));
+                            type.name().replace('$', '.') + "." + com.editora.lsp.JavaMembers.methodName(hit.name())));
             foundIn.put(order + i, key);
         }
         Header header = declared == null

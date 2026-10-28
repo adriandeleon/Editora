@@ -6286,13 +6286,16 @@ final class LspCoordinator {
 
     /** Opens {@code root}, an anonymous class's instantiated type, or says it has none. */
     private void openSuperType(SuperAsk ask, LspManager.@Nullable HierarchyNode root) {
-        if (ask.current().getAsBoolean()) {
-            openOneOrPick(
-                    ask,
-                    root == null ? List.of() : typeTargets(List.of(root)),
-                    "picker.superTypes.title",
-                    "status.lsp.noSuperType");
-        }
+        String label = root == null ? "" : InstantiatedType.simple(root.name());
+        InstantiatedType.typeTarget(lspManager, ask, root, t -> {
+            if (ask.current().getAsBoolean()) {
+                openOneOrPick(
+                        ask,
+                        t == null ? List.of() : List.of(new SuperTarget(t, label)),
+                        "picker.superTypes.title",
+                        "status.lsp.noSuperType");
+            }
+        });
     }
 
     private static List<SuperTarget> typeTargets(List<LspManager.HierarchyNode> nodes) {

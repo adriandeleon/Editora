@@ -519,6 +519,16 @@ class JavaMembersTest {
      * the header, and a Javadoc with a line comment after it; a trailing comment or one after a blank line is not
      * (thirteenth review BK6, EM2).
      */
+    /** A {@code try (… new X(…))} or {@code if (… new X())} block is no anonymous class (fourteenth check RJ3). */
+    @Test
+    void aBlockAfterACreationIsNoAnonymousHeader() {
+        String text = "static {\n    try (InputStream in = new FileInputStream(\"x\")) {\n        P.load(in);\n    }\n"
+                + "    if (P.equals(new Object())) {\n        P.clear();\n    }\n}\n";
+        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("FileInputStream") + 2), "try");
+        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("P.load")), "its block");
+        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("Object()") + 2), "if");
+    }
+
     @Test
     void aCommentAboveAnAnonymousMethodIsTheMethods() {
         String text = "new Comparator<>() {\n    int seen; // after a field\n    // C1 right above\n"
