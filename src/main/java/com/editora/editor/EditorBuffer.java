@@ -64,6 +64,7 @@ import com.editora.editor.debug.DebugValuePresenter;
 import com.editora.editor.debug.ExecutionLine;
 import com.editora.editor.debug.InlineValuesOverlay;
 import com.editora.editor.fold.FoldManager;
+import com.editora.editor.fold.NarrowCarry;
 import com.editora.editor.fold.NarrowPresentation;
 import com.editora.editor.fold.StickyScroll;
 import com.editora.editor.fold.StickyScrollBar;
@@ -352,12 +353,11 @@ public class EditorBuffer implements TabContent {
     /** The line ending the file had when loaded or last saved; a different one is an unsaved change. */
     private String cleanLineEnding = LineEndings.LF;
     /**
-     * Emacs narrowing: the document text before/after the accessible region, held aside while the area
-     * itself holds only the region. Both null when the buffer is widened (the normal state).
+     * Emacs narrowing: the document text before/after the accessible region (and its styles, symbols and fold
+     * regions, see {@link NarrowCarry}), held aside while the area itself holds only the region. Null when the
+     * buffer is widened (the normal state).
      */
-    private @Nullable String narrowPrefix;
-
-    private @Nullable String narrowSuffix;
+    private NarrowCarry.@Nullable Held narrowHeld;
     /** Fired whenever narrowing turns on or off, from wherever — the UI reconciles off this, not off the
      *  command, so a widen forced by a whole-document write cannot leave a stale indicator or a suspended
      *  language server behind. */
@@ -9495,18 +9495,18 @@ public class EditorBuffer implements TabContent {
         if (logView.filtered()) {
             return logView.fullText(); // the area shows only the matching lines
         }
-        return narrowPrefix == null ? documentTextSnapshot() : narrowPrefix + documentTextSnapshot() + narrowSuffix;
+        return NarrowCarry.wholeText(narrowHeld, documentTextSnapshot());
     }
 
     // --- Narrowing -------------------------------------------------------------------------------
 
     public boolean isNarrowed() {
-        return narrowPrefix != null;
+        return narrowHeld != null;
     }
 
     /** Offset of the accessible region within the whole document (0 when widened). */
     public int narrowStart() {
-        return narrowPrefix == null ? 0 : narrowPrefix.length();
+        return NarrowCarry.regionStart(narrowHeld);
     }
 
     /**
@@ -9532,7 +9532,7 @@ public class EditorBuffer implements TabContent {
         // already narrowed are relative to the region — so rebase them onto the document before widening,
         // or re-narrowing would silently measure the new region from the top of the file instead.
         int base = narrowStart();
-        String narrowed = narrowPrefix;
+        NarrowCarry.Held narrowed = narrowHeld;
         if (narrowed != null) {
             widenInternal(narrowed); // re-narrow from the whole document: narrowing does not nest, as in Emacs
         }
@@ -9544,10 +9544,13 @@ public class EditorBuffer implements TabContent {
         }
         int caret = area.getCaretPosition();
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();
-        narrowPrefix = full.substring(0, s);
-        narrowSuffix = full.substring(e);
         boolean hadHistory = hasUndoHistory();
-        LineMarks.narrow(s, e, () -> area.replaceText(full.substring(s, e)), bookmarks, breakpoints, notes, gitLines);
+        clearBraceMatch(); // its offsets are the area's, which the swap changes
+        NarrowCarry.Held held = NarrowCarry.hold(area, full, s, e, symbols, folds.regions());
+        narrowHeld = held; // set first: the swap fires the dirty listener, which reads getContent()
+        LineMarks.narrow(s, e, () -> NarrowCarry.narrow(area, s, e), bookmarks, breakpoints, notes, gitLines);
+        symbols = NarrowCarry.narrowSymbols(held); // before the regions: their listeners read the symbols
+        folds.carryRegions(NarrowCarry.narrowRegions(held));
         forgetHistoryAtNarrowBoundary(hadHistory);
         area.moveTo(Math.max(0, Math.min(caret - s, area.getLength())));
         area.requestFollowCaret();
@@ -9573,28 +9576,31 @@ public class EditorBuffer implements TabContent {
 
     /** Emacs {@code widen}: restores access to the whole document. No-op when not narrowed. */
     public void widen() {
-        String prefix = narrowPrefix;
-        if (prefix == null) { // not narrowed
+        NarrowCarry.Held held = narrowHeld;
+        if (held == null) { // not narrowed
             return;
         }
-        widenInternal(prefix);
+        widenInternal(held);
         onNarrowChanged.run();
     }
 
-    /** {@code prefix}: {@link #narrowPrefix}, which the callers have checked. */
-    private void widenInternal(String prefix) {
-        String visible = documentTextSnapshot(); // the region the area holds while narrowed
-        String suffix = narrowSuffix;
+    /** {@code held}: {@link #narrowHeld}, which the callers have checked. */
+    private void widenInternal(NarrowCarry.Held held) {
+        int prefix = held.prefixText().length();
         int caret = area.getCaretPosition();
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();
-        narrowPrefix = null; // cleared first: replaceText fires the dirty listener, which reads getContent()
-        narrowSuffix = null;
+        narrowHeld = null; // cleared first: the swap fires the dirty listener, which reads getContent()
         boolean hadHistory = hasUndoHistory();
-        LineMarks.widen(() -> area.replaceText(prefix + visible + suffix), bookmarks, breakpoints, notes, gitLines);
+        String region = documentTextSnapshot();
+        clearBraceMatch(); // its offsets are the area's, which the swap changes
+        int top = ScrollAnchor.firstVisibleLine(area); // the region's lines stay put on screen, as in Emacs
+        LineMarks.widen(() -> NarrowCarry.widen(area, held), bookmarks, breakpoints, notes, gitLines);
+        symbols = NarrowCarry.widenSymbols(held, region, symbols); // before the regions, as narrowTo
+        folds.carryRegions(NarrowCarry.widenRegions(held, region, folds.regions()));
         forgetHistoryAtNarrowBoundary(hadHistory);
-        area.moveTo(Math.min(prefix.length() + caret, area.getLength()));
-        area.requestFollowCaret();
-        moveSplitCaret(prefix.length() + caret2);
+        area.moveTo(Math.min(prefix + caret, area.getLength()));
+        jumps.reveal(area, held.firstLine() + Math.max(0, top), top < 0);
+        moveSplitCaret(prefix + caret2);
         narrowView.widened(area2);
     }
 
@@ -9681,11 +9687,7 @@ public class EditorBuffer implements TabContent {
         if (logView.filtered()) {
             return logView.fullLength();
         }
-        String prefix = narrowPrefix;
-        String suffix = narrowSuffix; // set and cleared together with the prefix
-        return prefix == null || suffix == null
-                ? area.getLength()
-                : prefix.length() + area.getLength() + suffix.length();
+        return area.getLength() + NarrowCarry.heldLength(narrowHeld);
     }
 
     public BooleanProperty dirtyProperty() {
@@ -9787,7 +9789,7 @@ public class EditorBuffer implements TabContent {
     public void acknowledgeSavedContent(
             long savedVersion, int savedLength, String savedTextFingerprint, String savedLineEnding) {
         SavedBaseline saved = savedVersion == docVersion
-                        && narrowPrefix == null
+                        && narrowHeld == null
                         && !logView.filtered()
                         && area.getLength() == savedLength
                 ? SavedBaseline.of(documentTextSnapshot(), savedTextFingerprint)

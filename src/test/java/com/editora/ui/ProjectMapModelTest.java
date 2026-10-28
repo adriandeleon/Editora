@@ -156,6 +156,68 @@ class ProjectMapModelTest {
     }
 
     @Test
+    void hideUnmatchedTakesFadedRowsOffAndCountsThemPerColumn() {
+        Path src = root.resolve("src");
+        Path docs = root.resolve("docs");
+        Path java = src.resolve("App.java");
+        Path readme = src.resolve("README.md");
+        Path markdown = docs.resolve("guide.md");
+        ProjectMapModel.Entry more = ProjectMapModel.Entry.placeholder(
+                src, 2, new ProjectMapModel.Placeholder(ProjectMapModel.PlaceholderKind.MORE, 40, "+40 more…"));
+        List<ProjectMapModel.Entry> entries = List.of(
+                new ProjectMapModel.Entry(root, null, 0, true),
+                new ProjectMapModel.Entry(src, root, 1, true),
+                new ProjectMapModel.Entry(docs, root, 1, true),
+                new ProjectMapModel.Entry(java, src, 2, false),
+                new ProjectMapModel.Entry(readme, src, 2, false),
+                more,
+                new ProjectMapModel.Entry(markdown, docs, 2, false));
+        Set<Path> keep = ProjectMapModel.emphasized(entries, Set.of(normalize(java)));
+
+        List<ProjectMapModel.Column> columns = ProjectMapModel.columnsById(entries, Map.of(), Map.of(), keep);
+
+        assertEquals(3, columns.size(), "docs is off the map, so its open column goes with it");
+        ProjectMapModel.Column top = columns.get(1);
+        assertEquals(
+                List.of(normalize(src)),
+                top.entries().stream().map(ProjectMapModel.Entry::path).toList());
+        assertEquals(1, top.narrowed());
+        assertEquals("1/2", top.countLabel());
+        ProjectMapModel.Column inSrc = columns.get(2);
+        assertEquals(
+                List.of(normalize(java), more.path()),
+                inSrc.entries().stream().map(ProjectMapModel.Entry::path).toList(),
+                "a \"+N more\" row is about the folder, so it stays");
+        assertEquals(1, inSrc.narrowed());
+        assertEquals(0, columns.get(0).narrowed());
+
+        List<ProjectMapModel.Column> faded = ProjectMapModel.columnsById(entries, Map.of(), Map.of(), null);
+        assertEquals(4, faded.size(), "without a keep set every row stays (and fades)");
+        assertTrue(faded.stream().allMatch(column -> column.narrowed() == 0));
+    }
+
+    @Test
+    void hideUnmatchedCanEmptyAColumnAndSaysHowManyWent() {
+        Path docs = root.resolve("docs");
+        List<ProjectMapModel.Entry> entries = List.of(
+                new ProjectMapModel.Entry(root, null, 0, true),
+                new ProjectMapModel.Entry(docs, root, 1, true),
+                new ProjectMapModel.Entry(docs.resolve("a.md"), docs, 2, false),
+                new ProjectMapModel.Entry(docs.resolve("b.md"), docs, 2, false));
+        // The folder itself matched (a query on its name): its files did not.
+        Set<Path> keep = ProjectMapModel.emphasized(entries, Set.of(normalize(docs)));
+
+        ProjectMapModel.Column inDocs = ProjectMapModel.columnsById(entries, Map.of(), Map.of(), keep).stream()
+                .filter(column -> column.depth() == 2)
+                .findFirst()
+                .orElseThrow();
+
+        assertTrue(inDocs.entries().isEmpty());
+        assertEquals(2, inDocs.narrowed());
+        assertEquals("0/2", inDocs.countLabel());
+    }
+
+    @Test
     void columnFiltersKeepAValidVisibleHierarchy() {
         Path src = root.resolve("src");
         Path docs = root.resolve("docs");

@@ -245,6 +245,34 @@ class NarrowingFxTest {
     }
 
     @Test
+    void wideningKeepsTheRegionsLinesWhereTheyWereOnScreen() throws Exception {
+        StringBuilder doc = new StringBuilder();
+        for (int i = 0; i < 300; i++) {
+            doc.append("line ").append(i).append('\n');
+        }
+        String text = doc.toString();
+        EditorBuffer b = open(text);
+        FxTestSupport.runOnFx(() -> assertTrue(b.narrowTo(at(text, 150, 0), at(text, 160, 8))));
+        for (int i = 0; i < 4; i++) {
+            Thread.sleep(30);
+            FxTestSupport.drainFx();
+        }
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().moveTo(2, 0); // line 152 of the file
+            b.getArea().showParagraphAtTop(0);
+        });
+        FxTestSupport.drainFx();
+        run("edit.widen");
+        FxTestSupport.drainFx();
+        // Following the caret instead scrolled from the top of the file and left line 152 at the bottom edge.
+        assertEquals(
+                150,
+                FxTestSupport.callOnFx(() -> b.getArea().firstVisibleParToAllParIndex()),
+                "the region's first line is still the top one");
+        assertEquals(152, FxTestSupport.callOnFx(() -> b.getArea().getCurrentParagraph()));
+    }
+
+    @Test
     void theStatusBarLnIsTheFileLineWhileNarrowed() throws Exception {
         EditorBuffer b = narrowed();
         FxTestSupport.runOnFx(() -> b.getArea().moveTo(1, 0)); // "three", line 3 of the file

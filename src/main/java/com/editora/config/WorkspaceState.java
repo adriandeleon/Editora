@@ -71,8 +71,11 @@ public class WorkspaceState {
      * and this is where that window was. Additive; absent means a large window centred on the editor window.
      * {@code projectViewMode} keeps its values, but "MAP" now means the Map window was open — so a workspace that
      * last showed the Map shows it again, in its window.
+     *
+     * <p>v24 → v25 added {@code projectMapHideUnmatched} (the Map's "Hide unmatched": rows the filters do not
+     * match are taken off the map rather than faded). Additive; absent means off, the fading every Map did before.
      */
-    public static final int SCHEMA_VERSION = 24;
+    public static final int SCHEMA_VERSION = 25;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -182,6 +185,8 @@ public class WorkspaceState {
     private boolean projectMapKeepZoom = true;
     /** Project Map "Focus new column". Additive in v13; on by default. */
     private boolean projectMapFocusNewColumn = true;
+    /** Project Map "Hide unmatched": filtered-out rows hidden instead of faded. Additive in v25; off by default. */
+    private boolean projectMapHideUnmatched;
     /** Branch dropdown sections shown folded ("local", "remote", "remote:<name>", "actions"). Additive in v14. */
     private List<String> collapsedBranchSections = new ArrayList<>();
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
@@ -569,6 +574,14 @@ public class WorkspaceState {
 
     public void setProjectMapFocusNewColumn(boolean projectMapFocusNewColumn) {
         this.projectMapFocusNewColumn = projectMapFocusNewColumn;
+    }
+
+    public boolean isProjectMapHideUnmatched() {
+        return projectMapHideUnmatched;
+    }
+
+    public void setProjectMapHideUnmatched(boolean projectMapHideUnmatched) {
+        this.projectMapHideUnmatched = projectMapHideUnmatched;
     }
 
     public Map<String, String> getProgramArgs() {

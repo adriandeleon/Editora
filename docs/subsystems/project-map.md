@@ -288,6 +288,15 @@ as the Git chip does. Those ancestor sets come from the open tabs and the marker
 (`ProjectPanel.setOpenFiles`, `MarkerActions.markedPaths`) by path arithmetic; nothing is read from disk
 on the FX thread. Folders match the Bookmarks and Personal Notes chips in their own right.
 
+**Hide unmatched** (a checkbox in the filter row, remembered per workspace as `projectMapHideUnmatched`,
+workspace schema v25) takes the rows that would fade off the map instead. It keeps exactly the emphasized
+set — the matches and the folders that lead to them — by handing it to `ProjectMapModel.columnsById` as a
+keep set, so a folder taken out takes its open columns with it, as a column filter does. Placeholder rows
+("+N more", "Empty folder") stay. Each column counts what it lost (`Column.narrowed`): its header reads
+"shown/total", an italic "N hidden" footer sits under its rows (or on its empty row when none are left), and
+an amber "N rows hidden" badge beside the checkbox totals them. With no filter active it changes nothing.
+Column widths are still measured from every loaded row, so switching it does not resize the cards.
+
 The type selector asks `ProjectMapModel.classify`, which maps `LanguageRegistry.forFileName` — the
 registry behind the file icons and the editor's language detection — to a bucket: program languages are
 Source, document and style languages Markup, every other recognized language (data formats, unit files,
