@@ -46,4 +46,12 @@ class PomServerSupportTest {
         assertTrue(PomServerSupport.pomServerRunsFor(Path.of("/w/pom.xml"), "java -cp \"/cfg/plugins/lsp/maven/*\" X"));
         assertTrue(PomServerSupport.pomServerRunsFor(null, ""));
     }
+
+    @Test
+    void savingALeftOutPomWellFormedRestartsItsServer() {
+        Path pom = Path.of("broken/pom.xml");
+        assertTrue(PomServerSupport.wellFormedAgain(true, pom, "<project><artifactId>a</artifactId></project>"));
+        assertFalse(PomServerSupport.wellFormedAgain(true, pom, "<project><artifactId>a</project>"), "still broken");
+        assertFalse(PomServerSupport.wellFormedAgain(false, pom, "<project/>"), "never left out");
+    }
 }

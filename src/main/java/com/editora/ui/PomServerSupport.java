@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -19,11 +20,14 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * What the window does around the Maven pom server beyond starting it: where it may run ({@link
- * #pomServerRunsFor}), and saying why its coordinate completion came back empty when the reason is a malformed pom elsewhere
- * in the project (review 2, E3). lemminx-maven answers the first {@code groupId}/{@code artifactId}/{@code version}
- * completion, then only {@code <!--} and {@code <![CDATA[} for every pom while any pom of its workspace is not
- * well-formed XML — which looked exactly like "nothing to suggest". On such an answer the project is searched (off
- * the FX thread, at most once every few seconds per root) and the malformed file is named in the status bar.
+ * #pomServerRunsFor}), and keeping its coordinate completion alive when a pom elsewhere in the project is malformed
+ * (review 2, E3). lemminx-maven answers the first {@code groupId}/{@code artifactId}/{@code version} completion, then
+ * only {@code <!--} and {@code <![CDATA[} for every pom while any pom of its workspace is not well-formed XML: its
+ * workspace list keeps the failed build's null project, and the completion throws on it (lemminx-maven 0.12.0,
+ * {@code MavenLemminxExtension.getCurrentWorkspaceProjects}). On such an answer the project is searched (off the FX
+ * thread, at most once every few seconds per root), the malformed poms are taken out of the server's workspace, the
+ * completion is asked again, and the status bar names the file. Saving such a pom well-formed restarts the server,
+ * which takes it back.
  */
 final class PomServerSupport {
 
@@ -68,31 +72,64 @@ final class PomServerSupport {
     }
 
     /**
-     * Hears one Maven-server completion answered at a coordinate ({@code element} non-null): when it holds only
-     * markup, searches {@code root} for a malformed pom and names it. {@code openPoms} (asked on this thread, only
-     * then) gives the open poms' unsaved text by absolute path: what the server sees for them.
+     * Hears one Maven-server completion answered at a coordinate ({@code element} non-null). When it holds only
+     * markup, searches {@code root} for malformed poms, hands them to {@code leaveOut} (which returns the ones newly
+     * taken out of the server's workspace) and runs {@code askAgain} — or {@code deliver}, the answer as it came, when
+     * none was. {@code openPoms} (asked on this thread, only then) gives the open poms' unsaved text by absolute path:
+     * what the server sees for them. Returns whether it took the answer over; when false the caller delivers it.
      */
-    void onCompletion(
-            @Nullable String element, List<String> labels, @Nullable Path root, Supplier<Map<Path, String>> openPoms) {
+    boolean onCompletion(
+            @Nullable String element,
+            List<String> labels,
+            @Nullable Path root,
+            Supplier<Map<Path, String>> openPoms,
+            Function<List<Path>, List<Path>> leaveOut,
+            Runnable askAgain,
+            Runnable deliver) {
         if (element == null || root == null || !onlyMarkup(labels)) {
-            return;
+            return false;
         }
         long now = System.currentTimeMillis();
         if (root.equals(lastRoot) && now - lastCheck < RECHECK_MILLIS) {
-            return;
+            return false;
         }
         lastRoot = root;
         lastCheck = now;
         Map<Path, String> open = Map.copyOf(openPoms.get());
         Thread.ofVirtual().name("pom-wellformed").start(() -> {
-            MalformedPoms.Problem problem = MalformedPoms.firstIn(
+            List<MalformedPoms.Problem> problems = MalformedPoms.allIn(
                     root, file -> open.get(file.toAbsolutePath().normalize()));
-            if (problem != null) {
-                String where = displayPath(root, problem.file());
-                Platform.runLater(() -> status.accept(
-                        tr("status.maven.completionMalformed", where, String.valueOf(Math.max(1, problem.line())))));
-            }
+            Platform.runLater(() -> {
+                if (problems.isEmpty()) {
+                    deliver.run();
+                    return;
+                }
+                List<Path> out = leaveOut.apply(
+                        problems.stream().map(MalformedPoms.Problem::file).toList());
+                MalformedPoms.Problem first = problems.get(0);
+                String where = displayPath(root, first.file());
+                String line = String.valueOf(Math.max(1, first.line()));
+                if (out.isEmpty()) {
+                    status.accept(tr("status.maven.completionMalformed", where, line));
+                    deliver.run();
+                    return;
+                }
+                status.accept(
+                        problems.size() == 1
+                                ? tr("status.maven.completionLeftOut", where, line)
+                                : tr("status.maven.completionLeftOutMore", where, line, problems.size() - 1));
+                askAgain.run();
+            });
         });
+        return true;
+    }
+
+    /**
+     * Whether saving {@code pom} as {@code text} should restart its Maven server: it was left out of the server's
+     * workspace ({@code leftOut}) and is well-formed now. lemminx-maven cannot take it back in the same session.
+     */
+    static boolean wellFormedAgain(boolean leftOut, Path pom, String text) {
+        return leftOut && MalformedPoms.check(pom, text) == null;
     }
 
     /** {@code file} relative to {@code root} when it lies under it, else its full path. Pure. */

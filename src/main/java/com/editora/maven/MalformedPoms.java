@@ -6,7 +6,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -16,8 +18,8 @@ import org.jspecify.annotations.Nullable;
  * Finds a pom.xml under a Maven project that is not well-formed XML. lemminx-maven builds the whole workspace's
  * reactor for its coordinate completion, and one malformed pom anywhere in it makes every completion after the
  * first come back with only {@code <!--} and {@code <![CDATA[} — for every pom, with no message (review 2, E3; a
- * pom that is well-formed but an invalid model does no such harm). The Maven server cannot be told to skip it, so
- * the editor names the file instead. Reads files only; call it off the FX thread.
+ * pom that is well-formed but an invalid model does no such harm). The editor names the file and takes it out of the
+ * server's workspace (see {@code PomServerSupport}). Reads files only; call it off the FX thread.
  */
 public final class MalformedPoms {
 
@@ -42,10 +44,20 @@ public final class MalformedPoms {
      * gives an open file's unsaved text (null for one not open), which is what the server sees for it.
      */
     public static @Nullable Problem firstIn(@Nullable Path root, Function<Path, @Nullable String> openText) {
+        List<Problem> found = walk(root, openText, 1);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Every pom.xml under {@code root} that is not well-formed, in walk order (see {@link #firstIn}). */
+    public static List<Problem> allIn(@Nullable Path root, Function<Path, @Nullable String> openText) {
+        return walk(root, openText, MAX_POMS);
+    }
+
+    private static List<Problem> walk(@Nullable Path root, Function<Path, @Nullable String> openText, int limit) {
+        List<Problem> found = new ArrayList<>();
         if (root == null || !Files.isDirectory(root)) {
-            return null;
+            return found;
         }
-        Problem[] found = new Problem[1];
         int[] read = new int[1];
         try {
             Files.walkFileTree(
@@ -70,8 +82,10 @@ public final class MalformedPoms {
                             }
                             Problem p = check(file, openText.apply(file));
                             if (p != null) {
-                                found[0] = p;
-                                return FileVisitResult.TERMINATE;
+                                found.add(p);
+                                if (found.size() >= limit) {
+                                    return FileVisitResult.TERMINATE;
+                                }
                             }
                             return FileVisitResult.CONTINUE;
                         }
@@ -82,13 +96,13 @@ public final class MalformedPoms {
                         }
                     });
         } catch (IOException | RuntimeException e) {
-            return found[0];
+            return found;
         }
-        return found[0];
+        return found;
     }
 
     /** {@code pom}'s problem when its text ({@code text}, or the file's when null) is not well-formed; else null. */
-    static @Nullable Problem check(Path pom, @Nullable String text) {
+    public static @Nullable Problem check(Path pom, @Nullable String text) {
         String xml = text;
         if (xml == null) {
             try {

@@ -1,0 +1,87 @@
+package com.editora.lsp;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+import org.eclipse.lsp4j.ServerCapabilities;
+import org.eclipse.lsp4j.WorkspaceFolder;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * A malformed pom is taken out of lemminx-maven's workspace by its own file URI (review 2, E3): one
+ * {@code didChangeWorkspaceFolders} that removes it and adds nothing, sent once per pom for the session.
+ */
+@Tag("fx")
+class MavenWorkspaceLeaveOutFxTest {
+
+    @TempDir
+    Path root;
+
+    private LspManager manager;
+    private final List<FakeLanguageServer> fakes = new CopyOnWriteArrayList<>();
+    private Path pom;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        manager = new LspManager((f, d) -> {}, (t, m) -> {});
+        manager.setSessionStarterForTest(session -> {
+            FakeLanguageServer fake = new FakeLanguageServer();
+            fakes.add(fake);
+            session.attachForTest(fake, new ServerCapabilities());
+        });
+        manager.setFolderTrust(folder -> true);
+        manager.configure(true, Map.of(LspServerRegistry.MAVEN_POM_SERVER_ID, "lemminx-maven"));
+        pom = root.resolve("pom.xml");
+        Files.writeString(pom, "<project/>\n");
+        manager.openDocument(pom, root, LspServerRegistry.MAVEN_POM_LANGUAGE_ID, "<project/>\n");
+    }
+
+    @AfterEach
+    void tearDown() {
+        manager.shutdownAll();
+    }
+
+    @Test
+    void aMalformedPomLeavesTheWorkspaceByItsOwnUriOnce() throws Exception {
+        Path broken = root.resolve("broken/pom.xml");
+        Path other = root.resolve("wip/pom.xml");
+
+        assertEquals(List.of(broken, other), manager.leaveOutOfMavenWorkspace(pom, List.of(broken, other)));
+        assertEquals(List.of(), manager.leaveOutOfMavenWorkspace(pom, List.of(broken)), "already out");
+
+        FakeLanguageServer fake = fakes.get(0);
+        assertEquals(1, fake.workspaceFolderChanges.size());
+        var event = fake.workspaceFolderChanges.get(0).getEvent();
+        assertTrue(event.getAdded().isEmpty(), "nothing is added: a re-added pom brings its failed build back");
+        assertEquals(
+                List.of(LspTestHooks.uri(broken), LspTestHooks.uri(other)),
+                event.getRemoved().stream().map(WorkspaceFolder::getUri).toList());
+        Files.createDirectories(broken.getParent());
+        Files.writeString(broken, "<project>");
+        manager.openDocument(broken, root, LspServerRegistry.MAVEN_POM_LANGUAGE_ID, "<project>"); // saved from a tab
+        assertTrue(manager.leftOutOfMavenWorkspace(broken));
+        assertFalse(manager.leftOutOfMavenWorkspace(pom));
+    }
+
+    @Test
+    void aFileOnAnotherServerLeavesNothingOut() throws Exception {
+        manager.configure(true, Map.of(LspServerRegistry.MAVEN_POM_SERVER_ID, "lemminx-maven", "java", "jdtls"));
+        Path java = root.resolve("A.java");
+        Files.writeString(java, "class A {}\n");
+        manager.openDocument(java, root, "java", "class A {}\n");
+
+        assertEquals(List.of(), manager.leaveOutOfMavenWorkspace(java, List.of(root.resolve("broken/pom.xml"))));
+        assertTrue(fakes.stream().allMatch(f -> f.workspaceFolderChanges.isEmpty()));
+    }
+}

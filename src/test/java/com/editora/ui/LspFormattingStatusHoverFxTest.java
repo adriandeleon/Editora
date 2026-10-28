@@ -73,6 +73,19 @@ class LspFormattingStatusHoverFxTest {
     }
 
     @Test
+    void formatDocumentCarriesTheFilesEditorConfigSaveRules() throws Exception {
+        // D3 (XML/pom review 2): lemminx adds the final newline only when the request asks for it
+        EditorBuffer b = fx.open("A.java", "class A {\n    void go() {}\n}");
+        FxTestSupport.runOnFx(() -> b.setEditorConfigProps(
+                new com.editora.editorconfig.EditorConfigProperties(null, null, null, null, null, true, true, null)));
+
+        FormattingOptions options = formatAndGetOptions();
+
+        assertEquals(Boolean.TRUE, options.isTrimTrailingWhitespace());
+        assertEquals(Boolean.TRUE, options.isInsertFinalNewline());
+    }
+
+    @Test
     void aTabIndentedFileAsksForTabs() throws Exception {
         fx.open("A.java", "class A {\n\tvoid go() {}\n}\n");
 

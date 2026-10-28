@@ -956,6 +956,31 @@ public final class LspManager {
         return s != null && s.questionOpen();
     }
 
+    /**
+     * Takes {@code poms} out of the workspace of the Maven pom server serving {@code file} (review 2, E3: one
+     * malformed pom in its workspace empties every coordinate completion). Returns the poms newly left out; none
+     * when {@code file} is not on the Maven server.
+     */
+    public List<Path> leaveOutOfMavenWorkspace(Path file, List<Path> poms) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || !LspServerRegistry.MAVEN_POM_SERVER_ID.equals(s.serverId())) {
+            return List.of();
+        }
+        Map<String, Path> byUri = new java.util.LinkedHashMap<>();
+        poms.forEach(p -> byUri.put(s.uris().toWire(uri(p)), p));
+        return s.leaveOutOfWorkspace(List.copyOf(byUri.keySet())).stream()
+                .map(byUri::get)
+                .toList();
+    }
+
+    /** Whether {@code pom} was left out of its Maven pom server's workspace ({@link #leaveOutOfMavenWorkspace}). */
+    public boolean leftOutOfMavenWorkspace(Path pom) {
+        LanguageServerSession s = sessionFor(pom);
+        return s != null
+                && LspServerRegistry.MAVEN_POM_SERVER_ID.equals(s.serverId())
+                && s.leftOutOfWorkspace(s.uris().toWire(uri(pom)));
+    }
+
     /** Restarts {@code serverId} (dispose + drop its cached sessions) so the next {@code openDocument}
      *  re-initializes it — e.g. to reload jdtls with the java-debug bundle. The controller re-opens the
      *  affected buffers afterwards. */
@@ -3739,6 +3764,18 @@ public final class LspManager {
             int tabSize,
             boolean insertSpaces,
             Consumer<List<com.editora.text.LspTextEdit>> cb) {
+        rangeFormatting(file, startLine, startChar, endLine, endChar, new FormattingIndent(tabSize, insertSpaces), cb);
+    }
+
+    /** As above, with the file's save rules in the request's options (Format Selection). */
+    public void rangeFormatting(
+            Path file,
+            int startLine,
+            int startChar,
+            int endLine,
+            int endChar,
+            FormattingIndent indent,
+            Consumer<List<com.editora.text.LspTextEdit>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(List.of()));
@@ -3746,23 +3783,22 @@ public final class LspManager {
         }
         org.eclipse.lsp4j.Range range =
                 new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
-        s.rangeFormatting(uri(file), range, new org.eclipse.lsp4j.FormattingOptions(tabSize, insertSpaces))
-                .whenComplete((result, error) -> {
-                    List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
-                    if (error == null && result != null) {
-                        for (org.eclipse.lsp4j.TextEdit e : result) {
-                            if (e != null && e.getRange() != null) {
-                                edits.add(new com.editora.text.LspTextEdit(
-                                        e.getRange().getStart().getLine(),
-                                        e.getRange().getStart().getCharacter(),
-                                        e.getRange().getEnd().getLine(),
-                                        e.getRange().getEnd().getCharacter(),
-                                        e.getNewText() == null ? "" : e.getNewText()));
-                            }
-                        }
+        s.rangeFormatting(uri(file), range, indent.options()).whenComplete((result, error) -> {
+            List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
+            if (error == null && result != null) {
+                for (org.eclipse.lsp4j.TextEdit e : result) {
+                    if (e != null && e.getRange() != null) {
+                        edits.add(new com.editora.text.LspTextEdit(
+                                e.getRange().getStart().getLine(),
+                                e.getRange().getStart().getCharacter(),
+                                e.getRange().getEnd().getLine(),
+                                e.getRange().getEnd().getCharacter(),
+                                e.getNewText() == null ? "" : e.getNewText()));
                     }
-                    Platform.runLater(() -> cb.accept(edits));
-                });
+                }
+            }
+            Platform.runLater(() -> cb.accept(edits));
+        });
     }
 
     /**
@@ -3772,28 +3808,32 @@ public final class LspManager {
      */
     public void formatDocument(
             Path file, int tabSize, boolean insertSpaces, Consumer<List<com.editora.text.LspTextEdit>> cb) {
+        formatDocument(file, new FormattingIndent(tabSize, insertSpaces), cb);
+    }
+
+    /** As above, with the file's save rules in the request's options (see {@link FormattingIndent#options}). */
+    public void formatDocument(Path file, FormattingIndent indent, Consumer<List<com.editora.text.LspTextEdit>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
-        s.formatting(uri(file), new org.eclipse.lsp4j.FormattingOptions(tabSize, insertSpaces))
-                .whenComplete((result, error) -> {
-                    List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
-                    if (error == null && result != null) {
-                        for (org.eclipse.lsp4j.TextEdit e : result) {
-                            if (e != null && e.getRange() != null) {
-                                edits.add(new com.editora.text.LspTextEdit(
-                                        e.getRange().getStart().getLine(),
-                                        e.getRange().getStart().getCharacter(),
-                                        e.getRange().getEnd().getLine(),
-                                        e.getRange().getEnd().getCharacter(),
-                                        e.getNewText() == null ? "" : e.getNewText()));
-                            }
-                        }
+        s.formatting(uri(file), indent.options()).whenComplete((result, error) -> {
+            List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
+            if (error == null && result != null) {
+                for (org.eclipse.lsp4j.TextEdit e : result) {
+                    if (e != null && e.getRange() != null) {
+                        edits.add(new com.editora.text.LspTextEdit(
+                                e.getRange().getStart().getLine(),
+                                e.getRange().getStart().getCharacter(),
+                                e.getRange().getEnd().getLine(),
+                                e.getRange().getEnd().getCharacter(),
+                                e.getNewText() == null ? "" : e.getNewText()));
                     }
-                    Platform.runLater(() -> cb.accept(edits));
-                });
+                }
+            }
+            Platform.runLater(() -> cb.accept(edits));
+        });
     }
 
     /** True if {@code file}'s server is ready and advertises the document-symbol outline (Structure window). */
