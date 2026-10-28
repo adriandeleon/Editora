@@ -10,7 +10,6 @@ import java.util.regex.Pattern;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.LspManager;
-import com.editora.text.ShellScripts;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
@@ -53,7 +52,7 @@ final class BashLspUi {
         String name = path == null || path.getFileName() == null
                 ? null
                 : path.getFileName().toString();
-        return ShellScripts.isZshDialect(name, head) ? tr("editor.problemCounter.zshNotChecked") : null;
+        return com.editora.text.ShellDialect.isZsh(name, head) ? tr("editor.problemCounter.zshNotChecked") : null;
     }
 
     // --- Format Document (B3, C3, B14) -----------------------------------------------------------------------------

@@ -69,15 +69,15 @@ class ShellScriptsTest {
     /** ShellCheck has no zsh mode: the counter says such a script is not checked (Bash review C14). */
     @Test
     void zshIsToldByItsNameItsShebangOrAShellcheckDirective() {
-        assertTrue(ShellScripts.isZshDialect("prompt.zsh", ""));
-        assertTrue(ShellScripts.isZshDialect("PROMPT.ZSH", null));
-        assertTrue(ShellScripts.isZshDialect("tool", "#!/usr/bin/env zsh\necho\n"));
-        assertTrue(ShellScripts.isZshDialect("tool", "#!/bin/zsh -f\n"));
-        assertTrue(ShellScripts.isZshDialect("lib.sh", "#!/bin/sh\n# shellcheck shell=zsh\nsetopt x\n"));
-        assertTrue(ShellScripts.isZshDialect("lib.sh", "# shellcheck disable=SC1090 shell=zsh\n"));
-        assertFalse(ShellScripts.isZshDialect("deploy.sh", "#!/usr/bin/env bash\necho zsh\n"));
-        assertFalse(ShellScripts.isZshDialect("deploy.sh", "#!/bin/bash\n# shellcheck shell=bash\n"));
-        assertFalse(ShellScripts.isZshDialect("deploy.sh", "#!/bin/bash\necho '#!/bin/zsh'\n"), "only line 1");
-        assertFalse(ShellScripts.isZshDialect(null, null));
+        assertTrue(ShellDialect.isZsh("prompt.zsh", ""));
+        assertTrue(ShellDialect.isZsh("PROMPT.ZSH", null));
+        assertTrue(ShellDialect.isZsh("tool", "#!/usr/bin/env zsh\necho\n"));
+        assertTrue(ShellDialect.isZsh("tool", "#!/bin/zsh -f\n"));
+        assertTrue(ShellDialect.isZsh("lib.sh", "#!/bin/sh\n# shellcheck shell=zsh\nsetopt x\n"));
+        assertTrue(ShellDialect.isZsh("lib.sh", "# shellcheck disable=SC1090 shell=zsh\n"));
+        assertFalse(ShellDialect.isZsh("deploy.sh", "#!/usr/bin/env bash\necho zsh\n"));
+        assertFalse(ShellDialect.isZsh("deploy.sh", "#!/bin/bash\n# shellcheck shell=bash\n"));
+        assertFalse(ShellDialect.isZsh("deploy.sh", "#!/bin/bash\necho '#!/bin/zsh'\n"), "only line 1");
+        assertFalse(ShellDialect.isZsh(null, null));
     }
 }
