@@ -688,6 +688,9 @@ class ProjectMapLayoutFxTest {
                         String where = language + " at " + (int) width + " px";
                         Parent filters = (Parent) view.lookup(".project-map-filters");
                         for (Node child : filters.getChildrenUnmodifiable()) {
+                            if (!child.isManaged()) {
+                                continue; // the "rows hidden" badge takes no room until rows are hidden
+                            }
                             assertWhole(child, where);
                             assertTrue(
                                     child.getBoundsInParent().getMaxX() <= width + 0.5,

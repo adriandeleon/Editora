@@ -42,6 +42,21 @@ class JavaStringPasteTest {
         JavaStringPaste.copied(null, false);
     }
 
+    /** In a text block only backslashes and a {@code """} are escaped; in a char literal its quote too (RJ4). */
+    @Test
+    void aTextBlockAndACharLiteralAreEscapedForThemselves() {
+        JavaStringPaste.copied(null, false);
+        String block = "String t = \"\"\"\n    x\n    \"\"\";\n";
+        int in = block.indexOf("x");
+        assertEquals(JavaStringPaste.Literal.TEXT_BLOCK, JavaStringPaste.literalAt(block, in));
+        assertEquals("C:\\\\temp \"x\"\nnext", JavaStringPaste.forPaste(block, in, "C:\\temp \"x\"\nnext"));
+        String ch = "char c = ' ';";
+        int at = ch.indexOf("' '") + 1;
+        assertEquals(JavaStringPaste.Literal.CHAR, JavaStringPaste.literalAt(ch, at));
+        assertEquals("\\\\", JavaStringPaste.forPaste(ch, at, "\\"));
+        assertEquals(JavaStringPaste.Literal.NONE, JavaStringPaste.literalAt(ch, ch.length()), "after it");
+    }
+
     @Test
     void aSelectionWithinOneLiteralIsTold() {
         String text = "String s = \"a\\\"b\" + \"c\";";

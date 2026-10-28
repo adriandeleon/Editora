@@ -2,15 +2,12 @@ package com.editora.lsp;
 
 import java.io.IOException;
 import java.nio.file.FileSystems;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -97,7 +94,7 @@ final class RootWatcher implements AutoCloseable {
             RootWatcher w = new RootWatcher(root, com.editora.io.WatchServices.open(), sink, reported, skipOutputs);
             try {
                 w.registerTree(root);
-            } catch (IOException | RuntimeException e) {
+            } catch (RuntimeException e) {
                 w.ws.close(); // a watcher that is not returned is never closed: it held an inotify instance
                 throw e;
             }
@@ -160,49 +157,55 @@ final class RootWatcher implements AutoCloseable {
         return root.relativize(dir).toString().replace('\\', '/');
     }
 
-    private void registerTree(Path start) throws IOException {
+    /**
+     * Registers {@code start}'s folders level by level: build files and sources sit near the top, so past
+     * {@link #MAX_DIRS} folders a module's pom.xml is watched before a deep asset tree is (fourteenth check CJ6).
+     * Skips hidden, dependency and (for a build-file watcher) build-output folders, and every folder a
+     * {@code .gitignore} on the way down leaves out (Bash review B16).
+     */
+    private void registerTree(Path start) {
         // each folder's rules: its parent's, plus a .gitignore of its own (a monorepo keeps them per package)
         Map<Path, com.editora.search.GitignoreFilter> rules = new HashMap<>();
-        Files.walkFileTree(start, new SimpleFileVisitor<>() {
-            @Override
-            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                if (!dir.equals(root) && (skipped(dir) || (skipOutputs && buildOutput(dir)))) {
-                    return FileVisitResult.SKIP_SUBTREE;
+        java.util.ArrayDeque<Path> queue = new java.util.ArrayDeque<>(List.of(start));
+        while (!queue.isEmpty()) {
+            Path dir = queue.poll();
+            if (!dir.equals(root)) {
+                if (skipped(dir) || (skipOutputs && buildOutput(dir))) {
+                    continue;
                 }
-                if (!dir.equals(root)) {
-                    String rel = relative(dir);
-                    var parent = rules.getOrDefault(dir.getParent(), ignore);
-                    if (parent.ignored(rel, true)) {
-                        return FileVisitResult.SKIP_SUBTREE;
-                    }
-                    rules.put(dir, parent.nested(dir, rel));
+                String rel = relative(dir);
+                var parent = rules.getOrDefault(dir.getParent(), ignore);
+                if (parent.ignored(rel, true)) {
+                    continue;
                 }
-                synchronized (dirs) {
-                    if (dirs.size() >= (com.editora.io.WatchServices.isPolling(ws) ? MAX_POLLED_DIRS : MAX_DIRS)) {
-                        LOG.fine(() -> "watching only part of " + root + ": " + dirs.size() + " folders");
-                        return FileVisitResult.TERMINATE;
-                    }
-                    try {
-                        dirs.put(
-                                com.editora.io.WatchServices.register(
-                                        dir,
-                                        ws,
-                                        StandardWatchEventKinds.ENTRY_CREATE,
-                                        StandardWatchEventKinds.ENTRY_DELETE,
-                                        StandardWatchEventKinds.ENTRY_MODIFY),
-                                dir);
-                    } catch (IOException | RuntimeException e) {
-                        return FileVisitResult.SKIP_SUBTREE;
-                    }
-                }
-                return FileVisitResult.CONTINUE;
+                rules.put(dir, parent.nested(dir, rel));
             }
-
-            @Override
-            public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                return FileVisitResult.CONTINUE;
+            synchronized (dirs) {
+                if (dirs.size() >= (com.editora.io.WatchServices.isPolling(ws) ? MAX_POLLED_DIRS : MAX_DIRS)) {
+                    LOG.fine(() -> "watching only part of " + root + ": " + dirs.size() + " folders");
+                    return;
+                }
+                try {
+                    dirs.put(
+                            com.editora.io.WatchServices.register(
+                                    dir,
+                                    ws,
+                                    StandardWatchEventKinds.ENTRY_CREATE,
+                                    StandardWatchEventKinds.ENTRY_DELETE,
+                                    StandardWatchEventKinds.ENTRY_MODIFY),
+                            dir);
+                } catch (IOException | RuntimeException e) {
+                    continue;
+                }
             }
-        });
+            try (var children = Files.list(dir)) {
+                children.filter(c -> Files.isDirectory(c, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+                        .sorted()
+                        .forEach(queue::add);
+            } catch (IOException | RuntimeException e) {
+                // unreadable: its folders are not watched
+            }
+        }
     }
 
     private void loop() {

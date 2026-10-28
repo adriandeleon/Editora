@@ -507,9 +507,9 @@ source file "a non-project file" (syntax only). A file under `src/main/java` or 
 file, or of the nearest folder with one under a root that has none (a build beside others), that gets that warning
 marks that build's import failed (`LspCoordinator.noteNonProjectFile`): said once with that
 reason, then the ready line's "did not import" and each counter's "Not checked". So does "not on the classpath of
-project <name>", the invisible project jdtls makes when a loose file was opened first or the build's own one, kept
-without source folders by a model error such as a dependency with no version (unless the build file names its own
-source folders, `JavaImportCheck.ownSources`), and a reactor module
+project <folder>_<hash>", the invisible project jdtls makes when a loose file was opened first (a real project's
+name is not enough: a healthy project keeps a nested sample's, `buildSrc`'s or an excluded file off its classpath), and
+a reactor module
 whose pom.xml does not parse (checked at the ready line, `JavaImportCheck.mavenModules`); a pom that does not parse
 is named with its parse error's line and column (`JavaImportCheck.unreadablePom`). A loose file elsewhere in the
 project is a non-project file by rights and is not counted.
@@ -520,7 +520,11 @@ and "Error occured while building workspace" (a compile error a build found) is 
 import is "the build has problems"; only that element's shape is skipped (`[in …] does not exist`), as Gradle's own
 "Included build '…' does not exist" is a failed import. A `language/status` Error before jdtls says it is ready is an
 import that threw (m2e on a dependency without an artifactId): the ready line then says the project did not import,
-with the pom's "Project build error" when Problems has it. A failure is keyed by the folder of the build that failed
+with the pom's "Project build error" when Problems has it. That error on a folder's pom.xml (a dependency without a
+version, a parent Maven cannot resolve) is the folder's failed import too, at the ready line or when it comes later
+(`JavaImportCheck.modelError`): m2e made no Java project of it, and jdtls gives its files no diagnostics at all. So is
+a source file of a module whose pom says `<packaging>pom</packaging>`. A Gradle "Unresolved dependency" is a build with
+problems, its files checked. A failure is keyed by the folder of the build that failed
 unless the root's own
 pom.xml does not parse (a Maven and a Gradle build side by side, or a Gradle build in `tools/` of a Maven root), and
 counters, the ready line
@@ -535,8 +539,8 @@ grammar only when told it changed, and the Bash server never re-reads a sourced 
 reports changes from its expanded folders alone, so every local server root gets a recursive watcher of its own
 (`LspManager.ensureRootWatcher`, one `RootWatcher` per root, none for a root inside one already watched, at most eight),
 project or not. It skips hidden, dependency and virtual-environment folders and the folders the root's `.gitignore`
-files leave out (nested ones too). A watcher registers at most 2,000 folders (300 when polling), so it reports a file
-only when its own folder is registered (`RootWatcher.watches`), not anything under its root; the panel's own event for a
+files leave out (nested ones too). A watcher registers at most 2,000 folders (300 when polling), level by level so build files near the top come
+first, and it reports a file only when its own folder is registered (`RootWatcher.watches`), not anything under its root; the panel's own event for a
 file that a watcher reports is not sent again (`LspManager.reportsChangesTo`). A build file saved here that no watcher
 covers (an SSH project, or one past the folder cap) is sent as a watched-file change on save.
 

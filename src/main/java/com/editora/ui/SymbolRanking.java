@@ -127,4 +127,25 @@ final class SymbolRanking {
         String c = m.container().strip();
         return c.isEmpty() ? m.name() : c + "." + m.name();
     }
+
+    private static final java.util.regex.Pattern TYPE_KEYWORD =
+            java.util.regex.Pattern.compile("\\b(?:class|interface|enum|record|@interface)\\s+(\\w+)\\b");
+
+    /** The line declaring type {@code name} in Java source, or -1; comment lines are skipped. Pure. */
+    static int typeDeclarationLine(String content, String name) {
+        String[] lines = content.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String t = lines[i].strip();
+            if (t.startsWith("*") || t.startsWith("/")) {
+                continue;
+            }
+            var m = TYPE_KEYWORD.matcher(lines[i]);
+            while (m.find()) {
+                if (m.group(1).equals(name)) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
 }

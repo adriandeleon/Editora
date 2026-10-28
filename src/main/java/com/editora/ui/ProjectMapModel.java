@@ -203,11 +203,19 @@ final class ProjectMapModel {
         }
     }
 
-    /** One Miller-style column containing the children of exactly one parent directory. */
-    record Column(int depth, @Nullable Path parent, List<Entry> entries, int totalEntries) {
+    /**
+     * One Miller-style column containing the children of exactly one parent directory. {@code narrowed} counts
+     * the rows the map-wide filters took out of it while the Map hides what does not match.
+     */
+    record Column(int depth, @Nullable Path parent, List<Entry> entries, int totalEntries, int narrowed) {
         Column {
             parent = normalize(parent);
             entries = entries == null ? List.of() : List.copyOf(entries);
+            narrowed = Math.max(0, narrowed);
+        }
+
+        Column(int depth, @Nullable Path parent, List<Entry> entries, int totalEntries) {
+            this(depth, parent, entries, totalEntries, 0);
         }
 
         ColumnId id() {
@@ -564,6 +572,20 @@ final class ProjectMapModel {
 
     static List<Column> columnsById(
             List<Entry> entries, Map<ColumnId, String> columnQueries, Map<ColumnId, Boolean> showHiddenByColumn) {
+        return columnsById(entries, columnQueries, showHiddenByColumn, null);
+    }
+
+    /**
+     * As {@link #columnsById(List, Map, Map)}, and with {@code keep} given only those rows stay: the Map's
+     * "Hide unmatched" mode, where a row the filters fade is taken out instead. A placeholder row ("+N more",
+     * "Empty folder") stays, since it says something about the folder rather than being one of its files,
+     * and a folder taken out takes its open columns with it, as a column's own filter does.
+     */
+    static List<Column> columnsById(
+            List<Entry> entries,
+            Map<ColumnId, String> columnQueries,
+            Map<ColumnId, Boolean> showHiddenByColumn,
+            @Nullable Set<Path> keep) {
         if (entries == null || entries.isEmpty()) {
             return List.of();
         }
@@ -604,6 +626,18 @@ final class ProjectMapModel {
                             || normalizedQuery.isEmpty()
                             || FuzzyMatch.of(entry.name(), normalizedQuery) != null)
                     .toList();
+            int narrowed = 0;
+            if (keep != null) {
+                List<Entry> kept = new ArrayList<>(shown.size());
+                for (Entry entry : shown) {
+                    if (entry.isPlaceholder() || keep.contains(entry.path())) {
+                        kept.add(entry);
+                    } else {
+                        narrowed++;
+                    }
+                }
+                shown = kept;
+            }
             shown.forEach(entry -> visible.add(entry.path()));
             // The directory's real child count: the loaded rows plus what a "+N more" row stands for.
             int total = 0;
@@ -611,7 +645,7 @@ final class ProjectMapModel {
                 Placeholder placeholder = entry.placeholder();
                 total += placeholder != null ? placeholder.remaining() : 1; // entry.isPlaceholder()
             }
-            result.add(new Column(depth, id.parent(), shown, total));
+            result.add(new Column(depth, id.parent(), shown, total, narrowed));
         }
         return List.copyOf(result);
     }

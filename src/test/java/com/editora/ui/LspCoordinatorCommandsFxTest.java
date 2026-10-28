@@ -2113,7 +2113,10 @@ class LspCoordinatorCommandsFxTest {
                 null,
                 "jdtls");
         fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("gb"), List.of(cause)));
-        awaitError(tr("status.lsp.importProblemWhy", "jdtls", "Could not find method thisIsNotAConfiguration()"));
+        awaitError(tr(
+                "status.lsp.importProblemWhy",
+                tr("status.lsp.serverInFolder", "jdtls", "gb"),
+                "Could not find method thisIsNotAConfiguration()"));
         java.util.Set<String> failed = FxTestSupport.field(fx.coordinator, "importFailed");
         assertTrue(
                 FxTestSupport.callOnFx(() -> failed.stream().anyMatch(k -> k.endsWith(java.io.File.separator + "gb"))),
@@ -2143,7 +2146,10 @@ class LspCoordinatorCommandsFxTest {
                 null,
                 "jdtls");
         fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("tools"), List.of(cause)));
-        awaitError(tr("status.lsp.importProblemWhy", "jdtls", "Could not find method nope()"));
+        awaitError(tr(
+                "status.lsp.importProblemWhy",
+                tr("status.lsp.serverInFolder", "jdtls", "tools"),
+                "Could not find method nope()"));
         Object note = FxTestSupport.callOnFx(() -> FxTestSupport.field(main.problemCounter(), "note"));
         assertEquals(null, note, "the root's files stay checked");
     }
@@ -2202,6 +2208,154 @@ class LspCoordinatorCommandsFxTest {
                 "status.lsp.importProblemWhy",
                 "jdtls",
                 "Project build error: 'dependencies.dependency.version' for g:a:jar is missing"));
+    }
+
+    /**
+     * A healthy project whose nested sample's file jdtls keeps off the classpath is "Loaded and ready", its files
+     * checked: no pom says a model error (fourteenth check CJ1).
+     */
+    @Test
+    void aHealthyProjectsFileOffItsClasspathIsNoFailedImport() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project/>");
+        java.nio.file.Files.createDirectories(root.resolve("samples/demo/src/main/java"));
+        java.nio.file.Files.writeString(root.resolve("samples/demo/pom.xml"), "<project/>");
+        EditorBuffer b = fx.open("samples/demo/src/main/java/Sample.java", "class Sample {}\n");
+        var warning = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.WARNING,
+                "Sample.java is not on the classpath of project root, only syntax errors are reported",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(warning)));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.ready", "jdtls"));
+        assertEquals(null, fx.host.lastError());
+    }
+
+    /**
+     * A pom whose parent Maven cannot resolve leaves its files with no diagnostics at all: the "Project build error" on
+     * the pom makes it a failed import, its module named (fourteenth check CJ2, CJ5).
+     */
+    @Test
+    void anUnresolvableParentIsAFailedImport() throws Exception {
+        java.nio.file.Files.writeString(
+                root.resolve("pom.xml"), "<project><modules><module>app</module></modules></project>");
+        java.nio.file.Files.createDirectories(root.resolve("app/src/main/java"));
+        java.nio.file.Files.writeString(root.resolve("app/pom.xml"), "<project/>");
+        EditorBuffer app = fx.open("app/src/main/java/App.java", "class App {}\n");
+        var parent = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.ERROR,
+                "Project build error: Non-resolvable parent POM for demo:app:1.1",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("app/pom.xml"), List.of(parent))); // after ready
+        awaitError(tr(
+                "status.lsp.importProblemWhy",
+                tr("status.lsp.serverInFolder", "jdtls", "app"),
+                "Project build error: Non-resolvable parent POM for demo:app:1.1"));
+        assertEquals(
+                tr("editor.problemCounter.notImported"),
+                FxTestSupport.callOnFx(() -> FxTestSupport.field(app.problemCounter(), "note")));
+    }
+
+    /**
+     * The fixed pom of an import whose model failed, saved, cleans the project's workspace: a plain restart reused the
+     * project jdtls had stored without a Java nature, and the import still failed (fourteenth check CJ7).
+     */
+    @Test
+    void aFixedModelErrorCleansTheWorkspace() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project/>");
+        java.nio.file.Files.createDirectories(root.resolve("src/main/java"));
+        EditorBuffer b = fx.open("src/main/java/Main.java", "class Main {}\n");
+        var model = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.ERROR,
+                "Project build error: 'dependencies.dependency.version' for g:a:jar is missing.",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("pom.xml"), List.of(model)));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
+        EditorBuffer pom = FxTestSupport.callOnFx(() -> {
+            EditorBuffer p = new EditorBuffer();
+            p.setPath(root.resolve("pom.xml"));
+            p.setContent("<project/>");
+            return p;
+        });
+        FxTestSupport.runOnFx(() -> fx.host.active = b); // the server's file, as a pom tab reaches it
+        fx.host.statuses.clear();
+        fx.run(() -> fx.coordinator.notifyDocumentSaved(pom, pom.getContent()));
+        assertTrue(fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")), fx.host.statuses.toString());
+    }
+
+    /**
+     * A pom whose model failed, fixed outside Editora (a git pull), re-imports with a cleaned workspace as a save does:
+     * jdtls's update in place ended at "Loaded and ready" with false errors (fourteenth check CJ8).
+     */
+    @Test
+    void aModelErrorFixedOutsideEditoraCleansTheWorkspace() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project/>");
+        java.nio.file.Files.createDirectories(root.resolve("src/main/java"));
+        EditorBuffer b = fx.open("src/main/java/Main.java", "class Main {}\n");
+        var model = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.ERROR,
+                "Project build error: 'dependencies.dependency.version' for g:a:jar is missing.",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("pom.xml"), List.of(model)));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
+        FxTestSupport.runOnFx(() -> fx.host.active = b);
+        fx.host.statuses.clear();
+        // The fix lands on disk; the server root's own watcher reports it (the panel's copy of the event is not sent
+        // again for a file that watcher covers, Bash review B16).
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project><!-- fixed --></project>");
+        fx.run(() -> fx.coordinator.watchedFilesReloaded(List.of(root.resolve("pom.xml"))));
+        for (int i = 0; i < 1500 && !fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")); i++) {
+            Thread.sleep(10); // the watcher coalesces, then the batch reaches the FX thread
+            fx.settle();
+        }
+        assertTrue(fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")), fx.host.statuses.toString());
+    }
+
+    /** A source file of a pom-packaging module is never compiled, and says so (fourteenth check CJ3). */
+    @Test
+    void aPomPackagingModulesSourceIsNotChecked() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project><packaging>pom</packaging></project>");
+        java.nio.file.Files.createDirectories(root.resolve("src/main/java"));
+        EditorBuffer b = fx.open("src/main/java/Main.java", "class Main {}\n");
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitError(tr("status.lsp.importProblemWhy", "jdtls", tr("status.lsp.pomPackaging", "pom.xml")));
+        assertEquals(
+                tr("editor.problemCounter.notImported"),
+                FxTestSupport.callOnFx(() -> FxTestSupport.field(b.problemCounter(), "note")));
+    }
+
+    /** A Gradle dependency it cannot fetch is a build with problems, its files checked (fourteenth check CJ4). */
+    @Test
+    void anUnresolvedGradleDependencyIsBuildProblems() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("build.gradle"), "plugins { id 'java' }\n");
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        LspTestHooks.logError(fx.manager, b.getPath(), "Unresolved dependency: com.example:does-not-exist:1.0");
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ProjectStatus", "WARNING"));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.readyWithProblems", "jdtls"));
+        assertEquals(null, fx.host.lastError());
     }
 
     /**

@@ -19,6 +19,13 @@ class InstantiatedTypeTest {
         assertEquals(-1, InstantiatedType.diamondLast(text, text.indexOf("Sink<String>()")), "explicit arguments");
     }
 
+    /** jdtls names a member type by its $-path (fourteenth check RJ1). */
+    @Test
+    void aMemberTypesSimpleNameIsAfterItsLastDollar() {
+        assertEquals("Sink", InstantiatedType.simple("Wrong12$Mid$Sink<T>"));
+        assertEquals("Comparator", InstantiatedType.simple("Comparator<T>"));
+    }
+
     @Test
     void aPasteImportsEditIsImportLinesOnly() {
         assertTrue(EditingCoordinator.importsOnly("import java.time.Instant;\n"));

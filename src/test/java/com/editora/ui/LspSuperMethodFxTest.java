@@ -1067,20 +1067,56 @@ class LspSuperMethodFxTest {
         TypeHierarchyItem jdk = new TypeHierarchyItem(
                 "Sink", SymbolKind.Interface, stream.toUri().toString(), range(0, 0, 1), range(0, 0, 4));
         jdk.setDetail("java.util.stream");
-        TypeHierarchyItem ours = new TypeHierarchyItem(
-                "Sink", SymbolKind.Interface, wrong.toUri().toString(), range(3, 8, 9), range(3, 18, 22));
+        TypeHierarchyItem ours = new TypeHierarchyItem( // jdtls names a member type by its $-path (RJ1)
+                "Wrong$Mid$Sink", SymbolKind.Interface, wrong.toUri().toString(), range(3, 8, 9), range(3, 18, 22));
         ours.setDetail("com.x");
         fx.server().typeHierarchyHandler =
                 p -> p.getTextDocument().getUri().endsWith("Wrong.java") ? List.of(ours) : List.of(jdk);
         fx.server().definitionHandler = p -> p.getPosition().getLine() == 1
                 ? List.of(new org.eclipse.lsp4j.Location(wrong.toUri().toString(), range(3, 18, 22)))
                 : List.of();
-        fx.server().supertypesByName.put("Sink", List.of());
+        fx.server().supertypesByName.put("Wrong$Mid$Sink", List.of());
         fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString("[]"); // findLinks: nothing
         fx.caret(b, 6, 26);
         fx.run(() -> fx.coordinator.gotoSuperMethod());
         fx.settle();
 
         assertEquals(List.of(new LspCoordinatorFixture.Jump(wrong, 4, 17)), fx.ops.jumps);
+    }
+
+    /**
+     * A nested type's anonymous class is walked from the type jdtls prepares, which it names by its $-path
+     * ({@code Holder$Pair}): that name was taken for another type's, and Ctrl+U said "No super method found"
+     * (fourteenth check RJ1).
+     */
+    @Test
+    void aNestedTypesDollarNameIsItsOwn() throws Exception {
+        Path holder = Files.writeString(
+                root.resolve("Holder.java"),
+                "class Holder {\n    interface Pair<T> {\n        void take(T t);\n    }\n}\n");
+        String source = "class A {\n    static {\n        new Holder.Pair<>() {\n"
+                + "            public void take(String s) {\n            }\n        };\n    }\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        fx.server().documentSymbolResponse = List.of(Either.forRight(member("A", SymbolKind.Class, 0, 7, 0, 6)));
+        DocumentSymbol pair = member("Pair<T>", SymbolKind.Interface, 1, 3, 1, 14);
+        pair.getChildren().add(member("take(T)", SymbolKind.Method, 2, 2, 2, 13));
+        DocumentSymbol outer = member("Holder", SymbolKind.Class, 0, 4, 0, 6);
+        outer.getChildren().add(pair);
+        fx.server().documentSymbolByUri.put(com.editora.lsp.LspTestHooks.uri(holder), List.of(Either.forRight(outer)));
+        TypeHierarchyItem nested = new TypeHierarchyItem(
+                "Holder$Pair", SymbolKind.Interface, holder.toUri().toString(), range(1, 4, 5), range(1, 14, 18));
+        nested.setDetail("");
+        fx.server().typeHierarchyHandler =
+                p -> p.getTextDocument().getUri().endsWith("Holder.java") ? List.of(nested) : List.of();
+        fx.server().definitionHandler = p -> p.getPosition().getLine() == 2
+                ? List.of(new org.eclipse.lsp4j.Location(holder.toUri().toString(), range(0, 6, 12)))
+                : List.of();
+        fx.server().supertypesByName.put("Holder$Pair", List.of());
+        fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString("[]"); // findLinks: nothing
+        fx.caret(b, 3, 25);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(holder, 2, 13)), fx.ops.jumps);
     }
 }

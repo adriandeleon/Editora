@@ -10,7 +10,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Workspace schema v13: the Map's open state and navigation options; v24: where the Map's window was. */
+/**
+ * Workspace schema v13: the Map's open state and navigation options; v24: where the Map's window was; v25: the
+ * Map's "Hide unmatched".
+ */
 class WorkspaceStateProjectViewTest {
 
     @Test
@@ -107,6 +110,24 @@ class WorkspaceStateProjectViewTest {
         assertEquals(
                 java.util.List.of(10.0, 20.0, 900.0, 600.0),
                 reopened.getWorkspaceState().getProjectMapWindowBounds());
+        assertEquals(WorkspaceState.SCHEMA_VERSION, reopened.getWorkspaceState().getSchemaVersion());
+    }
+
+    /** Schema v25: the Map's "Hide unmatched". */
+    @Test
+    void hideUnmatchedSurvivesARestartAndAnOlderFileKeepsFading(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("workspace-state.json"), "{\"schemaVersion\":24,\"debugWatches\":[\"kept\"]}");
+        ConfigManager first = new ConfigManager(dir);
+        first.load();
+        assertFalse(first.getWorkspaceState().isProjectMapHideUnmatched());
+        assertEquals(java.util.List.of("kept"), first.getWorkspaceState().getDebugWatches());
+        first.getWorkspaceState().setProjectMapHideUnmatched(true);
+        first.save();
+
+        ConfigManager reopened = new ConfigManager(dir);
+        reopened.load();
+
+        assertTrue(reopened.getWorkspaceState().isProjectMapHideUnmatched());
         assertEquals(WorkspaceState.SCHEMA_VERSION, reopened.getWorkspaceState().getSchemaVersion());
     }
 }
