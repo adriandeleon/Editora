@@ -1213,10 +1213,7 @@ final class EditingCoordinator {
         lastYankDocVersion = -1;
         lastYankStart = -1;
         lastYankEnd = -1;
-        if (yankWatch != null) {
-            yankWatch.unsubscribe();
-            yankWatch = null;
-        }
+        unwatchYank();
     }
 
     void recordYank(EditorBuffer buffer, int start, int end) {
@@ -1224,11 +1221,12 @@ final class EditingCoordinator {
         lastYankDocVersion = buffer.docVersion();
         lastYankStart = start;
         lastYankEnd = end;
-        if (yankWatch != null) {
-            yankWatch.unsubscribe();
-        }
-        // a paste's imports landing above the yank move it, and M-y still replaces it (thirteenth review AK4)
-        yankWatch = buffer.getArea().plainTextChanges().subscribe(c -> {
+        unwatchYank();
+        // a paste's imports landing above the yank move it, and M-y still replaces it (thirteenth review AK4); the
+        // watch is kept by the area itself, so a closed tab's buffer is not held here
+        CodeArea watched = buffer.getArea();
+        yankWatched = new WeakReference<>(watched);
+        watched.getProperties().put(YANK_WATCH, watched.plainTextChanges().subscribe(c -> {
             if (buffer == lastYankBuffer.get()
                     && lastYankDocVersion == buffer.docVersion() - 1
                     && c.getPosition() + c.getRemoved().length() <= lastYankStart
@@ -1239,11 +1237,21 @@ final class EditingCoordinator {
                 lastYankEnd += delta;
                 lastYankDocVersion = buffer.docVersion();
             }
-        });
+        }));
     }
 
-    /** The watch {@link #recordYank} keeps on the yank's buffer, or null. */
-    private org.reactfx.@Nullable Subscription yankWatch;
+    /** The area {@link #recordYank} watches, its watch kept in its properties under {@link #YANK_WATCH}. */
+    private WeakReference<CodeArea> yankWatched = new WeakReference<>(null);
+
+    private static final Object YANK_WATCH = new Object();
+
+    private void unwatchYank() {
+        CodeArea area = yankWatched.get();
+        if (area != null && area.getProperties().remove(YANK_WATCH) instanceof org.reactfx.Subscription s) {
+            s.unsubscribe();
+        }
+        yankWatched = new WeakReference<>(null);
+    }
 
     /** Whether {@code text} is only Java import lines and blanks: a paste-imports edit. */
     static boolean importsOnly(String text) {

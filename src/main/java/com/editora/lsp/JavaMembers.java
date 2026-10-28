@@ -76,12 +76,12 @@ public final class JavaMembers {
         return !text.substring(at, end).isBlank();
     }
 
-    /** {@code text} with comments and string, character and text-block contents as spaces; offsets and lines kept. */
-    /** {@code text} with its comments and string contents blanked, offsets kept. */
+    /** {@link #code}, for the {@code ui} package's readers of Java text. */
     public static String codeOf(String text) {
         return code(text);
     }
 
+    /** {@code text} with comments and string, character and text-block contents as spaces; offsets and lines kept. */
     static String code(String text) {
         StringBuilder out = new StringBuilder(text);
         int i = 0;
