@@ -29,8 +29,11 @@ class BashIdeConfigTest {
     void untouchedSettingsSendTheServersOwnDefaults() {
         Map<String, Object> section = BashIdeConfig.of(new Settings()).toSection();
         assertEquals("shellcheck", section.get("shellcheckPath"));
-        assertEquals("", section.get("shellcheckArguments"));
+        assertEquals(List.of(), section.get("shellcheckArguments"));
         assertEquals("", section.get("explainshellEndpoint"));
+        assertEquals(true, section.get("enableSourceErrorDiagnostics"), "a hint on source lines it cannot follow (B4)");
+        assertEquals(BashIdeConfig.DEFAULT_GLOB, section.get("globPattern"));
+        assertEquals("warning", section.get("logLevel"));
         assertEquals(500, section.get("backgroundAnalysisMaxFiles"));
         assertEquals(false, section.get("includeAllWorkspaceSymbols"));
         assertEquals("shfmt", shfmt(section).get("path"));
@@ -59,7 +62,7 @@ class BashIdeConfigTest {
         Map<String, Object> section = BashIdeConfig.of(s).toSection();
 
         assertEquals("/opt/sc/shellcheck", section.get("shellcheckPath"));
-        assertEquals("-x --severity=warning", section.get("shellcheckArguments"));
+        assertEquals(List.of("-x", "--severity=warning"), section.get("shellcheckArguments"));
         assertEquals("http://localhost:5000", section.get("explainshellEndpoint"));
         assertEquals(5000, section.get("backgroundAnalysisMaxFiles"));
         assertEquals(true, section.get("includeAllWorkspaceSymbols"));
@@ -211,5 +214,171 @@ class BashIdeConfigTest {
         assertEquals(500, analysisCapFor(project));
         assertTrue(RootResolver.isBroadRoot(Path.of(System.getProperty("user.home"))));
         assertEquals(false, RootResolver.isBroadRoot(project));
+    }
+
+    /** "Lint with ShellCheck" / "Format with shfmt" off: the server's own way, an empty path (A8, D7, B15). */
+    @Test
+    void switchedOffToolsAreSentAnEmptyPathAndAProjectMayTurnThemOff() {
+        Settings s = new Settings();
+        s.setBashShellcheckEnabled(false);
+        s.setBashShfmtEnabled(false);
+        BashIdeConfig off = BashIdeConfig.of(s).withInstalledTools("/cfg/sc", "/cfg/shfmt");
+        assertEquals("", off.toSection().get("shellcheckPath"));
+        assertEquals("", shfmt(off.toSection()).get("path"));
+        assertEquals("", off.effectiveShellcheck(), "off reads as no command, wherever it is asked");
+        assertEquals("", off.effectiveShfmt());
+        assertEquals(false, off.toolEnabled("shellcheck"));
+
+        BashIdeConfig user = BashIdeConfig.of(new Settings());
+        BashIdeConfig project = user.withProject(Map.of("shellcheckPath", "", "shfmt", Map.of("path", " ")), false);
+        assertEquals("", project.toSection().get("shellcheckPath"), "turning a tool off needs no trust");
+        assertEquals("", shfmt(project.toSection()).get("path"));
+        assertEquals(List.of(), BashIdeConfig.trustRequests(Map.of("shellcheckPath", "")));
+        BashIdeConfig back = BashIdeConfig.of(s).withProject(Map.of("shellcheckPath", "/opt/sc"), true);
+        assertEquals("/opt/sc", back.toSection().get("shellcheckPath"), "a trusted path turns it on again");
+    }
+
+    /** A project's further keys reach the server when of the type it accepts; unknown ones only when trusted. */
+    @Test
+    void aProjectsOtherServerKeysPassThroughValidated() {
+        Map<String, Object> project = Map.of(
+                "globPattern",
+                "**/*@(.sh|.bash)",
+                "logLevel",
+                "Info",
+                "shellcheckExternalSources",
+                false,
+                "backgroundAnalysisIgnore",
+                List.of("**/vendor/**"),
+                "enableSourceErrorDiagnostics",
+                false,
+                "futureKey",
+                Map.of("a", 1),
+                "shfmt",
+                Map.of("additionalArguments", "--minify -ln=bash", "newShfmtKey", true));
+        Map<String, Object> untrusted =
+                BashIdeConfig.defaults().withProject(project, false).toSection();
+        assertEquals("**/*@(.sh|.bash)", untrusted.get("globPattern"));
+        assertEquals("info", untrusted.get("logLevel"));
+        assertEquals(false, untrusted.get("shellcheckExternalSources"));
+        assertEquals(List.of("**/vendor/**"), untrusted.get("backgroundAnalysisIgnore"));
+        assertEquals(false, untrusted.get("enableSourceErrorDiagnostics"));
+        assertEquals(List.of("--minify", "-ln=bash"), shfmt(untrusted).get("additionalArguments"));
+        assertNull(untrusted.get("futureKey"), "a key Editora does not know could name a program");
+        assertNull(shfmt(untrusted).get("newShfmtKey"));
+        assertEquals(List.of("bash: futureKey = {a=1}"), BashIdeConfig.trustRequests(project));
+
+        Map<String, Object> trusted =
+                BashIdeConfig.defaults().withProject(project, true).toSection();
+        assertEquals(Map.of("a", 1), trusted.get("futureKey"));
+        assertEquals(true, shfmt(trusted).get("newShfmtKey"));
+
+        Map<String, Object> bad = BashIdeConfig.defaults()
+                .withProject(
+                        Map.of(
+                                "logLevel",
+                                "loud",
+                                "globPattern",
+                                3,
+                                "shellcheckExternalSources",
+                                "no",
+                                "backgroundAnalysisIgnore",
+                                List.of(1)),
+                        true)
+                .toSection();
+        assertEquals("warning", bad.get("logLevel"), "one bad value would make the server drop the whole section");
+        assertEquals(BashIdeConfig.DEFAULT_GLOB, bad.get("globPattern"));
+        assertNull(bad.get("shellcheckExternalSources"));
+        assertNull(bad.get("backgroundAnalysisIgnore"));
+    }
+
+    /** ShellCheck arguments go as a list: the server split a string on single spaces, quotes and all (A8). */
+    @Test
+    void shellcheckArgumentsAreSplitTheWayAShellWould() {
+        assertEquals(
+                List.of("--rcfile", "/a b/rc", "-e", "SC2086", "x\"y"),
+                BashIdeConfig.tokenize(" --rcfile '/a b/rc'  -e SC2086 \"x\\\"y\" "));
+        assertEquals(List.of(), BashIdeConfig.tokenize("   "));
+        assertEquals(List.of("a b", "c"), BashIdeConfig.tokenize("a\\ b c"));
+        BashIdeConfig fromList = BashIdeConfig.defaults()
+                .withProject(Map.of("shellcheckArguments", List.of("--rcfile", "/a b/rc", "-o", "all")), false);
+        assertEquals(
+                List.of("--rcfile", "/a b/rc", "-o", "all"),
+                fromList.toSection().get("shellcheckArguments"));
+    }
+
+    /** Hover sends explainshell the whole command line: plain http only to this machine (B10). */
+    @Test
+    void explainshellOverPlainHttpOnlyToThisMachine() {
+        assertTrue(BashIdeConfig.explainshellAllowed(""));
+        assertTrue(BashIdeConfig.explainshellAllowed("https://explain.example.com"));
+        assertTrue(BashIdeConfig.explainshellAllowed("http://localhost:5000"));
+        assertTrue(BashIdeConfig.explainshellAllowed("http://127.0.0.1:5000"));
+        assertTrue(BashIdeConfig.explainshellAllowed("http://[::1]:5000"));
+        assertTrue(BashIdeConfig.explainshellAllowed("http://explain.localhost"));
+        assertEquals(false, BashIdeConfig.explainshellAllowed("http://explain.example.com"));
+        assertEquals(false, BashIdeConfig.explainshellAllowed("http://localhost.example.com"));
+        assertEquals(false, BashIdeConfig.explainshellAllowed("localhost:5000"));
+        assertEquals(false, BashIdeConfig.explainshellAllowed("ftp://localhost"));
+        Settings s = new Settings();
+        s.setBashExplainshellEndpoint("http://explain.example.com");
+        assertEquals("", BashIdeConfig.of(s).toSection().get("explainshellEndpoint"), "a refused endpoint is not sent");
+    }
+
+    /** A project's bashIde reaches only the servers for its own folders, not another repository's (A1). */
+    @Test
+    void theProjectsConfigurationIsForItsOwnRootsOnly() {
+        BashIdeConfig user = BashIdeConfig.defaults();
+        BashIdeConfig project = user.withProject(Map.of("shellcheckArguments", "--exclude=SC2086"), false);
+        var forRoot = BashIdeConfig.perRoot(project, user, Path.of("/work/app"));
+        assertEquals(project, forRoot.apply(Path.of("/work/app")));
+        assertEquals(project, forRoot.apply(Path.of("/work/app/modules/a")));
+        assertEquals(project, forRoot.apply(Path.of("/work")), "a git root holding the project serves its scripts");
+        assertEquals(user, forRoot.apply(Path.of("/work/other")));
+        assertEquals(user, forRoot.apply(Path.of("/home/u/bin")));
+        assertEquals(user, BashIdeConfig.perRoot(project, user, null).apply(Path.of("/work/app")));
+    }
+
+    /** The Settings card names the rows a project overrides (A10). */
+    @Test
+    void theKeysAProjectOverridesAreNamed() {
+        Map<String, Object> project = Map.of(
+                "shellcheckArguments", "-o all",
+                "shellcheckPath", "./sc",
+                "backgroundAnalysisMaxFiles", "lots",
+                "shfmt", Map.of("caseIndent", true, "languageDialect", "fish"));
+        List<String> untrusted = BashIdeConfig.overriddenKeys(project, false);
+        assertTrue(untrusted.containsAll(List.of("shellcheckArguments", "shfmt.caseIndent")), untrusted.toString());
+        assertEquals(2, untrusted.size(), "an untrusted path and values of the wrong kind change nothing");
+        assertTrue(BashIdeConfig.overriddenKeys(project, true).contains("shellcheckPath"));
+        assertEquals(List.of(), BashIdeConfig.overriddenKeys(Map.of(), true));
+    }
+
+    /**
+     * A container or WSL folder is a local path whose server runs elsewhere: it is told to find ShellCheck and
+     * shfmt on its own PATH, not given this machine's installed copies (A2).
+     */
+    @Test
+    void aMappedFoldersServerLooksItsToolsUpThere(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        Path folder = java.nio.file.Files.createDirectories(dir.resolve("project"));
+        com.editora.process.ExecTargets.setRemoteEnabled(() -> true);
+        var target = com.editora.process.MappedTestTarget.register(folder, dir.resolve("alias"));
+        try {
+            var spec = new LspServerRegistry.ServerSpec("bash", List.of("bash-language-server"), List.of());
+            LanguageServerSession session = new LanguageServerSession(spec, folder.toRealPath(), d -> {}, (t, m) -> {});
+            session.setBashIde(BashIdeConfig.defaults().withInstalledTools("/cfg/tools/shellcheck", "/cfg/shfmt"));
+            ConfigurationItem item = new ConfigurationItem();
+            item.setSection("bashIde");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> section =
+                    (Map<String, Object>) session.configuration(new ConfigurationParams(List.of(item)))
+                            .get()
+                            .get(0);
+            assertEquals("shellcheck", section.get("shellcheckPath"));
+            assertEquals("shfmt", shfmt(section).get("path"));
+        } finally {
+            target.unregister();
+            com.editora.process.ExecTargets.setRemoteEnabled(null);
+        }
     }
 }
