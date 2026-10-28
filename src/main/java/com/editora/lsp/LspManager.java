@@ -595,21 +595,13 @@ public final class LspManager {
         });
     }
 
-    /**
-     * Which local server roots get a {@link RootWatcher} of their own: those nothing else reports file changes
-     * for (no project, or a root outside it). Read off the FX thread when a session starts.
-     */
-    private volatile java.util.function.Predicate<Path> watchRoot = root -> false;
+    /** Re-reads shell files changed on disk for the Bash server, which has no watched-files support (B7). */
+    private final BashReanalysis bashReanalysis = new BashReanalysis(Platform::runLater);
 
     /** Root → its watcher; at most {@link #MAX_ROOT_WATCHERS}, closed with the manager. */
     private final Map<Path, RootWatcher> rootWatchers = new ConcurrentHashMap<>();
 
     static final int MAX_ROOT_WATCHERS = 8;
-
-    /** Installs which server roots this manager watches itself (review B7). */
-    public void setWatchSessionRoots(java.util.function.Predicate<Path> watch) {
-        watchRoot = watch == null ? root -> false : watch;
-    }
 
     /**
      * The grammar files lemminx registers to be told of ({@code **}{@code /*.xsd}, {@code *.dtd}, {@code *.rng},
@@ -640,19 +632,14 @@ public final class LspManager {
     }
 
     /**
-     * Root → a watcher that reports only {@link #modelFile model files}, for an XML or Java server inside a watched
-     * project (B9, CL1).
-     */
-    private final Map<Path, RootWatcher> grammarWatchers = new ConcurrentHashMap<>();
-
-    /**
-     * Starts watching {@code root} when it should be and is not yet (any thread). A root the Project panel's
-     * watcher covers still gets a grammar-only watcher for an XML server: the panel watches only its expanded
-     * folders, so a schema regenerated in a collapsed one left lemminx's errors stale until the next keystroke
-     * (XML review B9). lemminx registers those globs dynamically, which this client does not offer for every
-     * server (jdtls would then expect its own registrations honoured), so they are watched here by name. A Java
-     * server's root gets one for its build files: a module's pom.xml edited in a collapsed folder, saved here or
-     * changed by a git pull, left the classpath stale until Reload (twelfth review CL1).
+     * Starts watching a local server's {@code root}, the whole tree, when nothing watches it yet (any thread). The
+     * Project panel watches only the folders it shows expanded, so a file changed by git, a terminal or another
+     * editor in a collapsed one never reached the servers: a schema regenerated there left lemminx's errors stale
+     * (XML review B9), a module's pom.xml left jdtls's classpath stale (twelfth review CL1), a sourced library left
+     * the Bash server's lines and functions stale (Bash review B16, B7). The panel's own events are forwarded only for
+     * the files this watcher does not report ({@link #reportsChangesTo}). One watcher per root, none for a root
+     * inside one already watched, at most {@link #MAX_ROOT_WATCHERS}; each bounded by {@link RootWatcher#MAX_DIRS}
+     * folders, skipping hidden, dependency and {@code .gitignore}d ones.
      */
     private void ensureRootWatcher(Path root, String serverId) {
         if (closed
@@ -662,18 +649,29 @@ public final class LspManager {
             return;
         }
         Path key = root.toAbsolutePath().normalize();
-        boolean whole = watchRoot.test(key);
-        boolean grammar =
-                !whole && (XmlServer.SERVER_ID.equals(serverId) || LspServerRegistry.JAVA_SERVER_ID.equals(serverId));
-        Map<Path, RootWatcher> watchers = whole ? rootWatchers : grammar ? grammarWatchers : null;
-        if (watchers == null || watchers.containsKey(key) || watchers.size() >= MAX_ROOT_WATCHERS) {
-            return;
-        }
-        java.util.function.Consumer<List<WatchedFile>> sink =
-                batch -> Platform.runLater(() -> notifyWatchedFiles(batch));
-        RootWatcher w = whole ? RootWatcher.start(key, sink) : RootWatcher.start(key, sink, LspManager::modelFile);
-        if (w != null && watchers.putIfAbsent(key, w) != null) {
-            w.close(); // another start won
+        synchronized (rootWatchers) {
+            if (rootWatchers.containsKey(key)
+                    || rootWatchers.size() >= MAX_ROOT_WATCHERS
+                    || rootWatchers.values().stream().anyMatch(w -> key.startsWith(w.root()) && w.watches(key))) {
+                return;
+            }
+            java.util.function.Consumer<List<WatchedFile>> sink =
+                    batch -> Platform.runLater(() -> notifyWatchedFiles(batch));
+            RootWatcher w = RootWatcher.start(key, sink);
+            if (w == null) {
+                return;
+            }
+            rootWatchers
+                    .entrySet()
+                    .removeIf(
+                            e -> { // a root inside this one: its events would go out twice
+                                boolean inside = e.getKey().startsWith(key);
+                                if (inside) {
+                                    e.getValue().close();
+                                }
+                                return inside;
+                            });
+            rootWatchers.put(key, w);
         }
         if (closed) {
             closeRootWatchers();
@@ -681,10 +679,10 @@ public final class LspManager {
     }
 
     private void closeRootWatchers() {
-        rootWatchers.values().forEach(RootWatcher::close);
-        rootWatchers.clear();
-        grammarWatchers.values().forEach(RootWatcher::close);
-        grammarWatchers.clear();
+        synchronized (rootWatchers) {
+            rootWatchers.values().forEach(RootWatcher::close);
+            rootWatchers.clear();
+        }
     }
 
     /**
@@ -693,10 +691,7 @@ public final class LspManager {
      * review CK3).
      */
     public boolean watchesModelFile(Path file) {
-        Path at = file.toAbsolutePath().normalize();
-        return modelFile(at)
-                && java.util.stream.Stream.concat(rootWatchers.values().stream(), grammarWatchers.values().stream())
-                        .anyMatch(w -> watches(w, at));
+        return modelFile(file.toAbsolutePath().normalize()) && reportsChangesTo(file);
     }
 
     private static boolean watches(RootWatcher w, Path file) {
@@ -704,17 +699,12 @@ public final class LspManager {
     }
 
     /**
-     * Whether a model-file-only watcher, which runs beside the Project panel's, reports {@code file}: the panel's own
-     * event for it would go out twice (twelfth review CL1).
+     * Whether a watcher of this manager's own reports changes to {@code file} (its folder is watched): the Project
+     * panel's own event for it would go out twice (twelfth review CL1, Bash review B16).
      */
-    public boolean watchesModelFileBesidePanel(Path file) {
+    public boolean reportsChangesTo(Path file) {
         Path at = file.toAbsolutePath().normalize();
-        return modelFile(at) && grammarWatchers.values().stream().anyMatch(w -> watches(w, at));
-    }
-
-    /** The roots watched for grammar files only (tests). */
-    java.util.Set<Path> grammarWatchedRoots() {
-        return java.util.Set.copyOf(grammarWatchers.keySet());
+        return rootWatchers.values().stream().anyMatch(w -> watches(w, at));
     }
 
     /** The roots watched by this manager itself (tests). */
@@ -2965,6 +2955,7 @@ public final class LspManager {
             List<org.eclipse.lsp4j.FileEvent> events = eventsUnderRoot(changes, s.root(), s.uris());
             if (!events.isEmpty()) {
                 s.didChangeWatchedFiles(events);
+                bashReanalysis.changed(s, changes); // the Bash server ignores the notification (Bash review B7)
             }
         }
         changes.stream().map(WatchedFile::file).filter(f -> f != null).forEach(this::projectStyleChanged);

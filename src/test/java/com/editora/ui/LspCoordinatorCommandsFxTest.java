@@ -1118,8 +1118,9 @@ class LspCoordinatorCommandsFxTest {
     @Test
     void externalFileChangesReachTheServerAsOneBatchWithTheLatestKind() throws Exception {
         fx.open("A.java", SOURCE);
-        Path changed = root.resolve("pom.xml");
-        Path gone = root.resolve("Old.java");
+        // in a folder the server root's own watcher does not watch (past its cap, or made after it looked)
+        Path changed = root.resolve("unwatched/pom.xml");
+        Path gone = root.resolve("unwatched/Old.java");
 
         FxTestSupport.runOnFx(() -> {
             fx.coordinator.watchedFilesChanged(null);
@@ -1154,6 +1155,12 @@ class LspCoordinatorCommandsFxTest {
 
         watchedFlushElapsed();
         assertEquals(1, fx.server().watchedFiles.size(), "an empty queue sends nothing");
+
+        // A folder the root's watcher watches reports its own changes: the Project panel's are not sent twice (B16)
+        FxTestSupport.runOnFx(() -> fx.coordinator.watchedFilesChanged(
+                List.of(new ProjectPanel.FsChange(root.resolve("B.java"), ProjectPanel.FsKind.CHANGED))));
+        watchedFlushElapsed();
+        assertEquals(1, fx.server().watchedFiles.size());
 
         fx.ops.featureEnabled = false;
         FxTestSupport.runOnFx(() -> fx.coordinator.watchedFilesChanged(
