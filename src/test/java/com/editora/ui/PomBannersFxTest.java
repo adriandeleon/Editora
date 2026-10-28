@@ -22,7 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The pom.xml server's banner in a real window (review 2, A1/E2): asked before the "already served" check, so a pom
  * the plain XML server serves still hears about it; a missing command of the user's own leads to Settings, not to an
- * Install that would overwrite it; and a pom in a folder that is not trusted is left to the trust offer.
+ * Install that would overwrite it; and for a pom in a folder that is not trusted the offer says the server runs only
+ * in trusted folders (review 3, A28).
  */
 @Tag("fx")
 class PomBannersFxTest {
@@ -125,8 +126,12 @@ class PomBannersFxTest {
         }
     }
 
+    /**
+     * XML/pom review 3, A28: one offer that says both — the server is not installed, and once installed it runs only
+     * in trusted folders — with Install; no trust prompt "for Maven-aware editing" while the server is missing.
+     */
     @Test
-    void aPomInAFolderThatIsNotTrustedIsLeftToTheTrustOffer() throws Exception {
+    void aPomInAFolderThatIsNotTrustedIsOfferedTheServerWithTheTrustRule() throws Exception {
         FxTestSupport.bootToolkit();
         Path pom = pom();
         try (FxWindowFixture fx = FxWindowFixture.create(Files.createDirectories(work.resolve("cfg")), shared -> {
@@ -136,8 +141,13 @@ class PomBannersFxTest {
             MainController c = fx.controller;
             FxTestSupport.runOnFx(() -> c.openAndNavigate(pom, 1));
             awaitPomDetected(c);
-            // Install would change nothing there: the file offers trust instead (XmlFolderTrust)
-            assertEquals(tr("xml.trust.pomNotice"), bannerTitle(c), "the trust offer, not Install");
+            String expected = tr(
+                    "install.banner.mavenPomServerUntrusted",
+                    InstallCatalog.LEMMINX_MAVEN_VERSION,
+                    InstallCatalog.LEMMINX_MAVEN_DOWNLOAD_MB);
+            assertEquals(expected, waitForBanner(c, expected));
+            assertTrue(buttons(c).contains(tr("install.banner.install")));
+            assertEquals(null, FxTestSupport.callOnFx(() -> c.activeBuffer().fileNoticeText()), "no trust notice");
         }
     }
 }

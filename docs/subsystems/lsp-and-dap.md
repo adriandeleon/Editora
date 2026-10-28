@@ -1076,8 +1076,11 @@ install …@latest`, rustup, the GitHub `releases/latest` archives).
   release's own `lemminx-<platform>.sha256` (`PinnedAsset.member`/`memberSha256`), installed as plain `lemminx` in
   `plugins/lsp/xml`, and asked to answer `initialize` (`JvmLspSmoke.initializeCheck`) before it is swapped in — it
   needs glibc 2.34. One that cannot run installs nothing; when the pom.xml server's bundle is complete the XML
-  command becomes its Java lemminx instead (`InstallService.javaLemminx`). The installer leaves the XML command
-  blank: `XmlServerInstall.effectiveCommand` makes a blank (or bare `lemminx`, or a stale path into that folder)
+  command becomes its Java lemminx instead (`InstallService.javaLemminx`): lemminx's own jars from that bundle,
+  named one by one (`XmlServerInstall.PLAIN_LEMMINX_ARTIFACTS`), never the folder's `*` — lemminx-maven is a
+  ServiceLoader extension and would join the plain server, resolving untrusted poms. `LemminxMavenGuard` is the
+  start backstop: an `xml` command whose classpath holds lemminx-maven is refused (`StartRefusal.XML_LOADS_MAVEN`).
+  The installer leaves the XML command blank: `XmlServerInstall.effectiveCommand` makes a blank (or bare `lemminx`, or a stale path into that folder)
   command run Editora's copy, including one from before the pin (`lemminx-<platform>`). A server that dies before
   `initialize` at every start reports its first stderr line (`LspManager.crashReason`) in the crash-loop notice,
   Settings and Doctor (`LspCoordinator.serverTrouble`).

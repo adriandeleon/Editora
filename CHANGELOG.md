@@ -63,6 +63,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   workspace with no project, and every groupId/artifactId/version completion after the first threw on it, leaving
   only `<!--` and `<![CDATA[`. Editora now takes each malformed pom out of the server's workspace, asks again, and
   names the file in the status bar. Saving that pom well-formed restarts the Maven server, which takes it back.
+- **XML and pom.xml trust (review 3).** Where the native XML server cannot run, the Java one Editora falls back to
+  no longer loads the Maven extension, so a pom in an untrusted folder is no longer resolved and its plugins no longer
+  run; an XML command that would load lemminx-maven is not started, and the status bar says why. Trusting or revoking
+  a folder moves every open pom.xml at once, background tabs included, and a revoked pom keeps its diagnostics. Trust
+  This Folder on a file outside the project no longer trusts the project. A pom in an untrusted folder without the
+  Maven server gets one offer to install it, saying it runs only in trusted folders. The blocked-schema status names
+  only what would help. Doctor's lemminx-maven store row follows a `<localRepository>` set in settings.xml. A pre-pin
+  lemminx path with arguments keeps them, and Settings shows a pre-pin copy as an amber warning.
 
 - **Language servers get the whole file when it opens.** Python, Java and XML files reached their server empty and
   were then filled in, so an XML file flashed a false "Premature end of file" error, the file was analysed twice,

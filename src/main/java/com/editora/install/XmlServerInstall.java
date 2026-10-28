@@ -64,6 +64,12 @@ public final class XmlServerInstall {
      */
     public static String effectiveCommand(@Nullable String configured, @Nullable Path configDir) {
         String raw = configured == null ? "" : configured.strip();
+        if (configDir != null && isOwnJavaLemminx(raw, configDir)) {
+            // What a fallback install stored before XML/pom review 3 (A21): the pom bundle's whole folder, which
+            // put lemminx-maven into the plain XML server. Run the plain classpath out of the same bundle instead.
+            String java = InstallService.javaLemminx(configDir);
+            return java == null ? raw : java;
+        }
         boolean useOwn = raw.isEmpty() || raw.equals(DEFAULT_COMMAND) || staleOwnPath(raw, configDir);
         if (!useOwn) {
             return raw;
@@ -142,6 +148,133 @@ public final class XmlServerInstall {
         } catch (InvalidPathException e) {
             return false;
         }
+    }
+
+    // --- the Java lemminx (XML/pom review 3, A21) ----------------------------------------------------------------
+
+    /**
+     * The jars plain lemminx needs, by artifact name, taken from the pom server's bundle when the native build cannot
+     * run here: lemminx core, lsp4j and its JSON-RPC, gson, Xerces, the XML catalog resolver, Jing (RELAX NG) with
+     * isorelax, remark and jsoup (documentation as Markdown), guava with failureaccess, and commons-lang3. Checked
+     * against the real server: XSD, DTD and RELAX NG validation, completion and formatting work on exactly these.
+     * Never lemminx-maven, Maven, Plexus, Sisu or the resolver: lemminx-maven joins any lemminx whose classpath holds
+     * it (it is a ServiceLoader extension) and then resolves a pom and runs its plugins, trusted or not.
+     */
+    public static final List<String> PLAIN_LEMMINX_ARTIFACTS = List.of(
+            "org.eclipse.lemminx",
+            "org.eclipse.lsp4j",
+            "org.eclipse.lsp4j.jsonrpc",
+            "gson",
+            "xercesImpl",
+            "xml-resolver",
+            "jing",
+            "isorelax",
+            "remark",
+            "jsoup",
+            "guava",
+            "failureaccess",
+            "commons-lang3");
+
+    /**
+     * The plain lemminx's jars in the pom server's bundle folder {@code mavenDir}, one per {@link
+     * #PLAIN_LEMMINX_ARTIFACTS} entry ({@code <artifact>-<version>.jar}, the highest name when there are several), or
+     * null when one is missing or the folder cannot be read. File lookups only.
+     */
+    public static @Nullable List<Path> plainLemminxJars(Path mavenDir) {
+        List<String> names;
+        try (java.util.stream.Stream<Path> list = Files.list(mavenDir)) {
+            names = list.map(p -> p.getFileName().toString()).sorted().toList();
+        } catch (java.io.IOException | RuntimeException e) {
+            return null;
+        }
+        List<Path> jars = new java.util.ArrayList<>();
+        for (String artifact : PLAIN_LEMMINX_ARTIFACTS) {
+            String chosen = null;
+            for (String name : names) {
+                if (isJarOf(name, artifact)) {
+                    chosen = name; // sorted: the last match is the highest version
+                }
+            }
+            if (chosen == null) {
+                return null;
+            }
+            jars.add(mavenDir.resolve(chosen));
+        }
+        return List.copyOf(jars);
+    }
+
+    /** Whether {@code fileName} is {@code <artifact>-<version>.jar} (a version starts with a digit). Pure. */
+    static boolean isJarOf(String fileName, String artifact) {
+        return fileName.endsWith(".jar")
+                && fileName.length() > artifact.length() + 5
+                && fileName.startsWith(artifact + "-")
+                && Character.isDigit(fileName.charAt(artifact.length() + 1));
+    }
+
+    /**
+     * {@code java -cp "<jar>:<jar>:…" org.eclipse.lemminx.XMLServerLauncher} over {@link #plainLemminxJars}, or null
+     * when the bundle lacks one of them. A bare {@code java}, which the Maven JDK then replaces.
+     */
+    public static @Nullable String javaLemminxCommand(Path mavenDir) {
+        List<Path> jars = plainLemminxJars(mavenDir);
+        if (jars == null) {
+            return null;
+        }
+        String cp = String.join(
+                java.io.File.pathSeparator, jars.stream().map(Path::toString).toList());
+        String quoted = cp.indexOf('"') < 0 ? '"' + cp + '"' : InstallCatalog.quoteCommandPath(cp);
+        return "java -cp " + quoted + " " + InstallCatalog.LEMMINX_MAIN_CLASS;
+    }
+
+    /**
+     * Whether {@code command} is a Java lemminx out of Editora's pom server bundle: {@code java -cp} whose every
+     * classpath entry is in that bundle's folder (the one under {@code configDir}; any {@code plugins/lsp/maven}
+     * folder when it is null), with lemminx's launcher as the main class — what an install that fell back to Java
+     * stored. Pure but for path normalisation.
+     */
+    public static boolean isOwnJavaLemminx(@Nullable String command, @Nullable Path configDir) {
+        if (command == null || command.isBlank()) {
+            return false;
+        }
+        List<String> argv = com.editora.run.ProgramArgs.commandLine(command);
+        if (argv.size() < 4 || !InstallCatalog.LEMMINX_MAIN_CLASS.equals(argv.get(argv.size() - 1))) {
+            return false;
+        }
+        String cp = null;
+        for (int i = 1; i + 1 < argv.size(); i++) {
+            String a = argv.get(i);
+            if (a.equals("-cp") || a.equals("-classpath") || a.equals("--class-path")) {
+                cp = argv.get(i + 1);
+            }
+        }
+        if (cp == null || cp.isBlank()) {
+            return false;
+        }
+        try {
+            Path bundle = configDir == null
+                    ? null
+                    : MavenServerInstall.folder(configDir).toAbsolutePath().normalize();
+            for (String entry : cp.split(java.util.regex.Pattern.quote(java.io.File.pathSeparator), -1)) {
+                String e = entry.strip();
+                boolean wildcard = e.endsWith("*");
+                String path = wildcard ? e.substring(0, e.length() - 1) : e;
+                Path folder = path.isEmpty()
+                        ? null
+                        : wildcard ? Path.of(path) : Path.of(path).getParent();
+                if (folder == null || !inBundle(folder, bundle)) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (InvalidPathException e) {
+            return false;
+        }
+    }
+
+    private static boolean inBundle(Path folder, @Nullable Path bundle) {
+        return bundle == null
+                ? folder.endsWith(Path.of(InstallCatalog.LEMMINX_MAVEN_DIR))
+                : folder.toAbsolutePath().normalize().equals(bundle);
     }
 
     private static boolean staleOwnPath(String raw, @Nullable Path configDir) {

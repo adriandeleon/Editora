@@ -35,17 +35,18 @@ final class XmlServerNotices {
 
     /**
      * The status line for a file's new diagnostics when one is a schema lemminx was not allowed to download, the
-     * first time since {@link #reset}; else null.
+     * first time since {@link #reset}; else null. {@code said} words it for that file: what would let the download
+     * through there (XML/pom review 3, C25).
      */
     @Nullable
-    String onDiagnostics(List<LspDiagnostic> diagnostics) {
+    String onDiagnostics(List<LspDiagnostic> diagnostics, java.util.function.Supplier<String> said) {
         if (downloadsOffSaid || diagnostics == null) {
             return null;
         }
         for (LspDiagnostic d : diagnostics) {
             if (DOWNLOAD_DISABLED.equals(d.code())) {
                 downloadsOffSaid = true;
-                return tr("status.lsp.xmlDownloadsOff", tr("command.workspace.trustFolder"));
+                return said.get();
             }
         }
         return null;

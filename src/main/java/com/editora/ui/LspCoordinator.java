@@ -1056,6 +1056,7 @@ final class LspCoordinator {
                         : tr("status.lsp.tsSdkWithoutTsserver", refusal.detail());
             case UNTRUSTED_TYPESCRIPT -> tr("status.lsp.tsSdkUntrusted", tr("command.lsp.trustProjectSettings"));
             case NO_JAVA_FOR_SERVER -> tr("status.lsp.javaTooOld", server, refusal.detail());
+            case XML_LOADS_MAVEN -> tr("status.lsp.xmlLoadsMaven", server);
         };
     }
 
@@ -1434,7 +1435,7 @@ final class LspCoordinator {
             buffer.setLspDiagnostics(diagnostics);
             noteNonProjectFile(file, diagnostics);
             xmlTrust.onDiagnostics(buffer, diagnostics); // a schema not downloaded: Trust Folder on the file (C6)
-            String blocked = xmlNotices.onDiagnostics(diagnostics); // a schema not downloaded: say where it is decided
+            String blocked = xmlNotices.onDiagnostics(diagnostics, () -> xmlTrust.downloadsOffStatus(buffer)); // C25
             if (blocked != null) {
                 // After the opening's own lines ("Opened …", the server's ready line), which replaced it at once.
                 var later = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(2));

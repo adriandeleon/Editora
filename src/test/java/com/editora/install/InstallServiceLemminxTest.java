@@ -177,12 +177,10 @@ class InstallServiceLemminxTest {
     @Test
     void aProgramThatCannotRunHereFallsBackToTheJavaLemminxOfThePomServer() throws IOException {
         Path maven = Files.createDirectories(config.resolve("plugins/lsp/maven"));
-        for (String jar : List.of(
-                "org.eclipse.lemminx-0.31.0.jar",
-                "lemminx-maven-0.12.0.jar",
-                "guava-33.jar",
-                "commons-lang3-3.17.jar",
-                "jsoup-1.18.jar")) {
+        for (String artifact : XmlServerInstall.PLAIN_LEMMINX_ARTIFACTS) {
+            Files.writeString(maven.resolve(artifact + "-1.0.jar"), "");
+        }
+        for (String jar : List.of("lemminx-maven-0.12.0.jar", "maven-core-3.9.9.jar", "plexus-utils-3.5.1.jar")) {
             Files.writeString(maven.resolve(jar), "");
         }
         serve(releaseZip("the server"), hash("the server"));
@@ -191,9 +189,11 @@ class InstallServiceLemminxTest {
         InstallService.Result result = install();
 
         assertTrue(result.ok(), result.message());
-        assertEquals(
-                InstallCatalog.jvmClasspathCommand(maven, InstallCatalog.LEMMINX_MAIN_CLASS),
-                result.installedCommand());
+        assertEquals(XmlServerInstall.javaLemminxCommand(maven), result.installedCommand());
+        // lemminx's own jars only: lemminx-maven on the classpath served untrusted poms as trusted (review 3, A21)
+        assertFalse(com.editora.lsp.LemminxMavenGuard.loadsLemminxMaven(
+                com.editora.run.ProgramArgs.commandLine(result.installedCommand()), true));
+        assertFalse(result.installedCommand().contains("maven-core"), result.installedCommand());
         assertEquals("version `GLIBC_2.34' not found", result.message(), "the reason, for the status line");
         assertNull(XmlServerInstall.ownCopy(config), "nothing of the native server is left");
         // Only the note that XML runs on the Java lemminx: a blank command keeps it (XML/pom review 2, A8).

@@ -116,9 +116,13 @@ final class XmlFolderTrust {
 
     // --- notices -------------------------------------------------------------------------------------
 
-    /** After {@code b} was (re)routed: an untrusted pom says, once per tab, why it is not Maven-aware. */
+    /**
+     * After {@code b} was (re)routed: an untrusted pom says, once per tab, why it is not Maven-aware. Only once the
+     * Maven server is known to be installed: without it trusting would not make the pom Maven-aware, so the install
+     * banner says both that the server is missing and that it runs only in trusted folders (XML/pom review 3, A28).
+     */
     void afterSync(EditorBuffer b) {
-        if (pomWithheldUntrusted(b)) {
+        if (pomWithheldUntrusted(b) && lsp.isServerAvailable(LspServerRegistry.MAVEN_POM_SERVER_ID)) {
             if (offered.add(b)) {
                 show(b, tr("xml.trust.pomNotice"));
             }
@@ -147,6 +151,22 @@ final class XmlFolderTrust {
         }
         offered.add(b);
         show(b, tr("xml.trust.downloadNotice"));
+    }
+
+    /**
+     * The status line for a schema lemminx was not allowed to download in {@code b}, by what would let it (XML/pom
+     * review 3, C25): with Download schemas at Never only that setting; for a file no folder can be trusted for (one
+     * outside the project, on the shared loose root) the project and the setting; else Trust Folder or the setting.
+     */
+    String downloadsOffStatus(EditorBuffer b) {
+        if ("never".equals(host.settings().getXmlSchemaDownloads())) {
+            return tr("status.lsp.xmlDownloadsNever");
+        }
+        Path serverRoot = serverRoot(b);
+        Path root = serverRoot == null || isLoose(serverRoot, lspManager.looseRoot()) ? null : target(b);
+        return root == null
+                ? tr("status.lsp.xmlDownloadsLoose")
+                : tr("status.lsp.xmlDownloadsOff", tr("command.workspace.trustFolder"));
     }
 
     /** Whether one of {@code diagnostics} is lemminx's "Downloading external resources is disabled". */
@@ -191,16 +211,24 @@ final class XmlFolderTrust {
     /**
      * A folder was trusted or revoked (here or in another window): forget the routing answers, stop the Maven
      * server on any folder that is no longer trusted, and route every pom again — a newly trusted one moves to the
-     * Maven server, a revoked one back to plain lemminx. Notices that no longer apply go.
+     * Maven server, a revoked one back to plain lemminx. Every pom a server held is rerouted at once, shown or not:
+     * a background pom kept the old server (or, revoked, none and no diagnostics) until shown (XML/pom review 3,
+     * A27). A tab never shown stays deferred. Notices that no longer apply go.
      */
     void trustChanged() {
         answers.clear();
+        Set<EditorBuffer> served = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        host.forEachBuffer(b -> {
+            Path file = lsp.lspPath(b);
+            if (file != null && isPom(file) && lspManager.managedServerId(file) != null) {
+                served.add(b);
+            }
+        });
         lspManager.shutdownUntrusted(LspServerRegistry.MAVEN_POM_SERVER_ID);
         ConfigManager config = ops.config();
         host.forEachBuffer(b -> {
             Path file = lsp.lspPath(b);
-            Path name = file == null ? null : file.getFileName();
-            boolean pom = name != null && LspServerRegistry.isPomFile(name.toString());
+            boolean pom = isPom(file);
             Path root = pom ? null : target(b);
             boolean nowTrusted = pom
                     ? pomTrusted(b)
@@ -209,10 +237,17 @@ final class XmlFolderTrust {
                 hideOwn(b);
                 offered.remove(b); // a later revoke may offer again
             }
-            if (pom) {
+            if (pom && served.contains(b)) {
+                lsp.syncBuffer(b);
+            } else if (pom) {
                 lsp.syncBufferWhenShown(b);
             }
         });
+    }
+
+    private static boolean isPom(@Nullable Path file) {
+        Path name = file == null ? null : file.getFileName();
+        return name != null && LspServerRegistry.isPomFile(name.toString());
     }
 
     /**
@@ -240,7 +275,10 @@ final class XmlFolderTrust {
         config.saveTrust(); // durable: a security decision must survive a crash
         broadcast.run(); // every window, this one included, re-reads its trust (reloadProjectSettings)
         host.syncSettingsWindow(); // the Workspace page's trusted-folders list
-        host.setStatus(tr("xml.trust.trusted", shown));
+        // Maven-aware editing is claimed only where the Maven server runs (A28)
+        String pomServer = LspServerRegistry.MAVEN_POM_SERVER_ID;
+        boolean mavenOn = lsp.serverEnabled(pomServer) && lsp.isServerAvailable(pomServer);
+        host.setStatus(tr(mavenOn ? "xml.trust.trusted" : "xml.trust.trustedDownloads", shown));
     }
 
     /** The folder Trust Folder trusts for {@code b} (see {@link #trustTarget}). */
@@ -270,20 +308,22 @@ final class XmlFolderTrust {
     }
 
     /**
-     * Pure: the folder to trust for {@code file} — the open project when the file is in it (the folder a build's
-     * trust prompt records too); else the folder its XML server runs on, unless that is Editora's shared root of
-     * files outside the project (trusting it would trust every loose file); else the project. Null: nothing to trust.
+     * Pure: the folder to trust for {@code file} — the open project when there is no file or the file is in it (the
+     * folder a build's trust prompt records too); else the folder its XML server runs on, unless that is Editora's
+     * shared root of files outside the project (trusting it would trust every loose file). Null: nothing to trust —
+     * a file outside the project never stands for the project, whose build and server commands trusting would grant
+     * while the file stayed as it was (XML/pom review 3, A24/C23).
      */
     static @Nullable Path trustTarget(
             @Nullable Path project, @Nullable Path file, @Nullable Path serverRoot, @Nullable Path looseRoot) {
         Path p = project == null ? null : project.toAbsolutePath().normalize();
         Path f = file == null ? null : file.toAbsolutePath().normalize();
-        if (p != null && f != null && f.getFileSystem() == p.getFileSystem() && f.startsWith(p)) {
+        if (f == null || (p != null && f.getFileSystem() == p.getFileSystem() && f.startsWith(p))) {
             return project;
         }
         if (serverRoot != null && !isLoose(serverRoot, looseRoot)) {
             return serverRoot;
         }
-        return project;
+        return null;
     }
 }

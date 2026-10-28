@@ -135,6 +135,24 @@ final class ToolStatusRow {
         }
     }
 
+    /**
+     * Shows a tool that works but should be updated, in amber: {@code text} in the pill and {@code detail}, the
+     * whole story, in its tooltip — a long text was cut in the middle, where its version was (XML/pom review 3,
+     * A26). Install… stays offered.
+     */
+    void showWarning(String text, String detail) {
+        pill.getStyleClass().setAll("settings-git-status", "settings-git-warn");
+        pill.setText(text);
+        tooltip.setText(detail);
+        if (missingOnly != null) {
+            missingOnly.setVisible(false);
+        }
+        if (install != null) {
+            install.setDisable(false);
+            install.setText(tr("settings.install.button"));
+        }
+    }
+
     /** The pill's text. Pure. */
     static String text(String tool, boolean found, String detail) {
         if (!found) {
