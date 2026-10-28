@@ -120,7 +120,7 @@ class LspFormattingStatusHoverFxTest {
         double height = FxTestSupport.callOnFx(
                 () -> popup.getScene().getRoot().getLayoutBounds().getHeight());
         assertTrue(
-                height <= LspCoordinator.hoverMaxHeight(windowHeight) + 40,
+                height <= HoverCard.maxHeight(windowHeight) + 40,
                 "the popup is " + height + " px tall in a " + windowHeight + " px window");
         assertNotNull(
                 FxTestSupport.callOnFx(() -> popup.getScene().getRoot().lookup(".scroll-pane")),

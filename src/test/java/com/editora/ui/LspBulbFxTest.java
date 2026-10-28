@@ -143,7 +143,7 @@ class LspBulbFxTest {
     }
 
     @Test
-    void theCounterCountsErrorsAndWarningsAndShowsACheckWhenThereAreNone() throws Exception {
+    void theCounterCountsErrorsWarningsAndNotesAndShowsACheckWhenThereAreNone() throws Exception {
         EditorBuffer b = open();
         var error = new LspDiagnostic(2, 8, 2, 11, LspDiagnostic.Severity.ERROR, "bad", null, "jdtls");
         var warning = new LspDiagnostic(2, 12, 2, 13, LspDiagnostic.Severity.WARNING, "unused", null, "jdtls");
@@ -154,7 +154,7 @@ class LspBulbFxTest {
         Node counter = FxTestSupport.callOnFx(() -> b.getArea().getScene().lookup(".problem-counter"));
         assertNotNull(counter, "mounted at the top right while a server checks the file");
         assertEquals(
-                com.editora.i18n.Messages.tr("editor.problemCounter.summary", 1, 2),
+                com.editora.i18n.Messages.tr("editor.problemCounter.summary", 1, 2, 1),
                 FxTestSupport.callOnFx(() -> ((javafx.scene.layout.HBox) counter)
                         .getChildren()
                         .get(0)
@@ -163,6 +163,15 @@ class LspBulbFxTest {
                 () -> counter.lookup(".problem-counter-next").isVisible()));
 
         FxTestSupport.runOnFx(() -> b.setLspDiagnostics(List.of(info)));
+        fx.layout();
+        assertNull(FxTestSupport.callOnFx(() -> counter.lookup(".problem-counter-ok")), "a note is a problem (C5)");
+        assertTrue(FxTestSupport.callOnFx(
+                () -> counter.lookup(".problem-counter-next").isVisible()));
+
+        FxTestSupport.runOnFx(() -> {
+            b.problemCounter().setSettled(() -> true); // the server has looked: an empty list is clean
+            b.setLspDiagnostics(List.of());
+        });
         fx.layout();
         assertNotNull(FxTestSupport.callOnFx(() -> counter.lookup(".problem-counter-ok")), "a check: nothing to fix");
         assertFalse(
@@ -314,7 +323,7 @@ class LspBulbFxTest {
         var error = new LspDiagnostic(2, 8, 2, 11, LspDiagnostic.Severity.ERROR, "bad", null, "jdtls");
         FxTestSupport.runOnFx(() -> b.setLspDiagnostics(List.of(error)));
         assertEquals(
-                com.editora.i18n.Messages.tr("editor.problemCounter.summary", 1, 0),
+                com.editora.i18n.Messages.tr("editor.problemCounter.summary", 1, 0, 0),
                 FxTestSupport.callOnFx(() -> ((javafx.scene.layout.HBox) counter)
                         .getChildren()
                         .get(0)

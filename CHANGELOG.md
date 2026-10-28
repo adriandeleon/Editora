@@ -55,6 +55,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Shell scripts with the Bash language server (Bash review: editing UI).**
+  - Rename on a command (`echo`, `cd`) is refused: "echo is a command, not a function or variable defined in your
+    scripts". It used to rewrite every call in the file with no preview. A new name must be a shell name (a function
+    may also have `-`, `.` and `:`).
+  - Format Document on a script shfmt cannot parse says why, with the line ("Could not format: line 5: `for`
+    statement must end with `done`"), and points at the shebang or the shfmt dialect for a `#!/bin/sh` script with
+    bashisms. It used to say "Already formatted". A format that changes nothing says "Already formatted" for every
+    server and leaves the file clean; a selection on a server without range formatting says the whole file was
+    formatted.
+  - The problem counter counts notes (information and hints, muted) as a third number, so ShellCheck's quoting
+    advice no longer shows a green check; the check means no problems at all, and the counter's arrows go through
+    every problem. A zsh script shows "Not checked: ShellCheck has no zsh mode". Applies to every language server.
+  - ShellCheck quick fixes say what they do ("Fix SC2006: Use $(...) notation instead of legacy backticks"), with
+    the column when two would read alike. Suppressions are tagged **Suppress** and listed after the fixes, and with
+    bash-language-server 5.6 (which offers none) "Disable SC2086 for this command" inserts the directive above the
+    line.
+  - Completion ranks keywords and snippets first, then the script's functions and variables, builtins, and PATH
+    commands last, with a detail saying which; after `$` it offers only variables. Editora's own shell snippets
+    (`case`, `function`, `while`, `echo`) stay in the list beside the server's word of the same name. Without the
+    server, the script's own function and variable names are offered after the snippets.
+  - Block Tab / Indent Lines no longer indents the shebang, a here-doc's text or its delimiter (a `<<-` here-doc
+    moves by tabs only), or the inside of a multi-line string.
+  - A hover pages with Page Down / Page Up (and Emacs's C-v / M-v), and a man page gets its 80 columns.
+  - Next Problem onto a ShellCheck error no longer leaves the red unread-error badge.
+  - The completion documentation panel loses the Markdown preview's margins and language tag; a two-line snippet
+    description shows its first line in the row.
+  - "1 symbols" in Go to Symbol in Workspace; the rename preview's Select all / Select none are no longer cut.
+  - Keymaps: CUA gets F2 (Rename), F12 / Shift+F12 (Go to Definition / Find References), Ctrl+. (Code Actions)
+    and Shift+Alt+F (Format Document); Sublime gets Ctrl+Shift+R (Go to Symbol) and Shift+Alt+F; Emacs gets
+    `M-g s` (Go to Symbol in Workspace).
 - **Format Document follows the file's save rules.** Format Document and Format Selection now send the file's
   EditorConfig `trim_trailing_whitespace` and `insert_final_newline` (or the project's) to the language server, so a
   formatted file already looks the way saving writes it. lemminx adds the final newline only when asked. Tab re-indent

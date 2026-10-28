@@ -24,6 +24,8 @@ public final class CodeActionKinds {
     /** The groups, in the order the list shows them. */
     public enum Group {
         FIX,
+        /** A suppression ("Disable ShellCheck rule SC2086"): no fix, listed after the fixes (Bash review C10). */
+        SUPPRESS,
         ASSIST,
         REFACTOR,
         SOURCE
@@ -31,6 +33,9 @@ public final class CodeActionKinds {
 
     /** The group of an action of {@code kind} (an empty or unknown kind is an assist). */
     public static Group group(String kind) {
+        if (matches(kind, BashCodeActions.SUPPRESS_KIND)) {
+            return Group.SUPPRESS;
+        }
         if (matches(kind, "quickfix")) {
             return Group.FIX;
         }

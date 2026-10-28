@@ -4111,9 +4111,10 @@ final class LspCoordinator {
         buffer.problemCounter()
                 .setActions(
                         () -> ops.executeCommand("tool.problems"),
-                        () -> gotoProblem(buffer, false),
-                        () -> gotoProblem(buffer, true));
+                        () -> gotoProblem(buffer, false, true),
+                        () -> gotoProblem(buffer, true, true));
         buffer.problemCounter().setSettled(() -> serverSettled(buffer));
+        buffer.problemCounter().setUncheckedReason(() -> BashLspUi.uncheckedReason(buffer, lspPath(buffer)));
         buffer.setLspPasteImportsRequester((sl, sc, el, ec, text, stillValid) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
@@ -6772,6 +6773,7 @@ final class LspCoordinator {
         CodeArea area = buffer.getFocusedArea();
         var sel = area.getSelection();
         boolean selectionOnly = sel.getLength() > 0 && lspManager.supportsRangeFormatting(path);
+        long errorsBefore = lspManager.loggedErrorCount(path); // a failed format says why only in the log (B3)
         Consumer<List<com.editora.text.LspTextEdit>> onEdits = edits -> {
             if (buffer != host.activeBuffer()) {
                 return; // user switched tabs before the server replied
@@ -6780,19 +6782,22 @@ final class LspCoordinator {
                 host.setStatus(tr("status.lsp.formatStale")); // edited mid-format — a re-run formats cleanly
                 return;
             }
-            if (edits.isEmpty()) {
-                // bash-language-server answers "no edits" when shfmt is missing, too: say which it is.
-                host.setStatus(
-                        "bash".equals(lspManager.managedServerId(path)) && !bashToolFound("shfmt")
-                                ? tr("status.lsp.bashNoShfmt")
-                                : tr("status.lsp.formatNoChange"));
+            if (edits.isEmpty() || com.editora.text.LspTextEdits.changesNothing(snapshot, edits)) {
+                // bash-language-server answers "no edits" when shfmt is missing or cannot parse the script, too
+                host.setStatus(BashLspUi.formatNoChange(
+                        lspManager.managedServerId(path),
+                        () -> !edits.isEmpty() || bashToolFound("shfmt"), // a no-op edit: shfmt ran
+                        edits.isEmpty() ? lspManager.errorLoggedSince(path, errorsBefore) : null));
                 return;
             }
             if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lsp"))) {
                 return;
             }
             buffer.applyLspEdits(edits);
-            host.setStatus(tr(selectionOnly ? "status.lsp.selectionFormatted" : "status.lsp.formatted"));
+            host.setStatus(tr(
+                    selectionOnly
+                            ? "status.lsp.selectionFormatted"
+                            : sel.getLength() > 0 ? "status.lsp.formattedWholeFile" : "status.lsp.formatted"));
         };
         if (selectionOnly) {
             int startLine = area.offsetToPosition(sel.getStart(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
@@ -6947,7 +6952,7 @@ final class LspCoordinator {
                 }
                 assist = true;
             }
-            assist |= group == com.editora.lsp.CodeActionKinds.Group.ASSIST
+            assist |= group.compareTo(com.editora.lsp.CodeActionKinds.Group.ASSIST) <= 0 // a suppression, too
                     && !com.editora.lsp.CodeActionKinds.isJavaGeneratorAssist(a)
                     && !a.title().startsWith("Add Javadoc comment");
         }
@@ -6990,11 +6995,14 @@ final class LspCoordinator {
      * no errors. Before this a diagnostic could only be read with the mouse or in the Problems window.
      */
     void gotoProblem(boolean forward) {
-        gotoProblem(host.activeBuffer(), forward);
+        gotoProblem(host.activeBuffer(), forward, false);
     }
 
-    /** As {@link #gotoProblem(boolean)} in {@code b}, which takes the focus first (its counter's arrows). */
-    void gotoProblem(@Nullable EditorBuffer b, boolean forward) {
+    /**
+     * As {@link #gotoProblem(boolean)} in {@code b}, which takes the focus first; {@code every}: through all its
+     * problems, the notes the counter counts too, as its arrows go (Bash review C5).
+     */
+    void gotoProblem(@Nullable EditorBuffer b, boolean forward, boolean every) {
         if (b != null && b != host.activeBuffer()) {
             b.getFocusedArea().requestFocus();
         }
@@ -7007,7 +7015,7 @@ final class LspCoordinator {
         List<LspDiagnostic> errors = here.stream()
                 .filter(d -> d.severity() == LspDiagnostic.Severity.ERROR)
                 .toList();
-        List<LspDiagnostic> candidates = new java.util.ArrayList<>(errors.isEmpty() ? here : errors);
+        List<LspDiagnostic> candidates = new java.util.ArrayList<>(errors.isEmpty() || every ? here : errors);
         if (candidates.isEmpty()) {
             host.setStatus(tr("status.lsp.noProblems"));
             return;
@@ -7067,13 +7075,9 @@ final class LspCoordinator {
         return problems.getOrDefault(ops.canonicalize(path), List.of());
     }
 
+    /** Says a problem in the echo line: the script's, not Editora's, so never with the unread-error badge (C13). */
     private void sayProblem(LspDiagnostic d) {
-        String text = tr("status.lsp.problem", d.startLine() + 1, d.message());
-        if (d.severity() == LspDiagnostic.Severity.ERROR) {
-            host.setError(text);
-        } else {
-            host.setStatus(text);
-        }
+        host.setStatus(tr("status.lsp.problem", d.startLine() + 1, d.message()));
     }
 
     /**
@@ -7163,18 +7167,38 @@ final class LspCoordinator {
                 String placeholder = !prep.placeholder().isBlank()
                         ? prep.placeholder()
                         : textInRange(b, prep.startLine(), prep.startCol(), prep.endLine(), prep.endCol());
-                promptAndRename(b, path, line, col, placeholder.isBlank() ? wordAtCaret(area) : placeholder);
+                String old = placeholder.isBlank() ? wordAtCaret(area) : placeholder;
+                // a command word (echo, cd) is no symbol of the user's: bash-language-server renamed it (C1)
+                BashLspUi.beforeRename(
+                        lspManager,
+                        b,
+                        path,
+                        line,
+                        col,
+                        old,
+                        host::setStatus,
+                        rule -> promptAndRename(b, path, line, col, old, rule));
             });
         } else {
-            promptAndRename(b, path, line, col, wordAtCaret(area));
+            promptAndRename(b, path, line, col, wordAtCaret(area), name -> null);
         }
     }
 
-    private void promptAndRename(EditorBuffer b, Path path, int line, int col, String placeholder) {
+    private void promptAndRename(
+            EditorBuffer b,
+            Path path,
+            int line,
+            int col,
+            String placeholder,
+            java.util.function.Function<String, @Nullable String> refusal) {
         host.promptText(tr("dialog.lsp.rename.title"), tr("dialog.lsp.rename.label"), placeholder, newName -> {
             String name = newName == null ? "" : newName.trim();
             if (name.isEmpty() || name.equals(placeholder)) {
                 return; // nothing to do
+            }
+            if (refusal.apply(name) instanceof String bad) {
+                host.setStatus(bad); // not a name the language takes (a shell name, Bash review B11)
+                return;
             }
             host.setStatus(tr("status.lsp.renaming"));
             beginReportedEdit();
@@ -9472,14 +9496,14 @@ final class LspCoordinator {
         scroll.setHbarPolicy(javafx.scene.control.ScrollPane.ScrollBarPolicy.NEVER);
         scroll.setVbarPolicy(javafx.scene.control.ScrollPane.ScrollBarPolicy.AS_NEEDED);
         scroll.setFocusTraversable(false);
-        scroll.setMaxWidth(HOVER_MAX_WIDTH);
-        scroll.setMaxHeight(hoverMaxHeight(area));
+        scroll.setMaxWidth(HoverCard.maxWidth(markdown)); // a man page's 80 columns uncut (Bash review C7)
+        scroll.setMaxHeight(HoverCard.maxHeight(area));
         // Wide enough for the signature: the popup sized itself to the docstring's prose, so Pyright's
         // `def helper(` block scrolled sideways under its own language tag (Python review B12).
-        scroll.setMinWidth(hoverCodeWidth(markdown));
+        scroll.setMinWidth(HoverCard.codeWidth(markdown));
         VBox box = new VBox(scroll);
         box.getStyleClass().add("lsp-hover-popup");
-        box.setMaxWidth(HOVER_MAX_WIDTH);
+        box.setMaxWidth(HoverCard.maxWidth(markdown));
         box.getStylesheets()
                 .addAll(
                         getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
@@ -9491,19 +9515,21 @@ final class LspCoordinator {
         popup.getContent().add(box);
         hoverPopup = popup;
 
-        // Dismiss on Escape, caret movement, or scroll — all detached again when the popup hides.
-        EventHandler<KeyEvent> esc = ev -> {
-            if (ev.getCode() == KeyCode.ESCAPE) {
-                hideHoverPopup();
-                ev.consume();
-            }
-        };
+        // Dismiss on Escape, caret movement, or scroll, page with Page Down/Up (and Emacs's C-v/M-v, which the
+        // keymap hands over while it shows: C7) — all detached again when the popup hides.
+        EventHandler<KeyEvent> esc = HoverCard.keys(scroll, this::hideHoverPopup);
         ChangeListener<Object> dismiss = (o, a, b) -> hideHoverPopup();
+        boolean ownChords = area.getProperties()
+                        .putIfAbsent(com.editora.command.KeyDispatcher.OWNED_CHORDS, HoverCard.SCROLL_CHORDS)
+                == null;
         area.addEventFilter(KeyEvent.KEY_PRESSED, esc);
         area.caretPositionProperty().addListener(dismiss);
         area.estimatedScrollYProperty().addListener(dismiss);
         popup.setOnHidden(ev -> {
             area.removeEventFilter(KeyEvent.KEY_PRESSED, esc);
+            if (ownChords) {
+                area.getProperties().remove(com.editora.command.KeyDispatcher.OWNED_CHORDS, HoverCard.SCROLL_CHORDS);
+            }
             area.caretPositionProperty().removeListener(dismiss);
             area.estimatedScrollYProperty().removeListener(dismiss);
             if (hoverPopup == popup) {
@@ -9530,49 +9556,6 @@ final class LspCoordinator {
         if (top < bounds.getMinY()) {
             popup.setAnchorY(top);
         }
-    }
-
-    /** Average advance of the hover's code font, per character (a slight over-estimate is harmless). */
-    static final double HOVER_CODE_CHAR_WIDTH = 8.4;
-
-    /** Code-block chrome inside the hover: block padding, the scroll pane's inner padding, the scroll bar. */
-    static final double HOVER_CODE_CHROME = 72;
-
-    /**
-     * Pure: the text-column width a hover needs to show its fenced code without a sideways scroll — the
-     * longest code line in characters — clamped to {@link #HOVER_MAX_WIDTH}; 0 without a code block.
-     */
-    static double hoverCodeWidth(String markdown) {
-        if (markdown == null) {
-            return 0;
-        }
-        int longest = 0;
-        boolean inFence = false;
-        for (String line : markdown.split("\\R", -1)) {
-            String t = line.strip();
-            if (t.startsWith("```") || t.startsWith("~~~")) {
-                inFence = !inFence;
-                continue;
-            }
-            if (inFence) {
-                longest = Math.max(longest, line.length());
-            }
-        }
-        return longest == 0 ? 0 : Math.min(HOVER_MAX_WIDTH, longest * HOVER_CODE_CHAR_WIDTH + HOVER_CODE_CHROME);
-    }
-
-    /** Widest a hover popup's text column gets. */
-    static final double HOVER_MAX_WIDTH = 560;
-
-    /** The tallest a hover popup gets in a window {@code windowHeight} tall: part of it, within fixed bounds. */
-    static double hoverMaxHeight(double windowHeight) {
-        double share = windowHeight > 0 ? windowHeight * 0.45 : 400;
-        return Math.max(160, Math.min(480, share));
-    }
-
-    private static double hoverMaxHeight(CodeArea area) {
-        javafx.stage.Window w = area.getScene() == null ? null : area.getScene().getWindow();
-        return hoverMaxHeight(w == null ? 0 : w.getHeight());
     }
 
     /** Hides the LSP hover popup if one is showing. */

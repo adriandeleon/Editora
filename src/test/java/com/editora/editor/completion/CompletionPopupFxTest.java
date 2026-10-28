@@ -73,4 +73,12 @@ class CompletionPopupFxTest {
         }
         return result.get();
     }
+
+    /** A two-line snippet description shows its first line in the row; the panel has the rest (Bash review C15). */
+    @Test
+    void aRowShowsTheFirstLineOfItsDetail() {
+        assertEquals("Defines a function.", CompletionPopup.firstLine("Defines a function.\nThe word is optional."));
+        assertEquals("one", CompletionPopup.firstLine("  one  "));
+        assertEquals("", CompletionPopup.firstLine(null));
+    }
 }

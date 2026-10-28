@@ -3255,6 +3255,10 @@ final class LanguageServerSession implements LanguageClient {
         if (type == org.eclipse.lsp4j.MessageType.Error && importError(message.getMessage())) {
             lastErrorLog = firstLine(message.getMessage());
         }
+        if (type == org.eclipse.lsp4j.MessageType.Error) {
+            lastLoggedError = firstLine(message.getMessage());
+            loggedErrors.incrementAndGet(); // after the text: a reader that sees the count sees its message
+        }
         if (type == org.eclipse.lsp4j.MessageType.Error || type == org.eclipse.lsp4j.MessageType.Warning) {
             LOG.info("[" + serverId + "] " + message.getMessage());
         } else if (LOG.isLoggable(Level.FINE)) {
@@ -3264,6 +3268,24 @@ final class LanguageServerSession implements LanguageClient {
 
     /** The first line of the last error this server logged: a failed Gradle import's reason is only there. */
     private volatile @Nullable String lastErrorLog;
+
+    /**
+     * The first line of the last Error this server logged, whatever it was about, and how many it has logged: how a
+     * request can tell that the server failed it and said why only in its log (bash-language-server answers a
+     * Format Document that shfmt could not parse with no edits, Bash review B3).
+     */
+    private volatile @Nullable String lastLoggedError;
+
+    private final java.util.concurrent.atomic.AtomicLong loggedErrors = new java.util.concurrent.atomic.AtomicLong();
+
+    long loggedErrorCount() {
+        return loggedErrors.get();
+    }
+
+    @Nullable
+    String lastLoggedError() {
+        return lastLoggedError;
+    }
 
     /** Forgets the last logged error: an import starts again, or one succeeded (eleventh review CM1). */
     void forgetLastErrorLog() {

@@ -87,6 +87,54 @@ public final class ShellScripts {
         return "sh".equals(Shebang.extension(nl < 0 ? text : text.substring(0, nl)));
     }
 
+    /** A {@code # shellcheck shell=zsh} directive (ShellCheck's own way to name the dialect). */
+    private static final java.util.regex.Pattern SHELLCHECK_ZSH =
+            java.util.regex.Pattern.compile("^\\s*#\\s*shellcheck\\s+(?:.*\\s)?shell=zsh\\b");
+
+    /** How far {@link #isZshDialect} looks for a directive: the comments at the top of a script. */
+    private static final int DIRECTIVE_LINES = 20;
+
+    /**
+     * Whether a shell buffer named {@code fileName} holding {@code text} is zsh, which ShellCheck cannot check: a
+     * {@code .zsh} name, a zsh shebang ({@code #!/bin/zsh}, {@code #!/usr/bin/env zsh}), or a {@code # shellcheck
+     * shell=zsh} directive among its first lines. Bash review C14/D2: the problem counter says such a file is not
+     * checked instead of showing a check over a script nothing linted.
+     */
+    public static boolean isZshDialect(@Nullable String fileName, @Nullable String text) {
+        String name = fileName == null ? "" : fileName.toLowerCase(java.util.Locale.ROOT);
+        if (name.endsWith(".zsh")) {
+            return true;
+        }
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+        int from = 0;
+        for (int line = 0; line < DIRECTIVE_LINES && from <= text.length(); line++) {
+            int nl = text.indexOf('\n', from);
+            String l = text.substring(from, nl < 0 ? text.length() : nl);
+            if (line == 0 && l.startsWith("#!")) {
+                String[] tokens = l.substring(2).strip().split("\\s+");
+                int k = 0;
+                if (k < tokens.length && baseName(tokens[k]).equals("env")) {
+                    k++;
+                    while (k < tokens.length && (tokens[k].startsWith("-") || tokens[k].contains("="))) {
+                        k++;
+                    }
+                }
+                if (k < tokens.length && baseName(tokens[k]).equals("zsh")) {
+                    return true;
+                }
+            } else if (SHELLCHECK_ZSH.matcher(l).find()) {
+                return true;
+            }
+            if (nl < 0) {
+                break;
+            }
+            from = nl + 1;
+        }
+        return false;
+    }
+
     /** POSIX shells without bash's {@code [[ ]]}: a script run by one of them needs {@code [ ]}. */
     private static final java.util.Set<String> POSIX_SHELLS = java.util.Set.of("sh", "dash", "ash", "posh");
 
