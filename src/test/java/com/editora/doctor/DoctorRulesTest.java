@@ -84,4 +84,35 @@ class DoctorRulesTest {
         org.junit.jupiter.api.Assertions.assertEquals("", DoctorRules.npmPackageVersion(dir.resolve("missing")));
         org.junit.jupiter.api.Assertions.assertEquals("2.0", DoctorRules.packageJsonVersion("{\"version\": \"2.0\"}"));
     }
+
+    /** Bash review A3: an npm launcher is a Node.js script, which cannot start where its {@code node} is not found. */
+    @org.junit.jupiter.api.Test
+    void aLauncherRunByNodeIsTold(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        org.junit.jupiter.api.Assertions.assertEquals("node", DoctorRules.shebangNode("#!/usr/bin/env node"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "node", DoctorRules.shebangNode("#!/usr/bin/env -S node --max-old-space-size=4096"));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "/opt/node/bin/node", DoctorRules.shebangNode("#!/opt/node/bin/node"));
+        org.junit.jupiter.api.Assertions.assertNull(DoctorRules.shebangNode("#!/bin/sh"));
+        org.junit.jupiter.api.Assertions.assertNull(DoctorRules.shebangNode("#!/usr/bin/env python3"));
+        org.junit.jupiter.api.Assertions.assertNull(DoctorRules.shebangNode("ELF"));
+        org.junit.jupiter.api.Assertions.assertNull(DoctorRules.shebangNode(null));
+
+        java.nio.file.Path js =
+                java.nio.file.Files.writeString(dir.resolve("cli.js"), "#!/usr/bin/env node\n'use strict'\n");
+        org.junit.jupiter.api.Assertions.assertEquals("node", DoctorRules.launcherNode(js));
+        java.nio.file.Path sh = java.nio.file.Files.writeString(dir.resolve("tool"), "#!/bin/sh\necho hi\n");
+        org.junit.jupiter.api.Assertions.assertNull(DoctorRules.launcherNode(sh));
+        org.junit.jupiter.api.Assertions.assertNull(DoctorRules.launcherNode(dir.resolve("missing")));
+    }
+
+    /** Bash review A12: the version in what {@link DoctorRules#npmPackageVersion} said, for the package asked. */
+    @org.junit.jupiter.api.Test
+    void theVersionOfANamedPackage() {
+        org.junit.jupiter.api.Assertions.assertEquals(
+                "5.8.1", DoctorRules.versionOf("bash-language-server 5.8.1", "bash-language-server"));
+        org.junit.jupiter.api.Assertions.assertNull(DoctorRules.versionOf("pyright 1.1.411", "bash-language-server"));
+        org.junit.jupiter.api.Assertions.assertNull(DoctorRules.versionOf("", "bash-language-server"));
+        org.junit.jupiter.api.Assertions.assertNull(DoctorRules.versionOf("bash-language-server 5.8.1", null));
+    }
 }

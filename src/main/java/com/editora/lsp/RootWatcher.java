@@ -2,15 +2,12 @@ package com.editora.lsp;
 
 import java.io.IOException;
 import java.nio.file.FileSystems;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -28,7 +25,8 @@ import org.jspecify.annotations.Nullable;
  * window stayed unknown to the server until a restart: the Project panel's watcher was the only source.
  *
  * <p>Folders a server never analyses are skipped — hidden ones ({@code .git}, {@code .venv}), {@code
- * node_modules}, {@code __pycache__}, and any virtual environment — and at most {@link #MAX_DIRS} folders are
+ * node_modules}, {@code __pycache__}, any virtual environment, and those the project's {@code .gitignore} files
+ * leave out ({@code target/}, {@code dist/}, …; Bash review B16) — and at most {@link #MAX_DIRS} folders are
  * watched, so a server rooted at a huge tree costs a bounded number of watches. Events are coalesced for
  * {@link #COALESCE_MS} and merged per path ({@link LspManager#mergeWatched}). One virtual thread per watcher.
  */
@@ -51,6 +49,9 @@ final class RootWatcher implements AutoCloseable {
     private final Consumer<List<LspManager.WatchedFile>> sink;
     private final java.util.function.Predicate<Path> reported;
     private final boolean skipOutputs;
+    /** The root's {@code .gitignore} rules: a folder they leave out is not watched. */
+    private final com.editora.search.GitignoreFilter ignore;
+
     private volatile boolean closed;
 
     private RootWatcher(
@@ -64,6 +65,7 @@ final class RootWatcher implements AutoCloseable {
         this.sink = sink;
         this.reported = reported;
         this.skipOutputs = skipOutputs;
+        this.ignore = com.editora.search.GitignoreFilter.load(root);
     }
 
     /** Starts watching {@code root}; {@code sink} gets each coalesced batch on the watcher's thread. Null on failure. */
@@ -92,7 +94,7 @@ final class RootWatcher implements AutoCloseable {
             RootWatcher w = new RootWatcher(root, com.editora.io.WatchServices.open(), sink, reported, skipOutputs);
             try {
                 w.registerTree(root);
-            } catch (IOException | RuntimeException e) {
+            } catch (RuntimeException e) {
                 w.ws.close(); // a watcher that is not returned is never closed: it held an inotify instance
                 throw e;
             }
@@ -150,55 +152,33 @@ final class RootWatcher implements AutoCloseable {
                 || Files.isRegularFile(dir.resolve("pyvenv.cfg"));
     }
 
-    private void registerTree(Path start) throws IOException {
-        if (skipOutputs) {
-            registerBreadthFirst(start);
-            return;
-        }
-        Files.walkFileTree(start, new SimpleFileVisitor<>() {
-            @Override
-            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                if (!dir.equals(root) && (skipped(dir) || (skipOutputs && buildOutput(dir)))) {
-                    return FileVisitResult.SKIP_SUBTREE;
-                }
-                synchronized (dirs) {
-                    if (dirs.size() >= (com.editora.io.WatchServices.isPolling(ws) ? MAX_POLLED_DIRS : MAX_DIRS)) {
-                        LOG.fine(() -> "watching only part of " + root + ": " + dirs.size() + " folders");
-                        return FileVisitResult.TERMINATE;
-                    }
-                    try {
-                        dirs.put(
-                                com.editora.io.WatchServices.register(
-                                        dir,
-                                        ws,
-                                        StandardWatchEventKinds.ENTRY_CREATE,
-                                        StandardWatchEventKinds.ENTRY_DELETE,
-                                        StandardWatchEventKinds.ENTRY_MODIFY),
-                                dir);
-                    } catch (IOException | RuntimeException e) {
-                        return FileVisitResult.SKIP_SUBTREE;
-                    }
-                }
-                return FileVisitResult.CONTINUE;
-            }
-
-            @Override
-            public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                return FileVisitResult.CONTINUE;
-            }
-        });
+    /** The root-relative, {@code /}-separated path of {@code dir} ("" for the root). */
+    private String relative(Path dir) {
+        return root.relativize(dir).toString().replace('\\', '/');
     }
 
     /**
-     * A build-file watcher's folders, level by level: build files sit near the top, so past {@link #MAX_DIRS} folders a
-     * module's pom.xml is watched before a deep asset tree is (fourteenth check CJ6).
+     * Registers {@code start}'s folders level by level: build files and sources sit near the top, so past
+     * {@link #MAX_DIRS} folders a module's pom.xml is watched before a deep asset tree is (fourteenth check CJ6).
+     * Skips hidden, dependency and (for a build-file watcher) build-output folders, and every folder a
+     * {@code .gitignore} on the way down leaves out (Bash review B16).
      */
-    private void registerBreadthFirst(Path start) {
+    private void registerTree(Path start) {
+        // each folder's rules: its parent's, plus a .gitignore of its own (a monorepo keeps them per package)
+        Map<Path, com.editora.search.GitignoreFilter> rules = new HashMap<>();
         java.util.ArrayDeque<Path> queue = new java.util.ArrayDeque<>(List.of(start));
         while (!queue.isEmpty()) {
             Path dir = queue.poll();
-            if (!dir.equals(root) && (skipped(dir) || buildOutput(dir))) {
-                continue;
+            if (!dir.equals(root)) {
+                if (skipped(dir) || (skipOutputs && buildOutput(dir))) {
+                    continue;
+                }
+                String rel = relative(dir);
+                var parent = rules.getOrDefault(dir.getParent(), ignore);
+                if (parent.ignored(rel, true)) {
+                    continue;
+                }
+                rules.put(dir, parent.nested(dir, rel));
             }
             synchronized (dirs) {
                 if (dirs.size() >= (com.editora.io.WatchServices.isPolling(ws) ? MAX_POLLED_DIRS : MAX_DIRS)) {

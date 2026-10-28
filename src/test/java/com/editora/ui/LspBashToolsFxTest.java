@@ -15,7 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Without ShellCheck or shfmt, bash-language-server lints nothing and formats nothing, and says so only in its
- * log (shell review C2). The editor now says it: once when a script opens, and on Format Document.
+ * log (shell review C2). The editor says it: with the install banner when a script opens (Bash review C8, see
+ * {@code ShellBannersFxTest}), and on Format Document.
  */
 @Tag("fx")
 class LspBashToolsFxTest {
@@ -40,22 +41,14 @@ class LspBashToolsFxTest {
     }
 
     @Test
-    void openingAScriptWithoutShellCheckSaysWhyItHasNoDiagnostics() throws Exception {
+    void openingAScriptWithoutShellCheckLeavesTheEchoLineToTheBanner() throws Exception {
         fx.open("deploy.sh", "#!/usr/bin/env bash\necho $1\n");
 
+        // The one-second echo line is gone: the editor's install banner says it and offers Install (Bash review
+        // C8/A4, ShellBannersFxTest); the status line is left to the server's own start-up messages.
         assertTrue(
-                fx.host.statuses.contains(tr("status.lsp.bashNoShellcheck")),
-                "told once, when the script opened: " + fx.host.statuses);
-        long times = fx.host.statuses.stream()
-                .filter(tr("status.lsp.bashNoShellcheck")::equals)
-                .count();
-        fx.open("other.sh", "#!/bin/sh\necho hi\n");
-        assertEquals(
-                times,
-                fx.host.statuses.stream()
-                        .filter(tr("status.lsp.bashNoShellcheck")::equals)
-                        .count(),
-                "and only once per window");
+                fx.host.statuses.stream().noneMatch(m -> m.startsWith("ShellCheck")),
+                "no ShellCheck echo line: " + fx.host.statuses);
     }
 
     @Test

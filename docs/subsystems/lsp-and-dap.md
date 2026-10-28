@@ -553,13 +553,26 @@ character", "Unresolved reference", a "@ line N, column M"), with a script's pat
 closing "1 error" nor its "Could not compile settings file" wrapper. A failure that is one folder's under the root is
 said with that folder's name ("jdtls (tools)").
 
-jdtls updates a project's classpath from a build file only when told it changed. Inside the project the Project panel
-reports changes from its expanded folders alone, so a Java server's root also gets a watcher for build files
-(`LspManager.modelFile`: `pom.xml`, `build.gradle(.kts)`, `settings.gradle(.kts)`, beside lemminx's grammar files),
-which skips a build's output folders (`target`, `build`, `out`, `bin` beside a build file). A watcher registers at most
-2,000 folders, level by level so build files near the top come first, and it reports a file only when its own folder
-is registered (`RootWatcher.watches`), not anything under its root; the panel's own event for a file that watcher reports is not sent again. A build file saved here that no
-watcher covers (an SSH project, or one past the folder cap) is sent as a watched-file change on save.
+jdtls updates a project's classpath from a build file only when told it changed, lemminx revalidates against a
+grammar only when told it changed, and the Bash server never re-reads a sourced library on its own. The Project panel
+reports changes from its expanded folders alone, so every local server root gets a recursive watcher of its own
+(`LspManager.ensureRootWatcher`, one `RootWatcher` per root, none for a root inside one already watched, at most eight),
+project or not. It skips hidden, dependency and virtual-environment folders and the folders the root's `.gitignore`
+files leave out (nested ones too). A watcher registers at most 2,000 folders (300 when polling), level by level so build files near the top come
+first, and it reports a file only when its own folder is registered (`RootWatcher.watches`), not anything under its root; the panel's own event for a
+file that a watcher reports is not sent again (`LspManager.reportsChangesTo`). A build file saved here that no watcher
+covers (an SSH project, or one past the folder cap) is sent as a watched-file change on save.
+
+bash-language-server has no `didChangeWatchedFiles` handler. For a Bash session, a shell script (by extension or name,
+or `.inc`) created or changed under its root and open in no window is opened and closed again with its text from disk
+(`BashReanalysis`, gathered for 400 ms, at most 200 files of 1 MB per burst, read off the FX thread and sent from it);
+the server parses it afresh and the close clears what it publishes. The other Bash workarounds are in `BashShims`:
+after the server's first `workspace/configuration` has been answered (`AfterRequestConsumer`, on the reader thread, so
+the answer is already queued) and after every `bashIde` push, each open document is re-sent unchanged, because the
+server lints only the document it heard of last; Find References asks with `includeDeclaration: true` and drops the
+reference that starts where `textDocument/definition` does, because the server reads `false` as "without the
+occurrence under the caret"; ShellCheck's columns, which count code points, are made UTF-16 in its diagnostics and quick
+fixes against the text the session sent.
 
 ### jdtls preferences
 
@@ -1074,6 +1087,19 @@ Editora installs some servers and tools at an **exact release** (jdtls, vscode-j
 Metals, JetBrains' Kotlin LSP, clojure-lsp, lemminx, ShellCheck, shfmt): the version constants in `InstallCatalog`,
 listed with their steps in `install/PinnedVersions`. Every other installer takes whatever is latest (npm, pip, `go
 install …@latest`, rustup, the GitHub `releases/latest` archives).
+
+- **bash-language-server** is the one npm global installed at a version (`npm install -g
+  bash-language-server@<BASH_LS_VERSION>`; the step id stays the bare package name). It is not in `PinnedVersions`
+  (an npm global has no folder for a receipt): `InstallCatalog.nodeFloor` makes `InstallCoordinator.installServer`
+  ask `node --version` first and refuse below `VersionFloor.NODE_BASH_LS` (npm only warns about `engines`, and the
+  server then dies at start); Doctor reads the found server's `package.json` (`DoctorRules.npmPackageVersion`, for
+  every npm server via `InstallCatalog.npmPackage`) and warns with Update below `VersionFloor.BASH_LANGUAGE_SERVER`;
+  `LatestVersions` does not look it up. After the server, the install fetches whichever of ShellCheck and shfmt is
+  missing (`InstallCoordinator.toolsAfterServer`); the editor's banner offers just the tools when only they are
+  missing (`InstallPromptCoordinator.offerShellTools`). Doctor also warns when a server's launcher is a Node.js script
+  whose `node` is not found (`DoctorRules.launcherNode`), and when this window gave up on a server that said nothing
+  (a blank `LspCoordinator.serverTrouble` detail); those rows offer Restart Language Servers
+  (`DoctorCheck.restartable`).
 
 - **lemminx (XML).** vscode-xml's native build (`LEMMINX_VERSION`, which ships `LEMMINX_SERVER_VERSION`), one zip
   per platform: the zip is checked against GitHub's SHA-256 for the asset and the program inside against the

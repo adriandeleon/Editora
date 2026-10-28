@@ -109,6 +109,8 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public List<InlayHint> inlayHintResponse = List.of();
     public SemanticTokens semanticTokensResponse;
     public List<TextEdit> formattingResponse = List.of();
+    /** Run as a formatting request arrives, before it is answered (what the server logs on the way), or null. */
+    public volatile Runnable beforeFormattingReply;
     /** The value {@code workspace/executeCommand} answers with (null unless a test sets it). */
     public Object executeCommandResponse;
     /** When set, answers {@code workspace/executeCommand} per request instead of the canned value above. */
@@ -367,6 +369,10 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     @Override
     public CompletableFuture<List<? extends TextEdit>> formatting(DocumentFormattingParams params) {
         formattings.add(params);
+        Runnable before = beforeFormattingReply;
+        if (before != null) {
+            before.run(); // e.g. bash-language-server logging shfmt's parse error, then answering with nothing
+        }
         return failEverything ? failed() : CompletableFuture.completedFuture(formattingResponse);
     }
 

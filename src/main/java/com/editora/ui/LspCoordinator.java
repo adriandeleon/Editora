@@ -502,11 +502,6 @@ final class LspCoordinator {
             }
         });
         lspManager.setPythonInterpreterResolver(pythonInterpreters::pythonPathForServerRoot); // review B1
-        // A server root the Project panel's watcher does not cover gets a watcher of its own (review B7).
-        lspManager.setWatchSessionRoots(root -> {
-            Path project = watchedProjectRoot;
-            return project == null || !root.startsWith(project.toAbsolutePath().normalize());
-        });
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
         lspManager.setOnSecondServer((serverId, root) -> host.setStatus(tr(
@@ -892,16 +887,14 @@ final class LspCoordinator {
         String reason = lspManager.crashReason(serverId);
         if (!restart) {
             startBlocked.add(crashKey(serverId, root)); // E5: given up — opening another tab must not fork it again
-            if (reason != null) {
-                crashedServers.put(serverId, reason);
-            }
+            crashedServers.put(serverId, reason == null ? "" : reason); // "": gave up, nothing said (Bash A7)
         }
         host.setStatus(
                 restart
                         ? tr("status.lsp.crashed", serverLabel(serverId))
                         : reason == null
-                                ? tr("status.lsp.crashLoop", serverLabel(serverId))
-                                : tr("status.lsp.crashLoopReason", serverLabel(serverId), reason));
+                                ? tr("status.lsp.crashLoopError", serverLabel(serverId))
+                                : tr("status.lsp.crashLoopReasonError", serverLabel(serverId), reason));
         forEachCrashedBuffer(serverId, root, b -> {
             Path p = lspPath(b);
             b.setLspActive(false); // drop the dead session's squiggles/stripes immediately
@@ -1125,7 +1118,8 @@ final class LspCoordinator {
      */
     @Nullable
     String serverCrash(String serverId) {
-        return crashedServers.get(serverId);
+        String said = crashedServers.get(serverId);
+        return said == null || said.isEmpty() ? null : said;
     }
 
     /** {@link #serverFailure} or {@link #serverCrash}, whichever says why {@code serverId} is given up on. */
@@ -2016,7 +2010,7 @@ final class LspCoordinator {
      * {@code .editora/settings.json} choose a program to run. Only consulted when the file overrides
      * something, so a project without one never touches the trust list.
      */
-    private boolean projectTrusted() {
+    boolean projectTrusted() {
         return projectScope.trusted();
     }
 
@@ -2108,25 +2102,10 @@ final class LspCoordinator {
                         com.editora.install.InstallCatalog.installedToolIfPresent(configDir, "shfmt"));
     }
 
-    /** Whether ShellCheck's absence has been pointed out in this window already. */
-    private boolean shellcheckNoticeShown;
-
-    /**
-     * Says once per window that ShellCheck is missing when a shell script is opened on the Bash server: the
-     * server then lints nothing and says so only in its log, so the script just looked clean.
-     */
-    private void noticeMissingShellcheck() {
-        if (!shellcheckNoticeShown && !bashToolFound("shellcheck")) {
-            shellcheckNoticeShown = true;
-            // After the opening finishes: the "Opened <file>" message is written later in the same pass and
-            // replaced this one before anyone could read it.
-            javafx.application.Platform.runLater(() -> host.setStatus(tr("status.lsp.bashNoShellcheck")));
-        }
-    }
-
-    /** Whether the command the Bash server runs for {@code toolId} resolves (a PATH/file lookup, no process). */
+    /** Whether {@code toolId} is switched off (nothing is missing) or its command resolves (a lookup, no process). */
     boolean bashToolFound(String toolId) {
-        return com.editora.doctor.DoctorProbes.onPath(List.of(bashToolCommand(toolId)));
+        return !bashIdeConfig().toolEnabled(toolId)
+                || com.editora.doctor.DoctorProbes.onPath(List.of(bashToolCommand(toolId)));
     }
 
     /** The command the Bash server runs for {@code toolId} ({@code shellcheck}/{@code shfmt}) in this window. */
@@ -2148,9 +2127,11 @@ final class LspCoordinator {
         xmlNotices.reset();
     }
 
-    /** Hands the current {@link #bashIdeConfig()} to the manager, which pushes it to running Bash servers. */
+    /** Hands Bash servers their settings: {@link #bashIdeConfig()} in the project, the user's elsewhere (A1). */
     void applyBashIde() {
-        lspManager.setBashIde(bashIdeConfig());
+        com.editora.config.ConfigManager config = ops.config();
+        var user = userBashIde(host.settings(), config == null ? null : config.getConfigDir());
+        lspManager.setBashIde(com.editora.lsp.BashIdeConfig.perRoot(bashIdeConfig(), user, ops.lspProjectRoot()));
         applyTypeScriptConfig();
     }
 
@@ -2311,7 +2292,7 @@ final class LspCoordinator {
      * gating for every open buffer — re-reading a file each time would be disk I/O on the FX thread for a
      * value that changes only when someone edits it. {@link #reloadProjectSettings()} drops the cache.
      */
-    private com.editora.config.ProjectSettings projectSettings() {
+    com.editora.config.ProjectSettings projectSettings() {
         return projectScope.settings();
     }
 
@@ -2827,7 +2808,6 @@ final class LspCoordinator {
             eligible = false; // crash-looped or refused: not started again by a tab (E5)
         }
         buffer.setHeavyFileLspAllowed(buffer.isHeavyFile() && eligible); // B10: within the language's limit
-        watchedProjectRoot = ops.lspProjectRoot();
         if (eligible && "python".equals(serverId)) {
             pythonInterpreters.captureSnapshot(); // what the server's start resolves its interpreter from
         }
@@ -2883,9 +2863,6 @@ final class LspCoordinator {
             buffer.setInlayHintsActive(lineAnnotationsOn()); // decoupled from semantic (#681)
             requestInlayHints(buffer); // gated internally on the setting + capability (#681)
             requestFoldingRanges(buffer); // #738 — a no-op until the server reports ready, then refreshed
-            if ("bash".equals(serverId) && !remote) {
-                noticeMissingShellcheck();
-            }
             if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId) && !remote) {
                 noticeMissingNodeTypes(buffer, path);
             }
@@ -2971,11 +2948,8 @@ final class LspCoordinator {
         if (loose != null && com.editora.lsp.XmlServer.isXml(serverId)) {
             return com.editora.lsp.XmlServer.sharedRoot(ops.lspProjectRoot(), file, loose); // one lemminx (A7)
         }
-        if (loose != null
-                && com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)
-                && com.editora.lsp.RootResolver.isLoose(
-                        ops.lspProjectRoot(), file, com.editora.lsp.LspServerRegistry.rootMarkersForServer(serverId))) {
-            return loose; // one server for every loose script, wherever it is (B7)
+        if (loose != null && com.editora.lsp.BashLsp.sharesLooseRoot(serverId, ops.lspProjectRoot(), file)) {
+            return loose; // one server for every loose script, wherever it is (TypeScript B7, Bash A9)
         }
         Path resolved = com.editora.lsp.RootResolver.resolveTiered(
                 ops.lspProjectRoot(), file, com.editora.lsp.LspServerRegistry.rootMarkerTiersForServer(serverId));
@@ -3122,7 +3096,7 @@ final class LspCoordinator {
             // probed and absent → fall through to the plain XML server (base-XML LSP still works)
         }
         // zsh startup files (.zshrc, /etc/zsh/zshenv, …) say nothing about being zsh, so bash-language-server would
-        // lint them as bash and mark valid zsh as parse errors. A *.zsh script it recognizes and skips itself.
+        // lint them as bash. A *.zsh script stays on it (completion, hover, symbols); its SC1071 is dropped (D2).
         if ("bash".equals(base) && fileName != null && com.editora.text.ShellFiles.isZshStartupFile(fileName)) {
             return null;
         }
@@ -3215,9 +3189,6 @@ final class LspCoordinator {
             } else command.run();
         };
     }
-
-    /** The project root whose files the Project panel watches (null = none), for the server-start thread. */
-    private volatile @Nullable Path watchedProjectRoot;
 
     /**
      * Untitled buffers served by a language server → the made-up file path their document has there (review
@@ -3841,9 +3812,13 @@ final class LspCoordinator {
         importWarned.clear();
         warnedAtReady.clear();
         statusNarrator.forget(null);
+        // Every tab a server served reopens at once, shown or not: deferred, the Problems window lost all but one (B17)
+        java.util.List<EditorBuffer> served = new java.util.ArrayList<>();
+        host.forEachBuffer(b -> served.addAll(lspManager.isManaged(lspPath(b)) ? List.of(b) : List.of()));
         lspManager.restartAll(); // a Java server shared with another window restarts for both
         clearAllDiagnostics();
         applyGating();
+        served.forEach(b -> ensureManaged(lspPath(b)));
         host.setStatus(tr("status.lsp.restarted"));
     }
 
@@ -4143,9 +4118,10 @@ final class LspCoordinator {
         buffer.problemCounter()
                 .setActions(
                         () -> ops.executeCommand("tool.problems"),
-                        () -> gotoProblem(buffer, false),
-                        () -> gotoProblem(buffer, true));
+                        () -> gotoProblem(buffer, false, true),
+                        () -> gotoProblem(buffer, true, true));
         buffer.problemCounter().setSettled(() -> serverSettled(buffer));
+        buffer.problemCounter().setUncheckedReason(() -> BashLspUi.uncheckedReason(buffer, lspPath(buffer)));
         buffer.setLspPasteImportsRequester((sl, sc, el, ec, text, stillValid) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
@@ -6754,6 +6730,7 @@ final class LspCoordinator {
         CodeArea area = buffer.getFocusedArea();
         var sel = area.getSelection();
         boolean selectionOnly = sel.getLength() > 0 && lspManager.supportsRangeFormatting(path);
+        long errorsBefore = lspManager.loggedErrorCount(path); // a failed format says why only in the log (B3)
         Consumer<List<com.editora.text.LspTextEdit>> onEdits = edits -> {
             if (buffer != host.activeBuffer()) {
                 return; // user switched tabs before the server replied
@@ -6762,19 +6739,22 @@ final class LspCoordinator {
                 host.setStatus(tr("status.lsp.formatStale")); // edited mid-format — a re-run formats cleanly
                 return;
             }
-            if (edits.isEmpty()) {
-                // bash-language-server answers "no edits" when shfmt is missing, too: say which it is.
-                host.setStatus(
-                        "bash".equals(lspManager.managedServerId(path)) && !bashToolFound("shfmt")
-                                ? tr("status.lsp.bashNoShfmt")
-                                : tr("status.lsp.formatNoChange"));
+            if (edits.isEmpty() || com.editora.text.LspTextEdits.changesNothing(snapshot, edits)) {
+                // bash-language-server answers "no edits" when shfmt is missing or cannot parse the script, too
+                host.setStatus(BashLspUi.formatNoChange(
+                        lspManager.managedServerId(path),
+                        () -> !edits.isEmpty() || bashToolFound("shfmt"), // a no-op edit: shfmt ran
+                        edits.isEmpty() ? lspManager.errorLoggedSince(path, errorsBefore) : null));
                 return;
             }
             if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lsp"))) {
                 return;
             }
             buffer.applyLspEdits(edits);
-            host.setStatus(tr(selectionOnly ? "status.lsp.selectionFormatted" : "status.lsp.formatted"));
+            host.setStatus(tr(
+                    selectionOnly
+                            ? "status.lsp.selectionFormatted"
+                            : sel.getLength() > 0 ? "status.lsp.formattedWholeFile" : "status.lsp.formatted"));
         };
         if (selectionOnly) {
             int startLine = area.offsetToPosition(sel.getStart(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
@@ -6929,7 +6909,7 @@ final class LspCoordinator {
                 }
                 assist = true;
             }
-            assist |= group == com.editora.lsp.CodeActionKinds.Group.ASSIST
+            assist |= group.compareTo(com.editora.lsp.CodeActionKinds.Group.ASSIST) <= 0 // a suppression, too
                     && !com.editora.lsp.CodeActionKinds.isJavaGeneratorAssist(a)
                     && !a.title().startsWith("Add Javadoc comment");
         }
@@ -6972,11 +6952,14 @@ final class LspCoordinator {
      * no errors. Before this a diagnostic could only be read with the mouse or in the Problems window.
      */
     void gotoProblem(boolean forward) {
-        gotoProblem(host.activeBuffer(), forward);
+        gotoProblem(host.activeBuffer(), forward, false);
     }
 
-    /** As {@link #gotoProblem(boolean)} in {@code b}, which takes the focus first (its counter's arrows). */
-    void gotoProblem(@Nullable EditorBuffer b, boolean forward) {
+    /**
+     * As {@link #gotoProblem(boolean)} in {@code b}, which takes the focus first; {@code every}: through all its
+     * problems, the notes the counter counts too, as its arrows go (Bash review C5).
+     */
+    void gotoProblem(@Nullable EditorBuffer b, boolean forward, boolean every) {
         if (b != null && b != host.activeBuffer()) {
             b.getFocusedArea().requestFocus();
         }
@@ -6989,7 +6972,7 @@ final class LspCoordinator {
         List<LspDiagnostic> errors = here.stream()
                 .filter(d -> d.severity() == LspDiagnostic.Severity.ERROR)
                 .toList();
-        List<LspDiagnostic> candidates = new java.util.ArrayList<>(errors.isEmpty() ? here : errors);
+        List<LspDiagnostic> candidates = new java.util.ArrayList<>(errors.isEmpty() || every ? here : errors);
         if (candidates.isEmpty()) {
             host.setStatus(tr("status.lsp.noProblems"));
             return;
@@ -7049,13 +7032,9 @@ final class LspCoordinator {
         return problems.getOrDefault(ops.canonicalize(path), List.of());
     }
 
+    /** Says a problem in the echo line: the script's, not Editora's, so never with the unread-error badge (C13). */
     private void sayProblem(LspDiagnostic d) {
-        String text = tr("status.lsp.problem", d.startLine() + 1, d.message());
-        if (d.severity() == LspDiagnostic.Severity.ERROR) {
-            host.setError(text);
-        } else {
-            host.setStatus(text);
-        }
+        host.setStatus(tr("status.lsp.problem", d.startLine() + 1, d.message()));
     }
 
     /**
@@ -7145,18 +7124,38 @@ final class LspCoordinator {
                 String placeholder = !prep.placeholder().isBlank()
                         ? prep.placeholder()
                         : textInRange(b, prep.startLine(), prep.startCol(), prep.endLine(), prep.endCol());
-                promptAndRename(b, path, line, col, placeholder.isBlank() ? wordAtCaret(area) : placeholder);
+                String old = placeholder.isBlank() ? wordAtCaret(area) : placeholder;
+                // a command word (echo, cd) is no symbol of the user's: bash-language-server renamed it (C1)
+                BashLspUi.beforeRename(
+                        lspManager,
+                        b,
+                        path,
+                        line,
+                        col,
+                        old,
+                        host::setStatus,
+                        rule -> promptAndRename(b, path, line, col, old, rule));
             });
         } else {
-            promptAndRename(b, path, line, col, wordAtCaret(area));
+            promptAndRename(b, path, line, col, wordAtCaret(area), name -> null);
         }
     }
 
-    private void promptAndRename(EditorBuffer b, Path path, int line, int col, String placeholder) {
+    private void promptAndRename(
+            EditorBuffer b,
+            Path path,
+            int line,
+            int col,
+            String placeholder,
+            java.util.function.Function<String, @Nullable String> refusal) {
         host.promptText(tr("dialog.lsp.rename.title"), tr("dialog.lsp.rename.label"), placeholder, newName -> {
             String name = newName == null ? "" : newName.trim();
             if (name.isEmpty() || name.equals(placeholder)) {
                 return; // nothing to do
+            }
+            if (refusal.apply(name) instanceof String bad) {
+                host.setStatus(bad); // not a name the language takes (a shell name, Bash review B11)
+                return;
             }
             host.setStatus(tr("status.lsp.renaming"));
             beginReportedEdit();
@@ -9454,14 +9453,14 @@ final class LspCoordinator {
         scroll.setHbarPolicy(javafx.scene.control.ScrollPane.ScrollBarPolicy.NEVER);
         scroll.setVbarPolicy(javafx.scene.control.ScrollPane.ScrollBarPolicy.AS_NEEDED);
         scroll.setFocusTraversable(false);
-        scroll.setMaxWidth(HOVER_MAX_WIDTH);
-        scroll.setMaxHeight(hoverMaxHeight(area));
+        scroll.setMaxWidth(HoverCard.maxWidth(markdown)); // a man page's 80 columns uncut (Bash review C7)
+        scroll.setMaxHeight(HoverCard.maxHeight(area));
         // Wide enough for the signature: the popup sized itself to the docstring's prose, so Pyright's
         // `def helper(` block scrolled sideways under its own language tag (Python review B12).
-        scroll.setMinWidth(hoverCodeWidth(markdown));
+        scroll.setMinWidth(HoverCard.codeWidth(markdown));
         VBox box = new VBox(scroll);
         box.getStyleClass().add("lsp-hover-popup");
-        box.setMaxWidth(HOVER_MAX_WIDTH);
+        box.setMaxWidth(HoverCard.maxWidth(markdown));
         box.getStylesheets()
                 .addAll(
                         getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
@@ -9473,19 +9472,21 @@ final class LspCoordinator {
         popup.getContent().add(box);
         hoverPopup = popup;
 
-        // Dismiss on Escape, caret movement, or scroll — all detached again when the popup hides.
-        EventHandler<KeyEvent> esc = ev -> {
-            if (ev.getCode() == KeyCode.ESCAPE) {
-                hideHoverPopup();
-                ev.consume();
-            }
-        };
+        // Dismiss on Escape, caret movement, or scroll, page with Page Down/Up (and Emacs's C-v/M-v, which the
+        // keymap hands over while it shows: C7) — all detached again when the popup hides.
+        EventHandler<KeyEvent> esc = HoverCard.keys(scroll, this::hideHoverPopup);
         ChangeListener<Object> dismiss = (o, a, b) -> hideHoverPopup();
+        boolean ownChords = area.getProperties()
+                        .putIfAbsent(com.editora.command.KeyDispatcher.OWNED_CHORDS, HoverCard.SCROLL_CHORDS)
+                == null;
         area.addEventFilter(KeyEvent.KEY_PRESSED, esc);
         area.caretPositionProperty().addListener(dismiss);
         area.estimatedScrollYProperty().addListener(dismiss);
         popup.setOnHidden(ev -> {
             area.removeEventFilter(KeyEvent.KEY_PRESSED, esc);
+            if (ownChords) {
+                area.getProperties().remove(com.editora.command.KeyDispatcher.OWNED_CHORDS, HoverCard.SCROLL_CHORDS);
+            }
             area.caretPositionProperty().removeListener(dismiss);
             area.estimatedScrollYProperty().removeListener(dismiss);
             if (hoverPopup == popup) {
@@ -9512,49 +9513,6 @@ final class LspCoordinator {
         if (top < bounds.getMinY()) {
             popup.setAnchorY(top);
         }
-    }
-
-    /** Average advance of the hover's code font, per character (a slight over-estimate is harmless). */
-    static final double HOVER_CODE_CHAR_WIDTH = 8.4;
-
-    /** Code-block chrome inside the hover: block padding, the scroll pane's inner padding, the scroll bar. */
-    static final double HOVER_CODE_CHROME = 72;
-
-    /**
-     * Pure: the text-column width a hover needs to show its fenced code without a sideways scroll — the
-     * longest code line in characters — clamped to {@link #HOVER_MAX_WIDTH}; 0 without a code block.
-     */
-    static double hoverCodeWidth(String markdown) {
-        if (markdown == null) {
-            return 0;
-        }
-        int longest = 0;
-        boolean inFence = false;
-        for (String line : markdown.split("\\R", -1)) {
-            String t = line.strip();
-            if (t.startsWith("```") || t.startsWith("~~~")) {
-                inFence = !inFence;
-                continue;
-            }
-            if (inFence) {
-                longest = Math.max(longest, line.length());
-            }
-        }
-        return longest == 0 ? 0 : Math.min(HOVER_MAX_WIDTH, longest * HOVER_CODE_CHAR_WIDTH + HOVER_CODE_CHROME);
-    }
-
-    /** Widest a hover popup's text column gets. */
-    static final double HOVER_MAX_WIDTH = 560;
-
-    /** The tallest a hover popup gets in a window {@code windowHeight} tall: part of it, within fixed bounds. */
-    static double hoverMaxHeight(double windowHeight) {
-        double share = windowHeight > 0 ? windowHeight * 0.45 : 400;
-        return Math.max(160, Math.min(480, share));
-    }
-
-    private static double hoverMaxHeight(CodeArea area) {
-        javafx.stage.Window w = area.getScene() == null ? null : area.getScene().getWindow();
-        return hoverMaxHeight(w == null ? 0 : w.getHeight());
     }
 
     /** Hides the LSP hover popup if one is showing. */
@@ -9779,7 +9737,7 @@ final class LspCoordinator {
         List<com.editora.lsp.LspManager.WatchedFile> batch = new java.util.ArrayList<>(pendingWatched.size());
         pomCompletionNotice.filesChanged(List.copyOf(pendingWatched.keySet())); // a left-out pom fixed on disk (E24)
         pendingWatched.forEach((path, kind) -> {
-            if (!lspManager.watchesModelFileBesidePanel(path)) { // its own watcher reports it: not twice (CL1)
+            if (!lspManager.reportsChangesTo(path)) { // the server root's own watcher reports it: not twice (B16)
                 batch.add(new com.editora.lsp.LspManager.WatchedFile(path, kind));
             }
         });

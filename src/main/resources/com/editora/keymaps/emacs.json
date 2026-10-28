@@ -243,6 +243,7 @@
   "C-c l u": "lsp.undoRefactoring",
   "M-g M-n": "lsp.nextProblem",
   "M-g M-p": "lsp.previousProblem",
+  "M-g s": "lsp.gotoSymbol",
   "M-,": "nav.back",
   "C-M-,": "nav.forward"
 }
