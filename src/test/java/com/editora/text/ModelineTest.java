@@ -66,4 +66,13 @@ class ModelineTest {
         assertEquals("cljs", ext(";; -*- clojurescript -*-\n"));
         assertEquals("clj", ext("(ns a)\n;; vim: set filetype=clojure :\n"));
     }
+
+    /** A sourced library that says so: ShellCheck's dialect directive makes it shell (Bash review A15). */
+    @Test
+    void aShellcheckShellDirectiveMakesTheFileShell() {
+        assertEquals("sh", ext("# shellcheck shell=bash\nlog() { echo \"$*\"; }\n"));
+        assertEquals("sh", ext("# Helpers.\n#shellcheck disable=SC2034 shell=sh\nX=1\n"));
+        assertNull(ext("<?php\n// shell=bash is not a directive\n"), "a .inc that is PHP stays what it was");
+        assertNull(ext("log() { echo hi; }\n"));
+    }
 }

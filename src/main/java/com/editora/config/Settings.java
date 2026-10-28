@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 153;
+    public static final int SCHEMA_VERSION = 154;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -892,7 +892,7 @@ public class Settings {
     // --- bash-language-server's own settings (its "bashIde" configuration section) ------------------------
     /** ShellCheck executable; blank = the one Editora installed (plugins/tools/shellcheck), else "shellcheck". */
     private String bashShellcheckPath = "";
-    /** Extra ShellCheck arguments (e.g. {@code -x --severity=warning}); the server adds --shell/--format. */
+    /** Extra ShellCheck arguments (e.g. {@code --severity=warning}); the server adds --shell/--format/-x. */
     private String bashShellcheckArguments = "";
     /** shfmt executable; blank = the one Editora installed (plugins/tools/shfmt), else "shfmt". */
     private String bashShfmtPath = "";
@@ -911,8 +911,14 @@ public class Settings {
     private int bashBackgroundAnalysisMaxFiles = BASH_BACKGROUND_ANALYSIS_DEFAULT;
     /** Symbols from every workspace script, not only from sourced files (completion, rename, …). */
     private boolean bashIncludeAllWorkspaceSymbols;
-    /** explainshell server for hover help on flags; blank = off (it receives the command under the caret). */
+    /** explainshell server for hover help on flags; blank = off (it receives the whole command line). */
     private String bashExplainshellEndpoint = "";
+    /** Lint shell scripts with ShellCheck; off = the server is sent an empty ShellCheck path (Bash review A8). */
+    private boolean bashShellcheckEnabled = true;
+    /** Format shell scripts with shfmt; off = the server is sent an empty shfmt path. */
+    private boolean bashShfmtEnabled = true;
+    /** A hint on {@code source} lines the server cannot follow (its enableSourceErrorDiagnostics, review B4). */
+    private boolean bashSourceErrorDiagnostics = true;
 
     private boolean javaLspEnabled = true;
     private boolean typescriptLspEnabled = true;
@@ -3855,6 +3861,30 @@ public class Settings {
 
     public void setBashExplainshellEndpoint(String endpoint) {
         this.bashExplainshellEndpoint = endpoint == null ? "" : endpoint.strip();
+    }
+
+    public boolean isBashShellcheckEnabled() {
+        return bashShellcheckEnabled;
+    }
+
+    public void setBashShellcheckEnabled(boolean on) {
+        this.bashShellcheckEnabled = on;
+    }
+
+    public boolean isBashShfmtEnabled() {
+        return bashShfmtEnabled;
+    }
+
+    public void setBashShfmtEnabled(boolean on) {
+        this.bashShfmtEnabled = on;
+    }
+
+    public boolean isBashSourceErrorDiagnostics() {
+        return bashSourceErrorDiagnostics;
+    }
+
+    public void setBashSourceErrorDiagnostics(boolean on) {
+        this.bashSourceErrorDiagnostics = on;
     }
 
     public String getYamlLspCommand() {

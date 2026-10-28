@@ -65,4 +65,19 @@ class ShellScriptsTest {
         assertEquals(body, ShellScripts.snippetBody(body, "#!/usr/bin/env bash"));
         assertEquals(body, ShellScripts.snippetBody(body, ""), "no shebang: a .sh is run by bash");
     }
+
+    /** ShellCheck has no zsh mode: the counter says such a script is not checked (Bash review C14). */
+    @Test
+    void zshIsToldByItsNameItsShebangOrAShellcheckDirective() {
+        assertTrue(ShellDialect.isZsh("prompt.zsh", ""));
+        assertTrue(ShellDialect.isZsh("PROMPT.ZSH", null));
+        assertTrue(ShellDialect.isZsh("tool", "#!/usr/bin/env zsh\necho\n"));
+        assertTrue(ShellDialect.isZsh("tool", "#!/bin/zsh -f\n"));
+        assertTrue(ShellDialect.isZsh("lib.sh", "#!/bin/sh\n# shellcheck shell=zsh\nsetopt x\n"));
+        assertTrue(ShellDialect.isZsh("lib.sh", "# shellcheck disable=SC1090 shell=zsh\n"));
+        assertFalse(ShellDialect.isZsh("deploy.sh", "#!/usr/bin/env bash\necho zsh\n"));
+        assertFalse(ShellDialect.isZsh("deploy.sh", "#!/bin/bash\n# shellcheck shell=bash\n"));
+        assertFalse(ShellDialect.isZsh("deploy.sh", "#!/bin/bash\necho '#!/bin/zsh'\n"), "only line 1");
+        assertFalse(ShellDialect.isZsh(null, null));
+    }
 }

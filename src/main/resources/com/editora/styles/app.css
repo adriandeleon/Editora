@@ -1248,8 +1248,8 @@
 .html-preview-toggle:hover { -fx-opacity: 1; }
 .html-preview-toggle:hover .toolbar-icon { -fx-fill: -color-accent-fg; }
 
-/* The problem counter at the top right of a file a language server checks: error and warning counts (a check when
-   there are none) and previous/next arrows, in one translucent pill. */
+/* The problem counter at the top right of a file a language server checks: error, warning and note counts (a check
+   when there are none) and previous/next arrows, in one translucent pill. */
 .problem-counter {
     /* the code pane carries the editor's font; the counter is chrome, so the UI font (ui-font.css) */
     -fx-font-family: "Inter", "System", "sans-serif";
@@ -1265,6 +1265,9 @@
 .problem-counter .problem-counter-counts .label { -fx-text-fill: -color-fg-default; -fx-graphic-text-gap: 2; }
 .problem-counter .problem-counter-error-glyph { -fx-fill: -state-red; }
 .problem-counter .problem-counter-warning-glyph { -fx-fill: -state-amber; }
+/* notes (information and hints): counted, but muted, as IntelliJ's weak warnings (Bash review C5) */
+.problem-counter .problem-counter-counts .problem-counter-notes { -fx-text-fill: -color-fg-muted; }
+.problem-counter .problem-counter-note-glyph { -fx-fill: -color-fg-muted; }
 .problem-counter .problem-counter-ok { -fx-fill: -state-green; }
 .problem-counter .problem-counter-step { -fx-padding: 0 1 0 1; -fx-background-color: transparent; }
 .problem-counter .problem-counter-arrow { -fx-fill: -color-fg-muted; }
@@ -4359,11 +4362,15 @@
     -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.25), 10, 0.0, 0, 2);
 }
 
-/* A hover's code is a signature, not a document: no language tag sitting on top of its first line (B12). */
-.lsp-hover-popup .md-code-lang { visibility: hidden; }
+/* A hover's code is a signature, not a document: no language tag sitting on top of its first line (B12). The
+   completion documentation panel shows the same Markdown, and had both the tag and the margins (Bash review C12). */
+.lsp-hover-popup .md-code-lang,
+.completion-doc-popup .md-code-lang { visibility: hidden; }
 /* The card has its own padding: the preview's page margins (48px a side) only squeezed the signature. */
 .lsp-hover-popup .markdown-preview-wrap,
-.lsp-hover-popup .markdown-preview { -fx-padding: 0; -fx-background-color: transparent; }
+.lsp-hover-popup .markdown-preview,
+.completion-doc-popup .markdown-preview-wrap,
+.completion-doc-popup .markdown-preview { -fx-padding: 0; -fx-background-color: transparent; }
 /* The problems at the caret lead the card, whole (XML review C6): a severity bar, the message as plain text. */
 .lsp-hover-problem {
     -fx-text-fill: -color-fg-default;

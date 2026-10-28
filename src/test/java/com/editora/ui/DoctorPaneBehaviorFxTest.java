@@ -174,6 +174,52 @@ class DoctorPaneBehaviorFxTest {
     }
 
     /**
+     * Bash review A7: a server row this window gave up on offers Restart Language Servers beside Install…, and the
+     * button runs it.
+     */
+    @Test
+    void aGivenUpServerRowOffersRestart() throws Exception {
+        DoctorCheck loop = DoctorCheck.checking("lsp.bash", "lsp", "Bash / Shell", "bash-language-server start")
+                .withInstall(DoctorCheck.Install.SERVER, "bash")
+                .warn("/x/bash-language-server", "doctor.tip.serverCrashLoop");
+        int[] restarts = {0};
+        Shown s = FxTestSupport.callOnFx(() -> {
+            DoctorPane pane = new DoctorPane(new DoctorPane.Actions() {
+                @Override
+                public void refresh() {}
+
+                @Override
+                public void install(DoctorCheck check) {}
+
+                @Override
+                public void openSettings(String settingsKey) {}
+
+                @Override
+                public void restartServers() {
+                    restarts[0]++;
+                }
+            });
+            pane.setChecks(List.of(loop, gitOk()));
+            Stage stage = new Stage();
+            stage.setScene(new Scene(pane, 1200, 900));
+            stage.show();
+            pane.applyCss();
+            pane.layout();
+            return new Shown(pane, stage);
+        });
+        try {
+            Button restart = FxTestSupport.callOnFx(() -> button(row(s.pane(), "lsp.bash"), "restart"));
+            assertNotNull(restart, "Restart is offered");
+            assertEquals(tr("doctor.action.restartServers"), restart.getText());
+            assertNotNull(FxTestSupport.callOnFx(() -> button(row(s.pane(), "lsp.bash"), "install")), "Install… too");
+            FxTestSupport.runOnFx(restart::fire);
+            assertEquals(1, restarts[0]);
+        } finally {
+            FxTestSupport.runOnFx(s.stage()::hide);
+        }
+    }
+
+    /**
      * A working server with a newer release moves out of its folded all-OK section into "Updates available", above
      * the sections, with its tip and an Update button; the summary counts it.
      */

@@ -110,9 +110,11 @@ public final class IndentWindow {
         int a = Math.min(selStart, selEnd);
         int b = Math.max(selStart, selEnd);
         int firstLine = doc.lineOf(a);
-        // A selection is rewritten line by line with no look at what is above it; a bare caret in leading
-        // whitespace is re-indented from the lines above.
-        int start = a == b ? backScanStart(doc, firstLine) : doc.lineStart(firstLine);
+        // A selection is rewritten line by line with no look at what is above it, except in a shell script, where
+        // a here-doc opened above leaves its lines alone (Bash review C2); a bare caret in leading whitespace is
+        // re-indented from the lines above.
+        boolean above = a == b || Indenter.styleFor(language) == Indenter.Style.SHELL;
+        int start = above ? backScanStart(doc, firstLine) : doc.lineStart(firstLine);
         int lastLine = doc.lineOf(b > a ? b - 1 : b);
         String window = doc.text(start, doc.lineStart(lastLine) + doc.lineLength(lastLine));
         Indenter.TabEdit edit = Indenter.smartTab(window, a - start, b - start, language, tabSize, shift, unit);

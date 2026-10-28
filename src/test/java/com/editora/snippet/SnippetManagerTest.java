@@ -222,6 +222,14 @@ class SnippetManagerTest {
         }
     }
 
+    /** A two-line description's second line starts with no stray space (Bash review C15). */
+    @Test
+    void aTwoLineDescriptionKeepsItsLinesWithoutAStraySpace(@TempDir Path dir) {
+        SnippetManager m = manager(dir);
+        String d = m.byPrefix("shell", "function").description();
+        assertEquals("Defines a function: name() { … }.\nThe reserved word function is optional, and not POSIX.", d);
+    }
+
     /**
      * The bundled PowerShell snippets use regex transforms, and used to expand wrongly — the transform was
      * ignored and a leading non-value occurrence stole the value slot (#624 / #642). Expand the real shipped

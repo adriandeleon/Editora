@@ -19,7 +19,9 @@ import org.jspecify.annotations.Nullable;
  *       is a shebang.
  * </ul>
  *
- * <p>When neither names one, a file that opens with an XML declaration ({@code <?xml version="1.0"?>}) is XML.
+ * <p>When neither names one, a ShellCheck {@code # shell=} directive in the first lines makes the file shell
+ * ({@code # shellcheck shell=bash} heads many a sourced {@code *.inc} library), and a file that opens with an XML
+ * declaration ({@code <?xml version="1.0"?>}) is XML.
  *
  * <p>The answer is a {@link Shebang.Result} — a representative extension — so the caller resolves it exactly as
  * it resolves a shebang, through {@code LanguageRegistry.forFileName("shebang." + extension)}.
@@ -111,6 +113,9 @@ public final class Modeline {
         String ext = emacs(first);
         if (ext == null) {
             ext = vim(first);
+        }
+        if (ext == null && ShellDialect.directiveShell(head) != null) {
+            ext = "sh"; // ShellCheck's `# shellcheck shell=bash`: a sourced library (*.inc) says so (Bash review A15)
         }
         if (ext == null && tail != null) {
             List<String> all = tail.lines().toList();

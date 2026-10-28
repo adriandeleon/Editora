@@ -203,7 +203,7 @@ class RemoteLspLifecycleFxTest {
         FxTestSupport.drainFx();
         assertEquals(1, launches(), "nothing is started against a dead connection");
         String crashed = tr("status.lsp.crashed", pythonLabel());
-        String looping = tr("status.lsp.crashLoop", pythonLabel());
+        String looping = tr("status.lsp.crashLoopError", pythonLabel());
         assertFalse(
                 host.statuses.stream().anyMatch(s -> s.equals(crashed) || s.equals(looping)),
                 "a lost connection is not reported as a crash: " + host.statuses);

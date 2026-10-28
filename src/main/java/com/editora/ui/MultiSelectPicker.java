@@ -111,6 +111,9 @@ public final class MultiSelectPicker {
         Hyperlink none = new Hyperlink(tr("picker.selectNone"));
         all.setOnAction(e -> boxes.forEach(b -> b.setSelected(true)));
         none.setOnAction(e -> boxes.forEach(b -> b.setSelected(false)));
+        // The title wraps; the links never shrink: a long rename title squeezed them to "Selec…" (Bash review C17).
+        all.setMinWidth(Region.USE_PREF_SIZE);
+        none.setMinWidth(Region.USE_PREF_SIZE);
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
         HBox header = new HBox(8, heading, spacer, all, none);

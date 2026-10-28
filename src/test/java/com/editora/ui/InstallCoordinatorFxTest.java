@@ -74,6 +74,7 @@ class InstallCoordinatorFxTest {
         final Set<String> lsp = new HashSet<>();
         final Set<String> dap = new HashSet<>();
         boolean typstCli;
+        final Set<String> tools = new HashSet<>();
         int redetected;
         final List<String> stopped = new ArrayList<>();
 
@@ -114,6 +115,11 @@ class InstallCoordinatorFxTest {
         @Override
         public void stopServer(String serverId) {
             stopped.add(serverId);
+        }
+
+        @Override
+        public boolean toolAvailable(String toolId) {
+            return tools.contains(toolId);
         }
     }
 
@@ -316,6 +322,85 @@ class InstallCoordinatorFxTest {
                     LspCoordinator.userBashIde(rig.host.settings, rig.window.configDir)
                             .effectiveShfmt(),
                     "the Bash server is pointed at the installed copy");
+        }
+    }
+
+    /** Settles the service's worker hops until the trigger has reported its outcome (or a bounded number of hops). */
+    private static void settleUntilReported(Rig rig) throws Exception {
+        for (int i = 0; i < 12 && rig.outcomes.isEmpty(); i++) {
+            rig.step();
+        }
+    }
+
+    /**
+     * Bash review A6: bash-language-server 5.8 needs Node.js 20, and npm only warns about an older one; the install is
+     * refused before npm runs, saying which Node.js it found.
+     */
+    @Test
+    void theBashServerIsNotInstalledOnTooOldANodeJs() throws Exception {
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, "bash-old-node");
+            List<List<String>> ran = new java.util.concurrent.CopyOnWriteArrayList<>();
+            InstallTestAccess.packageManagers(
+                    rig.service, Set.of(InstallCatalog.Prereq.NPM), () -> "v18.19.0", argv -> {
+                        ran.add(argv);
+                        return new ProcessRunner.Result(0, "", "");
+                    });
+
+            rig.installServer("bash");
+            settleUntilReported(rig);
+
+            assertEquals(List.of(false), rig.outcomes);
+            assertEquals(List.of(), ran, "npm never ran");
+            String said = tr("status.install.nodeTooOld", tr("install.lang.bash"), "20", "v18.19.0");
+            assertTrue(rig.host.statuses.contains(said), String.valueOf(rig.host.statuses));
+            assertEquals(List.of("WARNING: " + said), rig.alerts);
+        }
+    }
+
+    /**
+     * Bash review A6/C8: the Bash server installs at its pinned version, and the ShellCheck or shfmt it lacks follows
+     * it — without them the server shows no problems and formats nothing.
+     */
+    @Test
+    void theBashServerInstallsPinnedAndBringsTheMissingTool() throws Exception {
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, "bash-tools");
+            List<List<String>> ran = new java.util.concurrent.CopyOnWriteArrayList<>();
+            InstallTestAccess.packageManagers(
+                    rig.service, Set.of(InstallCatalog.Prereq.NPM), () -> "v24.18.1", argv -> {
+                        ran.add(argv);
+                        return new ProcessRunner.Result(0, "", "");
+                    });
+            byte[] program = "#!/bin/sh\necho v3.14.1\n".getBytes();
+            var real = InstallCatalog.pinnedTool("shfmt").orElseThrow();
+            var here = InstallCatalog.currentPlatform();
+            var asset = real.assetFor(here);
+            rig.web.serve(asset.url(), program);
+            InstallTestAccess.pinnedTools(
+                    rig.service,
+                    id -> java.util.Optional.of(new InstallCatalog.PinnedTool(
+                            id,
+                            real.version(),
+                            java.util.Map.of(
+                                    here,
+                                    new InstallCatalog.PinnedAsset(
+                                            asset.url(), InstallCatalog.sha256Hex(program), asset.packing())),
+                            real.binaryName())));
+            rig.window.tools.add("shellcheck"); // only shfmt is missing
+
+            rig.installServer("bash");
+            settleUntilReported(rig);
+
+            assertEquals(List.of(true), rig.outcomes, String.valueOf(rig.alerts));
+            assertEquals(
+                    List.of(List.of("npm", "install", "-g", "bash-language-server@" + InstallCatalog.BASH_LS_VERSION)),
+                    ran);
+            assertTrue(
+                    Files.exists(InstallCatalog.installedToolPath(rig.window.configDir, "shfmt")),
+                    "shfmt came with the server");
+            assertEquals(List.of(asset.url()), rig.web.requests(), "ShellCheck, already there, was not fetched");
+            assertEquals(2, rig.window.redetected, "after the server, and after the tool");
         }
     }
 

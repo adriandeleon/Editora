@@ -217,9 +217,11 @@ class InstallCatalogTest {
             assertEquals(List.of("vscode-langservers-extracted"), steps.get(0).npmPackages());
             assertTrue(steps.get(0).prereqs().contains(Prereq.NPM));
         }
-        assertEquals(
-                List.of("bash-language-server"),
-                InstallCatalog.serverInstall("bash").orElseThrow().get(0).npmPackages());
+        // the Bash server is pinned (Bash review A6), under its bare package name as the step id
+        Step bash = InstallCatalog.serverInstall("bash").orElseThrow().get(0);
+        assertEquals(List.of("bash-language-server@" + InstallCatalog.BASH_LS_VERSION), bash.npmPackages());
+        assertEquals("bash-language-server", bash.id());
+        assertEquals(List.of("bash"), InstallCatalog.serversOfStep(bash.id()));
         assertEquals(
                 List.of("@taplo/cli"),
                 InstallCatalog.serverInstall("toml").orElseThrow().get(0).npmPackages());
@@ -692,5 +694,32 @@ class InstallCatalogTest {
         assertEquals(List.of("kotlin"), InstallCatalog.serversOfStep(InstallCatalog.KOTLIN_LSP_STEP));
         assertEquals(List.of(), InstallCatalog.serversOfStep("js-debug"), "a debugger is no language server");
         assertEquals(List.of(), InstallCatalog.serversOfStep(null));
+    }
+
+    /**
+     * Bash review A6/A12: the Bash server's install is pinned and wants Node.js 20 first; Doctor reads every
+     * npm-installed server's version from the package the install names, without its pinned version.
+     */
+    @Test
+    void theBashServerIsPinnedAndNeedsNode20() {
+        assertEquals(VersionFloor.NODE_BASH_LS, InstallCatalog.nodeFloor("bash-language-server"));
+        assertEquals("20", InstallCatalog.nodeFloor("bash-language-server").minimum());
+        assertNull(InstallCatalog.nodeFloor("yaml-language-server"), "no floor where the catalog sets none");
+        assertNull(InstallCatalog.nodeFloor(null));
+        assertFalse(VersionFloor.NODE_BASH_LS.metBy("v18.19.0"), "Debian 12's Node.js is refused");
+        assertTrue(VersionFloor.NODE_BASH_LS.metBy("v20.0.0"));
+        assertTrue(VersionFloor.BASH_LANGUAGE_SERVER.metBy(InstallCatalog.BASH_LS_VERSION), "the pin is tested");
+        assertFalse(VersionFloor.BASH_LANGUAGE_SERVER.metBy("5.6.0"), "5.6 predates the 5.7 fixes");
+
+        assertEquals("bash-language-server", InstallCatalog.npmPackage("bash"));
+        assertEquals("pyright", InstallCatalog.npmPackage("python"));
+        assertEquals("typescript-language-server", InstallCatalog.npmPackage("typescript"));
+        assertEquals("vscode-langservers-extracted", InstallCatalog.npmPackage("css"));
+        assertEquals("@astrojs/language-server", InstallCatalog.npmPackage("astro"));
+        assertNull(InstallCatalog.npmPackage("go"), "gopls is installed with go, not npm");
+        assertNull(InstallCatalog.npmPackage(null));
+        assertEquals("@scope/name", InstallCatalog.packageName("@scope/name@1.2.3"));
+        assertEquals("@scope/name", InstallCatalog.packageName("@scope/name"));
+        assertEquals("typescript", InstallCatalog.packageName("typescript@6"));
     }
 }
