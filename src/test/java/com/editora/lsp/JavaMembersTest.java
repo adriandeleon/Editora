@@ -514,6 +514,16 @@ class JavaMembersTest {
         assertEquals(text.indexOf("Sink<>"), JavaMembers.anonymousMethod(text, 0, text.indexOf("int g"))[0]);
     }
 
+    /** A {@code try (… new X(…))} or {@code if (… new X())} block is no anonymous class (fourteenth check RJ3). */
+    @Test
+    void aBlockAfterACreationIsNoAnonymousHeader() {
+        String text = "static {\n    try (InputStream in = new FileInputStream(\"x\")) {\n        P.load(in);\n    }\n"
+                + "    if (P.equals(new Object())) {\n        P.clear();\n    }\n}\n";
+        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("FileInputStream") + 2), "try");
+        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("P.load")), "its block");
+        assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("Object()") + 2), "if");
+    }
+
     /**
      * A comment right above an anonymous method's header is the method's: a {@code //} line with no blank line before
      * the header, and a Javadoc with a line comment after it; a trailing comment or one after a blank line is not

@@ -151,6 +151,10 @@ final class RootWatcher implements AutoCloseable {
     }
 
     private void registerTree(Path start) throws IOException {
+        if (skipOutputs) {
+            registerBreadthFirst(start);
+            return;
+        }
         Files.walkFileTree(start, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
@@ -183,6 +187,45 @@ final class RootWatcher implements AutoCloseable {
                 return FileVisitResult.CONTINUE;
             }
         });
+    }
+
+    /**
+     * A build-file watcher's folders, level by level: build files sit near the top, so past {@link #MAX_DIRS} folders a
+     * module's pom.xml is watched before a deep asset tree is (fourteenth check CJ6).
+     */
+    private void registerBreadthFirst(Path start) {
+        java.util.ArrayDeque<Path> queue = new java.util.ArrayDeque<>(List.of(start));
+        while (!queue.isEmpty()) {
+            Path dir = queue.poll();
+            if (!dir.equals(root) && (skipped(dir) || buildOutput(dir))) {
+                continue;
+            }
+            synchronized (dirs) {
+                if (dirs.size() >= (com.editora.io.WatchServices.isPolling(ws) ? MAX_POLLED_DIRS : MAX_DIRS)) {
+                    LOG.fine(() -> "watching only part of " + root + ": " + dirs.size() + " folders");
+                    return;
+                }
+                try {
+                    dirs.put(
+                            com.editora.io.WatchServices.register(
+                                    dir,
+                                    ws,
+                                    StandardWatchEventKinds.ENTRY_CREATE,
+                                    StandardWatchEventKinds.ENTRY_DELETE,
+                                    StandardWatchEventKinds.ENTRY_MODIFY),
+                            dir);
+                } catch (IOException | RuntimeException e) {
+                    continue;
+                }
+            }
+            try (var children = Files.list(dir)) {
+                children.filter(c -> Files.isDirectory(c, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+                        .sorted()
+                        .forEach(queue::add);
+            } catch (IOException | RuntimeException e) {
+                // unreadable: its folders are not watched
+            }
+        }
     }
 
     private void loop() {

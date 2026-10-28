@@ -421,7 +421,7 @@ public final class JavaMembers {
 
     /** An anonymous class's header before its body's {@code '{'}: {@code new}, its (wrapped) name, type arguments and arguments. */
     private static final java.util.regex.Pattern ANONYMOUS = java.util.regex.Pattern.compile(
-            "new\\s+([\\w$]+(?:\\s*\\.\\s*[\\w$]+)*)\\s*(<[^{};]*?>)?\\s*\\([^{};]*\\)\\s*$");
+            "new\\s+([\\w$]+(?:\\s*\\.\\s*[\\w$]+)*)\\s*(<[^{};]*?>)?\\s*\\((?:[^(){};]|\\([^(){};]*\\))*\\)\\s*$");
 
     /**
      * The offset of the last segment of the type an anonymous class instantiates when {@code caret} is on its header,
@@ -740,7 +740,7 @@ public final class JavaMembers {
      * (ninth review DP3).
      */
     public static @Nullable MemberSpan typeAt(List<MemberSpan> members, int line, String name) {
-        String simple = name.replaceAll("<.*", "").strip();
+        String simple = name.replaceAll("<.*", "").replaceAll(".*[$.]", "").strip(); // jdtls's Outer$Inner too
         MemberSpan named = typeNamedAt(members, line, simple); // one of several types on a line (thirteenth BK4)
         MemberSpan at = named != null ? named : typeAt(members, line);
         return at != null ? at : typeNamed(members, simple);

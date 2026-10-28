@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sources when a Java project is imported" (off; Maven), applied at the next import, and View: Toggle Downloading
   Library Sources at Import flips it. Looking for a Maven library's sources can ask Maven Central's search, by the
   jar's checksum. Settings schema 152 → 153.
+- **Project Map: Hide unmatched.** A checkbox in the Map's filter row takes the rows the filters would fade off the
+  map, leaving only the matches and the folders that lead to them. It never hides silently: an amber "N rows hidden"
+  badge sits beside it, and each column shows "shown/total" with an "N hidden" line under its rows. Remembered per
+  workspace (workspace schema 24 → 25).
 
 - **Terminal: Nerd Font icons without installing a Nerd Font.** Editora bundles Symbols Nerd Font Mono (Nerd Fonts
   3.5.1), so the icons eza, lsd and powerline prompts print show on any machine. An installed Nerd Font build of the
@@ -65,6 +69,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Narrowing and widening are finished in the frame they happen in.** The Structure window's Narrow to Fold
+  Region toggle (and C-x n n / n f / n w) swapped the text in unstyled: the code showed plain until the next
+  highlight pass, the fold gutter kept the old lines, and on widening the outline showed raw fold blocks for a
+  moment, about a quarter second after narrowing a 1,600-line file and over half a second after widening it (three
+  quarters on a 10,000-line one). The swap now keeps the colours, folds and outline symbols, and widening keeps the
+  region's lines where they were on screen instead of scrolling from the top of the file to put the caret at the
+  bottom edge.
 - **Format Document follows the file's save rules.** Format Document and Format Selection now send the file's
   EditorConfig `trim_trailing_whitespace` and `insert_final_newline` (or the project's) to the language server, so a
   formatted file already looks the way saving writes it. lemminx adds the final newline only when asked. Tab re-indent
@@ -177,7 +188,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   initializer's or a library class's anonymous method, the caret in the parameter list (an annotated or a wrapped
   one), the Javadoc or a `//` comment right above opened `Object.java`; it is that method's now. The anonymous class's
   header, from its type's name to its `{`, or a field in it goes to the type it instantiates (not that type's
-  constructor), and an interface's anonymous `hashCode()` to `Object.hashCode`. On a one-line class a later method is
+  constructor, and not `Object`'s), and an interface's anonymous `hashCode()` to `Object.hashCode`. A paste into a
+  text block escapes its backslashes, and into a char literal its backslash and quote. On a one-line class a later method is
   itself, a wrapped class header with a trailing comment is the class's, and `Collections::<List<String>>emptyList`
   goes to `Supplier.get`. A class's supertypes leave out `java.lang.Object`, as in IntelliJ: `class X implements
   Runnable` opens `Runnable.java`, and a plain class says "No supertype found".
@@ -318,8 +330,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   settings file names its cause, two Kotlin script errors name the first, a script is named by its file name, and a
   pom's line and column read in the interface's language. A settings file that `include`s a folder that does not
   exist, or `includeBuild`s one, is a failed import again; a pom with a dependency missing its `<version>` or
-  `<artifactId>` says the project did not import, naming the pom's error, rather than "Loaded and ready" over files
-  that were never checked; and a build that failed in one folder of a project is named with that folder. In a tree of
+  `<artifactId>`, a parent Maven cannot resolve, or `<packaging>pom</packaging>` over Java sources says the project
+  (or that module) did not import, naming the cause, rather than "Loaded and ready" over files that were never
+  checked; once such a pom is fixed, saved here or changed by a git pull, the project's workspace is cleaned so it
+  imports again (a restart reused the broken project, and a pull left false errors under "Loaded and ready"); a build that failed in one folder of a project is named with that folder; and a Gradle
+  dependency that cannot be fetched is a build with problems, not a failed import. In a tree of
   more than 2,000 folders, a module's pom.xml past the watched ones still reaches jdtls when saved or seen in the
   Project panel, and build output folders (`target`, `build`) no longer use up the build-file watcher's share.
 - **Focus and paste.** Window ▸ Buffer: Next and the Switcher onto the Welcome, Doctor or an image tab focus that page;

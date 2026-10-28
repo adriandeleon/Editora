@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,21 +26,44 @@ class JavaImportCheckTest {
         String invisible =
                 "Main.java is not on the classpath of project project_d15135a6, only syntax errors are reported";
         assertEquals(invisible, JavaImportCheck.nonProjectMessage(List.of(warning(invisible))), "an invisible project");
-        // the build's own project, kept without source folders by a model error: only a file in a source folder is
-        // asked (a real project's other folder is not), and a build naming its own sources is not (thirteenth CK2)
+        // a healthy project keeps a nested sample's or buildSrc's file off its classpath: no failed import (CJ1)
         String own = "Main.java is not on the classpath of project shelf-debug-demo, only syntax errors are reported";
-        assertEquals(own, JavaImportCheck.nonProjectMessage(List.of(warning(own))), "the build's own project");
-        assertNull(
-                JavaImportCheck.nonProjectMessage(List.of(warning("The import java.util.Lisst cannot be resolved"))));
+        assertNull(JavaImportCheck.nonProjectMessage(List.of(warning(own))), "a real project's file off its classpath");
     }
 
+    /** m2e's "Project build error" on a pom is a failed import; a missing artifact is not (fourteenth check CJ2). */
     @Test
-    void aBuildNamingItsOwnSourcesIsTold(@TempDir Path dir) throws Exception {
-        Files.writeString(dir.resolve("pom.xml"), "<project><build></build></project>");
-        assertFalse(JavaImportCheck.ownSources(dir));
+    void aPomsModelErrorIsAFailedImport(@TempDir Path dir) {
+        var error = new LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                LspDiagnostic.Severity.ERROR,
+                "Project build error: Non-resolvable parent POM for demo:app:1.1\nmore",
+                null,
+                "jdtls");
+        var missing = new LspDiagnostic(
+                0, 0, 0, 1, LspDiagnostic.Severity.ERROR, "Missing artifact g:a:jar:1.0", null, "jdtls");
+        var found = JavaImportCheck.modelError(dir.resolve("app/pom.xml"), List.of(missing, error));
+        assertEquals(dir.resolve("app").toAbsolutePath().normalize(), found.folder());
+        assertEquals("Project build error: Non-resolvable parent POM for demo:app:1.1", found.line());
+        assertNull(JavaImportCheck.modelError(dir.resolve("app/pom.xml"), List.of(missing)));
+        assertNull(JavaImportCheck.modelError(dir.resolve("app/Main.java"), List.of(error)), "only a pom's");
+    }
+
+    /** A pom-packaging module's sources are never compiled (fourteenth check CJ3). */
+    @Test
+    void aPomPackagingModulesSourcesAreTold(@TempDir Path dir) throws Exception {
+        Path app = Files.createDirectories(dir.resolve("app/src/main/java"));
         Files.writeString(
-                dir.resolve("pom.xml"), "<project><build><sourceDirectory>src</sourceDirectory></build></project>");
-        assertTrue(JavaImportCheck.ownSources(dir));
+                dir.resolve("app/pom.xml"),
+                "<project><parent><packaging>jar</packaging></parent><packaging>pom</packaging></project>");
+        Path main = app.resolve("Main.java");
+        assertEquals(dir.resolve("app"), JavaImportCheck.pomPackagingModule(dir, main));
+        Files.writeString(dir.resolve("app/pom.xml"), "<project><packaging>jar</packaging></project>");
+        assertNull(JavaImportCheck.pomPackagingModule(dir, main));
+        assertEquals("app/pom.xml", JavaImportCheck.pomOf(dir, dir.resolve("app")));
     }
 
     @Test

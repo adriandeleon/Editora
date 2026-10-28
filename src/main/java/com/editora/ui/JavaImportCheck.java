@@ -30,26 +30,80 @@ final class JavaImportCheck {
     static @Nullable String nonProjectMessage(List<LspDiagnostic> diagnostics) {
         for (LspDiagnostic d : diagnostics) {
             String m = d.message();
-            if (m.contains("is a non-project file") || m.contains("is not on the classpath of project ")) {
-                return m; // also the build's own project, kept without source folders (thirteenth review CK2)
+            if (m.contains("is a non-project file")
+                    || m.matches("(?s).*is not on the classpath of project \\S+_[0-9a-f]{8}\\b.*")) {
+                return m;
             }
         }
         return null;
     }
 
-    /** Whether {@code build}'s build file names its own source folders, so its {@code src/main/java} may be none. */
-    static boolean ownSources(Path build) {
-        for (String name : List.of("pom.xml", "build.gradle", "build.gradle.kts")) {
-            try {
-                String text = Files.readString(build.resolve(name));
-                if (text.contains("<sourceDirectory>") || text.contains("srcDir")) {
-                    return true;
-                }
-            } catch (java.io.IOException | RuntimeException e) {
-                // not this build file
+    /**
+     * The first line of m2e's "Project build error" among a pom.xml's {@code diagnostics}, or null: Maven could not
+     * build the project's model (a dependency without a version, a parent it cannot resolve), so m2e made no Java
+     * project of it and its files are never checked (thirteenth review CK2, fourteenth check CJ2). A missing artifact
+     * or a plugin without a version is no such error: those projects are checked.
+     */
+    static @Nullable String modelError(List<LspDiagnostic> diagnostics) {
+        for (LspDiagnostic d : diagnostics) {
+            if (d.severity() == LspDiagnostic.Severity.ERROR && d.message().startsWith("Project build error")) {
+                String first = d.message().lines().findFirst().orElse("").strip();
+                return first.isEmpty() ? null : first;
             }
         }
-        return false;
+        return null;
+    }
+
+    /** Whether a pom.xml under {@code root} has m2e's "Project build error" in {@code problems}. */
+    static boolean modelErrorUnder(Map<Path, List<LspDiagnostic>> problems, Path root) {
+        Path r = root.toAbsolutePath().normalize();
+        return problems.entrySet().stream()
+                .anyMatch(e -> e.getKey().toAbsolutePath().normalize().startsWith(r)
+                        && modelError(e.getKey(), e.getValue()) != null);
+    }
+
+    /** As above for {@code diagnostics} of {@code file}, when it is a pom.xml: its folder and the error's line. */
+    static @Nullable Reason modelError(Path file, List<LspDiagnostic> diagnostics) {
+        Path at = file.toAbsolutePath().normalize();
+        String error = at.getFileName() != null && at.getFileName().toString().equals("pom.xml")
+                ? modelError(diagnostics)
+                : null;
+        return error == null || at.getParent() == null ? null : new Reason(at.getParent(), error);
+    }
+
+    /**
+     * The folder of the pom.xml nearest above {@code file} (a Java file under {@code root}) when it is in that pom's
+     * source folders and the pom says {@code <packaging>pom</packaging>}; else null (fourteenth check CJ3).
+     */
+    static @Nullable Path pomPackagingModule(Path root, @Nullable Path file) {
+        if (file == null || !file.toString().endsWith(".java") || !file.startsWith(root)) {
+            return null;
+        }
+        for (Path dir = file.getParent(); dir != null && dir.startsWith(root); dir = dir.getParent()) {
+            if (Files.isRegularFile(dir.resolve("pom.xml"))) {
+                return inSourceFolder(dir, file) && pomPackaging(dir) ? dir : null;
+            }
+        }
+        return null;
+    }
+
+    /** {@code module}'s pom.xml relative to {@code root}, with forward slashes. */
+    static String pomOf(Path root, Path module) {
+        return root.relativize(module.resolve("pom.xml")).toString().replace('\\', '/');
+    }
+
+    /**
+     * Whether {@code folder}'s pom.xml says {@code <packaging>pom</packaging>}: Maven compiles no sources there, so its
+     * {@code src/main/java} files are never checked (fourteenth check CJ3).
+     */
+    static boolean pomPackaging(Path folder) {
+        try {
+            String pom = Files.readString(folder.resolve("pom.xml")).replaceAll("(?s)<!--.*?-->", "");
+            return pom.replaceAll("(?s)<(parent|build|profiles|dependencies|dependencyManagement)>.*?</\\1>", "")
+                    .matches("(?s).*<packaging>\\s*pom\\s*</packaging>.*");
+        } catch (java.io.IOException | RuntimeException e) {
+            return false;
+        }
     }
 
     /** Whether {@code file} is under a Maven or Gradle source folder of {@code root}. */

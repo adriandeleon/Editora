@@ -413,7 +413,9 @@ public enum ConfigSchema {
                     Map.entry(22, ConfigMigrations::identity),
                     // v23→24: + projectMapWindowBounds (additive; absent means a large window centred on the
                     // editor). projectViewMode keeps its values: "MAP" now reopens the Map's own window.
-                    Map.entry(23, ConfigMigrations::identity))),
+                    Map.entry(23, ConfigMigrations::identity),
+                    // v24→25: + projectMapHideUnmatched (additive; absent means off, so rows keep fading)
+                    Map.entry(24, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),

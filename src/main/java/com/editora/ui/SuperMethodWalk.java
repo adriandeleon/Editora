@@ -112,6 +112,50 @@ final class SuperMethodWalk {
         });
     }
 
+    /**
+     * The super methods of an anonymous class's method no outline holds (in an initializer, or a class file), found in
+     * {@code text} ({@code anonymous}: the offsets of the instantiated type's name and the method's): jdtls's
+     * {@code findLinks}, else the walk from the type it instantiates, as for one the outline holds (tenth review BO2).
+     * {@code done} gets them, empty for none, and nothing once {@code ask} is stale; {@code failed} a request's error.
+     */
+    static void anonymousMethod(
+            LspManager lspManager,
+            LspCoordinator.SuperAsk ask,
+            String text,
+            int[] anonymous,
+            java.util.function.Function<Path, @Nullable String> openText,
+            java.util.function.Consumer<List<LspCoordinator.SuperTarget>> done,
+            java.util.function.Consumer<String> failed) {
+        int[] name = LspCoordinator.lineColumn(text, anonymous[1]);
+        int[] type = LspCoordinator.lineColumn(text, anonymous[0]);
+        lspManager.superMethodAt(
+                ask.path(),
+                ask.libraryUri(),
+                name[0],
+                name[1],
+                linked -> {
+                    if (!ask.current().getAsBoolean()) {
+                        return;
+                    }
+                    if (!linked.isEmpty()) {
+                        done.accept(LspCoordinator.labelled(linked));
+                        return;
+                    }
+                    var method = new com.editora.lsp.MemberSpan(
+                            com.editora.lsp.JavaMembers.signatureAt(text, anonymous[1]),
+                            "method",
+                            name[0],
+                            name[0],
+                            name[0],
+                            name[1],
+                            List.of());
+                    var anonymousClass = new com.editora.lsp.MemberSpan(
+                            "new {...}", "class", type[0], name[0], type[0], type[1], List.of(method));
+                    new SuperMethodWalk(lspManager, ask, text, method, openText, done).start(anonymousClass);
+                },
+                failed);
+    }
+
     /** {@code supers} with the superclass first, as IntelliJ lists them; jdtls gives the interfaces first. */
     static List<LspManager.HierarchyNode> superclassFirst(List<LspManager.HierarchyNode> supers) {
         List<LspManager.HierarchyNode> out = new java.util.ArrayList<>(supers);
@@ -315,7 +359,7 @@ final class SuperMethodWalk {
                                     onDisk(type.file(), hit.nameLine()),
                                     hit.nameColumn(),
                                     type.libraryUri()),
-                            type.name() + "." + com.editora.lsp.JavaMembers.methodName(hit.name())));
+                            type.name().replace('$', '.') + "." + com.editora.lsp.JavaMembers.methodName(hit.name())));
             foundIn.put(order + i, key);
         }
         Header header = declared == null
