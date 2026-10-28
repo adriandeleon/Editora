@@ -66,33 +66,47 @@ final class LibrarySources {
         }
         Tab tab = tabs.get(buffer);
         String jar = JavaLibrarySources.archiveName(tab.uri());
-        buffer.hideFileNotice();
-        status.accept(tr("status.librarySources.looking", jar));
-        // jdtls looks for the sources when a class file without them is read, waiting a moment; a download that
-        // takes longer ends in its SourceInvalidated event (sourcesAttached)
-        lspManager.classFileContents(
-                tab.anchor(),
-                tab.uri(),
-                content -> resolve(buffer, attachment -> {
-                    if (attachment != null && attachment.attached()) {
-                        reload(buffer);
-                        return;
-                    }
-                    var wait = new javafx.animation.PauseTransition(javafx.util.Duration.millis(DOWNLOAD_WAIT_MS));
-                    wait.setOnFinished(e -> {
-                        waiting.remove(buffer);
-                        resolve(buffer, again -> {
-                            if (again != null && again.attached()) {
-                                reload(buffer);
-                            } else {
-                                status.accept(tr("status.librarySources.notFound", jar));
-                                offerChoose(buffer);
-                            }
+        resolve(buffer, before -> {
+            if (before != null && before.error() != null) {
+                // a Gradle library: its sources come from its build, and jdtls may not attach any (LS1)
+                status.accept(tr("status.librarySources.fromBuild", jar));
+                return;
+            }
+            if (before != null && before.attached()) {
+                status.accept(tr("status.librarySources.already", jar));
+                return;
+            }
+            buffer.hideFileNotice();
+            status.accept(tr("status.librarySources.looking", jar));
+            // jdtls looks for the sources when a class file without them is read, waiting a moment; a download
+            // that takes longer ends in its SourceInvalidated event (sourcesAttached). A jar no repository knows
+            // (a lib/ or system jar, a JDK module) is not waited for (LS4).
+            boolean downloadable = JavaLibrarySources.downloadable(tab.uri());
+            lspManager.classFileContents(
+                    tab.anchor(),
+                    tab.uri(),
+                    content -> resolve(buffer, attachment -> {
+                        if (attachment != null && attachment.attached()) {
+                            reload(buffer);
+                            return;
+                        }
+                        var wait = new javafx.animation.PauseTransition(
+                                javafx.util.Duration.millis(downloadable ? DOWNLOAD_WAIT_MS : 1));
+                        wait.setOnFinished(e -> {
+                            waiting.remove(buffer);
+                            resolve(buffer, again -> {
+                                if (again != null && again.attached()) {
+                                    reload(buffer);
+                                } else {
+                                    status.accept(tr("status.librarySources.notFound", jar));
+                                    offerChoose(buffer);
+                                }
+                            });
                         });
-                    });
-                    waiting.put(buffer, wait);
-                    wait.play();
-                }));
+                        waiting.put(buffer, wait);
+                        wait.play();
+                    }));
+        });
     }
 
     /** Choose Sources… for {@code buffer}'s library ({@code lsp.attachLibrarySources}): a sources archive on disk. */
@@ -128,7 +142,9 @@ final class LibrarySources {
                             if (done == null || done.error() != null) {
                                 status.accept(tr(
                                         "status.librarySources.attachFailed",
-                                        done == null || done.error() == null ? String.valueOf(error) : done.error()));
+                                        done == null || done.error() == null
+                                                ? String.valueOf(error)
+                                                : done.error().replace(" {0}", ""))); // jdtls's unfilled argument
                                 return;
                             }
                             reload(buffer);
@@ -157,7 +173,8 @@ final class LibrarySources {
             if (content == null) {
                 return;
             }
-            if (!content.equals(buffer.getArea().getText())) {
+            boolean changed = !content.equals(buffer.getArea().getText());
+            if (changed) {
                 int line = buffer.getArea().getCurrentParagraph();
                 buffer.setContent(content);
                 buffer.getArea()
@@ -167,7 +184,9 @@ final class LibrarySources {
             resolve(buffer, attachment -> {
                 if (attachment != null && attachment.attached()) {
                     buffer.hideFileNotice();
-                    status.accept(tr("status.librarySources.attached", JavaLibrarySources.archiveName(tab.uri())));
+                    if (changed) { // once: Choose Sources and jdtls's event both read it again (LS5)
+                        status.accept(tr("status.librarySources.attached", JavaLibrarySources.archiveName(tab.uri())));
+                    }
                 }
             });
         });
@@ -176,8 +195,11 @@ final class LibrarySources {
     private void offerDownload(EditorBuffer buffer) {
         Tab tab = tabs.get(buffer);
         if (tab != null) {
+            String archive = JavaLibrarySources.archiveName(tab.uri());
             buffer.showFileNotice(
-                    tr("librarySources.none", JavaLibrarySources.archiveName(tab.uri())),
+                    archive != null && !archive.endsWith(".jar") && !archive.endsWith(".zip")
+                            ? tr("librarySources.noJdkSources", archive) // a JDK module: its src.zip (LS5)
+                            : tr("librarySources.none", archive),
                     tr("librarySources.download"),
                     tr("librarySources.dismiss"),
                     () -> download(buffer));

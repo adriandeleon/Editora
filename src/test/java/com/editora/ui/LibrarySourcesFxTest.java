@@ -86,4 +86,40 @@ class LibrarySourcesFxTest {
         assertNull(FxTestSupport.callOnFx(library::fileNoticeText), "the bar is gone");
         assertEquals(tr("status.librarySources.attached", "lib-1.0.jar"), fx.host.lastStatus());
     }
+
+    /**
+     * Download Sources on a Gradle library, whose container takes no attachment, says its sources come from its
+     * build at once, and on one that has them says so: it waited 20 s and offered Choose Sources… (LS1, LS5).
+     */
+    @Test
+    void downloadSourcesAnswersAtOnceWhenThereIsNothingToFetch() throws Exception {
+        fx.open("A.java", "class A {}\n");
+        EditorBuffer[] library = {null};
+        fx.ops.readOnlyOpener = doc -> {
+            library[0] = new EditorBuffer();
+            library[0].setContent(doc.content());
+            fx.show(library[0]);
+            return library[0];
+        };
+        fx.server().rawResponse = "package p;\n\npublic class C {}\n";
+        fx.server().definitionResponse =
+                List.of(new Location(URI, new Range(new Position(2, 13), new Position(2, 14))));
+        fx.server().executeCommandHandler = p -> Map.of(
+                "errorMessage",
+                "The JAR of this class file belongs to container {0} which does not allow modifications");
+        fx.run(() -> fx.coordinator.gotoDefinition());
+        fx.settle();
+        assertNull(FxTestSupport.callOnFx(library[0]::fileNoticeText), "no bar for a library jdtls cannot attach to");
+        FxTestSupport.runOnFx(() -> fx.host.active = library[0]);
+        fx.run(() -> fx.coordinator.librarySources(false));
+        fx.settle();
+        assertEquals(tr("status.librarySources.fromBuild", "lib-1.0.jar"), fx.host.lastStatus());
+
+        Path sources = Files.writeString(root.resolve("lib-1.0-sources.jar"), "");
+        fx.server().executeCommandHandler =
+                p -> Map.of("attributes", Map.of("jarPath", JAR, "sourceAttachmentPath", sources.toString()));
+        fx.run(() -> fx.coordinator.librarySources(false));
+        fx.settle();
+        assertEquals(tr("status.librarySources.already", "lib-1.0.jar"), fx.host.lastStatus());
+    }
 }

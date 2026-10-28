@@ -57,6 +57,21 @@ class JavaLibrarySourcesTest {
         assertFalse(JavaLibrarySources.inAny(URI, Set.of("/home/u/.m2/guava-32.0.jar")));
     }
 
+    /** A JDK module's class is in jrt-fs.jar, named by its URI's query; only a Maven artifact is downloadable (LS2, LS4). */
+    @Test
+    void aJdkModulesRootAndAMavenArtifactAreTold() {
+        String jdk = "jdt://contents/java.base/java.util/ArrayList.class?=demo/%5C/opt%5C/jdk17%5C/lib%5C/jrt-fs.jar"
+                + "%60java.base=/javadoc_location=/x";
+        assertTrue(JavaLibrarySources.inAny(jdk, Set.of("/opt/jdk17/lib/jrt-fs.jar")));
+        assertFalse(JavaLibrarySources.inAny(jdk, Set.of("/opt/jdk21/lib/jrt-fs.jar")));
+        assertFalse(JavaLibrarySources.downloadable(jdk));
+        String maven = "jdt://contents/c-1.0.jar/p/C.class?=demo/%5C/m2%5C/c-1.0.jar=/maven.pomderived=/true=/"
+                + "=/maven.groupId=/com.example=/";
+        assertTrue(JavaLibrarySources.downloadable(maven));
+        assertFalse(
+                JavaLibrarySources.downloadable("jdt://contents/libbase.jar/p/C.class?=demo/%5C/lib%5C/libbase.jar"));
+    }
+
     @Test
     void theCommandsAreAskedAndAnsweredInJdtlssShapes(@TempDir Path dir) throws Exception {
         List<Object> resolve = JavaLibrarySources.request(URI, null, null);

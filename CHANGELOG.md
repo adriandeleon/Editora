@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Java: library sources.** A library class opened with no sources attached, shown decompiled, says so in its tab
-  and offers **Download Sources**; when none are found, **Choose Sources…** attaches a `-sources.jar` or zip from
-  disk (also LSP: Download Library Sources and LSP: Choose Library Sources… in the palette). A tab whose library gets
-  its sources later, by either or by the Java server's own download, shows them at once. Settings → LSP has
-  "Download library sources when a Java project is imported" (off; Maven and Gradle), and View: Toggle Downloading
+- **Java: library sources.** A Maven library's sources are fetched as its class opens, when a repository has them.
+  A library class that has none, shown decompiled (a `lib/` or system jar, an artifact only installed locally, a JDK
+  without `src.zip`), says so in its tab, with **Download Sources** for one a repository may have and **Choose
+  Sources…** to attach a `-sources.jar` or zip from disk (also LSP: Download Library Sources and LSP: Choose Library
+  Sources… in the palette); a Gradle library is told its sources come from its build. A tab whose library gets its
+  sources later shows them at once, every open tab of that library or JDK. Settings → LSP has "Download library
+  sources when a Java project is imported" (off; Maven), applied at the next import, and View: Toggle Downloading
   Library Sources at Import flips it. Looking for a Maven library's sources can ask Maven Central's search, by the
   jar's checksum. Settings schema 152 → 153.
 

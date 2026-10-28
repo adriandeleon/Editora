@@ -104,10 +104,36 @@ public final class JavaLibrarySources {
     /** Whether the class at {@code classFileUri} is in one of {@code roots}, the paths of the libraries that changed. */
     public static boolean inAny(String classFileUri, Set<String> roots) {
         String name = archiveName(classFileUri);
+        String query = decodedQuery(classFileUri);
         return name != null
                 && roots.stream()
                         .map(r -> r.replace('\\', '/'))
-                        .anyMatch(r -> r.endsWith("/" + name) || r.equals(name));
+                        .anyMatch(r -> r.endsWith("/" + name)
+                                || r.equals(name)
+                                || (!r.isEmpty() && query.contains(r))); // a JDK module's jrt-fs.jar (LS2)
+    }
+
+    /**
+     * Whether a repository may have the sources of {@code classFileUri}'s library: a Maven artifact's URI names its
+     * coordinates; a {@code lib/} or system jar, or a JDK module, has nothing to download (LS4).
+     */
+    public static boolean downloadable(String classFileUri) {
+        return decodedQuery(classFileUri).contains("maven.groupId");
+    }
+
+    /** The part of a {@code jdt://} URI after its {@code ?}, decoded, with jdtls's {@code \\/} as {@code /}. */
+    private static String decodedQuery(String classFileUri) {
+        int q = classFileUri.indexOf('?');
+        if (q < 0) {
+            return "";
+        }
+        String raw = classFileUri.substring(q + 1);
+        try {
+            raw = java.net.URLDecoder.decode(raw.replace("+", "%2B"), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            // not percent-encoded as expected: read as it is
+        }
+        return raw.replace("\\/", "/").replace('\\', '/');
     }
 
     /** {@link #RESOLVE}'s and {@link #UPDATE}'s one argument: the class file and, to attach, the sources archive. */
