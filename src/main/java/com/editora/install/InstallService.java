@@ -1063,11 +1063,6 @@ public final class InstallService {
         }
     }
 
-    /**
-     * Runs one package-manager command (npm/pip/gem/go/dotnet/rustup/composer). In the user's locale, not the
-     * parse-stable C one: the output is only ever shown, and several of these (RubyGems, a JVM-based tool)
-     * fail on non-ASCII package metadata or install paths when forced to ASCII.
-     */
     /** Test seam: runs a package manager's command line ({@code npm install -g …}); a test records it instead. */
     private volatile java.util.function.Function<List<String>, ProcessRunner.Result> commands =
             argv -> ProcessRunner.runInUserLocale(null, CMD_TIMEOUT, argv);
@@ -1076,6 +1071,11 @@ public final class InstallService {
         this.commands = Objects.requireNonNull(commands, "commands");
     }
 
+    /**
+     * Runs one package-manager command (npm/pip/gem/go/dotnet/rustup/composer). In the user's locale, not the
+     * parse-stable C one: the output is only ever shown, and several of these (RubyGems, a JVM-based tool)
+     * fail on non-ASCII package metadata or install paths when forced to ASCII.
+     */
     private void runCommand(@Nullable List<String> argv, String id) throws InstallException {
         if (argv == null || argv.isEmpty()) {
             throw new InstallException(id + ": no command");

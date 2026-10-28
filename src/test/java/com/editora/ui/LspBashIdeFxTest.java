@@ -96,6 +96,10 @@ class LspBashIdeFxTest {
         Files.writeString(
                 app.resolve(".editora/settings.json"),
                 "{\"bashIde\": {\"shellcheckArguments\": \"--exclude=SC2086,SC2045\"}}");
+        // Switching the project re-runs server detection, which replaces setUp's forced "available" with a real
+        // lookup; a command that exists everywhere (this JVM) keeps it found where no bash-language-server is.
+        fx.host.settings.setBashLspCommand(
+                ProcessHandle.current().info().command().orElseThrow());
         fx.ops.projectRoot = app;
         fx.open("app/main.sh", "#!/usr/bin/env bash\necho $1\n");
         FakeLanguageServer appServer = fx.server();

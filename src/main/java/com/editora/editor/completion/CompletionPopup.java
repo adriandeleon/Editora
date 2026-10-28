@@ -236,12 +236,6 @@ public final class CompletionPopup {
     }
 
     /**
-     * The popup width that fits the widest row — icon + label + the right-aligned type/detail — so the
-     * type column isn't clipped (IntelliJ-style), clamped to {@code [MIN_WIDTH, MAX_WIDTH]}. Text is
-     * measured with the popup's font sizes (label 13px, detail 11px) plus geometry slack; beyond the cap
-     * the detail Label ellipsizes.
-     */
-    /**
      * A row's detail: the first line of {@code detail}, stripped. Four shell snippets have two-line descriptions,
      * and the row showed half of the second line and widened the list (Bash review C15); the documentation panel
      * still shows the whole text. Pure.
@@ -254,6 +248,12 @@ public final class CompletionPopup {
         return (nl < 0 ? detail : detail.substring(0, nl)).strip();
     }
 
+    /**
+     * The popup width that fits the widest row — icon + label + the right-aligned type/detail — so the
+     * type column isn't clipped (IntelliJ-style), clamped to {@code [MIN_WIDTH, MAX_WIDTH]}. Text is
+     * measured with the popup's font sizes (label 13px, detail 11px) plus geometry slack; beyond the cap
+     * the detail Label ellipsizes.
+     */
     static double contentWidth(List<Completion> items) {
         Font labelFont = Font.font(13);
         Font detailFont = Font.font(11);
