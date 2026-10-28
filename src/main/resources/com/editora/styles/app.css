@@ -1542,6 +1542,21 @@
     -fx-border-color: -color-accent-muted;
     -fx-text-fill: -color-accent-fg;
 }
+.project-map-hide-unmatched {
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 0 0 0 4;
+}
+/* Rows are off the map, not faded: the badge keeps that from going unnoticed. */
+.project-map-narrowed-badge {
+    -fx-font-size: 10px;
+    -fx-background-color: -color-warning-subtle;
+    -fx-background-radius: 10;
+    -fx-border-color: -color-warning-muted;
+    -fx-border-radius: 10;
+    -fx-padding: 2 8 2 8;
+    -fx-text-fill: -color-warning-fg;
+}
 .project-map-filter-clear {
     -fx-background-color: transparent;
     -fx-padding: 3 5 3 5;
