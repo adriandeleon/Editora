@@ -2356,6 +2356,23 @@ final class WindowCommandRegistrar {
                         "lsp.copyQualifiedName", () -> host.ifLsp(host.lspCoordinator()::copyQualifiedName)));
         host.registry()
                 .register(Command.of("lsp.reloadProject", () -> host.ifLsp(host.lspCoordinator()::reloadProject)));
+        host.registry()
+                .register(Command.of(
+                        "lsp.downloadLibrarySources",
+                        () -> host.ifLsp(() -> host.lspCoordinator().librarySources(false))));
+        host.registry()
+                .register(Command.of(
+                        "lsp.attachLibrarySources",
+                        () -> host.ifLsp(() -> host.lspCoordinator().librarySources(true))));
+        host.registry()
+                .register(Command.of(
+                        "view.toggleJavaDownloadSources",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "view.toggleJavaDownloadSources",
+                                        () -> host.config().getSettings().isJavaDownloadSources(),
+                                        v -> host.config().getSettings().setJavaDownloadSources(v),
+                                        () -> host.lspCoordinator().applyOnTypeFormatting())));
         // Not behind ifLsp: the caches stay on disk after LSP is turned off.
         host.registry().register(Command.of("lsp.clearJavaIndexCaches", host.lspCoordinator()::clearJavaIndexCaches));
         // Not behind ifLsp either: Run and Debug follow the picked interpreter too.

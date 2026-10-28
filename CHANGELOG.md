@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Java: library sources.** A library class opened with no sources attached, shown decompiled, says so in its tab
+  and offers **Download Sources**; when none are found, **Choose Sources…** attaches a `-sources.jar` or zip from
+  disk (also LSP: Download Library Sources and LSP: Choose Library Sources… in the palette). A tab whose library gets
+  its sources later, by either or by the Java server's own download, shows them at once. Settings → LSP has
+  "Download library sources when a Java project is imported" (off; Maven and Gradle), and View: Toggle Downloading
+  Library Sources at Import flips it. Looking for a Maven library's sources can ask Maven Central's search, by the
+  jar's checksum. Settings schema 152 → 153.
+
 - **Terminal: Nerd Font icons without installing a Nerd Font.** Editora bundles Symbols Nerd Font Mono (Nerd Fonts
   3.5.1), so the icons eza, lsd and powerline prompts print show on any machine. An installed Nerd Font build of the
   terminal's font still wins. Bundled icons are drawn a cell and a half wide, the size Nerd Font builds give them;

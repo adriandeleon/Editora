@@ -379,6 +379,19 @@ hierarchy node with a `jdt://` URI opens as library source. Search Everywhere's 
 jdtls's `workspace/symbol` types that live in `jdt://` (`LspManager.javaLibraryTypes`), as a second batch
 after the index's own (`SearchEverywherePopup.Ops.laterSymbols`).
 
+A library tab's sources (`LibrarySources`, the jdtls side in `lsp/JavaLibrarySources`): jdtls reads a class file
+whose library has no sources attached by first looking for its sources jar, for a Maven project in the local
+repository and, by the jar's SHA-1, on Maven Central's search, waiting about three seconds, then decompiles it. A
+tab opened on such a class asks `java.project.resolveSourceAttachment`; with no sources, its file notice offers
+Download Sources (`lsp.downloadLibrarySources`: the class file is read again, which asks jdtls again, then waited
+for up to 20 s) and, when none is found, Choose Sources… (`lsp.attachLibrarySources`: a `-sources.jar` or zip,
+attached with `java.project.updateSourceAttachment`). jdtls's `language/eventNotification` SourceInvalidated (event
+type 500, `data.affectedRootPaths`) says which libraries got sources later; their open tabs are read again, the caret
+kept on its line. Settings → LSP's "Download library sources when a Java project is imported" (off) sends
+`java.maven.downloadSources` and `java.eclipse.downloadSources` (Gradle) at `initialize` and with every settings
+push. The event reaches the window whose manager started the session; a shared server's other windows do not
+reload their tabs.
+
 Peek Definition goes through `navOrigin()` too, and a `jdt://` target is peeked from
 `java/classFileContents` (on the declaration, past its Javadoc) rather than opened. Move into a package that
 does not exist yet creates its folder under the current package's source root

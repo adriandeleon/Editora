@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 152;
+    public static final int SCHEMA_VERSION = 153;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -946,6 +946,8 @@ public class Settings {
     /** Whether lemminx-maven may search Maven Central (search.maven.org, sent what is typed) when completing
      *  pom.xml coordinates; off = completion from the local repository ({@code ~/.m2}) only (review 2, D13). */
     private boolean mavenPomCentralIndex = false;
+    /** Whether jdtls downloads every Maven or Gradle dependency's sources when it imports a project. */
+    private boolean javaDownloadSources = false;
     /**
      * Whether the XML server (lemminx) may download the schemas, DTDs and RelaxNG grammars a file names over the
      * network: {@code never}, {@code trusted} (only for a file in a trusted folder) or {@code always}.
@@ -4197,6 +4199,14 @@ public class Settings {
 
     public void setMavenPomCentralIndex(boolean mavenPomCentralIndex) {
         this.mavenPomCentralIndex = mavenPomCentralIndex;
+    }
+
+    public boolean isJavaDownloadSources() {
+        return javaDownloadSources;
+    }
+
+    public void setJavaDownloadSources(boolean javaDownloadSources) {
+        this.javaDownloadSources = javaDownloadSources;
     }
 
     public static final java.util.List<String> XML_SCHEMA_DOWNLOADS = java.util.List.of("never", "trusted", "always");

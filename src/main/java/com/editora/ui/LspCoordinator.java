@@ -304,6 +304,8 @@ final class LspCoordinator {
     /** Folder trust for the lemminx servers: which pom may reach lemminx-maven, and Trust Folder (E1, C6). */
     private final XmlFolderTrust xmlTrust;
 
+    private final LibrarySources librarySourcesBar;
+
     private final WorkspaceFileOperations workspaceFiles;
     private final Executor workspaceExecutor;
 
@@ -366,6 +368,7 @@ final class LspCoordinator {
         this.lspManager = lspManager;
         this.ops = ops;
         this.xmlTrust = new XmlFolderTrust(this, host, lspManager, ops);
+        this.librarySourcesBar = new LibrarySources(lspManager, host::setStatus); // a decompiled tab's sources
         this.pythonInterpreters = new PythonInterpreterCoordinator(new PythonInterpreterCoordinator.Host() {
             @Override
             public @Nullable Path projectRoot() {
@@ -1746,6 +1749,7 @@ final class LspCoordinator {
             host.setStatus(tr("status.lsp.javaJdkChanged")); // a running jdtls keeps its JDK (re-review CN7)
         }
         lspManager.setMavenCentralIndex(host.settings().isMavenPomCentralIndex());
+        lspManager.setJavaDownloadSources(host.settings().isJavaDownloadSources());
     }
 
     /** Clears the diagnostics (Problems entry + editor overlay) of every open buffer served by {@code serverId}
@@ -5588,6 +5592,7 @@ final class LspCoordinator {
             if (opened != null) {
                 libraryBuffers.put(uri, new java.lang.ref.WeakReference<>(opened));
                 librarySources.put(opened, new LibrarySource(uri, anchorPath)); // chain point (#684)
+                librarySourcesBar.opened(opened, uri, anchorPath);
                 // jdtls's class-file range starts at the member's Javadoc: land on the declaration (B16).
                 int line = com.editora.lsp.JavadocSkip.declarationLine(content, t.line());
                 gotoInBuffer(opened, line, line == t.line() ? t.character() : -1);
@@ -6305,6 +6310,15 @@ final class LspCoordinator {
                 SuperTarget::label,
                 t -> implementationDetail(t.target(), base),
                 chosen -> openTarget(ask.path(), chosen.target()));
+    }
+
+    /** The active library tab's sources: Download Sources, else Choose Sources… ({@code lsp.*LibrarySources}). */
+    void librarySources(boolean choose) {
+        if (choose) {
+            librarySourcesBar.choose(host.activeBuffer());
+        } else {
+            librarySourcesBar.download(host.activeBuffer());
+        }
     }
 
     /** Go to Declaration ({@code lsp.gotoDeclaration}, #736). */
