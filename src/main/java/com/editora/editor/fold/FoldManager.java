@@ -447,6 +447,15 @@ public final class FoldManager {
     }
 
     /**
+     * Takes {@code regions} now, without a scan: a narrow/widen text swap re-based the ones it held (see
+     * {@link NarrowCarry}), so the gutter is right in the swap's own frame. The debounced scan the swap's edit
+     * started still runs and has the last word.
+     */
+    public void carryRegions(List<Region> regions) {
+        applyRegions(regions);
+    }
+
+    /**
      * Runs the expensive brace/indent/comment scan away from the FX thread after typing or initial load, and
      * for a consumer that wants the regions current without stalling the thread (the Structure outline on a
      * tab switch). Capturing RichTextFX text stays on FX; only the pure detector crosses threads. A
