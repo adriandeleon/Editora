@@ -640,7 +640,8 @@ final class LanguageServerSession implements LanguageClient {
                     // LSP4J wraps both directions with this; only its stream writer is the outgoing end.
                     .wrapMessages(consumer -> consumer instanceof org.eclipse.lsp4j.jsonrpc.json.StreamMessageConsumer
                             ? new DeferredSyncConsumer(consumer, out, json::get)
-                            : consumer)
+                            : new AfterRequestConsumer(
+                                    consumer, "workspace/configuration", this::configurationAnswered))
                     .create();
             this.launcher = launcher;
             server = launcher.getRemoteProxy();
@@ -1104,7 +1105,7 @@ final class LanguageServerSession implements LanguageClient {
     /**
      * Sets the {@code bashIde} section this session answers and pushes. A server on another host is told to look
      * ShellCheck and shfmt up on that host's PATH ({@link BashIdeConfig#forRemote}). A running Bash server gets
-     * the change pushed; it re-reads its configuration and re-lints the open file.
+     * the change pushed and every open document sent again: 5.6 re-lints only the one it heard of last (B8).
      */
     void setBashIde(@Nullable BashIdeConfig config) {
         BashIdeConfig next = config == null ? null : com.editora.vfs.Vfs.isRemote(root) ? config.forRemote() : config;
@@ -1112,7 +1113,61 @@ final class LanguageServerSession implements LanguageClient {
         bashIde = next;
         if (changed && "bash".equals(serverId) && ready()) {
             pushConfiguration();
+            // 5.6 re-lints only the document it heard of last; every other tab kept what the old settings said (B8)
+            resyncOpenDocuments();
         }
+    }
+
+    /** Where the open documents are re-sent from: the thread every other document sync comes from. */
+    private volatile java.util.concurrent.Executor clientThread = Runnable::run;
+
+    /** Sets {@link #clientThread} ({@link LspManager}: the FX thread, so a re-sync never races an edit's). */
+    void setClientThread(java.util.concurrent.Executor thread) {
+        clientThread = thread;
+    }
+
+    /** Whether the Bash server's first {@code workspace/configuration} has been answered. */
+    private final java.util.concurrent.atomic.AtomicBoolean configuredOnce =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * The server's {@code workspace/configuration} request has been answered (on the reader thread, the answer
+     * already queued for the writer). bash-language-server lints nothing that arrives before it has that answer
+     * and then only the document it heard of last, so every tab opened while it started — a restored session,
+     * several files opened at once, a restart — showed no problems until it was edited (Bash review B1). Each
+     * open document is sent again, unchanged, which the server lints like any change.
+     */
+    void configurationAnswered() {
+        if (BashShims.isBash(serverId) && configuredOnce.compareAndSet(false, true)) {
+            clientThread.execute(this::resyncOpenDocuments);
+        }
+    }
+
+    /** Re-sends every open document's text, unchanged, under a new version: the server analyses it again. */
+    void resyncOpenDocuments() {
+        for (var e : openers.entrySet()) {
+            if (!e.getValue().isEmpty()) {
+                resend(e.getKey());
+            }
+        }
+    }
+
+    /**
+     * Opens {@code uri}, a file no window has open, and closes it again at once, sending {@code text}: the Bash
+     * server reads a workspace file once and has no watched-files handler, so a library changed on disk kept its
+     * old functions and lines until a restart (Bash review B7). Not sent while the server starts: it reads the
+     * disk then anyway. The close clears what it publishes for the file; a late, versioned publish for a document
+     * that is not open is dropped by the manager.
+     */
+    void reanalyze(String uri, String text) {
+        if (!ready() || isOpen(uri)) {
+            return;
+        }
+        String wire = named.toWire(uri);
+        server().getTextDocumentService()
+                .didOpen(new DidOpenTextDocumentParams(
+                        new TextDocumentItem(wire, LspServerRegistry.protocolLanguageId("shell"), 1, text)));
+        server().getTextDocumentService().didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(wire)));
     }
 
     /**
@@ -1618,16 +1673,21 @@ final class LanguageServerSession implements LanguageClient {
             if (uri.equals(saved) || !uri.endsWith(".java") || e.getValue().isEmpty()) {
                 continue;
             }
-            whenReady("revalidate:" + uri, () -> {
-                String text = shadows.get(uri);
-                if (text == null || changeSyncDisabled()) return;
-                int version = versions.merge(uri, 1, Integer::sum);
-                server().getTextDocumentService()
-                        .didChange(new DidChangeTextDocumentParams(
-                                new VersionedTextDocumentIdentifier(named.toWire(uri), version),
-                                List.of(new TextDocumentContentChangeEvent(wireText(uri, text)))));
-            });
+            resend(uri);
         }
+    }
+
+    /** Sends {@code uri}'s last-sent text again as a full change with the next version. */
+    private void resend(String uri) {
+        whenReady("revalidate:" + uri, () -> {
+            String text = shadows.get(uri);
+            if (text == null || changeSyncDisabled()) return;
+            int version = versions.merge(uri, 1, Integer::sum);
+            server().getTextDocumentService()
+                    .didChange(new DidChangeTextDocumentParams(
+                            new VersionedTextDocumentIdentifier(named.toWire(uri), version),
+                            List.of(new TextDocumentContentChangeEvent(wireText(uri, text)))));
+        });
     }
 
     /**
@@ -1751,6 +1811,11 @@ final class LanguageServerSession implements LanguageClient {
     @Nullable
     String documentSnapshot(String uri) {
         return shadows.get(uri);
+    }
+
+    /** The text last sent for the document the server calls {@code wireUri}, or null when it is not open. */
+    private @Nullable String shadowOfWire(@Nullable String wireUri) {
+        return wireUri == null ? null : shadows.get(named.toKey(wireUri));
     }
 
     /** Snapshot of the text sent for each open document, used to reject stale unversioned workspace edits. */
@@ -1907,8 +1972,12 @@ final class LanguageServerSession implements LanguageClient {
         }
         var params = new org.eclipse.lsp4j.CodeActionParams(doc(uri), range, context);
         return bounded(server().getTextDocumentService().codeAction(params))
-                .<List<Either<org.eclipse.lsp4j.Command, org.eclipse.lsp4j.CodeAction>>>thenApply(
-                        l -> l == null ? List.of() : List.copyOf(l))
+                .<List<Either<org.eclipse.lsp4j.Command, org.eclipse.lsp4j.CodeAction>>>thenApply(l -> {
+                    if (l != null && BashShims.isBash(serverId)) { // ShellCheck's fixes count code points (B2)
+                        BashShims.codeActionsToUtf16(l, named.toWire(uri), shadows.get(uri));
+                    }
+                    return l == null ? List.of() : List.copyOf(l);
+                })
                 .exceptionally(t -> List.of());
     }
 
@@ -2441,8 +2510,25 @@ final class LanguageServerSession implements LanguageClient {
         }
         // Usages only: with the declaration included, Find References on an unused symbol answered with the
         // declaration alone, and the lone result was "jumped to" — the caret stayed put (Java review B5).
+        if (BashShims.isBash(serverId)) {
+            return bashReferences(uri, pos);
+        }
         ReferenceParams params = new ReferenceParams(doc(uri), pos, new ReferenceContext(false));
         return bounded(server().getTextDocumentService().references(params));
+    }
+
+    /**
+     * bash-language-server reads {@code includeDeclaration: false} as "without the occurrence at the request
+     * position": from a call the list held the definition and not the call (Bash review C4, B9). It is asked with
+     * the declaration included, and the declaration — where {@code textDocument/definition} says it is — is left
+     * out here. Should the definition request fail, the whole list is shown.
+     */
+    private CompletableFuture<List<? extends Location>> bashReferences(String uri, Position pos) {
+        var refs = bounded(server().getTextDocumentService()
+                .references(new ReferenceParams(doc(uri), pos, new ReferenceContext(true))));
+        var defs = bounded(server().getTextDocumentService().definition(new DefinitionParams(doc(uri), pos)))
+                .exceptionally(t -> null);
+        return refs.thenCombine(defs, (r, d) -> BashShims.withoutDeclarations(r, BashShims.locations(d)));
     }
 
     /**
@@ -2656,6 +2742,9 @@ final class LanguageServerSession implements LanguageClient {
 
     @Override
     public void publishDiagnostics(PublishDiagnosticsParams diagnostics) {
+        if (BashShims.isBash(serverId) && diagnostics != null) { // ShellCheck's columns are code points (B2)
+            BashShims.diagnosticsToUtf16(diagnostics.getDiagnostics(), shadowOfWire(diagnostics.getUri()));
+        }
         if (!disposed) {
             onDiagnostics.accept(diagnostics);
         }

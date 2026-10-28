@@ -1884,6 +1884,7 @@ public final class LspManager {
                 params -> onPublishDiagnostics(diagnosticSource[0], params),
                 statusSink(spec.serverId(), () -> diagnosticSource[0]));
         diagnosticSource[0] = session;
+        session.setClientThread(Platform::runLater); // a re-sync must not race the FX thread's own document sync
         configureClient(session.primaryClient(), key, session);
         session.setJavaOnTypeFormatting(javaOnTypeFormatting);
         session.setJavaCleanups(javaCleanups);
