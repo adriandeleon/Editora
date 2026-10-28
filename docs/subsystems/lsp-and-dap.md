@@ -530,13 +530,26 @@ character", "Unresolved reference", a "@ line N, column M"), with a script's pat
 closing "1 error" nor its "Could not compile settings file" wrapper. A failure that is one folder's under the root is
 said with that folder's name ("jdtls (tools)").
 
-jdtls updates a project's classpath from a build file only when told it changed. Inside the project the Project panel
-reports changes from its expanded folders alone, so a Java server's root also gets a watcher for build files
-(`LspManager.modelFile`: `pom.xml`, `build.gradle(.kts)`, `settings.gradle(.kts)`, beside lemminx's grammar files),
-which skips a build's output folders (`target`, `build`, `out`, `bin` beside a build file). A watcher registers at most
-2,000 folders, so it reports a file only when its own folder is registered (`RootWatcher.watches`), not anything under
-its root; the panel's own event for a file that watcher reports is not sent again. A build file saved here that no
-watcher covers (an SSH project, or one past the folder cap) is sent as a watched-file change on save.
+jdtls updates a project's classpath from a build file only when told it changed, lemminx revalidates against a
+grammar only when told it changed, and the Bash server never re-reads a sourced library on its own. The Project panel
+reports changes from its expanded folders alone, so every local server root gets a recursive watcher of its own
+(`LspManager.ensureRootWatcher`, one `RootWatcher` per root, none for a root inside one already watched, at most eight),
+project or not. It skips hidden, dependency and virtual-environment folders and the folders the root's `.gitignore`
+files leave out (nested ones too). A watcher registers at most 2,000 folders (300 when polling), so it reports a file
+only when its own folder is registered (`RootWatcher.watches`), not anything under its root; the panel's own event for a
+file that a watcher reports is not sent again (`LspManager.reportsChangesTo`). A build file saved here that no watcher
+covers (an SSH project, or one past the folder cap) is sent as a watched-file change on save.
+
+bash-language-server has no `didChangeWatchedFiles` handler. For a Bash session, a shell script (by extension or name,
+or `.inc`) created or changed under its root and open in no window is opened and closed again with its text from disk
+(`BashReanalysis`, gathered for 400 ms, at most 200 files of 1 MB per burst, read off the FX thread and sent from it);
+the server parses it afresh and the close clears what it publishes. The other Bash workarounds are in `BashShims`:
+after the server's first `workspace/configuration` has been answered (`AfterRequestConsumer`, on the reader thread, so
+the answer is already queued) and after every `bashIde` push, each open document is re-sent unchanged, because the
+server lints only the document it heard of last; Find References asks with `includeDeclaration: true` and drops the
+reference that starts where `textDocument/definition` does, because the server reads `false` as "without the
+occurrence under the caret"; ShellCheck's columns, which count code points, are made UTF-16 in its diagnostics and quick
+fixes against the text the session sent.
 
 ### jdtls preferences
 

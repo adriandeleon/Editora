@@ -55,6 +55,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Shell scripts: problems for every open script, and libraries changed on disk are read again** (Bash review,
+  sync):
+  - Scripts opened while the Bash server starts (a restored session, several files opened at once) all show their
+    ShellCheck problems; only the last one did, until it was edited.
+  - A Settings ▸ Bash change re-checks every open script, not only the last one touched (bash-language-server 5.6).
+  - After Restart Language Servers, background tabs keep their problems instead of waiting to be visited (every
+    server).
+  - A sourced library changed on disk by git, a terminal or another editor is read again: Go to Definition lands on
+    the right line and new functions complete, without a restart.
+  - Find References from a call lists that call and leaves out the definition; a function used once no longer jumps
+    to its definition.
+  - On a line with emoji, ShellCheck squiggles sit under the right characters and "Apply fix" quotes the right word.
+- **Language servers hear of file changes in collapsed folders.** Each server's project folder is watched as a whole
+  (skipping hidden, dependency and `.gitignore`d folders), not only the folders the Project panel shows expanded, so a
+  `git checkout` no longer leaves jdtls, Pyright or lemminx with a stale model.
 - **Format Document follows the file's save rules.** Format Document and Format Selection now send the file's
   EditorConfig `trim_trailing_whitespace` and `insert_final_newline` (or the project's) to the language server, so a
   formatted file already looks the way saving writes it. lemminx adds the final newline only when asked. Tab re-indent
