@@ -184,4 +184,30 @@ class SnippetVersusCompletionFxTest {
         List<Completion> server = List.of(serverTemplate("sysout", "System.out.println(${0});"));
         assertEquals(server, BufferCompletion.mergeCompletions(server, List.of()));
     }
+
+    /**
+     * A local snippet stays beside the server's keyword or builtin of the same word, right after it, and the server's
+     * own snippet it shadows goes: turning the Bash server on took case, function, while and echo away (C6).
+     */
+    @Test
+    void aLocalSnippetIsKeptBesideTheServersWordOfTheSameName() {
+        Snippet caseSnippet = new Snippet("case", "case", "case $1 in\n\t*) ;;\nesac", "A case", "shell");
+        Snippet echo = new Snippet("echo", "echo", "echo \"$1\"", "Print", "shell");
+        List<Completion> server = new java.util.ArrayList<>();
+        server.add(Completion.lsp("case", "case", "keyword"));
+        server.add(serverTemplate("case", "case ${1:x} in esac"));
+        for (int i = 0; i < 60; i++) {
+            server.add(Completion.lsp("cmd" + i, "cmd" + i, "command"));
+        }
+        server.add(Completion.lsp("echo", "echo", "builtin"));
+        List<Completion> local = List.of(Completion.ofSnippet(caseSnippet), Completion.ofSnippet(echo));
+
+        List<Completion> rows = BufferCompletion.mergeCompletions(server, local);
+
+        assertEquals("case", rows.get(0).label());
+        assertSame(caseSnippet, rows.get(1).snippet(), "right after the keyword");
+        assertTrue(rows.stream().noneMatch(c -> c.label().equals("case") && c.snippet() == null && c != rows.get(0)));
+        assertTrue(rows.stream().anyMatch(c -> c.snippet() == echo), "kept though the list is capped");
+        assertEquals(50, rows.size());
+    }
 }

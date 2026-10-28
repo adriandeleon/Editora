@@ -1347,7 +1347,8 @@ class LspCoordinatorCommandsFxTest {
 
         fx.run(() -> fx.coordinator.gotoProblem(true));
         assertEquals(List.of(1, 12), List.of(caretOf(b)[0], caretOf(b)[1]));
-        assertEquals(tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastError());
+        assertEquals(
+                tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastStatus()); // no Editora error (C13)
         fx.run(() -> fx.coordinator.gotoProblem(true));
         assertEquals(2, caretOf(b)[0]);
         fx.run(() -> fx.coordinator.gotoProblem(true));
@@ -1374,11 +1375,11 @@ class LspCoordinatorCommandsFxTest {
 
         fx.caret(b, 1, 12);
         fx.run(() -> fx.coordinator.problemAtCaret());
-        assertEquals(tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastError(), "the one at the caret");
+        assertEquals(tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastStatus(), "the one at the caret");
         fx.caret(b, 1, 0);
         fx.host.errors.clear();
         fx.run(() -> fx.coordinator.problemAtCaret());
-        assertEquals(tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastError(), "the line's worst");
+        assertEquals(tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastStatus(), "the line's worst");
         fx.caret(b, 3, 0);
         fx.run(() -> fx.coordinator.problemAtCaret());
         assertEquals(tr("status.lsp.noProblemHere"), fx.host.lastStatus());

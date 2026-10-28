@@ -115,4 +115,48 @@ class ShellIndentTest {
         Indenter.TabEdit edit = Indenter.smartTab(text, blank, blank, "shell", 4, false, true, 4);
         return edit.replacement();
     }
+
+    /** Tab / Shift-Tab over {@code [from, to)} of {@code text}, as the editor runs it: through its window. */
+    private static String block(String text, int from, int to, boolean shift, String unit) {
+        Indenter.TabEdit e = IndentWindow.tabEdit(IndentWindow.of(text), from, to, "shell", 4, shift, unit);
+        return text.substring(0, e.from()) + e.replacement() + text.substring(e.to());
+    }
+
+    private static final String HEREDOC = "#!/bin/bash\nmain() {\ncat <<EOF\nhello $1\n  world\nEOF\necho done\n}\n";
+
+    /** Indenting a whole script kept it a script: the shebang and the here-doc stay put (Bash review C2). */
+    @Test
+    void blockIndentLeavesTheShebangAndHereDocsAlone() {
+        assertEquals(
+                "#!/bin/bash\n    main() {\n    cat <<EOF\nhello $1\n  world\nEOF\n    echo done\n    }\n",
+                block(HEREDOC, 0, HEREDOC.length(), false, "    "));
+        String indented = "#!/bin/bash\n    main() {\n    cat <<EOF\nhello $1\n  world\nEOF\n    echo done\n    }\n";
+        assertEquals(HEREDOC, block(indented, 0, indented.length(), true, "    "), "and outdenting gives it back");
+        assertEquals(
+                "#!/bin/bash\nmain() {\ncat <<EOF\nhello $1\n  world\nEOF\n    echo done\n}\n",
+                block(HEREDOC, HEREDOC.indexOf("hello"), HEREDOC.indexOf("}"), false, "    "),
+                "a selection that starts inside the here-doc knows it is there");
+        String notFirst = "x=1\n#!/not/a/shebang\n";
+        assertEquals("    x=1\n    #!/not/a/shebang\n", block(notFirst, 0, notFirst.length(), false, "    "));
+    }
+
+    @Test
+    void aDashHereDocMovesByTabsOnly() {
+        String text = "f() {\n\tcat <<-EOF\n\thello\n\tEOF\n}\n";
+        assertEquals(
+                "\tf() {\n\t\tcat <<-EOF\n\t\thello\n\t\tEOF\n\t}\n",
+                block(text, 0, text.length(), false, "\t"),
+                "bash strips the tabs, so they may move");
+        assertEquals(
+                "    f() {\n    \tcat <<-EOF\n\thello\n\tEOF\n    }\n",
+                block(text, 0, text.length(), false, "    "),
+                "spaces would hide the delimiter");
+        assertEquals("f() {\ncat <<-EOF\nhello\nEOF\n}\n", block(text, 0, text.length(), true, "\t"));
+    }
+
+    @Test
+    void aMultiLineStringIsNotReindented() {
+        String text = "msg=\"one\ntwo\"\necho \"$msg\"\n";
+        assertEquals("    msg=\"one\ntwo\"\n    echo \"$msg\"\n", block(text, 0, text.length(), false, "    "));
+    }
 }

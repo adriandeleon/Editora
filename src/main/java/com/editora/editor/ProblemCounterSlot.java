@@ -30,6 +30,9 @@ public final class ProblemCounterSlot {
     /** Why the file is not checked although a server has it (its project did not import), or null. */
     private @Nullable String note;
 
+    /** Why the server, though it has the file, does not lint it (ShellCheck has no zsh mode), or null. */
+    private java.util.function.Supplier<@Nullable String> unchecked = () -> null;
+
     private java.util.function.Function<String, @Nullable String> chords = id -> null;
 
     /**
@@ -90,6 +93,15 @@ public final class ProblemCounterSlot {
         }
     }
 
+    /**
+     * What says, each time the counter updates, why the file's server does not lint it although it serves it (a zsh
+     * script on the Bash server: completion and hover, no ShellCheck), or null when it does. Such a file showed a
+     * check over a script nothing had checked (Bash review C14).
+     */
+    public void setUncheckedReason(java.util.function.Supplier<@Nullable String> reason) {
+        this.unchecked = reason == null ? () -> null : reason;
+    }
+
     /** The active keymap's chords for command ids, for the arrows' tooltips. */
     public void setChords(java.util.function.Function<String, @Nullable String> chords) {
         this.chords = chords == null ? id -> null : chords;
@@ -120,7 +132,7 @@ public final class ProblemCounterSlot {
             counter = new ProblemCounter(() -> open.run(), () -> previous.run(), () -> next.run());
             counter.setChords(chords);
         }
-        String noteNow = note;
+        String noteNow = note != null ? note : unchecked.get();
         boolean known = checked && (!diagnostics.isEmpty() || settled.getAsBoolean());
         counter.show(
                 diagnostics,

@@ -402,6 +402,21 @@ public final class LspManager {
         return s == null ? null : s.lastErrorLog();
     }
 
+    /** How many errors {@code file}'s server has logged so far: a mark for {@link #errorLoggedSince}. */
+    public long loggedErrorCount(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s == null ? 0 : s.loggedErrorCount();
+    }
+
+    /**
+     * The first line of the last error {@code file}'s server logged after {@code mark} ({@link #loggedErrorCount}),
+     * or null when it logged none since: why a request it answered with nothing failed (Bash review B3).
+     */
+    public @Nullable String errorLoggedSince(Path file, long mark) {
+        LanguageServerSession s = sessionFor(file);
+        return s == null || s.loggedErrorCount() <= mark ? null : s.lastLoggedError();
+    }
+
     /**
      * The last error {@code serverId}'s servers logged (its first line), or null: what a failed import was really
      * about, which jdtls says only in its log (re-review CN2).
@@ -2668,6 +2683,11 @@ public final class LspManager {
             if (cancelled.get()) return;
             long mapping = com.editora.completion.CompletionTrace.now();
             var items = error == null ? CompletionMapper.itemsOf(result) : List.<CompletionItem>of();
+            if (BashCompletions.SERVER_ID.equals(session.serverId())) {
+                // ranked by the server's own categories, and variables only after `$` (Bash review C11)
+                items = BashCompletions.adjust(
+                        items, BashCompletions.lineBefore(session.documentSnapshot(uri(file)), line, character));
+            }
             var options = session.capabilities() == null
                     ? null
                     : session.capabilities().getCompletionProvider();
@@ -4830,7 +4850,10 @@ public final class LspManager {
                 }
                 items.sort((a, b) -> Boolean.compare(b.preferred(), a.preferred())); // preferred first (stable)
             }
-            Platform.runLater(() -> cb.accept(items));
+            List<CodeActionItem> shown = BashCompletions.SERVER_ID.equals(s.serverId()) // titles, suppressions (C10)
+                    ? BashCodeActions.shape(items, context, uri(file), s.documentSnapshot(uri(file)), expected, sentAt)
+                    : items;
+            Platform.runLater(() -> cb.accept(shown));
         });
     }
 

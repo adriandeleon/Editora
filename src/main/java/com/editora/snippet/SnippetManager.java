@@ -974,7 +974,9 @@ public final class SnippetManager {
         if (value instanceof List<?> parts) {
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < parts.size(); i++) {
-                if (i > 0) {
+                // a description line that ends in a line break needs no space after it: the second line of a
+                // two-line shell description started with one in the documentation panel (Bash review C15)
+                if (i > 0 && !(" ".equals(separator) && sb.length() > 0 && sb.charAt(sb.length() - 1) == '\n')) {
                     sb.append(separator);
                 }
                 sb.append(String.valueOf(parts.get(i)));
