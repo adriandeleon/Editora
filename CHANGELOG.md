@@ -55,6 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Narrowing and widening are finished in the frame they happen in.** The Structure window's Narrow to Fold
+  Region toggle (and C-x n n / n f / n w) swapped the text in unstyled: the code showed plain until the next
+  highlight pass, the fold gutter kept the old lines, and on widening the outline showed raw fold blocks for a
+  moment, about a quarter second after narrowing a 1,600-line file and over half a second after widening it (three
+  quarters on a 10,000-line one). The swap now keeps the colours, folds and outline symbols, and widening keeps the
+  region's lines where they were on screen instead of scrolling from the top of the file to put the caret at the
+  bottom edge.
 - **Format Document follows the file's save rules.** Format Document and Format Selection now send the file's
   EditorConfig `trim_trailing_whitespace` and `insert_final_newline` (or the project's) to the language server, so a
   formatted file already looks the way saving writes it. lemminx adds the final newline only when asked. Tab re-indent
