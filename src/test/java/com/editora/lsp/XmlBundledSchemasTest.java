@@ -58,6 +58,22 @@ class XmlBundledSchemasTest {
         assertTrue(xml.contains("<uri name=\"http://maven.apache.org/POM/4.1.0\" uri=\"maven-4.1.0.xsd\"/>"));
     }
 
+    /**
+     * XML/pom review 3, C21: lemminx's grammar-aware formatting of a generated XSD loads XMLSchema.xsd, which imports
+     * {@code http://www.w3.org/2001/xml.xsd}; lemminx ships only the https copy, so with downloads off both XSD fixes
+     * of XML: Generate Grammar… resolved to null. The catalog now maps that location to a shipped copy.
+     */
+    @Test
+    void theXmlNamespaceSchemaIsShippedForGeneratingAnXsdWithDownloadsOff() throws Exception {
+        String xml = XmlBundledSchemas.catalogXml();
+        assertTrue(xml.contains("<system systemId=\"http://www.w3.org/2001/xml.xsd\" uri=\"xml.xsd\"/>"), xml);
+        assertTrue(xml.contains("<uri name=\"http://www.w3.org/2001/xml.xsd\" uri=\"xml.xsd\"/>"), xml);
+        XmlBundledSchemas.ensure(config);
+        String text = Files.readString(XmlBundledSchemas.dir(config).resolve("xml.xsd"));
+        assertTrue(text.contains("targetNamespace=\"http://www.w3.org/XML/1998/namespace\""));
+        assertTrue(!text.contains("<!DOCTYPE"), "it must load without fetching a DTD");
+    }
+
     @Test
     void aChangedOrMissingFileIsWrittenAgain() throws Exception {
         XmlBundledSchemas.ensure(config);
