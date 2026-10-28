@@ -55,6 +55,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Shell scripts: setting up the Bash server is one step, and Doctor tells the truth about it** (Bash review,
+  install). The first shell script asks once whether to turn code intelligence on. The install banner says what
+  Install brings, and Install adds ShellCheck and shfmt with the server; when only those two are missing, the
+  script gets an Install banner instead of an echo-line notice the next message overwrote. bash-language-server is
+  installed at 5.8.1 (not npm's latest), and the install refuses a Node.js older than 20, which 5.8 needs. Doctor
+  shows the version of every npm-installed server, warns with Update below bash-language-server 5.7, warns when a
+  server's Node.js is missing or this window gave up on a server after it kept crashing, and offers Restart
+  Language Servers on those rows. A crash loop is now an error in the status bar (it raises the unread marker). One
+  name, "Bash / Shell", in the banner, status and Doctor; the Settings tool row says ShellCheck; separate Doctor tips
+  for ShellCheck (no problems) and shfmt (no formatting).
+
 - **Format Document follows the file's save rules.** Format Document and Format Selection now send the file's
   EditorConfig `trim_trailing_whitespace` and `insert_final_newline` (or the project's) to the language server, so a
   formatted file already looks the way saving writes it. lemminx adds the final newline only when asked. Tab re-indent
