@@ -75,6 +75,58 @@ class MavenWorkspaceLeaveOutFxTest {
     }
 
     @Test
+    void theLeftOutPomsAndTheRootAreKnownByFile() {
+        Path broken = root.resolve("broken/pom.xml");
+        manager.leaveOutOfMavenWorkspace(pom, List.of(broken));
+
+        assertEquals(List.of(broken), manager.mavenLeftOut(pom));
+        assertEquals(root, manager.mavenRoot(pom));
+        // a pom not open (left out, or changed on disk) belongs to the Maven server whose root holds it (E24)
+        assertEquals(root, manager.mavenRoot(broken));
+        assertTrue(manager.leftOutOfMavenWorkspace(broken));
+        assertEquals(List.of(broken), manager.mavenLeftOut(broken));
+        assertEquals(null, manager.mavenRoot(root.resolveSibling("elsewhere/pom.xml")), "no server's root holds it");
+    }
+
+    @Test
+    void aServerNotReadyLeavesNothingOutAndRecordsNothing() throws Exception {
+        manager.shutdownAll();
+        manager = new LspManager((f, d) -> {}, (t, m) -> {});
+        manager.setSessionStarterForTest(session -> {}); // never attached: never ready
+        manager.setFolderTrust(folder -> true);
+        manager.configure(true, Map.of(LspServerRegistry.MAVEN_POM_SERVER_ID, "lemminx-maven"));
+        manager.openDocument(pom, root, LspServerRegistry.MAVEN_POM_LANGUAGE_ID, "<project/>\n");
+        Path broken = root.resolve("broken/pom.xml");
+
+        assertEquals(List.of(), manager.leaveOutOfMavenWorkspace(pom, List.of(broken)));
+        assertFalse(manager.leftOutOfMavenWorkspace(broken), "nothing was sent, so nothing is claimed (E Gaps)");
+    }
+
+    @Test
+    void theServersLoggedWorkspaceFailureIsCounted() {
+        assertEquals(0, manager.mavenCompletionFailures(pom));
+        var session = manager.sessionForTest(pom);
+        session.logMessage(new org.eclipse.lsp4j.MessageParams(
+                org.eclipse.lsp4j.MessageType.Error,
+                "Message: While performing ICompletionParticipant#onXMLContent for participant "
+                        + "'org.eclipse.lemminx.extensions.maven.participants.completion.MavenCompletionParticipant'.\n"
+                        + "java.lang.NullPointerException: Cannot invoke \"MavenProject.getGroupId()\"\n"
+                        + "\tat org.eclipse.lemminx.extensions.maven.participants.completion.MavenCompletionParticipant"
+                        + ".internalCollectWorkspaceArtifacts(MavenCompletionParticipant.java:1400)"));
+        session.logMessage(
+                new org.eclipse.lsp4j.MessageParams(org.eclipse.lsp4j.MessageType.Info, "Local repo updater started"));
+        assertEquals(1, manager.mavenCompletionFailures(pom));
+    }
+
+    @Test
+    void thePomServerAsksForTheServersLog() {
+        Object logs = manager.xmlSectionFor(LspServerRegistry.MAVEN_POM_SERVER_ID, root)
+                .get("logs");
+        assertEquals(Map.of("client", true), logs, "lemminx-maven's failure is only in its log (E21)");
+        assertEquals(null, manager.xmlSectionFor("xml", root).get("logs"), "the plain XML server: unchanged");
+    }
+
+    @Test
     void aFileOnAnotherServerLeavesNothingOut() throws Exception {
         manager.configure(true, Map.of(LspServerRegistry.MAVEN_POM_SERVER_ID, "lemminx-maven", "java", "jdtls"));
         Path java = root.resolve("A.java");

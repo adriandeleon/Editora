@@ -61,8 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and on-type formatting leave them out.
 - **One malformed pom no longer stops Maven dependency completion.** lemminx-maven kept a malformed pom in its
   workspace with no project, and every groupId/artifactId/version completion after the first threw on it, leaving
-  only `<!--` and `<![CDATA[`. Editora now takes each malformed pom out of the server's workspace, asks again, and
-  names the file in the status bar. Saving that pom well-formed restarts the Maven server, which takes it back.
+  only `<!--` and `<![CDATA[`. Editora now takes each pom that is malformed on disk out of the server's workspace,
+  asks again, and names the file in the status bar ("Left out broken/pom.xml …"). It looks where lemminx-maven
+  looks (`pom*.xml`, `*pom.xml` and `*.pom`, ten folders deep, `node_modules` and `build` included), and acts only
+  when the server really failed, so an honest empty answer changes nothing. When the pom is well-formed again
+  (saved here, or fixed by a checkout), or the server still holds a pom fixed after it broke, only that project's
+  Maven server restarts, and its open poms move to the new one at once.
 - **XML and pom.xml trust (review 3).** Where the native XML server cannot run, the Java one Editora falls back to
   no longer loads the Maven extension, so a pom in an untrusted folder is no longer resolved and its plugins no longer
   run; an XML command that would load lemminx-maven is not started, and the status bar says why. Trusting or revoking
