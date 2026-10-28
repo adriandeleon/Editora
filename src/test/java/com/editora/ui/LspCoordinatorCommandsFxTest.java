@@ -1016,7 +1016,7 @@ class LspCoordinatorCommandsFxTest {
     void aServerThatKeepsDyingAtStartSaysWhy() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);
         String why = "lemminx: version `GLIBC_2.34' not found";
-        String loop = tr("status.lsp.crashLoopReason", tr("install.lang.java"), why);
+        String loop = tr("status.lsp.crashLoopReasonError", tr("install.lang.java"), why);
         for (int i = 0; i < 12 && !fx.host.statuses.contains(loop); i++) {
             FxTestSupport.runOnFx(() -> {
                 if (fx.manager.isManaged(b.getPath())) {
@@ -1027,6 +1027,7 @@ class LspCoordinatorCommandsFxTest {
         }
 
         assertTrue(fx.host.statuses.contains(loop), "the crash loop is reported with the server's own words");
+        assertEquals(MessageLog.Severity.ERROR, StatusSeverity.of(loop), "an error, not lost info (Bash review A11)");
         assertEquals(why, FxTestSupport.callOnFx(() -> fx.coordinator.serverCrash("java")));
         LspCoordinator.ServerTrouble trouble = FxTestSupport.callOnFx(() -> fx.coordinator.serverTrouble("java"));
         assertTrue(trouble.crashed());
@@ -1067,7 +1068,7 @@ class LspCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> fx.host.active = b);
 
         // Keep killing it: after the allowed restarts the editor stops re-forking and says so.
-        String loop = tr("status.lsp.crashLoop", tr("install.lang.java"));
+        String loop = tr("status.lsp.crashLoopError", tr("install.lang.java"));
         for (int i = 0; i < 12 && !fx.host.statuses.contains(loop); i++) {
             FxTestSupport.runOnFx(() -> {
                 if (fx.manager.isManaged(b.getPath())) {
@@ -1077,6 +1078,12 @@ class LspCoordinatorCommandsFxTest {
             fx.settle();
         }
         assertTrue(fx.host.statuses.contains(loop), "a crash loop is reported instead of restarted forever");
+        // an error, so it raises the unread marker and is not lost under the next message (Bash review A11)…
+        assertEquals(MessageLog.Severity.ERROR, StatusSeverity.of(loop));
+        // …and Doctor hears the server is given up on though it said nothing (Bash review A7)
+        LspCoordinator.ServerTrouble trouble = FxTestSupport.callOnFx(() -> fx.coordinator.serverTrouble("java"));
+        assertTrue(trouble != null && trouble.crashed() && trouble.detail().isEmpty(), String.valueOf(trouble));
+        assertNull(FxTestSupport.callOnFx(() -> fx.coordinator.serverCrash("java")), "Settings has no words to show");
         assertFalse(fx.manager.isManaged(b.getPath()));
         assertFalse(FxTestSupport.callOnFx(b::isLspActive), "the dead server's marks are dropped");
         // Showing or re-syncing a tab of that root does not fork it again (Node review E5)…

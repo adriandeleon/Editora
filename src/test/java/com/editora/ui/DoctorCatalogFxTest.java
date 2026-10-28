@@ -208,7 +208,7 @@ class DoctorCatalogFxTest {
         assertEquals(DoctorStatus.OPTIONAL, shfmt.status());
         assertEquals("format", shfmt.sectionKey());
         assertEquals(DoctorCheck.Install.TOOL, shfmt.install());
-        assertEquals("doctor.tip.bashTool", shfmt.tipKey());
+        assertEquals("doctor.tip.shfmtMissing", shfmt.tipKey());
         assertEquals(List.of(noShfmt), shfmt.tipArgs());
 
         ops.serversOff = Set.of("bash");
@@ -302,6 +302,68 @@ class DoctorCatalogFxTest {
         } finally {
             com.editora.io.WatchServices.setOpenerForTest(previous);
         }
+    }
+
+    /** An npm-style Bash server: {@code bin/bash-language-server} linked into its package, which names its version. */
+    private static Path npmBashServer(Path dir, String version, String shebang) throws Exception {
+        Path pkg = Files.createDirectories(dir.resolve("lib/node_modules/bash-language-server"));
+        Files.writeString(
+                pkg.resolve("package.json"), "{\"name\": \"bash-language-server\", \"version\": \"" + version + "\"}");
+        Path cli = executable(pkg.resolve("out/cli.js"), shebang + "\n");
+        Path launcher = Files.createDirectories(dir.resolve("bin")).resolve("bash-language-server");
+        Files.createSymbolicLink(launcher, cli);
+        return launcher;
+    }
+
+    /**
+     * Bash review A12/D4: the Shell row says which bash-language-server it found, as Pyright's always did; one older
+     * than the 5.7 Editora is tested with is a warning whose Update installs the pinned release.
+     */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS) // symlinked launcher
+    void theBashServerRowShowsItsVersionAndAnOldOneOffersUpdate(@TempDir Path dir) throws Exception {
+        Host host = new Host();
+        Ops ops = new Ops();
+        ops.servers = List.of("bash");
+        Path current = npmBashServer(dir.resolve("new"), "5.8.1", "#!/bin/sh");
+        ops.argv.put("bash", List.of(current.toString(), "start"));
+        DoctorCheck ok = spec(specs(host, ops), "lsp.bash").probe().get();
+        assertEquals(DoctorStatus.OK, ok.status(), ok.tipKey());
+        assertEquals("bash-language-server 5.8.1 — " + current, ok.detail());
+
+        Path old = npmBashServer(dir.resolve("old"), "5.6.0", "#!/bin/sh");
+        ops.argv.put("bash", List.of(old.toString(), "start"));
+        DoctorCheck outdated = spec(specs(host, ops), "lsp.bash").probe().get();
+        assertEquals(DoctorStatus.WARN, outdated.status());
+        assertTrue(outdated.update(), "offered as Update");
+        assertEquals("doctor.tip.bashServerOld", outdated.tipKey());
+        assertEquals(List.of("5.6.0", InstallCatalog.BASH_LS_VERSION), outdated.tipArgs());
+    }
+
+    /**
+     * Bash review A3/A7: a server whose Node.js is not there, or one this window gave up on after it kept crashing
+     * with nothing on stderr, is no longer "OK": the row warns and offers Restart Language Servers.
+     */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS) // symlinked launcher
+    void aServerWithoutNodeOrGivenUpOnIsAWarning(@TempDir Path dir) throws Exception {
+        Host host = new Host();
+        Ops ops = new Ops();
+        ops.servers = List.of("bash");
+        Path noNode = npmBashServer(dir.resolve("a"), "5.8.1", "#!" + dir.resolve("gone/node"));
+        ops.argv.put("bash", List.of(noNode.toString(), "start"));
+        DoctorCheck needsNode = spec(specs(host, ops), "lsp.bash").probe().get();
+        assertEquals(DoctorStatus.WARN, needsNode.status());
+        assertEquals("doctor.tip.serverNeedsNode", needsNode.tipKey());
+        assertTrue(needsNode.restartable());
+
+        Path fine = npmBashServer(dir.resolve("b"), "5.8.1", "#!/bin/sh");
+        ops.argv.put("bash", List.of(fine.toString(), "start"));
+        ops.crashes.put("bash", ""); // given up on, and it said nothing
+        DoctorCheck loop = spec(specs(host, ops), "lsp.bash").probe().get();
+        assertEquals(DoctorStatus.WARN, loop.status());
+        assertEquals("doctor.tip.serverCrashLoop", loop.tipKey());
+        assertTrue(loop.restartable() && loop.reinstallable(), "Restart and Install… both offered");
     }
 
     private static List<DoctorService.CheckSpec> specs(Host host, Ops ops) throws Exception {

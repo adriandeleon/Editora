@@ -74,7 +74,23 @@ public record DoctorCheck(
 
     /** The tips of a server that is installed but crashes or fails, which tell the user to click Install…. */
     private static final java.util.Set<String> REINSTALL_TIPS =
-            java.util.Set.of("doctor.tip.serverCrashing", "doctor.tip.serverFailing");
+            java.util.Set.of("doctor.tip.serverCrashing", "doctor.tip.serverFailing", "doctor.tip.serverCrashLoop");
+
+    /** The tips of a server this window has given up on, which a "Restart Language Servers" may bring back. */
+    private static final java.util.Set<String> RESTART_TIPS = java.util.Set.of(
+            "doctor.tip.serverCrashing",
+            "doctor.tip.serverFailing",
+            "doctor.tip.serverCrashLoop",
+            "doctor.tip.serverNeedsNode");
+
+    /**
+     * Whether the pane offers Restart Language Servers on this warning: a language server that crashed, failed its
+     * requests or could not start, which this window stopped retrying (Bash review A7). The tip names the command;
+     * the row now runs it.
+     */
+    public boolean restartable() {
+        return status == DoctorStatus.WARN && id.startsWith("lsp.") && RESTART_TIPS.contains(tipKey);
+    }
 
     /**
      * Whether the pane offers Install on this warning: an installable server whose tip says to reinstall it because it

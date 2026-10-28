@@ -7389,7 +7389,7 @@ public class SettingsWindow {
         });
         // Its status row (ShellCheck / shfmt: found, Install…) follows, like every other tool's.
         String toolId = key.replace("Path", "");
-        ToolStatusRow status = new ToolStatusRow(toolId).install(() -> {
+        ToolStatusRow status = new ToolStatusRow(InstallCoordinator.toolName(toolId)).install(() -> {
             if (onInstallTool != null) {
                 onInstallTool.accept(toolId);
             }

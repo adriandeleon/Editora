@@ -89,6 +89,9 @@ final class DoctorPane extends Region implements TabContent {
 
         /** "Clear": empty the cache the row reports ({@link DoctorCheck#clearable()}). */
         default void clear(DoctorCheck check) {}
+
+        /** "Restart Language Servers" on a server row this window gave up on ({@link DoctorCheck#restartable()}). */
+        default void restartServers() {}
     }
 
     /** Narrowest the centered column gets before the page scrolls horizontally; tips wrap, so it is not scaled. */
@@ -920,6 +923,11 @@ final class DoctorPane extends Region implements TabContent {
                 Button help = action(tr("doctor.action.howToInstall"), "help");
                 help.setOnAction(e -> actions.openUrl(c.helpUrl()));
                 box.getChildren().add(help);
+            }
+            if (c.restartable()) {
+                Button restart = action(tr("doctor.action.restartServers"), "restart");
+                restart.setOnAction(e -> actions.restartServers());
+                box.getChildren().add(restart);
             }
             if (c.clearable() && st == DoctorStatus.OK && pathIn(c.detail()) != null) {
                 Button clear = action(tr("doctor.action.clear"), "clear"); // a cache with something in it

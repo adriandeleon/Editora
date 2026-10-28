@@ -223,6 +223,12 @@ final class DoctorCoordinator {
             public void clear(DoctorCheck check) {
                 clearCache(check);
             }
+
+            @Override
+            public void restartServers() {
+                ops.runCommand("lsp.restartServers"); // a given-up server gets a fresh start (Bash review A7)
+                runChecks();
+            }
         });
     }
 
@@ -1082,7 +1088,7 @@ final class DoctorCoordinator {
         if (install != DoctorCheck.Install.NONE) {
             row = row.withInstall(install, installArgFor(serverId));
         }
-        boolean python = "python".equals(serverId);
+        String npmPackage = InstallCatalog.npmPackage(serverId);
         boolean configured = ops.lspServerCommandSet(serverId);
         LspCoordinator.ServerTrouble failing = ops.lspServerFailure(serverId);
         PinnedVersions.Pin pin = PinnedVersions.forServer(serverId).orElse(null);
@@ -1110,6 +1116,11 @@ final class DoctorCoordinator {
                                 : "doctor.tip.missingInstallable",
                         argv.get(0));
             }
+            String node = DoctorRules.launcherNode(Path.of(path));
+            if (node != null && DoctorProbes.resolvedPath(List.of(node)).isEmpty()) {
+                // an npm launcher (#!/usr/bin/env node) with no Node.js: it can only die at start (Bash review A3)
+                return base.warn(path, "doctor.tip.serverNeedsNode");
+            }
             if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)) {
                 // found is not enough: it needs a tsserver (E4)
                 return withNewer(typeScriptServerRow(base, argv, path), serverId, argv, path, latest);
@@ -1121,6 +1132,10 @@ final class DoctorCoordinator {
                 if (!missingJars.isEmpty()) {
                     return base.missing("doctor.tip.mavenIncomplete", String.join(", ", missingJars));
                 }
+            }
+            if (failing != null && failing.crashed() && failing.detail().isEmpty()) {
+                // given up after crashing, with nothing on stderr: not OK while this window runs none (Bash A7)
+                return base.warn(path, "doctor.tip.serverCrashLoop");
             }
             if (failing != null) {
                 // it starts, then fails every request (C2); or it exits before it is ready, saying why (XML A4)
@@ -1138,9 +1153,16 @@ final class DoctorCoordinator {
                 DoctorCheck pinned = pinnedRow(base, pin, config, locations, own, printed, path, true);
                 return own != null ? jdtlsRuntime(pinned, mavenJdk, path, projectRoot) : pinned;
             }
-            // Pyright's launcher prints no version; its npm package.json beside it says (review B16).
-            String version = python ? DoctorRules.npmPackageVersion(Path.of(path)) : "";
-            return withNewer(base.ok(version.isEmpty() ? path : version + " — " + path), serverId, argv, path, latest);
+            // An npm launcher prints no version (Pyright) or none Doctor asks for; its package.json says (review B16,
+            // Bash review A12: every npm-installed server, not only Pyright).
+            String version = npmPackage != null ? DoctorRules.npmPackageVersion(Path.of(path)) : "";
+            String detail = version.isEmpty() ? path : version + " — " + path;
+            String tested = "bash".equals(serverId) ? DoctorRules.versionOf(version, npmPackage) : null;
+            if (tested != null && !com.editora.install.VersionFloor.BASH_LANGUAGE_SERVER.metBy(tested)) {
+                // older than the release Editora's shell support is checked against: Update installs the pin (D4)
+                return base.outdated(detail, "doctor.tip.bashServerOld", tested, InstallCatalog.BASH_LS_VERSION);
+            }
+            return withNewer(base.ok(detail), serverId, argv, path, latest);
         });
     }
 
@@ -1219,7 +1241,7 @@ final class DoctorCoordinator {
     /** A row for one of bash-language-server's tools: its version when it runs, else Install…. */
     private DoctorService.CheckSpec bashToolRow(String toolId, Needs needs) {
         String command = ops.bashTool(toolId);
-        String label = "shellcheck".equals(toolId) ? "ShellCheck" : toolId;
+        String label = InstallCoordinator.toolName(toolId);
         DoctorCheck row = DoctorCheck.checking("lsp.bash." + toolId, "format", label, command)
                 .withSettings("lsp")
                 .withInstall(DoctorCheck.Install.TOOL, toolId);
@@ -1248,9 +1270,9 @@ final class DoctorCoordinator {
                                 || PinnedVersions.anyInside(
                                         List.of(command), config == null ? null : config.resolve(pin.destSubpath())));
             }
-            return needed
-                    ? base.missing("doctor.tip.bashTool", command)
-                    : base.optional("doctor.tip.bashTool", command);
+            // ShellCheck's absence costs the problems, shfmt's the formatting: one tip each (Bash review A14)
+            String tip = "shellcheck".equals(toolId) ? "doctor.tip.shellcheckMissing" : "doctor.tip.shfmtMissing";
+            return needed ? base.missing(tip, command) : base.optional(tip, command);
         });
     }
 
