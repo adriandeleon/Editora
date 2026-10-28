@@ -42,6 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file to it, with "Files without a grammar" left at Nothing (lemminx offered these fixes only on its no-grammar
   hint). In Structure, a DTD now lists its elements with their attributes, its entities and notations.
 
+- **Bash server settings (Bash review, config).** Settings ▸ LSP ▸ Bash has **Lint with ShellCheck** and
+  **Format with shfmt** switches (on; off sends the server an empty path and silences the missing-tool notices) and
+  **Explain source lines the server cannot follow** (on: a hint on `source "$(dirname "$0")/lib.sh"` lines saying to
+  add a `# shellcheck source=` directive). A project's `bashIde` object now also passes `enableSourceErrorDiagnostics`,
+  `globPattern`, `logLevel`, `shellcheckExternalSources`, `backgroundAnalysisIgnore` and `shfmt.additionalArguments`
+  (checked for type; unknown keys only in a trusted folder), and `"shellcheckPath": ""` / `"shfmt": {"path": ""}`
+  turn a tool off. Background analysis also reads `.ksh`, `.mksh` and `.bats` files. Settings schema 152 → 153.
+
 ### Changed
 
 - **Terminal: a keystroke no longer clears the selection.** It goes when the text under it is redrawn, so a
@@ -55,6 +63,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Bash server (Bash review, config):** a project's `bashIde` overrides reach only the servers for that project's
+  folders, not scripts opened from another repository, `~/bin` or `/etc`. Container and WSL folders look ShellCheck
+  and shfmt up on their own PATH instead of being sent this machine's copies. Scripts outside any repository share
+  one Bash server per window (background analysis off) instead of one node process per folder. ShellCheck's SC1071
+  ("only supports sh/bash…") is no longer shown on zsh scripts, nor SC2034/SC2154 on a `PKGBUILD`. A file with a
+  `# shellcheck shell=…` directive (a sourced `.inc` library) opens as a shell script. ShellCheck arguments are sent
+  as a list, so a quoted argument with spaces survives. An explainshell endpoint over plain `http://` to another
+  machine is refused (hover sends it the whole command line), and a Bash hover waiting on explainshell gives up
+  after 5 seconds with "explainshell did not answer". The Bash card names the rows a project overrides and checks
+  the tools the window actually runs; the ShellCheck-arguments and `.editorconfig` texts say what the server really
+  does (it already follows sourced files; any shfmt key in `.editorconfig` replaces all the shfmt options).
 - **Format Document follows the file's save rules.** Format Document and Format Selection now send the file's
   EditorConfig `trim_trailing_whitespace` and `insert_final_newline` (or the project's) to the language server, so a
   formatted file already looks the way saving writes it. lemminx adds the final newline only when asked. Tab re-indent
