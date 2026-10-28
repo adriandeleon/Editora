@@ -1052,6 +1052,19 @@ Metals, JetBrains' Kotlin LSP, clojure-lsp, lemminx, ShellCheck, shfmt): the ver
 listed with their steps in `install/PinnedVersions`. Every other installer takes whatever is latest (npm, pip, `go
 install …@latest`, rustup, the GitHub `releases/latest` archives).
 
+- **bash-language-server** is the one npm global installed at a version (`npm install -g
+  bash-language-server@<BASH_LS_VERSION>`; the step id stays the bare package name). It is not in `PinnedVersions`
+  (an npm global has no folder for a receipt): `InstallCatalog.nodeFloor` makes `InstallCoordinator.installServer`
+  ask `node --version` first and refuse below `VersionFloor.NODE_BASH_LS` (npm only warns about `engines`, and the
+  server then dies at start); Doctor reads the found server's `package.json` (`DoctorRules.npmPackageVersion`, for
+  every npm server via `InstallCatalog.npmPackage`) and warns with Update below `VersionFloor.BASH_LANGUAGE_SERVER`;
+  `LatestVersions` does not look it up. After the server, the install fetches whichever of ShellCheck and shfmt is
+  missing (`InstallCoordinator.toolsAfterServer`); the editor's banner offers just the tools when only they are
+  missing (`InstallPromptCoordinator.offerShellTools`). Doctor also warns when a server's launcher is a Node.js script
+  whose `node` is not found (`DoctorRules.launcherNode`), and when this window gave up on a server that said nothing
+  (a blank `LspCoordinator.serverTrouble` detail); those rows offer Restart Language Servers
+  (`DoctorCheck.restartable`).
+
 - **lemminx (XML).** vscode-xml's native build (`LEMMINX_VERSION`, which ships `LEMMINX_SERVER_VERSION`), one zip
   per platform: the zip is checked against GitHub's SHA-256 for the asset and the program inside against the
   release's own `lemminx-<platform>.sha256` (`PinnedAsset.member`/`memberSha256`), installed as plain `lemminx` in

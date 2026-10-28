@@ -890,16 +890,14 @@ final class LspCoordinator {
         String reason = lspManager.crashReason(serverId);
         if (!restart) {
             startBlocked.add(crashKey(serverId, root)); // E5: given up — opening another tab must not fork it again
-            if (reason != null) {
-                crashedServers.put(serverId, reason);
-            }
+            crashedServers.put(serverId, reason == null ? "" : reason); // "": gave up, nothing said (Bash A7)
         }
         host.setStatus(
                 restart
                         ? tr("status.lsp.crashed", serverLabel(serverId))
                         : reason == null
-                                ? tr("status.lsp.crashLoop", serverLabel(serverId))
-                                : tr("status.lsp.crashLoopReason", serverLabel(serverId), reason));
+                                ? tr("status.lsp.crashLoopError", serverLabel(serverId))
+                                : tr("status.lsp.crashLoopReasonError", serverLabel(serverId), reason));
         forEachCrashedBuffer(serverId, root, b -> {
             Path p = lspPath(b);
             b.setLspActive(false); // drop the dead session's squiggles/stripes immediately
@@ -1122,7 +1120,8 @@ final class LspCoordinator {
      */
     @Nullable
     String serverCrash(String serverId) {
-        return crashedServers.get(serverId);
+        String said = crashedServers.get(serverId);
+        return said == null || said.isEmpty() ? null : said;
     }
 
     /** {@link #serverFailure} or {@link #serverCrash}, whichever says why {@code serverId} is given up on. */
@@ -2086,22 +2085,6 @@ final class LspCoordinator {
                         com.editora.install.InstallCatalog.installedToolIfPresent(configDir, "shfmt"));
     }
 
-    /** Whether ShellCheck's absence has been pointed out in this window already. */
-    private boolean shellcheckNoticeShown;
-
-    /**
-     * Says once per window that ShellCheck is missing when a shell script is opened on the Bash server: the
-     * server then lints nothing and says so only in its log, so the script just looked clean.
-     */
-    private void noticeMissingShellcheck() {
-        if (!shellcheckNoticeShown && !bashToolFound("shellcheck")) {
-            shellcheckNoticeShown = true;
-            // After the opening finishes: the "Opened <file>" message is written later in the same pass and
-            // replaced this one before anyone could read it.
-            javafx.application.Platform.runLater(() -> host.setStatus(tr("status.lsp.bashNoShellcheck")));
-        }
-    }
-
     /** Whether the command the Bash server runs for {@code toolId} resolves (a PATH/file lookup, no process). */
     boolean bashToolFound(String toolId) {
         return com.editora.doctor.DoctorProbes.onPath(List.of(bashToolCommand(toolId)));
@@ -2861,9 +2844,6 @@ final class LspCoordinator {
             buffer.setInlayHintsActive(lineAnnotationsOn()); // decoupled from semantic (#681)
             requestInlayHints(buffer); // gated internally on the setting + capability (#681)
             requestFoldingRanges(buffer); // #738 — a no-op until the server reports ready, then refreshed
-            if ("bash".equals(serverId) && !remote) {
-                noticeMissingShellcheck();
-            }
             if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId) && !remote) {
                 noticeMissingNodeTypes(buffer, path);
             }

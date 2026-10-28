@@ -122,4 +122,23 @@ class DoctorCheckTest {
         assertEquals(DoctorStatus.MISSING, c.status());
         assertEquals("doctor.tip.needsLsp", c.tipKey());
     }
+
+    /** Bash review A7: a server row this window gave up on offers Restart Language Servers; other warnings do not. */
+    @Test
+    void aGivenUpServerOffersRestart() {
+        DoctorCheck row = DoctorCheck.checking("lsp.bash", "lsp", "Bash / Shell", "bash-language-server start")
+                .withInstall(DoctorCheck.Install.SERVER, "bash");
+        DoctorCheck crashLoop = row.warn("/bin/bash-language-server", "doctor.tip.serverCrashLoop");
+        assertTrue(crashLoop.restartable());
+        assertTrue(crashLoop.reinstallable(), "Install… too, as the tip says");
+        assertTrue(row.warn("/x", "doctor.tip.serverNeedsNode").restartable());
+        assertFalse(row.warn("/x", "doctor.tip.serverNeedsNode").reinstallable(), "a reinstall brings no Node.js");
+        assertFalse(row.ok("/x").restartable());
+        assertFalse(row.warn("/x", "doctor.tip.pinOutdated").restartable());
+        assertFalse(
+                DoctorCheck.checking("git", "vcs", "Git", "git")
+                        .warn("", "doctor.tip.serverCrashLoop")
+                        .restartable(),
+                "only language servers");
+    }
 }

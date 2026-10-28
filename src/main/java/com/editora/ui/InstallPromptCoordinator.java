@@ -38,7 +38,7 @@ final class InstallPromptCoordinator {
 
     /**
      * The languages whose first file in this window already asked to turn language servers on: Python (review
-     * B15) and XML (XML review C13) — asked once each, answered or not.
+     * B15), XML (XML review C13) and shell (Bash review C8) — asked once each, answered or not.
      */
     private final java.util.Set<String> turnOnOffered = new java.util.HashSet<>();
 
@@ -75,8 +75,9 @@ final class InstallPromptCoordinator {
             buffer.showInstallBar(false);
             return;
         }
-        // Language servers are off (the default): the first Python or XML file this window opens asks once whether
-        // to turn them on, since nothing else says their code intelligence exists (review B15, XML review C13).
+        // Language servers are off (the default): the first Python, XML or shell file this window opens asks once
+        // whether to turn them on, since nothing else says their code intelligence exists (review B15, XML review
+        // C13, Bash review C8).
         if (!host.lspEnabled() && buffer == turnOnOfferBuffer.get()) {
             return; // still unanswered: the offer stays on its tab
         }
@@ -84,7 +85,7 @@ final class InstallPromptCoordinator {
         if (turnOnKind != null && turnOnOffered.add(turnOnKind)) {
             turnOnOfferBuffer = new java.lang.ref.WeakReference<>(buffer);
             buffer.setInstallPrompt(
-                    tr("python".equals(turnOnKind) ? "install.banner.enablePython" : "install.banner.enableXml"),
+                    tr(turnOnMessageKey(turnOnKind)),
                     tr("install.banner.turnOn"),
                     () -> {
                         turnOnOfferBuffer.clear();
@@ -102,6 +103,11 @@ final class InstallPromptCoordinator {
         // is served by the plain XML server, so the "already served" check below would hide the offer for good —
         // it is asked first (review 2, A1/E2).
         if (offerPomServer(buffer)) {
+            return;
+        }
+        // A shell script whose server is there but whose ShellCheck or shfmt is not: no problems, no formatting, and
+        // nothing on screen said why (Bash review C8/A4/A13). Asked whether or not the server already serves it.
+        if (offerShellTools(buffer)) {
             return;
         }
         // A live LSP session already serving this file ⇒ its server is present; never nag.
@@ -200,15 +206,57 @@ final class InstallPromptCoordinator {
     }
 
     /**
-     * Which language's first file asks to turn language servers on: {@code python}, or {@code xml} unless the XML
-     * server is switched off; else null.
+     * Which language's first file asks to turn language servers on: {@code python}, or {@code xml} or {@code bash} (a
+     * shell script, Bash review C8) unless that server is switched off; else null.
      */
     private @Nullable String turnOnKind(EditorBuffer buffer) {
         if (buffer.isPython()) {
             return "python";
         }
-        boolean xml = "xml".equals(com.editora.lsp.LspServerRegistry.serverIdFor(buffer.getLanguage()));
-        return xml && host.lspCoordinator().serverEnabled("xml") ? "xml" : null;
+        String server = com.editora.lsp.LspServerRegistry.serverIdFor(buffer.getLanguage());
+        if (server == null || !("xml".equals(server) || "bash".equals(server))) {
+            return null;
+        }
+        return host.lspCoordinator().serverEnabled(server) ? server : null;
+    }
+
+    /** The words of the "turn on code intelligence?" offer for {@link #turnOnKind}. */
+    static String turnOnMessageKey(String kind) {
+        return switch (kind) {
+            case "python" -> "install.banner.enablePython";
+            case "bash" -> "install.banner.enableShell";
+            default -> "install.banner.enableXml";
+        };
+    }
+
+    /**
+     * The banner of a shell script whose Bash server is installed but whose ShellCheck or shfmt is not: Install
+     * fetches Editora's pinned copies of what is missing (Bash review C8/A13). The once-per-window echo line it
+     * replaces was overwritten by the server's start-up status a second later (A4). A tool whose command is blank is
+     * switched off and not asked about. True when this decided the banner.
+     */
+    private boolean offerShellTools(EditorBuffer buffer) {
+        LspCoordinator lsp = host.lspCoordinator();
+        if (!host.lspEnabled()
+                || !"bash".equals(com.editora.lsp.LspServerRegistry.serverIdFor(buffer.getLanguage()))
+                || !lsp.serverEnabled("bash")
+                || !lsp.isServerAvailable("bash")) {
+            return false;
+        }
+        java.util.List<String> missing = com.editora.install.InstallCatalog.PINNED_TOOL_IDS.stream()
+                .filter(id -> !lsp.bashToolCommand(id).isBlank() && !lsp.bashToolFound(id))
+                .toList();
+        if (missing.isEmpty()) {
+            return false;
+        }
+        String key = missing.size() > 1
+                ? "install.banner.shellTools"
+                : "shellcheck".equals(missing.get(0))
+                        ? "install.banner.shellcheckMissing"
+                        : "install.banner.shfmtMissing";
+        offerInstall(
+                buffer, "bash-tools", tr(key), cb -> host.installCoordinator().installTools(missing, cb));
+        return true;
     }
 
     /**
@@ -221,6 +269,13 @@ final class InstallPromptCoordinator {
                     "install.banner.xmlServer",
                     com.editora.install.InstallCatalog.LEMMINX_SERVER_VERSION,
                     com.editora.install.InstallCatalog.LEMMINX_DOWNLOAD_MB);
+        }
+        if ("bash".equals(serverId)) {
+            // what Install brings and needs: a pinned server that wants Node.js 20, and the two tools (C8/A6)
+            return tr(
+                    "install.banner.bashServer",
+                    com.editora.install.InstallCatalog.BASH_LS_VERSION,
+                    com.editora.install.VersionFloor.NODE_BASH_LS.minimum());
         }
         return tr("install.banner.serverMessage", host.installCoordinator().serverName(serverId));
     }

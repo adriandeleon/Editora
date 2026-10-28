@@ -94,6 +94,57 @@ public final class DoctorRules {
         return "";
     }
 
+    /**
+     * The version in {@code named}, what {@link #npmPackageVersion} said ({@code "bash-language-server 5.8.1"}), when
+     * it names {@code pkg}; else null. Pure.
+     */
+    public static @Nullable String versionOf(@Nullable String named, @Nullable String pkg) {
+        if (named == null || pkg == null || !named.startsWith(pkg + " ")) {
+            return null;
+        }
+        String version = named.substring(pkg.length() + 1).strip();
+        return version.isEmpty() ? null : version;
+    }
+
+    /**
+     * The Node.js {@code launcher} (its real path) is run by when it is a script for one — {@code node} for npm's
+     * {@code #!/usr/bin/env node}, the path for {@code #!/usr/bin/node} — else null: a binary, a Windows {@code .cmd}
+     * shim, another interpreter, anything unreadable. Such a launcher cannot start where that {@code node} is not
+     * found (Bash review A3). Reads the first line only.
+     */
+    public static @Nullable String launcherNode(java.nio.file.Path launcher) {
+        try (java.io.InputStream in = java.nio.file.Files.newInputStream(launcher.toRealPath())) {
+            byte[] head = in.readNBytes(160);
+            int end = 0;
+            while (end < head.length && head[end] != '\n' && head[end] != '\r') {
+                end++;
+            }
+            return shebangNode(new String(head, 0, end, java.nio.charset.StandardCharsets.UTF_8));
+        } catch (java.io.IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Pure: the Node.js a script's first line names as its interpreter — the bare name after {@code env}, else the
+     * interpreter's path — or null when it names another one or none.
+     */
+    static @Nullable String shebangNode(@Nullable String firstLine) {
+        if (firstLine == null || !firstLine.startsWith("#!")) {
+            return null;
+        }
+        for (String word : firstLine.substring(2).strip().split("\\s+")) {
+            String name = word.substring(word.lastIndexOf('/') + 1);
+            if (name.equals("node") || name.equals("nodejs")) {
+                return word;
+            }
+            if (!name.equals("env") && !name.startsWith("-")) {
+                return null; // another interpreter (sh, python): not Node.js
+            }
+        }
+        return null;
+    }
+
     /** Pure: {@code "name version"} from a {@code package.json}'s text, or "" without a version. */
     static String packageJsonVersion(String json) {
         var name =

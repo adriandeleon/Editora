@@ -27,4 +27,19 @@ public final class InstallTestAccess {
             java.util.function.Function<String, java.util.Optional<InstallCatalog.PinnedTool>> recipes) {
         service.setPinnedToolsForTest(recipes);
     }
+
+    /**
+     * Makes {@code service} report {@code present} as the prerequisites on PATH, {@code nodeVersion} as what
+     * {@code node --version} prints, and run package-manager command lines through {@code commands} instead of a
+     * real npm — for tests of the npm installs, which never run npm.
+     */
+    public static void packageManagers(
+            InstallService service,
+            java.util.Set<InstallCatalog.Prereq> present,
+            java.util.function.Supplier<String> nodeVersion,
+            java.util.function.Function<java.util.List<String>, com.editora.process.ProcessRunner.Result> commands) {
+        service.setPrereqsForTest(present);
+        service.setNodeVersionForTest(nodeVersion);
+        service.setCommandsForTest(commands);
+    }
 }
