@@ -270,7 +270,6 @@ class PythonLspFxTest {
      */
     @Test
     void aModuleCreatedOnDiskReachesTheServerWithoutAProject() throws Exception {
-        manager.setWatchSessionRoots(r -> true);
         FakeLanguageServer fake = open();
         Files.createDirectories(root.resolve(".venv"));
         Path module = Files.writeString(root.resolve("newmod.py"), "def nm() -> int:\n    return 2\n");
@@ -292,7 +291,6 @@ class PythonLspFxTest {
     /** Turning language servers off stops their folder watchers too (each one an inotify instance on Linux). */
     @Test
     void turningLanguageServersOffStopsTheFolderWatcher() throws Exception {
-        manager.setWatchSessionRoots(r -> true);
         open();
         assertTrue(manager.watchedRoots().contains(root.toAbsolutePath().normalize()), "precondition: watched");
         manager.configure(false, null);

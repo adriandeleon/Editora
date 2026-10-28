@@ -117,4 +117,35 @@ class BashSettingsPageFxTest {
                 true, FxTestSupport.callOnFx(() -> installs.get("tool:shfmt").isDisable()));
         commit(row("lsp.bash.shfmtPath"), "");
     }
+
+    /** "Lint with ShellCheck", "Format with shfmt" and the source hint are switches on the card (A8, B4). */
+    @Test
+    void theToolsAndTheSourceHintCanBeSwitchedOff() throws Exception {
+        for (String key : java.util.List.of(
+                "lsp.bash.shellcheckEnabled", "lsp.bash.shfmtEnabled", "lsp.bash.sourceErrorDiagnostics")) {
+            CheckBox on = row(key);
+            assertTrue(FxTestSupport.callOnFx(on::isSelected), key + " is on by default");
+            FxTestSupport.runOnFx(() -> on.setSelected(false));
+        }
+        assertEquals(false, settings.isBashShellcheckEnabled());
+        assertEquals(false, settings.isBashShfmtEnabled());
+        assertEquals(false, settings.isBashSourceErrorDiagnostics());
+        for (String key : java.util.List.of(
+                "lsp.bash.shellcheckEnabled", "lsp.bash.shfmtEnabled", "lsp.bash.sourceErrorDiagnostics")) {
+            CheckBox on = row(key);
+            FxTestSupport.runOnFx(() -> on.setSelected(true));
+        }
+        assertTrue(settings.isBashShellcheckEnabled());
+    }
+
+    /** Hover sends the endpoint the whole command line: plain http elsewhere is refused, not saved (B10). */
+    @Test
+    void aPlainHttpExplainshellElsewhereIsRefused() throws Exception {
+        commit(row("lsp.bash.explainshellEndpoint"), "");
+        commit(row("lsp.bash.explainshellEndpoint"), "http://explain.example.com");
+        assertEquals("", settings.getBashExplainshellEndpoint(), "not kept");
+        commit(row("lsp.bash.explainshellEndpoint"), "https://explain.example.com");
+        assertEquals("https://explain.example.com", settings.getBashExplainshellEndpoint());
+        commit(row("lsp.bash.explainshellEndpoint"), "");
+    }
 }

@@ -236,6 +236,19 @@ public final class CompletionPopup {
     }
 
     /**
+     * A row's detail: the first line of {@code detail}, stripped. Four shell snippets have two-line descriptions,
+     * and the row showed half of the second line and widened the list (Bash review C15); the documentation panel
+     * still shows the whole text. Pure.
+     */
+    static String firstLine(@Nullable String detail) {
+        if (detail == null) {
+            return "";
+        }
+        int nl = detail.indexOf('\n');
+        return (nl < 0 ? detail : detail.substring(0, nl)).strip();
+    }
+
+    /**
      * The popup width that fits the widest row — icon + label + the right-aligned type/detail — so the
      * type column isn't clipped (IntelliJ-style), clamped to {@code [MIN_WIDTH, MAX_WIDTH]}. Text is
      * measured with the popup's font sizes (label 13px, detail 11px) plus geometry slack; beyond the cap
@@ -252,8 +265,8 @@ public final class CompletionPopup {
             measure.setText(c.label() == null ? "" : c.label());
             double labelW = measure.getLayoutBounds().getWidth();
             double detailW = 0;
-            String d = c.detail();
-            if (d != null && !d.isEmpty()) {
+            String d = firstLine(c.detail());
+            if (!d.isEmpty()) {
                 measure.setFont(detailFont);
                 measure.setText(d);
                 detailW = Math.min(measure.getLayoutBounds().getWidth(), DETAIL_MAX_WIDTH);
@@ -303,7 +316,7 @@ public final class CompletionPopup {
             iconHolder = icon;
             // Label: bold the matched characters.
             label.getChildren().setAll(buildLabel(item));
-            detail.setText(item.detail() == null ? "" : item.detail());
+            detail.setText(firstLine(item.detail()));
             getStyleClass().removeAll("completion-kind-snippet", "completion-kind-word", "completion-deprecated");
             getStyleClass()
                     .add(item.kind() == Completion.Kind.SNIPPET ? "completion-kind-snippet" : "completion-kind-word");

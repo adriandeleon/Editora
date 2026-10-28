@@ -180,8 +180,8 @@ public final class ShellFiles {
 
     /**
      * Whether {@code fileName} (a name or a path) is a zsh startup file: one the Bash language server must not
-     * be given (see {@link #ZSH_STARTUP}). A {@code *.zsh} script is not one of them — the server sees its
-     * extension and leaves its linting alone itself.
+     * be given (see {@link #ZSH_STARTUP}). A {@code *.zsh} script is not one of them: it stays on the server for
+     * completion, hover and symbols, and the SC1071 ShellCheck answers for it is dropped ({@code BashLsp}).
      */
     public static boolean isZshStartupFile(String fileName) {
         if (fileName == null) {

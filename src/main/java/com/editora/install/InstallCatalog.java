@@ -133,6 +133,18 @@ public final class InstallCatalog {
      */
     public static final String TYPESCRIPT_PACKAGE = "typescript@6";
 
+    /**
+     * The bash-language-server Editora installs: pinned, not npm's {@code latest} (Bash review A6/D4). Editora's shell
+     * support (its quick fixes, the {@code -} completion trigger, the zsh and re-lint behaviour) is checked against
+     * this release, and two users installing a month apart got different servers. 5.8 needs Node.js 20
+     * ({@link VersionFloor#NODE_BASH_LS}), which the install checks first: npm only warns about an older one, and the
+     * server then fails at start.
+     */
+    public static final String BASH_LS_VERSION = "5.8.1";
+
+    /** The npm package of the Bash server. */
+    public static final String BASH_LS_PACKAGE = "bash-language-server";
+
     /** The build stamp of the {@link #JDTLS_VERSION} tarball. */
     public static final String JDTLS_BUILD = "202610191322";
 
@@ -341,6 +353,44 @@ public final class InstallCatalog {
         return "https://open-vsx.org/api/" + namespace + "/" + name + "/latest";
     }
 
+    /**
+     * The npm package {@code serverId}'s install puts on the machine ({@code bash-language-server},
+     * {@code pyright}), without a pinned version; null for a server not installed with npm. Doctor reads the
+     * installed version from that package's {@code package.json} (Bash review A12). Pure.
+     */
+    public static @Nullable String npmPackage(@Nullable String serverId) {
+        if (serverId == null) {
+            return null;
+        }
+        List<Step> steps = "python".equals(serverId)
+                ? List.of(pyright())
+                : "typescript".equals(serverId)
+                        ? List.of(typescriptLs())
+                        : serverInstall(serverId).orElse(List.of());
+        for (Step s : steps) {
+            if (s.kind() == Kind.NPM_GLOBAL
+                    && s.npmPackages() != null
+                    && !s.npmPackages().isEmpty()) {
+                return packageName(s.npmPackages().get(0));
+            }
+        }
+        return null;
+    }
+
+    /** {@code name} of an npm package spec {@code name@version} ({@code @scope/name@1} → {@code @scope/name}). Pure. */
+    static String packageName(String spec) {
+        int at = spec.lastIndexOf('@');
+        return at > 0 ? spec.substring(0, at) : spec;
+    }
+
+    /**
+     * The Node.js an npm step needs to run what it installs, checked before {@code npm install} runs (npm only warns
+     * about an older one, and the server then fails at start); null when the catalog sets none. Pure.
+     */
+    public static @Nullable VersionFloor nodeFloor(@Nullable String stepId) {
+        return BASH_LS_PACKAGE.equals(stepId) ? VersionFloor.NODE_BASH_LS : null;
+    }
+
     /** {@code [npm, install, -g, <pkgs…>]}. Pure. */
     public static List<String> npmInstallGlobalArgv(@Nullable List<String> pkgs) {
         List<String> argv = new ArrayList<>(List.of("npm", "install", "-g"));
@@ -488,7 +538,8 @@ public final class InstallCatalog {
             // --- npm (Node) ---
             // vscode-langservers-extracted ships the JSON, HTML, and CSS servers in one npm package.
             case "json", "html", "css" -> java.util.Optional.of(List.of(npmStep("vscode-langservers-extracted")));
-            case "bash" -> java.util.Optional.of(List.of(npmStep("bash-language-server")));
+            case "bash" ->
+                java.util.Optional.of(List.of(npmStepWithId(BASH_LS_PACKAGE, BASH_LS_PACKAGE + "@" + BASH_LS_VERSION)));
             case "yaml" -> java.util.Optional.of(List.of(npmStep("yaml-language-server")));
             case "dockerfile" -> java.util.Optional.of(List.of(npmStep("dockerfile-language-server-nodejs")));
             case "toml" -> java.util.Optional.of(List.of(npmStep("@taplo/cli")));
@@ -1267,18 +1318,13 @@ public final class InstallCatalog {
 
     /** A single {@code npm install -g <pkgs>} step (the step id = the primary package). Pure. */
     private static Step npmStep(String... packages) {
+        return npmStepWithId(packages[0], packages);
+    }
+
+    /** As {@link #npmStep} with its own step id: a pinned package ({@code name@1.2.3}) keeps its bare name as id. */
+    private static Step npmStepWithId(String id, String... packages) {
         return new Step(
-                packages[0],
-                Kind.NPM_GLOBAL,
-                Set.of(Prereq.NPM),
-                List.of(packages),
-                null,
-                null,
-                null,
-                null,
-                false,
-                "",
-                null);
+                id, Kind.NPM_GLOBAL, Set.of(Prereq.NPM), List.of(packages), null, null, null, null, false, "", null);
     }
 
     /** A step that runs {@code argv} via a language toolchain (argv carried in {@code npmPackages}). Pure. */

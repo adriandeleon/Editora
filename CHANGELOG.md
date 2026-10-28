@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file to it, with "Files without a grammar" left at Nothing (lemminx offered these fixes only on its no-grammar
   hint). In Structure, a DTD now lists its elements with their attributes, its entities and notations.
 
+- **Bash server settings (Bash review, config).** Settings ▸ LSP ▸ Bash has **Lint with ShellCheck** and
+  **Format with shfmt** switches (on; off sends the server an empty path and silences the missing-tool notices) and
+  **Explain source lines the server cannot follow** (on: a hint on `source "$(dirname "$0")/lib.sh"` lines saying to
+  add a `# shellcheck source=` directive). A project's `bashIde` object now also passes `enableSourceErrorDiagnostics`,
+  `globPattern`, `logLevel`, `shellcheckExternalSources`, `backgroundAnalysisIgnore` and `shfmt.additionalArguments`
+  (checked for type; unknown keys only in a trusted folder), and `"shellcheckPath": ""` / `"shfmt": {"path": ""}`
+  turn a tool off. Background analysis also reads `.ksh`, `.mksh` and `.bats` files. Settings schema 152 → 153.
+
 ### Changed
 
 - **Terminal: a keystroke no longer clears the selection.** It goes when the text under it is redrawn, so a
@@ -59,6 +67,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   folder columns (the overview tints them too). Themes can retune it with `.project-map-probe-structure`.
 
 ### Fixed
+
+- **Shell scripts: setting up the Bash server is one step, and Doctor tells the truth about it** (Bash review,
+  install). The first shell script asks once whether to turn code intelligence on. The install banner says what
+  Install brings, and Install adds ShellCheck and shfmt with the server; when only those two are missing, the
+  script gets an Install banner instead of an echo-line notice the next message overwrote. bash-language-server is
+  installed at 5.8.1 (not npm's latest), and the install refuses a Node.js older than 20, which 5.8 needs. Doctor
+  shows the version of every npm-installed server, warns with Update below bash-language-server 5.7, warns when a
+  server's Node.js is missing or this window gave up on a server after it kept crashing, and offers Restart
+  Language Servers on those rows. A crash loop is now an error in the status bar (it raises the unread marker). One
+  name, "Bash / Shell", in the banner, status and Doctor; the Settings tool row says ShellCheck; separate Doctor tips
+  for ShellCheck (no problems) and shfmt (no formatting).
+
+- **Shell scripts: problems for every open script, and libraries changed on disk are read again** (Bash review,
+  sync):
+  - Scripts opened while the Bash server starts (a restored session, several files opened at once) all show their
+    ShellCheck problems; only the last one did, until it was edited.
+  - A Settings ▸ Bash change re-checks every open script, not only the last one touched (bash-language-server 5.6).
+  - After Restart Language Servers, background tabs keep their problems instead of waiting to be visited (every
+    server).
+  - A sourced library changed on disk by git, a terminal or another editor is read again: Go to Definition lands on
+    the right line and new functions complete, without a restart.
+  - Find References from a call lists that call and leaves out the definition; a function used once no longer jumps
+    to its definition.
+  - On a line with emoji, ShellCheck squiggles sit under the right characters and "Apply fix" quotes the right word.
+
+- **Language servers hear of file changes in collapsed folders.** Each server's project folder is watched as a whole
+  (skipping hidden, dependency and `.gitignore`d folders), not only the folders the Project panel shows expanded, so a
+  `git checkout` no longer leaves jdtls, Pyright or lemminx with a stale model.
+
+- **Bash server (Bash review, config):** a project's `bashIde` overrides reach only the servers for that project's
+  folders, not scripts opened from another repository, `~/bin` or `/etc`. Container and WSL folders look ShellCheck
+  and shfmt up on their own PATH instead of being sent this machine's copies. Scripts outside any repository share
+  one Bash server per window (background analysis off) instead of one node process per folder. ShellCheck's SC1071
+  ("only supports sh/bash…") is no longer shown on zsh scripts, nor SC2034/SC2154 on a `PKGBUILD`. A file with a
+  `# shellcheck shell=…` directive (a sourced `.inc` library) opens as a shell script. ShellCheck arguments are sent
+  as a list, so a quoted argument with spaces survives. An explainshell endpoint over plain `http://` to another
+  machine is refused (hover sends it the whole command line), and a Bash hover waiting on explainshell gives up
+  after 5 seconds with "explainshell did not answer". The Bash card names the rows a project overrides and checks
+  the tools the window actually runs; the ShellCheck-arguments and `.editorconfig` texts say what the server really
+  does (it already follows sourced files; any shfmt key in `.editorconfig` replaces all the shfmt options).
+
+- **Shell scripts with the Bash language server (Bash review: editing UI).**
+  - Rename on a command (`echo`, `cd`) is refused: "echo is a command, not a function or variable defined in your
+    scripts". It used to rewrite every call in the file with no preview. A new name must be a shell name (a function
+    may also have `-`, `.` and `:`).
+  - Format Document on a script shfmt cannot parse says why, with the line ("Could not format: line 5: `for`
+    statement must end with `done`"), and points at the shebang or the shfmt dialect for a `#!/bin/sh` script with
+    bashisms. It used to say "Already formatted". A format that changes nothing says "Already formatted" for every
+    server and leaves the file clean; a selection on a server without range formatting says the whole file was
+    formatted.
+  - The problem counter counts notes (information and hints, muted) as a third number, so ShellCheck's quoting
+    advice no longer shows a green check; the check means no problems at all, and the counter's arrows go through
+    every problem. A zsh script shows "Not checked: ShellCheck has no zsh mode". Applies to every language server.
+  - ShellCheck quick fixes say what they do ("Fix SC2006: Use $(...) notation instead of legacy backticks"), with
+    the column when two would read alike. Suppressions are tagged **Suppress** and listed after the fixes, and with
+    bash-language-server 5.6 (which offers none) "Disable SC2086 for this command" inserts the directive above the
+    line.
+  - Completion ranks keywords and snippets first, then the script's functions and variables, builtins, and PATH
+    commands last, with a detail saying which; after `$` it offers only variables. Editora's own shell snippets
+    (`case`, `function`, `while`, `echo`) stay in the list beside the server's word of the same name. Without the
+    server, the script's own function and variable names are offered after the snippets.
+  - Block Tab / Indent Lines no longer indents the shebang, a here-doc's text or its delimiter (a `<<-` here-doc
+    moves by tabs only), or the inside of a multi-line string.
+  - A hover pages with Page Down / Page Up (and Emacs's C-v / M-v), and a man page gets its 80 columns.
+  - Next Problem onto a ShellCheck error no longer leaves the red unread-error badge.
+  - The completion documentation panel loses the Markdown preview's margins and language tag; a two-line snippet
+    description shows its first line in the row.
+  - "1 symbols" in Go to Symbol in Workspace; the rename preview's Select all / Select none are no longer cut.
+  - Keymaps: CUA gets F2 (Rename), F12 / Shift+F12 (Go to Definition / Find References), Ctrl+. (Code Actions)
+    and Shift+Alt+F (Format Document); Sublime gets Ctrl+Shift+R (Go to Symbol) and Shift+Alt+F; Emacs gets
+    `M-g s` (Go to Symbol in Workspace).
 
 - **Narrowing and widening are finished in the frame they happen in.** The Structure window's Narrow to Fold
   Region toggle (and C-x n n / n f / n w) swapped the text in unstyled: the code showed plain until the next

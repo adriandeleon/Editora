@@ -117,6 +117,11 @@ public final class InstallService {
     /** Probes which {@link Prereq}s are present on the augmented PATH, off-thread; posts the set on FX. */
     public void detectPrereqs(Consumer<Set<Prereq>> onResult) {
         exec.submit(() -> {
+            Set<Prereq> fixed = prereqsForTest;
+            if (fixed != null) {
+                Platform.runLater(() -> onResult.accept(fixed));
+                return;
+            }
             Set<Prereq> have = EnumSet.noneOf(Prereq.class);
             if (onPath("npm")) {
                 have.add(Prereq.NPM);
@@ -148,6 +153,43 @@ public final class InstallService {
             Set<Prereq> result = Set.copyOf(have);
             Platform.runLater(() -> onResult.accept(result));
         });
+    }
+
+    /** Test seam: the prerequisites {@link #detectPrereqs} reports instead of looking on PATH (null: look). */
+    private volatile @Nullable Set<Prereq> prereqsForTest;
+
+    void setPrereqsForTest(@Nullable Set<Prereq> present) {
+        this.prereqsForTest = present == null ? null : Set.copyOf(present);
+    }
+
+    /** What {@code node --version} prints on the augmented PATH ({@code v24.18.1}), or null; a test answers itself. */
+    private volatile java.util.function.Supplier<@Nullable String> nodeVersion = InstallService::probeNodeVersion;
+
+    void setNodeVersionForTest(java.util.function.Supplier<@Nullable String> version) {
+        this.nodeVersion = Objects.requireNonNull(version, "version");
+    }
+
+    /**
+     * Asks the Node.js on the augmented PATH for its version, off-thread, and posts what it printed (null when it
+     * does not run) on the FX thread: the {@code npm install} of a server with a {@link InstallCatalog#nodeFloor}
+     * waits for it (Bash review A6).
+     */
+    public void detectNodeVersion(Consumer<@Nullable String> onResult) {
+        exec.submit(() -> {
+            String version;
+            try {
+                version = nodeVersion.get();
+            } catch (RuntimeException e) {
+                version = null;
+            }
+            String found = version;
+            Platform.runLater(() -> onResult.accept(found));
+        });
+    }
+
+    private static @Nullable String probeNodeVersion() {
+        ProcessRunner.Result r = ProcessRunner.run(null, Duration.ofSeconds(10), List.of("node", "--version"));
+        return r.ok() && r.out() != null && !r.out().isBlank() ? r.out().strip() : null;
     }
 
     /**
@@ -1021,13 +1063,24 @@ public final class InstallService {
         }
     }
 
+    /** Test seam: runs a package manager's command line ({@code npm install -g …}); a test records it instead. */
+    private volatile java.util.function.Function<List<String>, ProcessRunner.Result> commands =
+            argv -> ProcessRunner.runInUserLocale(null, CMD_TIMEOUT, argv);
+
+    void setCommandsForTest(java.util.function.Function<List<String>, ProcessRunner.Result> commands) {
+        this.commands = Objects.requireNonNull(commands, "commands");
+    }
+
     /**
      * Runs one package-manager command (npm/pip/gem/go/dotnet/rustup/composer). In the user's locale, not the
      * parse-stable C one: the output is only ever shown, and several of these (RubyGems, a JVM-based tool)
      * fail on non-ASCII package metadata or install paths when forced to ASCII.
      */
     private void runCommand(@Nullable List<String> argv, String id) throws InstallException {
-        ProcessRunner.Result r = ProcessRunner.runInUserLocale(null, CMD_TIMEOUT, argv);
+        if (argv == null || argv.isEmpty()) {
+            throw new InstallException(id + ": no command");
+        }
+        ProcessRunner.Result r = commands.apply(argv);
         if (!r.ok()) {
             throw new InstallException(id + ": " + (r.message().isBlank() ? "command failed" : r.message()));
         }

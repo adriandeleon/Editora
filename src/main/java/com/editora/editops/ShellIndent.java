@@ -131,6 +131,49 @@ final class ShellIndent {
         return null; // nothing above in reach: the plain rules decide, for a slice as for the whole text
     }
 
+    /** How a block indent or outdent may move one line of a shell script ({@link #blockMoves}). */
+    enum Move {
+        /** Code: by the indent unit. */
+        ANY,
+        /** A {@code <<-} here-doc's body or delimiter: by tabs only, which bash strips. */
+        TABS,
+        /** Not at all: the shebang, a here-doc's body and delimiter, a line inside a multi-line string. */
+        NONE
+    }
+
+    /**
+     * How each line of {@code [firstLs, regionEnd)} (whole lines; {@code firstLs} a line start) may move when a
+     * selection is indented or outdented. Block indent shifted every line, which broke the script: an indented
+     * {@code #!} is no shebang, a here-doc's text changed and its indented delimiter no longer ended it, so the rest of
+     * the file was swallowed into it (Bash review C2). Reads from {@link #scanStart} of the first line; the shebang is
+     * only the document's first line ({@code firstLs == 0} with the whole text from 0).
+     */
+    static Move[] blockMoves(String text, int firstLs, int regionEnd) {
+        int from = scanStart(text, firstLs);
+        ShellScan.Result r = ShellScan.scan(text.substring(from, regionEnd));
+        int first = 0;
+        for (int i = text.indexOf('\n', from); i >= 0 && i < firstLs; i = text.indexOf('\n', i + 1)) {
+            first++;
+        }
+        Move[] out = new Move[r.lineCount() - first];
+        for (int k = 0; k < out.length; k++) {
+            int line = first + k;
+            byte state = r.startState(line);
+            if (state == ShellScan.IN_HEREDOC) {
+                ShellScan.Block h = r.heredocAt(line);
+                out[k] = h != null && h.dash() ? Move.TABS : Move.NONE;
+            } else if (state == ShellScan.IN_STRING) {
+                out[k] = Move.NONE; // the line is part of a quoted string: leading blanks are its text
+            } else {
+                out[k] = Move.ANY;
+            }
+        }
+        if (firstLs == 0 && from == 0 && out.length > 0 && text.startsWith("#!")) {
+            out[0] = Move.NONE;
+        }
+        return out;
+    }
+
     /** {@code fi}/{@code else}/{@code elif}/{@code done}/{@code esac}, or {@code ;;}/{@code ;&}/{@code ;;&}, that
      *  {@code content} (a line without its indent) starts with as a whole word; else null. */
     static @Nullable String closerWord(String content) {

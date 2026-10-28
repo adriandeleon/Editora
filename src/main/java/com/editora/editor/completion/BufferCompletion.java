@@ -1043,6 +1043,9 @@ public final class BufferCompletion {
         if (a.getScene() == null) {
             return;
         }
+        if (sourceOn && !host.lspActive() && "shell".equals(host.language())) {
+            items = withShellNames(items, a, windowStart + start, prefix); // no server: the script's names (C9)
+        }
         if (wideStart < start && !items.isEmpty()) {
             var pos =
                     a.offsetToPosition(windowStart + wideStart, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
@@ -1734,6 +1737,25 @@ public final class BufferCompletion {
                 }));
     }
 
+    /** {@code items} (the snippets) followed by the shell script's own names for {@code prefix} at {@code wordStart}. */
+    private static List<Completion> withShellNames(List<Completion> items, CodeArea a, int wordStart, String prefix) {
+        int room = CompletionEngine.MAX - items.size();
+        if (room <= 0 || a.getLength() > com.editora.completion.ShellBufferNames.MAX_SCAN_CHARS) {
+            return items;
+        }
+        var names = com.editora.completion.ShellBufferNames.complete(a.getText(), wordStart, prefix, room);
+        if (names.isEmpty()) {
+            return items;
+        }
+        var out = new java.util.ArrayList<Completion>(items);
+        for (Completion name : names) {
+            if (out.stream().noneMatch(c -> c.insert().equals(name.insert()))) {
+                out.add(name);
+            }
+        }
+        return out;
+    }
+
     /** Whether the completion popup is currently open (an in-progress LSP/local completion session). */
     public boolean completionPopupShowing() {
         return completionPopup != null && completionPopup.isShowing();
@@ -1804,18 +1826,42 @@ public final class BufferCompletion {
         // Same inserted text can mean different overloads or imports. Never deduplicate server identities —
         // except a server template (jdtls's sysout, fori, try_catch…) named like a local snippet: Tab expands
         // the local one, so the popup offers that one too instead of two rows under one trigger.
+        // A local snippet is never dropped for a server word with its trigger's text: its insert IS its trigger, so
+        // bash-language-server's `case` keyword and `echo` builtin took Editora's case and echo snippets away, and
+        // the server's own `case` snippet went too, as shadowed by the snippet just dropped (Bash review C6). It is
+        // listed right after the server row of the same word, so the cap below never cuts it off a long list.
         var triggers = new java.util.HashSet<String>();
-        for (Completion c : local) if (c.kind() == Completion.Kind.SNIPPET) triggers.add(c.label());
+        var snippetKeys = new java.util.HashSet<String>();
+        var snippetsByTrigger = new java.util.LinkedHashMap<String, java.util.List<Completion>>();
+        for (Completion c : local)
+            if (c.kind() == Completion.Kind.SNIPPET
+                    && snippetKeys.add(c.insert()
+                            + '\u0000'
+                            + (c.snippet() == null ? "" : c.snippet().name()))) {
+                triggers.add(c.label());
+                snippetsByTrigger
+                        .computeIfAbsent(c.insert(), k -> new java.util.ArrayList<>())
+                        .add(c);
+            }
         var out = new java.util.ArrayList<Completion>();
         var inserts = new java.util.HashSet<String>();
+        var placed = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<Completion, Boolean>());
         if (lsp != null)
             for (Completion c : lsp) {
                 if (isServerTemplate(c) && triggers.contains(c.label())) continue;
                 out.add(c);
                 inserts.add(c.insert());
+                for (Completion snippet : snippetsByTrigger.getOrDefault(c.insert(), List.of()))
+                    if (placed.add(snippet)) out.add(snippet);
             }
-        for (Completion c : local) if (inserts.add(c.insert())) out.add(c);
-        return List.copyOf(out.subList(0, Math.min(50, out.size())));
+        for (var kept : snippetsByTrigger.values())
+            for (Completion snippet : kept) if (placed.add(snippet)) out.add(snippet);
+        for (Completion c : local) if (c.kind() != Completion.Kind.SNIPPET && inserts.add(c.insert())) out.add(c);
+        if (out.size() <= 50) return List.copyOf(out);
+        int room = 50 - placed.size(); // the snippets stay; the server's long tail of commands is what goes
+        var capped = new java.util.ArrayList<Completion>(50);
+        for (Completion c : out) if (placed.contains(c) || room-- > 0) capped.add(c);
+        return List.copyOf(capped.subList(0, Math.min(50, capped.size())));
     }
 
     /** A language server's own snippet item (its {@code kind} is Snippet), as opposed to a local snippet. */

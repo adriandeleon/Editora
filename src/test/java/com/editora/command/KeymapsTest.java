@@ -108,6 +108,32 @@ class KeymapsTest {
         assertEquals("view.textZoomOut", km.commandFor("C--"), "C-_ does not disturb C-- (zoom out)");
     }
 
+    /** Every keymap reaches the main LSP actions; CUA had none bound at all (Bash review C18). */
+    @Test
+    void everyKeymapBindsTheMainLanguageServerActions() {
+        Map<String, String> cua = load("/com/editora/keymaps/cua.json");
+        assertEquals("lsp.rename", cua.get("f2"));
+        assertEquals("lsp.gotoDefinition", cua.get("f12"));
+        assertEquals("lsp.codeActions", cua.get("C-."));
+        assertEquals("lsp.formatDocument", cua.get("M-S-f"));
+        assertEquals(
+                "lsp.codeActions", load("/com/editora/keymaps/cua.mac.json").get("Cmd-."));
+        assertEquals(
+                "lsp.formatDocument", load("/com/editora/keymaps/vscode.json").get("M-S-f"));
+        assertEquals("lsp.gotoSymbol", load("/com/editora/keymaps/sublime.json").get("C-S-r"));
+        assertEquals(
+                "lsp.gotoSymbol", load("/com/editora/keymaps/sublime.mac.json").get("Cmd-S-r"));
+        assertEquals("lsp.gotoSymbol", load("/com/editora/keymaps/emacs.json").get("M-g s"));
+        for (String id : GUI) {
+            KeymapManager km = new KeymapManager();
+            km.loadNamed(id, false);
+            for (String command :
+                    List.of("lsp.rename", "lsp.codeActions", "lsp.gotoDefinition", "lsp.formatDocument")) {
+                assertTrue(km.bindings().containsValue(command), id + " binds " + command);
+            }
+        }
+    }
+
     @Test
     void guiKeymapsCanToggleCommentWithoutUsPunctuation() {
         for (String id : GUI) {

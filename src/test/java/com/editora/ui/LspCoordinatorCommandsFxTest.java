@@ -1009,6 +1009,39 @@ class LspCoordinatorCommandsFxTest {
     }
 
     /**
+     * Bash review B17: every tab a server served before Restart Language Servers is opened on the new one at once,
+     * shown or not. Deferred to its next showing, a background tab's problems left the Problems window.
+     */
+    @Test
+    void restartingServersReopensBackgroundTabsTheyServed() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        EditorBuffer background = FxTestSupport.callOnFx(EditorBuffer::new);
+        Path other = file("Background.java", "class Background {}\n");
+        EditorBuffer neverShown = FxTestSupport.callOnFx(EditorBuffer::new);
+        Path unseen = file("Unseen.java", "class Unseen {}\n");
+        FxTestSupport.runOnFx(() -> {
+            background.setPath(other);
+            background.setContent("class Background {}\n");
+            fx.show(background);
+            fx.host.active = background;
+            fx.coordinator.syncBuffer(background);
+            fx.host.active = b;
+            neverShown.setPath(unseen);
+            neverShown.setContent("class Unseen {}\n");
+            fx.show(neverShown);
+            fx.coordinator.syncBufferWhenShown(neverShown);
+        });
+        assertTrue(fx.manager.isManaged(other));
+        assertFalse(fx.manager.isManaged(unseen), "precondition: a tab never shown waits");
+
+        fx.run(() -> fx.coordinator.restartServers());
+
+        assertTrue(fx.manager.isManaged(b.getPath()));
+        assertTrue(fx.manager.isManaged(other), "the background tab is open on the new server");
+        assertFalse(fx.manager.isManaged(unseen), "a tab no server had yet still waits to be shown");
+    }
+
+    /**
      * XML review A4: a server that exits before it is ready at every start — lemminx's native build on too old a
      * glibc — says why when it is given up on, and Doctor and Install hear it as given up on, not as installed.
      */
@@ -1016,7 +1049,7 @@ class LspCoordinatorCommandsFxTest {
     void aServerThatKeepsDyingAtStartSaysWhy() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);
         String why = "lemminx: version `GLIBC_2.34' not found";
-        String loop = tr("status.lsp.crashLoopReason", tr("install.lang.java"), why);
+        String loop = tr("status.lsp.crashLoopReasonError", tr("install.lang.java"), why);
         for (int i = 0; i < 12 && !fx.host.statuses.contains(loop); i++) {
             FxTestSupport.runOnFx(() -> {
                 if (fx.manager.isManaged(b.getPath())) {
@@ -1027,6 +1060,7 @@ class LspCoordinatorCommandsFxTest {
         }
 
         assertTrue(fx.host.statuses.contains(loop), "the crash loop is reported with the server's own words");
+        assertEquals(MessageLog.Severity.ERROR, StatusSeverity.of(loop), "an error, not lost info (Bash review A11)");
         assertEquals(why, FxTestSupport.callOnFx(() -> fx.coordinator.serverCrash("java")));
         LspCoordinator.ServerTrouble trouble = FxTestSupport.callOnFx(() -> fx.coordinator.serverTrouble("java"));
         assertTrue(trouble.crashed());
@@ -1067,7 +1101,7 @@ class LspCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> fx.host.active = b);
 
         // Keep killing it: after the allowed restarts the editor stops re-forking and says so.
-        String loop = tr("status.lsp.crashLoop", tr("install.lang.java"));
+        String loop = tr("status.lsp.crashLoopError", tr("install.lang.java"));
         for (int i = 0; i < 12 && !fx.host.statuses.contains(loop); i++) {
             FxTestSupport.runOnFx(() -> {
                 if (fx.manager.isManaged(b.getPath())) {
@@ -1077,6 +1111,12 @@ class LspCoordinatorCommandsFxTest {
             fx.settle();
         }
         assertTrue(fx.host.statuses.contains(loop), "a crash loop is reported instead of restarted forever");
+        // an error, so it raises the unread marker and is not lost under the next message (Bash review A11)…
+        assertEquals(MessageLog.Severity.ERROR, StatusSeverity.of(loop));
+        // …and Doctor hears the server is given up on though it said nothing (Bash review A7)
+        LspCoordinator.ServerTrouble trouble = FxTestSupport.callOnFx(() -> fx.coordinator.serverTrouble("java"));
+        assertTrue(trouble != null && trouble.crashed() && trouble.detail().isEmpty(), String.valueOf(trouble));
+        assertNull(FxTestSupport.callOnFx(() -> fx.coordinator.serverCrash("java")), "Settings has no words to show");
         assertFalse(fx.manager.isManaged(b.getPath()));
         assertFalse(FxTestSupport.callOnFx(b::isLspActive), "the dead server's marks are dropped");
         // Showing or re-syncing a tab of that root does not fork it again (Node review E5)…
@@ -1118,8 +1158,9 @@ class LspCoordinatorCommandsFxTest {
     @Test
     void externalFileChangesReachTheServerAsOneBatchWithTheLatestKind() throws Exception {
         fx.open("A.java", SOURCE);
-        Path changed = root.resolve("pom.xml");
-        Path gone = root.resolve("Old.java");
+        // in a folder the server root's own watcher does not watch (past its cap, or made after it looked)
+        Path changed = root.resolve("unwatched/pom.xml");
+        Path gone = root.resolve("unwatched/Old.java");
 
         FxTestSupport.runOnFx(() -> {
             fx.coordinator.watchedFilesChanged(null);
@@ -1154,6 +1195,12 @@ class LspCoordinatorCommandsFxTest {
 
         watchedFlushElapsed();
         assertEquals(1, fx.server().watchedFiles.size(), "an empty queue sends nothing");
+
+        // A folder the root's watcher watches reports its own changes: the Project panel's are not sent twice (B16)
+        FxTestSupport.runOnFx(() -> fx.coordinator.watchedFilesChanged(
+                List.of(new ProjectPanel.FsChange(root.resolve("B.java"), ProjectPanel.FsKind.CHANGED))));
+        watchedFlushElapsed();
+        assertEquals(1, fx.server().watchedFiles.size());
 
         fx.ops.featureEnabled = false;
         FxTestSupport.runOnFx(() -> fx.coordinator.watchedFilesChanged(
@@ -1300,7 +1347,8 @@ class LspCoordinatorCommandsFxTest {
 
         fx.run(() -> fx.coordinator.gotoProblem(true));
         assertEquals(List.of(1, 12), List.of(caretOf(b)[0], caretOf(b)[1]));
-        assertEquals(tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastError());
+        assertEquals(
+                tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastStatus()); // no Editora error (C13)
         fx.run(() -> fx.coordinator.gotoProblem(true));
         assertEquals(2, caretOf(b)[0]);
         fx.run(() -> fx.coordinator.gotoProblem(true));
@@ -1327,11 +1375,11 @@ class LspCoordinatorCommandsFxTest {
 
         fx.caret(b, 1, 12);
         fx.run(() -> fx.coordinator.problemAtCaret());
-        assertEquals(tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastError(), "the one at the caret");
+        assertEquals(tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastStatus(), "the one at the caret");
         fx.caret(b, 1, 0);
         fx.host.errors.clear();
         fx.run(() -> fx.coordinator.problemAtCaret());
-        assertEquals(tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastError(), "the line's worst");
+        assertEquals(tr("status.lsp.problem", 2, "x cannot be resolved"), fx.host.lastStatus(), "the line's worst");
         fx.caret(b, 3, 0);
         fx.run(() -> fx.coordinator.problemAtCaret());
         assertEquals(tr("status.lsp.noProblemHere"), fx.host.lastStatus());
@@ -2274,9 +2322,12 @@ class LspCoordinatorCommandsFxTest {
         awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
         FxTestSupport.runOnFx(() -> fx.host.active = b);
         fx.host.statuses.clear();
+        // The fix lands on disk; the server root's own watcher reports it (the panel's copy of the event is not sent
+        // again for a file that watcher covers, Bash review B16).
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project><!-- fixed --></project>");
         fx.run(() -> fx.coordinator.watchedFilesReloaded(List.of(root.resolve("pom.xml"))));
-        for (int i = 0; i < 100 && !fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")); i++) {
-            Thread.sleep(10); // the Project panel's events are flushed after a pause
+        for (int i = 0; i < 1500 && !fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")); i++) {
+            Thread.sleep(10); // the watcher coalesces, then the batch reaches the FX thread
             fx.settle();
         }
         assertTrue(fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")), fx.host.statuses.toString());

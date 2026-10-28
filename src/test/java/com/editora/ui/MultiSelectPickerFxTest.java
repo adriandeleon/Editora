@@ -231,4 +231,32 @@ class MultiSelectPickerFxTest {
             assertEquals(700, MultiSelectPicker.fittedWidth(List.of(new CheckBox("a")), 700), 0.01, "never narrower");
         });
     }
+
+    /** A long title wraps; Select all / Select none keep their whole text (Bash review C17). */
+    @Test
+    void aLongTitleNeverSqueezesTheLinks() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            StackPane root = new StackPane();
+            Stage stage = new Stage();
+            stage.setScene(new Scene(root, 800, 600));
+            stage.show();
+            OverlayHost host = new OverlayHost();
+            host.install(root);
+            MultiSelectPicker.show(
+                    host,
+                    "Rename to \"join_with_a_rather_long_name\" — 2 changes in 2 files of a project far away",
+                    members(),
+                    v -> {});
+            root.applyCss();
+            root.layout();
+            Node card = root.lookup(".multi-select-picker");
+            for (Node n : card.lookupAll(".hyperlink")) {
+                Hyperlink link = (Hyperlink) n;
+                assertTrue(
+                        link.getWidth() >= link.prefWidth(-1) - 0.5,
+                        link.getText() + " is cut: " + link.getWidth() + " < " + link.prefWidth(-1));
+            }
+            stage.close();
+        });
+    }
 }
