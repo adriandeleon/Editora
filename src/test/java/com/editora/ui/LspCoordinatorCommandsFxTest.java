@@ -1009,6 +1009,39 @@ class LspCoordinatorCommandsFxTest {
     }
 
     /**
+     * Bash review B17: every tab a server served before Restart Language Servers is opened on the new one at once,
+     * shown or not. Deferred to its next showing, a background tab's problems left the Problems window.
+     */
+    @Test
+    void restartingServersReopensBackgroundTabsTheyServed() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        EditorBuffer background = FxTestSupport.callOnFx(EditorBuffer::new);
+        Path other = file("Background.java", "class Background {}\n");
+        EditorBuffer neverShown = FxTestSupport.callOnFx(EditorBuffer::new);
+        Path unseen = file("Unseen.java", "class Unseen {}\n");
+        FxTestSupport.runOnFx(() -> {
+            background.setPath(other);
+            background.setContent("class Background {}\n");
+            fx.show(background);
+            fx.host.active = background;
+            fx.coordinator.syncBuffer(background);
+            fx.host.active = b;
+            neverShown.setPath(unseen);
+            neverShown.setContent("class Unseen {}\n");
+            fx.show(neverShown);
+            fx.coordinator.syncBufferWhenShown(neverShown);
+        });
+        assertTrue(fx.manager.isManaged(other));
+        assertFalse(fx.manager.isManaged(unseen), "precondition: a tab never shown waits");
+
+        fx.run(() -> fx.coordinator.restartServers());
+
+        assertTrue(fx.manager.isManaged(b.getPath()));
+        assertTrue(fx.manager.isManaged(other), "the background tab is open on the new server");
+        assertFalse(fx.manager.isManaged(unseen), "a tab no server had yet still waits to be shown");
+    }
+
+    /**
      * XML review A4: a server that exits before it is ready at every start — lemminx's native build on too old a
      * glibc — says why when it is given up on, and Doctor and Install hear it as given up on, not as installed.
      */
@@ -1125,8 +1158,9 @@ class LspCoordinatorCommandsFxTest {
     @Test
     void externalFileChangesReachTheServerAsOneBatchWithTheLatestKind() throws Exception {
         fx.open("A.java", SOURCE);
-        Path changed = root.resolve("pom.xml");
-        Path gone = root.resolve("Old.java");
+        // in a folder the server root's own watcher does not watch (past its cap, or made after it looked)
+        Path changed = root.resolve("unwatched/pom.xml");
+        Path gone = root.resolve("unwatched/Old.java");
 
         FxTestSupport.runOnFx(() -> {
             fx.coordinator.watchedFilesChanged(null);
@@ -1161,6 +1195,12 @@ class LspCoordinatorCommandsFxTest {
 
         watchedFlushElapsed();
         assertEquals(1, fx.server().watchedFiles.size(), "an empty queue sends nothing");
+
+        // A folder the root's watcher watches reports its own changes: the Project panel's are not sent twice (B16)
+        FxTestSupport.runOnFx(() -> fx.coordinator.watchedFilesChanged(
+                List.of(new ProjectPanel.FsChange(root.resolve("B.java"), ProjectPanel.FsKind.CHANGED))));
+        watchedFlushElapsed();
+        assertEquals(1, fx.server().watchedFiles.size());
 
         fx.ops.featureEnabled = false;
         FxTestSupport.runOnFx(() -> fx.coordinator.watchedFilesChanged(

@@ -46,7 +46,6 @@ class XmlGrammarWatchFxTest {
             fakes.add(fake);
             session.attachForTest(fake, new ServerCapabilities());
         });
-        manager.setWatchSessionRoots(r -> false); // inside the project: the Project panel's watcher covers it
     }
 
     @AfterEach
@@ -61,8 +60,8 @@ class XmlGrammarWatchFxTest {
         Path xml = Files.writeString(root.resolve("note.xml"), "<note/>\n");
         manager.configure(true, Map.of("xml", "lemminx"));
         manager.openDocument(xml, root, "xml", "<note/>\n");
-        assertEquals(java.util.Set.of(root.toAbsolutePath().normalize()), manager.grammarWatchedRoots());
-        assertTrue(manager.watchedRoots().isEmpty(), "the whole tree stays the Project panel's");
+        // the whole tree, project or not: the Project panel watches only its expanded folders (Bash review B16)
+        assertEquals(java.util.Set.of(root.toAbsolutePath().normalize()), manager.watchedRoots());
 
         Files.writeString(root.resolve("readme.txt"), "not a grammar\n");
         Files.writeString(xsd, "<xs:schema><!-- urgent added --></xs:schema>\n");
@@ -76,10 +75,9 @@ class XmlGrammarWatchFxTest {
                     .toList();
         }
         assertTrue(seen.stream().anyMatch(e -> e.getUri().equals(uri)), "the schema change: " + seen);
-        assertTrue(seen.stream().noneMatch(e -> e.getUri().endsWith("readme.txt")), "only grammar files: " + seen);
 
         manager.close();
-        assertTrue(manager.grammarWatchedRoots().isEmpty(), "closed with the window");
+        assertTrue(manager.watchedRoots().isEmpty(), "closed with the window");
     }
 
     private static <T> T onFx(java.util.concurrent.Callable<T> task) throws Exception {

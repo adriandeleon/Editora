@@ -33,4 +33,24 @@ class RootWatcherTest {
             assertFalse(w.watches(root.resolve("elsewhere")), "a folder never registered");
         }
     }
+    /** A folder the project's {@code .gitignore} files leave out is not watched, at any depth (Bash review B16). */
+    @Test
+    void foldersTheGitignoreLeavesOutAreNotWatched(@TempDir Path dir) throws Exception {
+        Path root = dir.toAbsolutePath().normalize();
+        Files.writeString(root.resolve(".gitignore"), "dist/\n*.log\n");
+        Path dist = Files.createDirectories(root.resolve("dist/assets"));
+        Path pkg = Files.createDirectories(root.resolve("packages/a"));
+        Files.writeString(pkg.resolve(".gitignore"), "cache/\n");
+        Path cache = Files.createDirectories(pkg.resolve("cache"));
+        Path lib = Files.createDirectories(root.resolve("lib"));
+        try (RootWatcher w = RootWatcher.start(root, batch -> {})) {
+            assertNotNull(w);
+            assertTrue(w.watches(root));
+            assertTrue(w.watches(lib));
+            assertTrue(w.watches(pkg));
+            assertFalse(w.watches(root.resolve("dist")));
+            assertFalse(w.watches(dist));
+            assertFalse(w.watches(cache), "a nested .gitignore counts for its own folder");
+        }
+    }
 }

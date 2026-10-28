@@ -501,11 +501,6 @@ final class LspCoordinator {
             }
         });
         lspManager.setPythonInterpreterResolver(pythonInterpreters::pythonPathForServerRoot); // review B1
-        // A server root the Project panel's watcher does not cover gets a watcher of its own (review B7).
-        lspManager.setWatchSessionRoots(root -> {
-            Path project = watchedProjectRoot;
-            return project == null || !root.startsWith(project.toAbsolutePath().normalize());
-        });
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
         lspManager.setOnSecondServer((serverId, root) -> host.setStatus(tr(
@@ -2788,7 +2783,6 @@ final class LspCoordinator {
             eligible = false; // crash-looped or refused: not started again by a tab (E5)
         }
         buffer.setHeavyFileLspAllowed(buffer.isHeavyFile() && eligible); // B10: within the language's limit
-        watchedProjectRoot = ops.lspProjectRoot();
         if (eligible && "python".equals(serverId)) {
             pythonInterpreters.captureSnapshot(); // what the server's start resolves its interpreter from
         }
@@ -3173,9 +3167,6 @@ final class LspCoordinator {
             } else command.run();
         };
     }
-
-    /** The project root whose files the Project panel watches (null = none), for the server-start thread. */
-    private volatile @Nullable Path watchedProjectRoot;
 
     /**
      * Untitled buffers served by a language server → the made-up file path their document has there (review
@@ -3783,9 +3774,13 @@ final class LspCoordinator {
         importWarned.clear();
         warnedAtReady.clear();
         statusNarrator.forget(null);
+        // Every tab a server served reopens at once, shown or not: deferred, the Problems window lost all but one (B17)
+        java.util.List<EditorBuffer> served = new java.util.ArrayList<>();
+        host.forEachBuffer(b -> served.addAll(lspManager.isManaged(lspPath(b)) ? List.of(b) : List.of()));
         lspManager.restartAll(); // a Java server shared with another window restarts for both
         clearAllDiagnostics();
         applyGating();
+        served.forEach(b -> ensureManaged(lspPath(b)));
         host.setStatus(tr("status.lsp.restarted"));
     }
 
@@ -9776,7 +9771,7 @@ final class LspCoordinator {
         }
         List<com.editora.lsp.LspManager.WatchedFile> batch = new java.util.ArrayList<>(pendingWatched.size());
         pendingWatched.forEach((path, kind) -> {
-            if (!lspManager.watchesModelFileBesidePanel(path)) { // its own watcher reports it: not twice (CL1)
+            if (!lspManager.reportsChangesTo(path)) { // the server root's own watcher reports it: not twice (B16)
                 batch.add(new com.editora.lsp.LspManager.WatchedFile(path, kind));
             }
         });

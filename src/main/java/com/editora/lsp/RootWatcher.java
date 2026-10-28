@@ -28,7 +28,8 @@ import org.jspecify.annotations.Nullable;
  * window stayed unknown to the server until a restart: the Project panel's watcher was the only source.
  *
  * <p>Folders a server never analyses are skipped — hidden ones ({@code .git}, {@code .venv}), {@code
- * node_modules}, {@code __pycache__}, and any virtual environment — and at most {@link #MAX_DIRS} folders are
+ * node_modules}, {@code __pycache__}, any virtual environment, and those the project's {@code .gitignore} files
+ * leave out ({@code target/}, {@code dist/}, …; Bash review B16) — and at most {@link #MAX_DIRS} folders are
  * watched, so a server rooted at a huge tree costs a bounded number of watches. Events are coalesced for
  * {@link #COALESCE_MS} and merged per path ({@link LspManager#mergeWatched}). One virtual thread per watcher.
  */
@@ -51,6 +52,9 @@ final class RootWatcher implements AutoCloseable {
     private final Consumer<List<LspManager.WatchedFile>> sink;
     private final java.util.function.Predicate<Path> reported;
     private final boolean skipOutputs;
+    /** The root's {@code .gitignore} rules: a folder they leave out is not watched. */
+    private final com.editora.search.GitignoreFilter ignore;
+
     private volatile boolean closed;
 
     private RootWatcher(
@@ -64,6 +68,7 @@ final class RootWatcher implements AutoCloseable {
         this.sink = sink;
         this.reported = reported;
         this.skipOutputs = skipOutputs;
+        this.ignore = com.editora.search.GitignoreFilter.load(root);
     }
 
     /** Starts watching {@code root}; {@code sink} gets each coalesced batch on the watcher's thread. Null on failure. */
@@ -150,12 +155,27 @@ final class RootWatcher implements AutoCloseable {
                 || Files.isRegularFile(dir.resolve("pyvenv.cfg"));
     }
 
+    /** The root-relative, {@code /}-separated path of {@code dir} ("" for the root). */
+    private String relative(Path dir) {
+        return root.relativize(dir).toString().replace('\\', '/');
+    }
+
     private void registerTree(Path start) throws IOException {
+        // each folder's rules: its parent's, plus a .gitignore of its own (a monorepo keeps them per package)
+        Map<Path, com.editora.search.GitignoreFilter> rules = new HashMap<>();
         Files.walkFileTree(start, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                 if (!dir.equals(root) && (skipped(dir) || (skipOutputs && buildOutput(dir)))) {
                     return FileVisitResult.SKIP_SUBTREE;
+                }
+                if (!dir.equals(root)) {
+                    String rel = relative(dir);
+                    var parent = rules.getOrDefault(dir.getParent(), ignore);
+                    if (parent.ignored(rel, true)) {
+                        return FileVisitResult.SKIP_SUBTREE;
+                    }
+                    rules.put(dir, parent.nested(dir, rel));
                 }
                 synchronized (dirs) {
                     if (dirs.size() >= (com.editora.io.WatchServices.isPolling(ws) ? MAX_POLLED_DIRS : MAX_DIRS)) {
