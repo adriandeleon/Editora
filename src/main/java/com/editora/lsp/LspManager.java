@@ -184,8 +184,8 @@ public final class LspManager {
     private volatile boolean javaOnTypeFormatting;
     /** Settings' Default JDK ("" = none): jdtls's default runtime and the JDK it may itself run on. */
     private volatile String javaDefaultJdk = "";
-    /** bash-language-server's {@code bashIde} settings (null = its defaults until the coordinator sets them). */
-    private volatile @Nullable BashIdeConfig bashIde;
+    /** Root → bash-language-server's {@code bashIde} settings there (null = its defaults until the coordinator sets them). */
+    private volatile java.util.function.@Nullable Function<Path, BashIdeConfig> bashIde;
 
     /** Whether the TypeScript server may fetch type definitions from npm (Settings; off by default). */
     private volatile boolean typeScriptTypeAcquisition;
@@ -540,13 +540,31 @@ public final class LspManager {
      * pushed to the running ones when it changed (they re-read it and re-lint).
      */
     public void setBashIde(BashIdeConfig config) {
-        bashIde = config;
+        setBashIde(root -> config);
+    }
+
+    /** As {@link #setBashIde(BashIdeConfig)}, each Bash server given the configuration for its root (A1). */
+    public void setBashIde(java.util.function.Function<Path, BashIdeConfig> forRoot) {
+        bashIde = forRoot;
         String prefix = sessionKeyPrefix("bash");
         sessionsByRoot.forEach((key, session) -> {
             if (key.startsWith(prefix)) {
-                session.setBashIde(config);
+                session.setBashIde(bashIdeFor(session.root()));
             }
         });
+    }
+
+    /**
+     * The {@code bashIde} settings a Bash server at {@code root} is sent (null = never set). The shared root of
+     * loose scripts reads nothing in the background: its scripts are wherever the user keeps them (Bash review A9).
+     */
+    public @Nullable BashIdeConfig bashIdeFor(Path root) {
+        var forRoot = bashIde;
+        BashIdeConfig config = forRoot == null ? null : forRoot.apply(root);
+        if (!root.toAbsolutePath().normalize().equals(looseRoot)) {
+            return config;
+        }
+        return (config == null ? BashIdeConfig.defaults() : config).withBackgroundAnalysisMaxFiles(0);
     }
 
     /** The Python server's id, whose sessions are told which interpreter to analyse with. */
@@ -731,11 +749,6 @@ public final class LspManager {
     public @Nullable String pythonPathFor(Path file) {
         LanguageServerSession s = sessionFor(file);
         return s == null ? null : s.pythonPath();
-    }
-
-    /** The {@code bashIde} configuration last set (null = never). */
-    public @Nullable BashIdeConfig bashIde() {
-        return bashIde;
     }
 
     private void putCommand(String serverId, String command) {
@@ -1879,7 +1892,7 @@ public final class LspManager {
         session.setJavaOnTypeFormatting(javaOnTypeFormatting);
         session.setJavaCleanups(javaCleanups);
         session.setJavaFilteredTypes(javaFilteredTypes);
-        session.setBashIde(bashIde);
+        session.setBashIde(bashIdeFor(root));
         if (TypeScriptServer.SERVER_ID.equals(serverId)) {
             session.setTypeScriptSettings(typeScriptSettings);
         }
@@ -4408,8 +4421,14 @@ public final class LspManager {
             cb.accept("");
             return;
         }
-        s.hover(documentUri != null ? documentUri : uri(anchor), new Position(line, character))
+        BashLsp.hoverDeadline(
+                        s, s.hover(documentUri != null ? documentUri : uri(anchor), new Position(line, character)))
                 .whenComplete((hover, error) -> {
+                    String late = BashLsp.hoverTimedOut(s, error); // explainshell kept it waiting (B10)
+                    if (late != null) {
+                        Platform.runLater(() -> onFailure.accept(late));
+                        return;
+                    }
                     var fault = error == null ? null : RequestErrorTracker.responseError(error);
                     if (fault != null && RequestErrorTracker.serverFault(fault.getCode())) {
                         String why = RequestErrorTracker.describe(fault);
@@ -5929,6 +5948,7 @@ public final class LspManager {
         if (file == null) {
             return;
         }
+        params.setDiagnostics(BashLsp.diagnostics(source.serverId(), file, params.getDiagnostics())); // D2, A15
         String sourceUri = managedDocumentUri(source, file, reported);
         if (params.getVersion() != null
                 && (sourceUri == null

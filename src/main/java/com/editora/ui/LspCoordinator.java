@@ -1988,7 +1988,7 @@ final class LspCoordinator {
      * {@code .editora/settings.json} choose a program to run. Only consulted when the file overrides
      * something, so a project without one never touches the trust list.
      */
-    private boolean projectTrusted() {
+    boolean projectTrusted() {
         return projectScope.trusted();
     }
 
@@ -2080,9 +2080,10 @@ final class LspCoordinator {
                         com.editora.install.InstallCatalog.installedToolIfPresent(configDir, "shfmt"));
     }
 
-    /** Whether the command the Bash server runs for {@code toolId} resolves (a PATH/file lookup, no process). */
+    /** Whether {@code toolId} is switched off (nothing is missing) or its command resolves (a lookup, no process). */
     boolean bashToolFound(String toolId) {
-        return com.editora.doctor.DoctorProbes.onPath(List.of(bashToolCommand(toolId)));
+        return !bashIdeConfig().toolEnabled(toolId)
+                || com.editora.doctor.DoctorProbes.onPath(List.of(bashToolCommand(toolId)));
     }
 
     /** The command the Bash server runs for {@code toolId} ({@code shellcheck}/{@code shfmt}) in this window. */
@@ -2104,9 +2105,11 @@ final class LspCoordinator {
         xmlNotices.reset();
     }
 
-    /** Hands the current {@link #bashIdeConfig()} to the manager, which pushes it to running Bash servers. */
+    /** Hands Bash servers their settings: {@link #bashIdeConfig()} in the project, the user's elsewhere (A1). */
     void applyBashIde() {
-        lspManager.setBashIde(bashIdeConfig());
+        com.editora.config.ConfigManager config = ops.config();
+        var user = userBashIde(host.settings(), config == null ? null : config.getConfigDir());
+        lspManager.setBashIde(com.editora.lsp.BashIdeConfig.perRoot(bashIdeConfig(), user, ops.lspProjectRoot()));
         applyTypeScriptConfig();
     }
 
@@ -2267,7 +2270,7 @@ final class LspCoordinator {
      * gating for every open buffer — re-reading a file each time would be disk I/O on the FX thread for a
      * value that changes only when someone edits it. {@link #reloadProjectSettings()} drops the cache.
      */
-    private com.editora.config.ProjectSettings projectSettings() {
+    com.editora.config.ProjectSettings projectSettings() {
         return projectScope.settings();
     }
 
@@ -2923,11 +2926,8 @@ final class LspCoordinator {
         if (loose != null && com.editora.lsp.XmlServer.isXml(serverId)) {
             return com.editora.lsp.XmlServer.sharedRoot(ops.lspProjectRoot(), file, loose); // one lemminx (A7)
         }
-        if (loose != null
-                && com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)
-                && com.editora.lsp.RootResolver.isLoose(
-                        ops.lspProjectRoot(), file, com.editora.lsp.LspServerRegistry.rootMarkersForServer(serverId))) {
-            return loose; // one server for every loose script, wherever it is (B7)
+        if (loose != null && com.editora.lsp.BashLsp.sharesLooseRoot(serverId, ops.lspProjectRoot(), file)) {
+            return loose; // one server for every loose script, wherever it is (TypeScript B7, Bash A9)
         }
         Path resolved = com.editora.lsp.RootResolver.resolveTiered(
                 ops.lspProjectRoot(), file, com.editora.lsp.LspServerRegistry.rootMarkerTiersForServer(serverId));
@@ -3074,7 +3074,7 @@ final class LspCoordinator {
             // probed and absent → fall through to the plain XML server (base-XML LSP still works)
         }
         // zsh startup files (.zshrc, /etc/zsh/zshenv, …) say nothing about being zsh, so bash-language-server would
-        // lint them as bash and mark valid zsh as parse errors. A *.zsh script it recognizes and skips itself.
+        // lint them as bash. A *.zsh script stays on it (completion, hover, symbols); its SC1071 is dropped (D2).
         if ("bash".equals(base) && fileName != null && com.editora.text.ShellFiles.isZshStartupFile(fileName)) {
             return null;
         }

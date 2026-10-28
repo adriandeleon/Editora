@@ -1103,12 +1103,15 @@ final class LanguageServerSession implements LanguageClient {
     private volatile @Nullable BashIdeConfig bashIde;
 
     /**
-     * Sets the {@code bashIde} section this session answers and pushes. A server on another host is told to look
-     * ShellCheck and shfmt up on that host's PATH ({@link BashIdeConfig#forRemote}). A running Bash server gets
-     * the change pushed and every open document sent again: 5.6 re-lints only the one it heard of last (B8).
+     * Sets the {@code bashIde} section this session answers and pushes. A server that runs elsewhere — another
+     * host, a container, WSL — is told to look ShellCheck and shfmt up on that side's PATH
+     * ({@link BashIdeConfig#forRemote}): a container or WSL folder is a local path, but this machine's tool paths
+     * mean nothing there (Bash review A2). A running Bash server gets the change pushed; it re-reads its
+     * configuration, and every open document is sent again: 5.6 re-lints only the one it heard of last (B8).
      */
     void setBashIde(@Nullable BashIdeConfig config) {
-        BashIdeConfig next = config == null ? null : com.editora.vfs.Vfs.isRemote(root) ? config.forRemote() : config;
+        BashIdeConfig next =
+                config == null || com.editora.process.ExecTargets.runsHere(root) ? config : config.forRemote();
         boolean changed = !java.util.Objects.equals(bashIde, next);
         bashIde = next;
         if (changed && "bash".equals(serverId) && ready()) {
@@ -1168,6 +1171,11 @@ final class LanguageServerSession implements LanguageClient {
                 .didOpen(new DidOpenTextDocumentParams(
                         new TextDocumentItem(wire, LspServerRegistry.protocolLanguageId("shell"), 1, text)));
         server().getTextDocumentService().didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(wire)));
+    }
+
+    /** The explainshell endpoint this Bash session's server is sent (blank = none: hover asks no one else). */
+    String explainshellEndpoint() {
+        return effectiveBashIde().sentExplainshellEndpoint();
     }
 
     /**
