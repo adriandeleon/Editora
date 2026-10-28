@@ -28,7 +28,7 @@ class LspCoordinatorPreviewTest {
                 new LspManager.Target(closed, 3, 0)); // no open buffer
 
         AtomicInteger calls = new AtomicInteger();
-        List<String> previews = LspCoordinator.previewLines(targets, f -> {
+        List<String> previews = ReferencePreviews.previewLines(targets, f -> {
             calls.incrementAndGet();
             if (f.equals(a)) {
                 return "  alpha\nbeta\ngamma  ";

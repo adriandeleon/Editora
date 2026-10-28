@@ -165,6 +165,16 @@ public final class LspManager {
         onSharedServerEnded = handler == null ? (serverId, root) -> {} : handler;
     }
 
+    /**
+     * Told (on the FX thread) of the files this manager's own watchers saw change outside Editora, after the servers
+     * were: a pom fixed by a git pull re-imports a failed project as a save does (fourteenth check CJ8).
+     */
+    private volatile java.util.function.Consumer<List<WatchedFile>> onWatchedFiles = changes -> {};
+
+    public void setOnWatchedFiles(java.util.function.Consumer<List<WatchedFile>> handler) {
+        onWatchedFiles = handler == null ? changes -> {} : handler;
+    }
+
     /** Told (on the FX thread) when an install stops a server in every window ({@code true}) and when it is done. */
     private volatile java.util.function.BiConsumer<String, Boolean> onInstallHold = (serverId, held) -> {};
 
@@ -693,8 +703,10 @@ public final class LspManager {
         if (watchers == null || watchers.containsKey(key) || watchers.size() >= MAX_ROOT_WATCHERS) {
             return;
         }
-        java.util.function.Consumer<List<WatchedFile>> sink =
-                batch -> Platform.runLater(() -> notifyWatchedFiles(batch));
+        java.util.function.Consumer<List<WatchedFile>> sink = batch -> Platform.runLater(() -> {
+            notifyWatchedFiles(batch);
+            onWatchedFiles.accept(batch);
+        });
         RootWatcher w = whole ? RootWatcher.start(key, sink) : RootWatcher.start(key, sink, LspManager::modelFile);
         if (w != null && watchers.putIfAbsent(key, w) != null) {
             w.close(); // another start won

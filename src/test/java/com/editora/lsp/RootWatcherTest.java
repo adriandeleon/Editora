@@ -33,4 +33,20 @@ class RootWatcherTest {
             assertFalse(w.watches(root.resolve("elsewhere")), "a folder never registered");
         }
     }
+
+    /** Past the folder cap, a module's own folder is watched before a deep asset tree (fourteenth check CJ6). */
+    @Test
+    void aBuildFileWatcherReachesModulesBeforeDeepTrees(@TempDir Path dir) throws Exception {
+        Path root = dir.toAbsolutePath().normalize();
+        Path assets = Files.createDirectories(root.resolve("a/src/main/resources/assets"));
+        for (int i = 0; i < RootWatcher.MAX_DIRS + 50; i++) {
+            Files.createDirectory(assets.resolve("d" + i));
+        }
+        Path module = Files.createDirectories(root.resolve("z"));
+        Files.writeString(module.resolve("pom.xml"), "<project/>");
+        try (RootWatcher w = RootWatcher.start(root, batch -> {}, LspManager::modelFile)) {
+            assertNotNull(w);
+            assertTrue(w.watches(module), "the module's folder");
+        }
+    }
 }
