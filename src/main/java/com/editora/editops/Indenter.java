@@ -102,13 +102,20 @@ public final class Indenter {
             int regionEnd = lineEnd(text, b > a ? b - 1 : b);
             String region = text.substring(firstLS, regionEnd);
             String[] lines = region.split("\n", -1);
+            ShellIndent.Move[] moves = style == Style.SHELL ? ShellIndent.blockMoves(text, firstLS, regionEnd) : null;
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < lines.length; i++) {
                 if (i > 0) {
                     sb.append('\n');
                 }
                 String ln = lines[i];
-                if (shift) {
+                ShellIndent.Move move = moves != null && i < moves.length ? moves[i] : ShellIndent.Move.ANY;
+                if (move == ShellIndent.Move.NONE
+                        || (move == ShellIndent.Move.TABS && !(shift ? ln.startsWith("\t") : unit.equals("\t")))) {
+                    sb.append(ln); // the shebang, a here-doc's text and delimiter stay where bash needs them (C2)
+                } else if (move == ShellIndent.Move.TABS && shift) {
+                    sb.append(ln.substring(1)); // `<<-` strips leading tabs: one comes off
+                } else if (shift) {
                     sb.append(removeOneIndent(ln, dedentWidth(unit, tabSize)));
                 } else {
                     sb.append(ln.isEmpty() ? ln : unit + ln); // don't indent blank lines on Tab
