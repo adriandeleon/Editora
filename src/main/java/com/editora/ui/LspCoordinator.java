@@ -1284,7 +1284,7 @@ final class LspCoordinator {
     private void noteNonProjectFile(Path file, List<LspDiagnostic> diagnostics) {
         Path root = file.toString().endsWith(".java") ? lspManager.javaSessionRoot(file) : null;
         Path build = root == null ? null : buildFolder(root, file); // a build beside others: its own (twelfth CL2)
-        if (build == null || !JavaImportCheck.inSourceFolder(build, file) || JavaImportCheck.ownSources(build)) {
+        if (build == null || !JavaImportCheck.inSourceFolder(build, file)) {
             return; // a loose file in a project's other folders is a non-project file by rights
         }
         String key = importKey(LspServerRegistry.JAVA_SERVER_ID, root);
@@ -1344,9 +1344,25 @@ final class LspCoordinator {
             }
             host.setError(tr(
                     "status.lsp.importProblemWhy",
-                    statusServerName(LspServerRegistry.JAVA_SERVER_ID, sessionRoot),
+                    failedServerName( // a module's named (fourteenth check CJ5)
+                            statusServerName(LspServerRegistry.JAVA_SERVER_ID, sessionRoot),
+                            LspServerRegistry.JAVA_SERVER_ID,
+                            sessionRoot),
                     reason.replaceFirst("[.\\s]+$", "")));
             refreshImportNotes();
+        }
+    }
+
+    /**
+     * A pom.xml at {@code file} with m2e's "Project build error", once its server has said it is ready: that folder's
+     * import failed, though jdtls says only "build has problems" and gives its files no diagnostics (thirteenth review
+     * CK2, fourteenth check CJ2, CJ5); a healthy project's file off the classpath has no such error (CJ1).
+     */
+    private void modelError(Path file, List<LspDiagnostic> diagnostics) {
+        var error = JavaImportCheck.modelError(file, diagnostics);
+        Path root = error == null ? null : lspManager.javaSessionRoot(error.folder());
+        if (error != null && root != null && saidReady.contains(statusSource(LspServerRegistry.JAVA_SERVER_ID, root))) {
+            nonProjectImport(error.folder(), error.line());
         }
     }
 
@@ -1495,6 +1511,7 @@ final class LspCoordinator {
             problems.remove(key);
         }
         if (projectLevel) {
+            modelError(file, diagnostics);
             // The project's error comes after jdtls said the import failed: say the reason again in its words
             // ("Could not find method …", not the Gradle wrapper's "Could not fetch model") (third review CT7).
             Path project = java.nio.file.Files.isDirectory(file) ? file : file.getParent();
@@ -1505,10 +1522,12 @@ final class LspCoordinator {
                     && importFailedAt(project)
                     && !reason.equals(saidImportReason.put(failedKey, reason))) { // once, not per publish
                 narrowFailure(project);
+                Path served = lspManager.javaSessionRoot(project);
+                String server = statusServerName(LspServerRegistry.JAVA_SERVER_ID, served != null ? served : project);
                 host.setError(tr(
                         "status.lsp.importProblemWhy",
-                        statusServerName(LspServerRegistry.JAVA_SERVER_ID, project), // named with its folder (CV4)
-                        reason.replaceFirst("[.\\s]+$", "")));
+                        served == null ? server : failedServerName(server, LspServerRegistry.JAVA_SERVER_ID, served),
+                        reason.replaceFirst("[.\\s]+$", ""))); // named with its folder (CV4, thirteenth CK5)
             }
         }
         refreshProblems();
@@ -3644,7 +3663,10 @@ final class LspCoordinator {
             return;
         }
         Path root = lspManager.javaSessionRoot(folder);
-        if (root == null || folder.equals(root) || JavaImportCheck.unreadablePom(root.resolve("pom.xml")) != null) {
+        if (root == null
+                || folder.equals(root)
+                || JavaImportCheck.unreadablePom(root.resolve("pom.xml")) != null
+                || lspManager.startupError(LspServerRegistry.JAVA_SERVER_ID, root) != null) { // the whole import threw
             return;
         }
         if (importFailed.remove(importKey(LspServerRegistry.JAVA_SERVER_ID, root))) {
@@ -3707,6 +3729,15 @@ final class LspCoordinator {
                                 java.util.Objects.requireNonNullElse(buildFolder(root, e.getKey()), root),
                                 e.getValue())); // CO2, CL2
                 checkModulePoms(root);
+                problems.forEach((at, listed) -> modelError(at, listed)); // its pom's model failed (CK2, CJ2)
+                host.forEachBuffer(
+                        b -> { // a source file of a pom-packaging module is never checked (fourteenth CJ3)
+                            Path module = JavaImportCheck.pomPackagingModule(root, lspPath(b));
+                            if (module != null) {
+                                nonProjectImport(
+                                        module, tr("status.lsp.pomPackaging", JavaImportCheck.pomOf(root, module)));
+                            }
+                        });
                 String threw = lspManager.startupError(serverId, root);
                 if (threw != null && importFailed.add(key)) { // a pom with a model error (thirteenth review CK2)
                     JavaImportCheck.Reason why = JavaImportCheck.projectReason(problems, root);
@@ -3720,7 +3751,9 @@ final class LspCoordinator {
                 // jdtls says WARNING both for an import that threw (a Gradle build that does not run: it logs the
                 // exception) and for one that worked with build problems (a missing Maven artifact: nothing
                 // logged). Only the first is "did not import" (re-review CN2, third review CT2).
-                String logged = serverId == null ? null : lspManager.lastServerError(serverId, root);
+                String error = serverId == null ? null : lspManager.lastServerError(serverId, root);
+                // a dependency it cannot fetch: imported and checked, with problems (fourteenth check CJ4)
+                String logged = error == null || error.startsWith("Unresolved dependenc") ? null : error;
                 if (logged == null) {
                     importWarned.add(key);
                     if (saidReady.contains(line.serverId())) {
