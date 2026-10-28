@@ -1009,6 +1009,39 @@ class LspCoordinatorCommandsFxTest {
     }
 
     /**
+     * Bash review B17: every tab a server served before Restart Language Servers is opened on the new one at once,
+     * shown or not. Deferred to its next showing, a background tab's problems left the Problems window.
+     */
+    @Test
+    void restartingServersReopensBackgroundTabsTheyServed() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        EditorBuffer background = FxTestSupport.callOnFx(EditorBuffer::new);
+        Path other = file("Background.java", "class Background {}\n");
+        EditorBuffer neverShown = FxTestSupport.callOnFx(EditorBuffer::new);
+        Path unseen = file("Unseen.java", "class Unseen {}\n");
+        FxTestSupport.runOnFx(() -> {
+            background.setPath(other);
+            background.setContent("class Background {}\n");
+            fx.show(background);
+            fx.host.active = background;
+            fx.coordinator.syncBuffer(background);
+            fx.host.active = b;
+            neverShown.setPath(unseen);
+            neverShown.setContent("class Unseen {}\n");
+            fx.show(neverShown);
+            fx.coordinator.syncBufferWhenShown(neverShown);
+        });
+        assertTrue(fx.manager.isManaged(other));
+        assertFalse(fx.manager.isManaged(unseen), "precondition: a tab never shown waits");
+
+        fx.run(() -> fx.coordinator.restartServers());
+
+        assertTrue(fx.manager.isManaged(b.getPath()));
+        assertTrue(fx.manager.isManaged(other), "the background tab is open on the new server");
+        assertFalse(fx.manager.isManaged(unseen), "a tab no server had yet still waits to be shown");
+    }
+
+    /**
      * XML review A4: a server that exits before it is ready at every start — lemminx's native build on too old a
      * glibc — says why when it is given up on, and Doctor and Install hear it as given up on, not as installed.
      */

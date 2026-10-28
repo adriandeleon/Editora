@@ -3794,9 +3794,13 @@ final class LspCoordinator {
         importWarned.clear();
         warnedAtReady.clear();
         statusNarrator.forget(null);
+        // Every tab a server served reopens at once, shown or not: deferred, the Problems window lost all but one (B17)
+        java.util.List<EditorBuffer> served = new java.util.ArrayList<>();
+        host.forEachBuffer(b -> served.addAll(lspManager.isManaged(lspPath(b)) ? List.of(b) : List.of()));
         lspManager.restartAll(); // a Java server shared with another window restarts for both
         clearAllDiagnostics();
         applyGating();
+        served.forEach(b -> ensureManaged(lspPath(b)));
         host.setStatus(tr("status.lsp.restarted"));
     }
 
