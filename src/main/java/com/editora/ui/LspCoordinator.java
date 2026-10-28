@@ -515,7 +515,12 @@ final class LspCoordinator {
         lspManager.setOnStartFailed(this::onStartFailed);
         lspManager.setOnStartRefused(this::onStartRefused);
         lspManager.setOnRequestError(this::onRequestError);
-        pomCompletionNotice = new PomServerSupport(host::setStatus);
+        pomCompletionNotice = new PomServerSupport(
+                host::setStatus,
+                PomServerSupport.MavenWorkspace.of(lspManager),
+                host::forEachBuffer,
+                this::lspPath,
+                this::syncBuffer); // keeps pom completion alive (E3, E21-E24)
         lspManager.setApplyEditHandler(this::applyWorkspaceEditsConfirmed); // server quick-fix edits land here (#670)
         lspManager.setOnEditBlocked(this::editBlocked);
         lspManager.setOnRefreshRequested(this::refreshRequested);
@@ -3135,6 +3140,7 @@ final class LspCoordinator {
                 : "";
         String prefix = com.editora.lsp.MavenPomServer.elementPrefix(lineText, column);
         String coordinate = PomServerSupport.coordinateElement(lineText, column);
+        int failuresBefore = pomCompletionNotice.failuresBefore(p); // read as the request goes out (E21)
         return result -> {
             var items = com.editora.lsp.MavenPomServer.filterCompletion(
                     prefix, result.items(), com.editora.completion.Completion::label);
@@ -3144,9 +3150,8 @@ final class LspCoordinator {
             boolean takenOver = pomCompletionNotice.onCompletion( // a malformed pom empties it: leave it out (E3)
                     coordinate,
                     items.stream().map(com.editora.completion.Completion::label).toList(),
-                    lspRootFor(buffer, com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID),
-                    () -> PomServerSupport.openPoms(host::forEachBuffer),
-                    poms -> lspManager.leaveOutOfMavenWorkspace(p, poms),
+                    p,
+                    failuresBefore,
                     () -> lspManager.completion(
                             p,
                             line,
@@ -3846,11 +3851,7 @@ final class LspCoordinator {
             lspManager.changeDocument(path, buffer.getContent());
             lspManager.saveDocument(path, savedText);
             lspManager.pullDiagnostics(path); // no-op for push-only servers
-            if (PomServerSupport.wellFormedAgain(lspManager.leftOutOfMavenWorkspace(path), path, buffer.getContent())) {
-                host.setStatus(tr("status.maven.pomBack", path.getFileName())); // a fresh server takes it back (E3)
-                lspManager.restartServer(LspServerRegistry.MAVEN_POM_SERVER_ID);
-                applyGating();
-            }
+            pomCompletionNotice.saved(path, savedText); // a left-out pom saved well-formed: its root restarts (E23)
             if ((projectWideProblems || lspManager.otherJavaDocumentOpen(path))
                     && LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))) {
                 pendingProjectRecheck.add(path); // one build per session, saves in two projects both checked
@@ -9795,6 +9796,7 @@ final class LspCoordinator {
             return;
         }
         List<com.editora.lsp.LspManager.WatchedFile> batch = new java.util.ArrayList<>(pendingWatched.size());
+        pomCompletionNotice.filesChanged(List.copyOf(pendingWatched.keySet())); // a left-out pom fixed on disk (E24)
         pendingWatched.forEach((path, kind) -> {
             if (!lspManager.watchesModelFileBesidePanel(path)) { // its own watcher reports it: not twice (CL1)
                 batch.add(new com.editora.lsp.LspManager.WatchedFile(path, kind));

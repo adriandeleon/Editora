@@ -56,4 +56,24 @@ class LanguageServerLogTest {
             log.removeHandler(handler);
         }
     }
+
+    @Test
+    void thePomServersLoggedErrorsLoseTheirStackAndItsWorkspaceFailureIsRecognised() {
+        String logged = "Oct 27 XMLCompletions collectInsideContent()\nMessage: While performing "
+                + "ICompletionParticipant#onXMLContent for participant "
+                + "'org.eclipse.lemminx.extensions.maven.participants.completion.MavenCompletionParticipant'.\n"
+                + "java.lang.NullPointerException: x\n"
+                + "\tat org.eclipse.lemminx.extensions.maven.participants.completion.MavenCompletionParticipant"
+                + ".internalCollectWorkspaceArtifacts(MavenCompletionParticipant.java:1400)\n\tat y";
+        assertEquals(
+                "Oct 27 XMLCompletions collectInsideContent()\nMessage: While performing "
+                        + "ICompletionParticipant#onXMLContent for participant "
+                        + "'org.eclipse.lemminx.extensions.maven.participants.completion.MavenCompletionParticipant'.\n"
+                        + "java.lang.NullPointerException: x",
+                LanguageServerSession.withoutStack(logged));
+        assertEquals("no stack", LanguageServerSession.withoutStack("no stack"));
+        assertEquals(true, LanguageServerSession.mavenWorkspaceCompletionFailed(logged));
+        assertEquals(false, LanguageServerSession.mavenWorkspaceCompletionFailed("Local repo updater started"));
+        assertEquals(false, LanguageServerSession.mavenWorkspaceCompletionFailed(null));
+    }
 }

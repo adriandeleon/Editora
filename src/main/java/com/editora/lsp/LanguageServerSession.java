@@ -1232,36 +1232,81 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
-    /** The poms (wire URIs) this session's lemminx-maven was told to leave out of its workspace (review 2, E3). */
-    private final java.util.Set<String> leftOutOfWorkspace = ConcurrentHashMap.newKeySet();
+    /** The poms this session's lemminx-maven was told to leave out of its workspace, by wire URI (review 2, E3). */
+    private final Map<String, java.nio.file.Path> leftOutOfWorkspace = new ConcurrentHashMap<>();
 
     /**
-     * Takes {@code uris} (pom files) out of the server's workspace: a {@code workspace/didChangeWorkspaceFolders}
-     * that removes each file, which lemminx-maven applies to every workspace pom under the removed path — so to that
-     * one pom. Returns the ones not already out. They stay out for this session: lemminx-maven never rebuilds a
-     * closed pom, so one put back would bring its failed build back with it.
+     * Takes {@code poms} (pom files by wire URI) out of the server's workspace: a
+     * {@code workspace/didChangeWorkspaceFolders} that removes each file, which lemminx-maven applies to every
+     * workspace pom under the removed path — so to that one pom. Returns the ones newly left out: none while the
+     * server is not ready, when nothing can be sent (review 3, E Gaps). They stay out for this session: lemminx-maven
+     * never rebuilds a closed pom, so one put back would bring its failed build back with it.
      */
-    List<String> leaveOutOfWorkspace(List<String> uris) {
-        List<String> fresh = uris.stream().filter(leftOutOfWorkspace::add).toList();
-        if (!fresh.isEmpty() && ready()) {
-            try {
-                server().getWorkspaceService()
-                        .didChangeWorkspaceFolders(new org.eclipse.lsp4j.DidChangeWorkspaceFoldersParams(
-                                new org.eclipse.lsp4j.WorkspaceFoldersChangeEvent(
-                                        List.of(),
-                                        fresh.stream()
-                                                .map(u -> new WorkspaceFolder(u, u.substring(u.lastIndexOf('/') + 1)))
-                                                .toList())));
-            } catch (RuntimeException e) {
-                LOG.log(Level.FINE, "didChangeWorkspaceFolders failed", e);
-            }
+    List<java.nio.file.Path> leaveOutOfWorkspace(Map<String, java.nio.file.Path> poms) {
+        if (!ready()) {
+            return List.of();
         }
-        return fresh;
+        Map<String, java.nio.file.Path> fresh = new java.util.LinkedHashMap<>();
+        poms.forEach((uri, pom) -> {
+            if (!leftOutOfWorkspace.containsKey(uri)) {
+                fresh.put(uri, pom);
+            }
+        });
+        if (fresh.isEmpty()) {
+            return List.of();
+        }
+        try {
+            server().getWorkspaceService()
+                    .didChangeWorkspaceFolders(new org.eclipse.lsp4j.DidChangeWorkspaceFoldersParams(
+                            new org.eclipse.lsp4j.WorkspaceFoldersChangeEvent(
+                                    List.of(),
+                                    fresh.keySet().stream()
+                                            .map(u -> new WorkspaceFolder(u, u.substring(u.lastIndexOf('/') + 1)))
+                                            .toList())));
+        } catch (RuntimeException e) {
+            LOG.log(Level.FINE, "didChangeWorkspaceFolders failed", e);
+            return List.of();
+        }
+        leftOutOfWorkspace.putAll(fresh);
+        return List.copyOf(fresh.values());
     }
 
     /** Whether {@code uri} (a wire URI) was left out of this session's workspace ({@link #leaveOutOfWorkspace}). */
     boolean leftOutOfWorkspace(String uri) {
-        return leftOutOfWorkspace.contains(uri);
+        return leftOutOfWorkspace.containsKey(uri);
+    }
+
+    /** Every pom left out of this session's workspace ({@link #leaveOutOfWorkspace}). */
+    List<java.nio.file.Path> leftOutOfWorkspace() {
+        return List.copyOf(leftOutOfWorkspace.values());
+    }
+
+    /**
+     * How many coordinate completions lemminx-maven failed on its workspace list (review 3, E21): with
+     * {@code xml.logs.client} on it logs the participant's exception (a null project in
+     * {@code internalCollectWorkspaceArtifacts}) before it answers with markup only. The proof that an empty answer
+     * is the broken one and not an honest no-match.
+     */
+    private final java.util.concurrent.atomic.AtomicInteger workspaceCompletionFailures =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** See {@link #workspaceCompletionFailures}. */
+    int workspaceCompletionFailures() {
+        return workspaceCompletionFailures.get();
+    }
+
+    /** {@code message} up to its first stack frame ({@code "\tat …"}). Pure. */
+    static String withoutStack(@Nullable String message) {
+        String m = message == null ? "" : message;
+        int at = m.indexOf("\n\tat ");
+        return at < 0 ? m : m.substring(0, at);
+    }
+
+    /** Whether {@code message} is lemminx-maven's coordinate completion failing on its workspace's projects. Pure. */
+    static boolean mavenWorkspaceCompletionFailed(@Nullable String message) {
+        return message != null
+                && message.contains("MavenCompletionParticipant")
+                && message.contains("internalCollectWorkspaceArtifacts");
     }
 
     /** lemminx's {@code xml} object for this session's root ({@link XmlServerSettings#section}; null: none yet). */
@@ -3252,11 +3297,19 @@ final class LanguageServerSession implements LanguageClient {
         // says only here that it found no ShellCheck ("disabling linting as no executable was found") or that
         // a format failed, and the user otherwise saw a script with no diagnostics and no hint why.
         org.eclipse.lsp4j.MessageType type = message.getType();
+        if (mavenWorkspaceCompletionFailed(message.getMessage())) {
+            workspaceCompletionFailures.incrementAndGet(); // seen by the completion's answer (E21); no stack logged
+            LOG.fine(() -> "[" + serverId + "] " + firstLine(message.getMessage()));
+            return;
+        }
         if (type == org.eclipse.lsp4j.MessageType.Error && importError(message.getMessage())) {
             lastErrorLog = firstLine(message.getMessage());
         }
         if (type == org.eclipse.lsp4j.MessageType.Error || type == org.eclipse.lsp4j.MessageType.Warning) {
-            LOG.info("[" + serverId + "] " + message.getMessage());
+            LOG.info("[" + serverId + "] "
+                    + (LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)
+                            ? withoutStack(message.getMessage()) // its log reaches us since E21: no stack per start
+                            : message.getMessage()));
         } else if (LOG.isLoggable(Level.FINE)) {
             LOG.fine(message.getMessage());
         }
