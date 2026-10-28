@@ -84,10 +84,16 @@ class XmlServerTest {
     }
 
     @Test
-    void onlyTheXmlServerIsToldItMayRegisterCommandsDynamically() {
+    void onlyTheLemminxServersAreToldTheyMayRegisterCommandsDynamically() {
         var xml = LanguageServerSession.clientCapabilities("xml").getWorkspace().getExecuteCommand();
         assertNotNull(xml);
         assertEquals(Boolean.TRUE, xml.getDynamicRegistration());
+        // the pom server is lemminx too: without it "XML: Revalidate File" could not run on a pom (review 2, D15)
+        var pom = LanguageServerSession.clientCapabilities("maven-pom")
+                .getWorkspace()
+                .getExecuteCommand();
+        assertNotNull(pom);
+        assertEquals(Boolean.TRUE, pom.getDynamicRegistration());
         assertNull(
                 LanguageServerSession.clientCapabilities("java").getWorkspace().getExecuteCommand());
         assertNotNull(
@@ -154,5 +160,53 @@ class XmlServerTest {
         assertEquals(link, XmlServer.linkAt(List.of(link), new Position(1, 99))); // at its end
         assertNull(XmlServer.linkAt(List.of(link), new Position(1, 90)));
         assertNull(XmlServer.linkAt(null, new Position(1, 95)));
+    }
+
+    /** XML review 2 B3: the href of an xsl:include or xsl:import, at the caret. */
+    @Test
+    void theHrefOfAStylesheetIncludeIsFoundAtTheCaret() {
+        String xsl = "<xsl:stylesheet>\n  <xsl:include href=\"common/base.xsl\"/>\n  <xsl:import href='more.xsl'/>\n"
+                + "  <xs:include schemaLocation=\"a.xsd\"/>\n  <xsl:template match=\"/\" href=\"x.xsl\"/>\n";
+        int inInclude = xsl.indexOf("common/") + 3;
+        assertEquals("common/base.xsl", XmlServer.includeHref(xsl, inInclude));
+        assertEquals("common/base.xsl", XmlServer.includeHref(xsl, xsl.indexOf("common/")), "at the value's start");
+        assertEquals("more.xsl", XmlServer.includeHref(xsl, xsl.indexOf("more.xsl") + 8), "at its end, single quotes");
+        assertNull(XmlServer.includeHref(xsl, xsl.indexOf("xsl:include") + 2), "on the element name");
+        assertNull(XmlServer.includeHref(xsl, xsl.indexOf("a.xsd")), "an XSD include is lemminx's own link");
+        assertNull(XmlServer.includeHref(xsl, xsl.indexOf("x.xsl")), "not an include");
+        assertNull(XmlServer.includeHref(xsl, xsl.indexOf("<xsl:import") - 1), "between tags");
+        assertNull(XmlServer.includeHref(xsl, -1));
+    }
+
+    @Test
+    void anIncludeResolvesToAnExistingFileNextToTheStylesheet(@TempDir Path dir) throws Exception {
+        Path base = Files.createDirectories(dir.resolve("common")).resolve("base file.xsl");
+        Files.writeString(base, "<xsl:stylesheet/>");
+        String doc = dir.resolve("main.xsl").toUri().toString();
+        String target = XmlServer.resolveInclude(doc, "common/base file.xsl", WireUris.LOCAL);
+        assertEquals(base.toUri(), java.net.URI.create(target));
+        assertNull(XmlServer.resolveInclude(doc, "common/missing.xsl", WireUris.LOCAL), "no such file");
+        assertNull(XmlServer.resolveInclude(doc, "https://example.com/a.xsl", WireUris.LOCAL), "a web address");
+    }
+
+    /** XML review 2 C8: the diagnostic that brings lemminx's generate fixes, and which fixes those are. */
+    @Test
+    void generateGrammarFixesAreTheNoGrammarFixesButTheBindingWizard() {
+        Range root = new Range(new Position(1, 1), new Position(1, 7));
+        var d = XmlServer.noGrammarDiagnostic(root);
+        assertEquals("NoGrammarConstraints", d.getCode().getLeft());
+        assertEquals("xml", d.getSource());
+        assertEquals(root, d.getRange());
+
+        var generate =
+                new org.eclipse.lsp4j.CodeAction("Generate 'config.xsd' and bind with xsi:noNamespaceSchemaLocation");
+        generate.setDiagnostics(List.of(d));
+        assertTrue(XmlServer.generatesGrammar(generate));
+        var wizard = new org.eclipse.lsp4j.CodeAction("Bind to existing grammar/schema");
+        wizard.setDiagnostics(List.of(d));
+        wizard.setCommand(new org.eclipse.lsp4j.Command("Bind", XmlServer.BINDING_WIZARD));
+        assertFalse(XmlServer.generatesGrammar(wizard));
+        assertFalse(XmlServer.generatesGrammar(new org.eclipse.lsp4j.CodeAction("Minify XML")));
+        assertFalse(XmlServer.generatesGrammar(new org.eclipse.lsp4j.Command("x", "y")));
     }
 }

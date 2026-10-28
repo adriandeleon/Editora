@@ -258,6 +258,54 @@ public final class LanguageRegistry {
         return PLAINTEXT;
     }
 
+    /**
+     * Extensions XML shares with other formats: a DTD module and a Modula-2 module ({@code .mod}), Schematron and a
+     * KiCad schematic ({@code .sch}), MSBuild and Java/INI-style properties ({@code .props}, {@code .targets}),
+     * XSL-FO and other {@code .fo} files. Such a file is XML only when its text says so (XML review 2 C13).
+     */
+    private static final java.util.Set<String> SNIFFED_XML_EXTENSIONS =
+            java.util.Set.of("mod", "sch", "props", "targets", "fo");
+
+    /**
+     * The language a buffer for {@code file}, now in {@code current}, moves to once its text starts with
+     * {@code head}, or null to keep it: a file {@link #xmlBySniff} names goes between XML and plain text by
+     * {@link #sniffXml}. Any other language (the user's pick, a shebang's) is kept.
+     */
+    public static @org.jspecify.annotations.Nullable String sniffedXmlLanguage(
+            java.nio.file.Path file, String current, java.util.function.Supplier<String> head) {
+        java.nio.file.Path name = file.getFileName();
+        if (!(PLAINTEXT.equals(current) || "xml".equals(current)) || name == null || !xmlBySniff(name.toString())) {
+            return null; // read only for these few extensions: this runs after every settled edit
+        }
+        String want = sniffXml(head.get());
+        return want == null || want.equals(current) ? null : want;
+    }
+
+    /** Whether {@code fileName} maps to XML only by an extension other formats use too (see {@link #sniffXml}). */
+    public static boolean xmlBySniff(String fileName) {
+        if (fileName == null || !"xml".equals(forFileName(fileName))) {
+            return false;
+        }
+        int dot = fileName.lastIndexOf('.');
+        return dot >= 0
+                && SNIFFED_XML_EXTENSIONS.contains(fileName.substring(dot + 1).toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * For a file {@link #xmlBySniff} names: {@code "xml"} when the first non-blank character of {@code head} (the
+     * start of its text; a byte-order mark is skipped) is {@code <}, plain text when it is anything else, and null
+     * when there is nothing but blanks yet to tell by.
+     */
+    public static @org.jspecify.annotations.Nullable String sniffXml(CharSequence head) {
+        for (int i = 0; i < head.length(); i++) {
+            char c = head.charAt(i);
+            if (!Character.isWhitespace(c) && c != '\uFEFF') {
+                return c == '<' ? "xml" : PLAINTEXT;
+            }
+        }
+        return null;
+    }
+
     /** Every language name an extension maps to (not the file-name rules of {@link ConfigFileType}). */
     public static java.util.Set<String> names() {
         java.util.Set<String> names = new java.util.TreeSet<>(BY_EXTENSION.values());

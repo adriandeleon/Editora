@@ -309,7 +309,7 @@ public class SettingsWindow {
     private CheckBox logViewerCheck;
     private CheckBox testRunnerCheck;
     private CheckBox buildBeforeRunCheck;
-    /** Settings → LSP: lemminx-maven may download and use the Maven Central index (Maven review C10). */
+    /** Settings → LSP: lemminx-maven may search Maven Central when completing coordinates (Maven C10, D13). */
     private CheckBox mavenCentralIndexCheck;
 
     private CheckBox csvGridCheck;
@@ -3591,6 +3591,18 @@ public class SettingsWindow {
         controlRow(
                 card, cat, tr("settings." + key), described ? tr("settings." + key + ".desc") : null, combo, keywords);
         settingSyncs.add(st -> combo.setValue(get.apply(st)));
+    }
+
+    /**
+     * A sub-heading inside a card that groups the rows after it ({@code text}); found by {@code keywords}, so a
+     * search that finds any row under it can name the group too (the XML card's Validation / Formatting /
+     * Structure, XML review 2 C9).
+     */
+    void cardSubheading(Card card, Category cat, String text, String keywords) {
+        Label h = new Label(text);
+        h.getStyleClass().addAll("settings-row", "settings-card-subheading");
+        h.setMaxWidth(Double.MAX_VALUE);
+        cardRow(card, cat, h, keywords);
     }
 
     /** A row for a size in pixels where 0 means "the built-in one" (described by {@code settings.<key>.desc}). */
@@ -7190,7 +7202,7 @@ public class SettingsWindow {
                         Category.LSP,
                         mavenCentralIndexCheck,
                         tr("settings.lsp.mavenCentralIndex.hint"),
-                        "lsp maven central index pom.xml completion download artifacts remote");
+                        "lsp maven central search pom.xml completion coordinates artifacts remote network");
             }
             if ("bash".equals(srv.id())) {
                 bashServerRows(c);
@@ -8019,6 +8031,13 @@ public class SettingsWindow {
                                     lspCheck.isSelected());
                             return;
                         }
+                        String unknown = found ? unknownPin(srv.id(), argv, config.getConfigDir()) : null;
+                        if (unknown != null) { // an install from before the pin: Doctor says Update too (A7)
+                            status.showProblem(
+                                    tr("settings.lsp.pinUnknown", lspToolName(srv.id(), argv), unknown),
+                                    lspCheck.isSelected());
+                            return;
+                        }
                         String crash = found && projectLsp != null ? projectLsp.serverCrash(srv.id()) : null;
                         if (crash != null) { // found, but it exits before it is ready: not "Installed" (XML A4)
                             String name = lspToolName(srv.id(), argv);
@@ -8038,6 +8057,23 @@ public class SettingsWindow {
      * copy is older than it; else null. A copy from elsewhere is not one Install… replaces. File lookups only.
      */
     static @Nullable String outdatedPin(String serverId, List<String> argv, @Nullable Path configDir) {
+        return pinIs(serverId, argv, configDir, com.editora.install.PinnedVersions.Freshness.OUTDATED);
+    }
+
+    /**
+     * The pinned release, as shown, when {@code argv} runs Editora's own copy of {@code serverId}'s server and that
+     * copy was installed before Editora recorded versions, so which release it is cannot be told — what Doctor offers
+     * to Update (XML/pom review 2, A7); else null.
+     */
+    static @Nullable String unknownPin(String serverId, List<String> argv, @Nullable Path configDir) {
+        return pinIs(serverId, argv, configDir, com.editora.install.PinnedVersions.Freshness.UNKNOWN);
+    }
+
+    private static @Nullable String pinIs(
+            String serverId,
+            List<String> argv,
+            @Nullable Path configDir,
+            com.editora.install.PinnedVersions.Freshness freshness) {
         var pin = com.editora.install.PinnedVersions.forServer(serverId).orElse(null);
         if (pin == null || configDir == null || argv.isEmpty()) {
             return null;
@@ -8045,9 +8081,7 @@ public class SettingsWindow {
         List<String> tokens = new java.util.ArrayList<>(argv); // a classpath token names the Maven server's folder
         tokens.add(com.editora.doctor.DoctorProbes.resolvedPath(argv));
         boolean editoras = com.editora.install.PinnedVersions.anyInside(tokens, configDir.resolve(pin.destSubpath()));
-        return editoras
-                        && com.editora.install.PinnedVersions.installedFreshness(pin, configDir)
-                                == com.editora.install.PinnedVersions.Freshness.OUTDATED
+        return editoras && com.editora.install.PinnedVersions.installedFreshness(pin, configDir) == freshness
                 ? pin.label()
                 : null;
     }

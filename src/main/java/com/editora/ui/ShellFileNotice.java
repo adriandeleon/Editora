@@ -28,7 +28,14 @@ final class ShellFileNotice {
         boolean shell = "shell".equals(buffer.getLanguage()) || ShellScripts.isShellScript(fileName, head);
         ShellScripts.Problem problem = ShellScripts.problem(shell ? "shell" : "", lineEnding, charset);
         if (problem == ShellScripts.Problem.NONE) {
-            buffer.hideFileNotice();
+            // Only its own: another feature's notice on the file (Trust Folder on a pom, XML/pom review 2) stays.
+            String shown = buffer.fileNoticeText();
+            if (shown != null
+                    && (shown.equals(tr("shell.notice.crlf", fileName))
+                            || shown.equals(tr("shell.notice.bom", fileName))
+                            || shown.equals(tr("shell.notice.crlfBom", fileName)))) {
+                buffer.hideFileNotice();
+            }
             return;
         }
         String message = tr(

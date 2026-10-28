@@ -16,4 +16,20 @@ class LanguageNamesTest {
         assertEquals("Python", LanguageNames.display("python"));
         assertEquals("", LanguageNames.display(null));
     }
+
+    /** Acronyms read as acronyms: the status bar and Problems said "Xml" (XML review 2 C12). */
+    @Test
+    void acronymsAndOwnCasingsAreKept() {
+        assertEquals("XML", LanguageNames.display(LanguageRegistry.forFileName("pom.xml")));
+        assertEquals("JSON", LanguageNames.display("json"));
+        assertEquals("YAML", LanguageNames.display(LanguageRegistry.forFileName("ci.yml")));
+        assertEquals("HTML", LanguageNames.display("html"));
+        assertEquals("CSS", LanguageNames.display("css"));
+        assertEquals("SQL", LanguageNames.display("sql"));
+        assertEquals("TOML", LanguageNames.display("toml"));
+        assertEquals("C++", LanguageNames.display(LanguageRegistry.forFileName("a.cpp")));
+        assertEquals("C#", LanguageNames.display(LanguageRegistry.forFileName("a.cs")));
+        assertEquals("GraphQL", LanguageNames.display("graphql"));
+        assertEquals("PowerShell", LanguageNames.display("powershell"));
+    }
 }

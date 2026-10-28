@@ -369,6 +369,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 ? StructureOutline.fromLsp(
                         lspSymbols,
                         buffer.getLanguage(),
+                        buffer.isPom(),
                         i -> area.getParagraph(i).getText(),
                         area.getParagraphs().size())
                 : StructureOutline.build(StructureOutline.Source.area(buffer));

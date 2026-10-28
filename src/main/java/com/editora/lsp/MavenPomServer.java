@@ -76,8 +76,8 @@ public final class MavenPomServer {
     static final String DOWNLOADING_MARKER = "is downloading in the cache path";
 
     /**
-     * Diagnostics as the editor shows them: a null {@code source} becomes {@code serverName} (lemminx-maven
-     * omits it; copied reports printed "null"), and the schema-download notice is downgraded to information.
+     * Diagnostics as the editor shows them: a null {@code source}, or one that is a document URI, becomes
+     * {@code serverName} (lemminx-maven omits it or names the pom; copied reports printed "null"), and the schema-download notice is downgraded to information.
      * Unchanged entries are kept as they are; any server's list may pass through here.
      */
     public static List<LspDiagnostic> adjustDiagnostics(String serverName, List<LspDiagnostic> diagnostics) {
@@ -86,7 +86,7 @@ public final class MavenPomServer {
         }
         List<LspDiagnostic> out = new ArrayList<>(diagnostics.size());
         for (LspDiagnostic d : diagnostics) {
-            String source = d.source() == null || d.source().isBlank() ? serverName : d.source();
+            String source = d.source() == null || d.source().isBlank() || isUri(d.source()) ? serverName : d.source();
             LspDiagnostic.Severity severity = d.severity();
             if (d.message() != null && d.message().contains(DOWNLOADING_MARKER)) {
                 severity = LspDiagnostic.Severity.INFO;
@@ -109,6 +109,42 @@ public final class MavenPomServer {
             }
         }
         return out;
+    }
+
+    /**
+     * Whether a diagnostic's {@code source} is a document URI rather than a tool's name: lemminx-maven's
+     * "overriding managed version" diagnostic names the pom it came from there, which read as a source of
+     * "file:/home/…/pom.xml" (review 2; Maven review C20).
+     */
+    static boolean isUri(String source) {
+        String s = source.strip();
+        return s.startsWith("file:") || s.startsWith("jar:") || s.contains("://");
+    }
+
+    // --- hover ---------------------------------------------------------------------------------------
+
+    /** A Markdown link's target: {@code ](…)}. */
+    private static final java.util.regex.Pattern LINK_TARGET = java.util.regex.Pattern.compile("\\]\\(([^)\\s]+)\\)");
+
+    /**
+     * {@code markdown} with each link whose target holds a second {@code file:} URI cut down to that last one.
+     * lemminx-maven writes a plugin's "managed in …" link as the project folder followed by the parent's absolute
+     * URI ({@code file:/…/project/file:/…/reactor/pom.xml}), which opened nothing (review 2, E6).
+     */
+    public static String fixHoverLinks(@Nullable String markdown) {
+        if (markdown == null || !markdown.contains("file:")) {
+            return markdown == null ? "" : markdown;
+        }
+        java.util.regex.Matcher m = LINK_TARGET.matcher(markdown);
+        StringBuilder out = new StringBuilder(markdown.length());
+        while (m.find()) {
+            String target = m.group(1);
+            int last = target.lastIndexOf("file:");
+            String fixed = last > 0 ? target.substring(last) : target;
+            m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement("](" + fixed + ")"));
+        }
+        m.appendTail(out);
+        return out.toString();
     }
 
     // --- completion ---------------------------------------------------------------------------------

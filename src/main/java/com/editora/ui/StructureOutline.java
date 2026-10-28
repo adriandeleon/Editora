@@ -66,6 +66,21 @@ final class StructureOutline {
         return "xml".equals(language) ? XmlOutline.tidyLsp(symbols, lineAt, lineCount) : fromLsp(symbols);
     }
 
+    /**
+     * As {@link #fromLsp(List, String, java.util.function.IntFunction, int)}, a pom's rows named the pom-aware way
+     * ({@link PomOutlineLabels}): the Maven server names its symbols by element ("dependency", "plugin"), so the
+     * outline was a wall of identical rows exactly when that server was on (review 2, E4; Maven review C16).
+     */
+    static List<StructureNode> fromLsp(
+            List<SymbolNode> symbols,
+            @Nullable String language,
+            boolean pom,
+            java.util.function.IntFunction<String> lineAt,
+            int lineCount) {
+        List<StructureNode> nodes = fromLsp(symbols, language, lineAt, lineCount);
+        return pom ? pomLabelled(lineAt, lineCount, nodes) : nodes;
+    }
+
     /** Converts the LSP symbol tree into structure nodes (region-less; navigation uses the symbol line). */
     static List<StructureNode> fromLsp(List<SymbolNode> symbols) {
         List<StructureNode> out = new ArrayList<>();
@@ -186,7 +201,8 @@ final class StructureOutline {
             return clojureFormNodes(src.text(), regions);
         }
         if ("xml".equals(src.language()) && !src.pom()) {
-            return XmlOutline.build(src.text()); // every element, by qualified name and naming attribute (C4)
+            List<StructureNode> elements = XmlOutline.build(src.text()); // by qualified name and naming attribute
+            return elements.isEmpty() ? DtdOutline.build(src.text()) : elements; // a DTD has declarations instead
         }
         // Sort so each region precedes the regions it contains: by start asc, then by end desc.
         regions.sort(Comparator.comparingInt(Region::startLine)

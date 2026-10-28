@@ -98,6 +98,7 @@ public final class LspTestHooks {
             case "semanticTokens" -> session.refreshSemanticTokens();
             case "inlayHints" -> session.refreshInlayHints();
             case "foldingRanges" -> session.refreshFoldingRanges();
+            case "codeLenses" -> session.refreshCodeLenses();
             default -> throw new IllegalArgumentException("not a refresh a server can ask for: " + kind);
         }
     }

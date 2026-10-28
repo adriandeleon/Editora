@@ -73,6 +73,7 @@ class LspWindowClampTest {
         assertTrue(LspCoordinator.refreshAppliesTo("semanticTokens", true));
         assertTrue(!LspCoordinator.refreshAppliesTo("semanticTokens", false));
         assertTrue(!LspCoordinator.refreshAppliesTo("inlayHints", false));
+        assertTrue(!LspCoordinator.refreshAppliesTo("codeLenses", false)); // lenses are only drawn on the active tab
         assertTrue(LspCoordinator.refreshAppliesTo("diagnostics", false));
         assertTrue(LspCoordinator.refreshAppliesTo("foldingRanges", false));
     }

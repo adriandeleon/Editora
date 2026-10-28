@@ -499,6 +499,25 @@ public final class ConfigMigrations {
         return input;
     }
 
+    /** The program of an XML command an install from before the pin wrote: Editora's per-platform lemminx copy. */
+    private static final java.util.regex.Pattern PRE_PIN_XML = java.util.regex.Pattern.compile(
+            "^[\"']?.*[/\\\\]plugins[/\\\\]lsp[/\\\\]xml[/\\\\]lemminx-(?:linux|osx|win32)[^/\\\\\"']*[\"']?$");
+
+    /**
+     * v150 → v151 for {@code settings.json}: blanks {@code xmlLspCommand} when it is the path an install from before
+     * the pin stored ({@code <config>/plugins/lsp/xml/lemminx-linux-x86_64} and the like). A blank command runs that
+     * same copy (or the pinned one once installed), and the path stopped counting as the user's own choice in Settings'
+     * Modified badge (XML/pom review 2, A7). Any other command is the user's and is kept.
+     */
+    static JsonNode blankPrePinXmlCommand(JsonNode input) {
+        if (input instanceof ObjectNode o
+                && o.get("xmlLspCommand") instanceof com.fasterxml.jackson.databind.node.TextNode t
+                && PRE_PIN_XML.matcher(t.asText().strip()).matches()) {
+            o.put("xmlLspCommand", "");
+        }
+        return input;
+    }
+
     /** v0 → v1 for {@code recent-files.json}: wrap the legacy bare array into {@code { "files": [ … ] }}. */
     static JsonNode wrapRecentFilesArray(JsonNode input) {
         ObjectNode o = JsonNodeFactory.instance.objectNode();

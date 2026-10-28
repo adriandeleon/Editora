@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 150;
+    public static final int SCHEMA_VERSION = 152;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -943,8 +943,8 @@ public class Settings {
     /** Whether the Maven-aware pom.xml server is enabled (only effective once installed — see
      *  {@link #mavenPomLspCommand} — and under the global LSP enable). */
     private boolean mavenPomLspEnabled = true;
-    /** Whether lemminx-maven may download and use the Maven Central index for pom.xml completion (a large
-     *  one-time download); off = completion from the local repository ({@code ~/.m2}) only. */
+    /** Whether lemminx-maven may search Maven Central (search.maven.org, sent what is typed) when completing
+     *  pom.xml coordinates; off = completion from the local repository ({@code ~/.m2}) only (review 2, D13). */
     private boolean mavenPomCentralIndex = false;
     /**
      * Whether the XML server (lemminx) may download the schemas, DTDs and RelaxNG grammars a file names over the
@@ -959,6 +959,11 @@ public class Settings {
     private java.util.Map<String, String> xmlFileAssociations = new java.util.LinkedHashMap<>();
     /** XML Format Document wraps long text content at the fill column; off = text is left on its lines. */
     private boolean xmlFormatWrap = false;
+    /**
+     * The elements whose text the XML server's Format Document leaves exactly as written ({@code
+     * xml.format.preserveSpace}); in the others it joins runs of spaces and line breaks. vscode-xml's list.
+     */
+    private java.util.List<String> xmlFormatPreserveSpace = new java.util.ArrayList<>(XML_PRESERVE_SPACE_DEFAULT);
     /** How XML Format Document lays out attributes: {@code preserve}, {@code splitNewLine}, {@code alignWithFirstAttr}. */
     private String xmlFormatSplitAttributes = "preserve";
     /** What XML Format Document does with empty elements: {@code ignore}, {@code collapse} or {@code expand}. */
@@ -4199,6 +4204,18 @@ public class Settings {
     public static final java.util.List<String> XML_SPLIT_ATTRIBUTES =
             java.util.List.of("preserve", "splitNewLine", "alignWithFirstAttr");
     public static final java.util.List<String> XML_EMPTY_ELEMENTS = java.util.List.of("ignore", "collapse", "expand");
+    /** vscode-xml's {@code xml.format.preserveSpace}: XSLT text output and DocBook/HTML verbatim elements. */
+    public static final java.util.List<String> XML_PRESERVE_SPACE_DEFAULT = java.util.List.of(
+            "xsl:text",
+            "xsl:comment",
+            "xsl:processing-instruction",
+            "literallayout",
+            "programlisting",
+            "screen",
+            "synopsis",
+            "pre",
+            "xd:pre");
+
     public static final int XML_SYMBOL_LIMIT_DEFAULT = 5_000;
     public static final int XML_SYMBOL_LIMIT_MAX = 1_000_000;
 
@@ -4259,6 +4276,22 @@ public class Settings {
 
     public void setXmlFormatWrap(boolean wrap) {
         this.xmlFormatWrap = wrap;
+    }
+
+    public java.util.List<String> getXmlFormatPreserveSpace() {
+        return xmlFormatPreserveSpace == null ? XML_PRESERVE_SPACE_DEFAULT : xmlFormatPreserveSpace;
+    }
+
+    /** Element names; blanks are dropped and duplicates kept once. */
+    public void setXmlFormatPreserveSpace(java.util.@Nullable List<String> names) {
+        java.util.LinkedHashSet<String> kept = new java.util.LinkedHashSet<>();
+        if (names != null) {
+            names.stream()
+                    .filter(n -> n != null && !n.isBlank())
+                    .map(String::strip)
+                    .forEach(kept::add);
+        }
+        this.xmlFormatPreserveSpace = new java.util.ArrayList<>(kept);
     }
 
     public String getXmlFormatSplitAttributes() {

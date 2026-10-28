@@ -23,6 +23,31 @@ public final class LanguageNames {
             case "typescript" -> "TypeScript";
             case "typescriptreact" -> "TypeScript (TSX)";
             case "pip-requirements" -> "pip requirements"; // the tool's own spelling: lower-case pip
+            // Acronyms and names with their own casing; capitalising the first letter gave "Xml", "Json", "Cpp"
+            // (XML review 2 C12).
+            case "xml" -> "XML";
+            case "json" -> "JSON";
+            case "yaml" -> "YAML";
+            case "html" -> "HTML";
+            case "css" -> "CSS";
+            case "sql" -> "SQL";
+            case "toml" -> "TOML";
+            case "csv" -> "CSV";
+            case "tsv" -> "TSV";
+            case "ini" -> "INI";
+            case "php" -> "PHP";
+            case "http" -> "HTTP";
+            case "graphql" -> "GraphQL";
+            case "dot" -> "DOT";
+            case "c" -> "C";
+            case "cpp" -> "C++";
+            case "csharp" -> "C#";
+            case "powershell" -> "PowerShell";
+            case "plantuml" -> "PlantUML";
+            case "proto" -> "Protocol Buffers";
+            case "batchfile" -> "Batch";
+            case "systemd" -> "systemd"; // its own spelling, lower-case
+            case "desktop" -> "Desktop Entry";
             default -> id.substring(0, 1).toUpperCase(Locale.ROOT) + id.substring(1);
         };
     }

@@ -344,13 +344,21 @@ final class DoctorPane extends Region implements TabContent {
         List<String> attentionIds = new ArrayList<>();
         List<String> updateIds = new ArrayList<>();
         LinkedHashMap<String, List<DoctorCheck>> sections = new LinkedHashMap<>();
+        DoctorCheck previous = null;
         for (DoctorCheck c : checks.values()) {
-            if (c.status().needsAttention()) {
+            // A cache row is listed right after its server's row (XML/pom review 2, A9): with the server in "Needs
+            // attention", its cache went on sitting among the healthy rows, between two other servers.
+            DoctorCheck placed =
+                    c.clearable() && previous != null && previous.sectionKey().equals(c.sectionKey()) ? previous : c;
+            if (placed.status().needsAttention()) {
                 attentionIds.add(c.id());
-            } else if (newerAvailable(c)) {
+            } else if (newerAvailable(placed)) {
                 updateIds.add(c.id());
             } else {
                 sections.computeIfAbsent(c.sectionKey(), k -> new ArrayList<>()).add(c);
+            }
+            if (!c.clearable()) {
+                previous = c;
             }
         }
         if (!attentionIds.isEmpty()) {
@@ -884,7 +892,7 @@ final class DoctorPane extends Region implements TabContent {
             DoctorStatus st = c.status();
             boolean update = c.update() && (st == DoctorStatus.WARN || st == DoctorStatus.OK);
             if (c.install() != DoctorCheck.Install.NONE
-                    && (update || st == DoctorStatus.MISSING || st == DoctorStatus.OPTIONAL)) {
+                    && (update || st == DoctorStatus.MISSING || st == DoctorStatus.OPTIONAL || c.reinstallable())) {
                 boolean busy = installing.contains(c.id());
                 // Not disabled while busy (a disabled button drops the focus): it says so and ignores clicks;
                 // the installer itself refuses a second run. An install older than Editora's pin offers the same

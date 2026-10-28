@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -15,7 +16,9 @@ import javafx.stage.FileChooser;
 import com.editora.config.PathDisplay;
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.LspManager;
+import com.editora.lsp.XmlGrammarBinding;
 import com.editora.lsp.XmlServer;
+import com.editora.lsp.XmlServerSettings;
 import com.google.gson.JsonElement;
 import org.jspecify.annotations.Nullable;
 
@@ -24,7 +27,8 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The XML server's own commands and client commands (XML review B15, D6): revalidate the current file or every
  * open one, bind a document to an XSD/DTD/RELAX NG grammar (lemminx's "Bind to existing grammar/schema" quick fix,
- * its code lens, and a palette command), and the client commands lemminx asks the editor for —
+ * its code lens, and a palette command), generate a grammar from a document and bind it (XML review 2 C8), and the
+ * client commands lemminx asks the editor for —
  * {@code xml.show.references}, {@code xml.open.uri}, {@code xml.open.binding.wizard}. Owned by
  * {@link LspCoordinator}; every method runs on the FX thread.
  */
@@ -38,6 +42,10 @@ final class XmlLspActions {
 
         /** Which of {@code types} ({@link XmlServer#bindingTypes}) to bind {@code grammar} by; null when cancelled. */
         void chooseBinding(Path grammar, List<String> types, Consumer<@Nullable String> chosen);
+
+        /** Which of lemminx's generate-a-grammar fixes to apply to {@code xmlFile}; nothing when cancelled. */
+        void chooseGenerated(
+                Path xmlFile, List<LspManager.CodeActionItem> fixes, Consumer<LspManager.CodeActionItem> chosen);
     }
 
     /** Opens a file at a 0-based line and column. */
@@ -51,6 +59,7 @@ final class XmlLspActions {
     private final Supplier<@Nullable EditorBuffer> activeLspBuffer;
     private final Function<EditorBuffer, @Nullable Path> lspPath;
     private final Runnable findReferences;
+    private final BiConsumer<Path, LspManager.CodeActionItem> applyAction;
     private Prompts prompts = new DialogPrompts();
 
     XmlLspActions(
@@ -59,8 +68,10 @@ final class XmlLspActions {
             Opener opener,
             Supplier<@Nullable EditorBuffer> activeLspBuffer,
             Function<EditorBuffer, @Nullable Path> lspPath,
-            Runnable findReferences) {
+            Runnable findReferences,
+            BiConsumer<Path, LspManager.CodeActionItem> applyAction) {
         this.host = host;
+        this.applyAction = applyAction;
         this.lsp = lsp;
         this.opener = opener;
         this.activeLspBuffer = activeLspBuffer;
@@ -73,19 +84,41 @@ final class XmlLspActions {
         this.prompts = prompts;
     }
 
+    /** The active XML file and its text. */
+    private record Active(Path path, String text) {}
+
     /** The active buffer's path when the XML server serves it; says why not and answers null otherwise. */
     private @Nullable Path activeXmlPath() {
+        Active active = activeXml();
+        return active == null ? null : active.path();
+    }
+
+    private @Nullable Active activeXml() {
         EditorBuffer b = activeLspBuffer.get(); // says "No language server for this file" itself
         Path path = b == null ? null : lspPath.apply(b);
         if (b == null || path == null) {
             return null;
         }
-        if (!XmlServer.isXml(lsp.managedServerId(path))) {
+        if (!XmlServerSettings.isLemminx(lsp.managedServerId(path))) { // a pom on the Maven server too (D15)
             host.setStatus(tr("status.xml.notXmlServer"));
             return null;
         }
-        lsp.changeDocument(path, b.text()); // what the user sees is what is validated or bound
-        return path;
+        String text = b.text();
+        lsp.changeDocument(path, text); // what the user sees is what is validated or bound
+        return new Active(path, text);
+    }
+
+    /**
+     * Says so and answers true when {@code text} is already bound to a grammar (XML review 2 C7): lemminx would add
+     * a second binding — duplicate {@code xsi} attributes, or a second DOCTYPE — and report success.
+     */
+    private boolean refuseBound(Path path, String text) {
+        XmlGrammarBinding.Binding bound = XmlGrammarBinding.existing(text);
+        if (bound == null) {
+            return false;
+        }
+        host.setStatus(tr("status.xml.alreadyBound", PathDisplay.fileName(path), bound.grammar(), bound.how()));
+        return true;
     }
 
     /** {@code xml.validateFile}: lemminx revalidates the active document (after its schema changed, say). */
@@ -118,12 +151,51 @@ final class XmlLspActions {
         });
     }
 
-    /** {@code xml.bindGrammar}: binds the active XML document to a grammar the user picks. */
+    /** {@code xml.bindGrammar}: binds the active XML document to a grammar the user picks, when it has none yet. */
     void bindGrammar() {
-        Path path = activeXmlPath();
-        if (path != null) {
-            bindingWizard(path);
+        Active active = activeXml();
+        if (active != null && !refuseBound(active.path(), active.text())) {
+            bindingWizard(active.path(), XmlGrammarBinding.hasDoctype(active.text()));
         }
+    }
+
+    /**
+     * XML: Generate Grammar… (XML review 2 C8): lemminx's "Generate … and bind" fixes for the active document, which
+     * it offers only on its no-grammar diagnostic — never reported while "Files without a grammar" is Nothing, the
+     * default. Asks for them with that diagnostic at the root element, lists them and applies the one picked.
+     */
+    void generateGrammar() {
+        Active active = activeXml();
+        if (active == null) {
+            return;
+        }
+        Path path = active.path();
+        if (com.editora.vfs.Vfs.isRemote(path)) {
+            host.setStatus(tr("status.xml.generateRemote"));
+            return;
+        }
+        if (refuseBound(path, active.text())) {
+            return;
+        }
+        int[] root = XmlGrammarBinding.rootName(active.text());
+        if (root == null) {
+            host.setStatus(tr("status.xml.generateNoRoot"));
+            return;
+        }
+        int[] start = XmlGrammarBinding.lineColumn(active.text(), root[0]);
+        int[] end = XmlGrammarBinding.lineColumn(active.text(), root[1]);
+        var range = new org.eclipse.lsp4j.Range(
+                new org.eclipse.lsp4j.Position(start[0], start[1]), new org.eclipse.lsp4j.Position(end[0], end[1]));
+        lsp.codeActionsFor(path, XmlServer.noGrammarDiagnostic(range), items -> {
+            List<LspManager.CodeActionItem> fixes = items.stream()
+                    .filter(item -> XmlServer.generatesGrammar(item.raw()))
+                    .toList();
+            if (fixes.isEmpty()) {
+                host.setStatus(tr("status.xml.generateNone"));
+            } else {
+                prompts.chooseGenerated(path, fixes, item -> applyAction.accept(path, item));
+            }
+        });
     }
 
     /**
@@ -131,6 +203,14 @@ final class XmlLspActions {
      * an {@code xml-model} instruction), and apply the edit lemminx computes for it.
      */
     void bindingWizard(Path xmlFile) {
+        bindingWizard(xmlFile, false);
+    }
+
+    /**
+     * The wizard for a document that has a DOCTYPE already ({@code doctype}): a DTD is then bound only by
+     * {@code xml-model}, since a second DOCTYPE is not well-formed.
+     */
+    private void bindingWizard(Path xmlFile, boolean doctype) {
         if (com.editora.vfs.Vfs.isRemote(xmlFile)) {
             host.setStatus(tr("status.xml.bindRemote"));
             return;
@@ -139,7 +219,11 @@ final class XmlLspActions {
         if (grammar == null) {
             return;
         }
-        List<String> types = XmlServer.bindingTypes(String.valueOf(grammar.getFileName()));
+        String grammarName = String.valueOf(grammar.getFileName());
+        List<String> types =
+                doctype && grammarName.toLowerCase(java.util.Locale.ROOT).endsWith(".dtd")
+                        ? List.of(XmlServer.BINDING_XML_MODEL)
+                        : XmlServer.bindingTypes(grammarName);
         Consumer<@Nullable String> bind = type -> {
             if (type == null) {
                 return;
@@ -166,7 +250,7 @@ final class XmlLspActions {
     /** Takes over a picked code action whose command is a client command ("Bind to existing grammar/schema"). */
     boolean runsCodeAction(Path path, LspManager.CodeActionItem item) {
         String command = LspManager.commandIdOf(item.raw());
-        if (!XmlServer.BINDING_WIZARD.equals(command) || !XmlServer.isXml(lsp.managedServerId(path))) {
+        if (!XmlServer.BINDING_WIZARD.equals(command) || !XmlServerSettings.isLemminx(lsp.managedServerId(path))) {
             return false;
         }
         bindingWizard(path);
@@ -178,7 +262,7 @@ final class XmlLspActions {
      * answers null, which is all lemminx expects of these.
      */
     CompletableFuture<Object> clientCommand(String serverId, String command, List<Object> arguments) {
-        if (!XmlServer.isXml(serverId)) {
+        if (!XmlServerSettings.isLemminx(serverId)) {
             return CompletableFuture.completedFuture(null);
         }
         List<JsonElement> args = arguments.stream().map(LspManager::asJson).toList();
@@ -282,6 +366,25 @@ final class XmlLspActions {
                             : "<?xml-model href=\"…\"?>",
                     chosen::accept);
             picker.setPreview(type -> {}, () -> {});
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.window());
+        }
+
+        @Override
+        public void chooseGenerated(
+                Path xmlFile, List<LspManager.CodeActionItem> fixes, Consumer<LspManager.CodeActionItem> chosen) {
+            QuickOpen<LspManager.CodeActionItem> picker = new QuickOpen<>(
+                    tr("picker.xml.generateGrammar", PathDisplay.fileName(xmlFile)),
+                    tr("palette.setting.pick"),
+                    () -> fixes,
+                    LspManager.CodeActionItem::title,
+                    item -> "",
+                    item -> {
+                        if (item != null) {
+                            chosen.accept(item);
+                        }
+                    });
+            picker.setPreview(item -> {}, () -> {});
             picker.setOverlayHost(host.overlayHost());
             picker.show(host.window());
         }

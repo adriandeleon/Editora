@@ -80,6 +80,14 @@ class LspCoordinatorSyncFxTest {
 
     private static final class FakeOps extends LspOpsStub {
         boolean featureEnabled = true;
+        /** The window's configuration (its trust list); null as in a window without one. */
+        com.editora.config.ConfigManager config;
+
+        @Override
+        public com.editora.config.ConfigManager config() {
+            return config;
+        }
+
         final List<Boolean> problemsAvailable = new ArrayList<>();
         final List<String> statusBarLabels = new ArrayList<>();
 
@@ -258,6 +266,72 @@ class LspCoordinatorSyncFxTest {
         assertFalse(manager.isManaged(b.getPath()), "heavy-file mode must skip LSP");
     }
 
+    /**
+     * A tab opens as an empty, loading shell and its text lands later. Python, Java and XML let a heavy file
+     * of up to tens of thousands of lines through, so the shell's one empty line used to reach the server as
+     * an empty didOpen, followed by a whole-file insert, and the empty buffer's indent was recorded (XML
+     * review 2 B1, B12). The server must first see the document when its text is there, and in full.
+     */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"A.java", "a.xml", "a.py"})
+    void aLoadingShellOpensOnItsServerOnlyWithItsText(String name) throws Exception {
+        List<com.editora.lsp.FakeLanguageServer> fakes = LspTestHooks.useFakeSessions(manager);
+        String text = switch (name) {
+            case "A.java" -> "class A {\n  int x;\n}\n";
+            case "a.xml" -> "<a>\n  <b/>\n</a>\n";
+            default -> "def f():\n  return 1\n";
+        };
+        Path f = root.resolve(name);
+        Files.writeString(f, text);
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            for (String id : List.of("java", "xml", "python")) {
+                coordinator.setServerAvailableForTest(id, true);
+            }
+            EditorBuffer x = new EditorBuffer();
+            x.setPath(f); // what openTextBufferAsync's shell is until the read lands
+            x.setHeavyFile(true);
+            x.setLoading(true);
+            host.buffers.add(x);
+            host.active = x;
+            return x;
+        });
+        sync(b);
+        assertFalse(manager.isManaged(f), "a loading shell is not opened on a server");
+
+        FxTestSupport.runOnFx(
+                () -> { // the load lands, as finishAsyncOpen applies it
+                    b.setContent(text);
+                    b.setHeavyFile(false);
+                    b.setLoading(false);
+                });
+        sync(b);
+
+        assertTrue(manager.isManaged(f), "the loaded buffer is opened");
+        for (int i = 0; i < 100 && fakes.stream().allMatch(s -> s.opened.isEmpty()); i++) {
+            Thread.sleep(50); // the didOpen queues behind initialize
+        }
+        var opened = fakes.stream()
+                .flatMap(s -> s.opened.stream())
+                .map(p -> p.getTextDocument().getText())
+                .toList();
+        assertEquals(List.of(text), opened, "one didOpen, with the whole text");
+        assertEquals(new com.editora.lsp.FormattingIndent(2, true), manager.documentIndent(f));
+    }
+
+    /** The indent a server is answered with follows the text: re-indented to tabs, it says tabs (B12). */
+    @Test
+    void theRecordedIndentFollowsTheText() throws Exception {
+        EditorBuffer b = javaBuffer("A.java");
+        FxTestSupport.runOnFx(() -> b.setContent("class A {\n  int x;\n}\n"));
+        sync(b);
+        assertEquals(new com.editora.lsp.FormattingIndent(2, true), manager.documentIndent(b.getPath()));
+
+        FxTestSupport.runOnFx(() -> b.setContent("class A {\n\tint x;\n}\n"));
+        sync(b); // a settings apply or a tab switch; the debounced didChange does the same as the user types
+
+        assertFalse(manager.documentIndent(b.getPath()).insertSpaces(), "now indented with a tab");
+    }
+
     /** jdtls keeps a large Java file up to 50,000 lines (Java review C16). */
     @Test
     void aLargeJavaFileKeepsItsServer() throws Exception {
@@ -396,6 +470,10 @@ class LspCoordinatorSyncFxTest {
             host.active = x;
             return x;
         });
+
+        // Only a pom in a trusted folder may reach lemminx-maven (XML/pom review 2, E1; see XmlFolderTrustFxTest).
+        ops.config = new com.editora.config.ConfigManager(root.resolve("config"));
+        ops.config.getTrustStore().trust(root);
 
         // Unprobed: no routing decision yet.
         assertEquals(null, FxTestSupport.callOnFx(() -> coordinator.serverIdForBuffer(b)));
@@ -537,6 +615,16 @@ class LspCoordinatorSyncFxTest {
 
         FxTestSupport.runOnFx(() -> b.setLanguageOverride("plaintext"));
         assertFalse(manager.isManaged(b.getPath()), "back to plain text: the server lets it go");
+    }
+
+    /** A Modula-2 {@code .mod} file is plain text, so it never reaches lemminx; a DTD module does (XML review 2 C13). */
+    @Test
+    void anAmbiguousXmlExtensionIsXmlOnlyByItsText() throws Exception {
+        EditorBuffer modula = wiredBuffer("Lib.mod", "DEFINITION MODULE Lib;\nEND Lib.\n");
+        EditorBuffer dtd = wiredBuffer("xhtml-lat1.mod", "<!ENTITY nbsp \"&#160;\">\n");
+
+        assertEquals("plaintext", FxTestSupport.callOnFx(modula::getLanguage));
+        assertEquals("xml", FxTestSupport.callOnFx(dtd::getLanguage));
     }
 
     /** A shebang typed into an extension-less file makes it shell; the Bash server follows without a reopen. */

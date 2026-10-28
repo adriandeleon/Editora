@@ -896,7 +896,7 @@ final class LanguageServerSession implements LanguageClient {
      */
     static ClientCapabilities clientCapabilities(@Nullable String serverId) {
         ClientCapabilities cc = clientCapabilities();
-        if (XmlServer.isXml(serverId)) {
+        if (XmlServerSettings.isLemminx(serverId)) { // the pom server is lemminx too (review 2, D15)
             cc.getWorkspace().setExecuteCommand(new org.eclipse.lsp4j.ExecuteCommandCapabilities(true));
         }
         return cc;
@@ -1085,6 +1085,7 @@ final class LanguageServerSession implements LanguageClient {
         ws.setInlayHint(new org.eclipse.lsp4j.InlayHintWorkspaceCapabilities(true));
         ws.setDiagnostics(new org.eclipse.lsp4j.DiagnosticWorkspaceCapabilities(true));
         ws.setFoldingRange(new org.eclipse.lsp4j.FoldingRangeWorkspaceCapabilities(true));
+        ws.setCodeLens(new org.eclipse.lsp4j.CodeLensWorkspaceCapabilities(true)); // jdtls asks too (B2)
         cc.setWorkspace(ws);
         return cc;
     }
@@ -2339,8 +2340,8 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /**
-     * The document's links ({@code textDocument/documentLink}) — lemminx's schema, DTD, {@code xml-model} and
-     * {@code xsl:include} references (XML review B5). Empty when not ready, unsupported or on error.
+     * The document's links ({@code textDocument/documentLink}) — lemminx's schema, DTD and {@code xml-model}
+     * references (XML review B5; it has none for {@code xsl:include}). Empty when not ready, unsupported or on error.
      */
     CompletableFuture<List<org.eclipse.lsp4j.DocumentLink>> documentLinks(String uri) {
         ServerCapabilities c = capabilities;
@@ -2662,6 +2663,16 @@ final class LanguageServerSession implements LanguageClient {
     @Override
     public CompletableFuture<Void> refreshFoldingRanges() {
         refresh("foldingRanges");
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * lemminx sends {@code workspace/codeLens/refresh} after every settings push; lsp4j's default threw, so it got
+     * an "Internal error" reply, a SEVERE log line, and its lenses went stale (XML review 2 B2).
+     */
+    @Override
+    public CompletableFuture<Void> refreshCodeLenses() {
+        refresh("codeLenses");
         return CompletableFuture.completedFuture(null);
     }
 
@@ -3438,7 +3449,7 @@ final class LanguageServerSession implements LanguageClient {
 
     /** Whether {@code command} is one the window carries out for this server (an XML client command). */
     private boolean clientRuns(@Nullable String command) {
-        return XmlServer.isXml(serverId) && command != null && XmlServer.CLIENT_COMMANDS.contains(command);
+        return XmlServerSettings.isLemminx(serverId) && command != null && XmlServer.CLIENT_COMMANDS.contains(command);
     }
 
     /** The commands the server says it executes ({@code executeCommandProvider}). */

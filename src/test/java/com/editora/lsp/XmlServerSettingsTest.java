@@ -114,6 +114,41 @@ class XmlServerSettingsTest {
         assertEquals("**/web.xml", XmlServerSettings.globPattern("web.xml"));
     }
 
+    /**
+     * Files outside the project share Editora's own loose-files folder as their root: a relative grammar resolved
+     * under it failed with an error naming that folder (XML review 2 B4). The manager sends no root for it, and a
+     * relative grammar or catalog is then left out; absolute ones and URLs stay.
+     */
+    @Test
+    void theLooseRootGetsNoRelativeGrammarsOrCatalogs() throws Exception {
+        Path absolute = root.resolve("abs.xsd");
+        Settings s = new Settings();
+        s.setXmlFileAssociations(Map.of("*.myconf.xml", "xsd/note.xsd", "*.b.xml", absolute.toString()));
+        s.setXmlCatalogs(List.of("catalog.xml", "https://x.test/c.xml"));
+        LspManager manager = new LspManager((f, d) -> {}, (t, m) -> {});
+        try {
+            Path loose = Files.createDirectories(root.resolve("loose-files"));
+            Files.createDirectories(loose.resolve("xsd"));
+            Files.writeString(loose.resolve("xsd/note.xsd"), "<x/>"); // even where it would resolve
+            Files.writeString(loose.resolve("catalog.xml"), "<catalog/>");
+            manager.setLooseRoot(loose);
+            manager.setXmlSettings(XmlServerSettings.of(s, null));
+
+            Map<String, Object> xml = manager.xmlSectionFor(XmlServerSettings.SERVER_ID, loose);
+            assertEquals(
+                    List.of(Map.of("pattern", "**/*.b.xml", "systemId", absolute.toString())),
+                    xml.get("fileAssociations"));
+            assertEquals(List.of("https://x.test/c.xml"), xml.get("catalogs"));
+
+            Path project = Files.createDirectories(root.resolve("project"));
+            Object associations =
+                    manager.xmlSectionFor(XmlServerSettings.SERVER_ID, project).get("fileAssociations");
+            assertEquals(2, ((List<?>) associations).size(), "a project root keeps its relative grammar");
+        } finally {
+            manager.close();
+        }
+    }
+
     @Test
     void formattingKeepsTextUnwrappedUnlessAskedThenWrapsAtTheFillColumn() {
         Map<String, Object> format =
@@ -133,6 +168,50 @@ class XmlServerSettingsTest {
         assertEquals("alignWithFirstAttr", format.get("splitAttributes"));
         assertEquals("collapse", format.get("emptyElements"));
         assertEquals(false, format.get("spaceBeforeEmptyCloseTag"));
+        assertEquals(true, format.get("enabled"), "the user's settings never drop the rest of the object");
+        assertEquals(2, format.get("preservedNewlines"));
+    }
+
+    @Test
+    void theFormatObjectIsCompleteSoLemminxRegistersFormattingAndKeepsTheLayout() {
+        // lemminx reads xml.format as a whole: a key left out is Java's default, not lemminx's. Without "enabled" it
+        // never registered formatting (XML review 2 C1); without the rest it dropped blank lines and joined a pom's
+        // multi-line <project> start tag (E8), and joined comment and CDATA lines.
+        Map<String, Object> format =
+                map(XmlServerSettings.defaults().section(root, true, true).get("format"));
+        assertEquals(true, format.get("enabled"));
+        assertEquals(2, format.get("preservedNewlines"));
+        assertEquals(true, format.get("preserveAttributeLineBreaks"));
+        assertEquals(false, format.get("joinContentLines"));
+        assertEquals(false, format.get("joinCDATALines"));
+        assertEquals(false, format.get("joinCommentLines"));
+        assertEquals(false, format.get("preserveEmptyContent"));
+        assertEquals("ignore", format.get("enforceQuoteStyle"));
+        assertEquals(Settings.XML_PRESERVE_SPACE_DEFAULT, format.get("preserveSpace"));
+        assertEquals(
+                true,
+                XmlServerSettings.answer(
+                        XmlServerSettings.defaults().section(root, true, true), "xml.format.enabled", null),
+                "workspace/configuration says so too");
+        Map<String, Object> init =
+                XmlServerSettings.withSection(null, XmlServerSettings.defaults().section(root, true, true));
+        assertEquals(
+                true,
+                map(map(map(init.get("settings")).get("xml")).get("format")).get("enabled"));
+    }
+
+    @Test
+    void elementsWhoseTextIsKeptAreTheUsersList() {
+        Settings s = new Settings();
+        assertEquals(Settings.XML_PRESERVE_SPACE_DEFAULT, s.getXmlFormatPreserveSpace());
+        s.setXmlFormatPreserveSpace(XmlServerSettings.parseNames("p; pre,  xsl:text\n p "));
+        assertEquals(List.of("p", "pre", "xsl:text"), s.getXmlFormatPreserveSpace());
+        assertEquals(
+                List.of("p", "pre", "xsl:text"),
+                map(XmlServerSettings.of(s, null).section(root, true, true).get("format"))
+                        .get("preserveSpace"));
+        s.setXmlFormatPreserveSpace(XmlServerSettings.parseNames(""));
+        assertEquals(List.of(), s.getXmlFormatPreserveSpace(), "an empty list is kept: every text is reflowed");
     }
 
     @Test

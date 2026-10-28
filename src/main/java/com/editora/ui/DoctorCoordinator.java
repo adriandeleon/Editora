@@ -635,8 +635,16 @@ final class DoctorCoordinator {
                 }
                 specs.add(serverRow(serverId, needs));
                 Path configDir = host.configDir();
-                if (com.editora.lsp.XmlServerSettings.SERVER_ID.equals(serverId) && configDir != null) {
+                // The schema cache under the lemminx that uses it: XML's, else the pom server's (A9); the pom
+                // server's own artifact store under it (D14). Each follows its server's row wherever it is shown.
+                boolean pomServer = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId);
+                if (configDir != null
+                        && (com.editora.lsp.XmlServerSettings.SERVER_ID.equals(serverId)
+                                || (pomServer && !ops.lspServerEnabled(com.editora.lsp.XmlServerSettings.SERVER_ID)))) {
                     specs.add(xmlCacheRow(com.editora.lsp.XmlServerSettings.cacheDir(configDir)));
+                }
+                if (pomServer) {
+                    specs.add(mavenStoreRow(mavenStoreDir()));
                 }
                 if ("bash".equals(serverId)) {
                     // What bash-language-server lints and formats with. Without them a shell script silently
@@ -1544,17 +1552,50 @@ final class DoctorCoordinator {
         });
     }
 
+    /** The row id of lemminx-maven's artifact store ({@code ~/.m2/.lemminx-maven}, review D14). */
+    static final String MAVEN_STORE_ID = DoctorCheck.CACHE_PREFIX + "lemminx-maven";
+
+    /**
+     * Where lemminx-maven keeps what it resolves: {@code .lemminx-maven} beside the local repository, under the home
+     * Editora runs with (the server is started with that {@code user.home}).
+     */
+    static Path mavenStoreDir() {
+        return Path.of(System.getProperty("user.home", ""), ".m2", ".lemminx-maven");
+    }
+
+    /**
+     * lemminx-maven's artifact store: how much it holds and where, with Clear and Reveal (review D14). It piled up in
+     * the passwd home's {@code ~/.m2}, which no Editora screen showed.
+     */
+    static DoctorService.CheckSpec mavenStoreRow(Path dir) {
+        DoctorCheck row = DoctorCheck.checking(MAVEN_STORE_ID, "lsp", tr("doctor.label.mavenStore"), "")
+                .withSettings("lsp");
+        return probe(row, base -> {
+            long size = com.editora.lsp.XmlSchemaCache.size(dir);
+            return size == 0
+                    ? base.ok(tr("doctor.xmlCache.empty"))
+                    : base.ok(StatusBar.formatSize(size) + " — " + dir.toAbsolutePath());
+        });
+    }
+
     /** Empties the cache a row reports, off the FX thread, then says how much went and checks again. */
     private void clearCache(DoctorCheck check) {
         Path config = host.configDir();
-        if (!XML_CACHE_ID.equals(check.id()) || config == null) {
+        Path dir;
+        String said;
+        if (XML_CACHE_ID.equals(check.id()) && config != null) {
+            dir = com.editora.lsp.XmlServerSettings.cacheDir(config);
+            said = "doctor.xmlCache.cleared";
+        } else if (MAVEN_STORE_ID.equals(check.id())) {
+            dir = mavenStoreDir();
+            said = "doctor.mavenStore.cleared";
+        } else {
             return;
         }
-        Path dir = com.editora.lsp.XmlServerSettings.cacheDir(config);
         Thread.ofVirtual().name("doctor-clear-cache").start(() -> {
             long freed = com.editora.lsp.XmlSchemaCache.clear(dir);
             javafx.application.Platform.runLater(() -> {
-                host.setStatus(tr("doctor.xmlCache.cleared", StatusBar.formatSize(freed)));
+                host.setStatus(tr(said, StatusBar.formatSize(freed)));
                 runChecks();
             });
         });

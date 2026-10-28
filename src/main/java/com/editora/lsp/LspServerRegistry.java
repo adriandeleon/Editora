@@ -485,12 +485,31 @@ public final class LspServerRegistry {
         if (configured != null && !configured.isBlank()) {
             List<String> tokens = tokenize(configured);
             String exe = tokens.isEmpty() ? "" : tokens.get(0);
-            if (!exe.isEmpty() && exe.indexOf('/') < 0 && exe.indexOf('\\') < 0) {
+            if (!exe.isEmpty() && exe.indexOf('/') < 0 && exe.indexOf('\\') < 0 && !loadsLocalPath(tokens)) {
                 return tokens;
             }
         }
         String def = defaultCommandFor(serverId);
         return def.isEmpty() ? List.of() : tokenize(def);
+    }
+
+    /**
+     * Whether {@code argv} loads code from a path of this machine: a {@code -cp}/{@code -classpath}/
+     * {@code --class-path}/{@code -jar} argument that is a path. {@code java -cp "<config>/plugins/lsp/maven/*" …}
+     * starts with a bare {@code java}, yet sent to an SSH host it ran with a classpath that exists only here and
+     * crash-looped (review 2, A5). Pure.
+     */
+    static boolean loadsLocalPath(List<String> argv) {
+        for (int i = 1; i + 1 < argv.size(); i++) {
+            String flag = argv.get(i);
+            if (flag.equals("-cp") || flag.equals("-classpath") || flag.equals("--class-path") || flag.equals("-jar")) {
+                String value = argv.get(i + 1);
+                if (value.indexOf('/') >= 0 || value.indexOf('\\') >= 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** The tokenized argv for {@code serverId} from {@code commands} (blank ⇒ default), or empty if unknown. */

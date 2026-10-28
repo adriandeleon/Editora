@@ -17,13 +17,20 @@ import org.jspecify.annotations.Nullable;
  *       written, inner whitespace included, so no text value changes;</li>
  *   <li>tags, comments, the declaration and a DOCTYPE (internal subset included) are copied verbatim, attributes
  *       and line breaks inside them too; a CDATA section counts as text;</li>
- *   <li>an element marked {@code xml:space="preserve"} is kept exactly as written.</li>
+ *   <li>an element marked {@code xml:space="preserve"} is kept exactly as written;</li>
+ *   <li>blank lines between markup are kept, at most {@value #MAX_BLANK_LINES} in a row (as lemminx's
+ *       {@code preservedNewlines}), so a hand-grouped file keeps its groups (XML review 2 C3);</li>
+ *   <li>a comment that starts on the line the markup before it ends on stays on that line, so a trailing
+ *       {@code <!-- note -->} keeps describing what it followed (C3).</li>
  * </ul>
  * A document that does not nest properly is left alone ({@link #format} returns null) rather than guessed at.
  * Line breaks are {@code \n}: the editor holds bare {@code \n} and writes the file's own line ending on save, so
  * a CRLF file stays CRLF. Pure; any thread.
  */
 public final class XmlFormatter {
+
+    /** The most blank lines kept in a row between two pieces of markup. */
+    static final int MAX_BLANK_LINES = 2;
 
     private XmlFormatter() {}
 
@@ -38,6 +45,13 @@ public final class XmlFormatter {
         TEXT // character data, CDATA sections included
     }
 
+    /**
+     * A child of an element: an {@link Element} or a {@link Token}, the blank lines written before it, and, for a
+     * comment kept on the previous line, the whitespace between them ({@code sameLine} non-null).
+     */
+    private record Child(
+            Object node, int blankLines, @Nullable String sameLine) {}
+
     /** An element (or, at the top, the document) and what it holds. */
     private static final class Element {
         final @Nullable Token open;
@@ -45,8 +59,11 @@ public final class XmlFormatter {
         @Nullable
         Token close;
 
-        final List<Object> children = new ArrayList<>(); // Element or Token
+        final List<Child> children = new ArrayList<>();
         boolean hasText;
+
+        /** Blank lines between the last child and the end tag. */
+        int blankLinesBeforeClose;
 
         Element(@Nullable Token open) {
             this.open = open;
@@ -65,12 +82,28 @@ public final class XmlFormatter {
         Element document = new Element(null);
         List<Element> stack = new ArrayList<>();
         stack.add(document);
+        int wsStart = -1; // the whitespace-only text since the last markup, or -1
+        int wsEnd = -1;
+        boolean afterMarkup = false; // whether markup ended right before that whitespace on its line
         for (Token t : tokens) {
             Element current = stack.get(stack.size() - 1);
+            if (t.kind() == Kind.TEXT && isBlank(text, t.start(), t.end())) {
+                wsStart = t.start();
+                wsEnd = t.end();
+                continue;
+            }
+            int newlines = wsStart < 0 ? 0 : newlines(text, wsStart, wsEnd);
+            int blank = Math.min(MAX_BLANK_LINES, Math.max(0, newlines - 1));
+            String sameLine = afterMarkup && newlines == 0 && isComment(text, t)
+                    ? (wsStart < 0 ? "" : text.substring(wsStart, wsEnd))
+                    : null;
+            wsStart = -1;
+            wsEnd = -1;
+            afterMarkup = true;
             switch (t.kind()) {
                 case OPEN -> {
                     Element e = new Element(t);
-                    current.children.add(e);
+                    current.children.add(new Child(e, blank, null));
                     stack.add(e);
                 }
                 case CLOSE -> {
@@ -78,25 +111,24 @@ public final class XmlFormatter {
                         return null; // a stray or mismatched end tag
                     }
                     current.close = t;
+                    current.blankLinesBeforeClose = blank;
                     stack.remove(stack.size() - 1);
                 }
                 case TEXT -> {
-                    if (!isBlank(text, t.start(), t.end())) {
-                        if (current == document) {
-                            return null; // text outside the root element: not a document to reflow
-                        }
-                        current.hasText = true;
-                        current.children.add(t);
+                    if (current == document) {
+                        return null; // text outside the root element: not a document to reflow
                     }
+                    current.hasText = true;
+                    current.children.add(new Child(t, blank, null));
                 }
-                default -> current.children.add(t);
+                default -> current.children.add(new Child(t, blank, sameLine));
             }
         }
         if (stack.size() != 1) {
             return null; // an element left open
         }
         StringBuilder out = new StringBuilder(text.length() + text.length() / 8);
-        for (Object child : document.children) {
+        for (Child child : document.children) {
             emit(out, text, child, 0, indent);
         }
         if (text.endsWith("\n")) {
@@ -105,16 +137,20 @@ public final class XmlFormatter {
         return out.toString();
     }
 
-    private static void emit(StringBuilder out, String text, Object node, int depth, String indent) {
-        if (!out.isEmpty()) {
-            out.append('\n');
+    private static void emit(StringBuilder out, String text, Child child, int depth, String indent) {
+        if (child.sameLine() != null && !out.isEmpty()) {
+            out.append(child.sameLine());
+        } else {
+            if (!out.isEmpty()) {
+                out.append("\n".repeat(1 + child.blankLines()));
+            }
+            out.append(indent.repeat(depth));
         }
-        out.append(indent.repeat(depth));
-        if (node instanceof Token t) {
+        if (child.node() instanceof Token t) {
             out.append(text, t.start(), t.end());
             return;
         }
-        Element e = (Element) node;
+        Element e = (Element) child.node();
         Token open = e.open;
         Token close = e.close;
         if (open == null || close == null) {
@@ -125,10 +161,26 @@ public final class XmlFormatter {
             return;
         }
         out.append(text, open.start(), open.end());
-        for (Object child : e.children) {
-            emit(out, text, child, depth + 1, indent);
+        for (Child c : e.children) {
+            emit(out, text, c, depth + 1, indent);
         }
-        out.append('\n').append(indent.repeat(depth)).append(text, close.start(), close.end());
+        out.append("\n".repeat(1 + e.blankLinesBeforeClose))
+                .append(indent.repeat(depth))
+                .append(text, close.start(), close.end());
+    }
+
+    private static int newlines(String s, int from, int to) {
+        int n = 0;
+        for (int i = from; i < to; i++) {
+            if (s.charAt(i) == '\n') {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    private static boolean isComment(String s, Token t) {
+        return t.kind() == Kind.OTHER && s.startsWith("<!--", t.start());
     }
 
     /** Whether a start tag says its whitespace matters ({@code xml:space="preserve"}): kept as written. */

@@ -917,6 +917,17 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("plugins.installFromDisk", host.pluginCoordinator()::installFromDisk));
         host.registry().register(Command.of("workspace.manageTrust", host::showTrustedFolders));
         host.registry().register(Command.of("workspace.revokeTrust", host::revokeTrustForActiveRoot));
+        host.lspCoordinator().xmlTrust().broadcast = () -> {
+            WindowManager windows = host.windowManager();
+            if (windows != null) {
+                windows.broadcastTrustChanged();
+            } else {
+                host.lspCoordinator().reloadProjectSettings();
+            }
+        };
+        host.registry()
+                .register(
+                        Command.of(XmlFolderTrust.COMMAND, host.lspCoordinator().xmlTrust()::trustFolder));
         host.registry().register(Command.of("config.export", host::exportConfig));
         host.registry().register(Command.of("config.import", host::importConfig));
         // Settings sync is one service for the whole process; each window's Settings window holds it.
@@ -2300,6 +2311,10 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "lsp.xmlBindGrammar",
                         () -> host.ifLsp(() -> host.lspCoordinator().xml().bindGrammar())));
+        host.registry()
+                .register(Command.of(
+                        "lsp.xmlGenerateGrammar",
+                        () -> host.ifLsp(() -> host.lspCoordinator().xml().generateGrammar())));
         host.registry()
                 .register(Command.of("lsp.undoRefactoring", () -> host.ifLsp(host.lspCoordinator()::undoRefactoring)));
         host.registry().register(Command.of("lsp.generate", () -> host.ifLsp(host.lspCoordinator()::generateActions)));

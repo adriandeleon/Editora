@@ -33,6 +33,7 @@ import org.jspecify.annotations.Nullable;
  *     exists there
  * @param fileAssociations glob → grammar (a path, relative to the root when not absolute, or a URL)
  * @param maxLineWidth the column Format Document wraps text at; 0 = never wraps
+ * @param preserveSpace the elements whose text Format Document leaves exactly as written
  * @param symbolLimit {@code xml.symbols.maxItemsComputed}
  * @param workDir lemminx's {@code xml.server.workDir}, under which it keeps its {@code cache}; null = its own
  *     default ({@code ~/.lemminx})
@@ -43,6 +44,7 @@ public record XmlServerSettings(
         List<String> catalogs,
         Map<String, String> fileAssociations,
         int maxLineWidth,
+        List<String> preserveSpace,
         String splitAttributes,
         String emptyElements,
         boolean spaceBeforeEmptyCloseTag,
@@ -68,6 +70,7 @@ public record XmlServerSettings(
                 ? Map.of()
                 : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(fileAssociations));
         maxLineWidth = Math.max(0, maxLineWidth);
+        preserveSpace = preserveSpace == null ? List.of() : List.copyOf(preserveSpace);
         splitAttributes = Settings.XML_SPLIT_ATTRIBUTES.contains(splitAttributes) ? splitAttributes : "preserve";
         emptyElements = Settings.XML_EMPTY_ELEMENTS.contains(emptyElements) ? emptyElements : "ignore";
         symbolLimit = symbolLimit < 1 ? Settings.XML_SYMBOL_LIMIT_DEFAULT : symbolLimit;
@@ -89,6 +92,7 @@ public record XmlServerSettings(
                 s.getXmlCatalogs(),
                 s.getXmlFileAssociations(),
                 s.isXmlFormatWrap() ? s.getFillColumn() : 0,
+                s.getXmlFormatPreserveSpace(),
                 s.getXmlFormatSplitAttributes(),
                 s.getXmlFormatEmptyElements(),
                 s.isXmlFormatSpaceBeforeEmptyCloseTag(),
@@ -115,7 +119,8 @@ public record XmlServerSettings(
     }
 
     /**
-     * The {@code xml} object for a server on {@code root} (null = unknown): {@code trusted} is that folder's trust,
+     * The {@code xml} object for a server on {@code root} (null = none, as for files outside the project: relative
+     * catalogs and grammars are then left out): {@code trusted} is that folder's trust,
      * {@code local} whether the server runs on this machine (a remote one keeps its own work dir, and relative
      * paths are sent as typed: this machine cannot look at the host's disk).
      */
@@ -125,6 +130,11 @@ public record XmlServerSettings(
         // Explicit, though it is lemminx's default: an external entity would be another fetch (or a local read).
         xml.put("validation", Map.of("noGrammar", noGrammar, "resolveExternalEntities", false));
         List<String> resolvedCatalogs = new ArrayList<>();
+        // Editora's own grammars first (the POM schemas, D12), so a pom validates and completes with downloads off.
+        Path bundled = local ? XmlBundledSchemas.catalogBeside(workDir) : null;
+        if (bundled != null) {
+            resolvedCatalogs.add(bundled.toString());
+        }
         for (String catalog : catalogs) {
             String path = resolve(catalog, root, local, true);
             if (path != null) {
@@ -140,12 +150,7 @@ public record XmlServerSettings(
             }
         });
         xml.put("fileAssociations", associations);
-        Map<String, Object> format = new LinkedHashMap<>();
-        format.put("maxLineWidth", maxLineWidth);
-        format.put("splitAttributes", splitAttributes);
-        format.put("emptyElements", emptyElements);
-        format.put("spaceBeforeEmptyCloseTag", spaceBeforeEmptyCloseTag);
-        xml.put("format", format);
+        xml.put("format", format());
         // Lenses are asked for only while Editora's own Code Lens setting is on, so the server side stays on: off
         // (lemminx's default) meant the XSD/DTD reference lenses never came at all (D3).
         xml.put("codeLens", Map.of("enabled", true));
@@ -155,6 +160,36 @@ public record XmlServerSettings(
             xml.put("server", Map.of("workDir", workDir.toString()));
         }
         return xml;
+    }
+
+    /**
+     * The {@code xml.format} object: every key vscode-xml sends, at vscode-xml's defaults, with the user's settings
+     * over them. lemminx reads the object as a whole, so a key left out is not "its default" but Java's: without
+     * {@code enabled} it never registered formatting at all — Format Document fell back to the built-in formatter and
+     * Tab got no server indent (XML review 2 C1) — and without the rest it dropped every blank line
+     * ({@code preservedNewlines} 0) and joined a multi-line start tag such as a pom's {@code <project>} header (E8).
+     */
+    Map<String, Object> format() {
+        Map<String, Object> format = new LinkedHashMap<>();
+        format.put("enabled", true);
+        format.put("maxLineWidth", maxLineWidth);
+        format.put("splitAttributes", splitAttributes);
+        format.put("splitAttributesIndentSize", 2);
+        format.put("emptyElements", emptyElements);
+        format.put("spaceBeforeEmptyCloseTag", spaceBeforeEmptyCloseTag);
+        format.put("preservedNewlines", 2);
+        format.put("preserveAttributeLineBreaks", true);
+        format.put("preserveEmptyContent", false);
+        format.put("preserveSpace", preserveSpace);
+        format.put("joinContentLines", false);
+        format.put("joinCDATALines", false);
+        format.put("joinCommentLines", false);
+        format.put("closingBracketNewLine", false);
+        format.put("enforceQuoteStyle", "ignore");
+        format.put("xsiSchemaLocationSplit", "onPair");
+        format.put("grammarAwareFormatting", true);
+        format.put("trimFinalNewlines", true);
+        return format;
     }
 
     /**
@@ -189,7 +224,7 @@ public record XmlServerSettings(
                 return path.toString();
             }
             if (root == null) {
-                return mustExist ? null : v;
+                return null; // no folder to be relative to (the loose files' root): left out, as a missing catalog is
             }
             Path under = root.resolve(path).normalize();
             return !mustExist || Files.isRegularFile(under) ? under.toString() : null;
@@ -296,6 +331,19 @@ public record XmlServerSettings(
         List<String> pairs = new ArrayList<>();
         associations.forEach((pattern, grammar) -> pairs.add(pattern + "=" + grammar));
         return String.join("; ", pairs);
+    }
+
+    /** Parses Settings' element-name list: names separated by {@code ;}, commas, spaces or new lines. */
+    public static List<String> parseNames(@Nullable String text) {
+        List<String> out = new ArrayList<>();
+        if (text != null) {
+            for (String part : text.split("[;,\\s]+")) {
+                if (!part.isBlank() && !out.contains(part.strip())) {
+                    out.add(part.strip());
+                }
+            }
+        }
+        return out;
     }
 
     /** Parses Settings' catalog text: paths separated by {@code ;} or new lines. */

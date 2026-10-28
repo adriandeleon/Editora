@@ -100,6 +100,18 @@ class XmlOutlineTest {
         String many = "<r>\n" + "<e/>\n".repeat(XmlOutline.MAX_NODES + 50) + "</r>\n";
         List<StructureNode> roots = XmlOutline.build(many);
         assertEquals(XmlOutline.MAX_NODES - 1, roots.get(0).children().size());
+        // Settings → LSP → XML's "Structure element limit" caps the outline without the server too (XML review 2 C9).
+        assertEquals(9, XmlOutline.build(many, 10).get(0).children().size());
+        try {
+            XmlOutline.setLimit(20);
+            assertEquals(19, XmlOutline.build(many).get(0).children().size());
+        } finally {
+            XmlOutline.setLimit(0);
+        }
+        assertEquals(
+                XmlOutline.MAX_NODES - 1,
+                XmlOutline.build(many).get(0).children().size(),
+                "0 = the default");
     }
 
     @Test
@@ -158,5 +170,18 @@ class XmlOutlineTest {
         List<String> rows = flat(StructureOutline.build(
                 StructureOutline.Source.file("pom.xml", pom).analyzed()));
         assertTrue(rows.stream().noneMatch(r -> r.contains("groupId")), "a pom keeps its own outline: " + rows);
+    }
+
+    /** XML review 2 C11: a DTD's Structure was empty without the server; it lists the declarations now. */
+    @Test
+    void aDtdIsOutlinedByItsDeclarations() {
+        String dtd = "<!ELEMENT catalog (item*)>\n<!ELEMENT item (#PCDATA)>\n<!ATTLIST item sku ID #REQUIRED>\n"
+                + "<!ENTITY % common \"id ID #IMPLIED\">\n<!ENTITY copy \"&#169;\">\n";
+        List<StructureNode> rows = StructureOutline.build(
+                StructureOutline.Source.file("catalog.dtd", dtd).analyzed());
+        assertEquals(List.of("catalog@0", "item@1", "  sku@2", "%common;@3", "&copy;@4"), flat(rows));
+        assertEquals("tag", rows.get(0).kind());
+        assertEquals("property", rows.get(1).children().get(0).kind());
+        assertEquals("constant", rows.get(2).kind());
     }
 }

@@ -30,12 +30,25 @@ class XmlFormatDocumentFxTest {
             FxTestSupport.runOnFx(() -> c.openAndNavigate(file, 1));
             FxTestSupport.drainFx();
             com.editora.command.CommandRegistry registry = FxTestSupport.field(c, "registry");
+            int caret = "<note>\n    <to>Tove</to>\n<from><na".length(); // inside <name>
+            FxTestSupport.runOnFx(() -> c.activeBuffer().getArea().moveTo(caret));
             FxTestSupport.runOnFx(() -> registry.run("lsp.formatDocument"));
             String expected =
                     "<note>\n    <to>Tove</to>\n    <from>\n        <name>Jani</name>\n    </from>\n</note>\n";
+            // It formats off the FX thread (XML review 2 C10), then applies the result there.
+            long until = System.nanoTime() + 10_000_000_000L;
+            while (System.nanoTime() < until
+                    && !expected.equals(FxTestSupport.callOnFx(
+                            () -> c.activeBuffer().getArea().getText()))) {
+                Thread.sleep(20);
+            }
             assertEquals(
                     expected,
                     FxTestSupport.callOnFx(() -> c.activeBuffer().getArea().getText()));
+            assertEquals(
+                    expected.indexOf("<name>") + 3,
+                    FxTestSupport.callOnFx(() -> c.activeBuffer().getArea().getCaretPosition()),
+                    "the caret stays on its character, not at the end of the formatted text (C4)");
             FxTestSupport.runOnFx(() -> c.activeBuffer().getArea().undo());
             assertEquals(
                     "<note>\n    <to>Tove</to>\n<from><name>Jani</name></from></note>\n",

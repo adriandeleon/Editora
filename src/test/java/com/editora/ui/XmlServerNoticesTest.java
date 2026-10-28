@@ -65,7 +65,7 @@ class XmlServerNoticesTest {
         XmlServerNotices notices = new XmlServerNotices();
         assertNull(notices.onDiagnostics(List.of(diagnostic("cvc-elt.1.a"))));
         assertEquals(
-                tr("status.lsp.xmlDownloadsOff"),
+                tr("status.lsp.xmlDownloadsOff", tr("command.workspace.trustFolder")),
                 notices.onDiagnostics(List.of(diagnostic(XmlServerNotices.DOWNLOAD_DISABLED))));
         assertNull(notices.onDiagnostics(List.of(diagnostic(XmlServerNotices.DOWNLOAD_DISABLED))), "once");
         notices.reset();

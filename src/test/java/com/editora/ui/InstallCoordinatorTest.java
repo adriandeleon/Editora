@@ -41,6 +41,13 @@ class InstallCoordinatorTest {
         String java = "java -cp \"/home/u/.editora/plugins/lsp/maven/*\" org.eclipse.lemminx.XMLServerLauncher";
         InstallCoordinator.applyServerCommand(xml, "xml", java);
         assertEquals(java, xml.getXmlLspCommand());
+        // The pom server's own bundle needs no setting either: blank runs it, so Reset keeps it (review 2, A3).
+        Settings pom = new Settings();
+        InstallCoordinator.applyServerCommand(pom, "maven-pom", java);
+        assertEquals("", pom.getMavenPomLspCommand());
+        String elsewhere = "java -cp \"/opt/lemminx-maven/*\" org.eclipse.lemminx.XMLServerLauncher";
+        InstallCoordinator.applyServerCommand(pom, "maven-pom", elsewhere);
+        assertEquals(elsewhere, pom.getMavenPomLspCommand());
         // JetBrains' Kotlin LSP is a pinned distribution, not an archive recipe: its launcher persists the same way.
         Settings s = new Settings();
         InstallCoordinator.applyServerCommand(s, "kotlin", "/cfg/plugins/lsp/kotlin/bin/intellij-server --stdio");

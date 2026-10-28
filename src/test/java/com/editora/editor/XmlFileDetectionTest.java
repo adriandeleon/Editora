@@ -55,6 +55,31 @@ class XmlFileDetectionTest {
         assertEquals("html", LanguageRegistry.forFileName("page.xhtml"));
     }
 
+    /** A Modula-2 {@code .mod} or a KiCad {@code .sch} is not XML: those extensions are XML only by their text (C13). */
+    @Test
+    void ambiguousExtensionsAreXmlOnlyWhenTheTextStartsWithATag() {
+        java.nio.file.Path mod = java.nio.file.Path.of("/src/Lib.mod");
+        assertEquals(
+                LanguageRegistry.PLAINTEXT,
+                LanguageRegistry.sniffedXmlLanguage(mod, "xml", () -> "DEFINITION MODULE Lib;\n"));
+        assertEquals(
+                LanguageRegistry.PLAINTEXT,
+                LanguageRegistry.sniffedXmlLanguage(
+                        java.nio.file.Path.of("board.sch"), "xml", () -> "EESchema Schematic File Version 4\n"));
+        assertNull(
+                LanguageRegistry.sniffedXmlLanguage(mod, "xml", () -> "\uFEFF\n  <!ENTITY a \"b\">"), "a DTD module");
+        assertNull(LanguageRegistry.sniffedXmlLanguage(mod, "xml", () -> " \n"), "blank: the name decides");
+        assertEquals("xml", LanguageRegistry.sniffedXmlLanguage(mod, LanguageRegistry.PLAINTEXT, () -> "<!-- x -->"));
+        for (String name : List.of("a.props", "a.targets", "a.fo", "a.SCH")) {
+            assertTrue(LanguageRegistry.xmlBySniff(name), name);
+        }
+        for (String name : List.of("a.xml", "a.dtd", "a.csproj", "go.mod", "a.txt")) {
+            assertFalse(LanguageRegistry.xmlBySniff(name), name);
+        }
+        assertNull(
+                LanguageRegistry.sniffedXmlLanguage(mod, "python", () -> "x"), "a shebang's or the user's pick stays");
+    }
+
     @Test
     void aFileThatOpensWithAnXmlDeclarationIsXml() {
         String manifest = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<manifest package=\"a.b\"/>\n";

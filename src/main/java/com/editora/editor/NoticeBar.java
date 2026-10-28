@@ -14,6 +14,9 @@ import org.jspecify.annotations.Nullable;
  * A banner above the editor: a message, one action button, a dismiss button and a busy spinner — the
  * IntelliJ-style strip the "install language support?" offer and the shell line-ending notice use. Generic
  * (strings and runnables), so {@code editor} stays decoupled from whoever wires the actions.
+ *
+ * <p>The buttons never shrink: the message wraps onto more lines instead. Squeezed by a long message, both
+ * buttons used to read "…", so a new XML user could not tell Install from Not now (XML review 2 C5).
  */
 final class NoticeBar {
 
@@ -34,6 +37,7 @@ final class NoticeBar {
         progress.setVisible(false);
         progress.setManaged(false);
         action.getStyleClass().add("accent");
+        action.setMinWidth(Region.USE_PREF_SIZE);
         action.setOnAction(e -> {
             if (onAction != null) {
                 onAction.run();
@@ -41,6 +45,7 @@ final class NoticeBar {
         });
         dismiss = new Button(dismissLabel);
         dismiss.getStyleClass().add("lsp-install-dismiss");
+        dismiss.setMinWidth(Region.USE_PREF_SIZE);
         dismiss.setOnAction(e -> {
             if (onDismiss != null) {
                 onDismiss.run();
@@ -73,5 +78,10 @@ final class NoticeBar {
 
     String text() {
         return message.getText();
+    }
+
+    /** TEST SEAM: the action and dismiss buttons. */
+    Button[] buttonsForTest() {
+        return new Button[] {action, dismiss};
     }
 }

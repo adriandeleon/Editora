@@ -305,6 +305,9 @@ public final class InstallService {
                         + " installed, installing XML again uses it instead.");
             }
             LOG.warning(s.id() + " cannot run here (" + e.reason + "); XML uses the Java lemminx instead");
+            if (InstallCatalog.LEMMINX_STEP.equals(tool.id())) {
+                XmlServerInstall.recordJavaFallback(dest, e.reason); // a blank XML command keeps the Java lemminx (A8)
+            }
             fellBackTo = e.reason;
             return fallback;
         }

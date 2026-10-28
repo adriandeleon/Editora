@@ -3226,9 +3226,10 @@ public class EditorBuffer implements TabContent {
         return structuredPreviewEnabled && isStructured() && !hugeFile;
     }
 
-    /** An XML buffer (excluding {@code .svg}, which renders as an image). Reuses the structured-preview gate. */
+    /** An XML document: not an {@code .svg}, which renders as an image, nor a DTD, which has no tree (C11). */
     public boolean isXml() {
-        return "xml".equals(language) && !isSvg();
+        String name = path != null ? String.valueOf(path.getFileName()) : displayName;
+        return "xml".equals(language) && !isSvg() && !com.editora.structured.DtdDeclarations.isDtdFileName(name);
     }
 
     /** Whether the XML DOM-tree preview should be offered (structured-preview feature on, XML, not huge). */
@@ -7763,10 +7764,16 @@ public class EditorBuffer implements TabContent {
      * behaves exactly like a file of that type. Never overrides a real extension or the user's pick.
      */
     private void maybeApplyShebang() {
+        int len = area.getLength(); // a shebang, else a vim/emacs modeline in the first or last lines
+        String sniffed = languageUserOverride || path == null // a .mod/.sch/… is XML only if it reads so (C13)
+                ? null
+                : LanguageRegistry.sniffedXmlLanguage(path, language, () -> area.getText(0, Math.min(len, 1024)));
+        if (sniffed != null && path != null) {
+            applyLanguageFor(sniffed, "xml".equals(sniffed) ? path.toString() : null);
+        }
         if (languageUserOverride || !LanguageRegistry.plaintext().equals(language)) {
             return; // a real extension or the user's pick already decided the language
         }
-        int len = area.getLength(); // a shebang, else a vim/emacs modeline in the first or last lines
         Shebang.Result r =
                 Modeline.detect(area.getText(0, Math.min(len, 1024)), area.getText(Math.max(0, len - 1024), len), path);
         if (r == null) {

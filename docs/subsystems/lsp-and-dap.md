@@ -126,7 +126,7 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   trust decision is read again), and `workspace/configuration` answers by dotted path. The object is built per
   session root: `xml.downloadExternalResources.enabled` follows `xmlSchemaDownloads` (`trusted` = that root's
   folder trust; the shared loose-files root is never trusted), relative catalogs and grammar paths resolve under
-  the root, and `xml.server.workDir` puts lemminx's cache at `<config>/cache/lemminx` (a GraalVM native lemminx
+  the root (and are left out for the loose-files root, which is Editora's folder, not one of the user's), and `xml.server.workDir` puts lemminx's cache at `<config>/cache/lemminx` (a GraalVM native lemminx
   takes `user.home` from passwd, so neither `$HOME` nor a test's `user.home` reached it). The pom server's push
   repeats lemminx-maven's own `xml.maven` object, which it reads whole. `xml.format.tabSize`/`insertSpaces`
   are answered from the document's indentation, as jdtls's `java.format.*` are.
@@ -162,11 +162,18 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   cannot read the `Either` fields (`SemanticTokensWithRegistrationOptions.range`/`full`) and either drops
   them or throws. Each registration is applied on its own, so one unusable entry cannot abort the batch.
   Rename and code-action registrations keep their options object (`prepareProvider`, `codeActionKinds`)
-  rather than being reduced to a Boolean. Diagnostic, semantic-token, inlay-hint, and folding refresh
+  rather than being reduced to a Boolean. Diagnostic, semantic-token, inlay-hint, folding and code-lens refresh
   requests are advertised (`workspace.*.refreshSupport` — servers send none without it) and re-request
-  data for managed open buffers, coalesced over a 100 ms window; semantic tokens and inlay hints are
+  data for managed open buffers, coalesced over a 100 ms window; semantic tokens, inlay hints and code lenses are
   re-requested for the active buffer only, the one their replies are applied to. A capability change re-pushes every
   buffer gate, including Go to Implementation / Type Definition.
+- **A document opens on its server only with its text.** A tab first appears as an empty loading shell
+  (`EditorBuffer.isLoading()`); `syncBuffer` treats it as ineligible and the load's completion
+  (`finishAsyncOpen`, `finishSessionBuffer`) syncs it again, so `didOpen` carries the whole file. The shell's
+  heavy-file flag alone did not stop it: Python, Java and XML keep their server in the large-source tier, and the
+  shell's one line passed their line limits, so those servers got an empty `didOpen` and then a whole-file insert.
+  The indent a server's `workspace/configuration` questions are answered with (`LspManager.setDocumentIndent`) is
+  re-recorded on every sync and with each debounced `didChange`.
 - **jdtls on-type formatting** is registered by the server only while `java.format.onType.enabled` is set.
   `Settings.lspOnTypeFormatting` is mirrored into it: in `initializationOptions`, in the configuration pushed
   after `initialized`, and again (to running Java sessions) when the setting flips. The opt-in
@@ -686,17 +693,24 @@ open project at the same `<config>/lsp/loose-files`, markers or not, since lemmi
 of configs or a Maven reactor opened file by file used to start one native process per folder or module). Files
 that only XML reads reach it: `LanguageRegistry` and `GrammarRegistry` map the XML dialects (`.dtd .ent .mod .rng
 .xsl .xslt .xsd .wsdl .xlf .xliff .plist .csproj …`, a `go.mod` excepted) to `xml`, and `Modeline.detect` makes a
-file whose name says nothing XML when it opens with `<?xml` (not a `.txt`). A DTD opens as language id `dtd` and a
+file whose name says nothing XML when it opens with `<?xml` (not a `.txt`). `.mod .sch .props .targets .fo` are shared
+with other formats, so such a file stays XML only while its first non-blank character is `<`
+(`LanguageRegistry.sniffedXmlLanguage`); a Modula-2 module or a KiCad schematic is plain text. A DTD opens as language id `dtd` and a
 stylesheet as `xsl`, as vscode-xml sends them. lemminx keeps its server in the large-source tier up to
-`XmlServer.HEAVY_FILE_LINE_LIMIT` lines. Its protocol extensions: `initializationOptions.extendedClientCapabilities`
+`XmlServer.HEAVY_FILE_LINE_LIMIT` lines; the 5 MB large-file cut still comes first ("up to 100,000 lines and 5 MB").
+Its protocol extensions: `initializationOptions.extendedClientCapabilities`
 (reference code lenses, the binding wizard, actionable notifications), `xml/actionableNotification` (handled like
 jdtls's), `xml/executeClientCommand` and the binding wizard's quick fix (`XmlLspActions`: `xml.open.uri`,
-`xml.show.references`, `xml.open.binding.wizard` → `xml.associate.grammar.insert`). It registers its commands only
+`xml.show.references`, `xml.open.binding.wizard` → `xml.associate.grammar.insert`; Bind to Grammar… refuses a
+document `XmlGrammarBinding.existing` finds bound). XML: Generate Grammar… sends `XmlServer.noGrammarDiagnostic` at
+the root element as a code-action context (`LspManager.codeActionsFor`), so lemminx's "Generate … and bind" fixes
+come back even while `xml.validation.noGrammar` is `ignore` and the real diagnostic is never reported. It registers its commands only
 for a client with dynamic `workspace/executeCommand` registration, which `clientCapabilities("xml")` alone
 declares; registrations add up (`withCommands`). Go to Definition (and so Ctrl/Cmd-click and Peek) on the XML
 server goes through `XmlServer.definition`: lemminx's own answer, unless that is only the element's other tag, then
 `typeDefinition` (the XSD declaration), then the `documentLink` at the caret (`schemaLocation`, DOCTYPE system id,
-`xml-model` href, `xsl:include`). Editora's own auto-close and auto-rename tag stay; lemminx's `xml/closeTag` and
+`xml-model` href), then, since lemminx links no stylesheet, a relative `href` of an `xsl:include`/`xsl:import` (or
+`xi:include`) resolved by Editora itself (`XmlServer.includeHref`). Editora's own auto-close and auto-rename tag stay; lemminx's `xml/closeTag` and
 `linkedEditingRange` are not requested.
 
 **A refused `initialize` is not a crash.** A server that answers `initialize` with an error (its message kept as

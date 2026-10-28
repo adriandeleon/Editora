@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Campbell and the Editora pair are fixed schemes that stay the same whichever editor theme is active. Open
   terminals recolour at once. Settings schema 147 → 148 (additive).
 
+- **XML: Generate Grammar….** Generates an XSD, DTD or RELAX NG grammar from the current XML file and binds the
+  file to it, with "Files without a grammar" left at Nothing (lemminx offered these fixes only on its no-grammar
+  hint). In Structure, a DTD now lists its elements with their attributes, its entities and notations.
+
 ### Changed
 
 - **Terminal: a keystroke no longer clears the selection.** It goes when the text under it is redrawn, so a
@@ -50,6 +54,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   folder columns (the overview tints them too). Themes can retune it with `.project-map-probe-structure`.
 
 ### Fixed
+
+- **Language servers get the whole file when it opens.** Python, Java and XML files reached their server empty and
+  were then filled in, so an XML file flashed a false "Premature end of file" error, the file was analysed twice,
+  and quick fixes and generated schemas used a four-space indent in a two-space file. The indent a server is told
+  now also follows the file as you edit it.
+- **XML: code lenses refresh after a settings change**, and lemminx's refresh request no longer logs an internal
+  error.
+- **XML: a relative schema association no longer applies to files outside the project**, where it failed with an
+  error naming an internal Editora folder.
+- **XML is no longer guessed from `.mod`, `.sch`, `.props`, `.targets` and `.fo` alone**: such a file is XML only
+  when its text starts with `<`, so a Modula-2 module or a KiCad schematic opens as plain text.
+- **The status bar and Problems say XML, JSON, YAML, HTML, CSS, SQL, TOML, C++, C#** (and other acronyms) instead
+  of "Xml" or "Cpp", and plain text reads "Plain Text".
+- **XML formatting (XML/pom review 2: format).**
+  - Format Document and Tab use lemminx again. Editora's XML settings left out `format.enabled`, so lemminx never
+    offered formatting: every Format Document fell back to the built-in formatter, Tab never got the server's
+    indent, and the four XML formatting settings did nothing.
+  - lemminx now gets vscode-xml's whole set of format defaults, so it keeps up to two blank lines, keeps a
+    multi-line start tag such as a pom's `<project …>` header on its lines, and leaves comment and CDATA lines alone.
+  - New **Keep text as written in** (Settings ▸ LSP ▸ XML, `xmlFormatPreserveSpace`, vscode-xml's list): elements
+    whose text the XML server leaves exactly as written. Settings schema 150 → 151 (additive).
+  - Tab on a line that opens an element (`<d>` with its `</d>` below) re-indents it instead of typing spaces into
+    the tag.
+  - The built-in formatter (no XML server) keeps blank lines, at most two in a row, and keeps a trailing comment on
+    the line it follows. It formats off the UI thread, puts the caret back on the character it was on, and its
+    no-undo notice for a large file says "Format Document".
+  - The XML settings card has Validation, Formatting (XML server) and Structure headings; the formatting rows say
+    they need the XML server, and "Wrap long text: off" no longer claims text is left as it is. The Structure
+    element limit applies without the server too.
+- **XML and HTML: typing a close tag by hand no longer renames another tag.** Typing `</b>` before an outer `</p>`
+  gave `<bp>…</b>p>`, and a typo in a closing name (`</itme>`) renamed the open tag. Only the closer of the innermost
+  open element is joined, and a name that turns out different becomes a tag of its own.
+- **XML: Bind to Grammar… on a file that is already bound** says what it is bound to instead of writing a second,
+  duplicate binding; a file with a DOCTYPE binds a DTD by `xml-model`.
+- **XML: Go to Definition on an `xsl:include` or `xsl:import` href** opens the stylesheet, as documented.
+- **A DTD no longer offers an XML tree preview** that called the file not well-formed.
+- **Banner buttons no longer shrink to "…".** Install and Not now on the XML install banner (and every other
+  banner) keep their labels; the message wraps instead, and the XML banner is shorter.
+
+- **pom.xml and the Maven server (XML/pom review 2).** A pom.xml served by the plain XML server now offers the
+  Maven server (what it adds, about 16 MB), or Settings… when your own command for it is missing; a pom in a folder
+  you have not trusted is left to the trust offer. "Reset to default" on the Maven server command keeps Editora's
+  installed copy instead of asking for a second download. A Maven project beside the open one gets one server, not
+  one per module, and an SSH/WSL/container host is never sent this machine's classpath (its plain XML server serves
+  the pom unless the host has an `lsp.maven-pom` tool). The Structure window names dependencies and plugins by
+  `groupId:artifactId` with the Maven server on; a plugin's "managed in" hover link opens, and hover links go to
+  the line they name (`#L28,22`). "Extract as new property in parent" works while the parent is open (unsaved
+  parent: refused with a reason). When one malformed pom stops dependency completion, the status bar names it.
+  XML: Revalidate File and lemminx's client commands work on a pom; a model diagnostic no longer shows the pom's
+  path as its source.
+- **XML and pom.xml: folder trust.** A pom.xml in a folder you have not trusted no longer reaches the Maven pom
+  server (lemminx-maven), which fetched the parents, plugins and extensions it named — from repositories the pom
+  itself named — and could run their code. It is edited with the plain XML server until you trust the folder; its
+  tab says "Maven-aware editing is off until you trust this folder" with **Trust Folder**, which moves it to the
+  Maven server. Revoking trust stops that server on the folder. A pom outside every trusted folder stays on the XML
+  server.
+  - **Workspace: Trust This Folder** (palette) trusts the active file's folder, and an XML file whose schema was not
+    downloaded because its folder is not trusted offers Trust Folder on the file: an XML-only folder had no way to
+    be trusted. Downloads turn on without a restart.
+  - The Maven POM schemas (4.0.0 and 4.1.0) are bundled: a pom validates and completes with schema downloads off,
+    without the two errors on line 2.
+  - "Use the Maven Central index" is now **Search Maven Central when completing pom.xml coordinates**, and says that
+    what you type is sent to search.maven.org (there is no index download).
+  - Doctor: a crashing or failing server's row has the Install… its tip names; the XML schema cache sits under its
+    server and is shown when only the pom server is on; lemminx-maven's artifact store (`~/.m2/.lemminx-maven`) has
+    its own row with Clear and Reveal, and the pom server keeps it under Editora's home.
+  - The status bar says "files outside the project" rather than Editora's internal `loose-files` folder.
+  - Settings says when Editora's own server copy predates version records, as Doctor does; a stored path to an
+    old per-platform lemminx copy is cleared (Settings schema 150 → 151), since a blank command runs that copy.
+  - After the XML install falls back to the Java lemminx, the native copy that cannot run is removed and a blank
+    XML command keeps the Java one.
 
 - **Terminal: a selection keeps its text when the terminal is resized.** JediTerm moves a selection itself when a
   shorter window pushes rows into history, and the terminal moved it again: after a splitter drag the highlight sat
@@ -125,8 +200,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   go to its XSD declaration instead of the element's own end tag.
 - **XML: one language server per window.** XML files outside the project, in any number of folders or Maven
   modules, share one lemminx instead of starting one each.
-- **XML: files up to 100,000 lines keep the language server** (it stopped at 10,000), and the large-file notice
-  now says that folding, Structure, spell check and the language server are off too; Structure says why it is
+- **XML: files up to 100,000 lines and 5 MB keep the language server** (it stopped at 10,000), and the large-file
+  notice now says that folding, Structure, spell check and the language server are off too; Structure says why it is
   empty.
 - **XML: lemminx's commands and quick fixes work.** New palette commands XML: Revalidate File, XML: Revalidate
   All Open Files and XML: Bind to Grammar…; the "Bind to existing grammar/schema" quick fix picks an XSD, DTD or

@@ -41,7 +41,7 @@ import static com.editora.i18n.Messages.tr;
  *   <li>the <em>diagnostics routing</em> — the per-open-file {@code problems} map, the {@link ProblemsPanel},
  *       and the {@code publishDiagnostics} callback ({@link #onDiagnostics});
  *   <li>the <em>configure/detect/gating + per-buffer lifecycle</em> — {@link #applySupport} (mirrors
- *       {@link MermaidCoordinator}), per-server detection ({@code serverAvailable}/{@code SERVER_IDS}), the
+ *       {@link MermaidCoordinator}), per-server detection ({@code serverAvailable}/{@code LspServerCommands.SERVER_IDS}), the
  *       per-server enable/command switches, {@link #syncBuffer} (open/activate/close), the status-bar
  *       {@code LSP:} segment ({@link #updateStatusBar}), the Structure outline ({@link #requestStructureSymbols}),
  *       semantic tokens, the server-ready callback ({@link #onServerStatus}), the {@link #wireBuffer} hook set,
@@ -301,6 +301,9 @@ final class LspCoordinator {
     private final CoordinatorHost host;
     private final LspManager lspManager;
     private final Ops ops;
+    /** Folder trust for the lemminx servers: which pom may reach lemminx-maven, and Trust Folder (E1, C6). */
+    private final XmlFolderTrust xmlTrust;
+
     private final WorkspaceFileOperations workspaceFiles;
     private final Executor workspaceExecutor;
 
@@ -324,37 +327,6 @@ final class LspCoordinator {
 
     /** serverId → whether that server's command was found on this machine (per-server availability). */
     private final Map<String, Boolean> serverAvailable = new java.util.HashMap<>();
-
-    /** Known LSP server ids (the configure/detect/gating loops iterate these). */
-    private static final String[] SERVER_IDS = {
-        "java",
-        "typescript",
-        "python",
-        "xml",
-        "json",
-        "bash",
-        "yaml",
-        "go",
-        "rust",
-        "php",
-        "ruby",
-        "clangd",
-        "html",
-        "css",
-        "kotlin",
-        "groovy",
-        "scala",
-        "clojure",
-        "lua",
-        "dockerfile",
-        "sql",
-        "terraform",
-        "toml",
-        "csharp",
-        "typst",
-        "astro",
-        com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID
-    };
 
     /** Lines of over-scan above/below the viewport when requesting semantic tokens (small scrolls stay covered). */
     private static final int SEMANTIC_WINDOW_PAD = 200;
@@ -393,6 +365,7 @@ final class LspCoordinator {
         this.host = host;
         this.lspManager = lspManager;
         this.ops = ops;
+        this.xmlTrust = new XmlFolderTrust(this, host, lspManager, ops);
         this.pythonInterpreters = new PythonInterpreterCoordinator(new PythonInterpreterCoordinator.Host() {
             @Override
             public @Nullable Path projectRoot() {
@@ -542,6 +515,7 @@ final class LspCoordinator {
         lspManager.setOnStartFailed(this::onStartFailed);
         lspManager.setOnStartRefused(this::onStartRefused);
         lspManager.setOnRequestError(this::onRequestError);
+        pomCompletionNotice = new PomServerSupport(host::setStatus);
         lspManager.setApplyEditHandler(this::applyWorkspaceEditsConfirmed); // server quick-fix edits land here (#670)
         lspManager.setOnEditBlocked(this::editBlocked);
         lspManager.setOnRefreshRequested(this::refreshRequested);
@@ -549,7 +523,13 @@ final class LspCoordinator {
         lspManager.setOnDiagnosticsUnchanged(this::diagnosticsUnchanged);
         lspManager.setClientUi(serverPrompts()); // a server's questions (Metals' "Import build?") get asked
         xml = new XmlLspActions(
-                host, lspManager, ops::openAndGoto, this::activeLspBuffer, this::lspPath, () -> findReferences(true));
+                host,
+                lspManager,
+                ops::openAndGoto,
+                this::activeLspBuffer,
+                this::lspPath,
+                () -> findReferences(true),
+                this::applyCodeActionItem);
     }
 
     /** The XML server's commands and client commands (XML review B15, D6). */
@@ -645,6 +625,7 @@ final class LspCoordinator {
                     case "semanticTokens" -> requestSemanticTokens(buffer);
                     case "inlayHints" -> requestInlayHints(buffer);
                     case "foldingRanges" -> requestFoldingRanges(buffer);
+                    case "codeLenses" -> requestCodeLens(buffer); // XML review 2 B2
                     default -> {
                         // Future server refresh kinds are ignored until the corresponding UI feature exists.
                     }
@@ -676,7 +657,8 @@ final class LspCoordinator {
      * when it is shown — {@link #onBufferShown}), so asking for them for every open tab was pure server load.
      */
     static boolean refreshAppliesTo(String kind, boolean activeBuffer) {
-        return activeBuffer || !("semanticTokens".equals(kind) || "inlayHints".equals(kind));
+        return activeBuffer
+                || !("semanticTokens".equals(kind) || "inlayHints".equals(kind) || "codeLenses".equals(kind));
     }
 
     /**
@@ -1030,7 +1012,7 @@ final class LspCoordinator {
                 b.setLspActive(false);
             }
         });
-        host.setStatus(tr("status.lsp.astroSdkUntrusted", tr("command.lsp.trustProjectSettings")));
+        host.setStatus(XmlFolderTrust.withheldStatus(serverId)); // astro-ls's SDK, or an untrusted pom (E1)
         updateStatusBar();
     }
 
@@ -1439,6 +1421,7 @@ final class LspCoordinator {
         if (buffer != null) {
             buffer.setLspDiagnostics(diagnostics);
             noteNonProjectFile(file, diagnostics);
+            xmlTrust.onDiagnostics(buffer, diagnostics); // a schema not downloaded: Trust Folder on the file (C6)
             String blocked = xmlNotices.onDiagnostics(diagnostics); // a schema not downloaded: say where it is decided
             if (blocked != null) {
                 // After the opening's own lines ("Opened …", the server's ready line), which replaced it at once.
@@ -1683,7 +1666,7 @@ final class LspCoordinator {
             updateStatusBar();
             return;
         }
-        for (String serverId : SERVER_IDS) {
+        for (String serverId : LspServerCommands.SERVER_IDS) {
             // Stop any server whose per-server toggle is off (frees its process); buffers deactivate below.
             if (!serverEnabled(serverId)) {
                 // Clear this server's buffers' diagnostics BEFORE shutting it down. After shutdown
@@ -1700,7 +1683,7 @@ final class LspCoordinator {
 
     /**
      * One server's probe result: recorded, then the buffers it can change are re-gated. Not every open
-     * buffer — each of the {@link #SERVER_IDS} answers on its own, so a buffer whose server had just failed to
+     * buffer — each of the {@link LspServerCommands#SERVER_IDS} answers on its own, so a buffer whose server had just failed to
      * start was re-opened, and its start failed again, once for every other server's answer.
      */
     void serverDetected(String serverId, boolean ok) {
@@ -1728,35 +1711,11 @@ final class LspCoordinator {
                 && com.editora.lsp.LspServerRegistry.isPomFile(p.getFileName().toString());
     }
 
-    /**
-     * Every known server's configured command, keyed by server id — what {@link LspManager#configure} needs.
-     *
-     * <p><b>Derived from {@link #SERVER_IDS}, never hand-listed.</b> This used to be a literal
-     * {@code Map.ofEntries(...)} of 22 entries against a 23-entry {@code SERVER_IDS}, and the one it omitted
-     * was {@code maven-pom} — whose registry default command is deliberately blank (it is only known after
-     * install). So {@code commandFor} returned an empty argv, {@code available()} said false, and the
-     * Maven-aware {@code pom.xml} server could <em>never</em> start, while the Settings row, the in-app
-     * installer and Doctor (which all read {@code Settings} directly) reported it present and configured
-     * (#723). Building the map from the same array the detect/gating loops walk makes that drift
-     * unrepresentable; {@code LspCoordinatorServerIdsTest} pins it.
-     *
-     * <p>A {@code HashMap} rather than {@code Map.ofEntries} on purpose: it tolerates a null command from a
-     * config where the field was explicitly nulled, which {@code Map.ofEntries} would turn into an NPE
-     * escaping {@code applySupport} — i.e. LSP silently dead for the session.
-     */
-    static Map<String, String> commandsForAllServers(com.editora.config.Settings s) {
-        Map<String, String> commands = new java.util.HashMap<>();
-        for (String serverId : SERVER_IDS) {
-            commands.put(serverId, serverCommand(s, serverId));
-        }
-        return commands;
-    }
-
-    /** Every server's effective launch command: {@link #commandsForAllServers} with the project overrides
+    /** Every server's effective launch command: {@link LspServerCommands#commandsForAllServers} with the project overrides
      *  that this window's trust allows ({@link #serverCommand(String)}) laid over it. */
     Map<String, String> effectiveCommands() {
-        Map<String, String> commands = commandsForAllServers(host.settings());
-        for (String serverId : SERVER_IDS) {
+        Map<String, String> commands = LspServerCommands.commandsForAllServers(host.settings());
+        for (String serverId : LspServerCommands.SERVER_IDS) {
             commands.put(serverId, launchCommand(serverId));
         }
         return commands;
@@ -1956,6 +1915,10 @@ final class LspCoordinator {
         if ("xml".equals(serverId) && com.editora.install.XmlServerInstall.editorasOwn(command, configDir())) {
             return null; // what an earlier install wrote: Install replaces it, it is not the user's own (review A6)
         }
+        if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)
+                && com.editora.install.MavenServerInstall.editorasOwn(command, configDir())) {
+            return null; // likewise for the pom server's own bundle (review 2, A1)
+        }
         String normalized = String.join(" ", com.editora.lsp.LspServerRegistry.tokenize(command));
         String fallback = com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId);
         return normalized.equals(String.join(" ", com.editora.lsp.LspServerRegistry.tokenize(fallback)))
@@ -1965,26 +1928,37 @@ final class LspCoordinator {
 
     /** The configured command for a server id (blank ⇒ the server's default). */
     private String serverCommand(String serverId) {
-        return projectSettings().commandFor(serverId, serverCommand(host.settings(), serverId), projectTrusted());
+        return projectSettings()
+                .commandFor(serverId, LspServerCommands.serverCommand(host.settings(), serverId), projectTrusted());
     }
 
     /** The command a server is started with: {@link #serverCommand(String)}, a blank one filled in with
-     *  Editora's own copy where it keeps one outside PATH (lemminx, review A9). */
+     *  Editora's own copy where it keeps one outside PATH (lemminx, review A9; the pom server, review 2 A3). */
     private String launchCommand(String serverId) {
-        return withOwnCopy(serverId, serverCommand(serverId), configDir());
+        return withOwnCopy(
+                serverId, serverCommand(serverId), configDir(), host.settings().getMavenJdkHome());
     }
 
-    /** {@code command} for {@code serverId}, Editora's own copy standing in for a blank XML command. Pure but
-     *  for file lookups. */
-    static String withOwnCopy(String serverId, @Nullable String command, @Nullable Path configDir) {
+    /** {@code command} for {@code serverId}, Editora's own copy standing in for a blank XML or pom command (the
+     *  Java lemminx after a fallback, the pom server's bundle) on the Maven JDK ({@code jdkHome}). Pure but for
+     *  file lookups. */
+    static String withOwnCopy(
+            String serverId, @Nullable String command, @Nullable Path configDir, @Nullable String jdkHome) {
         String raw = command == null ? "" : command;
-        return "xml".equals(serverId) ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir) : raw;
+        String jdk = jdkHome == null ? "" : jdkHome;
+        if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId) && raw.isBlank()) {
+            String own = com.editora.install.MavenServerInstall.effectiveCommand(raw, configDir);
+            return own.isBlank() ? raw : com.editora.lsp.JvmServerCommand.withJdk(own, jdk);
+        }
+        return "xml".equals(serverId)
+                ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir, jdk)
+                : raw;
     }
 
-    /** {@link #commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
+    /** {@link LspServerCommands#commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
     static Map<String, String> launchCommandsForAllServers(com.editora.config.Settings s, @Nullable Path configDir) {
-        Map<String, String> commands = commandsForAllServers(s);
-        commands.replaceAll((id, command) -> withOwnCopy(id, command, configDir));
+        Map<String, String> commands = LspServerCommands.commandsForAllServers(s);
+        commands.replaceAll((id, command) -> withOwnCopy(id, command, configDir, s.getMavenJdkHome()));
         return commands;
     }
 
@@ -2067,8 +2041,8 @@ final class LspCoordinator {
 
     /** What the project file asks for that needs trust (see {@code ProjectSettings.trustRequests}). */
     private List<String> projectTrustRequests() {
-        List<String> requests = new java.util.ArrayList<>(
-                projectSettings().trustRequests(id -> serverCommand(host.settings(), id), this::globalServerEnabled));
+        List<String> requests = new java.util.ArrayList<>(projectSettings()
+                .trustRequests(id -> LspServerCommands.serverCommand(host.settings(), id), this::globalServerEnabled));
         requests.addAll(
                 com.editora.lsp.BashIdeConfig.trustRequests(projectSettings().getBashIde()));
         projectSettings().valueOverrides().forEach((key, value) -> requests.add(scopeLabel(key) + ": " + value));
@@ -2129,8 +2103,10 @@ final class LspCoordinator {
     /** Hands the XML servers their settings (Settings → LSP → XML), each folder's trust read again (XML review D3). */
     void applyXmlSettings() {
         com.editora.config.ConfigManager config = ops.config();
+        com.editora.lsp.XmlBundledSchemas.ensure(config == null ? null : config.getConfigDir()); // the POM XSDs (D12)
         lspManager.setXmlSettings(
                 com.editora.lsp.XmlServerSettings.of(host.settings(), config == null ? null : config.getConfigDir()));
+        XmlOutline.setLimit(host.settings().getXmlSymbolLimit()); // the outline without the server too (C9)
         xmlNotices.reset();
     }
 
@@ -2340,7 +2316,7 @@ final class LspCoordinator {
     /** Everything a re-configure depends on: the project's effective commands and enables, as one string. */
     private String projectOverrideSignature() {
         StringBuilder signature = new StringBuilder();
-        for (String serverId : SERVER_IDS) {
+        for (String serverId : LspServerCommands.SERVER_IDS) {
             signature
                     .append(serverId)
                     .append('=')
@@ -2362,6 +2338,7 @@ final class LspCoordinator {
         applyOnTypeFormatting();
         applyBashIde();
         applyXmlSettings();
+        xmlTrust.trustChanged(); // a pom moves to or off lemminx-maven with its folder's trust (E1)
         appliedProjectRoot = ops.lspProjectRoot();
         offerInterruptedEdits();
         if (ops.lspFeatureEnabled() && !projectOverrideSignature().equals(appliedProjectOverrides)) {
@@ -2369,46 +2346,14 @@ final class LspCoordinator {
         }
     }
 
-    /** Pure: {@code serverId}'s configured command from {@code s} — the id→Settings-field mapping, kept
-     *  static so {@link #commandsForAllServers} (and its guard test) need no window/host (#723). */
-    static String serverCommand(com.editora.config.Settings s, String serverId) {
-        return switch (serverId) {
-            case "typescript" -> s.getTypescriptLspCommand();
-            case "python" -> s.getPythonLspCommand();
-            // A Java lemminx (the pom.xml server's, where the native build cannot run) runs on the Maven JDK too.
-            case "xml" -> com.editora.lsp.JvmServerCommand.withJdk(s.getXmlLspCommand(), s.getMavenJdkHome());
-            case "json" -> s.getJsonLspCommand();
-            case "bash" -> s.getBashLspCommand();
-            case "yaml" -> s.getYamlLspCommand();
-            case "go" -> s.getGoLspCommand();
-            case "rust" -> s.getRustLspCommand();
-            case "php" -> s.getPhpLspCommand();
-            case "ruby" -> s.getRubyLspCommand();
-            case "clangd" -> s.getClangdLspCommand();
-            case "html" -> s.getHtmlLspCommand();
-            case "css" -> s.getCssLspCommand();
-            case "kotlin" -> s.getKotlinLspCommand();
-            case "groovy" -> com.editora.lsp.JvmServerCommand.withJdk(s.getGroovyLspCommand(), s.getMavenJdkHome());
-            case "scala" -> com.editora.lsp.JvmServerCommand.withJdk(s.getScalaLspCommand(), s.getMavenJdkHome());
-            case "clojure" -> s.getClojureLspCommand();
-            case "lua" -> s.getLuaLspCommand();
-            case "dockerfile" -> s.getDockerfileLspCommand();
-            case "sql" -> s.getSqlLspCommand();
-            case "terraform" -> s.getTerraformLspCommand();
-            case "toml" -> s.getTomlLspCommand();
-            case "csharp" -> s.getCsharpLspCommand();
-            case "typst" -> s.getTypstLspCommand();
-            case "astro" -> s.getAstroLspCommand();
-            // The stored command starts with a bare `java`: run it on the Maven JDK like groovy/scala (review C4).
-            case "maven-pom" ->
-                com.editora.lsp.JvmServerCommand.withJdk(s.getMavenPomLspCommand(), s.getMavenJdkHome());
-            default -> s.getJavaLspCommand();
-        };
+    /** Whether {@code b} is a pom.xml served by plain lemminx because its folder is not trusted (E1). */
+    boolean pomWithheldUntrusted(EditorBuffer b) {
+        return xmlTrust.pomWithheldUntrusted(b);
     }
 
-    /** Known server ids in Settings-page order (read by the Doctor screen's check catalog). */
-    static java.util.List<String> serverIds() {
-        return java.util.List.of(SERVER_IDS);
+    /** Folder trust for the lemminx servers: {@code workspace.trustFolder} and its broadcast (E1, C6). */
+    XmlFolderTrust xmlTrust() {
+        return xmlTrust;
     }
 
     /**
@@ -2810,6 +2755,9 @@ final class LspCoordinator {
         boolean eligible = ops.lspFeatureEnabled()
                 && path != null
                 && (!remote || (RemoteExec.runsFor(path) && !remoteUnsupported(serverId)))
+                // A loading shell is empty: its heavy-file flag let Python/Java/XML's line limits through, so they
+                // got an empty didOpen, then a whole-file insert (XML review 2 B1). The load re-syncs it.
+                && !buffer.isLoading()
                 && !buffer.isLargeFile() // 5+ MB files skip LSP (like highlighting/minimap/git) — see setLspActive
                 // The intermediate large-source tier skips LSP (keeps highlighting) — up to a per-language limit:
                 // Python keeps Pyright to 50,000 lines (review B10).
@@ -2854,6 +2802,8 @@ final class LspCoordinator {
             buffer.setViewMode(true); // a library or stub file is for reading; Enable Editing is one click away
         }
         if (eligible && path != null && serverId != null) {
+            // Every sync re-records it (a settings apply, a language change); didChange keeps it current (B12).
+            lspManager.setDocumentIndent(path, formattingIndent(buffer)); // quick fixes keep its indent (B8)
             // Open when not yet managed, or re-open when the desired server changed — a pom.xml moving from the
             // plain XML server to lemminx-maven (once installed/enabled), or back. isManaged() alone can't tell:
             // it's keyed by URI, not server, so it stays true across a switch (which would otherwise never happen).
@@ -2868,7 +2818,6 @@ final class LspCoordinator {
                     host.setStatus(tr("status.lsp.starting", serverLabel(serverId)));
                     ops.setLspLoading(true); // show the loading bar until the server reports ready
                 }
-                lspManager.setDocumentIndent(path, formattingIndent(buffer)); // quick fixes keep its indent (B8)
                 lspManager.openDocument(path, root, routeLanguageId(buffer, serverId), buffer.text());
                 correctPlainFolderSourceRoot(buffer, path); // queued until the server is up (C6)
             }
@@ -2924,6 +2873,7 @@ final class LspCoordinator {
                 clearDiagnostics(path);
             }
         }
+        xmlTrust.afterSync(buffer); // an untrusted pom says why it is not Maven-aware (E1)
         if (buffer == host.activeBuffer()) {
             // The "LSP: <server>" segment and the Problems stripe follow whether the active file is managed,
             // which only changes here. Every other refresh (a tab switch, a server detected) runs before a
@@ -2956,7 +2906,8 @@ final class LspCoordinator {
 
     /** Workspace root for a buffer under {@code serverId}: active project (if Projects on), else nearest build
      *  file (that server's markers), else the file's dir. */
-    private @Nullable Path lspRootFor(EditorBuffer buffer, String serverId) {
+    @Nullable
+    Path lspRootFor(EditorBuffer buffer, String serverId) {
         Path file = lspPath(buffer);
         if (file == null) {
             return null; // every caller has checked lspPath already
@@ -3107,7 +3058,8 @@ final class LspCoordinator {
      * (not yet probed) this returns null so the buffer is <i>not</i> opened on the plain XML server first
      * (which {@link #syncBuffer} would then never switch away from). Once probed: available → {@code maven-pom};
      * absent → fall back to the language's normal server, so a {@code pom.xml} still gets base-XML LSP when
-     * lemminx-maven isn't installed. Disabling {@code maven-pom} skips the routing entirely (pure native XML).
+     * lemminx-maven isn't installed. Disabling {@code maven-pom} skips the routing entirely (pure native XML), and
+     * a pom whose folder is not trusted never reaches lemminx-maven, which would resolve and load what it names.
      */
     @Nullable
     String serverIdForBuffer(EditorBuffer b) {
@@ -3116,12 +3068,17 @@ final class LspCoordinator {
         String pomServer = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;
         String fileName =
                 p == null || p.getFileName() == null ? null : p.getFileName().toString();
-        if (fileName != null && com.editora.lsp.LspServerRegistry.isPomFile(fileName) && serverEnabled(pomServer)) {
+        if (fileName != null
+                && com.editora.lsp.LspServerRegistry.isPomFile(fileName)
+                && serverEnabled(pomServer)
+                && xmlTrust.pomTrusted(b)) { // an untrusted pom stays on plain lemminx (E1)
             Boolean mavenOk = serverAvailable.get(pomServer);
             if (mavenOk == null) {
                 return null; // not yet probed — don't open on the plain XML server first; wait for the probe
             }
-            if (mavenOk) {
+            // A host runs the pom server only with a command of its own (lsp.maven-pom in its tools): the local one
+            // loads this machine's jars (review 2, A5). Without one the host's plain lemminx serves the pom.
+            if (mavenOk && PomServerSupport.pomServerRunsFor(p, serverCommand(pomServer))) {
                 return pomServer;
             }
             // probed and absent → fall through to the plain XML server (base-XML LSP still works)
@@ -3159,15 +3116,23 @@ final class LspCoordinator {
                 ? buffer.getArea().getParagraph(line).getText()
                 : "";
         String prefix = com.editora.lsp.MavenPomServer.elementPrefix(lineText, column);
+        String coordinate = PomServerSupport.coordinateElement(lineText, column);
         return result -> {
             var items = com.editora.lsp.MavenPomServer.filterCompletion(
                     prefix, result.items(), com.editora.completion.Completion::label);
+            pomCompletionNotice.onCompletion( // a malformed pom elsewhere empties it: say which (review 2, E3)
+                    coordinate,
+                    items.stream().map(com.editora.completion.Completion::label).toList(),
+                    lspRootFor(buffer, com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID),
+                    () -> PomServerSupport.openPoms(host::forEachBuffer));
             cb.accept(
                     items == result.items()
                             ? result
                             : new com.editora.completion.CompletionResult(items, result.incomplete()));
         };
     }
+
+    private final PomServerSupport pomCompletionNotice;
 
     /** The accept hook for a completion item: resolve it + apply any additional edits (a TypeScript
      *  auto-import's {@code import} line). Returns null when the item can't carry extra edits. */
@@ -3616,9 +3581,13 @@ final class LspCoordinator {
         long folders = statusSources.values().stream()
                 .filter(src -> src.serverId().equals(serverId) && lspManager.hasLiveSession(serverId, src.root()))
                 .count(); // live servers only (CV4), starting ones too: their first lines were unnamed (sixth CS3)
-        return root == null || folders < 2 || root.getFileName() == null
-                ? name
-                : tr("status.lsp.serverInFolder", name, root.getFileName().toString());
+        if (root == null || folders < 2 || root.getFileName() == null) {
+            return name;
+        }
+        String folder = root.toAbsolutePath().normalize().equals(lspManager.looseRoot())
+                ? tr("status.lsp.looseFiles") // not Editora's internal folder's name (A6)
+                : root.getFileName().toString();
+        return tr("status.lsp.serverInFolder", name, folder);
     }
 
     /**
@@ -3948,61 +3917,11 @@ final class LspCoordinator {
         if (buffer.isDisposed() || buffer.getContent().equals(saved) || !buffer.isDirty()) {
             return;
         }
-        foldIntoOneUndo(buffer, saved);
+        SaveActionUndo.foldIntoOneUndo(buffer, saved);
         savingAfterActions.add(buffer);
         if (!ops.saveBuffer(buffer)) {
             savingAfterActions.remove(buffer);
         }
-    }
-
-    /** Clean-up, Organize Imports and Format, each of which may be an undo step of its own. */
-    private static final int SAVE_ACTION_STEPS = 3;
-
-    /**
-     * Makes what the actions on save did one undo step: undoing it took one Undo per action, and the states in
-     * between were never on disk (re-review AN7). Undoes the actions' steps back to {@code saved}, then puts
-     * their result back as a single edit. The history is left as it was when those steps cannot be told apart
-     * from the user's own (they do not lead back to {@code saved}) or the buffer shows only part of its text.
-     */
-    static void foldIntoOneUndo(EditorBuffer buffer, String saved) {
-        CodeArea area = buffer.getArea();
-        String result = area.getText();
-        if (!result.equals(buffer.getContent())) {
-            return; // narrowed or filtered: the area is not the whole document
-        }
-        var undo = area.getUndoManager();
-        int caret = area.getCaretPosition();
-        int undone = 0;
-        while (!area.getText().equals(saved) && undo.isUndoAvailable() && undone < SAVE_ACTION_STEPS) {
-            undo.undo();
-            undone++;
-        }
-        if (!area.getText().equals(saved)) {
-            for (int i = 0; i < undone && undo.isRedoAvailable(); i++) {
-                undo.redo();
-            }
-            return;
-        }
-        if (undone < 2) {
-            if (undone == 1) {
-                undo.redo(); // already one step
-            }
-            return;
-        }
-        int prefix = 0;
-        int max = Math.min(saved.length(), result.length());
-        while (prefix < max && saved.charAt(prefix) == result.charAt(prefix)) {
-            prefix++;
-        }
-        int suffix = 0;
-        while (suffix < max - prefix
-                && saved.charAt(saved.length() - 1 - suffix) == result.charAt(result.length() - 1 - suffix)) {
-            suffix++;
-        }
-        undo.preventMerge();
-        area.replaceText(prefix, saved.length() - suffix, result.substring(prefix, result.length() - suffix));
-        undo.preventMerge();
-        area.moveTo(Math.min(caret, area.getLength()));
     }
 
     /** The file whose save asked for {@link #projectRecheck}; the build goes to its project's server. */
@@ -4058,6 +3977,9 @@ final class LspCoordinator {
         buffer.setOccurrenceRequester(() -> requestOccurrences(buffer)); // caret at rest (#675)
         buffer.setLspChangeListener(text -> {
             Path path = lspPath(buffer);
+            if (path != null && lspManager.isManaged(path)) { // the indent servers are told follows the text (B12)
+                lspManager.setDocumentIndent(path, formattingIndent(buffer));
+            }
             if (path != null && !lspManager.changeDocument(path, text)) {
                 // A net-zero edit (type + Backspace, edit + undo): the server was sent nothing and will
                 // publish nothing, but the edit already cleared the buffer's marks.
@@ -4226,7 +4148,7 @@ final class LspCoordinator {
         QuickOpen<String> picker = new QuickOpen<>(
                 tr("command.lsp.toggleServer"),
                 tr("palette.setting.pick"),
-                () -> List.of(SERVER_IDS),
+                () -> List.of(LspServerCommands.SERVER_IDS),
                 id -> id + "  —  " + tr(serverEnabled(id) ? "common.on" : "common.off"),
                 this::serverLabel,
                 id -> {
@@ -4249,7 +4171,7 @@ final class LspCoordinator {
         QuickOpen<String> picker = new QuickOpen<>(
                 tr("command.lsp.setServerCommand"),
                 tr("palette.setting.pick"),
-                () -> List.of(SERVER_IDS),
+                () -> List.of(LspServerCommands.SERVER_IDS),
                 id -> id,
                 this::serverLabel,
                 id -> {
@@ -4258,14 +4180,18 @@ final class LspCoordinator {
                     }
                     // Prefill with the GLOBAL value: this prompt writes the persistent global setting, so
                     // showing the project's override here would copy a repository's command into it.
-                    host.promptText(id, tr("palette.setting.value"), serverCommand(host.settings(), id), v -> {
-                        String value = v.trim();
-                        setServerCommand(id, value);
-                        host.requestSave();
-                        applySupport();
-                        host.syncSettingsWindow();
-                        host.setStatus(tr("status.settingChanged", id, value));
-                    });
+                    host.promptText(
+                            id,
+                            tr("palette.setting.value"),
+                            LspServerCommands.serverCommand(host.settings(), id),
+                            v -> {
+                                String value = v.trim();
+                                setServerCommand(id, value);
+                                host.requestSave();
+                                applySupport();
+                                host.syncSettingsWindow();
+                                host.setStatus(tr("status.settingChanged", id, value));
+                            });
                 });
         picker.setOverlayHost(host.overlayHost());
         picker.show(host.window());
@@ -7152,7 +7078,11 @@ final class LspCoordinator {
         if (runRefactorCommand(path, item) || xml.runsCodeAction(path, item)) {
             return; // likewise a refactoring that asks the user where to, or what; or lemminx's binding wizard
         }
-        LspManager.CodeActionItem applied = item;
+        applyCodeActionItem(path, item);
+    }
+
+    /** Applies a code action and says how it went (the popup's pick, or XML: Generate Grammar…'s). */
+    void applyCodeActionItem(Path path, LspManager.CodeActionItem applied) {
         beginReportedEdit();
         lspManager.applyCodeAction(
                 path,

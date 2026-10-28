@@ -318,4 +318,22 @@ class LspServerRegistryTest {
         assertFalse(LspServerRegistry.lspAllowedForSize("typescript", true, 12_000));
         assertTrue(LspServerRegistry.lspAllowedForSize("java", false, 12_000), "below the tier: always");
     }
+
+    /** Review 2, A5: a bare {@code java} that loads this machine's jars is not sent to a remote host. */
+    @org.junit.jupiter.api.Test
+    void aRemoteHostIsNotSentALocalClasspath() {
+        String local = "java -cp \"/home/u/.editora/plugins/lsp/maven/*\" org.eclipse.lemminx.XMLServerLauncher";
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of(), LspServerRegistry.remoteCommandFor("maven-pom", local, null));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of("lemminx"), LspServerRegistry.remoteCommandFor("xml", local, null), "the host's own");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of("java", "-jar", "server.jar"),
+                LspServerRegistry.remoteCommandFor("groovy", "java -jar server.jar", null),
+                "a jar named without a path is still the host's");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of("lemminx-maven"),
+                LspServerRegistry.remoteCommandFor("maven-pom", local, "lemminx-maven"),
+                "the host's configured tool wins");
+    }
 }
