@@ -8033,9 +8033,10 @@ public class SettingsWindow {
                         }
                         String unknown = found ? unknownPin(srv.id(), argv, config.getConfigDir()) : null;
                         if (unknown != null) { // an install from before the pin: Doctor says Update too (A7)
-                            status.showProblem(
-                                    tr("settings.lsp.pinUnknown", lspToolName(srv.id(), argv), unknown),
-                                    lspCheck.isSelected());
+                            String name = lspToolName(srv.id(), argv); // a warning there too, so amber here (A26)
+                            status.showWarning(
+                                    tr("settings.lsp.pinUnknownShort", name, unknown),
+                                    tr("settings.lsp.pinUnknown", name, unknown));
                             return;
                         }
                         String crash = found && projectLsp != null ? projectLsp.serverCrash(srv.id()) : null;
