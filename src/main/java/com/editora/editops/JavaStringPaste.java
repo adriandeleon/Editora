@@ -20,13 +20,30 @@ public final class JavaStringPaste {
         fromLiteral = inLiteral ? text : null;
     }
 
+    /** Where a paste lands: in no literal, a {@code "…"} string, a text block or a char literal. */
+    enum Literal {
+        NONE,
+        STRING,
+        TEXT_BLOCK,
+        CHAR
+    }
+
     /**
-     * {@code pasted} as it should land at {@code offset} of {@code text}, a Java file: escaped when the offset is inside
-     * a {@code "…"} literal (not a text block, a char literal or a comment) and the text was not copied from one.
+     * {@code pasted} as it should land at {@code offset} of {@code text}, a Java file: escaped for the literal the
+     * offset is in (not in a comment), unless the text was copied from inside a string literal. A text block keeps its
+     * line breaks and quotes, so only its backslashes and a {@code """} are escaped there, and a char literal's
+     * backslash and quote (fourteenth check RJ4).
      */
     public static String forPaste(String text, int offset, String pasted) {
-        if (pasted.isEmpty() || pasted.equals(fromLiteral) || !inLiteral(text, offset)) {
+        Literal at = literalAt(text, offset);
+        if (pasted.isEmpty() || pasted.equals(fromLiteral) || at == Literal.NONE) {
             return pasted;
+        }
+        if (at == Literal.TEXT_BLOCK) {
+            return pasted.replace("\\", "\\\\").replace("\"\"\"", "\\\"\"\"");
+        }
+        if (at == Literal.CHAR) {
+            return pasted.replace("\\", "\\\\").replace("'", "\\'");
         }
         int lineStart = text.lastIndexOf('\n', Math.max(0, offset - 1)) + 1;
         int indentEnd = lineStart;
@@ -76,6 +93,11 @@ public final class JavaStringPaste {
 
     /** Whether {@code offset} of {@code text} is inside a {@code "…"} literal: after its opening quote, not past its end. */
     public static boolean inLiteral(String text, int offset) {
+        return literalAt(text, offset) == Literal.STRING;
+    }
+
+    /** The literal {@code offset} of {@code text} is inside, after its opening quote(s) and not past its end. */
+    public static Literal literalAt(String text, int offset) {
         int end = Math.min(offset, text.length());
         int i = 0;
         boolean string = false;
@@ -93,19 +115,19 @@ public final class JavaStringPaste {
             } else if (text.startsWith("//", i)) {
                 int nl = text.indexOf('\n', i);
                 if (nl < 0 || nl >= end) {
-                    return false;
+                    return Literal.NONE;
                 }
                 i = nl + 1;
             } else if (text.startsWith("/*", i)) {
                 int close = text.indexOf("*/", i + 2);
                 if (close < 0 || close + 2 > end) {
-                    return false;
+                    return Literal.NONE;
                 }
                 i = close + 2;
             } else if (text.startsWith("\"\"\"", i)) {
                 int close = text.indexOf("\"\"\"", i + 3);
-                if (close < 0 || close + 3 > end) {
-                    return false; // a text block keeps its line breaks and quotes
+                if (close < 0 || close >= end) {
+                    return i + 3 <= end ? Literal.TEXT_BLOCK : Literal.NONE;
                 }
                 i = close + 3;
             } else if (c == '\'') {
@@ -114,7 +136,7 @@ public final class JavaStringPaste {
                     j += text.charAt(j) == '\\' ? 2 : 1;
                 }
                 if (j >= end) {
-                    return false;
+                    return Literal.CHAR;
                 }
                 i = j + 1;
             } else {
@@ -122,7 +144,7 @@ public final class JavaStringPaste {
                 i++;
             }
         }
-        return string && i == end;
+        return string && i == end ? Literal.STRING : Literal.NONE;
     }
 
     private static boolean escaped(String text, int at) {
