@@ -312,6 +312,8 @@ public class SettingsWindow {
     /** Settings → LSP: lemminx-maven may search Maven Central when completing coordinates (Maven C10, D13). */
     private CheckBox mavenCentralIndexCheck;
 
+    private CheckBox javaDownloadSourcesCheck;
+
     private CheckBox csvGridCheck;
     private CheckBox structuredPreviewCheck;
     private CheckBox svgPreviewCheck;
@@ -1497,6 +1499,7 @@ public class SettingsWindow {
         testRunnerCheck = viewCheck(tr("settings.testRunner"), Settings::setTestRunner);
         buildBeforeRunCheck = viewCheck(tr("settings.buildBeforeRun"), Settings::setBuildBeforeRun);
         mavenCentralIndexCheck = viewCheck(tr("settings.lsp.mavenCentralIndex"), Settings::setMavenPomCentralIndex);
+        javaDownloadSourcesCheck = viewCheck(tr("settings.lsp.javaDownloadSources"), Settings::setJavaDownloadSources);
         csvGridCheck = viewCheck(tr("settings.csvPreview"), Settings::setCsvPreview);
         structuredPreviewCheck = viewCheck(tr("settings.structuredPreview"), Settings::setStructuredPreview);
         svgPreviewCheck = viewCheck(tr("settings.svgPreview"), Settings::setSvgPreview);
@@ -7191,6 +7194,14 @@ public class SettingsWindow {
             project.managedProperty().bind(project.visibleProperty());
             lspProjectLabels.put(srv.id(), project);
             c.body().getChildren().add(project);
+            if (com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(srv.id())) {
+                checkRow( // every dependency's sources at import; a library tab offers them one at a time anyway
+                        c,
+                        Category.LSP,
+                        javaDownloadSourcesCheck,
+                        tr("settings.lsp.javaDownloadSources.hint"),
+                        "lsp java jdtls library sources download maven gradle dependencies decompiled network");
+            }
             if (MAVEN_POM.equals(srv.id())) {
                 // What the server adds, what a pom gets without it, and which java runs it (review C17); and the
                 // Central-index choice that decides whether completion sees more than ~/.m2 (review C10).
@@ -8895,6 +8906,7 @@ public class SettingsWindow {
             testRunnerCheck.setSelected(settings.isTestRunner());
             buildBeforeRunCheck.setSelected(settings.isBuildBeforeRun());
             mavenCentralIndexCheck.setSelected(settings.isMavenPomCentralIndex());
+            javaDownloadSourcesCheck.setSelected(settings.isJavaDownloadSources());
             csvGridCheck.setSelected(settings.isCsvPreview());
             structuredPreviewCheck.setSelected(settings.isStructuredPreview());
             svgPreviewCheck.setSelected(settings.isSvgPreview());
@@ -9425,6 +9437,7 @@ public class SettingsWindow {
             testRunnerCheck.setSelected(config.getSettings().isTestRunner());
             buildBeforeRunCheck.setSelected(config.getSettings().isBuildBeforeRun());
             mavenCentralIndexCheck.setSelected(config.getSettings().isMavenPomCentralIndex());
+            javaDownloadSourcesCheck.setSelected(config.getSettings().isJavaDownloadSources());
         } finally {
             loading = prev;
         }
@@ -9575,6 +9588,7 @@ public class SettingsWindow {
             testRunnerCheck.setSelected(s.isTestRunner());
             buildBeforeRunCheck.setSelected(s.isBuildBeforeRun());
             mavenCentralIndexCheck.setSelected(s.isMavenPomCentralIndex());
+            javaDownloadSourcesCheck.setSelected(s.isJavaDownloadSources());
             csvGridCheck.setSelected(s.isCsvPreview());
             structuredPreviewCheck.setSelected(s.isStructuredPreview());
             svgPreviewCheck.setSelected(s.isSvgPreview());

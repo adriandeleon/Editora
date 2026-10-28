@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Java: library sources.** A Maven library's sources are fetched as its class opens, when a repository has them.
+  A library class that has none, shown decompiled (a `lib/` or system jar, an artifact only installed locally, a JDK
+  without `src.zip`), says so in its tab, with **Download Sources** for one a repository may have and **Choose
+  Sources…** to attach a `-sources.jar` or zip from disk (also LSP: Download Library Sources and LSP: Choose Library
+  Sources… in the palette); a Gradle library is told its sources come from its build. A tab whose library gets its
+  sources later shows them at once, every open tab of that library or JDK. Settings → LSP has "Download library
+  sources when a Java project is imported" (off; Maven), applied at the next import, and View: Toggle Downloading
+  Library Sources at Import flips it. Looking for a Maven library's sources can ask Maven Central's search, by the
+  jar's checksum. Settings schema 153 → 154.
 - **Project Map: Hide unmatched.** A checkbox in the Map's filter row takes the rows the filters would fade off the
   map, leaving only the matches and the folders that lead to them. It never hides silently: an amber "N rows hidden"
   badge sits beside it, and each column shows "shown/total" with an "N hidden" line under its rows. Remembered per

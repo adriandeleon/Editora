@@ -1246,6 +1246,18 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
+    /** Whether jdtls downloads every dependency's sources at import (Maven and Gradle). */
+    private volatile boolean javaDownloadSources;
+
+    /** Sets {@link #javaDownloadSources} and, for a running Java server, pushes it. */
+    void setJavaDownloadSources(boolean enabled) {
+        boolean changed = javaDownloadSources != enabled;
+        javaDownloadSources = enabled;
+        if (changed && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
     /** Sets {@link #javaOnTypeFormatting} and, for a running Java server, pushes the changed preference. */
     void setJavaOnTypeFormatting(boolean enabled) {
         boolean changed = javaOnTypeFormatting != enabled;
@@ -1285,6 +1297,7 @@ final class LanguageServerSession implements LanguageClient {
             }
             completion.put("filteredTypes", javaFilteredTypes);
             merged.put("completion", completion);
+            JavaLibrarySources.into(merged, javaDownloadSources);
             settings = Map.of("java", merged); // the project's own style, and the chosen clean-ups
         }
         try {
@@ -3524,10 +3537,25 @@ final class LanguageServerSession implements LanguageClient {
         onStatus.accept("Progress", progressText(report.task, detail, percentage));
     }
 
-    /** A JDT project-model event. Editora already refreshes from diagnostics and watched files; accepting the
-     *  event keeps the client contract complete without duplicating those flows. */
+    /**
+     * A JDT project-model event. Editora refreshes the project from diagnostics and watched files; the one it acts on
+     * is SourceInvalidated, a library that got sources after its class file was read, whose open tabs then show them.
+     */
     @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("language/eventNotification")
-    public void languageEventNotification(LanguageEventNotification event) {}
+    public void languageEventNotification(LanguageEventNotification event) {
+        java.util.Set<String> roots =
+                event == null ? java.util.Set.of() : JavaLibrarySources.invalidatedRoots(event.eventType, event.data);
+        if (!roots.isEmpty()) {
+            onSourceInvalidated.accept(roots);
+        }
+    }
+
+    /** Told (on the reader's thread) of the libraries whose sources jdtls attached. */
+    private volatile java.util.function.Consumer<java.util.Set<String>> onSourceInvalidated = roots -> {};
+
+    void setOnSourceInvalidated(java.util.function.Consumer<java.util.Set<String>> handler) {
+        onSourceInvalidated = handler;
+    }
 
     /**
      * JDT's actionable message: its commands become the buttons of a non-modal question, and the one chosen is
@@ -3762,6 +3790,9 @@ final class LanguageServerSession implements LanguageClient {
     /** Payload of JDT LS's {@code language/eventNotification}; data remains intentionally opaque. */
     public static final class LanguageEventNotification {
         public @Nullable String type;
+        /** jdtls's {@code EventType}, sent as its number ({@code 500}: SourceInvalidated). */
+        public @Nullable Object eventType;
+
         public @Nullable Object data;
     }
 

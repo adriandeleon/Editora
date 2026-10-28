@@ -88,6 +88,18 @@ public final class LspTestHooks {
         manager.sessionForTest(file).languageStatus(status);
     }
 
+    /** Plays jdtls's SourceInvalidated event for {@code file}'s server: the libraries at {@code roots} got sources. */
+    public static void sourceInvalidated(LspManager manager, java.nio.file.Path file, String... roots) {
+        LanguageServerSession.LanguageEventNotification event = new LanguageServerSession.LanguageEventNotification();
+        event.eventType = 500.0; // gson reads a JSON number into an Object as a double
+        java.util.Map<String, Object> paths = new java.util.LinkedHashMap<>();
+        for (String r : roots) {
+            paths.put(r, Boolean.TRUE);
+        }
+        event.data = java.util.Map.of("affectedRootPaths", paths);
+        manager.sessionForTest(file).languageEventNotification(event);
+    }
+
     /** Plays the server serving {@code file} dying on its own — a crash, not a shutdown the editor asked for. */
     public static void simulateServerDeath(LspManager manager, java.nio.file.Path file) {
         manager.sessionForTest(file).simulateServerDeathForTest();

@@ -489,6 +489,31 @@ public final class LspManager {
                 });
     }
 
+    /** Whether jdtls downloads every dependency's sources when it imports a project (Settings → LSP). */
+    private volatile boolean javaDownloadSources;
+
+    /** Told (on the FX thread) of the libraries whose sources jdtls attached after their class files were read. */
+    private volatile java.util.function.Consumer<java.util.Set<String>> onSourceInvalidated = roots -> {};
+
+    public void setOnSourceInvalidated(java.util.function.Consumer<java.util.Set<String>> handler) {
+        onSourceInvalidated = handler == null ? roots -> {} : handler;
+    }
+
+    /**
+     * Tells jdtls whether to download every dependency's sources at import ({@code java.maven.downloadSources},
+     * {@code java.eclipse.downloadSources}): sent at {@code initialize} and pushed to running Java sessions, which
+     * apply it at their next import or project update.
+     */
+    public void setJavaDownloadSources(boolean enabled) {
+        javaDownloadSources = enabled;
+        String prefix = sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID);
+        sessionsByRoot.forEach((key, session) -> {
+            if (key.startsWith(prefix)) {
+                session.setJavaDownloadSources(enabled);
+            }
+        });
+    }
+
     /**
      * Tells jdtls whether to format as you type. jdtls registers its on-type formatting provider only while
      * {@code java.format.onType.enabled} is set, so this is sent at {@code initialize}, pushed after it, and
@@ -1917,6 +1942,8 @@ public final class LspManager {
         session.setClientThread(Platform::runLater); // a re-sync must not race the FX thread's own document sync
         configureClient(session.primaryClient(), key, session);
         session.setJavaOnTypeFormatting(javaOnTypeFormatting);
+        session.setJavaDownloadSources(javaDownloadSources);
+        session.setOnSourceInvalidated(roots -> Platform.runLater(() -> onSourceInvalidated.accept(roots)));
         session.setJavaCleanups(javaCleanups);
         session.setJavaFilteredTypes(javaFilteredTypes);
         session.setBashIde(bashIdeFor(root));
@@ -1986,6 +2013,7 @@ public final class LspManager {
                 ? null // a remote host's JDKs are its own; the setting names this machine's
                 : JavaRuntimes.preferredHome(javaDefaultJdk, System.getenv("JAVA_HOME"));
         boolean centralIndex = mavenCentralIndex;
+        boolean downloadSources = javaDownloadSources;
         // Trust is read here, on the caller's thread, where the trust list is also edited.
         Path sdkCeiling = ASTRO_SERVER_ID.equals(serverId) || TypeScriptServer.SERVER_ID.equals(serverId)
                 ? trustedCeiling(root, folderTrust)
@@ -2143,14 +2171,25 @@ public final class LspManager {
                                             serverId,
                                             withProjectSettings(
                                                     serverId,
-                                                    initOptionsFor(
-                                                            serverId,
-                                                            startBundles,
-                                                            astroTsdk,
-                                                            onTypeFormatting,
-                                                            jdks,
-                                                            centralIndex,
-                                                            javaPreferredHome),
+                                                    LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
+                                                            ? JavaLibrarySources.withDownloadSources(
+                                                                    initOptionsFor(
+                                                                            serverId,
+                                                                            startBundles,
+                                                                            astroTsdk,
+                                                                            onTypeFormatting,
+                                                                            jdks,
+                                                                            centralIndex,
+                                                                            javaPreferredHome),
+                                                                    downloadSources)
+                                                            : initOptionsFor(
+                                                                    serverId,
+                                                                    startBundles,
+                                                                    astroTsdk,
+                                                                    onTypeFormatting,
+                                                                    jdks,
+                                                                    centralIndex,
+                                                                    javaPreferredHome),
                                                     remote ? null : root),
                                             session.xmlSettings()));
             if (!session.start()) {
