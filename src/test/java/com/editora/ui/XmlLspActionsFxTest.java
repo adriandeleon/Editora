@@ -272,6 +272,29 @@ class XmlLspActionsFxTest {
         assertEquals(at, sent.getRange());
     }
 
+    /**
+     * XML/pom review 3, C24: on a file whose DOCTYPE has only an internal subset, "Generate … and bind with DOCTYPE"
+     * wrote a second DOCTYPE ("Already seen doctype."). That fix is no longer offered; the DTD with xml-model is.
+     */
+    @Test
+    void generateGrammarOnAFileWithADoctypeLeavesOutTheDoctypeFix() throws Exception {
+        Served s = serve("int2.xml", "<?xml version=\"1.0\"?>\n<!DOCTYPE note [ <!ENTITY who \"Tove\"> ]>\n<note/>\n");
+        var diagnostic = XmlServer.noGrammarDiagnostic(new org.eclipse.lsp4j.Range());
+        var doctype = new org.eclipse.lsp4j.CodeAction("Generate 'int2.dtd' and bind with DOCTYPE");
+        doctype.setDiagnostics(List.of(diagnostic));
+        var model = new org.eclipse.lsp4j.CodeAction("Generate 'int2.dtd' and bind with xml-model");
+        model.setDiagnostics(List.of(diagnostic));
+        s.server().codeActionResponse = List.of(Either.forRight(doctype), Either.forRight(model));
+        XmlLspActions xml = actions(s.buffer(), s.path());
+        Recording prompts = new Recording();
+        xml.setPromptsForTest(prompts);
+
+        FxTestSupport.runOnFx(xml::generateGrammar);
+        waitFor(() -> events.stream().anyMatch(e -> e.startsWith("apply:")));
+
+        assertEquals(List.of("generate [" + model.getTitle() + "]"), prompts.asked);
+    }
+
     @Test
     void generateGrammarSaysSoWhenThereIsNothingToGenerate() throws Exception {
         Served s = serve("empty.xml", "<!-- nothing yet -->\n");
