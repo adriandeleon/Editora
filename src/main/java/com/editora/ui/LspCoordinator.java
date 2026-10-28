@@ -3123,6 +3123,8 @@ final class LspCoordinator {
             EditorBuffer buffer,
             int line,
             int column,
+            int kind,
+            @Nullable String trigger,
             java.util.function.Consumer<com.editora.completion.CompletionResult> cb) {
         Path p = lspPath(buffer);
         if (p == null || !com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(lspManager.managedServerId(p))) {
@@ -3136,15 +3138,27 @@ final class LspCoordinator {
         return result -> {
             var items = com.editora.lsp.MavenPomServer.filterCompletion(
                     prefix, result.items(), com.editora.completion.Completion::label);
-            pomCompletionNotice.onCompletion( // a malformed pom elsewhere empties it: say which (review 2, E3)
+            var filtered = items == result.items()
+                    ? result
+                    : new com.editora.completion.CompletionResult(items, result.incomplete());
+            boolean takenOver = pomCompletionNotice.onCompletion( // a malformed pom empties it: leave it out (E3)
                     coordinate,
                     items.stream().map(com.editora.completion.Completion::label).toList(),
                     lspRootFor(buffer, com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID),
-                    () -> PomServerSupport.openPoms(host::forEachBuffer));
-            cb.accept(
-                    items == result.items()
-                            ? result
-                            : new com.editora.completion.CompletionResult(items, result.incomplete()));
+                    () -> PomServerSupport.openPoms(host::forEachBuffer),
+                    poms -> lspManager.leaveOutOfMavenWorkspace(p, poms),
+                    () -> lspManager.completion(
+                            p,
+                            line,
+                            column,
+                            kind,
+                            trigger,
+                            item -> autoImportAccept(buffer, item),
+                            pomCompletionFilter(buffer, line, column, kind, trigger, cb)),
+                    () -> cb.accept(filtered));
+            if (!takenOver) {
+                cb.accept(filtered);
+            }
         };
     }
 
@@ -3832,6 +3846,11 @@ final class LspCoordinator {
             lspManager.changeDocument(path, buffer.getContent());
             lspManager.saveDocument(path, savedText);
             lspManager.pullDiagnostics(path); // no-op for push-only servers
+            if (PomServerSupport.wellFormedAgain(lspManager.leftOutOfMavenWorkspace(path), path, buffer.getContent())) {
+                host.setStatus(tr("status.maven.pomBack", path.getFileName())); // a fresh server takes it back (E3)
+                lspManager.restartServer(LspServerRegistry.MAVEN_POM_SERVER_ID);
+                applyGating();
+            }
             if ((projectWideProblems || lspManager.otherJavaDocumentOpen(path))
                     && LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))) {
                 pendingProjectRecheck.add(path); // one build per session, saves in two projects both checked
@@ -4048,7 +4067,7 @@ final class LspCoordinator {
                         kind,
                         trigger,
                         item -> autoImportAccept(buffer, item),
-                        pomCompletionFilter(buffer, line, column, cb));
+                        pomCompletionFilter(buffer, line, column, kind, trigger, cb));
             }
             cb.accept(com.editora.completion.CompletionResult.EMPTY);
             return () -> {};

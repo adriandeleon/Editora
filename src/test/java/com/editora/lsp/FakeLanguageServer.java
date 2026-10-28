@@ -3,6 +3,7 @@ package com.editora.lsp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionParams;
@@ -592,6 +593,15 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     @Override
     public void didChangeConfiguration(DidChangeConfigurationParams params) {
         configurations.add(params);
+    }
+
+    /** Every {@code workspace/didChangeWorkspaceFolders} received. */
+    public final List<org.eclipse.lsp4j.DidChangeWorkspaceFoldersParams> workspaceFolderChanges =
+            new CopyOnWriteArrayList<>();
+
+    @Override
+    public void didChangeWorkspaceFolders(org.eclipse.lsp4j.DidChangeWorkspaceFoldersParams params) {
+        workspaceFolderChanges.add(params);
     }
 
     /** What {@code workspace/willRenameFiles} answers (null: no edit). */

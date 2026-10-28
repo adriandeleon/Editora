@@ -60,4 +60,19 @@ class MalformedPomsTest {
         assertEquals(core, p.file());
         assertNull(MalformedPoms.firstIn(root.resolve("missing"), f -> null));
     }
+
+    @Test
+    void everyMalformedPomIsFoundForLeavingOut() throws IOException {
+        pom(".", GOOD);
+        Path a = pom("a", "<project><artifactId>a\n</project>");
+        pom("ok", GOOD);
+        Path b = pom("b", "<project>");
+
+        assertEquals(
+                java.util.Set.of(a, b),
+                MalformedPoms.allIn(root, f -> null).stream()
+                        .map(MalformedPoms.Problem::file)
+                        .collect(java.util.stream.Collectors.toSet()));
+        assertEquals(java.util.List.of(), MalformedPoms.allIn(root.resolve("ok"), f -> null));
+    }
 }

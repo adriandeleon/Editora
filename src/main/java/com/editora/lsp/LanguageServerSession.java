@@ -1232,6 +1232,38 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
+    /** The poms (wire URIs) this session's lemminx-maven was told to leave out of its workspace (review 2, E3). */
+    private final java.util.Set<String> leftOutOfWorkspace = ConcurrentHashMap.newKeySet();
+
+    /**
+     * Takes {@code uris} (pom files) out of the server's workspace: a {@code workspace/didChangeWorkspaceFolders}
+     * that removes each file, which lemminx-maven applies to every workspace pom under the removed path — so to that
+     * one pom. Returns the ones not already out. They stay out for this session: lemminx-maven never rebuilds a
+     * closed pom, so one put back would bring its failed build back with it.
+     */
+    List<String> leaveOutOfWorkspace(List<String> uris) {
+        List<String> fresh = uris.stream().filter(leftOutOfWorkspace::add).toList();
+        if (!fresh.isEmpty() && ready()) {
+            try {
+                server().getWorkspaceService()
+                        .didChangeWorkspaceFolders(new org.eclipse.lsp4j.DidChangeWorkspaceFoldersParams(
+                                new org.eclipse.lsp4j.WorkspaceFoldersChangeEvent(
+                                        List.of(),
+                                        fresh.stream()
+                                                .map(u -> new WorkspaceFolder(u, u.substring(u.lastIndexOf('/') + 1)))
+                                                .toList())));
+            } catch (RuntimeException e) {
+                LOG.log(Level.FINE, "didChangeWorkspaceFolders failed", e);
+            }
+        }
+        return fresh;
+    }
+
+    /** Whether {@code uri} (a wire URI) was left out of this session's workspace ({@link #leaveOutOfWorkspace}). */
+    boolean leftOutOfWorkspace(String uri) {
+        return leftOutOfWorkspace.contains(uri);
+    }
+
     /** lemminx's {@code xml} object for this session's root ({@link XmlServerSettings#section}; null: none yet). */
     private volatile java.util.@Nullable Map<String, Object> xmlSettings;
 

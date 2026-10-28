@@ -55,6 +55,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Format Document follows the file's save rules.** Format Document and Format Selection now send the file's
+  EditorConfig `trim_trailing_whitespace` and `insert_final_newline` (or the project's) to the language server, so a
+  formatted file already looks the way saving writes it. lemminx adds the final newline only when asked. Tab re-indent
+  and on-type formatting leave them out.
+- **One malformed pom no longer stops Maven dependency completion.** lemminx-maven kept a malformed pom in its
+  workspace with no project, and every groupId/artifactId/version completion after the first threw on it, leaving
+  only `<!--` and `<![CDATA[`. Editora now takes each malformed pom out of the server's workspace, asks again, and
+  names the file in the status bar. Saving that pom well-formed restarts the Maven server, which takes it back.
+
 - **Language servers get the whole file when it opens.** Python, Java and XML files reached their server empty and
   were then filled in, so an XML file flashed a false "Premature end of file" error, the file was analysed twice,
   and quick fixes and generated schemas used a four-space indent in a two-space file. The indent a server is told

@@ -956,6 +956,31 @@ public final class LspManager {
         return s != null && s.questionOpen();
     }
 
+    /**
+     * Takes {@code poms} out of the workspace of the Maven pom server serving {@code file} (review 2, E3: one
+     * malformed pom in its workspace empties every coordinate completion). Returns the poms newly left out; none
+     * when {@code file} is not on the Maven server.
+     */
+    public List<Path> leaveOutOfMavenWorkspace(Path file, List<Path> poms) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || !LspServerRegistry.MAVEN_POM_SERVER_ID.equals(s.serverId())) {
+            return List.of();
+        }
+        Map<String, Path> byUri = new java.util.LinkedHashMap<>();
+        poms.forEach(p -> byUri.put(s.uris().toWire(uri(p)), p));
+        return s.leaveOutOfWorkspace(List.copyOf(byUri.keySet())).stream()
+                .map(byUri::get)
+                .toList();
+    }
+
+    /** Whether {@code pom} was left out of its Maven pom server's workspace ({@link #leaveOutOfMavenWorkspace}). */
+    public boolean leftOutOfMavenWorkspace(Path pom) {
+        LanguageServerSession s = sessionFor(pom);
+        return s != null
+                && LspServerRegistry.MAVEN_POM_SERVER_ID.equals(s.serverId())
+                && s.leftOutOfWorkspace(s.uris().toWire(uri(pom)));
+    }
+
     /** Restarts {@code serverId} (dispose + drop its cached sessions) so the next {@code openDocument}
      *  re-initializes it — e.g. to reload jdtls with the java-debug bundle. The controller re-opens the
      *  affected buffers afterwards. */
