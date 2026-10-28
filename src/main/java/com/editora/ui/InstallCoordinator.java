@@ -233,34 +233,81 @@ final class InstallCoordinator {
                 onResult.accept(false);
                 return;
             }
-            installingServers.add(serverId);
-            List<String> replaced = runningServersOf(steps);
-            stopWhileReplaced(replaced);
-            host.setStatus(tr("status.install.installing", serverName(serverId)));
-            service.install(
-                    steps, ops.configDir(), id -> host.setStatus(tr("status.install.installingTool", id)), result -> {
-                        installingServers.remove(serverId);
-                        replaced.forEach(com.editora.lsp.LspManager::releaseAfterInstall);
-                        if (result.ok()) {
-                            if (result.installedCommand() != null) {
-                                applyServerCommand(host.settings(), serverId, result.installedCommand());
-                            }
-                            ops.reapplyToolSupport();
-                            String fellBack = result.message();
-                            host.setStatus(
-                                    fellBack == null || fellBack.isBlank()
-                                            ? tr("status.install.done", serverName(serverId))
-                                            : tr("status.install.javaFallback", serverName(serverId), fellBack));
-                        } else {
-                            if (!replaced.isEmpty()) {
-                                ops.reapplyToolSupport(); // a failed install leaves the old copy: run it again
-                            }
-                            host.setStatus(tr("status.install.failed", serverName(serverId)));
-                            alert(Alert.AlertType.ERROR, result.message());
-                        }
-                        onResult.accept(result.ok());
-                    });
+            com.editora.install.VersionFloor node = steps.stream()
+                    .map(s -> InstallCatalog.nodeFloor(s.id()))
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst()
+                    .orElse(null);
+            if (node == null) {
+                runServerInstall(serverId, steps, onResult);
+                return;
+            }
+            // npm only warns about a Node.js older than the package's engines, and the server then fails at start
+            // with nothing but "keeps crashing" (Bash review A6): refuse before anything is installed.
+            service.detectNodeVersion(version -> {
+                if (!node.metBy(version)) {
+                    String said = tr("status.install.nodeTooOld", serverName(serverId), node.minimum(), version);
+                    host.setStatus(said);
+                    alert(Alert.AlertType.WARNING, said);
+                    onResult.accept(false);
+                    return;
+                }
+                runServerInstall(serverId, steps, onResult);
+            });
         });
+    }
+
+    /** The install {@link #installServer} starts once its prerequisites are there. */
+    private void runServerInstall(String serverId, List<Step> steps, java.util.function.Consumer<Boolean> onResult) {
+        installingServers.add(serverId);
+        List<String> replaced = runningServersOf(steps);
+        stopWhileReplaced(replaced);
+        host.setStatus(tr("status.install.installing", serverName(serverId)));
+        service.install(
+                steps, ops.configDir(), id -> host.setStatus(tr("status.install.installingTool", id)), result -> {
+                    installingServers.remove(serverId);
+                    replaced.forEach(com.editora.lsp.LspManager::releaseAfterInstall);
+                    if (result.ok()) {
+                        if (result.installedCommand() != null) {
+                            applyServerCommand(host.settings(), serverId, result.installedCommand());
+                        }
+                        ops.reapplyToolSupport();
+                        String fellBack = result.message();
+                        host.setStatus(
+                                fellBack == null || fellBack.isBlank()
+                                        ? tr("status.install.done", serverName(serverId))
+                                        : tr("status.install.javaFallback", serverName(serverId), fellBack));
+                        List<String> tools = toolsAfterServer(serverId);
+                        if (!tools.isEmpty()) {
+                            // the server alone lints and formats nothing: ShellCheck and shfmt come with it (C8)
+                            installTools(tools, false, toolsOk -> onResult.accept(true));
+                            return;
+                        }
+                    } else {
+                        if (!replaced.isEmpty()) {
+                            ops.reapplyToolSupport(); // a failed install leaves the old copy: run it again
+                        }
+                        host.setStatus(tr("status.install.failed", serverName(serverId)));
+                        alert(Alert.AlertType.ERROR, result.message());
+                    }
+                    onResult.accept(result.ok());
+                });
+    }
+
+    /**
+     * The pinned tools an installed {@code serverId} needs and this machine lacks: ShellCheck and shfmt for the Bash
+     * server, which without them shows no problems and formats nothing (Bash review C8/A13). A tool whose command is
+     * blank is switched off and not wanted.
+     */
+    List<String> toolsAfterServer(String serverId) {
+        if (!"bash".equals(serverId)) {
+            return List.of();
+        }
+        com.editora.lsp.BashIdeConfig bash = LspCoordinator.userBashIde(host.settings(), ops.configDir());
+        return InstallCatalog.PINNED_TOOL_IDS.stream()
+                .filter(id -> !("shfmt".equals(id) ? bash.effectiveShfmt() : bash.effectiveShellcheck()).isBlank())
+                .filter(id -> !ops.toolAvailable(id))
+                .toList();
     }
 
     /**

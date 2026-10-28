@@ -80,4 +80,12 @@ class LatestVersionsTest {
         assertFalse(LatestVersions.isNewer(null, "1.0.0"));
         assertFalse(LatestVersions.isNewer("1.0.0", "development build"));
     }
+
+    /** Bash review A6: the Bash server is pinned now, so Check for Newer Versions no longer offers npm's latest. */
+    @Test
+    void thePinnedBashServerIsNotLookedUp() {
+        assertTrue(LatestVersions.forServer("bash").isEmpty());
+        assertEquals(
+                Registry.NPM, LatestVersions.forServer("yaml").orElseThrow().registry());
+    }
 }

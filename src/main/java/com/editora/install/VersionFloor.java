@@ -20,7 +20,18 @@ public enum VersionFloor {
     /** HTTP Client JavaScript handlers: the permission model behind {@code --experimental-permission}. */
     NODE_HTTP_SCRIPTS("node", "20"),
     /** HTTP Client JavaScript handlers with the stable {@code --permission} flag. */
-    NODE_HTTP_PERMISSION("node", "22.13");
+    NODE_HTTP_PERMISSION("node", "22.13"),
+    /**
+     * The Node.js that runs the bash-language-server Editora installs ({@code engines.node} of 5.8): its install
+     * refuses an older one (Bash review A6).
+     */
+    NODE_BASH_LS("node", "20"),
+    /**
+     * The oldest bash-language-server Editora's shell support is tested with: 5.7 fixed an out-of-memory crash on
+     * cyclic symlinks in background analysis and bounded ShellCheck runs. An older copy found on the machine gets a
+     * Doctor warning with Update (Bash review D4).
+     */
+    BASH_LANGUAGE_SERVER("bash-language-server", "5.7");
 
     private final String tool;
     private final String minimum;
