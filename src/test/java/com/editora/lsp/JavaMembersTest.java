@@ -514,11 +514,6 @@ class JavaMembersTest {
         assertEquals(text.indexOf("Sink<>"), JavaMembers.anonymousMethod(text, 0, text.indexOf("int g"))[0]);
     }
 
-    /**
-     * A comment right above an anonymous method's header is the method's: a {@code //} line with no blank line before
-     * the header, and a Javadoc with a line comment after it; a trailing comment or one after a blank line is not
-     * (thirteenth review BK6, EM2).
-     */
     /** A {@code try (… new X(…))} or {@code if (… new X())} block is no anonymous class (fourteenth check RJ3). */
     @Test
     void aBlockAfterACreationIsNoAnonymousHeader() {
@@ -529,6 +524,11 @@ class JavaMembersTest {
         assertNull(JavaMembers.anonymousMethod(text, 0, text.indexOf("Object()") + 2), "if");
     }
 
+    /**
+     * A comment right above an anonymous method's header is the method's: a {@code //} line with no blank line before
+     * the header, and a Javadoc with a line comment after it; a trailing comment or one after a blank line is not
+     * (thirteenth review BK6, EM2).
+     */
     @Test
     void aCommentAboveAnAnonymousMethodIsTheMethods() {
         String text = "new Comparator<>() {\n    int seen; // after a field\n    // C1 right above\n"

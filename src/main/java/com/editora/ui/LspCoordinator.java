@@ -3729,7 +3729,9 @@ final class LspCoordinator {
                                 java.util.Objects.requireNonNullElse(buildFolder(root, e.getKey()), root),
                                 e.getValue())); // CO2, CL2
                 checkModulePoms(root);
-                problems.forEach((at, listed) -> modelError(at, listed)); // its pom's model failed (CK2, CJ2)
+                if (lspManager.startupError(serverId, root) == null) { // else the whole import's, said below
+                    problems.forEach((at, listed) -> modelError(at, listed)); // its pom's model failed (CK2, CJ2)
+                }
                 host.forEachBuffer(
                         b -> { // a source file of a pom-packaging module is never checked (fourteenth CJ3)
                             Path module = JavaImportCheck.pomPackagingModule(root, lspPath(b));
@@ -3848,9 +3850,7 @@ final class LspCoordinator {
             if (root != null && importFailedUnder(root)) {
                 // The build file of a project that did not import was saved, presumably fixed: import it again,
                 // as a saved pom.xml re-syncs a project that did (fourth review CT1).
-                forgetImport(root);
-                restartJavaServer(path);
-                host.setStatus(tr("status.lsp.projectReimporting"));
+                reimport(path, root);
             } else if (root != null
                     && !LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))
                     && !lspManager.watchesModelFile(path)) {
@@ -5047,8 +5047,7 @@ final class LspCoordinator {
         if (failed && lspManager.hasJavaSession(path)) {
             // An import that threw made no Java project, so java/projectConfigurationUpdate updated nothing:
             // Problems emptied and no file was checked again (third review CT1). Start the server over instead.
-            restartJavaServer(path);
-            host.setStatus(tr("status.lsp.projectReimporting"));
+            reimport(path, root);
             return;
         }
         if (lspManager.reloadProjectConfiguration(path)) {
@@ -5084,7 +5083,10 @@ final class LspCoordinator {
      */
     void cleanJavaWorkspace() {
         EditorBuffer b = host.activeBuffer();
-        Path path = b == null ? null : lspPath(b);
+        cleanJavaWorkspace(b == null ? null : lspPath(b));
+    }
+
+    private void cleanJavaWorkspace(@Nullable Path path) {
         if (path == null || !lspManager.hasJavaSession(path)) {
             host.setStatus(tr("status.lsp.unavailable"));
             return;
@@ -5109,6 +5111,24 @@ final class LspCoordinator {
             // tab, nothing started the server again (third review CT5).
             reopenNow(java);
         });
+    }
+
+    /**
+     * Imports a failed project at {@code root} again: a pom whose model failed left a project without a Java nature in
+     * jdtls's workspace, which a restart reuses, so the fixed pom still read "did not import" until Clean Java
+     * Workspace; that project's workspace is cleaned instead (fourteenth check CJ7).
+     */
+    private void reimport(Path path, @Nullable Path root) {
+        boolean model = root != null
+                && (JavaImportCheck.modelErrorUnder(problems, root)
+                        || lspManager.startupError(LspServerRegistry.JAVA_SERVER_ID, root) != null);
+        forgetImport(root);
+        if (model) {
+            cleanJavaWorkspace(path);
+        } else {
+            restartJavaServer(path);
+            host.setStatus(tr("status.lsp.projectReimporting"));
+        }
     }
 
     /** Restarts {@code path}'s Java server in this window, its open Java files reopened on the new one. */
@@ -6107,41 +6127,13 @@ final class LspCoordinator {
             InstantiatedType.resolve(lspManager, ask, text, anonymous[0], line, line, root -> openSuperType(ask, root));
             return;
         }
-        int[] name = lineColumn(text, anonymous[1]);
-        int[] type = lineColumn(text, anonymous[0]);
-        lspManager.superMethodAt(
-                ask.path(),
-                ask.libraryUri(),
-                name[0],
-                name[1],
-                linked -> {
-                    if (!ask.current().getAsBoolean()) {
-                        return;
-                    }
-                    if (!linked.isEmpty()) {
-                        openOneOrPick(ask, labelled(linked), "picker.superMethod.title", "status.lsp.noSuperMethod");
-                        return;
-                    }
-                    var method = new com.editora.lsp.MemberSpan(
-                            com.editora.lsp.JavaMembers.signatureAt(text, anonymous[1]),
-                            "method",
-                            name[0],
-                            name[0],
-                            name[0],
-                            name[1],
-                            List.of());
-                    var anonymousClass = new com.editora.lsp.MemberSpan(
-                            "new {...}", "class", type[0], name[0], type[0], type[1], List.of(method));
-                    new SuperMethodWalk(
-                                    lspManager,
-                                    ask,
-                                    text,
-                                    method,
-                                    this::openText,
-                                    found -> openOneOrPick(
-                                            ask, found, "picker.superMethod.title", "status.lsp.noSuperMethod"))
-                            .start(anonymousClass);
-                },
+        SuperMethodWalk.anonymousMethod(
+                lspManager,
+                ask,
+                text,
+                anonymous,
+                this::openText,
+                found -> openOneOrPick(ask, found, "picker.superMethod.title", "status.lsp.noSuperMethod"),
                 why -> navigationFailed(ask, why));
     }
 
@@ -6173,7 +6165,7 @@ final class LspCoordinator {
         }
     }
 
-    private static List<SuperTarget> labelled(List<LspManager.Target> targets) {
+    static List<SuperTarget> labelled(List<LspManager.Target> targets) {
         return targets.stream()
                 .map(t -> new SuperTarget(t, implementationLabel(t)))
                 .toList();

@@ -302,8 +302,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exist, or `includeBuild`s one, is a failed import again; a pom with a dependency missing its `<version>` or
   `<artifactId>`, a parent Maven cannot resolve, or `<packaging>pom</packaging>` over Java sources says the project
   (or that module) did not import, naming the cause, rather than "Loaded and ready" over files that were never
-  checked; a build that failed in one folder of a project is named with that folder; and a Gradle dependency that
-  cannot be fetched is a build with problems, not a failed import. In a tree of
+  checked; once such a pom is fixed and saved, the project's workspace is cleaned so it imports again (a restart
+  reused the broken project); a build that failed in one folder of a project is named with that folder; and a Gradle
+  dependency that cannot be fetched is a build with problems, not a failed import. In a tree of
   more than 2,000 folders, a module's pom.xml past the watched ones still reaches jdtls when saved or seen in the
   Project panel, and build output folders (`target`, `build`) no longer use up the build-file watcher's share.
 - **Focus and paste.** Window ▸ Buffer: Next and the Switcher onto the Welcome, Doctor or an image tab focus that page;

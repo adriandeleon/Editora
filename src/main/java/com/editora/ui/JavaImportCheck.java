@@ -54,6 +54,14 @@ final class JavaImportCheck {
         return null;
     }
 
+    /** Whether a pom.xml under {@code root} has m2e's "Project build error" in {@code problems}. */
+    static boolean modelErrorUnder(Map<Path, List<LspDiagnostic>> problems, Path root) {
+        Path r = root.toAbsolutePath().normalize();
+        return problems.entrySet().stream()
+                .anyMatch(e -> e.getKey().toAbsolutePath().normalize().startsWith(r)
+                        && modelError(e.getKey(), e.getValue()) != null);
+    }
+
     /** As above for {@code diagnostics} of {@code file}, when it is a pom.xml: its folder and the error's line. */
     static @Nullable Reason modelError(Path file, List<LspDiagnostic> diagnostics) {
         Path at = file.toAbsolutePath().normalize();

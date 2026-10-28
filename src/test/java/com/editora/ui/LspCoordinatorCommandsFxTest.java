@@ -2218,6 +2218,39 @@ class LspCoordinatorCommandsFxTest {
                 FxTestSupport.callOnFx(() -> FxTestSupport.field(app.problemCounter(), "note")));
     }
 
+    /**
+     * The fixed pom of an import whose model failed, saved, cleans the project's workspace: a plain restart reused the
+     * project jdtls had stored without a Java nature, and the import still failed (fourteenth check CJ7).
+     */
+    @Test
+    void aFixedModelErrorCleansTheWorkspace() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project/>");
+        java.nio.file.Files.createDirectories(root.resolve("src/main/java"));
+        EditorBuffer b = fx.open("src/main/java/Main.java", "class Main {}\n");
+        var model = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.ERROR,
+                "Project build error: 'dependencies.dependency.version' for g:a:jar is missing.",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("pom.xml"), List.of(model)));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
+        EditorBuffer pom = FxTestSupport.callOnFx(() -> {
+            EditorBuffer p = new EditorBuffer();
+            p.setPath(root.resolve("pom.xml"));
+            p.setContent("<project/>");
+            return p;
+        });
+        FxTestSupport.runOnFx(() -> fx.host.active = b); // the server's file, as a pom tab reaches it
+        fx.host.statuses.clear();
+        fx.run(() -> fx.coordinator.notifyDocumentSaved(pom, pom.getContent()));
+        assertTrue(fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")), fx.host.statuses.toString());
+    }
+
     /** A source file of a pom-packaging module is never compiled, and says so (fourteenth check CJ3). */
     @Test
     void aPomPackagingModulesSourceIsNotChecked() throws Exception {
