@@ -604,18 +604,14 @@ final class LspCoordinator {
                 activeGated[0] |= buffer == active;
                 return;
             }
-            boolean invalidated = false;
             for (var asked : due.entrySet()) {
                 String kind = asked.getKey();
                 if (!servedByAny(path, asked.getValue())) {
                     continue;
                 }
-                if (!invalidated) {
-                    // The server's answers changed without the document changing: one already on its way
-                    // may predate that, so it must not stand in for the request made here.
-                    lspManager.invalidateRequests(path);
-                    invalidated = true;
-                }
+                // The server's answers of this kind changed without the document changing: one already on its way
+                // may predate that, so it must not stand in for the request made here. Only this kind (B21).
+                lspManager.invalidateRequests(path, kind);
                 if (!refreshAppliesTo(kind, buffer == active)) {
                     refreshWhenShown.add(buffer);
                     continue;

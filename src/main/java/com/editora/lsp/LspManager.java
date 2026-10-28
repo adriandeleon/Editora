@@ -319,6 +319,28 @@ public final class LspManager {
     private static final List<String> REFRESHABLE_KINDS =
             List.of("diagnostic", "documentSymbol", "foldingRange", "inlayHint", "semanticTokens");
 
+    /**
+     * As {@link #invalidateRequests(Path)}, for one {@code workspace/…/refresh} kind only ({@code diagnostics},
+     * {@code semanticTokens}, {@code inlayHints}, {@code foldingRanges}; {@code codeLenses} has nothing cached). Only
+     * that kind is asked again, so cancelling the others dropped their answers until the next edit (review 3, B21).
+     */
+    public void invalidateRequests(Path file, String refreshKind) {
+        String kind = switch (refreshKind) {
+            case "diagnostics" -> "diagnostic";
+            case "semanticTokens" -> "semanticTokens";
+            case "inlayHints" -> "inlayHint";
+            case "foldingRanges" -> "foldingRange";
+            default -> null;
+        };
+        if (kind != null && file != null && servable(file)) {
+            String uri = uri(file);
+            latest.cancel(uri, kind);
+            if (kind.equals("semanticTokens")) {
+                wholeDocumentTokens.remove(uri);
+            }
+        }
+    }
+
     /** Unanswered deduplicated requests — package-private for the bounded-traffic test. */
     int latestRequestsInFlight() {
         return latest.inFlight();
