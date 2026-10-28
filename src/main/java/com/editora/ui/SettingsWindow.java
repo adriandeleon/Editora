@@ -3683,6 +3683,18 @@ public class SettingsWindow {
             field.setText(get.apply(st));
             showProblem(field, null);
         });
+        field.textProperty().addListener((o, was, now) -> { // the whole value as its tooltip (C28)
+            if (!field.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER)) {
+                showProblem(field, null);
+            }
+        });
+    }
+
+    /** Widens text row {@code key}'s field: a list the usual 220 px shows only the start of (XML review 3, C28). */
+    void widenField(String key, double width) {
+        if (settingControls.get(key) instanceof TextField field) {
+            field.setPrefWidth(width);
+        }
     }
 
     /** The field message for a typed ruler list that cannot be read, or null. */
@@ -3704,7 +3716,15 @@ public class SettingsWindow {
     /** Marks {@code field} as holding text that is not kept ({@code why} != null), with the reason, or clears it. */
     private static void showProblem(TextField field, @Nullable String why) {
         field.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, why != null);
-        field.setTooltip(why == null ? null : new Tooltip(why));
+        // No problem: a value too long to read in the field is the tooltip, whole (XML/pom review 3, C28)
+        String text = field.getText();
+        String tip = why != null ? why : text != null && text.length() > 24 ? text : null;
+        Tooltip tooltip = tip == null ? null : new Tooltip(tip);
+        if (tooltip != null) {
+            tooltip.setWrapText(true);
+            tooltip.setMaxWidth(480);
+        }
+        field.setTooltip(tooltip);
         field.setAccessibleHelp(why);
     }
 
