@@ -19,13 +19,27 @@ import static com.editora.i18n.Messages.tr;
  * (XML review 2 C10). The result is applied on the FX thread only when the tab is still the active one and its
  * text has not changed meanwhile, and the caret goes back to the same character it was on rather than to the end
  * of the reformatted text (C4).
+ *
+ * <p>One format at a time (XML/pom review 3, C29): a second Format Document while one runs says so, where it used to
+ * start another that then reported the first one's edit as "the file changed". And in large-file mode, which has no
+ * undo and redraws slowly, a format that more than doubles the line count (60,000 lines into 480,000) asks first.
  */
 final class XmlFormatCoordinator {
 
     private final PythonFormatCoordinator.Host host;
 
+    /** The buffer being formatted off the FX thread, or null. */
+    private @Nullable EditorBuffer running;
+
+    /** Asks whether to format a large-file buffer from {@code lines[0]} lines into {@code lines[1]}; a test seam. */
+    private java.util.function.BiPredicate<EditorBuffer, long[]> askGrowth = XmlFormatCoordinator::askGrowth;
+
     XmlFormatCoordinator(PythonFormatCoordinator.Host host) {
         this.host = host;
+    }
+
+    void setAskGrowthForTest(java.util.function.BiPredicate<EditorBuffer, long[]> ask) {
+        this.askGrowth = ask;
     }
 
     /** Formats the active buffer when it is XML a server will not format; true when it took the job. */
@@ -42,14 +56,29 @@ final class XmlFormatCoordinator {
             host.setStatus(tr("status.lsp.formatUnavailable"));
             return true;
         }
+        if (running != null) {
+            host.setStatus(tr("status.xml.formatRunning"));
+            return true;
+        }
         String before = buffer.getArea().getText();
         String indent = buffer.indentUnit();
         int caret = buffer.getArea().getCaretPosition();
+        running = buffer;
         host.setStatus(tr("status.lsp.formatting"));
         Thread.ofVirtual().name("xml-format").start(() -> {
-            String after = format(before, indent);
-            int newCaret = after == null ? caret : caretAfter(before, after, caret);
-            Platform.runLater(() -> apply(buffer, before, after, newCaret));
+            String after = null;
+            int newCaret = caret;
+            try {
+                after = format(before, indent);
+                newCaret = after == null ? caret : caretAfter(before, after, caret);
+            } finally {
+                String formatted = after;
+                int at = newCaret;
+                Platform.runLater(() -> {
+                    running = null;
+                    apply(buffer, before, formatted, at);
+                });
+            }
         });
         return true;
     }
@@ -68,6 +97,11 @@ final class XmlFormatCoordinator {
             host.setStatus(tr("status.lsp.formatNoChange"));
             return;
         }
+        long[] lines = {lines(before), lines(after)};
+        if (buffer.isLargeFile() && lines[1] > 2 * lines[0] && !askGrowth.test(buffer, lines)) {
+            host.setStatus(tr("status.xml.formatSkipped"));
+            return;
+        }
         if (!NoUndoGuard.allow(buffer, tr("noUndo.op.format"))) {
             return;
         }
@@ -75,6 +109,32 @@ final class XmlFormatCoordinator {
         buffer.getArea().moveTo(Math.min(caret, buffer.getArea().getLength()));
         buffer.getArea().requestFollowCaret();
         host.setStatus(tr("status.xml.formatted"));
+    }
+
+    private static long lines(String text) {
+        return text.chars().filter(ch -> ch == '\n').count() + 1;
+    }
+
+    /** The question before a large-file format that multiplies the line count; Cancel is the default. */
+    private static boolean askGrowth(EditorBuffer buffer, long[] lines) {
+        var format = new javafx.scene.control.ButtonType(
+                tr("dialog.xml.formatGrowth.accept"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        var cancel = javafx.scene.control.ButtonType.CANCEL;
+        var alert = Dialogs.styled(new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.CONFIRMATION,
+                tr("dialog.xml.formatGrowth.body", String.format("%,d", lines[0]), String.format("%,d", lines[1])),
+                format,
+                cancel));
+        var scene = buffer.getArea().getScene();
+        if (scene != null && scene.getWindow() != null) {
+            alert.initOwner(scene.getWindow());
+        }
+        alert.setTitle(tr("noUndo.op.format"));
+        alert.setHeaderText(tr(
+                "dialog.xml.formatGrowth.header", java.util.Objects.requireNonNullElse(buffer.getDisplayName(), "")));
+        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(format)).setDefaultButton(false);
+        ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(cancel)).setDefaultButton(true);
+        return alert.showAndWait().orElse(cancel) == format;
     }
 
     /** {@code text} formatted with {@code indent} per level, or null when it does not nest properly. */

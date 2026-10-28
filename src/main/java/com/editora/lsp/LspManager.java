@@ -4702,9 +4702,29 @@ public final class LspManager {
             int character,
             Consumer<List<Target>> cb) {
         // XML: the grammar declaration instead of the element's own other tag, else the linked schema (B5, B10).
-        LocationRequest request =
-                s != null && XmlServer.isXml(s.serverId()) ? XmlServer::definition : LanguageServerSession::definition;
-        requestLocations(s, documentUri, line, character, request, cb, null);
+        boolean xml = s != null && XmlServer.isXml(s.serverId());
+        LocationRequest request = xml ? XmlServer::definition : LanguageServerSession::definition;
+        lastMissingInclude = null;
+        Consumer<List<Target>> answer = xml && s != null && documentUri != null
+                ? notingMissingInclude(s, documentUri, new Position(line, character), cb)
+                : cb;
+        requestLocations(s, documentUri, line, character, request, answer, null);
+    }
+
+    /** {@code cb}, after noting when nothing was found on an include href that names no file (C26). */
+    private Consumer<List<Target>> notingMissingInclude(
+            LanguageServerSession s, String documentUri, Position pos, Consumer<List<Target>> cb) {
+        return targets -> {
+            lastMissingInclude = targets.isEmpty() ? XmlServer.missingInclude(s, documentUri, pos) : null;
+            cb.accept(targets);
+        };
+    }
+
+    /** The file the last Go to Definition's include href named when it does not exist, or null (C26). */
+    private volatile @Nullable String lastMissingInclude;
+
+    public @Nullable String lastMissingInclude() {
+        return lastMissingInclude;
     }
 
     private void requestLocations(

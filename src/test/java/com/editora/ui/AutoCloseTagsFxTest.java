@@ -154,7 +154,11 @@ class AutoCloseTagsFxTest {
             CodeArea area = FxTestSupport.field(b, "area");
             area.moveTo(caret);
             for (char ch : keys.toCharArray()) {
-                typeKey(area, String.valueOf(ch));
+                if (ch == '\b') {
+                    backspace(area);
+                } else {
+                    typeKey(area, String.valueOf(ch));
+                }
             }
             String text = b.getContent();
             int at = area.getCaretPosition();
@@ -197,5 +201,80 @@ class AutoCloseTagsFxTest {
         EditorBuffer typed = renamingBuffer("xml", "");
         FxTestSupport.runOnFx(() -> typed.typeString("<note><to>x</to></note>"));
         assertEquals("<note><to>x</to></note>", FxTestSupport.callOnFx(typed::getContent));
+    }
+
+    /** A Backspace key press, as the keyboard sends it ({@code \b} in {@link #typeAt}'s keys). */
+    private static void backspace(CodeArea area) {
+        javafx.event.Event.fireEvent(
+                area,
+                new javafx.scene.input.KeyEvent(
+                        javafx.scene.input.KeyEvent.KEY_PRESSED,
+                        "",
+                        "",
+                        javafx.scene.input.KeyCode.BACK_SPACE,
+                        false,
+                        false,
+                        false,
+                        false));
+    }
+
+    /**
+     * XML/pom review 3, C22: Backspace during a join deleted the closer's own characters, and auto-rename mirrored
+     * that onto the start tag ({@code </it} + Backspace×2 gave {@code <em>text</em>}; {@code </} + Backspace turned
+     * the end tag into a start tag). Now it takes back the user's last character only.
+     */
+    @Test
+    void backspaceDuringAJoinTakesBackOnlyWhatWasTyped() throws Exception {
+        for (String lang : List.of("xml", "html")) {
+            assertEquals(
+                    "<item>text</i|</item>", typeAt(renamingBuffer(lang, "<item>text</item>"), 10, "</it\b"), lang);
+            assertEquals(
+                    "<item>text</|</item>", typeAt(renamingBuffer(lang, "<item>text</item>"), 10, "</it\b\b"), lang);
+            assertEquals("<item>t<|</item>", typeAt(renamingBuffer(lang, "<item>t</item>"), 7, "</\b"), lang);
+            // typing on after the Backspace joins the closer again: it is closed once
+            assertEquals("<item>t</item>|", typeAt(renamingBuffer(lang, "<item>t</item>"), 7, "</it\btem>"), lang);
+            assertEquals("<item>t</item>|", typeAt(renamingBuffer(lang, "<item>t</item>"), 7, "</\b/item>"), lang);
+            assertEquals(
+                    "<item>t</it>|</item>",
+                    typeAt(renamingBuffer(lang, "<item>t</item>"), 7, "</it\bt>"),
+                    lang + ": a '>' before the name is complete is the user's own tag");
+        }
+        assertEquals("<span>t<|</span>", typeAt(renamingBuffer("html", "<span>t</span>"), 7, "</\b"));
+    }
+
+    /** C22: after a space before the '>', the '>' typed went in as well: {@code <item>text</item >>}. */
+    @Test
+    void aSpaceBeforeTheGreaterThanStillStepsOverIt() throws Exception {
+        for (String lang : List.of("xml", "html")) {
+            assertEquals(
+                    "<item>text</item >|", typeAt(renamingBuffer(lang, "<item>text</item>"), 10, "</item >"), lang);
+            assertEquals(
+                    "<item>text</item>|",
+                    typeAt(renamingBuffer(lang, "<item>text</item>"), 10, "</item \b>"),
+                    lang + ": the space taken back");
+        }
+    }
+
+    /** C22: HTML names are case-insensitive: {@code <DIV>t</DIV>} + {@code </div>} gave {@code </div></DIV>}. */
+    @Test
+    void anHtmlCloserStepsOverInAnyCase() throws Exception {
+        assertEquals("<DIV>t</DIV>|", typeAt(renamingBuffer("html", "<DIV>t</DIV>"), 6, "</div>"));
+        assertEquals(
+                "<Item>t</item>|</Item>", typeAt(renamingBuffer("xml", "<Item>t</Item>"), 7, "</item>"), "XML is not");
+    }
+
+    /** C22: a join left pending survived a caret move: back at the spot, typing gave {@code </x</item>}. */
+    @Test
+    void movingTheCaretDropsAPendingJoin() throws Exception {
+        EditorBuffer b = renamingBuffer("xml", "<item>t</item>");
+        typeAt(b, 7, "</");
+        String after = FxTestSupport.callOnFx(() -> {
+            CodeArea area = FxTestSupport.field(b, "area");
+            area.moveTo(0);
+            area.moveTo(9);
+            typeKey(area, "x");
+            return b.getContent();
+        });
+        assertEquals("<xitem>t</xitem>", after, "the closer is edited as text (and auto-rename mirrors it)");
     }
 }

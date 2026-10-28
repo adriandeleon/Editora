@@ -5331,7 +5331,7 @@ final class LspCoordinator {
                         return;
                     }
                     if (targets.isEmpty()) {
-                        host.setStatus(tr("status.lsp.noDefinition"));
+                        host.setStatus(XmlLspActions.noDefinition(lspManager.lastMissingInclude()));
                         return;
                     }
                     LspManager.Target t = targets.get(0);
@@ -5484,7 +5484,7 @@ final class LspCoordinator {
                     }
                     if (targets.isEmpty()) {
                         if (noAnswer == null || !noAnswer.getAsBoolean()) {
-                            host.setStatus(tr("status.lsp.noDefinition"));
+                            host.setStatus(XmlLspActions.noDefinition(lspManager.lastMissingInclude()));
                         }
                     } else {
                         LspManager.Target t = targets.get(0);

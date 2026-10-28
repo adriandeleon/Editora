@@ -108,6 +108,17 @@ public final class XmlGrammarBinding {
         return new int[] {line, offset - lineStart};
     }
 
+    /**
+     * A Schematron rule set: rules checked on top of a grammar, not a grammar (XML/pom review 3, C27). Its
+     * {@code xml-model} does not bind the document, so Bind to Grammar… and Generate Grammar… are still offered.
+     */
+    static boolean isSchematron(String href, String schematypens) {
+        String ns = schematypens.trim();
+        return ns.equals("http://purl.oclc.org/dsdl/schematron")
+                || ns.equals("http://www.ascc.net/xml/schematron")
+                || (ns.isEmpty() && href.toLowerCase(java.util.Locale.ROOT).endsWith(".sch"));
+    }
+
     private static String value(Matcher m) {
         return m.group(2) != null ? m.group(2) : m.group(3);
     }
@@ -131,12 +142,18 @@ public final class XmlGrammarBinding {
                         && pi.startsWith("xml-model")
                         && pi.length() > 9
                         && Character.isWhitespace(pi.charAt(9))) {
+                    String href = null;
+                    String typens = "";
                     Matcher m = ATTRIBUTE.matcher(pi);
                     while (m.find()) {
                         if (m.group(1).equals("href")) {
-                            xmlModel = value(m);
-                            break;
+                            href = value(m);
+                        } else if (m.group(1).equals("schematypens")) {
+                            typens = value(m);
                         }
+                    }
+                    if (href != null && !isSchematron(href, typens)) {
+                        xmlModel = href;
                     }
                 }
                 i = end < 0 ? n : end + 2;

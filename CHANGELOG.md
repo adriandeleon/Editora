@@ -55,6 +55,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **XML editing (XML/pom review 3: xmlui).**
+  - XML: Generate Grammar…'s two XSD choices work in untrusted folders. lemminx needed the W3C `xml.xsd`, which it
+    could not download there; Editora now ships it.
+  - Generate Grammar no longer offers "bind with DOCTYPE" on a file that already has a DOCTYPE (an internal subset
+    only), which wrote a second one.
+  - Bind to Grammar… and Generate Grammar… work on a file whose only `xml-model` is a Schematron rule set.
+  - Typing a close tag by hand over the auto-inserted one: Backspace takes back your last character instead of
+    deleting (and renaming) the existing tags, `</item >` no longer leaves a stray `>`, HTML tag names match in any
+    case, and moving the caret drops the pending join.
+  - Go to Definition opens a percent-encoded (`sub%20dir/lib.xsl`) or `file:` include href and an XInclude in the
+    default namespace, and says "missing.xsl does not exist" for a target that is not there.
+  - The built-in formatter says "Already formatting" to a second Format Document instead of a false "file changed",
+    and in large-file mode asks before a format that more than doubles the line count.
+  - Settings ▸ LSP ▸ XML: "Keep text as written in" and "XML catalogs" are wider and show their whole value on hover;
+    the formatting rows no longer repeat "(XML server only)" under their heading.
+
 - **Format Document follows the file's save rules.** Format Document and Format Selection now send the file's
   EditorConfig `trim_trailing_whitespace` and `insert_final_newline` (or the project's) to the language server, so a
   formatted file already looks the way saving writes it. lemminx adds the final newline only when asked. Tab re-indent

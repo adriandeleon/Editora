@@ -40,6 +40,7 @@ public final class XmlBundledSchemas {
     /**
      * Each shipped schema → the namespace it defines and the locations a document names it by: the current
      * {@code xsd/} URLs over http and https, and for 4.0.0 the old {@code maven-v4_0_0.xsd} many poms still carry.
+     * The W3C {@code xml.xsd} is listed by location only: lemminx already maps its namespace.
      */
     static final Map<String, List<String>> SCHEMAS = schemas();
 
@@ -59,6 +60,16 @@ public final class XmlBundledSchemas {
                         "http://maven.apache.org/POM/4.1.0",
                         "http://maven.apache.org/xsd/maven-4.1.0.xsd",
                         "https://maven.apache.org/xsd/maven-4.1.0.xsd"));
+        // The schema for the xml: attributes (xml:lang, xml:space…). XMLSchema.xsd imports it by its http URL, and
+        // lemminx ships only the https copy: with downloads off, its grammar-aware formatting of a generated XSD
+        // failed, and XML: Generate Grammar…'s two XSD fixes resolved to nothing (XML/pom review 3, C21).
+        m.put(
+                "xml.xsd",
+                List.of(
+                        "http://www.w3.org/2001/xml.xsd",
+                        "https://www.w3.org/2001/xml.xsd",
+                        "http://www.w3.org/2009/01/xml.xsd",
+                        "https://www.w3.org/2009/01/xml.xsd"));
         return java.util.Collections.unmodifiableMap(m);
     }
 

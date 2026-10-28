@@ -36,6 +36,23 @@ class XmlGrammarBindingTest {
                 XmlGrammarBinding.existing("<?xml version=\"1.0\"?>\n<?xml-model href=\"addresses.rng\"?>\n<a/>"));
     }
 
+    /** XML/pom review 3, C27: a Schematron rule set is not a grammar, so its xml-model does not bind the file. */
+    @Test
+    void aSchematronXmlModelIsNotABinding() {
+        assertNull(XmlGrammarBinding.existing(
+                "<?xml-model href=\"rules.sch\"" + " schematypens=\"http://purl.oclc.org/dsdl/schematron\"?>\n<doc/>"));
+        assertNull(XmlGrammarBinding.existing(
+                "<?xml-model href='old.sch'" + " schematypens='http://www.ascc.net/xml/schematron'?>\n<doc/>"));
+        assertNull(XmlGrammarBinding.existing("<?xml-model href=\"rules.sch\"?>\n<doc/>"), "named by its extension");
+        assertEquals(
+                new Binding("xml-model", "doc.rng"),
+                XmlGrammarBinding.existing(
+                        "<?xml-model href=\"rules.sch\""
+                                + " schematypens=\"http://purl.oclc.org/dsdl/schematron\"?>\n"
+                                + "<?xml-model href=\"doc.rng\" schematypens=\"http://relaxng.org/ns/structure/1.0\"?>\n<doc/>"),
+                "the grammar beside the rules still binds");
+    }
+
     @Test
     void anUnboundDocumentHasNone() {
         assertNull(XmlGrammarBinding.existing("<config><item>x</item></config>"));

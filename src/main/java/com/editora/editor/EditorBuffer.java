@@ -9034,6 +9034,10 @@ public class EditorBuffer implements TabContent {
             if (caret <= 0 || caret >= a.getLength()) {
                 return;
             }
+            if (autoCloseTags && tagTyping.backspace(a, language)) {
+                e.consume(); // a pending close-tag join takes back the last typed character (C22)
+                return;
+            }
             char prev = a.getText(caret - 1, caret).charAt(0);
             char next = a.getText(caret, caret + 1).charAt(0);
             if (AutoClose.isEmptyPair(prev, next)) {
