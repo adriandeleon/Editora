@@ -79,9 +79,9 @@ class SymbolRankingTest {
                     class Canvas2 {}
                 }
                 """;
-        assertEquals(5, LspCoordinator.typeDeclarationLine(src, "Canvas"));
-        assertEquals(6, LspCoordinator.typeDeclarationLine(src, "Canvas2"));
-        assertEquals(-1, LspCoordinator.typeDeclarationLine(src, "Missing"));
+        assertEquals(5, SymbolRanking.typeDeclarationLine(src, "Canvas"));
+        assertEquals(6, SymbolRanking.typeDeclarationLine(src, "Canvas2"));
+        assertEquals(-1, SymbolRanking.typeDeclarationLine(src, "Missing"));
     }
 
     @Test

@@ -2251,6 +2251,37 @@ class LspCoordinatorCommandsFxTest {
         assertTrue(fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")), fx.host.statuses.toString());
     }
 
+    /**
+     * A pom whose model failed, fixed outside Editora (a git pull), re-imports with a cleaned workspace as a save does:
+     * jdtls's update in place ended at "Loaded and ready" with false errors (fourteenth check CJ8).
+     */
+    @Test
+    void aModelErrorFixedOutsideEditoraCleansTheWorkspace() throws Exception {
+        java.nio.file.Files.writeString(root.resolve("pom.xml"), "<project/>");
+        java.nio.file.Files.createDirectories(root.resolve("src/main/java"));
+        EditorBuffer b = fx.open("src/main/java/Main.java", "class Main {}\n");
+        var model = new com.editora.text.LspDiagnostic(
+                0,
+                0,
+                0,
+                1,
+                com.editora.text.LspDiagnostic.Severity.ERROR,
+                "Project build error: 'dependencies.dependency.version' for g:a:jar is missing.",
+                null,
+                "jdtls");
+        fx.run(() -> fx.coordinator.onDiagnostics(root.resolve("pom.xml"), List.of(model)));
+        fx.run(() -> fx.coordinator.onServerStatus("java", root, "ServiceReady", "ServiceReady"));
+        awaitStatus(tr("status.lsp.readyNotImported", "jdtls"));
+        FxTestSupport.runOnFx(() -> fx.host.active = b);
+        fx.host.statuses.clear();
+        fx.run(() -> fx.coordinator.watchedFilesReloaded(List.of(root.resolve("pom.xml"))));
+        for (int i = 0; i < 100 && !fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")); i++) {
+            Thread.sleep(10); // the Project panel's events are flushed after a pause
+            fx.settle();
+        }
+        assertTrue(fx.host.statuses.contains(tr("status.lsp.javaWorkspaceCleaning")), fx.host.statuses.toString());
+    }
+
     /** A source file of a pom-packaging module is never compiled, and says so (fourteenth check CJ3). */
     @Test
     void aPomPackagingModulesSourceIsNotChecked() throws Exception {

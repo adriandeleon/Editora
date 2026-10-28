@@ -484,6 +484,7 @@ final class LspCoordinator {
         };
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setOnSharedServerEnded(this::sharedServerEnded);
+        lspManager.setOnWatchedFiles(this::buildFilesChanged);
         lspManager.setOnInstallHold(this::installHold);
         lspManager.setWindowFocused(() -> {
             javafx.stage.Window w = host.window();
@@ -6435,7 +6436,7 @@ final class LspCoordinator {
     /** As above; {@code implementations} titles the list "2 implementations of area()" (re-review BN9). */
     private void showInReferencesWindow(
             List<LspManager.Target> targets, @Nullable String symbol, boolean implementations) {
-        List<String> previews = previewLines(targets, f -> {
+        List<String> previews = ReferencePreviews.previewLines(targets, f -> {
             EditorBuffer buffer = bufferForLspPath(f);
             return buffer == null ? null : buffer.getContent();
         });
@@ -6528,30 +6529,6 @@ final class LspCoordinator {
         }
     }
 
-    private static final String[] NO_LINES = new String[0];
-
-    /**
-     * One-line previews for each reference target, splitting <b>each file's content at most once</b> —
-     * previously the per-target {@code previewLine} re-split the whole document for <em>every</em> target, so
-     * 500 references into one open file did 500 full {@code getText()} walks + splits in a single FX pulse
-     * (#471). {@code contentOf} maps a file to its open-buffer content (cheap, FX-safe, reflects unsaved
-     * edits), or {@code null} for a file with no open tab (closed files show just the line number — no disk I/O
-     * on the FX thread). Pure; unit-tested.
-     */
-    static List<String> previewLines(
-            List<LspManager.Target> targets, java.util.function.Function<Path, @Nullable String> contentOf) {
-        java.util.Map<Path, String[]> byFile = new java.util.HashMap<>();
-        List<String> out = new java.util.ArrayList<>(targets.size());
-        for (LspManager.Target t : targets) {
-            String[] lines = byFile.computeIfAbsent(t.file(), f -> {
-                String content = contentOf.apply(f);
-                return content == null ? NO_LINES : content.split("\n", -1);
-            });
-            out.add(t.line() >= 0 && t.line() < lines.length ? lines[t.line()].strip() : "");
-        }
-        return out;
-    }
-
     /**
      * Opens the "Go to Symbol in Workspace" popup ({@code workspace/symbol}) — an incremental picker that
      * re-queries the active file's language server as you type, jumping to the chosen symbol across files.
@@ -6603,33 +6580,12 @@ final class LspCoordinator {
             }
             // jdtls places a class-file type at line 0, its package line: find the declaration (BN7).
             openLibraryDefinition(anchor, target, () -> true, opened -> {
-                int line = typeDeclarationLine(opened.getContent(), match.name());
+                int line = SymbolRanking.typeDeclarationLine(opened.getContent(), match.name());
                 if (line >= 0) {
                     gotoInBuffer(opened, line, -1);
                 }
             });
         }
-    }
-
-    private static final java.util.regex.Pattern TYPE_KEYWORD =
-            java.util.regex.Pattern.compile("\\b(?:class|interface|enum|record|@interface)\\s+(\\w+)\\b");
-
-    /** The line declaring type {@code name} in Java source, or -1; comment lines are skipped. Pure. */
-    static int typeDeclarationLine(String content, String name) {
-        String[] lines = content.split("\n", -1);
-        for (int i = 0; i < lines.length; i++) {
-            String t = lines[i].strip();
-            if (t.startsWith("*") || t.startsWith("/")) {
-                continue;
-            }
-            var m = TYPE_KEYWORD.matcher(lines[i]);
-            while (m.find()) {
-                if (m.group(1).equals(name)) {
-                    return i;
-                }
-            }
-        }
-        return -1;
     }
 
     /** The file or project a Java request goes through when no tab names one: the active file, else the project. */
@@ -9811,6 +9767,28 @@ final class LspCoordinator {
         });
         pendingWatched.clear();
         lspManager.notifyWatchedFiles(batch);
+        buildFilesChanged(batch);
+    }
+
+    /**
+     * Build files changed outside Editora (a git pull, another editor): one whose project failed on its pom's model is
+     * imported again with a cleaned workspace, as a save does; jdtls's own update of it in place left every file with
+     * false errors under "Loaded and ready" (fourteenth check CJ8).
+     */
+    private void buildFilesChanged(List<LspManager.WatchedFile> changes) {
+        for (LspManager.WatchedFile c : changes) {
+            Path name = c.file().getFileName();
+            Path root = name != null && JAVA_BUILD_FILES.contains(name.toString())
+                    ? lspManager.javaSessionRoot(c.file())
+                    : null;
+            if (root != null
+                    && c.kind() != LspManager.WatchedKind.DELETED
+                    && importFailedUnder(root)
+                    && (JavaImportCheck.modelErrorUnder(problems, root)
+                            || lspManager.startupError(LspServerRegistry.JAVA_SERVER_ID, root) != null)) {
+                reimport(c.file(), root);
+            }
+        }
     }
 
     /** Refreshes on typing pause, including a first response invalidated by continued typing before
