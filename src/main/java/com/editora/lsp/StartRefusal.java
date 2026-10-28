@@ -17,7 +17,9 @@ public record StartRefusal(Kind kind, String detail) {
         /** The only TypeScript is the folder's own, and the folder is not trusted. */
         UNTRUSTED_TYPESCRIPT,
         /** No JDK new enough to run the server on ({@code detail}: the major version it needs). */
-        NO_JAVA_FOR_SERVER
+        NO_JAVA_FOR_SERVER,
+        /** The plain XML server's command would load lemminx-maven (XML/pom review 3, A21). */
+        XML_LOADS_MAVEN
     }
 
     public StartRefusal {

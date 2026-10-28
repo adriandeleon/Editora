@@ -111,25 +111,77 @@ class XmlServerInstallTest {
         program(legacyName());
         Path maven = Files.createDirectories(config.resolve(
                 InstallCatalog.serverInstall("maven-pom").orElseThrow().get(0).destSubpath()));
-        for (String jar : List.of("org.eclipse.lemminx-0.31.0.jar", "lemminx-maven-0.12.0.jar")) {
-            Files.writeString(maven.resolve(jar), "");
-        }
-        for (InstallCatalog.JvmLspJar jar : InstallCatalog.LEMMINX_MAVEN_EXTRA_JARS) {
-            Files.writeString(maven.resolve(jar.fileName()), "");
-        }
+        fillBundle(maven);
 
         XmlServerInstall.recordJavaFallback(XmlServerInstall.folder(config), "GLIBC_2.34 not found");
 
         assertNull(XmlServerInstall.ownCopy(config), "the unrunnable copy is removed");
-        String java = InstallCatalog.jvmClasspathCommand(maven, InstallCatalog.LEMMINX_MAIN_CLASS);
+        String java = XmlServerInstall.javaLemminxCommand(maven);
         assertEquals(java, XmlServerInstall.effectiveCommand("", config));
         assertEquals(java, XmlServerInstall.effectiveCommand("lemminx", config));
         assertEquals("/usr/bin/lemminx", XmlServerInstall.effectiveCommand("/usr/bin/lemminx", config));
+        // What an earlier fallback install stored, the bundle's whole folder, runs the plain classpath (review 3 A21)
+        String stored = InstallCatalog.jvmClasspathCommand(maven, InstallCatalog.LEMMINX_MAIN_CLASS);
+        assertEquals(java, XmlServerInstall.effectiveCommand(stored, config));
 
         program(pinnedName()); // a later native install (here: the program reappearing) wins again
         assertEquals(
                 InstallCatalog.quoteCommandPath(
                         config.resolve("plugins/lsp/xml").resolve(pinnedName()).toString()),
                 XmlServerInstall.effectiveCommand("", config));
+    }
+
+    /** A pom server bundle as the install leaves it: lemminx's own jars, lemminx-maven and the Maven libraries. */
+    private static void fillBundle(Path maven) throws IOException {
+        for (String artifact : XmlServerInstall.PLAIN_LEMMINX_ARTIFACTS) {
+            Files.writeString(maven.resolve(artifact + "-2.0.1.jar"), "");
+        }
+        for (String jar :
+                List.of("lemminx-maven-0.12.0.jar", "maven-core-3.9.9.jar", "org.eclipse.sisu.plexus-0.9.0.M3.jar")) {
+            Files.writeString(maven.resolve(jar), "");
+        }
+    }
+
+    /**
+     * The Java lemminx XML falls back to runs lemminx's own jars, named one by one: on the bundle's whole folder
+     * lemminx-maven (a ServiceLoader extension) joined the plain XML server, resolved an untrusted pom and ran its
+     * plugins (XML/pom review 3, A21).
+     */
+    @Test
+    void theJavaLemminxClasspathNamesLemminxsOwnJarsAndNeverTheMavenOnes() throws IOException {
+        Path maven = Files.createDirectories(config.resolve(InstallCatalog.LEMMINX_MAVEN_DIR));
+        assertNull(XmlServerInstall.javaLemminxCommand(maven), "an empty bundle has no Java lemminx");
+        fillBundle(maven);
+        Files.writeString(maven.resolve("org.eclipse.lsp4j.jsonrpc-0.9.jar"), ""); // older: the higher one wins
+
+        java.util.List<Path> jars = XmlServerInstall.plainLemminxJars(maven);
+        assertEquals(XmlServerInstall.PLAIN_LEMMINX_ARTIFACTS.size(), jars.size());
+        assertTrue(jars.contains(maven.resolve("org.eclipse.lsp4j-2.0.1.jar")));
+        assertTrue(jars.contains(maven.resolve("org.eclipse.lsp4j.jsonrpc-2.0.1.jar")));
+        String command = XmlServerInstall.javaLemminxCommand(maven);
+        java.util.List<String> argv = com.editora.run.ProgramArgs.commandLine(command);
+        assertEquals(java.util.List.of("java", "-cp"), argv.subList(0, 2));
+        assertEquals(InstallCatalog.LEMMINX_MAIN_CLASS, argv.get(3));
+        for (String forbidden : java.util.List.of("lemminx-maven", "maven-core", "sisu", "*")) {
+            assertFalse(argv.get(2).contains(forbidden), forbidden + " in " + argv.get(2));
+        }
+        assertFalse(com.editora.lsp.LemminxMavenGuard.loadsLemminxMaven(argv, true));
+        assertTrue(XmlServerInstall.isOwnJavaLemminx(command, config));
+        assertTrue(XmlServerInstall.isOwnJavaLemminx(command, null));
+        assertFalse(XmlServerInstall.isOwnJavaLemminx(
+                "java -cp \"/opt/x/*\" " + InstallCatalog.LEMMINX_MAIN_CLASS, config));
+        assertFalse(XmlServerInstall.isOwnJavaLemminx("lemminx", config));
+
+        Files.delete(maven.resolve("isorelax-2.0.1.jar"));
+        assertNull(XmlServerInstall.javaLemminxCommand(maven), "a jar short: no command that fails on RELAX NG");
+    }
+
+    @Test
+    void aJarIsMatchedByItsArtifactNameAndAVersion() {
+        assertTrue(XmlServerInstall.isJarOf("org.eclipse.lsp4j-0.23.1.jar", "org.eclipse.lsp4j"));
+        assertFalse(XmlServerInstall.isJarOf("org.eclipse.lsp4j.jsonrpc-0.23.1.jar", "org.eclipse.lsp4j"));
+        assertFalse(XmlServerInstall.isJarOf("lemminx-maven-0.12.0.jar", "org.eclipse.lemminx"));
+        assertFalse(XmlServerInstall.isJarOf("guava-33.7.2-jre.txt", "guava"));
+        assertTrue(XmlServerInstall.isJarOf("guava-33.7.2-jre.jar", "guava"));
     }
 }

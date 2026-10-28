@@ -33,14 +33,23 @@ class InstallCoordinatorTest {
                     true, com.editora.install.InstallCatalog.archiveSpec(id).isPresent(), id + ": no archiveSpec");
         });
         // lemminx: Editora's own copy needs no setting — blank finds it, so Reset no longer disconnects it (XML A9);
-        // the Java lemminx it falls back to where the native one cannot run is kept as a command of its own (A4).
+        // nor does the Java lemminx it falls back to where the native one cannot run: blank keeps it (review 2 A8), and
+        // a stored jar list would outlive a bundle update (review 3 A21). Another Java lemminx is the user's own.
         Settings xml = new Settings();
         xml.setXmlLspCommand("/old/path/lemminx-linux-x86_64");
         InstallCoordinator.applyServerCommand(xml, "xml", "/home/u/.editora/plugins/lsp/xml/lemminx");
         assertEquals("", xml.getXmlLspCommand());
         String java = "java -cp \"/home/u/.editora/plugins/lsp/maven/*\" org.eclipse.lemminx.XMLServerLauncher";
         InstallCoordinator.applyServerCommand(xml, "xml", java);
-        assertEquals(java, xml.getXmlLspCommand());
+        assertEquals("", xml.getXmlLspCommand());
+        String plain = "java -cp \"/home/u/.editora/plugins/lsp/maven/org.eclipse.lemminx-0.30.1.jar"
+                + System.getProperty("path.separator")
+                + "/home/u/.editora/plugins/lsp/maven/gson-2.10.1.jar\" org.eclipse.lemminx.XMLServerLauncher";
+        InstallCoordinator.applyServerCommand(xml, "xml", plain);
+        assertEquals("", xml.getXmlLspCommand());
+        String users = "java -cp \"/opt/lemminx/*\" org.eclipse.lemminx.XMLServerLauncher";
+        InstallCoordinator.applyServerCommand(xml, "xml", users);
+        assertEquals(users, xml.getXmlLspCommand());
         // The pom server's own bundle needs no setting either: blank runs it, so Reset keeps it (review 2, A3).
         Settings pom = new Settings();
         InstallCoordinator.applyServerCommand(pom, "maven-pom", java);

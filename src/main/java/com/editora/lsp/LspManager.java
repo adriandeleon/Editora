@@ -2022,6 +2022,21 @@ public final class LspManager {
                 // user.home: Editora's, not the passwd home the JVM would read (review D14).
                 startCommand = JvmServerCommand.withUserHome(startCommand, System.getProperty("user.home", ""));
             }
+            if (XmlServerSettings.SERVER_ID.equals(serverId)
+                    && LemminxMavenGuard.loadsLemminxMaven(startCommand, !remote)) {
+                // The plain XML server serves the poms trust keeps off lemminx-maven: with that extension on its
+                // classpath it would resolve them and run their plugins anyway (XML/pom review 3, A21). Not a crash.
+                LOG.warning("Not starting the XML server on " + root + ": its command loads lemminx-maven");
+                endHere(session);
+                dropSession(key, session);
+                StartRefusal refusal = new StartRefusal(StartRefusal.Kind.XML_LOADS_MAVEN, "");
+                Platform.runLater(() -> {
+                    if (!closed) {
+                        onStartRefused.refused(serverId, root, refusal);
+                    }
+                });
+                return;
+            }
             if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && !remote && !startCommand.isEmpty()) {
                 // the Java this jdtls's bundles need: 25 for 1.63, though its launcher only checks for 21 (DS1)
                 int minJava = JavaRuntimes.serverMinMajor(startCommand.get(0));

@@ -1060,6 +1060,7 @@ final class LspCoordinator {
                         : tr("status.lsp.tsSdkWithoutTsserver", refusal.detail());
             case UNTRUSTED_TYPESCRIPT -> tr("status.lsp.tsSdkUntrusted", tr("command.lsp.trustProjectSettings"));
             case NO_JAVA_FOR_SERVER -> tr("status.lsp.javaTooOld", server, refusal.detail());
+            case XML_LOADS_MAVEN -> tr("status.lsp.xmlLoadsMaven", server);
         };
     }
 
