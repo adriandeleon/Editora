@@ -3196,15 +3196,20 @@ final class LanguageServerSession implements LanguageClient {
     /**
      * Whether an Error jdtls logs may be an import's failure: not a build that found a compile error (eleventh review
      * CM1), nor a request about a file outside the source folders, which jdtls logs as a Java Model Exception
-     * ("scripts [in shelf] does not exist") for each request on it (twelfth review CM1).
+     * ("scripts [in shelf] does not exist") for each request on it (twelfth review CM1). Only that element shape is
+     * skipped: Gradle's own "Included build '…' does not exist" is a failed import (thirteenth review CK1).
      */
     static boolean importError(@Nullable String message) {
         return message != null
                 && !message.contains("while building workspace")
                 && !message.contains("Java Model Exception")
-                && !message.contains("does not exist")
+                && !JAVA_MODEL_MISSING.matcher(firstLine(message)).find()
                 && !message.contains("Error in calling delegate command handler");
     }
+
+    /** A Java element jdtls cannot find, "scripts [in shelf] does not exist": no import's failure. */
+    private static final java.util.regex.Pattern JAVA_MODEL_MISSING =
+            java.util.regex.Pattern.compile("\\[in [^\\]]+\\] does not exist");
 
     @Override
     public void logMessage(MessageParams message) {
@@ -3308,6 +3313,8 @@ final class LanguageServerSession implements LanguageClient {
                 lastStarting = message;
             } else if (type.toLowerCase(java.util.Locale.ROOT).contains("ready")) {
                 saidReady = true;
+            } else if (type.equalsIgnoreCase("Error") && !saidReady && !message.isEmpty()) {
+                startupError = firstLine(message); // an import that threw, then "ready" (thirteenth review CK2)
             }
             onStatus.accept(type, message);
         }
@@ -3317,6 +3324,14 @@ final class LanguageServerSession implements LanguageClient {
     private volatile @Nullable String lastStarting;
 
     private volatile boolean saidReady;
+
+    private volatile @Nullable String startupError;
+
+    /** The first line of a {@code language/status} Error jdtls sent before it said it is ready, or null. */
+    @Nullable
+    String startupError() {
+        return startupError;
+    }
 
     /**
      * Whether jdtls is still importing: its handshake is done, but it has not said it is ready. A window that joins

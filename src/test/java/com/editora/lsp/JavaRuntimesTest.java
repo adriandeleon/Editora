@@ -569,4 +569,28 @@ class JavaRuntimesTest {
                         + "<version>3.3.4</version></parent><artifactId>app</artifactId>");
         assertEquals(17, JavaRuntimes.statedRelease(app), "Boot 3's, not the aggregator's");
     }
+
+    /** A Groovy include list over several lines, and a bare Gradle property in a toolchain (thirteenth review CM5). */
+    @Test
+    void theStatedReleaseReadsTheThirteenthReviewsLayouts(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path lib = java.nio.file.Files.createDirectories(dir.resolve("gincml2/lib"));
+        java.nio.file.Files.createDirectories(dir.resolve("gincml2/app"));
+        java.nio.file.Files.writeString(
+                lib.getParent().resolve("settings.gradle"), "include 'app',\n        'lib'\nrootProject.name = 'x'\n");
+        java.nio.file.Files.writeString(
+                lib.resolve("build.gradle"), "java { toolchain { languageVersion = JavaLanguageVersion.of(17) } }");
+        assertEquals(17, JavaRuntimes.statedRelease(lib.getParent()), "the list's second line");
+        java.nio.file.Path props = java.nio.file.Files.createDirectories(dir.resolve("gprops2"));
+        java.nio.file.Files.writeString(props.resolve("settings.gradle"), "\n");
+        java.nio.file.Files.writeString(props.resolve("gradle.properties"), "javaVersion=17\n");
+        java.nio.file.Files.writeString(
+                props.resolve("build.gradle"),
+                "java { toolchain { languageVersion = JavaLanguageVersion.of(javaVersion) } }\n");
+        assertEquals(17, JavaRuntimes.statedRelease(props), "a bare property");
+        java.nio.file.Files.writeString(
+                props.resolve("build.gradle"),
+                "java { toolchain { languageVersion = JavaLanguageVersion.of(jdk) } }\n");
+        assertEquals(0, JavaRuntimes.statedRelease(props), "a name no property has");
+    }
 }

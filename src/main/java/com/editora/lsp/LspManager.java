@@ -384,6 +384,15 @@ public final class LspManager {
         }
     }
 
+    /**
+     * What jdtls's import on {@code root} threw before it said it is ready ("artifactId can neither be null…"): its
+     * files then have no project, under a ready line (thirteenth review CK2). Null when it threw nothing.
+     */
+    public @Nullable String startupError(@Nullable String serverId, @Nullable Path root) {
+        LanguageServerSession s = root == null ? null : sessionsByRoot.get(sessionKey(String.valueOf(serverId), root));
+        return s == null ? null : s.startupError();
+    }
+
     /** As {@link #lastServerError(String)}, from the session on {@code root} only. */
     public @Nullable String lastServerError(@Nullable String serverId, @Nullable Path root) {
         if (root == null) {
@@ -678,12 +687,20 @@ public final class LspManager {
         grammarWatchers.clear();
     }
 
-    /** Whether a watcher of this manager's own reports changes to {@code file}, a build file or a grammar. */
+    /**
+     * Whether a watcher of this manager's own reports changes to {@code file}, a build file or a grammar: one that
+     * watches the file's own folder, not merely its root, which a large tree is watched only in part of (thirteenth
+     * review CK3).
+     */
     public boolean watchesModelFile(Path file) {
         Path at = file.toAbsolutePath().normalize();
         return modelFile(at)
-                && java.util.stream.Stream.concat(rootWatchers.keySet().stream(), grammarWatchers.keySet().stream())
-                        .anyMatch(at::startsWith);
+                && java.util.stream.Stream.concat(rootWatchers.values().stream(), grammarWatchers.values().stream())
+                        .anyMatch(w -> watches(w, at));
+    }
+
+    private static boolean watches(RootWatcher w, Path file) {
+        return file.startsWith(w.root()) && file.getParent() != null && w.watches(file.getParent());
     }
 
     /**
@@ -692,7 +709,7 @@ public final class LspManager {
      */
     public boolean watchesModelFileBesidePanel(Path file) {
         Path at = file.toAbsolutePath().normalize();
-        return modelFile(at) && grammarWatchers.keySet().stream().anyMatch(at::startsWith);
+        return modelFile(at) && grammarWatchers.values().stream().anyMatch(w -> watches(w, at));
     }
 
     /** The roots watched for grammar files only (tests). */
@@ -3845,7 +3862,7 @@ public final class LspManager {
      * Whether {@code libraryUri} is a JDK class ({@code jdt://contents/java.base/…jrt-fs.jar…}): a dependency's jar can
      * be rebuilt in place ({@code mvn install} of a SNAPSHOT) under the same URI (tenth review DO4).
      */
-    static boolean jdkClassFile(String libraryUri) {
+    public static boolean jdkClassFile(String libraryUri) {
         return libraryUri.contains("jrt-fs.jar");
     }
 

@@ -485,15 +485,17 @@ public final class JavaRuntimes {
      * The release a Gradle build states: a toolchain first (it decides the JDK), then {@code options.release} or
      * {@code release.set}, then a source or target compatibility; a version catalog's value ({@code
      * libs.versions.jdk}) is read from {@code gradle/libs.versions.toml}, and a {@code
-     * providers.gradleProperty("javaVersion")} from {@code gradle.properties} (twelfth review CM5); a variable named
+     * providers.gradleProperty("javaVersion")} from {@code gradle.properties} (twelfth review CM5), as is a bare
+     * property a toolchain names ({@code JavaLanguageVersion.of(javaVersion)}, thirteenth review CM5); a variable named
      * {@code release} is none (eleventh review CM5).
      */
     private static int gradleRelease(String gradle, java.nio.file.Path root) {
         String code = gradleCode(gradle);
         String stated = "(\\d+|libs\\.versions\\.[\\w.]+|providers\\.gradleProperty\\(\\s*['\"][\\w.-]+['\"]\\s*\\))";
+        String toolchain = stated.replaceFirst("\\)$", "|(?:project\\\\.)?[A-Za-z_]\\\\w*)");
         for (String pattern : List.of(
-                "jvmToolchain\\s*\\(\\s*" + stated,
-                "JavaLanguageVersion\\.of\\(\\s*" + stated,
+                "jvmToolchain\\s*\\(\\s*" + toolchain,
+                "JavaLanguageVersion\\.of\\(\\s*" + toolchain,
                 "(?<![\\w$])(?<!def\\s)(?<!val\\s)(?<!var\\s)release(?:\\.set)?\\s*[(=]\\s*" + stated,
                 "(?:source|target)Compatibility\\s*=\\s*(?:JavaVersion\\.VERSION_(?:1_)?(\\d+)|['\"]?(?:1\\.)?(\\d+))")) {
             java.util.regex.Matcher m = java.util.regex.Pattern.compile(pattern).matcher(code);
@@ -505,7 +507,9 @@ public final class JavaRuntimes {
                                 ? catalogVersion(root, value)
                                 : value.startsWith("providers.")
                                         ? gradleProperty(root, value.replaceAll("(?s).*['\"]([\\w.-]+)['\"].*", "$1"))
-                                        : Integer.parseInt(value);
+                                        : Character.isDigit(value.charAt(0))
+                                                ? Integer.parseInt(value)
+                                                : gradleProperty(root, value.replaceFirst("^project\\.", ""));
                         if (release > 0) {
                             return release;
                         }
@@ -593,11 +597,13 @@ public final class JavaRuntimes {
 
     /**
      * Every project a settings file includes, as written ({@code include("app", "lib")}, {@code include 'a'}), an
-     * {@code include(} list over several lines too (twelfth review CM5).
+     * {@code include(} list over several lines too (twelfth review CM5), and a Groovy {@code include 'a',} whose list
+     * goes on after a line's comma (thirteenth review CM5).
      */
     private static List<String> includedProjects(String settings) {
         List<String> out = new java.util.ArrayList<>();
-        java.util.regex.Matcher include = java.util.regex.Pattern.compile("\\binclude\\b\\s*(?:\\(([^)]*)|([^\n]*))")
+        java.util.regex.Matcher include = java.util.regex.Pattern.compile(
+                        "\\binclude\\b\\s*(?:\\(([^)]*)|((?:[^\n]*,[ \\t]*\\r?\\n)*[^\n]*))")
                 .matcher(settings);
         while (include.find()) {
             java.util.regex.Matcher name = java.util.regex.Pattern.compile("['\"]:?([\\w.-]+(?::[\\w.-]+)*)['\"]")

@@ -1017,4 +1017,70 @@ class LspSuperMethodFxTest {
         fx.settle();
         assertEquals(1, fx.ops.readOnlyDocs.size(), "use(String) opens LKeyed.use");
     }
+
+    /**
+     * On an initializer's anonymous class's header, before its body, the type it instantiates: it said "No supertype
+     * found" (thirteenth review BK2, EL2).
+     */
+    @Test
+    void anInitializersAnonymousHeaderGoesToTheTypeItMakes() throws Exception {
+        Path comparator = Files.writeString(
+                root.resolve("Comparator.java"), "interface Comparator<T> {\n    int compare(T a, T b);\n}\n");
+        String source = "class A {\n    static {\n        Object by;\n        by = new Comparator<>() {\n"
+                + "            public int compare(String a, String b) {\n                return 0;\n            }\n"
+                + "        };\n    }\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        fx.server().documentSymbolResponse = List.of(Either.forRight(member("A", SymbolKind.Class, 0, 9, 0, 6)));
+        fx.server().typeHierarchyResponse = List.of(new TypeHierarchyItem(
+                "Comparator", SymbolKind.Interface, comparator.toUri().toString(), range(0, 0, 1), range(0, 10, 20)));
+        fx.caret(b, 3, 20);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(comparator, 0, 10)), fx.ops.jumps);
+    }
+
+    /**
+     * An imported nested type's diamond anonymous class: jdtls prepares the JDK's same-named, unimported
+     * {@code java.util.stream.Sink} there, which is never walked; the type is found through the import instead
+     * (thirteenth review BK1, BL1).
+     */
+    @Test
+    void aSameNamedJdkTypeIsNotTheImportedOne() throws Exception {
+        Path wrong = Files.writeString(
+                root.resolve("Wrong.java"),
+                "package com.x;\nclass Wrong {\n    static class Mid {\n        interface Sink<V> {\n"
+                        + "            void accept(V v);\n        }\n    }\n}\n");
+        Path stream = Files.writeString(root.resolve("StreamSink.java"), "package java.util.stream;\n");
+        String source = "package com.y;\nimport com.x.Wrong.Mid.Sink;\nclass A {\n    static Object s;\n    static {\n"
+                + "        s = new Sink<>() {\n            public void accept(String t) {\n            }\n        };\n"
+                + "    }\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        fx.server().documentSymbolResponse = List.of(Either.forRight(member("A", SymbolKind.Class, 2, 10, 2, 6)));
+        DocumentSymbol sink = member("Sink<V>", SymbolKind.Interface, 3, 5, 3, 18);
+        sink.getChildren().add(member("accept(V)", SymbolKind.Method, 4, 4, 4, 17));
+        DocumentSymbol mid = member("Mid", SymbolKind.Class, 2, 6, 2, 17);
+        mid.getChildren().add(sink);
+        DocumentSymbol outer = member("Wrong", SymbolKind.Class, 1, 7, 1, 6);
+        outer.getChildren().add(mid);
+        fx.server().documentSymbolByUri.put(com.editora.lsp.LspTestHooks.uri(wrong), List.of(Either.forRight(outer)));
+        TypeHierarchyItem jdk = new TypeHierarchyItem(
+                "Sink", SymbolKind.Interface, stream.toUri().toString(), range(0, 0, 1), range(0, 0, 4));
+        jdk.setDetail("java.util.stream");
+        TypeHierarchyItem ours = new TypeHierarchyItem(
+                "Sink", SymbolKind.Interface, wrong.toUri().toString(), range(3, 8, 9), range(3, 18, 22));
+        ours.setDetail("com.x");
+        fx.server().typeHierarchyHandler =
+                p -> p.getTextDocument().getUri().endsWith("Wrong.java") ? List.of(ours) : List.of(jdk);
+        fx.server().definitionHandler = p -> p.getPosition().getLine() == 1
+                ? List.of(new org.eclipse.lsp4j.Location(wrong.toUri().toString(), range(3, 18, 22)))
+                : List.of();
+        fx.server().supertypesByName.put("Sink", List.of());
+        fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString("[]"); // findLinks: nothing
+        fx.caret(b, 6, 26);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(wrong, 4, 17)), fx.ops.jumps);
+    }
 }

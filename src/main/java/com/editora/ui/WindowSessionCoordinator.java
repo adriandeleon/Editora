@@ -841,6 +841,9 @@ final class WindowSessionCoordinator {
         host.editorArea().select(tab);
         EditorBuffer buffer = host.bufferOf(tab);
         if (buffer == null) {
+            if (focusEditor) {
+                TabFocus.focusTab(tab, MainController::bufferOf); // its page (thirteenth review AK1)
+            }
             return; // an image or hex viewer tab: no text to place the caret in
         }
         if (host.fileWorkflows().loadingBuffers.contains(buffer)) {

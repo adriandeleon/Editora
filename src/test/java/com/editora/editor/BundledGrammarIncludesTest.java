@@ -56,6 +56,7 @@ class BundledGrammarIncludesTest {
         ObjectMapper json = new ObjectMapper();
         List<String> names = new ArrayList<>(GrammarRegistry.shared().availableLanguageNames());
         names.add("html-derivative"); // embedded only, so not a pickable language, but bundled all the same
+        names.add("javadoc");
         List<String> problems = new ArrayList<>();
         for (String name : names) {
             String resource = "/com/editora/grammars/" + name + ".tmLanguage.json";
@@ -96,6 +97,7 @@ class BundledGrammarIncludesTest {
         ObjectMapper json = new ObjectMapper();
         List<String> names = new ArrayList<>(GrammarRegistry.shared().availableLanguageNames());
         names.add("html-derivative");
+        names.add("javadoc");
         List<String> nonBoolean = new ArrayList<>();
         for (String name : names) {
             try (InputStream in =

@@ -438,11 +438,7 @@ final class FileWorkflowCoordinator {
             // Already open — switch to its tab instead of opening a duplicate. Asking for it explicitly
             // is a choice, so if it was only being previewed it stops being disposable.
             host.promoteTab(existing);
-            host.editorArea().select(existing);
-            EditorBuffer existingBuffer = host.bufferOf(existing);
-            if (existingBuffer != null) {
-                existingBuffer.getArea().requestFocus();
-            }
+            TabFocus.select(host.editorArea(), existing); // an image or PDF too (thirteenth review AK1)
             if (host.recentFiles() != null) {
                 host.recentFiles().add(file);
             }

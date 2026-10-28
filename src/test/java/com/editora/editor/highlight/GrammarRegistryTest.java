@@ -32,6 +32,20 @@ class GrammarRegistryTest {
         assertNull(GrammarRegistry.shared().forLanguageName("plaintext"));
     }
 
+    /** Groovy's Javadoc include resolves: a doc comment gets its scopes and its tags (thirteenth review CK4). */
+    @Test
+    void groovysJavadocCommentIsHighlighted() {
+        var groovy = GrammarRegistry.shared().forFileName("build.gradle");
+        assertNotNull(groovy);
+        var tokens = groovy.tokenizeLine("/** Builds it. @since 2 */", null, java.time.Duration.ZERO)
+                .getTokens();
+        assertTrue(
+                java.util.Arrays.stream(tokens)
+                        .anyMatch(t -> t.getScopes().contains("keyword.other.documentation.javadoc")),
+                java.util.Arrays.toString(tokens));
+        assertFalse(GrammarRegistry.shared().availableLanguageNames().contains("javadoc"), "embedded only");
+    }
+
     @Test
     void systemdUnitFilesLoadTheSystemdGrammar() {
         // Loads the bundled systemd.tmLanguage.json end-to-end (JSON parse + Oniguruma compile).

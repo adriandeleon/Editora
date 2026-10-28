@@ -1284,7 +1284,7 @@ final class LspCoordinator {
     private void noteNonProjectFile(Path file, List<LspDiagnostic> diagnostics) {
         Path root = file.toString().endsWith(".java") ? lspManager.javaSessionRoot(file) : null;
         Path build = root == null ? null : buildFolder(root, file); // a build beside others: its own (twelfth CL2)
-        if (build == null || !JavaImportCheck.inSourceFolder(build, file)) {
+        if (build == null || !JavaImportCheck.inSourceFolder(build, file) || JavaImportCheck.ownSources(build)) {
             return; // a loose file in a project's other folders is a non-project file by rights
         }
         String key = importKey(LspServerRegistry.JAVA_SERVER_ID, root);
@@ -1327,8 +1327,9 @@ final class LspCoordinator {
             JavaImportCheck.PomError pomError = JavaImportCheck.unreadablePom(folder.resolve("pom.xml"));
             String pom =
                     sessionRoot.relativize(folder.resolve("pom.xml")).toString().replace('\\', '/');
+            JavaImportCheck.Reason why = JavaImportCheck.projectReason(problems, folder);
             String reason = pomError == null
-                    ? message
+                    ? why != null ? why.line() : message // the pom's "Project build error" (thirteenth CK2)
                     : pomError.line() < 1
                             ? tr("status.lsp.pomUnreadable", pom, pomError.message())
                             : tr(
@@ -1375,6 +1376,21 @@ final class LspCoordinator {
             }
         }
         return false;
+    }
+
+    /**
+     * {@code server}, named with the one folder under {@code root} whose import failed when the root's own did not: a
+     * broken Gradle {@code tools/} in a Maven project is not the whole project's failure (thirteenth review CK5).
+     */
+    private String failedServerName(String server, @Nullable String serverId, @Nullable Path root) {
+        String prefix = importKey(serverId, root) + java.io.File.separator;
+        List<String> under =
+                importFailed.stream().filter(k -> k.startsWith(prefix)).toList();
+        if (root == null || under.size() != 1 || importFailed.contains(importKey(serverId, root))) {
+            return server;
+        }
+        Path folder = Path.of(under.get(0).substring(under.get(0).indexOf('\u0000') + 1));
+        return tr("status.lsp.serverInFolder", serverProgram(String.valueOf(serverId)), root.relativize(folder));
     }
 
     /**
@@ -3691,6 +3707,14 @@ final class LspCoordinator {
                                 java.util.Objects.requireNonNullElse(buildFolder(root, e.getKey()), root),
                                 e.getValue())); // CO2, CL2
                 checkModulePoms(root);
+                String threw = lspManager.startupError(serverId, root);
+                if (threw != null && importFailed.add(key)) { // a pom with a model error (thirteenth review CK2)
+                    JavaImportCheck.Reason why = JavaImportCheck.projectReason(problems, root);
+                    host.setError(tr(
+                            "status.lsp.importProblemWhy",
+                            server,
+                            (why != null ? why.line() : threw).replaceFirst("[.\\s]+$", "")));
+                }
             }
             if (line.problem()) {
                 // jdtls says WARNING both for an import that threw (a Gradle build that does not run: it logs the
@@ -3719,7 +3743,7 @@ final class LspCoordinator {
                         }
                         host.setError(tr(
                                 "status.lsp.importProblemWhy",
-                                server,
+                                failedServerName(server, serverId, root),
                                 (reason != null ? reason : logged).replaceFirst("[.\\s]+$", "")));
                     };
                     if (JavaImportCheck.projectReason(problems, root) != null) {
@@ -3731,7 +3755,7 @@ final class LspCoordinator {
                     }
                 }
             } else if (line.ready() && (root != null ? importFailedUnder(root) : importFailed.contains(key))) {
-                host.setStatus(tr("status.lsp.readyNotImported", server)); // not "Loaded and ready"; said as error
+                host.setStatus(tr("status.lsp.readyNotImported", failedServerName(server, serverId, root))); // as error
             } else if (line.ready() && importWarned.remove(key)) {
                 warnedAtReady.add(key);
                 host.setStatus(tr("status.lsp.readyWithProblems", server));
@@ -5433,31 +5457,37 @@ final class LspCoordinator {
         }
         long originVersion = b.docVersion();
         long requestGeneration = ++navigationRequestGeneration;
-        lspManager.changeDocument(originPath, b.text()); // sync latest text before the request
-        lspManager.definition(originPath, area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
-            if (!navigationRequestCurrent(b, originPath, originVersion, requestGeneration)) {
-                return;
-            }
-            if (targets.isEmpty()) {
-                if (noAnswer == null || !noAnswer.getAsBoolean()) {
-                    host.setStatus(tr("status.lsp.noDefinition"));
-                }
-            } else {
-                LspManager.Target t = targets.get(0);
-                if (t.file() != null) {
-                    noteLibraryTarget(originPath, t.file());
-                    ops.openAndGoto(t.file(), t.line(), t.character());
-                    if (afterJump != null) {
-                        // openAndGoto finishes its work in a runLater of its own, so the hook has to queue
-                        // behind it or it would act on the tab we are leaving.
-                        javafx.application.Platform.runLater(afterJump);
+        String text = b.text();
+        int caret = area.getCaretPosition();
+        lspManager.changeDocument(originPath, text); // sync latest text before the request
+        lspManager.definition(originPath, area.getCurrentParagraph(), area.getCaretColumn(), answered -> {
+            if (navigationRequestCurrent(b, originPath, originVersion, requestGeneration)) {
+                InstantiatedType.checkDefinition(lspManager, originPath, text, caret, answered, targets -> {
+                    if (!navigationRequestCurrent(b, originPath, originVersion, requestGeneration)) {
+                        return;
                     }
-                } else {
-                    openLibraryDefinition(
-                            lspPath(b),
-                            t,
-                            () -> navigationRequestCurrent(b, originPath, originVersion, requestGeneration));
-                }
+                    if (targets.isEmpty()) {
+                        if (noAnswer == null || !noAnswer.getAsBoolean()) {
+                            host.setStatus(tr("status.lsp.noDefinition"));
+                        }
+                    } else {
+                        LspManager.Target t = targets.get(0);
+                        if (t.file() != null) {
+                            noteLibraryTarget(originPath, t.file());
+                            ops.openAndGoto(t.file(), t.line(), t.character());
+                            if (afterJump != null) {
+                                // openAndGoto finishes its work in a runLater of its own, so the hook has to queue
+                                // behind it or it would act on the tab we are leaving.
+                                javafx.application.Platform.runLater(afterJump);
+                            }
+                        } else {
+                            openLibraryDefinition(
+                                    lspPath(b),
+                                    t,
+                                    () -> navigationRequestCurrent(b, originPath, originVersion, requestGeneration));
+                        }
+                    }
+                });
             }
         });
     }
@@ -5907,11 +5937,11 @@ final class LspCoordinator {
                     return;
                 }
             }
-            superTypes(ask, constant);
+            superTypes(ask, text, constant);
             return;
         }
         if (member.isType()) {
-            superTypes(ask, member);
+            superTypes(ask, text, member);
             return;
         }
         com.editora.lsp.MemberSpan type = null;
@@ -6021,7 +6051,7 @@ final class LspCoordinator {
     }
 
     /** The 0-based line and column of {@code offset} in {@code text}. */
-    private static int[] lineColumn(String text, int offset) {
+    static int[] lineColumn(String text, int offset) {
         int line = 0;
         int start = 0;
         for (int i = 0; i < offset && i < text.length(); i++) {
@@ -6040,7 +6070,8 @@ final class LspCoordinator {
      */
     private void anonymousSuper(SuperAsk ask, String text, int[] anonymous) {
         if (anonymous[1] < 0) { // its header or a field: the anonymous class, whose super is the type it instantiates
-            definitionAsSuper(ask, text, anonymous[0]); // (twelfth review EL2)
+            int line = lineColumn(text, anonymous[0])[0]; // (twelfth review EL2, thirteenth review BK1, BK3)
+            InstantiatedType.resolve(lspManager, ask, text, anonymous[0], line, line, root -> openSuperType(ask, root));
             return;
         }
         int[] name = lineColumn(text, anonymous[1]);
@@ -6175,61 +6206,26 @@ final class LspCoordinator {
 
     /** The superclass's no-argument constructor, else the superclass itself (none for {@code Object}). */
     private void implicitSuperConstructor(SuperAsk ask, com.editora.lsp.MemberSpan type) {
-        lspManager.prepareTypeHierarchyAt(ask.path(), ask.libraryUri(), type.nameLine(), type.nameColumn(), roots -> {
-            if (!ask.current().getAsBoolean()) {
-                return;
-            }
-            if (roots.isEmpty()) {
+        SuperMethodWalk.implicitSuperConstructor(lspManager, ask, type, t -> {
+            if (t == null) {
                 host.setStatus(tr("status.lsp.noSuperMethod"));
-                return;
+            } else {
+                openTarget(ask.path(), t);
             }
-            lspManager.typeHierarchyChildren(ask.path(), roots.get(0).raw(), true, supers -> {
-                LspManager.HierarchyNode superclass = supers.stream()
-                        .filter(n -> n.kindName().equals("class") && !n.name().equals("Object"))
-                        .findFirst()
-                        .orElse(null);
-                if (!ask.current().getAsBoolean()) {
-                    return;
-                }
-                if (superclass == null) {
-                    host.setStatus(tr("status.lsp.noSuperMethod"));
-                    return;
-                }
-                lspManager.memberSpans(ask.path(), superclass.file(), superclass.libraryUri(), members -> {
-                    if (!ask.current().getAsBoolean()) {
-                        return;
-                    }
-                    com.editora.lsp.MemberSpan declared =
-                            com.editora.lsp.JavaMembers.typeAt(members, superclass.line(), superclass.name());
-                    com.editora.lsp.MemberSpan noArgs = declared == null
-                            ? null
-                            : declared.children().stream()
-                                    .filter(m -> m.kind().equals("constructor")
-                                            && com.editora.lsp.JavaMembers.parameters(m.name())
-                                                    .isEmpty())
-                                    .findFirst()
-                                    .orElse(null);
-                    int line = noArgs == null ? superclass.line() : noArgs.nameLine();
-                    int col = noArgs == null ? superclass.col() : noArgs.nameColumn();
-                    openTarget(
-                            ask.path(), new LspManager.Target(superclass.file(), line, col, superclass.libraryUri()));
-                });
-            });
         });
-    }
-
-    /** {@code supers} with the superclass first, as IntelliJ lists them; jdtls gives the interfaces first. */
-    static List<LspManager.HierarchyNode> superclassFirst(List<LspManager.HierarchyNode> supers) {
-        List<LspManager.HierarchyNode> out = new java.util.ArrayList<>(supers);
-        out.sort(java.util.Comparator.comparingInt(n -> n.kindName().equals("interface") ? 1 : 0));
-        return out;
     }
 
     /**
      * A type's supertypes, the superclass first and each named by its type (eighth review BQ6). An anonymous class
      * goes to the type it instantiates.
      */
-    private void superTypes(SuperAsk ask, com.editora.lsp.MemberSpan type) {
+    private void superTypes(SuperAsk ask, String text, com.editora.lsp.MemberSpan type) {
+        if (type.isAnonymous() && !type.name().equals("{...}")) { // the type it instantiates, checked (thirteenth BK1)
+            int name = offsetOf(text, type.nameLine()) + type.nameColumn();
+            InstantiatedType.resolve(
+                    lspManager, ask, text, name, type.startLine(), type.endLine(), root -> openSuperType(ask, root));
+            return;
+        }
         lspManager.prepareTypeHierarchyAt(ask.path(), ask.libraryUri(), type.nameLine(), type.nameColumn(), roots -> {
             if (!ask.current().getAsBoolean()) {
                 return;
@@ -6238,7 +6234,7 @@ final class LspCoordinator {
                 host.setStatus(tr("status.lsp.noSuperType"));
                 return;
             }
-            if (type.isAnonymous()) { // jdtls answers with the instantiated type itself
+            if (type.isAnonymous()) { // an enum constant's body: jdtls answers with its enum
                 openOneOrPick(
                         ask, typeTargets(roots.subList(0, 1)), "picker.superTypes.title", "status.lsp.noSuperType");
                 return;
@@ -6247,12 +6243,23 @@ final class LspCoordinator {
                 if (ask.current().getAsBoolean()) {
                     openOneOrPick(
                             ask,
-                            typeTargets(superclassFirst(SuperMethodWalk.withoutObject(supers))),
+                            typeTargets(SuperMethodWalk.superclassFirst(SuperMethodWalk.withoutObject(supers))),
                             "picker.superTypes.title",
                             "status.lsp.noSuperType");
                 }
             });
         });
+    }
+
+    /** Opens {@code root}, an anonymous class's instantiated type, or says it has none. */
+    private void openSuperType(SuperAsk ask, LspManager.@Nullable HierarchyNode root) {
+        if (ask.current().getAsBoolean()) {
+            openOneOrPick(
+                    ask,
+                    root == null ? List.of() : typeTargets(List.of(root)),
+                    "picker.superTypes.title",
+                    "status.lsp.noSuperType");
+        }
     }
 
     private static List<SuperTarget> typeTargets(List<LspManager.HierarchyNode> nodes) {

@@ -74,6 +74,7 @@ public final class GrammarRegistry {
         // inverse of scopeToResource resolves a language name to its scope.
         scopeToResource.forEach((scope, resource) -> languageNameToScope.put(resource, scope));
         languageNameToScope.remove("html-derivative"); // only ever embedded; not a language to pick for a file
+        languageNameToScope.remove("javadoc");
         registry = new Registry(new IRegistryOptions() {
             @Override
             public @Nullable IGrammarSource getGrammarSource(String scopeName) {
@@ -215,6 +216,9 @@ public final class GrammarRegistry {
         // The flavour of HTML other grammars embed: Markdown includes it for raw HTML, and without it every
         // tag in a Markdown file was plain text (and one of the grammar's HTML block rules was dropped at load).
         scopeToResource.put("text.html.derivative", "html-derivative");
+        // the Javadoc comment Groovy's grammar includes: without it tm4e warned twice per Gradle build file opened, and
+        // a /** */ comment had no documentation scopes (thirteenth review CK4)
+        scopeToResource.put("text.html.javadoc", "javadoc");
         scopeToResource.put("source.astro", "astro");
         // Astro embeds JavaScript and stylesheet dialect scopes. Reuse the bundled TypeScript/CSS
         // grammars for aliases we can faithfully tokenize; unsupported preprocessors degrade to plain text.
