@@ -77,6 +77,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **XML editing (XML/pom review 3: xmlui).**
+  - XML: Generate Grammar…'s two XSD choices work in untrusted folders. lemminx needed the W3C `xml.xsd`, which it
+    could not download there; Editora now ships it.
+  - Generate Grammar no longer offers "bind with DOCTYPE" on a file that already has a DOCTYPE (an internal subset
+    only), which wrote a second one.
+  - Bind to Grammar… and Generate Grammar… work on a file whose only `xml-model` is a Schematron rule set.
+  - Typing a close tag by hand over the auto-inserted one: Backspace takes back your last character instead of
+    deleting (and renaming) the existing tags, `</item >` no longer leaves a stray `>`, HTML tag names match in any
+    case, and moving the caret drops the pending join.
+  - Go to Definition opens a percent-encoded (`sub%20dir/lib.xsl`) or `file:` include href and an XInclude in the
+    default namespace, and says "missing.xsl does not exist" for a target that is not there.
+  - The built-in formatter says "Already formatting" to a second Format Document instead of a false "file changed",
+    and in large-file mode asks before a format that more than doubles the line count.
+  - Settings ▸ LSP ▸ XML: "Keep text as written in" and "XML catalogs" are wider and show their whole value on hover;
+    the formatting rows no longer repeat "(XML server only)" under their heading.
+
 - **Shell scripts: setting up the Bash server is one step, and Doctor tells the truth about it** (Bash review,
   install). The first shell script asks once whether to turn code intelligence on. The install banner says what
   Install brings, and Install adds ShellCheck and shfmt with the server; when only those two are missing, the
@@ -161,8 +177,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and on-type formatting leave them out.
 - **One malformed pom no longer stops Maven dependency completion.** lemminx-maven kept a malformed pom in its
   workspace with no project, and every groupId/artifactId/version completion after the first threw on it, leaving
-  only `<!--` and `<![CDATA[`. Editora now takes each malformed pom out of the server's workspace, asks again, and
-  names the file in the status bar. Saving that pom well-formed restarts the Maven server, which takes it back.
+  only `<!--` and `<![CDATA[`. Editora now takes each pom that is malformed on disk out of the server's workspace,
+  asks again, and names the file in the status bar ("Left out broken/pom.xml …"). It looks where lemminx-maven
+  looks (`pom*.xml`, `*pom.xml` and `*.pom`, ten folders deep, `node_modules` and `build` included), and acts only
+  when the server really failed, so an honest empty answer changes nothing. When the pom is well-formed again
+  (saved here, or fixed by a checkout), or the server still holds a pom fixed after it broke, only that project's
+  Maven server restarts, and its open poms move to the new one at once.
+- **XML and pom.xml trust (review 3).** Where the native XML server cannot run, the Java one Editora falls back to
+  no longer loads the Maven extension, so a pom in an untrusted folder is no longer resolved and its plugins no longer
+  run; an XML command that would load lemminx-maven is not started, and the status bar says why. Trusting or revoking
+  a folder moves every open pom.xml at once, background tabs included, and a revoked pom keeps its diagnostics. Trust
+  This Folder on a file outside the project no longer trusts the project. A pom in an untrusted folder without the
+  Maven server gets one offer to install it, saying it runs only in trusted folders. The blocked-schema status names
+  only what would help. Doctor's lemminx-maven store row follows a `<localRepository>` set in settings.xml. A pre-pin
+  lemminx path with arguments keeps them, and Settings shows a pre-pin copy as an amber warning.
 
 - **Language servers get the whole file when it opens.** Python, Java and XML files reached their server empty and
   were then filled in, so an XML file flashed a false "Premature end of file" error, the file was analysed twice,

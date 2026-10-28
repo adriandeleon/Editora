@@ -499,23 +499,41 @@ public final class ConfigMigrations {
         return input;
     }
 
-    /** The program of an XML command an install from before the pin wrote: Editora's per-platform lemminx copy. */
-    private static final java.util.regex.Pattern PRE_PIN_XML = java.util.regex.Pattern.compile(
-            "^[\"']?.*[/\\\\]plugins[/\\\\]lsp[/\\\\]xml[/\\\\]lemminx-(?:linux|osx|win32)[^/\\\\\"']*[\"']?$");
+    /**
+     * An XML command an install from before the pin wrote: Editora's per-platform lemminx copy and nothing else — the
+     * path whole, in double or single quotes or bare, with no argument after it (the program's name has no space).
+     */
+    private static final java.util.regex.Pattern PRE_PIN_XML =
+            java.util.regex.Pattern.compile("^(?:\"([^\"]+)\"|'([^']+)'|(.+))$");
+
+    /** The program file of {@link #PRE_PIN_XML}: {@code …/plugins/lsp/xml/lemminx-<platform>[.exe]}. */
+    private static final java.util.regex.Pattern PRE_PIN_XML_PATH = java.util.regex.Pattern.compile(
+            ".*[/\\\\]plugins[/\\\\]lsp[/\\\\]xml[/\\\\]lemminx-(?:linux|osx|win32)[^/\\\\\\s\"']*");
 
     /**
-     * v150 → v151 for {@code settings.json}: blanks {@code xmlLspCommand} when it is the path an install from before
-     * the pin stored ({@code <config>/plugins/lsp/xml/lemminx-linux-x86_64} and the like). A blank command runs that
-     * same copy (or the pinned one once installed), and the path stopped counting as the user's own choice in Settings'
-     * Modified badge (XML/pom review 2, A7). Any other command is the user's and is kept.
+     * v151 → v152 for {@code settings.json}: blanks {@code xmlLspCommand} when it is the path an install from before
+     * the pin stored ({@code <config>/plugins/lsp/xml/lemminx-linux-x86_64} and the like) and nothing else. A blank
+     * command runs that same copy (or the pinned one once installed), and the path stopped counting as the user's own
+     * choice in Settings' Modified badge (XML/pom review 2, A7). Any other command is the user's and is kept — the
+     * same path with an argument of the user's ({@code -Xmx512m}) too (XML/pom review 3, A25).
      */
     static JsonNode blankPrePinXmlCommand(JsonNode input) {
         if (input instanceof ObjectNode o
                 && o.get("xmlLspCommand") instanceof com.fasterxml.jackson.databind.node.TextNode t
-                && PRE_PIN_XML.matcher(t.asText().strip()).matches()) {
+                && isPrePinXmlCommand(t.asText())) {
             o.put("xmlLspCommand", "");
         }
         return input;
+    }
+
+    /** Whether {@code command} is exactly the path a pre-pin XML install stored (see {@link #PRE_PIN_XML}). Pure. */
+    static boolean isPrePinXmlCommand(String command) {
+        java.util.regex.Matcher m = PRE_PIN_XML.matcher(command.strip());
+        if (!m.matches()) {
+            return false;
+        }
+        String path = m.group(1) != null ? m.group(1) : m.group(2) != null ? m.group(2) : m.group(3);
+        return path != null && PRE_PIN_XML_PATH.matcher(path).matches();
     }
 
     /** v0 → v1 for {@code recent-files.json}: wrap the legacy bare array into {@code { "files": [ … ] }}. */

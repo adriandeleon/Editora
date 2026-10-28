@@ -151,6 +151,14 @@ final class XmlLspActions {
         });
     }
 
+    /**
+     * What Go to Definition says when it found nothing: "missing.xsl does not exist" when the include href at the
+     * caret names a file that is not there ({@code missing}, XML/pom review 3, C26), else "No definition found".
+     */
+    static String noDefinition(@Nullable String missing) {
+        return missing == null ? tr("status.lsp.noDefinition") : tr("status.xml.includeMissing", missing);
+    }
+
     /** {@code xml.bindGrammar}: binds the active XML document to a grammar the user picks, when it has none yet. */
     void bindGrammar() {
         Active active = activeXml();
@@ -186,9 +194,12 @@ final class XmlLspActions {
         int[] end = XmlGrammarBinding.lineColumn(active.text(), root[1]);
         var range = new org.eclipse.lsp4j.Range(
                 new org.eclipse.lsp4j.Position(start[0], start[1]), new org.eclipse.lsp4j.Position(end[0], end[1]));
+        // A DOCTYPE with only an internal subset is no binding, but a second DOCTYPE is not well-formed (C24)
+        boolean doctype = XmlGrammarBinding.hasDoctype(active.text());
         lsp.codeActionsFor(path, XmlServer.noGrammarDiagnostic(range), items -> {
             List<LspManager.CodeActionItem> fixes = items.stream()
                     .filter(item -> XmlServer.generatesGrammar(item.raw()))
+                    .filter(item -> !doctype || !XmlServer.bindsWithDoctype(item.raw()))
                     .toList();
             if (fixes.isEmpty()) {
                 host.setStatus(tr("status.xml.generateNone"));

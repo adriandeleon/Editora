@@ -220,6 +220,23 @@ class LspRequestTrafficFxTest {
         assertEquals(1, fake.highlights.size());
     }
 
+    /** A refresh of one kind is answered by asking that kind again, so it must not drop the others (review 3, B21). */
+    @Test
+    void aRefreshOfOneKindLeavesTheOthersRunning() {
+        FakeLanguageServer fake = open();
+        fake.holdReplies = true;
+        askForEverything();
+
+        manager.invalidateRequests(file, "codeLenses");
+        assertEquals(0, fake.cancelled(), "code lenses have nothing cached to cancel");
+
+        manager.invalidateRequests(file, "foldingRanges");
+        askForEverything();
+
+        assertEquals(1, fake.cancelled(), "only the folding request was withdrawn");
+        assertEquals(KINDS + 1, fake.held.size(), "and only folding was sent again");
+    }
+
     @Test
     void closingADocumentCancelsItsRequestsAndReleasesItsBookkeeping() {
         FakeLanguageServer fake = open();

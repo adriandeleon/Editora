@@ -292,9 +292,100 @@ class XmlFolderTrustFxTest {
         assertEquals(p, XmlFolderTrust.trustTarget(p, p.resolve("a/pom.xml"), p.resolve("a"), loose));
         assertEquals(
                 Path.of("/x/lib"), XmlFolderTrust.trustTarget(p, Path.of("/x/lib/pom.xml"), Path.of("/x/lib"), loose));
-        assertEquals(p, XmlFolderTrust.trustTarget(p, Path.of("/x/a.xml"), loose, loose), "falls back to the project");
+        // a file outside the project never stands for the project (XML/pom review 3, A24/C23)
+        assertNull(XmlFolderTrust.trustTarget(p, Path.of("/x/a.xml"), loose, loose));
+        assertNull(XmlFolderTrust.trustTarget(p, Path.of("/x/a.java"), null, loose));
+        assertEquals(p, XmlFolderTrust.trustTarget(p, null, null, loose), "no file: the project");
         assertNull(XmlFolderTrust.trustTarget(null, Path.of("/x/a.xml"), loose, loose));
         assertNull(XmlFolderTrust.trustTarget(null, null, null, loose));
+    }
+
+    /** XML/pom review 3, A24/C23: Trust This Folder on a loose file says there is no folder, and trusts nothing. */
+    @Test
+    void trustFolderOnAFileOutsideTheProjectTrustsNothing() throws Exception {
+        manager.setLooseRoot(dir.resolve("config/lsp/loose-files"));
+        EditorBuffer feed = open(dir.resolve("downloads/feed.xml"), "<feed/>");
+        List<Path> asked = new ArrayList<>();
+        trust.confirmer = (owner, root) -> asked.add(root);
+
+        FxTestSupport.runOnFx(() -> trust.trustFolder());
+
+        assertEquals(List.of(), asked, "no prompt for the project");
+        assertFalse(config.getTrustStore().isTrusted(project));
+        assertEquals(tr("xml.trust.noFolder"), host.lastStatus);
+        assertNull(FxTestSupport.callOnFx(() -> trust.target(feed)));
+    }
+
+    /**
+     * XML/pom review 3, A27: a trust change reroutes every pom a server holds at once, the background ones too; a
+     * revoked one goes back to plain lemminx (not to no server at all). A tab never shown stays deferred.
+     */
+    @Test
+    void aTrustChangeReroutesBackgroundPomsAtOnce() throws Exception {
+        EditorBuffer parent =
+                open(project.resolve("pom.xml"), "<project><modules><module>core</module></modules></project>");
+        FxTestSupport.runOnFx(() -> coordinator.syncBuffer(parent));
+        EditorBuffer core = open(project.resolve("core/pom.xml"), "<project/>");
+        FxTestSupport.runOnFx(() -> coordinator.syncBuffer(core));
+        EditorBuffer neverShown = open(project.resolve("other/pom.xml"), "<project/>");
+        host.active = core; // parent and neverShown are background tabs
+        assertEquals("xml", manager.managedServerId(parent.getPath()));
+
+        config.getTrustStore().trust(project);
+        FxTestSupport.runOnFx(coordinator::reloadProjectSettings);
+        assertEquals("maven-pom", manager.managedServerId(parent.getPath()), "the background pom moved too");
+        assertEquals("maven-pom", manager.managedServerId(core.getPath()));
+        assertNull(manager.managedServerId(neverShown.getPath()), "a tab never shown is not started");
+
+        config.getTrustStore().revoke(project);
+        FxTestSupport.runOnFx(coordinator::reloadProjectSettings);
+        assertEquals("xml", manager.managedServerId(parent.getPath()), "back on plain lemminx, with diagnostics");
+        assertEquals("xml", manager.managedServerId(core.getPath()));
+        assertFalse(manager.hasSession("maven-pom", project));
+    }
+
+    /**
+     * XML/pom review 3, A28: without the Maven server an untrusted pom is not asked to trust its folder "for
+     * Maven-aware editing" (the install banner says both); once it is installed, the trust notice is offered.
+     */
+    @Test
+    void withoutTheMavenServerAnUntrustedPomGetsNoTrustNotice() throws Exception {
+        FxTestSupport.runOnFx(() -> coordinator.setServerAvailableForTest("maven-pom", false));
+        EditorBuffer pom = open(project.resolve("pom.xml"), "<project/>");
+        FxTestSupport.runOnFx(() -> coordinator.syncBuffer(pom));
+        assertEquals("xml", manager.managedServerId(pom.getPath()));
+        assertTrue(FxTestSupport.callOnFx(() -> coordinator.pomWithheldUntrusted(pom)), "the banner's wording");
+        assertNull(FxTestSupport.callOnFx(pom::fileNoticeText), "no trust notice for a server not installed");
+
+        FxTestSupport.runOnFx(() -> coordinator.serverDetected("maven-pom", true)); // installed
+        assertEquals(tr("xml.trust.pomNotice"), FxTestSupport.callOnFx(pom::fileNoticeText));
+    }
+
+    @Test
+    void trustingWithoutTheMavenServerClaimsOnlySchemaDownloads() throws Exception {
+        FxTestSupport.runOnFx(() -> coordinator.setServerAvailableForTest("maven-pom", false));
+        EditorBuffer beans = open(project.resolve("beans.xml"), "<beans/>");
+        trust.confirmer = (owner, root) -> true;
+        FxTestSupport.runOnFx(() -> trust.trustFolder());
+        assertEquals(tr("xml.trust.trustedDownloads", "app"), host.lastStatus);
+        assertTrue(config.getTrustStore().isTrusted(project));
+        assertEquals(project, FxTestSupport.callOnFx(() -> trust.target(beans)));
+    }
+
+    /** XML/pom review 3, C25: the blocked-download status names only what would let the download through. */
+    @Test
+    void theBlockedDownloadStatusNamesWhatWouldHelpThere() throws Exception {
+        manager.setLooseRoot(dir.resolve("config/lsp/loose-files"));
+        EditorBuffer beans = open(project.resolve("beans.xml"), "<beans/>");
+        EditorBuffer feed = open(dir.resolve("downloads/feed.xml"), "<feed/>");
+
+        assertEquals(
+                tr("status.lsp.xmlDownloadsOff", tr("command.workspace.trustFolder")),
+                FxTestSupport.callOnFx(() -> trust.downloadsOffStatus(beans)));
+        assertEquals(tr("status.lsp.xmlDownloadsLoose"), FxTestSupport.callOnFx(() -> trust.downloadsOffStatus(feed)));
+        host.settings.setXmlSchemaDownloads("never");
+        assertEquals(tr("status.lsp.xmlDownloadsNever"), FxTestSupport.callOnFx(() -> trust.downloadsOffStatus(beans)));
+        assertEquals(tr("status.lsp.xmlDownloadsNever"), FxTestSupport.callOnFx(() -> trust.downloadsOffStatus(feed)));
     }
 
     private static LspDiagnostic diagnostic(String code) {

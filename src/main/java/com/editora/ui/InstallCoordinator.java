@@ -461,9 +461,14 @@ final class InstallCoordinator {
             // clojure-lsp: a pinned native binary; the installer returns its bare path
             case "clojure" -> s.setClojureLspCommand(InstallCatalog.quoteCommandPath(command));
             case "lua" -> s.setLuaLspCommand(command);
-            // lemminx: Editora's own copy needs no setting (a blank command finds it, review A9); the Java lemminx it
-            // falls back to where the native build cannot run is a command of its own
-            case "xml" -> s.setXmlLspCommand(XmlServerInstall.isNativeInstall(command) ? "" : command);
+            // lemminx: Editora's own copy needs no setting (a blank command finds it, review A9); nor does the Java
+            // lemminx it falls back to where the native build cannot run (a blank one keeps it, review 2 A8): stored,
+            // its jar list would outlive a bundle update (review 3 A21)
+            case "xml" ->
+                s.setXmlLspCommand(
+                        XmlServerInstall.isNativeInstall(command) || XmlServerInstall.isOwnJavaLemminx(command, null)
+                                ? ""
+                                : command);
             case "terraform" -> s.setTerraformLspCommand(command);
             case "typst" -> s.setTypstLspCommand(command); // tinymist: a binary archive, path must be persisted
             // the pom server: Editora's own bundle needs no setting either (a blank command finds it, review 2 A3)

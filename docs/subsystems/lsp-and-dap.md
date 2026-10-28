@@ -130,6 +130,25 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   takes `user.home` from passwd, so neither `$HOME` nor a test's `user.home` reached it). The pom server's push
   repeats lemminx-maven's own `xml.maven` object, which it reads whole. `xml.format.tabSize`/`insertSpaces`
   are answered from the document's indentation, as jdtls's `java.format.*` are.
+- **pom.xml and trust** (`ui/XmlFolderTrust`): a pom goes to `maven-pom` only when its Maven root (the outermost
+  contiguous `pom.xml` folder) is trusted; otherwise plain lemminx serves it and the tab offers **Trust Folder**
+  (also the palette's **Workspace: Trust This Folder**). Trusting or revoking reroutes that root's poms. lemminx-maven
+  resolves parents, BOMs and plugins and class-loads plugin and extension code, so `LspManager` also refuses to start
+  `maven-pom` on an untrusted root. The `xml` server must stay free of lemminx-maven, including the Java fallback, whose
+  classpath is the plain-lemminx jars only. Both servers get the bundled POM schemas (`lsp/XmlBundledSchemas`:
+  `maven-4.0.0.xsd`, `maven-4.1.0.xsd` behind a catalog in `<config>/cache/schemas/`, listed first) so an untrusted
+  or offline pom validates; a JVM lemminx gets `-Duser.home=<Editora's home>` like the native one's `workDir`.
+- **A malformed pom and lemminx-maven** (`ui/PomServerSupport`, `maven/MalformedPoms`): lemminx-maven 0.12.0 keeps a
+  malformed pom in its workspace with a null project, and every coordinate completion after the first throws on it
+  (upstream: `getCurrentWorkspaceProjects` filters null futures, not null projects). On such an answer Editora walks the
+  root the way lemminx-maven does, reads each pom from disk (what the server built from), takes each malformed one out
+  with a `workspace/didChangeWorkspaceFolders` that removes its own file URI, and asks again. lemminx-maven never
+  rebuilds a closed pom, so one cannot be put back in the same session: when a left-out pom parses again, that root's
+  server is restarted.
+- **Formatting options** (`lsp/FormattingIndent`): every formatting request describes the document's own indentation;
+  Format Document and Format Selection also carry the file's save rules (EditorConfig `trim_trailing_whitespace` /
+  `insert_final_newline`, else the project's) as `trimTrailingWhitespace` / `insertFinalNewline`. Tab re-indent and
+  on-type formatting leave them out.
 - **Startup preparation** runs on `lsp-start`: per-project JDT workspace directory creation and installed-JDK
   discovery never execute on the JavaFX routing path.
 - **One ordered writer.** LSP4J writes a message on the calling thread, and most callers are the FX thread.
@@ -1103,8 +1122,11 @@ install …@latest`, rustup, the GitHub `releases/latest` archives).
   release's own `lemminx-<platform>.sha256` (`PinnedAsset.member`/`memberSha256`), installed as plain `lemminx` in
   `plugins/lsp/xml`, and asked to answer `initialize` (`JvmLspSmoke.initializeCheck`) before it is swapped in — it
   needs glibc 2.34. One that cannot run installs nothing; when the pom.xml server's bundle is complete the XML
-  command becomes its Java lemminx instead (`InstallService.javaLemminx`). The installer leaves the XML command
-  blank: `XmlServerInstall.effectiveCommand` makes a blank (or bare `lemminx`, or a stale path into that folder)
+  command becomes its Java lemminx instead (`InstallService.javaLemminx`): lemminx's own jars from that bundle,
+  named one by one (`XmlServerInstall.PLAIN_LEMMINX_ARTIFACTS`), never the folder's `*` — lemminx-maven is a
+  ServiceLoader extension and would join the plain server, resolving untrusted poms. `LemminxMavenGuard` is the
+  start backstop: an `xml` command whose classpath holds lemminx-maven is refused (`StartRefusal.XML_LOADS_MAVEN`).
+  The installer leaves the XML command blank: `XmlServerInstall.effectiveCommand` makes a blank (or bare `lemminx`, or a stale path into that folder)
   command run Editora's copy, including one from before the pin (`lemminx-<platform>`). A server that dies before
   `initialize` at every start reports its first stderr line (`LspManager.crashReason`) in the crash-loop notice,
   Settings and Doctor (`LspCoordinator.serverTrouble`).

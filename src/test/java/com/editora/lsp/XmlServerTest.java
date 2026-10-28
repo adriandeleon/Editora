@@ -189,6 +189,41 @@ class XmlServerTest {
         assertNull(XmlServer.resolveInclude(doc, "https://example.com/a.xsl", WireUris.LOCAL), "a web address");
     }
 
+    /**
+     * XML/pom review 3, B22 + C26: a percent-encoded href ({@code sub%20dir/lib.xsl}) re-encoded its {@code %}, a
+     * {@code file:} href was refused as a scheme, and an XInclude in the default namespace was not an include.
+     */
+    @Test
+    void anIncludeHrefIsAUriReference(@TempDir Path dir) throws Exception {
+        Path lib = Files.createDirectories(dir.resolve("sub dir")).resolve("lib.xsl");
+        Files.writeString(lib, "<xsl:stylesheet/>");
+        Path chap = Files.writeString(dir.resolve("chap.xml"), "<chapter/>");
+        String doc = dir.resolve("main.xsl").toUri().toString();
+        assertEquals(
+                lib.toUri(), java.net.URI.create(XmlServer.resolveInclude(doc, "sub%20dir/lib.xsl", WireUris.LOCAL)));
+        assertEquals(
+                lib.toUri(), java.net.URI.create(XmlServer.resolveInclude(doc, "sub dir/lib.xsl", WireUris.LOCAL)));
+        assertEquals(
+                lib.toUri(),
+                java.net.URI.create(XmlServer.resolveInclude(doc, lib.toUri().toString(), WireUris.LOCAL)),
+                "a file: URI");
+        assertEquals(
+                chap.toUri(),
+                java.net.URI.create(XmlServer.resolveInclude(doc, "chap.xml#xpointer(/chapter)", WireUris.LOCAL)),
+                "without its fragment");
+        assertNull(XmlServer.resolveInclude(doc, "http://example.com/lib.xsl", WireUris.LOCAL));
+        assertNull(XmlServer.resolveInclude(doc, "file:lib.xsl", WireUris.LOCAL), "an opaque file: URI");
+        assertNull(XmlServer.resolveInclude(doc, "missing.xsl", WireUris.LOCAL));
+        assertEquals(dir.resolve("missing.xsl").toUri(), java.net.URI.create(XmlServer.includeUri(doc, "missing.xsl")));
+
+        String book = "<book>\n  <include xmlns=\"http://www.w3.org/2001/XInclude\" href=\"chap.xml\"/>\n"
+                + "  <include href=\"other.xml\"/>\n</book>\n";
+        assertEquals("chap.xml", XmlServer.includeHref(book, book.indexOf("chap.xml") + 2), "by its namespace");
+        assertNull(XmlServer.includeHref(book, book.indexOf("other.xml") + 2), "another vocabulary's include");
+        String inherited = "<doc xmlns=\"http://www.w3.org/2001/XInclude\">\n  <include href=\"a.xml\"/>\n</doc>";
+        assertEquals("a.xml", XmlServer.includeHref(inherited, inherited.indexOf("a.xml")), "declared on an ancestor");
+    }
+
     /** XML review 2 C8: the diagnostic that brings lemminx's generate fixes, and which fixes those are. */
     @Test
     void generateGrammarFixesAreTheNoGrammarFixesButTheBindingWizard() {
@@ -208,5 +243,21 @@ class XmlServerTest {
         assertFalse(XmlServer.generatesGrammar(wizard));
         assertFalse(XmlServer.generatesGrammar(new org.eclipse.lsp4j.CodeAction("Minify XML")));
         assertFalse(XmlServer.generatesGrammar(new org.eclipse.lsp4j.Command("x", "y")));
+    }
+
+    /** XML/pom review 3, C24: the generate fix that binds with a DOCTYPE, by lemminx's resolver id or its title. */
+    @Test
+    void theDoctypeGenerateFixIsKnownByItsResolverOrTitle() {
+        var unresolved = new org.eclipse.lsp4j.CodeAction("Generate 'a.dtd' and bind with DOCTYPE");
+        assertTrue(XmlServer.bindsWithDoctype(unresolved));
+        var byData = new org.eclipse.lsp4j.CodeAction("Generate");
+        byData.setData(java.util.Map.of(
+                "participantId",
+                "org.eclipse.lemminx.extensions.contentmodel.participants.codeactions.nogrammarconstraints"
+                        + ".GenerateDocTypeCodeActionResolver"));
+        assertTrue(XmlServer.bindsWithDoctype(byData));
+        assertFalse(XmlServer.bindsWithDoctype(
+                new org.eclipse.lsp4j.CodeAction("Generate 'a.dtd' and bind with xml-model")));
+        assertFalse(XmlServer.bindsWithDoctype(null));
     }
 }

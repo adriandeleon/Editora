@@ -21,7 +21,7 @@ class ConfigMigrationsTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     /**
-     * v150→151: the path a pre-pin XML install wrote into the command is blanked (blank runs that same copy), so it
+     * v151→152: the path a pre-pin XML install wrote into the command is blanked (blank runs that same copy), so it
      * stops counting as a modified setting; a command of the user's own is kept (XML/pom review 2, A7).
      */
     @Test
@@ -29,13 +29,22 @@ class ConfigMigrationsTest {
         for (String stale : java.util.List.of(
                 "/home/u/.editora/plugins/lsp/xml/lemminx-linux-x86_64",
                 "\"/home/u/my files/.editora/plugins/lsp/xml/lemminx-osx-aarch_64\"",
+                "'/home/u/.editora/plugins/lsp/xml/lemminx-linux-x86_64'",
+                "/home/u/my files/.editora/plugins/lsp/xml/lemminx-linux-x86_64",
                 "C:\\Users\\u\\.editora\\plugins\\lsp\\xml\\lemminx-win32.exe")) {
             ObjectNode in = mapper.createObjectNode().put("schemaVersion", 150).put("xmlLspCommand", stale);
             ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, in, mapper);
             assertEquals("", out.get("xmlLspCommand").asText(), stale);
         }
         for (String own : java.util.List.of(
-                "/opt/lemminx/lemminx-linux-x86_64 --log", "/usr/local/bin/lemminx", "java -cp \"/x/*\" Main", "")) {
+                "/opt/lemminx/lemminx-linux-x86_64 --log",
+                "/usr/local/bin/lemminx",
+                "java -cp \"/x/*\" Main",
+                "",
+                // the user's own argument after Editora's pre-pin copy is theirs to keep (XML/pom review 3, A25)
+                "/home/u/.editora/plugins/lsp/xml/lemminx-linux-x86_64 -Xmx512m",
+                "\"/home/u/my files/.editora/plugins/lsp/xml/lemminx-linux-x86_64\" -Xmx512m",
+                "/home/u/.editora/plugins/lsp/xml/lemminx-linux-x86_64 \"-Dx=a b\"")) {
             ObjectNode in = mapper.createObjectNode().put("schemaVersion", 150).put("xmlLspCommand", own);
             ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, in, mapper);
             assertEquals(own, out.get("xmlLspCommand").asText(), own);

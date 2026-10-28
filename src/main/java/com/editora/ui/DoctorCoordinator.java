@@ -650,7 +650,7 @@ final class DoctorCoordinator {
                     specs.add(xmlCacheRow(com.editora.lsp.XmlServerSettings.cacheDir(configDir)));
                 }
                 if (pomServer) {
-                    specs.add(mavenStoreRow(mavenStoreDir()));
+                    specs.add(mavenStoreRow(DoctorCoordinator::mavenStoreDir));
                 }
                 if ("bash".equals(serverId)) {
                     // What bash-language-server lints and formats with. Without them a shell script silently
@@ -1578,21 +1578,35 @@ final class DoctorCoordinator {
     static final String MAVEN_STORE_ID = DoctorCheck.CACHE_PREFIX + "lemminx-maven";
 
     /**
-     * Where lemminx-maven keeps what it resolves: {@code .lemminx-maven} beside the local repository, under the home
-     * Editora runs with (the server is started with that {@code user.home}).
+     * Where lemminx-maven keeps what it resolves: {@code .lemminx-maven} beside the local repository — settings.xml's
+     * {@code <localRepository>}, else {@code ~/.m2/repository} — under the home Editora runs with (the server is
+     * started with that {@code user.home}). lemminx-maven's {@code LocalRepositoryUtils} puts it in the local
+     * repository's parent folder, so a moved repository moves the store too (XML/pom review 3, A22/D21). Reads
+     * settings.xml: call it off the FX thread.
      */
     static Path mavenStoreDir() {
-        return Path.of(System.getProperty("user.home", ""), ".m2", ".lemminx-maven");
+        return mavenStoreDir(Path.of(System.getProperty("user.home", "")));
+    }
+
+    /** {@link #mavenStoreDir()} for the home {@code userHome}. */
+    static Path mavenStoreDir(Path userHome) {
+        Path repo = com.editora.maven.MavenPluginGoals.localRepository(userHome)
+                .toAbsolutePath()
+                .normalize();
+        Path parent = repo.getParent();
+        return (parent == null ? repo : parent).resolve(".lemminx-maven");
     }
 
     /**
      * lemminx-maven's artifact store: how much it holds and where, with Clear and Reveal (review D14). It piled up in
-     * the passwd home's {@code ~/.m2}, which no Editora screen showed.
+     * the passwd home's {@code ~/.m2}, which no Editora screen showed. {@code dir} is asked for in the probe, off the
+     * FX thread (it reads settings.xml).
      */
-    static DoctorService.CheckSpec mavenStoreRow(Path dir) {
+    static DoctorService.CheckSpec mavenStoreRow(java.util.function.Supplier<Path> where) {
         DoctorCheck row = DoctorCheck.checking(MAVEN_STORE_ID, "lsp", tr("doctor.label.mavenStore"), "")
                 .withSettings("lsp");
         return probe(row, base -> {
+            Path dir = where.get();
             long size = com.editora.lsp.XmlSchemaCache.size(dir);
             return size == 0
                     ? base.ok(tr("doctor.xmlCache.empty"))
@@ -1603,19 +1617,19 @@ final class DoctorCoordinator {
     /** Empties the cache a row reports, off the FX thread, then says how much went and checks again. */
     private void clearCache(DoctorCheck check) {
         Path config = host.configDir();
-        Path dir;
+        @Nullable Path dir;
         String said;
         if (XML_CACHE_ID.equals(check.id()) && config != null) {
             dir = com.editora.lsp.XmlServerSettings.cacheDir(config);
             said = "doctor.xmlCache.cleared";
         } else if (MAVEN_STORE_ID.equals(check.id())) {
-            dir = mavenStoreDir();
+            dir = null; // read off the FX thread below: it reads settings.xml
             said = "doctor.mavenStore.cleared";
         } else {
             return;
         }
         Thread.ofVirtual().name("doctor-clear-cache").start(() -> {
-            long freed = com.editora.lsp.XmlSchemaCache.clear(dir);
+            long freed = com.editora.lsp.XmlSchemaCache.clear(dir == null ? mavenStoreDir() : dir);
             javafx.application.Platform.runLater(() -> {
                 host.setStatus(tr(said, StatusBar.formatSize(freed)));
                 runChecks();

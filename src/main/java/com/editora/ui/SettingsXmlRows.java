@@ -69,6 +69,7 @@ final class SettingsXmlRows {
                 st -> String.join("; ", st.getXmlCatalogs()),
                 (st, v) -> st.setXmlCatalogs(XmlServerSettings.parseCatalogs(v)),
                 WORDS + "catalog oasis resolve system public uri docbook dita");
+        w.widenField("lsp.xml.catalogs", 440);
         w.textRow(
                 c,
                 cat,
@@ -108,6 +109,7 @@ final class SettingsXmlRows {
                 st -> String.join("; ", st.getXmlFormatPreserveSpace()),
                 (st, v) -> st.setXmlFormatPreserveSpace(XmlServerSettings.parseNames(v)),
                 WORDS + "format text space spaces preserve keep verbatim whitespace xml:space join");
+        w.widenField("lsp.xml.preserveSpace", 440); // its default list is 9 names (C28)
         w.choiceRow(
                 c,
                 cat,

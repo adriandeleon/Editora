@@ -373,8 +373,10 @@ public final class InstallService {
 
     /**
      * The Java lemminx the pom.xml server's bundle holds, as a launch command, when that bundle is installed and
-     * complete under {@code configDir}; else null. It serves plain XML as well as the native build does (the
-     * Maven extension only takes part on a pom.xml) — what vscode-xml falls back to where its binary cannot run.
+     * complete under {@code configDir}; else null. It serves plain XML as well as the native build does — what
+     * vscode-xml falls back to where its binary cannot run. Its classpath names lemminx's own jars only ({@link
+     * XmlServerInstall#javaLemminxCommand}): on the bundle's whole folder lemminx-maven joined in and resolved an
+     * untrusted pom, running its plugins (XML/pom review 3, A21).
      */
     static @Nullable String javaLemminx(Path configDir) {
         String sub = InstallCatalog.serverInstall("maven-pom").orElse(List.of()).stream()
@@ -386,7 +388,7 @@ public final class InstallService {
         }
         Path dir = configDir.resolve(sub);
         return Files.isDirectory(dir) && MavenServerInstall.complete(dir)
-                ? InstallCatalog.jvmClasspathCommand(dir, InstallCatalog.LEMMINX_MAIN_CLASS)
+                ? XmlServerInstall.javaLemminxCommand(dir)
                 : null;
     }
 

@@ -514,7 +514,12 @@ final class LspCoordinator {
         lspManager.setOnStartFailed(this::onStartFailed);
         lspManager.setOnStartRefused(this::onStartRefused);
         lspManager.setOnRequestError(this::onRequestError);
-        pomCompletionNotice = new PomServerSupport(host::setStatus);
+        pomCompletionNotice = new PomServerSupport(
+                host::setStatus,
+                PomServerSupport.MavenWorkspace.of(lspManager),
+                host::forEachBuffer,
+                this::lspPath,
+                this::syncBuffer); // keeps pom completion alive (E3, E21-E24)
         lspManager.setApplyEditHandler(this::applyWorkspaceEditsConfirmed); // server quick-fix edits land here (#670)
         lspManager.setOnEditBlocked(this::editBlocked);
         lspManager.setOnRefreshRequested(this::refreshRequested);
@@ -603,18 +608,14 @@ final class LspCoordinator {
                 activeGated[0] |= buffer == active;
                 return;
             }
-            boolean invalidated = false;
             for (var asked : due.entrySet()) {
                 String kind = asked.getKey();
                 if (!servedByAny(path, asked.getValue())) {
                     continue;
                 }
-                if (!invalidated) {
-                    // The server's answers changed without the document changing: one already on its way
-                    // may predate that, so it must not stand in for the request made here.
-                    lspManager.invalidateRequests(path);
-                    invalidated = true;
-                }
+                // The server's answers of this kind changed without the document changing: one already on its way
+                // may predate that, so it must not stand in for the request made here. Only this kind (B21).
+                lspManager.invalidateRequests(path, kind);
                 if (!refreshAppliesTo(kind, buffer == active)) {
                     refreshWhenShown.add(buffer);
                     continue;
@@ -1057,6 +1058,7 @@ final class LspCoordinator {
                         : tr("status.lsp.tsSdkWithoutTsserver", refusal.detail());
             case UNTRUSTED_TYPESCRIPT -> tr("status.lsp.tsSdkUntrusted", tr("command.lsp.trustProjectSettings"));
             case NO_JAVA_FOR_SERVER -> tr("status.lsp.javaTooOld", server, refusal.detail());
+            case XML_LOADS_MAVEN -> tr("status.lsp.xmlLoadsMaven", server);
         };
     }
 
@@ -1452,7 +1454,7 @@ final class LspCoordinator {
             buffer.setLspDiagnostics(diagnostics);
             noteNonProjectFile(file, diagnostics);
             xmlTrust.onDiagnostics(buffer, diagnostics); // a schema not downloaded: Trust Folder on the file (C6)
-            String blocked = xmlNotices.onDiagnostics(diagnostics); // a schema not downloaded: say where it is decided
+            String blocked = xmlNotices.onDiagnostics(diagnostics, () -> xmlTrust.downloadsOffStatus(buffer)); // C25
             if (blocked != null) {
                 // After the opening's own lines ("Opened …", the server's ready line), which replaced it at once.
                 var later = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(2));
@@ -3133,6 +3135,7 @@ final class LspCoordinator {
                 : "";
         String prefix = com.editora.lsp.MavenPomServer.elementPrefix(lineText, column);
         String coordinate = PomServerSupport.coordinateElement(lineText, column);
+        int failuresBefore = pomCompletionNotice.failuresBefore(p); // read as the request goes out (E21)
         return result -> {
             var items = com.editora.lsp.MavenPomServer.filterCompletion(
                     prefix, result.items(), com.editora.completion.Completion::label);
@@ -3142,9 +3145,8 @@ final class LspCoordinator {
             boolean takenOver = pomCompletionNotice.onCompletion( // a malformed pom empties it: leave it out (E3)
                     coordinate,
                     items.stream().map(com.editora.completion.Completion::label).toList(),
-                    lspRootFor(buffer, com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID),
-                    () -> PomServerSupport.openPoms(host::forEachBuffer),
-                    poms -> lspManager.leaveOutOfMavenWorkspace(p, poms),
+                    p,
+                    failuresBefore,
                     () -> lspManager.completion(
                             p,
                             line,
@@ -3859,11 +3861,7 @@ final class LspCoordinator {
             lspManager.changeDocument(path, buffer.getContent());
             lspManager.saveDocument(path, savedText);
             lspManager.pullDiagnostics(path); // no-op for push-only servers
-            if (PomServerSupport.wellFormedAgain(lspManager.leftOutOfMavenWorkspace(path), path, buffer.getContent())) {
-                host.setStatus(tr("status.maven.pomBack", path.getFileName())); // a fresh server takes it back (E3)
-                lspManager.restartServer(LspServerRegistry.MAVEN_POM_SERVER_ID);
-                applyGating();
-            }
+            pomCompletionNotice.saved(path, savedText); // a left-out pom saved well-formed: its root restarts (E23)
             if ((projectWideProblems || lspManager.otherJavaDocumentOpen(path))
                     && LspServerRegistry.JAVA_SERVER_ID.equals(lspManager.managedServerId(path))) {
                 pendingProjectRecheck.add(path); // one build per session, saves in two projects both checked
@@ -5367,7 +5365,7 @@ final class LspCoordinator {
                         return;
                     }
                     if (targets.isEmpty()) {
-                        host.setStatus(tr("status.lsp.noDefinition"));
+                        host.setStatus(XmlLspActions.noDefinition(lspManager.lastMissingInclude()));
                         return;
                     }
                     LspManager.Target t = targets.get(0);
@@ -5520,7 +5518,7 @@ final class LspCoordinator {
                     }
                     if (targets.isEmpty()) {
                         if (noAnswer == null || !noAnswer.getAsBoolean()) {
-                            host.setStatus(tr("status.lsp.noDefinition"));
+                            host.setStatus(XmlLspActions.noDefinition(lspManager.lastMissingInclude()));
                         }
                     } else {
                         LspManager.Target t = targets.get(0);
@@ -9751,6 +9749,7 @@ final class LspCoordinator {
             return;
         }
         List<com.editora.lsp.LspManager.WatchedFile> batch = new java.util.ArrayList<>(pendingWatched.size());
+        pomCompletionNotice.filesChanged(List.copyOf(pendingWatched.keySet())); // a left-out pom fixed on disk (E24)
         pendingWatched.forEach((path, kind) -> {
             if (!lspManager.reportsChangesTo(path)) { // the server root's own watcher reports it: not twice (B16)
                 batch.add(new com.editora.lsp.LspManager.WatchedFile(path, kind));

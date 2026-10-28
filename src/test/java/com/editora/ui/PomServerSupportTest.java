@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
@@ -53,5 +54,73 @@ class PomServerSupportTest {
         assertTrue(PomServerSupport.wellFormedAgain(true, pom, "<project><artifactId>a</artifactId></project>"));
         assertFalse(PomServerSupport.wellFormedAgain(true, pom, "<project><artifactId>a</project>"), "still broken");
         assertFalse(PomServerSupport.wellFormedAgain(false, pom, "<project/>"), "never left out");
+    }
+
+    @Test
+    void anHonestEmptyAnswerChangesNothing() {
+        Path a = Path.of("/w/a/pom.xml");
+        assertEquals(
+                PomServerSupport.Act.DELIVER,
+                PomServerSupport.decide(false, true, List.of(), Set.of(), List.of()),
+                "markup only, nothing malformed on disk, no failure logged: a real no-match (E21)");
+        assertEquals(
+                PomServerSupport.Act.DELIVER,
+                PomServerSupport.decide(false, true, List.of(a), Set.of(a), List.of()),
+                "the malformed pom is already out: nothing to claim");
+    }
+
+    @Test
+    void aProvenDegradationLeavesTheMalformedPomsOut() {
+        Path a = Path.of("/w/a/pom.xml");
+        Path b = Path.of("/w/b/pom.xml");
+        assertEquals(
+                PomServerSupport.Act.LEAVE_OUT, PomServerSupport.decide(true, true, List.of(a), Set.of(), List.of()));
+        assertEquals(
+                PomServerSupport.Act.LEAVE_OUT,
+                PomServerSupport.decide(false, true, List.of(a, b), Set.of(a), List.of()),
+                "markup only with a pom malformed on disk: it breaks the server at the next completion anyway");
+        assertEquals(
+                PomServerSupport.Act.DELIVER,
+                PomServerSupport.decide(false, false, List.of(a), Set.of(), List.of()),
+                "a real answer: nothing is left out");
+    }
+
+    @Test
+    void aFailureWithNothingMalformedOnDiskRestartsTheRoot() {
+        Path a = Path.of("/w/a/pom.xml");
+        assertEquals(
+                PomServerSupport.Act.RESTART_STALE,
+                PomServerSupport.decide(true, true, List.of(), Set.of(), List.of()),
+                "fixed after the server cached its failure (E21)");
+        assertEquals(
+                PomServerSupport.Act.RESTART_STALE,
+                PomServerSupport.decide(true, true, List.of(a), Set.of(a), List.of()));
+    }
+
+    @Test
+    void aLeftOutPomWellFormedAgainIsTakenBack() {
+        Path a = Path.of("/w/a/pom.xml");
+        assertEquals(
+                PomServerSupport.Act.TAKE_BACK,
+                PomServerSupport.decide(false, false, List.of(), Set.of(a), List.of(a)),
+                "fixed outside Editora (E24)");
+    }
+
+    @Test
+    void leftOutPomsAreComparedAsNormalizedPaths() {
+        Path a = Path.of("/w/a/pom.xml").toAbsolutePath();
+        assertTrue(
+                PomServerSupport.holds(List.of(a), Path.of("/w/x/../a/pom.xml").toAbsolutePath()));
+        assertFalse(PomServerSupport.holds(List.of(a), Path.of("/w/b/pom.xml").toAbsolutePath()));
+    }
+
+    @Test
+    void theLeftOutStatusPluralizes() {
+        com.editora.i18n.Messages.init("en");
+        String one = com.editora.i18n.Messages.tr("status.maven.completionLeftOutMore", "a/pom.xml", "3", 1);
+        String two = com.editora.i18n.Messages.tr("status.maven.completionLeftOutMore", "a/pom.xml", "3", 2);
+        assertTrue(one.startsWith("Left out a/pom.xml"), one);
+        assertTrue(one.contains("one more pom:"), one);
+        assertTrue(two.contains("2 more poms:"), two);
     }
 }

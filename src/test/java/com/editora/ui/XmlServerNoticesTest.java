@@ -63,13 +63,14 @@ class XmlServerNoticesTest {
     @Test
     void aBlockedDownloadIsSaidOnceUntilTheSettingsAreAppliedAgain() {
         XmlServerNotices notices = new XmlServerNotices();
-        assertNull(notices.onDiagnostics(List.of(diagnostic("cvc-elt.1.a"))));
+        java.util.function.Supplier<String> said = () -> "the file's own words";
+        assertNull(notices.onDiagnostics(List.of(diagnostic("cvc-elt.1.a")), said));
         assertEquals(
-                tr("status.lsp.xmlDownloadsOff", tr("command.workspace.trustFolder")),
-                notices.onDiagnostics(List.of(diagnostic(XmlServerNotices.DOWNLOAD_DISABLED))));
-        assertNull(notices.onDiagnostics(List.of(diagnostic(XmlServerNotices.DOWNLOAD_DISABLED))), "once");
+                "the file's own words",
+                notices.onDiagnostics(List.of(diagnostic(XmlServerNotices.DOWNLOAD_DISABLED)), said));
+        assertNull(notices.onDiagnostics(List.of(diagnostic(XmlServerNotices.DOWNLOAD_DISABLED)), said), "once");
         notices.reset();
-        assertNotNull(notices.onDiagnostics(List.of(diagnostic(XmlServerNotices.DOWNLOAD_DISABLED))));
+        assertNotNull(notices.onDiagnostics(List.of(diagnostic(XmlServerNotices.DOWNLOAD_DISABLED)), said));
     }
 
     @Test

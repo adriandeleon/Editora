@@ -242,6 +242,15 @@ files without downloading the schema.
     Copyright The Apache Software Foundation
     License: Apache-2.0
 
+The schema for the xml: namespace in the same folder (xml.xsd, as published at
+https://www.w3.org/2001/xml.xsd and shipped by Eclipse LemMinX) is
+redistributed unmodified. It lets the XML language server read XML Schema
+files, and generate one from an XML file, without downloading it.
+
+    World Wide Web Consortium — https://www.w3.org/
+    Copyright World Wide Web Consortium
+    License: W3C Software and Document Notice and License
+
 ================================================================================
 Third-party libraries
 ================================================================================

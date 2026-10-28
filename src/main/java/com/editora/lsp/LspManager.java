@@ -329,6 +329,28 @@ public final class LspManager {
     private static final List<String> REFRESHABLE_KINDS =
             List.of("diagnostic", "documentSymbol", "foldingRange", "inlayHint", "semanticTokens");
 
+    /**
+     * As {@link #invalidateRequests(Path)}, for one {@code workspace/…/refresh} kind only ({@code diagnostics},
+     * {@code semanticTokens}, {@code inlayHints}, {@code foldingRanges}; {@code codeLenses} has nothing cached). Only
+     * that kind is asked again, so cancelling the others dropped their answers until the next edit (review 3, B21).
+     */
+    public void invalidateRequests(Path file, String refreshKind) {
+        String kind = switch (refreshKind) {
+            case "diagnostics" -> "diagnostic";
+            case "semanticTokens" -> "semanticTokens";
+            case "inlayHints" -> "inlayHint";
+            case "foldingRanges" -> "foldingRange";
+            default -> null;
+        };
+        if (kind != null && file != null && servable(file)) {
+            String uri = uri(file);
+            latest.cancel(uri, kind);
+            if (kind.equals("semanticTokens")) {
+                wholeDocumentTokens.remove(uri);
+            }
+        }
+    }
+
     /** Unanswered deduplicated requests — package-private for the bounded-traffic test. */
     int latestRequestsInFlight() {
         return latest.inFlight();
@@ -581,6 +603,8 @@ public final class LspManager {
                 new java.util.LinkedHashMap<>(xmlServerSettings.section(base, folderTrust.test(root), local));
         if (LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
             xml.put("maven", Map.of("central", Map.of("skip", !mavenCentralIndex)));
+            // lemminx-maven says only in its log that a coordinate completion failed on its workspace (E21)
+            xml.put("logs", Map.of("client", true));
         }
         return Map.copyOf(xml);
     }
@@ -1012,28 +1036,71 @@ public final class LspManager {
     }
 
     /**
+     * The Maven pom server's session for {@code file}: the one it is open on, else the one whose root holds it (a pom
+     * that is not open — left out, or changed on disk), the innermost; null when there is none.
+     */
+    private @Nullable LanguageServerSession mavenSession(@Nullable Path file) {
+        LanguageServerSession s = file == null ? null : sessionFor(file);
+        if (s != null || file == null) {
+            return s != null && LspServerRegistry.MAVEN_POM_SERVER_ID.equals(s.serverId()) ? s : null;
+        }
+        Path at = file.toAbsolutePath().normalize();
+        String prefix = sessionKeyPrefix(LspServerRegistry.MAVEN_POM_SERVER_ID);
+        LanguageServerSession best = null;
+        for (var e : sessionsByRoot.entrySet()) {
+            Path root = e.getValue().root().toAbsolutePath().normalize();
+            if (e.getKey().startsWith(prefix)
+                    && at.startsWith(root)
+                    && (best == null
+                            || root.getNameCount()
+                                    > best.root().toAbsolutePath().normalize().getNameCount())) {
+                best = e.getValue();
+            }
+        }
+        return best;
+    }
+
+    /**
      * Takes {@code poms} out of the workspace of the Maven pom server serving {@code file} (review 2, E3: one
-     * malformed pom in its workspace empties every coordinate completion). Returns the poms newly left out; none
-     * when {@code file} is not on the Maven server.
+     * malformed pom in its workspace empties every coordinate completion), each by the URI lemminx-maven's walk of
+     * the root gave it. Returns the poms newly left out; none when {@code file} is not on the Maven server, or that
+     * server is not ready to be told.
      */
     public List<Path> leaveOutOfMavenWorkspace(Path file, List<Path> poms) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || !LspServerRegistry.MAVEN_POM_SERVER_ID.equals(s.serverId())) {
+        LanguageServerSession s = mavenSession(file);
+        if (s == null) {
             return List.of();
         }
         Map<String, Path> byUri = new java.util.LinkedHashMap<>();
         poms.forEach(p -> byUri.put(s.uris().toWire(uri(p)), p));
-        return s.leaveOutOfWorkspace(List.copyOf(byUri.keySet())).stream()
-                .map(byUri::get)
-                .toList();
+        return s.leaveOutOfWorkspace(byUri);
     }
 
     /** Whether {@code pom} was left out of its Maven pom server's workspace ({@link #leaveOutOfMavenWorkspace}). */
     public boolean leftOutOfMavenWorkspace(Path pom) {
-        LanguageServerSession s = sessionFor(pom);
-        return s != null
-                && LspServerRegistry.MAVEN_POM_SERVER_ID.equals(s.serverId())
-                && s.leftOutOfWorkspace(s.uris().toWire(uri(pom)));
+        LanguageServerSession s = mavenSession(pom);
+        return s != null && s.leftOutOfWorkspace(s.uris().toWire(uri(pom)));
+    }
+
+    /** Every pom left out of the workspace of the Maven pom server serving {@code file} (none when it is not). */
+    public List<Path> mavenLeftOut(Path file) {
+        LanguageServerSession s = mavenSession(file);
+        return s == null ? List.of() : s.leftOutOfWorkspace();
+    }
+
+    /** The root of the Maven pom server serving {@code file}, or null when none does. */
+    public @Nullable Path mavenRoot(@Nullable Path file) {
+        LanguageServerSession s = mavenSession(file);
+        return s == null ? null : s.root();
+    }
+
+    /**
+     * How many coordinate completions the Maven pom server serving {@code file} failed on its workspace's projects
+     * so far (review 3, E21): an answer of markup only after this grew is the broken one, not an honest no-match.
+     */
+    public int mavenCompletionFailures(@Nullable Path file) {
+        LanguageServerSession s = mavenSession(file);
+        return s == null ? 0 : s.workspaceCompletionFailures();
     }
 
     /** Restarts {@code serverId} (dispose + drop its cached sessions) so the next {@code openDocument}
@@ -2080,6 +2147,21 @@ public final class LspManager {
                 // A Java lemminx (the pom server's, or XML's fallback) keeps lemminx-maven's artifact store under
                 // user.home: Editora's, not the passwd home the JVM would read (review D14).
                 startCommand = JvmServerCommand.withUserHome(startCommand, System.getProperty("user.home", ""));
+            }
+            if (XmlServerSettings.SERVER_ID.equals(serverId)
+                    && LemminxMavenGuard.loadsLemminxMaven(startCommand, !remote)) {
+                // The plain XML server serves the poms trust keeps off lemminx-maven: with that extension on its
+                // classpath it would resolve them and run their plugins anyway (XML/pom review 3, A21). Not a crash.
+                LOG.warning("Not starting the XML server on " + root + ": its command loads lemminx-maven");
+                endHere(session);
+                dropSession(key, session);
+                StartRefusal refusal = new StartRefusal(StartRefusal.Kind.XML_LOADS_MAVEN, "");
+                Platform.runLater(() -> {
+                    if (!closed) {
+                        onStartRefused.refused(serverId, root, refusal);
+                    }
+                });
+                return;
             }
             if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && !remote && !startCommand.isEmpty()) {
                 // the Java this jdtls's bundles need: 25 for 1.63, though its launcher only checks for 21 (DS1)
@@ -4702,9 +4784,29 @@ public final class LspManager {
             int character,
             Consumer<List<Target>> cb) {
         // XML: the grammar declaration instead of the element's own other tag, else the linked schema (B5, B10).
-        LocationRequest request =
-                s != null && XmlServer.isXml(s.serverId()) ? XmlServer::definition : LanguageServerSession::definition;
-        requestLocations(s, documentUri, line, character, request, cb, null);
+        boolean xml = s != null && XmlServer.isXml(s.serverId());
+        LocationRequest request = xml ? XmlServer::definition : LanguageServerSession::definition;
+        lastMissingInclude = null;
+        Consumer<List<Target>> answer = xml && s != null && documentUri != null
+                ? notingMissingInclude(s, documentUri, new Position(line, character), cb)
+                : cb;
+        requestLocations(s, documentUri, line, character, request, answer, null);
+    }
+
+    /** {@code cb}, after noting when nothing was found on an include href that names no file (C26). */
+    private Consumer<List<Target>> notingMissingInclude(
+            LanguageServerSession s, String documentUri, Position pos, Consumer<List<Target>> cb) {
+        return targets -> {
+            lastMissingInclude = targets.isEmpty() ? XmlServer.missingInclude(s, documentUri, pos) : null;
+            cb.accept(targets);
+        };
+    }
+
+    /** The file the last Go to Definition's include href named when it does not exist, or null (C26). */
+    private volatile @Nullable String lastMissingInclude;
+
+    public @Nullable String lastMissingInclude() {
+        return lastMissingInclude;
     }
 
     private void requestLocations(
