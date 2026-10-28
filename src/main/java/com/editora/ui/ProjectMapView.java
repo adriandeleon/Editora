@@ -70,6 +70,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.paint.Paint;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.text.Font;
+import javafx.scene.text.FontPosture;
 import javafx.scene.text.FontWeight;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextAlignment;
@@ -131,6 +132,11 @@ final class ProjectMapView extends VBox {
     private final CheckMenuItem keepZoomOnOpen = optionItem("project.map.navigation.keepZoom", true);
     private final CheckMenuItem focusNewColumn = optionItem("project.map.navigation.focusNewColumn", true);
     private final ComboBox<ProjectMapModel.TypeFilter> typeFilter = new ComboBox<>();
+    /** "Hide unmatched": rows the filters would fade are taken off the map, and the badge says how many. */
+    private final CheckBox hideUnmatched = new CheckBox(tr("project.map.filter.hideUnmatched"));
+
+    private final Label narrowedBadge = new Label();
+    private Consumer<Boolean> onHideUnmatchedChanged = hide -> {};
     private final ComboBox<FlowDirection> flowFilter = new ComboBox<>();
     private final Button backButton = new Button("‹");
     private final Button forwardButton = new Button("›");
@@ -421,6 +427,20 @@ final class ProjectMapView extends VBox {
             button.setOnAction(event -> updateFilters());
         }
         typeFilter.setOnAction(event -> updateFilters());
+        hideUnmatched.getStyleClass().add("project-map-hide-unmatched");
+        hideUnmatched.setMinWidth(Region.USE_PREF_SIZE);
+        hideUnmatched.setTooltip(new Tooltip(tr("project.map.filter.hideUnmatched.help")));
+        hideUnmatched.setAccessibleHelp(tr("project.map.filter.hideUnmatched.help"));
+        hideUnmatched.selectedProperty().addListener((obs, old, hide) -> {
+            surface.setHideUnmatched(hide);
+            onHideUnmatchedChanged.accept(hide);
+        });
+        narrowedBadge.getStyleClass().add("project-map-narrowed-badge");
+        narrowedBadge.setMinWidth(Region.USE_PREF_SIZE);
+        narrowedBadge.setTooltip(new Tooltip(tr("project.map.narrowed.help")));
+        narrowedBadge.setAccessibleHelp(tr("project.map.narrowed.help"));
+        showNarrowed(0);
+        surface.setOnNarrowedChanged(this::showNarrowed);
         flowFilter.setOnAction(event -> {
             FlowDirection flow = flowFilter.getValue();
             surface.setFlowDirection(flow);
@@ -438,6 +458,8 @@ final class ProjectMapView extends VBox {
                 bookmarksFilter,
                 personalNotesFilter,
                 typeFilter,
+                hideUnmatched,
+                narrowedBadge,
                 flowFilter,
                 clear);
         filters.getStyleClass().add("project-map-filters");
@@ -1054,6 +1076,22 @@ final class ProjectMapView extends VBox {
         surface.setKeepZoomOnColumnOpen(keepZoom);
         surface.setFocusNewColumn(focusColumn);
         onNavigationChanged = callback == null ? (keep, focus) -> {} : callback;
+    }
+
+    /** Restores "Hide unmatched" and reports later changes to {@code callback}. */
+    void setRememberedHideUnmatched(boolean hide, Consumer<Boolean> callback) {
+        onHideUnmatchedChanged = ignored -> {};
+        hideUnmatched.setSelected(hide);
+        surface.setHideUnmatched(hide);
+        onHideUnmatchedChanged = callback == null ? ignored -> {} : callback;
+    }
+
+    /** The badge beside "Hide unmatched": how many rows are off the map, shown only while some are. */
+    private void showNarrowed(int count) {
+        boolean any = count > 0;
+        narrowedBadge.setText(any ? tr("project.map.narrowed", count) : "");
+        narrowedBadge.setVisible(any);
+        narrowedBadge.setManaged(any);
     }
 
     private void navigationChanged() {
@@ -2411,6 +2449,9 @@ final class ProjectMapView extends VBox {
 
         private static final double COLUMN_TOP_INSET = 5;
         private static final double COLUMN_BOTTOM_PADDING = 12;
+        /** The line under a column's rows that says how many "Hide unmatched" took out. */
+        private static final double NARROWED_FOOTER_HEIGHT = 16;
+
         private static final double COLUMN_CONTROL_GAP = 4;
         private static final double MIN_COLUMN_CONTROL_HEIGHT = 20;
         private static final double MIN_COLUMN_FILTER_WIDTH = 46;
@@ -2535,6 +2576,12 @@ final class ProjectMapView extends VBox {
 
         private java.util.function.Consumer<Boolean> onNoMatchesChanged = none -> {};
         private boolean noMatches;
+        /** "Hide unmatched": rows the filters would fade are taken off the map instead. */
+        private boolean hideUnmatched;
+
+        private java.util.function.IntConsumer onNarrowedChanged = count -> {};
+        /** Rows the last paint left out for "Hide unmatched", over every column on the map. */
+        private int narrowedRows;
         /** Strip along the bottom edge, and its width from the left, covered by the floating zoom bar. */
         private double reservedBottom;
 
@@ -2931,6 +2978,27 @@ final class ProjectMapView extends VBox {
 
         void setOnNoMatchesChanged(java.util.function.Consumer<Boolean> callback) {
             onNoMatchesChanged = callback == null ? none -> {} : callback;
+        }
+
+        void setHideUnmatched(boolean hide) {
+            if (hide != hideUnmatched) {
+                hideUnmatched = hide;
+                repaint();
+            }
+        }
+
+        boolean isHideUnmatched() {
+            return hideUnmatched;
+        }
+
+        /** Told how many rows "Hide unmatched" takes off the map, whenever that number changes. */
+        void setOnNarrowedChanged(java.util.function.IntConsumer callback) {
+            onNarrowedChanged = callback == null ? count -> {} : callback;
+        }
+
+        /** Rows "Hide unmatched" took off the map at the last paint; 0 while nothing is hidden. */
+        int narrowedRows() {
+            return narrowedRows;
         }
 
         /** True while a query or filter chip is active and no loaded row matches it. */
@@ -3687,11 +3755,18 @@ final class ProjectMapView extends VBox {
                 g.setFont(Font.font(13));
                 g.fillText(tr(loadPending ? "project.map.loading" : "project.map.empty"), 18, 28);
                 reportNoMatches(false);
+                reportNarrowed(0);
                 return;
             }
 
-            List<ProjectMapModel.Column> columns =
-                    ProjectMapModel.columnsById(entries, columnQueries, columnShowHidden);
+            // "Hide unmatched" keeps what the filters keep prominent: the matches and the folders that lead to them.
+            boolean narrowing = hideUnmatched && filters != null && filters.active();
+            List<ProjectMapModel.Column> columns = ProjectMapModel.columnsById(
+                    entries, columnQueries, columnShowHidden, narrowing ? emphasized : null);
+            int narrowedTotal = 0;
+            for (ProjectMapModel.Column column : columns) {
+                narrowedTotal += column.narrowed();
+            }
             // Column widths allow for the checkbox label, so it is measured before they are computed (it
             // changes once, when the controls are first styled).
             for (ColumnControls controls : columnControls.values()) {
@@ -3734,6 +3809,7 @@ final class ProjectMapView extends VBox {
                 double cardHeight = COLUMN_TOP_INSET
                         + headerHeight
                         + (verticalFlow ? NODE_HEIGHT : rowsHeight)
+                        + narrowedFooterHeight(column)
                         + COLUMN_BOTTOM_PADDING;
                 double baseWorldX = WORLD_PADDING;
                 double baseWorldY = WORLD_PADDING + (verticalFlow ? direction * depth * depthStep : 0);
@@ -3874,6 +3950,22 @@ final class ProjectMapView extends VBox {
             layoutColumnControls();
             g.setGlobalAlpha(1);
             reportNoMatches(filters != null && filters.active() && emphasized.isEmpty());
+            reportNarrowed(narrowedTotal);
+        }
+
+        private void reportNarrowed(int count) {
+            if (count != narrowedRows) {
+                narrowedRows = count;
+                onNarrowedChanged.accept(count);
+            }
+        }
+
+        /**
+         * A column that "Hide unmatched" took rows out of says so under the rows that are left. One with none
+         * left says it on its empty row instead.
+         */
+        private static double narrowedFooterHeight(ProjectMapModel.Column column) {
+            return column.narrowed() > 0 && !column.entries().isEmpty() ? NARROWED_FOOTER_HEIGHT : 0;
         }
 
         private void reportNoMatches(boolean none) {
@@ -4237,14 +4329,22 @@ final class ProjectMapView extends VBox {
                     g.fillText(count, right, baseline);
                     g.setTextAlign(TextAlignment.LEFT);
                 }
+                String narrowed = column.narrowed() > 0 ? tr("project.map.column.narrowed", column.narrowed()) : null;
                 if (column.entries().isEmpty()) {
-                    // Its own filter (or the hidden-files checkbox) removed every row.
+                    // Its own filter (or the hidden-files checkbox, or "Hide unmatched") removed every row.
                     g.setFont(Font.font(Math.max(9, 11 * zoom)));
                     double header = columnHeaderHeight(column.depth(), w / zoom);
                     g.fillText(
-                            columnNoMatches,
+                            narrowed != null ? narrowed : columnNoMatches,
                             titleLeft,
                             y + (COLUMN_TOP_INSET + header) * zoom + 20.5 * zoom,
+                            Math.max(1, w - 20 * zoom));
+                } else if (narrowed != null) {
+                    g.setFont(Font.font("System", FontPosture.ITALIC, Math.max(8, 10 * zoom)));
+                    g.fillText(
+                            narrowed,
+                            titleLeft,
+                            y + h - (COLUMN_BOTTOM_PADDING + NARROWED_FOOTER_HEIGHT * 0.3) * zoom,
                             Math.max(1, w - 20 * zoom));
                 }
             }

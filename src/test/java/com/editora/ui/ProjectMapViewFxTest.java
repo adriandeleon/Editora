@@ -24,6 +24,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
@@ -343,6 +344,78 @@ class ProjectMapViewFxTest {
         }
     }
 
+    /** "Hide unmatched" takes what the filters fade off the canvas, and the badge and the column say how many. */
+    @Test
+    void hideUnmatchedTakesFadedRowsOffTheMapAndSaysHowMany() throws Exception {
+        Path javaFile = Files.writeString(root.resolve("Main.java"), "class Main {}")
+                .toAbsolutePath()
+                .normalize();
+        Path notes = Files.writeString(root.resolve("notes.md"), "# notes")
+                .toAbsolutePath()
+                .normalize();
+        Files.writeString(root.resolve("README.txt"), "readme");
+        List<ProjectMapModel.Entry> entries = ProjectMapModel.loadVisible(root, Set.of(root), false);
+        Set<Path> openFiles = new HashSet<>(Set.of(javaFile));
+        ProjectMapView mapView =
+                FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, openFiles::contains, path -> false));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                Scene scene = new Scene(mapView, 600, 320);
+                scene.getStylesheets()
+                        .add(ProjectMapViewFxTest.class
+                                .getResource("/com/editora/styles/app.css")
+                                .toExternalForm());
+                mapView.applyCss();
+                mapView.resize(600, 320);
+                mapView.layout();
+                mapView.setRememberedFlow("LEFT_TO_RIGHT", ignored -> {});
+                List<Boolean> remembered = new java.util.ArrayList<>();
+                mapView.setRememberedHideUnmatched(false, remembered::add);
+
+                Region surface = FxTestSupport.field(mapView, "surface");
+                FxTestSupport.call(
+                        surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(root));
+                mapView.refreshStates();
+                ToggleButton openFilter = FxTestSupport.field(mapView, "openFilter");
+                openFilter.fire();
+                CheckBox hide = FxTestSupport.field(mapView, "hideUnmatched");
+                Label badge = FxTestSupport.field(mapView, "narrowedBadge");
+                assertEquals(tr("project.map.filter.hideUnmatched"), hide.getText());
+                boxFor(surface, notes); // faded, but still on the map
+                assertFalse(badge.isVisible());
+
+                hide.setSelected(true);
+
+                assertEquals(List.of(true), remembered);
+                boxFor(surface, javaFile);
+                List<?> boxes = FxTestSupport.field(surface, "boxes");
+                assertTrue(boxes.stream()
+                        .noneMatch(box -> ((ProjectMapModel.Entry) FxTestSupport.call(box, "entry", new Class<?>[0]))
+                                .path()
+                                .equals(notes)));
+                assertEquals(2, (int) FxTestSupport.call(surface, "narrowedRows", new Class<?>[0]));
+                assertTrue(badge.isVisible());
+                assertEquals(tr("project.map.narrowed", 2), badge.getText());
+                ProjectMapModel.Column files = (ProjectMapModel.Column)
+                        FxTestSupport.call(columnBoxFor(surface, 1), "column", new Class<?>[0]);
+                assertEquals(2, files.narrowed());
+                assertEquals("1/3", files.countLabel());
+
+                openFilter.fire(); // no filter: nothing is faded, so nothing is hidden
+                assertFalse(badge.isVisible());
+                boxFor(surface, notes);
+
+                openFilter.fire();
+                hide.setSelected(false);
+                assertFalse(badge.isVisible());
+                boxFor(surface, notes);
+                assertEquals(List.of(true, false), remembered);
+            });
+        } finally {
+            FxTestSupport.runOnFx(mapView::dispose);
+        }
+    }
+
     /** White over the accent is 1.68:1 in Editora Dark: the selected node's ink is the theme's on-emphasis colour. */
     @Test
     void selectedNodeInkFollowsTheThemesOnEmphasisColour() throws Exception {
@@ -409,10 +482,11 @@ class ProjectMapViewFxTest {
                 FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
         try {
             FxTestSupport.runOnFx(() -> {
-                new Scene(mapView, 500, 300);
+                // Tall enough that the wrapped filter row leaves the canvas clear of the overview inset.
+                new Scene(mapView, 500, 340);
                 mapView.setRoot(project);
                 mapView.applyCss();
-                mapView.resize(500, 300);
+                mapView.resize(500, 340);
                 mapView.layout();
 
                 Region surface = FxTestSupport.field(mapView, "surface");
@@ -452,6 +526,10 @@ class ProjectMapViewFxTest {
                         entries,
                         Set.of(project, source));
                 Object currentSourceBox = boxFor(surface, source);
+                System.err.println("DBG surface=" + surface.getWidth() + "x" + surface.getHeight() + " box x="
+                        + FxTestSupport.call(currentSourceBox, "x", new Class<?>[0]) + " w="
+                        + FxTestSupport.call(currentSourceBox, "width", new Class<?>[0]) + " y="
+                        + FxTestSupport.call(currentSourceBox, "y", new Class<?>[0]));
                 click(surface, center(currentSourceBox, "x", "width"), center(currentSourceBox, "y", "height"));
                 assertTrue(mapView.expandedDirectories().contains(source));
                 click(surface, edge(currentSourceBox, "x", "width") - 8, center(currentSourceBox, "y", "height"));

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Project Map: Hide unmatched.** A checkbox in the Map's filter row takes the rows the filters would fade off the
+  map, leaving only the matches and the folders that lead to them. It never hides silently: an amber "N rows hidden"
+  badge sits beside it, and each column shows "shown/total" with an "N hidden" line under its rows. Remembered per
+  workspace (workspace schema 24 → 25).
+
 - **Terminal: Nerd Font icons without installing a Nerd Font.** Editora bundles Symbols Nerd Font Mono (Nerd Fonts
   3.5.1), so the icons eza, lsd and powerline prompts print show on any machine. An installed Nerd Font build of the
   terminal's font still wins. Bundled icons are drawn a cell and a half wide, the size Nerd Font builds give them;
