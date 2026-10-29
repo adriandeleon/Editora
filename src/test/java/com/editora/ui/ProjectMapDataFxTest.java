@@ -138,7 +138,8 @@ class ProjectMapDataFxTest {
 
             Files.delete(other); // what the context menu's Delete does, before it refreshes the panel
             FxTestSupport.runOnFx(() -> {
-                FxTestSupport.invoke(panel, "markLocalChange");
+                FxTestSupport.call(
+                        panel, "markLocalChange", new Class<?>[] {java.util.Collection.class}, List.of(other));
                 long before = generation.get();
                 FxTestSupport.invoke(panel, "refreshAfterChange");
                 assertTrue(generation.get() > before, "the Map must be reloaded, not only searched again");

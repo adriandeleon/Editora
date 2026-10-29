@@ -382,9 +382,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private volatile boolean disposed;
     // In-app rename/delete update the tree directly (instantly); the watcher then re-fires for that same
     // change (the OS delivers the event a beat later — ~1 s on macOS) and would run a redundant full
-    // refreshTree() rebuild that reads as the edit "settling" a second later. Skip the watcher refresh for a
-    // short window after an in-app filesystem change so the instant update is the only one the user sees.
-    private volatile long lastLocalChangeMs;
+    // refreshTree() rebuild that reads as the edit "settling" a second later. The paths an in-app operation
+    // touched (path -> when) are recorded, and for a short window the watcher's events for them — and only
+    // them — are taken for that operation's echo. Somebody else's change landing in the same window is not.
+    private final java.util.Map<Path, Long> localChanges = new java.util.HashMap<>();
 
     private static final long SELF_CHANGE_WINDOW_MS = 1500;
     // What the watcher reported since the last debounce tick, by directory (FX thread only).
@@ -1052,12 +1053,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (disposed) {
             return;
         }
-        if (System.currentTimeMillis() - lastLocalChangeMs < SELF_CHANGE_WINDOW_MS) {
-            watchChanges.clear();
-            syncWatches(); // our own edit already refreshed the tree; just keep the watch set current
-            return;
-        }
-        ProjectWatchChanges.Plan plan = watchChanges.drain(this::recentlyWrittenLocally);
+        // Events for what an in-app rename, move, delete or create touched are its echo: that operation already
+        // refreshed the tree. Everything else in the batch is applied as usual.
+        ProjectWatchChanges.Plan plan = watchChanges.drain(this::recentlyWrittenLocally, this::changedLocally);
         if (plan.relistAll()) {
             refreshTree();
         } else {
@@ -2324,7 +2322,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 showError(tr("project.newFolderError", name, ex.getMessage()));
                 return;
             }
-            markLocalChange(); // tree re-listed below; suppress the watcher's redundant refresh
+            markLocalChange(List.of(target)); // tree re-listed below; the watcher skips its echo
             dirItem.setExpanded(true); // reveal the new folder under its parent
             refreshAfterChange();
         });
@@ -2364,7 +2362,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             showError(tr("project.renameError", path.getFileName(), ex.getMessage()));
             return;
         }
-        markLocalChange(); // tree re-listed below; suppress the watcher's redundant refresh
+        markLocalChange(List.of(path, target)); // tree re-listed below; the watcher skips its echo
         mapView.pathRenamed(path, target); // a renamed open folder stays open in the Map
         refreshAfterChange();
         onFileRenamed.accept(path, target);
@@ -2543,8 +2541,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         moveThrough(planned, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             int moved = done.size();
             if (moved > 0) {
-                lastMove = List.copyOf(done);
-                markLocalChange();
+                lastMove = List.copyOf(done); // each move was recorded as a local change when it was made
                 refreshAfterChange();
             }
             int notMoved = alreadySkipped + failed - refused[0];
@@ -2594,6 +2591,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             } else {
                 try {
                     Files.move(m.from(), m.to());
+                    markLocalChange(List.of(m.from(), m.to()));
                     mapView.pathRenamed(m.from(), m.to());
                     onFileRenamed.accept(m.from(), m.to()); // the open buffer(s) of a moved file / under a moved dir
                     done.add(m);
@@ -2670,8 +2668,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         renameParticipant.beginMove(javaItems(back));
         moveThrough(back, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             if (!done.isEmpty()) {
-                markLocalChange();
-                refreshAfterChange();
+                refreshAfterChange(); // each move back was recorded as a local change when it was made
             }
             // a "No" to moving back without edits is the user's choice, not a conflict (sixth review BV3)
             int notBack = alreadyStuck + failed - refused[0];
@@ -2819,7 +2816,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         }
         if (deleted > 0) {
-            markLocalChange();
+            markLocalChange(files);
             refreshAfterChange();
         }
         if (trashed == 1) {
@@ -2848,9 +2845,33 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** Records an in-app filesystem change so the watcher skips its redundant refresh for a short window. */
-    private void markLocalChange() {
-        lastLocalChangeMs = System.currentTimeMillis();
+    /**
+     * Records the paths an in-app filesystem change touched (a renamed or moved item at both ends, a deleted
+     * one, a created folder), so the watcher's echo of that change does not refresh again for a short window.
+     * Only events at or under these paths are skipped: an outside change in the same window still lands.
+     */
+    private void markLocalChange(java.util.Collection<Path> paths) {
+        long now = localWriteClockForTest.getAsLong();
+        localChanges.values().removeIf(at -> now - at >= localWriteWindowMs);
+        for (Path path : paths) {
+            if (path != null) {
+                localChanges.put(path.toAbsolutePath().normalize(), now);
+            }
+        }
+    }
+
+    private boolean changedLocally(Path path) {
+        if (localChanges.isEmpty()) {
+            return false;
+        }
+        long now = localWriteClockForTest.getAsLong();
+        Path normalized = path.toAbsolutePath().normalize();
+        for (java.util.Map.Entry<Path, Long> change : localChanges.entrySet()) {
+            if (now - change.getValue() < localWriteWindowMs && normalized.startsWith(change.getKey())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Shows a modal error dialog when a filesystem operation (rename/delete) fails. */
