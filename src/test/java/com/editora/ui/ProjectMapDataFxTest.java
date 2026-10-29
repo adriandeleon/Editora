@@ -620,8 +620,6 @@ class ProjectMapDataFxTest {
         Path sub = Files.createDirectory(a.resolve("sub"));
         Path leaf = Files.writeString(sub.resolve("leaf.txt"), "leaf");
         Path renamed = root.resolve("renamed");
-        // A second entry at the root: its only folder would otherwise open on its own (a compacted chain).
-        Files.writeString(root.resolve("README.md"), "");
         ProjectMapView mapView = newMap(new ArrayList<>());
         try {
             Region surface = FxTestSupport.field(mapView, "surface");

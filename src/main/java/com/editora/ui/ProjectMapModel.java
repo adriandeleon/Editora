@@ -269,10 +269,10 @@ final class ProjectMapModel {
      * "Show hidden" choice by directory, falling back to {@code showHidden}; {@code limits} raises a
      * directory's row limit above {@link #DIRECTORY_CHUNK}; {@code pinned} paths (search matches, a revealed
      * file) are loaded first, with the rows that lead to them, wherever they sort. {@code cancelled} is
-     * polled between directories. With {@code compactChains} a listed folder whose only child is a folder
-     * lists that child too, as if it were expanded (not through a symbolic link, and at most {@link #MAX_CHAIN}
-     * folders deep): one click on {@code src} opens {@code src/main/java/com/acme}, which the Map draws as one
-     * column.
+     * polled between directories. With {@code compactChains} a listed folder (not the root) whose only child is
+     * a folder lists that child too, as if it were expanded (not through a symbolic link, and at most {@link
+     * #MAX_CHAIN} folders deep): one click on {@code src} opens {@code src/main/java/com/acme}, which the Map
+     * draws as one column.
      */
     record Request(
             Path root,
@@ -516,9 +516,11 @@ final class ProjectMapModel {
                 } else if (item.directory()
                         && request.compactChains()
                         && total == 1
+                        && !directory.equals(root)
                         && !item.symbolicLink()
                         && pending.chain() < MAX_CHAIN) {
-                    // The folder's only child is a folder: it opens with it (a compacted column).
+                    // The folder's only child is a folder: it opens with it (a compacted column). Not the root's
+                    // only child: the root's children are the first column, and that row must still close.
                     queue.addLast(new Pending(item.path(), childDepth, pending.chain() + 1));
                 }
             }

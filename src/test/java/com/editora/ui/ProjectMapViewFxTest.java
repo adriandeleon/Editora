@@ -200,8 +200,6 @@ class ProjectMapViewFxTest {
     @Test
     void globalSearchOpensTheColumnsThatRevealMatchingFiles() throws Exception {
         Path source = Files.createDirectories(root.resolve("src/main/java/com/editora/dap"));
-        // src holds two entries: a single-child chain would open on its own ("Compact folder chains").
-        Files.writeString(root.resolve("src/notes.txt"), "");
         Path match = Files.writeString(source.resolve("FileResult.java"), "record FileResult() {}")
                 .toAbsolutePath()
                 .normalize();

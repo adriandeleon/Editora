@@ -152,6 +152,13 @@ class ProjectMapLayoutReviewFxTest {
         ProjectMapModel.Snapshot plain =
                 ProjectMapModel.load(new ProjectMapModel.Request(root, Set.of(root, top), false));
         assertFalse(plain.entries().stream().anyMatch(entry -> entry.path().equals(app)));
+
+        // The root's only folder does not open on its own: its row must still open and close with a click.
+        Path lone = Files.createDirectory(temp.resolve("lone")).toRealPath();
+        Path only = Files.createDirectories(lone.resolve("only/inner"));
+        ProjectMapModel.Snapshot single = ProjectMapModel.load(new ProjectMapModel.Request(
+                lone, Set.of(lone), false, Map.of(), Map.of(), List.of(), null, () -> false, true));
+        assertFalse(single.loadedDirectories().contains(only.getParent()));
     }
 
     @Test
