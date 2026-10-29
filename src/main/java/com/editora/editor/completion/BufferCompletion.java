@@ -999,6 +999,10 @@ public final class BufferCompletion {
             start--;
         }
         String prefix = text.substring(start);
+        if (!manual && inWholeEndTag(a, caret, text)) { // a hand-typed closer joined Editora's: nothing to offer (C6)
+            hideCompletion();
+            return;
+        }
         if (showHttpOffer(a, caret, prefix, manual)
                 || showMarkdownOffer(a, caret, prefix, manual)
                 || (!manual && showAbbrevGhost(a))) {
@@ -1033,9 +1037,10 @@ public final class BufferCompletion {
         // `##include`) — start only, since the caret is the right end for a locally derived range.
         int wideStart = snippetTokenStart(text, text.length());
         String wideToken = text.substring(wideStart);
-        List<Completion> items = sourceOn
-                ? completionProvider.complete(
-                        host.language(), host.getSpellLanguage(), prefix, wideToken, host.isProse())
+        // The snippets of the language at the caret: a page's <style> gets CSS's, a start tag none (HTML B5/C4).
+        String snippetLang = SnippetTyping.snippetLanguageAt(a, caret, host.language());
+        List<Completion> items = sourceOn && snippetLang != null
+                ? completionProvider.complete(snippetLang, host.getSpellLanguage(), prefix, wideToken, host.isProse())
                 : List.of();
         if (a.getScene() == null) {
             return;
@@ -1129,6 +1134,13 @@ public final class BufferCompletion {
         localManual = manual;
         localCaret = caret;
         localVersion = host.docVersion();
+    }
+
+    private boolean inWholeEndTag(CodeArea a, int caret, String before) {
+        String lang = host.language();
+        return ("html".equals(lang) || "xml".equals(lang))
+                && com.editora.editops.HtmlCaretRegion.inWholeEndTag(
+                        before, a.getText(caret, Math.min(a.getLength(), caret + 128)));
     }
 
     /**

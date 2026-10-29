@@ -207,6 +207,60 @@ class LspCompletionFlowFxTest {
         }
     }
 
+    /**
+     * An HTML page's local snippets are those of the language at the caret: CSS's in a {@code <style>}, none in a
+     * start tag — the {@code col} and {@code hr} element snippets were preselected there (HTML review B5/C4).
+     */
+    @Test
+    void anHtmlPageAsksForTheSnippetsOfTheLanguageAtTheCaret() throws Exception {
+        for (String[] probe : new String[][] {
+            {"<style>\np { col", "css"}, {"<script>\n  var", "javascript"}, {"<a hr", "none"}, {"<p>\n  hr", "html"}
+        }) {
+            List<String> asked = new CopyOnWriteArrayList<>();
+            EditorBuffer b = lspBuffer(probe[0], List.of(Completion.lsp("zzz", "zzz", null)));
+            EditorFx.onFx(() -> {
+                b.setLanguageOverride("html");
+                b.setAutocomplete(true, true, true, true);
+                b.setCompletionProvider((lang, dict, prefix, wide, prose) -> {
+                    asked.add(lang);
+                    return List.of();
+                });
+                b.triggerCompletion();
+            });
+            EditorFx.drain();
+            assertEquals(probe[1].equals("none") ? List.of() : List.of(probe[1]), asked, probe[0]);
+        }
+    }
+
+    /**
+     * A closer typed by hand joins the one Editora inserted ({@code <p>a</|p>}). The server, asked there, offers the
+     * next open ancestor, and the Enter that followed renamed {@code </p>} to {@code </body>} (HTML review C6): no
+     * list opens in a whole end tag, and the rest of the name steps over the closer.
+     */
+    @Test
+    void noListOpensWhereAHandTypedCloserJoinsTheOneThere() throws Exception {
+        EditorBuffer b = lspBuffer("<body>\n<p>a</p>\n</body>", List.of(Completion.lsp("/body", "/body>", null)));
+        CodeArea a = EditorFx.callFx(b::getArea);
+        EditorFx.onFx(() -> {
+            b.setLanguageOverride("html");
+            b.setLspTriggerChars(Set.of('<', '/'));
+            b.setAutoCloseTags(true);
+            a.moveTo("<body>\n<p>a".length());
+            a.fireEvent(EditorFx.typed("<"));
+            a.fireEvent(EditorFx.typed("/"));
+        });
+        assertEquals("<body>\n<p>a</p>\n</body>", EditorFx.callFx(a::getText), "precondition: the closer joined");
+        Thread.sleep(700); // past the typing pause
+        EditorFx.drain();
+        assertFalse(EditorFx.callFx(() -> completion(b).completionPopupShowing()), "no list in a whole end tag");
+        EditorFx.onFx(() -> {
+            a.fireEvent(EditorFx.typed("p"));
+            a.fireEvent(EditorFx.typed(">"));
+        });
+        assertEquals("<body>\n<p>a</p>\n</body>", EditorFx.callFx(a::getText), "the closer is typed over, once");
+        assertEquals("<body>\n<p>a</p>".length(), EditorFx.callFx(a::getCaretPosition));
+    }
+
     @Test
     void typingAPrefixNoItemMatchesClosesTheList() throws Exception {
         EditorBuffer b = lspBuffer("out.pr", List.of(Completion.lsp("println", "println", "void println()")));
