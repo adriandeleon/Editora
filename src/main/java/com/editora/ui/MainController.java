@@ -966,7 +966,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 .applyRipgrepSupport(); // detect rg + pick the Find-in-Files backend (rg when available, else walker)
         applyMathSupport(); // LaTeX math rendering (off by default)
         httpClient.applySupport(); // .http run glyphs + response preview (off when disabled or in Simple UI mode)
-        htmlPreview.applySupport(); // HTML "open in browser" control off when disabled (default)
+        htmlPreview.applySupport(); // HTML "open in browser" control off when disabled (on by default)
         logViewer.applySupport(); // log-viewer control + level overlay (default on for .log files)
         applyMcpSupport(); // MCP server (loopback HTTP) off when disabled (default)
         applyAgentSupport(); // AI Agent chat window off when disabled (default)
@@ -2388,6 +2388,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             logViewer.onBufferClosed(closed); // cancel tail-follow + drop per-buffer state
                             csvCoordinator.onBufferClosed(closed); // drop the CSV grid's edit listener
                             httpClient.onBufferClosed(closed); // drop this buffer's HTTP response panel
+                            htmlPreview.onBufferClosed(closed); // the HTML preview serves its file from disk again
                             httpVariableHints.forget(closed);
                             recovery.untrack(closed); // closed by choice: its recovery copy goes with it
                             if (closed.getPath() != null && tabForPath(closed.getPath()) == null) {
@@ -8166,8 +8167,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setTypstImageHandler(() -> editing.insertImageFromChooser(buffer)); // Typst "Insert Image" menu
         buffer.previewMenu().setExportPng(typst::exportPng); // Typst preview right-click → PNG
         buffer.previewMenu().setExportSvg(typst::exportSvg); // Typst preview right-click → SVG
-        // HTML Live Preview: the debounced edit pulse reloads the browser (only while this file is served).
-        buffer.setHtmlPreviewDirtyListener(() -> htmlPreview.onBufferEdited(buffer));
+        htmlPreview.wireBuffer(buffer); // HTML Live Preview: settled edits reload a served site; globe follows language
         buffer.setFormatBarEnabled(config.getSettings().isMarkdownFormatBar());
         buffer.previewMenu().setExportPdf(exports::exportPreviewPdf); // preview right-click menu
         buffer.previewMenu().setPrint(exports::printPreview);

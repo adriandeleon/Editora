@@ -541,7 +541,7 @@ public class EditorBuffer implements TabContent {
     private boolean logViewForced;
     /** Filter, follow and trim state of the log viewer; a filtered view is read-only (see {@link LogView}). */
     private final LogView logView = new LogView(area, this::applyEditable);
-    /** Fired from the debounced edit pulse while this is an HTML buffer (drives HTML live-preview reload). */
+    /** Fired from the debounced edit pulse while an HTML preview is served (its site reloads on any file's edit). */
     private @Nullable Runnable htmlPreviewDirtyListener;
     /** One document subscription and timer sequence for all differently-timed settled-edit work. */
     private final SettledEditDispatcher settledEdits = new SettledEditDispatcher();
@@ -1313,10 +1313,10 @@ public class EditorBuffer implements TabContent {
         });
         settledEdits.at(
                 Duration.ofMillis(250),
-                () -> (isHtml() && htmlPreviewDirtyListener != null)
+                () -> htmlPreviewDirtyListener != null
                         || (previewLive() && markdownViewMode != MarkdownViewMode.EDITOR),
                 () -> {
-                    if (isHtml() && htmlPreviewDirtyListener != null) {
+                    if (htmlPreviewDirtyListener != null) {
                         htmlPreviewDirtyListener.run();
                     }
                     if (previewLive() && markdownViewMode != MarkdownViewMode.EDITOR) {
@@ -5127,8 +5127,8 @@ public class EditorBuffer implements TabContent {
         return com.editora.editorconfig.EditorConfigCharset.charsetFor(detectedCharset);
     }
 
-    /** Injects the debounced HTML-edit listener (fires the live-preview reload); {@code null} disables it. */
-    public void setHtmlPreviewDirtyListener(Runnable listener) {
+    /** Injects the debounced edit listener (fires the live-preview reload); {@code null} disables it. */
+    public void setHtmlPreviewDirtyListener(@Nullable Runnable listener) {
         this.htmlPreviewDirtyListener = listener;
     }
 
