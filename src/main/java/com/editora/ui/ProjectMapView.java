@@ -2684,6 +2684,9 @@ final class ProjectMapView extends VBox {
         private Predicate<Path> noteState = path -> false;
         private Map<Path, GitFileStatus> gitState = Map.of();
         private Set<Path> gitDirectories = Set.of();
+        /** Paths Git reports as untracked; a folder among them makes everything under it untracked too. */
+        private Set<Path> gitUntrackedRoots = Set.of();
+
         private Set<Path> openPaths = Set.of();
         private Set<Path> modifiedPaths = Set.of();
         private Set<Path> bookmarkedPaths = Set.of();
@@ -3202,6 +3205,13 @@ final class ProjectMapView extends VBox {
         void setGitState(Map<Path, GitFileStatus> status, Set<Path> directories) {
             gitState = status == null ? Map.of() : status;
             gitDirectories = directories == null ? Set.of() : directories;
+            Set<Path> untracked = new HashSet<>();
+            gitState.forEach((path, value) -> {
+                if (value == GitFileStatus.UNTRACKED) {
+                    untracked.add(path);
+                }
+            });
+            gitUntrackedRoots = Set.copyOf(untracked);
             recomputeEmphasis();
             repaint();
         }
@@ -3778,6 +3788,31 @@ final class ProjectMapView extends VBox {
             }
         }
 
+        /**
+         * A row's Git status: its own, or untracked when it lies under a folder Git reports as untracked. In
+         * its default mode {@code git status} names a new folder ({@code ? deep/}), not the files in it.
+         */
+        private @Nullable GitFileStatus gitStatusOf(Path path) {
+            GitFileStatus own = gitState.get(path);
+            if (own != null || gitUntrackedRoots.isEmpty()) {
+                return own;
+            }
+            for (Path parent = path.getParent(); parent != null; parent = parent.getParent()) {
+                if (gitUntrackedRoots.contains(parent)) {
+                    return GitFileStatus.UNTRACKED;
+                }
+                if (parent.equals(root)) {
+                    break;
+                }
+            }
+            return null;
+        }
+
+        /** Whether the Git chip counts a row: it has a status, or is a folder holding a change. */
+        private boolean gitChanged(Path path) {
+            return gitDirectories.contains(path) || gitStatusOf(path) != null;
+        }
+
         private void recomputeEmphasis() {
             if (filters == null || !filters.active()) {
                 emphasized = Set.of();
@@ -3785,9 +3820,13 @@ final class ProjectMapView extends VBox {
             }
             Set<Path> direct = new HashSet<>();
             Set<Path> loadedPaths = new HashSet<>();
+            List<ProjectMapModel.Entry> symbolRows = new ArrayList<>();
             for (ProjectMapModel.Entry entry : entries) {
                 Path path = entry.path();
                 loadedPaths.add(path);
+                if (entry.isSymbol()) {
+                    symbolRows.add(entry);
+                }
                 if (entry.isPlaceholder() || entry.isSymbol()) {
                     continue;
                 }
@@ -3796,7 +3835,7 @@ final class ProjectMapView extends VBox {
                         filters,
                         openPaths.contains(path),
                         modifiedPaths.contains(path),
-                        gitState.containsKey(path) || gitDirectories.contains(path),
+                        gitChanged(path),
                         bookmarkedPaths.contains(path),
                         notedPaths.contains(path))) {
                     direct.add(path);
@@ -3811,7 +3850,50 @@ final class ProjectMapView extends VBox {
                     result.add(entry.path());
                 }
             }
+            result.addAll(ProjectMapModel.emphasized(entries, searchMatchingSymbols(symbolRows), root));
             emphasized = result;
+        }
+
+        /**
+         * The declarations on screen whose name the query matches (E6): an open Structure column is searched
+         * as its file's rows are, without reading anything. A match lights itself and the rows that lead to
+         * it, not its siblings. The other filters still have to accept the declaration's file.
+         */
+        private Set<Path> searchMatchingSymbols(List<ProjectMapModel.Entry> symbolRows) {
+            if (filters.query().isEmpty() || symbolRows.isEmpty()) {
+                return Set.of();
+            }
+            ProjectMapModel.Filters fileFilters = new ProjectMapModel.Filters(
+                    "",
+                    filters.open(),
+                    filters.modified(),
+                    filters.gitChanged(),
+                    filters.bookmarked(),
+                    filters.personalNotes(),
+                    filters.type());
+            Set<Path> result = new HashSet<>();
+            Map<Path, Boolean> fileAccepted = new HashMap<>();
+            for (ProjectMapModel.Entry entry : symbolRows) {
+                ProjectMapModel.Symbol symbol = entry.symbol();
+                if (symbol == null || com.editora.search.FuzzyMatch.of(entry.name(), filters.query()) == null) {
+                    continue;
+                }
+                Path file = symbol.file();
+                boolean accepted = fileAccepted.computeIfAbsent(
+                        file,
+                        ignored -> ProjectMapModel.matches(
+                                new ProjectMapModel.Entry(file, file.getParent(), 0, false),
+                                fileFilters,
+                                openPaths.contains(file),
+                                modifiedPaths.contains(file),
+                                gitChanged(file),
+                                bookmarkedPaths.contains(file),
+                                notedPaths.contains(file)));
+                if (accepted) {
+                    result.add(entry.path());
+                }
+            }
+            return result;
         }
 
         /**
@@ -4832,12 +4914,12 @@ final class ProjectMapView extends VBox {
 
         private String iconStatusClass(ProjectMapModel.Entry entry) {
             if (entry.directory()) {
-                return gitDirectories.contains(entry.path()) ? "git-status-dir-changed" : "";
+                return gitChanged(entry.path()) ? "git-status-dir-changed" : "";
             }
             if (modifiedPaths.contains(entry.path())) {
                 return "modified-file";
             }
-            GitFileStatus status = gitState.get(entry.path());
+            GitFileStatus status = gitStatusOf(entry.path());
             return status == null ? "" : status.cssClass();
         }
 
@@ -4887,7 +4969,7 @@ final class ProjectMapView extends VBox {
                     + (notedPaths.contains(entry.path()) ? MARKER_WIDTH : 0);
             // Keep Structure and Preview in the final strip and the semantic markers immediately to its left.
             double x = box.x() + box.width() - (trailingZone(entry) + 3 + markerWidth) * zoom;
-            GitFileStatus status = gitState.get(entry.path());
+            GitFileStatus status = gitStatusOf(entry.path());
             if (status != null) {
                 g.setFill(onAccentFill ? onAccent() : gitColor(status));
                 g.setFont(Font.font("System", FontWeight.BOLD, 10 * zoom));
@@ -5215,7 +5297,7 @@ final class ProjectMapView extends VBox {
             if (modifiedPaths.contains(entry.path())) {
                 statuses.add(tr("project.map.tooltip.unsaved"));
             }
-            if (gitState.containsKey(entry.path()) || gitDirectories.contains(entry.path())) {
+            if (gitChanged(entry.path())) {
                 statuses.add(tr("project.map.tooltip.gitChanged"));
             }
             if (bookmarkedPaths.contains(entry.path())) {
