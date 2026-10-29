@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 154;
+    public static final int SCHEMA_VERSION = 155;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -980,6 +980,21 @@ public class Settings {
     private boolean xmlFormatSpaceBeforeEmptyCloseTag = true;
     /** The most XML elements Structure and folding list for one file ({@code xml.symbols.maxItemsComputed}). */
     private int xmlSymbolLimit = XML_SYMBOL_LIMIT_DEFAULT;
+    /**
+     * The column HTML Format Document wraps at ({@code html.format.wrapLineLength}); 0 = never wraps. A file's
+     * EditorConfig {@code max_line_length} wins.
+     */
+    private int htmlFormatWrapLineLength = HTML_WRAP_LINE_LENGTH_DEFAULT;
+    /** How HTML Format Document wraps attributes ({@code html.format.wrapAttributes}): one of {@link #HTML_WRAP_ATTRIBUTES}. */
+    private String htmlFormatWrapAttributes = "auto";
+    /** The elements whose content HTML Format Document leaves as written, comma-separated (VS Code's list). */
+    private String htmlFormatContentUnformatted = HTML_CONTENT_UNFORMATTED_DEFAULT;
+    /** The quotes an attribute completed by the HTML server gets: {@code doublequotes}, {@code singlequotes}, {@code empty}. */
+    private String htmlAttributeQuotes = "doublequotes";
+    /** The HTML server reports problems in embedded scripts. */
+    private boolean htmlValidateScripts = true;
+    /** The HTML server reports problems in embedded styles. */
+    private boolean htmlValidateStyles = true;
     /** PDF export: include the line-number gutter (code PDFs). */
     private boolean pdfLineNumbers = true;
     /** PDF export: apply syntax-highlighting colors (code PDFs); off = plain monospace. */
@@ -4256,6 +4271,37 @@ public class Settings {
             "pre",
             "xd:pre");
 
+    /** VS Code's {@code html.format.wrapAttributes} values, its default first. */
+    public static final java.util.List<String> HTML_WRAP_ATTRIBUTES = java.util.List.of(
+            "auto",
+            "force",
+            "force-aligned",
+            "force-expand-multiline",
+            "aligned-multiple",
+            "preserve",
+            "preserve-aligned");
+    /** VS Code's {@code html.completion.attributeDefaultValue} values, its default first. */
+    public static final java.util.List<String> HTML_ATTRIBUTE_QUOTES =
+            java.util.List.of("doublequotes", "singlequotes", "empty");
+
+    public static final int HTML_WRAP_LINE_LENGTH_DEFAULT = 120;
+    public static final int HTML_WRAP_LINE_LENGTH_MAX = 10_000;
+    /** VS Code's {@code html.format.contentUnformatted}. */
+    public static final String HTML_CONTENT_UNFORMATTED_DEFAULT = "pre,code,textarea";
+
+    /** A list of element names as the HTML server reads it: comma-separated, no blanks, no repeats. */
+    public static String normalizeTagList(@Nullable String names) {
+        java.util.LinkedHashSet<String> kept = new java.util.LinkedHashSet<>();
+        if (names != null) {
+            for (String n : names.split("[,;\\s]+")) {
+                if (!n.isBlank()) {
+                    kept.add(n.strip());
+                }
+            }
+        }
+        return String.join(",", kept);
+    }
+
     public static final int XML_SYMBOL_LIMIT_DEFAULT = 5_000;
     public static final int XML_SYMBOL_LIMIT_MAX = 1_000_000;
 
@@ -4356,6 +4402,57 @@ public class Settings {
 
     public void setXmlFormatSpaceBeforeEmptyCloseTag(boolean space) {
         this.xmlFormatSpaceBeforeEmptyCloseTag = space;
+    }
+
+    public int getHtmlFormatWrapLineLength() {
+        return Math.clamp(htmlFormatWrapLineLength, 0, HTML_WRAP_LINE_LENGTH_MAX);
+    }
+
+    public void setHtmlFormatWrapLineLength(int column) {
+        this.htmlFormatWrapLineLength = Math.clamp(column, 0, HTML_WRAP_LINE_LENGTH_MAX);
+    }
+
+    public String getHtmlFormatWrapAttributes() {
+        return oneOf(htmlFormatWrapAttributes, HTML_WRAP_ATTRIBUTES);
+    }
+
+    public void setHtmlFormatWrapAttributes(@Nullable String mode) {
+        this.htmlFormatWrapAttributes = oneOf(mode, HTML_WRAP_ATTRIBUTES);
+    }
+
+    public String getHtmlFormatContentUnformatted() {
+        return htmlFormatContentUnformatted == null
+                ? HTML_CONTENT_UNFORMATTED_DEFAULT
+                : normalizeTagList(htmlFormatContentUnformatted);
+    }
+
+    /** Element names, separated by commas, semicolons or spaces; empty = none (the server still keeps scripts). */
+    public void setHtmlFormatContentUnformatted(@Nullable String names) {
+        this.htmlFormatContentUnformatted = normalizeTagList(names);
+    }
+
+    public String getHtmlAttributeQuotes() {
+        return oneOf(htmlAttributeQuotes, HTML_ATTRIBUTE_QUOTES);
+    }
+
+    public void setHtmlAttributeQuotes(@Nullable String quotes) {
+        this.htmlAttributeQuotes = oneOf(quotes, HTML_ATTRIBUTE_QUOTES);
+    }
+
+    public boolean isHtmlValidateScripts() {
+        return htmlValidateScripts;
+    }
+
+    public void setHtmlValidateScripts(boolean validate) {
+        this.htmlValidateScripts = validate;
+    }
+
+    public boolean isHtmlValidateStyles() {
+        return htmlValidateStyles;
+    }
+
+    public void setHtmlValidateStyles(boolean validate) {
+        this.htmlValidateStyles = validate;
     }
 
     /** At least 1; a stored 0 or less (hand-edited) reads as the default. */

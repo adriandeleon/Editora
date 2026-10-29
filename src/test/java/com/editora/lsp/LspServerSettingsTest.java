@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
+import com.editora.config.Settings;
 import org.eclipse.lsp4j.ConfigurationItem;
 import org.eclipse.lsp4j.ConfigurationParams;
 import org.eclipse.lsp4j.ServerCapabilities;
@@ -22,7 +23,8 @@ class LspServerSettingsTest {
      */
     @Test
     void onlyTheServersWithSettingsOfTheirOwnArePushedAnything() {
-        for (String id : List.of("json", "css", "html", "yaml", "typescript", "astro", "go", "xml")) {
+        for (String id :
+                List.of("json", "css", "yaml", "typescript", "astro", "go", "xml")) { // html: its session pushes
             assertNull(LspServerSettings.push(id, true), id + " must not be pushed another server's settings");
         }
         assertNull(LspServerSettings.push(null, false));
@@ -53,15 +55,24 @@ class LspServerSettingsTest {
         assertNull(LspServerSettings.answer("python", "pyright"));
     }
 
-    /** A {@code null} answer makes the CSS validator throw, so these servers' own sections get an object. */
+    /**
+     * A {@code null} answer makes the CSS validator throw, so these servers' own sections get an object. The HTML
+     * server's {@code html} section is VS Code's defaults: {@code {}} left {@code <pre>} and {@code <textarea>}
+     * unprotected from Format Document (HTML review B2).
+     */
+    @SuppressWarnings("unchecked")
     @Test
     void cssAndHtmlServersGetAnObjectForTheirOwnSections() {
         for (String section : List.of("css", "scss", "less")) {
             assertEquals(Map.of(), LspServerSettings.answer("css", section));
         }
-        for (String section : List.of("css", "html", "javascript")) {
+        for (String section : List.of("css", "javascript")) {
             assertEquals(Map.of(), LspServerSettings.answer("html", section));
         }
+        var html = (Map<String, Object>) LspServerSettings.answer("html", "html");
+        String unformatted = (String) ((Map<String, Object>) html.get("format")).get("contentUnformatted");
+        assertTrue(List.of(unformatted.split(",")).containsAll(List.of("pre", "code", "textarea")), unformatted);
+        assertEquals(Boolean.TRUE, html.get("autoClosingTags"));
         // {} for js/ts makes the HTML server's JavaScript mode throw (strictNullChecks of undefined).
         assertNull(LspServerSettings.answer("html", "js/ts"));
         assertNull(LspServerSettings.answer("css", "editor"));
@@ -127,9 +138,45 @@ class LspServerSettingsTest {
     @Test
     void aSessionAnswersConfigurationForItsOwnServer() {
         List<Object> html = ask(session("html"), "css", "html", "javascript", "js/ts");
-        assertEquals(java.util.Arrays.asList(Map.of(), Map.of(), Map.of(), null), html);
+        assertEquals(
+                java.util.Arrays.asList(Map.of(), HtmlServerSettings.defaults().section(null), Map.of(), null), html);
         assertEquals(java.util.Arrays.asList((Object) null), ask(session("json"), "css"));
         assertTrue(ask(session("python"), "python").get(0) instanceof Map);
+    }
+
+    /**
+     * The HTML server asks per document: the answer carries that document's wrap column and final newline
+     * (HTML review A3, D6), and the session's own settings — a change of them is pushed, which makes the server ask
+     * again (D3: the auto-close switch takes effect without a restart).
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void theHtmlServerIsAnsweredPerDocumentAndPushedOnChange() {
+        var fake = new FakeLanguageServer();
+        var spec = new LspServerRegistry.ServerSpec("html", List.of("html-ls"), List.of());
+        var s = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (t, m) -> {}, null);
+        s.attachForTest(fake, new ServerCapabilities());
+        s.setIndentForUri(
+                uri -> uri.endsWith("narrow.html") ? new FormattingIndent(2, true).withDocument(60, true) : null);
+        var item = new ConfigurationItem();
+        item.setScopeUri("file:///p/narrow.html");
+        item.setSection("html");
+        var html = (Map<String, Object>)
+                s.configuration(new ConfigurationParams(List.of(item))).join().get(0);
+        var format = (Map<String, Object>) html.get("format");
+        assertEquals(60, format.get("wrapLineLength"));
+        assertEquals(Boolean.TRUE, format.get("endWithNewline"));
+
+        int before = fake.configurations.size();
+        s.setHtmlSettings(HtmlServerSettings.defaults());
+        assertEquals(before, fake.configurations.size(), "unchanged: nothing pushed");
+        var noAutoClose = new Settings();
+        noAutoClose.setAutoCloseTags(false);
+        s.setHtmlSettings(HtmlServerSettings.of(noAutoClose));
+        assertEquals(before + 1, fake.configurations.size());
+        var pushed = (Map<String, Object>) fake.configurations.get(before).getSettings();
+        assertEquals(Boolean.FALSE, ((Map<String, Object>) pushed.get("html")).get("autoClosingTags"));
+        assertEquals(Boolean.FALSE, ((Map<String, Object>) ask(s, "html").get(0)).get("autoClosingTags"));
     }
 
     /**

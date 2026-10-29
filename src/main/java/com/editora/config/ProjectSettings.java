@@ -81,6 +81,13 @@ public class ProjectSettings {
      */
     private Map<String, Object> bashIde = new LinkedHashMap<>();
 
+    /**
+     * The HTML server's own settings for this project, in VS Code's key names (its {@code html} section:
+     * {@code format.wrapLineLength}, {@code format.wrapAttributes}, {@code validate.scripts}, …), laid over the
+     * user's. Nothing in it runs anything, so it applies trusted or not.
+     */
+    private Map<String, Object> html = new LinkedHashMap<>();
+
     /** Where a project's overrides live. */
     public static Path fileFor(Path projectRoot) {
         return projectRoot.resolve(DIR).resolve(FILE);
@@ -146,6 +153,7 @@ public class ProjectSettings {
         return lspCommands.isEmpty()
                 && lspEnabled.isEmpty()
                 && bashIde.isEmpty()
+                && html.isEmpty()
                 && editor.isEmpty()
                 && blankValues(buildCommands)
                 && blankValues(debugTools);
@@ -559,6 +567,14 @@ public class ProjectSettings {
 
     public void setBashIde(Map<String, Object> bashIde) {
         this.bashIde = bashIde == null ? new LinkedHashMap<>() : new LinkedHashMap<>(bashIde);
+    }
+
+    public Map<String, Object> getHtml() {
+        return html;
+    }
+
+    public void setHtml(Map<String, Object> html) {
+        this.html = html == null ? new LinkedHashMap<>() : new LinkedHashMap<>(html);
     }
 
     public Map<String, Boolean> getLspEnabled() {

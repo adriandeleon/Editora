@@ -1279,6 +1279,9 @@ final class LanguageServerSession implements LanguageClient {
         if (xml != null && XmlServerSettings.isLemminx(serverId)) {
             settings = Map.of(XmlServerSettings.SECTION, xml); // lemminx's own; for a pom, with lemminx-maven's
         }
+        if (HtmlServerSettings.SERVER_ID.equals(serverId)) {
+            settings = htmlSettings.push(); // VS Code's defaults and the user's; the server re-asks per document
+        }
         if (settings == null) {
             return;
         }
@@ -1400,6 +1403,27 @@ final class LanguageServerSession implements LanguageClient {
     /** The {@code xml} object this session was last given (null: none). */
     java.util.@Nullable Map<String, Object> xmlSettings() {
         return xmlSettings;
+    }
+
+    /** The HTML server's settings for this session's root ({@link HtmlServerSettings}). */
+    private volatile HtmlServerSettings htmlSettings = HtmlServerSettings.defaults();
+
+    /**
+     * Sets the HTML server's settings; a running HTML server gets them pushed when they changed, which makes it drop
+     * every document's cached answer and ask again (HTML review B2, D3: the auto-close switch takes effect at once).
+     */
+    void setHtmlSettings(@Nullable HtmlServerSettings settings) {
+        HtmlServerSettings next = settings == null ? HtmlServerSettings.defaults() : settings;
+        boolean changed = !next.equals(htmlSettings);
+        htmlSettings = next;
+        if (changed && HtmlServerSettings.SERVER_ID.equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
+    /** The HTML server's settings this session was last given (the defaults until then). */
+    HtmlServerSettings htmlSettings() {
+        return htmlSettings;
     }
 
     /** typescript-language-server's {@code javascript}/{@code typescript} settings (null: none to send). */
@@ -3150,9 +3174,9 @@ final class LanguageServerSession implements LanguageClient {
 
     /**
      * Answers {@code workspace/configuration} per server and section from {@link LspServerSettings}: Pyright's
-     * {@code python} / {@code python.analysis} objects, bash-language-server's {@code bashIde} section, and an
-     * empty object for the CSS and HTML servers' own sections (they throw on {@code null}). Any other section
-     * returns null so the server keeps its own default.
+     * {@code python} / {@code python.analysis} objects, bash-language-server's {@code bashIde} section, an empty
+     * object for the CSS server's own sections (it throws on {@code null}), and the HTML server's from
+     * {@link HtmlServerSettings}. Any other section returns null so the server keeps its own default.
      */
     @Override
     public CompletableFuture<List<Object>> configuration(org.eclipse.lsp4j.ConfigurationParams params) {
@@ -3172,6 +3196,9 @@ final class LanguageServerSession implements LanguageClient {
 
     /** A non-TypeScript server's answer for one {@code workspace/configuration} item. */
     private @Nullable Object answerFor(org.eclipse.lsp4j.ConfigurationItem item) {
+        if (HtmlServerSettings.SERVER_ID.equals(serverId)) { // per document: its wrap column and final newline
+            return htmlSettings.answer(item.getSection(), indentForUri(item.getScopeUri()));
+        }
         Object answer = LspServerSettings.answer(serverId, item.getSection(), effectiveBashIde(), pythonPath);
         if (answer == null && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && item.getScopeUri() != null) {
             answer = LspServerSettings.javaFormatAnswer(item.getSection(), indentForUri(item.getScopeUri()));

@@ -350,7 +350,12 @@ public enum ConfigSchema {
                     Map.entry(152, (Migration) ConfigMigrations::identity),
                     // v153→154: + javaDownloadSources (off), jdtls downloading every dependency's sources at
                     // import. Additive: absent is the default.
-                    Map.entry(153, (Migration) ConfigMigrations::identity)),
+                    Map.entry(153, (Migration) ConfigMigrations::identity),
+                    // v154→155: + the HTML server's settings: htmlFormatWrapLineLength (120), htmlFormatWrapAttributes
+                    // ("auto"), htmlFormatContentUnformatted ("pre,code,textarea"), htmlAttributeQuotes
+                    // ("doublequotes"), htmlValidateScripts and htmlValidateStyles (on) — VS Code's defaults, which the
+                    // server was never sent (HTML review B2, A4). Additive: absent is the default.
+                    Map.entry(154, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
