@@ -211,8 +211,11 @@ request for its file. They are brought up to date with the cards: an open buffer
 (once a second while one is on show), a closed file by its size and time on disk after every listing and
 watcher notification. When an outline changes, every declaration card is moved to its declaration's new lines
 (`setRange`); a card whose declaration is gone keeps its last lines and says "No longer in this file". No
-language server is started for a closed file, the Map's global search still matches file names only, and
-nothing about the columns is remembered across restarts.
+language server is started for a closed file and nothing about the columns is remembered across restarts.
+The Map's global search walks file names only, but the query is also matched against the declaration rows of
+the open structure columns (no disk or server work): a matching declaration stays prominent with the rows
+that lead to it, its siblings fade, and a query that names only a declaration on screen does not read "No
+files match".
 
 ### Keyboard
 
@@ -308,7 +311,9 @@ read as the Git "M" letter, which is the Git changed chip's. A match does not ha
 Unsaved, Bookmarks and Personal Notes chips also light the collapsed folders that hold a matching file,
 as the Git chip does. Those ancestor sets come from the open tabs and the marker stores' keys
 (`ProjectPanel.setOpenFiles`, `MarkerActions.markedPaths`) by path arithmetic; nothing is read from disk
-on the FX thread. Folders match the Bookmarks and Personal Notes chips in their own right.
+on the FX thread. Folders match the Bookmarks and Personal Notes chips in their own right. In its default
+mode `git status` names a new folder (`? deep/`), not the files in it, so every row below a path reported as
+untracked counts as untracked (`MapSurface.gitStatusOf`): it matches the Git chip and carries the "U" letter.
 
 **Hide unmatched** (a checkbox in the filter row, remembered per workspace as `projectMapHideUnmatched`,
 workspace schema v25) takes the rows that would fade off the map instead. It keeps exactly the emphasized
@@ -494,11 +499,20 @@ Filesystem listing runs on the single daemon `project-map-loader` executor, crea
 Each request captures the root, the expanded set, the hidden-files rules, the row limits and the pinned
 paths. An atomic generation is checked when a queued request starts and between directories, so a burst of
 requests lists the folders once, and obsolete results never reach the FX thread. A request made after
-`dispose()` is ignored. Each child costs one attribute read (two for a symbolic link), which serves both
-the ordering and the row. A load that outlasts 200 ms shows a "Loading…" label over the canvas, and an
-empty map reads "Loading…" rather than "No project items" while its first load is in flight. Every action
-still re-lists every expanded directory, and one hung listing still blocks later reloads for that window;
-there is no per-directory cache or timeout.
+`dispose()` is ignored; so is a result that was listing when an in-app rename or move landed
+(`pathRenamed` supersedes it, so its old-tree snapshot cannot prune the renamed folder's expansion). Each
+child costs one attribute read (two for a symbolic link), which serves both the ordering and the row. A load
+that outlasts 200 ms shows a "Loading…" label over the canvas, and an empty map reads "Loading…" rather than
+"No project items" while its first load is in flight.
+
+Listings go through `ProjectMapModel.Listings`. A folder the Project watcher follows (`ProjectPanel` hands
+the watched set to `setWatchedDirectories` after every watch sync) keeps its sorted listing between loads,
+so opening a folder lists only that folder. A watcher event for a folder (`refresh(directories)`), a file
+rewritten there or saved by Editora (`listingsChanged`), and a focus regain or in-app file operation
+(`refresh()`, everything) drop the listing; a folder that stops being watched is dropped too. A remote root
+has no local watcher and lists afresh every time. Each listing runs on a worker with a 10 s timeout: a folder
+that does not answer holds a "Not responding" stub (nothing below it is forgotten), its next loads do not wait
+for it again, and the Map reloads when it finally answers.
 
 `ProjectMapModel.load` reads only the root and the expanded directories, under two limits:
 
@@ -510,9 +524,10 @@ there is no per-directory cache or timeout.
 
 Nothing is dropped silently. The snapshot carries `DirectoryFacts` (real child count, rows loaded,
 unreadable) for every listed directory, and a column header shows "shown/total" whenever a filter or a
-limit hides rows. A directory that got no rows at all is reported as skipped, is not drawn as expanded,
-leaves the manual expansion set, and the status bar says the overall limit was reached; the same message
-appears when "+N more…" cannot load anything. An expanded folder with nothing to list gets a column holding
+limit hides rows. A directory that got no rows at all is reported as skipped but stays open: its column holds
+one "Not loaded — over the 1,200-row limit" stub, it and the folders opened below it stay in the manual
+expansion set, and it fills again once a column is closed. The status bar says the overall limit was
+reached; the same message appears when "+N more…" cannot load anything. An expanded folder with nothing to list gets a column holding
 one stub row, "Empty folder" or "Cannot read this folder". A failure to read one directory does not
 discard the rest of the snapshot.
 
@@ -523,7 +538,8 @@ filters. Code that acts on a folder entry must check `isPlaceholder()` first.
 
 After a load the manual expansion set is pruned to folders that actually loaded, so a renamed, deleted or
 replaced folder does not leave stale expansion (or watch keys) behind; folders beneath one that could not
-be read are kept. An in-app rename or move remaps expansion, limits and the selection to the new path.
+be read, did not answer, or got no rows under the overall limit are kept. An in-app rename or move remaps
+expansion, limits, the selection and open cards to the new path.
 `revealPath` adds the target's ancestors to the expansion instead of replacing it, and a pending selection
 that a reload does not contain is dropped, together with its selection-history entries.
 

@@ -118,10 +118,13 @@ class ProjectMapModelLoadingTest {
         assertEquals(294, fourth.loaded());
         assertTrue(childrenOf(snapshot, folders.get(3)).getLast().isMore());
         assertTrue(snapshot.skipped().contains(normalize(last)));
-        assertFalse(
-                snapshot.loadedDirectories().contains(normalize(last)),
-                "a folder with no loaded rows must not be drawn as expanded");
-        assertTrue(childrenOf(snapshot, last).isEmpty());
+        // Since the Map review (A3) such a folder stays open, holding one stub row that says why it is empty.
+        assertTrue(snapshot.loadedDirectories().contains(normalize(last)));
+        assertEquals(0, snapshot.directories().get(normalize(last)).loaded());
+        assertEquals(1, childrenOf(snapshot, last).size());
+        assertEquals(
+                PlaceholderKind.OVER_LIMIT,
+                childrenOf(snapshot, last).getFirst().placeholder().kind());
     }
 
     @Test

@@ -176,6 +176,9 @@ final class ProjectMapView extends VBox {
         return thread;
     });
     private final AtomicLong generation = new AtomicLong();
+    /** Directory listings: cached for the folders the Project watcher follows, each one with a timeout. */
+    final ProjectMapModel.Listings listings =
+            new ProjectMapModel.Listings(ProjectMapModel.LISTING_TIMEOUT_MILLIS, null);
     /** How many queued loads actually began listing (the rest were superseded first). */
     final java.util.concurrent.atomic.AtomicInteger loadsStartedForTest =
             new java.util.concurrent.atomic.AtomicInteger();
@@ -267,6 +270,8 @@ final class ProjectMapView extends VBox {
         this.isModified = isModified == null ? path -> false : isModified;
         this.previewContent = previewContent == null ? path -> null : previewContent;
         this.structure = new ProjectMapStructure(this::previewContentFor);
+        // A folder that stopped answering and then answers is listed again by the next load.
+        listings.setOnRecovered(() -> Platform.runLater(this::reload));
         structure.setOnChanged(this::structureChanged);
         getStyleClass().add("project-map-view");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
@@ -975,9 +980,31 @@ final class ProjectMapView extends VBox {
         previews.values().forEach(this::updateCardNotes);
     }
 
+    /** Anything on disk may have changed (a focus regain, an in-app file operation): every folder is listed again. */
     void refresh() {
+        listings.invalidateAll();
         reload();
         scheduleCardRefresh();
+    }
+
+    /** The Project watcher saw entries come or go in {@code directories}: those are listed again, the rest kept. */
+    void refresh(java.util.Collection<Path> directories) {
+        listings.invalidate(directories);
+        reload();
+        scheduleCardRefresh();
+    }
+
+    /**
+     * Files in {@code directories} were rewritten (sizes and times changed, no entry came or went): their next
+     * listing reads them again, but nothing is reloaded for it now.
+     */
+    void listingsChanged(java.util.Collection<Path> directories) {
+        listings.invalidate(directories);
+    }
+
+    /** The folders the Project watcher follows now: only their listings may be reused between loads. */
+    void setWatchedDirectories(Set<Path> directories) {
+        listings.setWatched(directories);
     }
 
     /**
@@ -1207,6 +1234,7 @@ final class ProjectMapView extends VBox {
         cardDiskRefresh.stop();
         generation.incrementAndGet();
         loader.shutdownNow();
+        listings.close();
         structure.dispose();
         loadInFlight = false;
         loadingDelay.stop();
@@ -1288,7 +1316,8 @@ final class ProjectMapView extends VBox {
                 directoryLimits,
                 pinned,
                 ProjectMapView::placeholderLabel,
-                () -> requested != generation.get());
+                () -> requested != generation.get(),
+                surface.columnFilterQueries());
         loadStarted();
         try {
             loader.submit(() -> {
@@ -1298,7 +1327,7 @@ final class ProjectMapView extends VBox {
                 loadsStartedForTest.incrementAndGet();
                 ProjectMapModel.Snapshot loaded;
                 try {
-                    loaded = ProjectMapModel.load(request);
+                    loaded = ProjectMapModel.load(request, listings);
                 } catch (RuntimeException unreadable) {
                     // a closed SFTP file system throws unchecked; the map must still hear back
                     loaded = ProjectMapModel.Snapshot.EMPTY;
@@ -1319,6 +1348,8 @@ final class ProjectMapView extends VBox {
             case MORE -> tr("project.map.row.more", remaining);
             case EMPTY -> tr("project.map.row.emptyFolder");
             case UNREADABLE -> tr("project.map.row.unreadableFolder");
+            case OVER_LIMIT -> tr("project.map.row.overLimit", ProjectMapModel.MAX_VISIBLE_ITEMS);
+            case NOT_RESPONDING -> tr("project.map.row.notResponding");
         };
     }
 
@@ -1354,10 +1385,10 @@ final class ProjectMapView extends VBox {
         boolean expansionChanged = false;
         if (!loaded.entries().isEmpty()) {
             if (!searching()) {
-                // Folders that did not load (renamed, deleted, replaced by a file) leave the manual set, and
-                // so do those the overall limit left without a single row: neither is drawn as open.
+                // Folders that did not load (renamed, deleted, replaced by a file) leave the manual set. One the
+                // overall limit left without a single row stays: it is drawn open with an "over the limit" stub
+                // and loads again when a column closes.
                 Set<Path> kept = ProjectMapModel.pruneExpansion(root, expanded, loaded);
-                kept.removeAll(loaded.skipped());
                 if (!kept.equals(expanded)) {
                     expanded.clear();
                     expanded.addAll(kept);
@@ -1518,6 +1549,25 @@ final class ProjectMapView extends VBox {
         searchOpened.removeIf(path -> path.startsWith(directory));
         searchClosed.removeIf(path -> path.startsWith(directory));
         searchClosed.add(directory);
+    }
+
+    /**
+     * A column's own filter changed. In a folder with more rows than its limit loads, the filter has to see
+     * the rows that did not load as well, so the folder is listed again with the filter (B8); the listing
+     * cache makes that cheap. A folder that loaded whole is filtered where it is.
+     */
+    private void truncatedColumnFilterChanged(@Nullable Path directory) {
+        Path path = ProjectMapModel.normalize(directory);
+        ProjectMapModel.DirectoryFacts facts =
+                path == null ? null : snapshot.directories().get(path);
+        if (facts == null) {
+            return;
+        }
+        int limit = Math.max(
+                ProjectMapModel.DIRECTORY_CHUNK, directoryLimits.getOrDefault(path, ProjectMapModel.DIRECTORY_CHUNK));
+        if (facts.truncated() || facts.loaded() > limit) {
+            reload();
+        }
     }
 
     /** Raises one truncated directory's row limit by a chunk; the overall limit still applies. */
@@ -2931,6 +2981,17 @@ final class ProjectMapView extends VBox {
             return selected;
         }
 
+        /** Each column's own filter text, by the directory it lists (the loader matches a long folder's rest). */
+        Map<Path, String> columnFilterQueries() {
+            Map<Path, String> result = new HashMap<>();
+            columnQueries.forEach((id, value) -> {
+                if (id.parent() != null && value != null && !value.isBlank()) {
+                    result.put(id.parent(), value);
+                }
+            });
+            return result;
+        }
+
         /** Each column's own "Show hidden" choice, by the directory it lists; absent means the setting. */
         Map<Path, Boolean> hiddenOverrides() {
             Map<Path, Boolean> result = new HashMap<>();
@@ -3733,6 +3794,7 @@ final class ProjectMapView extends VBox {
                     } else {
                         columnQueries.put(id, value);
                     }
+                    truncatedColumnFilterChanged(id.parent());
                     repaint();
                     if (selected != null
                             && boxes.stream()

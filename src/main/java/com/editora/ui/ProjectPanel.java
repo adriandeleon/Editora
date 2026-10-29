@@ -1001,7 +1001,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Re-lists just {@code dirs} (those the tree currently shows expanded); the rest of the tree is untouched. */
     private void refreshDirectories(java.util.Collection<Path> dirs) {
         if (isMapShowing()) {
-            mapView.refresh();
+            mapView.refresh(dirs); // the Map lists these again and reuses the rest
         }
         if (root == null || filtering || !(tree.getRoot() instanceof PathItem rootItem)) {
             return;
@@ -1029,6 +1029,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         long now = localWriteClockForTest.getAsLong();
         localWrites.values().removeIf(at -> now - at >= localWriteWindowMs);
         localWrites.put(file.toAbsolutePath().normalize(), now);
+        Path parent = file.toAbsolutePath().normalize().getParent();
+        if (parent != null) {
+            mapView.listingsChanged(List.of(parent)); // its size and time changed; no entry came or went
+        }
     }
 
     /**
@@ -1082,6 +1086,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         syncWatches(); // a newly-created folder that's expanded would need watching
         if (plan.hasExternal()) {
+            java.util.Set<Path> rewritten = new java.util.HashSet<>();
+            for (FsChange change : plan.external()) {
+                if (change.kind() == FsKind.CHANGED && change.path().getParent() != null) {
+                    rewritten.add(change.path().getParent());
+                }
+            }
+            mapView.listingsChanged(rewritten); // a rewritten file's size and time, read with its next listing
             mapView.filesChangedOnDisk(); // a Map preview card re-reads a file that was rewritten
             // An external change → refresh Git/Commit stripe, build markers, diffs (#529).
             queuedExternal.addAll(plan.external());
@@ -1412,6 +1423,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         if (root != null && watchedOnTarget(root)) {
             cancelAllWatches(); // watched where its tools run: this machine's watcher would see nothing, or twice
+            mapView.setWatchedDirectories(java.util.Set.of());
             return;
         }
         java.util.Set<Path> desired = new java.util.HashSet<>();
@@ -1459,6 +1471,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 // a dir we can't watch (perms, vanished) is simply not watched
             }
         }
+        // The Map reuses a folder's listing only while this watcher would tell it the folder changed. The
+        // style-only folders' events refresh nothing, so they do not count.
+        java.util.Set<Path> followed = new java.util.HashSet<>(watchKeys.values());
+        followed.removeAll(style);
+        mapView.setWatchedDirectories(followed);
     }
 
     private void cancelAllWatches() {
