@@ -420,6 +420,7 @@ public class SettingsWindow {
     private final ComboBox<String> htmlBrowserCombo = new ComboBox<>();
 
     private final Map<String, String> htmlBrowserNames = new java.util.HashMap<>();
+    private boolean htmlBrowsersDetected; // until then a stored id is not "missing", just not looked up yet
     private final ToolStatusRow httpNodeStatus = new ToolStatusRow("node");
     private CheckBox mcpCheck;
     private CheckBox aiMasterCheck;
@@ -4376,7 +4377,7 @@ public class SettingsWindow {
         htmlBrowserCombo.setConverter(new StringConverter<>() {
             @Override
             public String toString(String id) {
-                return id == null ? "" : htmlBrowserNames.getOrDefault(id, id);
+                return id == null ? "" : browserComboLabel(id, htmlBrowserNames, htmlBrowsersDetected);
             }
 
             @Override
@@ -4400,17 +4401,15 @@ public class SettingsWindow {
         Thread.ofVirtual().name("settings-browsers").start(() -> {
             List<com.editora.web.Browsers.Browser> found = com.editora.web.Browsers.detect(); // file probes
             javafx.application.Platform.runLater(() -> {
-                found.forEach(b -> htmlBrowserNames.put(
-                        b.id(),
-                        com.editora.web.Browsers.SYSTEM_DEFAULT.equals(b.id())
-                                ? tr("htmlPreview.systemDefault")
-                                : b.displayName()));
+                found.forEach(b -> htmlBrowserNames.put(b.id(), HtmlPreviewCoordinator.label(b)));
+                htmlBrowsersDetected = true;
                 boolean prev = loading;
                 loading = true;
                 try {
                     htmlBrowserCombo
                             .getItems()
                             .setAll(found.stream().map(b -> b.id()).toList());
+                    htmlBrowserCombo.setValue(null); // re-label a stored id that detection did not find
                     syncHtmlBrowser();
                 } finally {
                     loading = prev;
@@ -5179,6 +5178,18 @@ public class SettingsWindow {
                 tr("settings.search.gitignore.desc"),
                 "search exclude gitignore ignored target node_modules build dist folders files");
         return p;
+    }
+
+    /**
+     * The "Open the preview in" label for a browser id: its detected name, else (once detection has run) the known
+     * name marked as not found — a remembered browser that was uninstalled, never a raw id like {@code brave}.
+     */
+    static String browserComboLabel(String id, Map<String, String> detectedNames, boolean detected) {
+        String name = detectedNames.get(id);
+        if (name != null) {
+            return name;
+        }
+        return detected ? tr("htmlPreview.browserMissing", com.editora.web.Browsers.knownName(id)) : id;
     }
 
     /** Shows the stored preview browser, or System Default when none was chosen yet. */

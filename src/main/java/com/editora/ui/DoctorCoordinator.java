@@ -930,7 +930,7 @@ final class DoctorCoordinator {
             specs.add(probe(
                     browsers,
                     base -> base.ok(Browsers.detect().stream()
-                            .map(Browsers.Browser::displayName)
+                            .map(HtmlPreviewCoordinator::label) // "System Default" in the UI's language
                             .reduce((a, b) -> a + " · " + b)
                             .orElse(""))));
         }
