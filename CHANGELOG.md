@@ -90,6 +90,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HTML Live Preview (HTML review: preview).**
+  - A video, archive or other big file next to the page no longer loads whole into Editora's memory (it could run
+    out of memory): files are streamed, with byte ranges, so `<video>` and `<audio>` play and seek (Safari too),
+    and media, PDF, CSV and web-manifest files get their real types.
+  - The preview serves the whole site: the project folder for a file in the project, else the nearest folder up
+    with an `index.html`. A page in `pages/` loads `../css/site.css` and links back to `../index.html`.
+  - Hidden files and folders (`.env`, `.git/`, `.ssh/`, `.npmrc`…) and private keys (`*.pem`, `*.key`, `id_*`) are
+    never served to the page's scripts, and a page sitting directly in Downloads, Desktop, Documents or the temp
+    folder is refused like one in the home folder.
+  - A remote (SFTP) file is never previewed, also from the HTML Preview commands.
+  - Editing or saving any file of the site reloads the page, a stylesheet without a reload; closing a file serves
+    it from disk again.
+  - Previewing a page of another folder no longer breaks the tabs already open; each site has its own address.
+  - Open preview tabs no longer tie up the server (a few tabs, or idle connections, stalled page loads), and a page
+    whose server has gone backs off and says so instead of polling hundreds of times a second.
+  - A Turkish page with many capital İ no longer fails with an error, and the reload script goes before the last
+    `</body>`, not into one in a script or comment.
+  - Other pages of the site keep their own encoding (Latin-1 no longer turns into �).
+  - The preview address changes every time the server starts; only GET and HEAD are answered, with `nosniff`.
+  - Status messages tell a server problem from a browser one, say when the chosen browser was missing and the
+    default one opened the page, and report a browser that quit at once.
+  - More browsers are offered: Chromium (no longer shown as Google Chrome), Brave, Vivaldi, Opera, Firefox
+    Developer Edition, Arc, Flatpak and Snap installs, any other Linux browser with a launcher, and per-user
+    Windows installs; a browser installed later shows up without reopening the window.
+  - Settings → Web names a remembered browser that is no longer installed ("Brave (not found)"), and Doctor's
+    Web Browsers row is translated.
+  - The open-in-browser button is a real globe, and it appears on an HTML file recognised by its modeline.
+
 - **XML editing (XML/pom review 3: xmlui).**
   - XML: Generate Grammar…'s two XSD choices work in untrusted folders. lemminx needed the W3C `xml.xsd`, which it
     could not download there; Editora now ships it.
