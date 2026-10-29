@@ -3,6 +3,7 @@ package com.editora.editor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntConsumer;
+import java.util.function.ObjIntConsumer;
 
 import javafx.application.Platform;
 import javafx.scene.Cursor;
@@ -54,6 +55,8 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
     private @Nullable String shownText;
     /** Called with a 0-based line when a mark is clicked; injected by {@link EditorBuffer}. */
     private IntConsumer onActivate = line -> {};
+    /** What a click on a split's copy of this stripe does, given that copy's view. */
+    private ObjIntConsumer<CodeArea> onActivateIn = SecondaryPane::jumpToLine;
 
     DiagnosticStripe(CodeArea area) {
         this.area = area;
@@ -81,7 +84,7 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
     @Override
     public DiagnosticStripe follower(CodeArea view) {
         DiagnosticStripe second = new DiagnosticStripe(view);
-        second.onActivate = line -> SecondaryPane.jumpToLine(view, line);
+        second.onActivate = line -> onActivateIn.accept(view, line);
         second.setDiagnostics(diagnostics);
         second.setActive(active);
         follower = second;
@@ -127,6 +130,12 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
     /** True only when the stripe should hold a real backing texture (active + has marks to draw). */
     private boolean shouldPaint() {
         return active && !diagnostics.isEmpty();
+    }
+
+    /** Injects the click-to-jump action for this stripe and its split copies, with the view clicked beside. */
+    void setOnActivateIn(ObjIntConsumer<CodeArea> onActivateIn) {
+        this.onActivateIn = onActivateIn;
+        this.onActivate = line -> onActivateIn.accept(area, line);
     }
 
     /** Injects the click-to-jump action (0-based line); null disables jumping. */

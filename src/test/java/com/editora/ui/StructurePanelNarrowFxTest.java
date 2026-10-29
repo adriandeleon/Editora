@@ -385,4 +385,23 @@ class StructurePanelNarrowFxTest {
         assertFalse(r.panel().foldMode());
         assertFalse(FxTestSupport.callOnFx(r.buffer()::isNarrowed));
     }
+
+    @Test
+    void reNarrowingKeepsTheClickedRowSelected() throws Exception {
+        Rig r = rig();
+        pick(r.panel(), "bar");
+        click(r.panel());
+        int builds = FxTestSupport.<Integer>field(r.panel(), "treeBuilds");
+        List<String> seen = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> tree(r.panel())
+                .getSelectionModel()
+                .selectedItemProperty()
+                .addListener((o, a, b) -> seen.add(b == null ? "none" : labelOf(b))));
+        pick(r.panel(), "foo");
+        activate(r.panel());
+        assertEquals(1, FxTestSupport.callOnFx(r.buffer()::narrowFirstLine));
+        assertEquals("foo", selectedLabel(r.panel()), "selections seen: " + seen);
+        assertEquals(List.of("foo"), seen, "the selection never left the clicked row");
+        assertEquals(builds, (int) FxTestSupport.<Integer>field(r.panel(), "treeBuilds"), "no rebuild");
+    }
 }

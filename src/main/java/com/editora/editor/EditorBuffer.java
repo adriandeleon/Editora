@@ -2552,7 +2552,7 @@ public class EditorBuffer implements TabContent {
     private DiagnosticStripe diagnosticStripe() {
         if (diagnosticStripe == null) {
             diagnosticStripe = attachLazyStripe(new DiagnosticStripe(area), OverlayLayer.DIAGNOSTIC_STRIPE);
-            diagnosticStripe.setOnActivate(this::jumpToLine);
+            diagnosticStripe.setOnActivateIn(jumps::revealLine);
             updateDiagnosticStripe(); // its inset and on/off state, as if it had been there all along
         }
         return diagnosticStripe;
@@ -2561,7 +2561,7 @@ public class EditorBuffer implements TabContent {
     private MarkdownLintStripe mdLintStripe() {
         if (mdLintStripe == null) {
             mdLintStripe = attachLazyStripe(new MarkdownLintStripe(area), OverlayLayer.MARKDOWN_LINT_STRIPE);
-            mdLintStripe.setOnActivate(this::jumpToLine);
+            mdLintStripe.setOnActivateIn(jumps::revealLine);
             updateMarkdownLintStripe(); // its inset and on/off state, as if it had been there all along
         }
         return mdLintStripe;
@@ -2570,7 +2570,7 @@ public class EditorBuffer implements TabContent {
     private TodoStripe todoStripe() {
         if (todoStripe == null) {
             todoStripe = attachLazyStripe(new TodoStripe(area), OverlayLayer.TODO_STRIPE);
-            todoStripe.setOnActivate(this::jumpToLine);
+            todoStripe.setOnActivateIn(jumps::revealLine);
             updateTodoStripe(); // its inset and on/off state, as if it had been there all along
         }
         return todoStripe;
@@ -9533,9 +9533,8 @@ public class EditorBuffer implements TabContent {
         // or re-narrowing would silently measure the new region from the top of the file instead.
         int base = narrowStart();
         NarrowCarry.Held narrowed = narrowHeld;
-        if (narrowed != null) {
-            widenInternal(narrowed); // re-narrow from the whole document: narrowing does not nest, as in Emacs
-        }
+        // Re-narrow from the whole document (narrowing does not nest, as in Emacs), without showing it widened.
+        List<FoldRegions.Region> regions = narrowed != null ? widenInternal(narrowed, false) : folds.regions();
         String full = documentTextSnapshot(); // widened just above, so this is the whole document
         int s = Math.max(0, Math.min(start + base, full.length()));
         int e = Math.max(0, Math.min(end + base, full.length()));
@@ -9546,7 +9545,7 @@ public class EditorBuffer implements TabContent {
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();
         boolean hadHistory = hasUndoHistory();
         clearBraceMatch(); // its offsets are the area's, which the swap changes
-        NarrowCarry.Held held = NarrowCarry.hold(area, full, s, e, symbols, folds.regions());
+        NarrowCarry.Held held = NarrowCarry.hold(area, full, s, e, symbols, regions);
         narrowHeld = held; // set first: the swap fires the dirty listener, which reads getContent()
         LineMarks.narrow(s, e, () -> NarrowCarry.narrow(area, s, e), bookmarks, breakpoints, notes, gitLines);
         symbols = NarrowCarry.narrowSymbols(held); // before the regions: their listeners read the symbols
@@ -9580,12 +9579,12 @@ public class EditorBuffer implements TabContent {
         if (held == null) { // not narrowed
             return;
         }
-        widenInternal(held);
+        widenInternal(held, true);
         onNarrowChanged.run();
     }
 
-    /** {@code held}: {@link #narrowHeld}, which the callers have checked. */
-    private void widenInternal(NarrowCarry.Held held) {
+    /** {@code held}: {@link #narrowHeld}. Returns the whole file's regions; a re-narrow (!shown) shows none of it. */
+    private List<FoldRegions.Region> widenInternal(NarrowCarry.Held held, boolean shown) {
         int prefix = held.prefixText().length();
         int caret = area.getCaretPosition();
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();
@@ -9596,12 +9595,16 @@ public class EditorBuffer implements TabContent {
         int top = ScrollAnchor.firstVisibleLine(area); // the region's lines stay put on screen, as in Emacs
         LineMarks.widen(() -> NarrowCarry.widen(area, held), bookmarks, breakpoints, notes, gitLines);
         symbols = NarrowCarry.widenSymbols(held, region, symbols); // before the regions, as narrowTo
-        folds.carryRegions(NarrowCarry.widenRegions(held, region, folds.regions()));
+        List<FoldRegions.Region> regions = NarrowCarry.widenRegions(held, region, folds.regions());
         forgetHistoryAtNarrowBoundary(hadHistory);
         area.moveTo(Math.min(prefix + caret, area.getLength()));
-        jumps.reveal(area, held.firstLine() + Math.max(0, top), top < 0);
+        if (shown) { // a re-narrow's listeners (the Structure outline) must not see the whole file in between
+            folds.carryRegions(regions);
+            jumps.keepAtTop(area, held.firstLine() + Math.max(0, top), top < 0);
+        }
         moveSplitCaret(prefix + caret2);
         narrowView.widened(area2);
+        return regions;
     }
 
     /** Puts the split's second caret back after the document was replaced under it (narrowing, widening). */

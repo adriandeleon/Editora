@@ -760,6 +760,11 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
             refreshNarrowedOutline();
         }
+        if (modelShown) {
+            // Only rows in the area borrow its colours: recolour the shown rows now, so the outline computed
+            // for this narrowing matches them and is not rebuilt (a rebuild loses the selection for a frame).
+            attachSyntaxStyles(roots);
+        }
         syncNarrowToggle();
         tree.refresh(); // rows outside the region are muted
     }
@@ -877,7 +882,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
         }
         area.moveTo(line, 0);
-        // Anchor the target at the top of the usable viewport, below any sticky-scroll rows, in this pulse (a
+        // Anchor the target near the top of the usable viewport, below any sticky-scroll rows, in this pulse (a
         // widen just swapped the text in: that one waits for the layout).
         targetBuffer.jumps().reveal(area, line, widened);
         if (focusEditor) {
@@ -1087,6 +1092,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     private static void attachSyntaxStyles(CodeArea area, int base, StructureNode node) {
         String label = node.label() == null ? "" : node.label();
         int line = node.line() - base;
+        node.setReturnRuns(List.of()); // a recolour (narrowChanged) must not keep runs a fresh node would not have
         if (line < 0 || line >= area.getParagraphs().size()) {
             node.setNameRuns(List.of(fallbackRun(label, node.kind())));
             return;
