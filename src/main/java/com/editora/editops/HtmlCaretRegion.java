@@ -2,6 +2,7 @@ package com.editora.editops;
 
 import java.util.Locale;
 
+import com.editora.text.HtmlElements;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -171,6 +172,6 @@ public final class HtmlCaretRegion {
             i++;
         }
         String name = s.substring(start, i).toLowerCase(Locale.ROOT);
-        return TagRename.RAW_TEXT_ELEMENTS.contains(name) ? name : null;
+        return HtmlElements.isRawText(name) ? name : null;
     }
 }
