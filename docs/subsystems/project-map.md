@@ -145,7 +145,7 @@ a card the user moved keeps its position and one the user resized keeps its size
 Up to eight cards remain open, code and note cards together; a ninth replaces the least recently used
 one. Pressing a card, moving keyboard focus into it and scrolling it all count as use. A folder's cards
 close when the folder stops being expanded, however it was collapsed, and all cards close when the root
-changes. Switching to the Tree and back keeps them where they were.
+changes. Closing the Map window and opening it again keeps them where they were.
 
 A preview uses current unsaved text when the file is already open; otherwise it reads the file off
 the JavaFX application thread, decoded as the editor would open it (BOM, then the `.editorconfig`
@@ -611,7 +611,8 @@ it is what opens the window.
 
 ## Threading, bounds, and lifecycle
 
-Filesystem listing runs on the single daemon `project-map-loader` executor, created on the first load.
+Filesystem listing runs on the single daemon `project-map-loader` executor, whose thread starts on the first
+load (the executor object exists with the view).
 Each request captures the root, the expanded set, the hidden-files rules, the row limits and the pinned
 paths. An atomic generation is checked when a queued request starts and between directories, so a burst of
 requests lists the folders once, and obsolete results never reach the FX thread. A request made after
@@ -691,6 +692,11 @@ flow, and the two navigation options; v27 also adds `projectMapSingleClickOpens`
 `projectMapCompactChains` and `projectMapFollowActiveFile` for three ⋯ options. Expansion, zoom
 and the status/type filters are not persisted.
 
+The Map recovers from every failure it meets (an empty listing, an unmarked row, no outline, a card left
+uncoloured). A failure that is not the disk's or a remote connection's is a bug, and `ProjectMapLog.unexpected`
+sends it to the debug log once per place and exception type; disk and connection failures stay quiet because
+the map already shows them (an "unreadable" or "Not responding" row, a status line).
+
 ## Tests and change checklist
 
 The focused coverage lives in:
@@ -740,6 +746,18 @@ The focused coverage lives in:
   cards, column drag against a packed neighbour, drag-to-pan from a row, Single-click opens files, the row menu's
   Map items, Shift-Enter, Tab past off-screen column controls and out of a card, the accessible text, and the help
   popover in English and German.
+- `ProjectMapDataReviewTest` and `ProjectMapDataReviewFxTest` for the listing cache (including a cached
+  listing taken before a new folder appeared), the listing timeout, the row-limit stub, a column filter in a
+  long folder, the ranked and bounded search, natural order, Type buckets, the watcher's own-echo window,
+  a rename during a load, cards following a rename, untracked folders, and declarations matched by the search;
+- `ProjectMapLayoutReviewFxTest` for compact folder chains, the root as the first column's title, long
+  names, faded-row contrast, the canvas font, one draw per pulse with a cached layout, and the breadcrumb;
+- `ProjectMapCardsReviewFxTest` for note and bookmark chords in a card, the Menu-key menu, declaration cards
+  across edits, overloads and deletion, re-anchored notes, placement, sticky-note overflow and counts,
+  outlines in more languages, keyboard move and resize, binary and large files, the editor font, and the
+  shared loader threads;
+- `ProjectMapMessagesTest` that every `project.map.*` string is used, and `ProjectMapLogTest` for the
+  debug-log record of a failure the Map recovers from.
 
 When extending the map:
 
