@@ -2221,8 +2221,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /**
-     * Restores what the workspace remembers of this panel — Tree or Map, the Map's flow, its two
-     * navigation options and "Hide unmatched" — and writes later changes back through {@code state} and {@code save}.
+     * Restores what the workspace remembers of this panel — Tree or Map, the Map's flow, its ⋯ options and
+     * "Hide unmatched" — and writes later changes back through {@code state} and {@code save}.
      */
     public void setRememberedMapState(
             java.util.function.Supplier<com.editora.config.WorkspaceState> state, Runnable save) {
@@ -2241,6 +2241,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             state.get().setProjectMapHideUnmatched(hide);
             save.run();
         });
+        mapView.setRememberedOptions(
+                stored.isProjectMapSingleClickOpens(),
+                opens -> {
+                    state.get().setProjectMapSingleClickOpens(opens);
+                    save.run();
+                },
+                stored.isProjectMapCompactChains(),
+                compact -> {
+                    state.get().setProjectMapCompactChains(compact);
+                    save.run();
+                },
+                stored.isProjectMapFollowActiveFile(),
+                follow -> {
+                    state.get().setProjectMapFollowActiveFile(follow);
+                    save.run();
+                });
         mapWindow.setBoundsMemory(
                 () -> state.get().getProjectMapWindowBounds(),
                 bounds -> state.get().setProjectMapWindowBounds(bounds));

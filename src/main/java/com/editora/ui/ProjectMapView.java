@@ -138,6 +138,11 @@ final class ProjectMapView extends VBox {
 
     /** "Compact folder chains": a run of single-child folders opens, and is drawn, as one column. */
     private final CheckMenuItem compactChainsOption = optionItem("project.map.layout.compactChains", true);
+    // Where the three options above are remembered (the workspace); see setRememberedOptions.
+    private Consumer<Boolean> onSingleClickChanged = ignored -> {};
+    private Consumer<Boolean> onCompactChainsChanged = ignored -> {};
+    private Consumer<Boolean> onFollowActiveFileChanged = ignored -> {};
+    private boolean optionsRemembered;
 
     private final ComboBox<ProjectMapModel.TypeFilter> typeFilter = new ComboBox<>();
     /** "Hide unmatched": rows the filters would fade are taken off the map, and the badge says how many. */
@@ -1424,6 +1429,34 @@ final class ProjectMapView extends VBox {
         hideUnmatched.setSelected(hide);
         surface.setHideUnmatched(hide);
         onHideUnmatchedChanged = callback == null ? ignored -> {} : callback;
+    }
+
+    /**
+     * Restores the ⋯ menu's Single-click opens files, Compact folder chains and Always select opened file, and
+     * reports each later change to its callback.
+     */
+    void setRememberedOptions(
+            boolean singleClick,
+            Consumer<Boolean> onSingleClick,
+            boolean compact,
+            Consumer<Boolean> onCompact,
+            boolean follow,
+            Consumer<Boolean> onFollow) {
+        onSingleClickChanged = ignored -> {};
+        onCompactChainsChanged = ignored -> {};
+        onFollowActiveFileChanged = ignored -> {};
+        singleClickOpens.setSelected(singleClick);
+        compactChainsOption.setSelected(compact);
+        followActiveFile.setSelected(follow);
+        if (!optionsRemembered) {
+            optionsRemembered = true;
+            singleClickOpens.selectedProperty().addListener((obs, old, on) -> onSingleClickChanged.accept(on));
+            compactChainsOption.selectedProperty().addListener((obs, old, on) -> onCompactChainsChanged.accept(on));
+            followActiveFile.selectedProperty().addListener((obs, old, on) -> onFollowActiveFileChanged.accept(on));
+        }
+        onSingleClickChanged = onSingleClick == null ? ignored -> {} : onSingleClick;
+        onCompactChainsChanged = onCompact == null ? ignored -> {} : onCompact;
+        onFollowActiveFileChanged = onFollow == null ? ignored -> {} : onFollow;
     }
 
     /** The badge beside "Hide unmatched": how many rows are off the map, shown only while some are. */
