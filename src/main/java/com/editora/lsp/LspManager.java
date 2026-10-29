@@ -2903,16 +2903,23 @@ public final class LspManager {
         });
     }
 
-    /** The item's documentation as a string (markdown or plain text), or null/blank → null. */
-    private static @Nullable String documentationOf(CompletionItem item) {
+    /**
+     * The item's documentation as Markdown for the doc popup, or null/blank → null. Text marked {@code plaintext}
+     * is escaped first, as a hover's is, so a {@code *} or {@code <tag>} in it shows as written (HTML review D7).
+     */
+    static @Nullable String documentationOf(CompletionItem item) {
         var doc = item.getDocumentation();
         if (doc == null) {
             return null;
         }
-        String s = doc.isLeft()
-                ? doc.getLeft()
-                : (doc.getRight() == null ? null : doc.getRight().getValue());
-        return (s == null || s.isBlank()) ? null : s;
+        var markup = doc.isRight() ? doc.getRight() : null;
+        String s = doc.isLeft() ? doc.getLeft() : (markup == null ? null : markup.getValue());
+        if (s == null || s.isBlank()) {
+            return null;
+        }
+        return markup != null && org.eclipse.lsp4j.MarkupKind.PLAINTEXT.equals(markup.getKind())
+                ? HoverMarkdown.escapePlainText(s)
+                : s;
     }
 
     /** True if {@code file}'s server is ready and advertises whole-document formatting. */

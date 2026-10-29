@@ -931,4 +931,22 @@ class LspManagerTest {
         java.nio.file.Files.writeString(module.resolve("target/gen/Gen.java"), "class Gen {}");
         org.junit.jupiter.api.Assertions.assertFalse(LspManager.holdsJava(module), "only the build output has Java");
     }
+
+    /** A completion's docs: Markdown as sent, plain text escaped so it reads as written (HTML review D7). */
+    @Test
+    void completionDocumentationKeepsMarkdownAndEscapesPlainText() {
+        var item = new org.eclipse.lsp4j.CompletionItem("section");
+        assertNull(LspManager.documentationOf(item));
+        item.setDocumentation(new org.eclipse.lsp4j.MarkupContent(
+                "markdown", "The `<section>` element.\n\n[MDN Reference](https://developer.mozilla.org/x)"));
+        assertEquals(
+                "The `<section>` element.\n\n[MDN Reference](https://developer.mozilla.org/x)",
+                LspManager.documentationOf(item));
+        item.setDocumentation(new org.eclipse.lsp4j.MarkupContent("plaintext", "a *b* <c>"));
+        assertEquals("a \\*b\\* \\<c\\>", LspManager.documentationOf(item));
+        item.setDocumentation(new org.eclipse.lsp4j.MarkupContent("plaintext", "  "));
+        assertNull(LspManager.documentationOf(item));
+        item.setDocumentation("**bare** string");
+        assertEquals("**bare** string", LspManager.documentationOf(item), "a bare string is left as it came");
+    }
 }
