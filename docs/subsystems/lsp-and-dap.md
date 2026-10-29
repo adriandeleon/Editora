@@ -117,9 +117,22 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   and section: the Python server's `python` / `*.analysis` objects (always with `autoSearchPaths: true`
   beside `autoImportCompletions`, because Pyright turns its default-on `src/` search path off as soon as an
   `analysis` object without that key exists); `{}` for the CSS server's `css`/`scss`/`less` and the HTML
-  server's `css`/`html`/`javascript`, whose validators throw on `null`; and `null` for everything else —
+  server's `css`/`javascript`, whose validators throw on `null`; and `null` for everything else —
   including the HTML server's `js/ts`, where `{}` makes its JavaScript mode throw. A new server's sections
   must be checked against the real server before anything other than `null` is answered.
+- **The HTML server's `html` section** (`lsp/HtmlServerSettings`, Settings → LSP, the HTML card) is VS Code's
+  defaults — the server has none of its own, and with `{}` its formatter protected only `script`, so Format
+  Document re-spaced every `<pre>` and `<textarea>` — with the user's values (wrap column, wrap attributes, content
+  kept as written, attribute quotes, embedded script/style validation), `autoClosingTags` from Editora's own
+  auto-close switch (so completion does not offer a closer Editora already typed), and a project's `html` object
+  from `.editora/settings.json` (VS Code's key names, known keys of the right type only) for servers on the
+  project's root. The answer is per document (`scopeUri` → the recorded `FormattingIndent`):
+  `format.wrapLineLength` is the file's EditorConfig `max_line_length` when set (`off` = 0, never wrap), and
+  `format.endWithNewline` its `insert_final_newline`, else whether the text ends with a newline now. The server
+  caches each document's answer until `didChangeConfiguration` or `didClose`, so every change is pushed
+  (`LanguageServerSession.setHtmlSettings`) and a formatting request repeats the two per-document values as
+  `FormattingOptions`, which the server lays over its settings. Proven against the real server by
+  `HtmlServerFormatNodeProbeFxTest` (opt-in, `-Dgroups=node -Dnode.probe=true`).
 - **lemminx's settings** (`lsp/XmlServerSettings`, Settings → LSP, the XML card) go to the `xml` and `maven-pom`
   servers through all three channels: `initializationOptions.settings.xml` (so the first validation already
   has them), a push on change (`LspManager.setXmlSettings`, run by every `LspCoordinator.applySupport`, so a
@@ -783,6 +796,19 @@ server goes through `XmlServer.definition`: lemminx's own answer, unless that is
 `xml-model` href), then, since lemminx links no stylesheet, a relative `href` of an `xsl:include`/`xsl:import` (or
 `xi:include`) resolved by Editora itself (`XmlServer.includeHref`). Editora's own auto-close and auto-rename tag stay; lemminx's `xml/closeTag` and
 `linkedEditingRange` are not requested.
+
+**HTML links, markup checks and colours** (`HtmlLspAids`, owned by `LspCoordinator`). The HTML server's definition
+answers only for embedded JavaScript, so Go to Definition and Ctrl/Cmd-click fall back to `HtmlLinkFollow` on an
+`href`/`src` value (`editops.HtmlLinks`): the server's `documentLink` at the caret when it runs
+(`LspManager.documentLinkTarget`; it percent-encodes a fragment as `%23`, split off there), else the value resolved
+against the page, root-relative against the project; the file opens at the element whose `id` the fragment names,
+a missing one says "File not found", a web address goes to the browser after a confirm. The same fallback runs with
+LSP off. The server validates no markup, so `editops.HtmlMarkupCheck` (unclosed and stray tags, missing local link
+targets) is added to its pulled or pushed diagnostics off the FX thread (`LspManager.withMarkupChecks`, source
+`editora`); a page no server serves shows the same check on the `.http` variable marks' squiggle overlay
+(`HttpVariableMarks.MarkupCheck`, gated on `!isLspActive()`). `textDocument/documentColor` (any server with a
+`colorProvider`: html, css) rides `requestFoldingRanges`' pulses; `EditorBuffer.setColorSwatches` draws an inlay per
+colour, painted by a per-buffer `data:` stylesheet with one class per colour (`ColorSwatchInlays`).
 
 **A refused `initialize` is not a crash.** A server that answers `initialize` with an error (its message kept as
 `LanguageServerSession.initializeRefusal`; the exit is reported only after LSP4J has read the server's last

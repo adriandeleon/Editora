@@ -91,8 +91,8 @@ final class DocumentSymbolMapper {
 
     /**
      * A flat {@link SymbolInformation} list as a tree: each symbol under the innermost other symbol whose range
-     * contains its own, and a name that repeats with the same kind in one scope listed once (its first
-     * occurrence). bash-language-server answers flat, listing every assignment: without this a function's
+     * contains its own, and a variable that repeats in one scope listed once (its first occurrence; see
+     * {@link #reassignment}). bash-language-server answers flat, listing every assignment: without this a function's
      * locals sat at top level beside the functions and a loop's {@code total=…} appeared once per assignment.
      */
     static List<SymbolNode> nest(List<SymbolInformation> flat) {
@@ -126,8 +126,9 @@ final class DocumentSymbolMapper {
                 java.util.Set<String> seen = new java.util.HashSet<>();
                 for (Item item : level) {
                     String kind = kindName(item.info().getKind());
-                    if (!seen.add(kind + '\u0000' + item.info().getName())) {
-                        continue; // the same name and kind again in this scope: a reassignment, not a symbol
+                    if (reassignment(kind, item.children().isEmpty())
+                            && !seen.add(kind + '\u0000' + item.info().getName())) {
+                        continue; // the same variable again in this scope: a reassignment, not a symbol
                     }
                     int line = Math.max(0, item.range().getStart().getLine());
                     int endLine = Math.max(line, item.range().getEnd().getLine());
@@ -137,6 +138,17 @@ final class DocumentSymbolMapper {
             }
         };
         return build.apply(roots);
+    }
+
+    /**
+     * Whether a repeat of this symbol's name in one scope is a reassignment to list once: only a variable or a
+     * constant with nothing inside it. vscode-html-language-server also answers flat, and its sibling elements
+     * share a name and a kind ({@code a} four times in a {@code nav}, two {@code script}s): dropping those took
+     * every repeated element away, and with it whatever it held, such as the functions of a page's second script
+     * (HTML review B4).
+     */
+    static boolean reassignment(String kind, boolean leaf) {
+        return leaf && ("variable".equals(kind) || "constant".equals(kind));
     }
 
     private static int compare(org.eclipse.lsp4j.Position a, org.eclipse.lsp4j.Position b) {

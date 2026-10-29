@@ -336,4 +336,31 @@ class LspServerRegistryTest {
                 LspServerRegistry.remoteCommandFor("maven-pom", local, "lemminx-maven"),
                 "the host's configured tool wins");
     }
+
+    /** HTML review A15: a `node …/htmlServerNodeMain.js` command is named by the server, not by `node`. */
+    @Test
+    void theWebServersAreNamedByTheirProgramWhenAGenericLauncherStartsThem() {
+        assertEquals(
+                "vscode-html-language-server",
+                LspServerRegistry.displayNameFor("html", List.of("node", "/x/htmlServerNodeMain.js", "--stdio")));
+        assertEquals(
+                "vscode-css-language-server",
+                LspServerRegistry.displayNameFor("css", List.of("/usr/bin/nodejs", "/x/cssServerMain.js")));
+        assertEquals("vscode-json-language-server", LspServerRegistry.displayNameFor("json", List.of("wrap.sh")));
+        assertEquals("vscode-html-language-server", LspServerRegistry.displayNameFor("html", List.of()));
+        assertNull(
+                LspServerRegistry.displayNameFor("html", List.of("superhtml", "lsp")),
+                "another program keeps its own name");
+        assertNull(LspServerRegistry.displayNameFor("go", List.of("node")), "only the web servers");
+        assertEquals("lemminx", LspServerRegistry.displayNameFor("xml", List.of("node")));
+    }
+
+    /** HTML review A14: the server answers a 48,000-line page in well under a second. */
+    @Test
+    void htmlKeepsItsServerUpTo50000Lines() {
+        assertEquals(50_000, LspServerRegistry.heavyFileLspLineLimit("html"));
+        assertTrue(LspServerRegistry.lspAllowedForSize("html", true, 48_004));
+        assertFalse(LspServerRegistry.lspAllowedForSize("html", true, 50_000));
+        assertEquals(0, LspServerRegistry.heavyFileLspLineLimit("css"));
+    }
 }

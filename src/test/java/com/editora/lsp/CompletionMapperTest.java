@@ -249,4 +249,23 @@ class CompletionMapperTest {
         field.setFilterText("weird(name");
         org.junit.jupiter.api.Assertions.assertEquals("weird(name", CompletionMapper.filterTextOf(field));
     }
+
+    /** The HTML/CSS servers' follow-up command is the editor's to run, never the server's (HTML review B7). */
+    @Test
+    void anEditorCommandRidesOnTheCompletionAndIsNotSentToTheServer() {
+        CompletionItem color = new CompletionItem("color");
+        color.setCommand(new org.eclipse.lsp4j.Command("Suggest", Completion.Protocol.TRIGGER_SUGGEST));
+        Completion mapped = CompletionMapper.map(List.of(color)).get(0);
+        assertEquals(Completion.Protocol.TRIGGER_SUGGEST, mapped.protocol().command());
+        assertNull(CompletionMapper.serverCommandOf(color));
+
+        CompletionItem organize = new CompletionItem("thing");
+        organize.setCommand(new org.eclipse.lsp4j.Command("Organize", "java.apply.workspaceEdit"));
+        assertNull(CompletionMapper.map(List.of(organize)).get(0).protocol().command());
+        assertEquals(
+                "java.apply.workspaceEdit",
+                CompletionMapper.serverCommandOf(organize).getCommand());
+
+        assertNull(CompletionMapper.serverCommandOf(new CompletionItem("plain")));
+    }
 }

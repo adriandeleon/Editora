@@ -19,8 +19,8 @@ import static com.editora.i18n.Messages.tr;
 /**
  * The floating "open in browser" control overlaid at the top-right of an HTML editor (mirroring
  * {@link MarkdownViewToggle}). Clicking the globe drops a menu of detected browsers (plus System Default);
- * picking one opens the live preview in it. Detection + opening live in {@code MainController} — this control
- * just renders the button + the menu from the injected browser supplier / pick callback.
+ * picking one opens the live preview in it. Detection + opening live in {@link HtmlPreviewCoordinator} — this
+ * control just renders the button + the menu from the injected browser supplier / pick callback.
  */
 public class HtmlPreviewToggle extends Button {
 
@@ -62,7 +62,7 @@ public class HtmlPreviewToggle extends Button {
     private static Node iconFor(String id) {
         return switch (id) {
             case "safari" -> Icons.browserSafari();
-            case "chrome" -> Icons.browserChrome();
+            case "chrome", "chromium" -> Icons.browserChrome();
             case "firefox" -> Icons.browserFirefox();
             case "edge" -> Icons.browserEdge();
             default -> Icons.htmlPreview();

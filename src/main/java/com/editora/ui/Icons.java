@@ -686,9 +686,10 @@ final class Icons {
                 + "1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z");
     }
 
-    /** Material "public" (globe) — the HTML Live Preview "open in browser" control. */
+    /** A globe (outline, equator, two parallels and a meridian) — the HTML Live Preview "open in browser" control. */
     static Node htmlPreview() {
-        return line("M1.7999999999999998 8.0a6.2 6.2 0 1 0 12.4 0a6.2 6.2 0 1 0 -12.4 0M1.8 8h12.4");
+        return line("M1.8 8a6.2 6.2 0 1 0 12.4 0a6.2 6.2 0 1 0 -12.4 0M1.8 8h12.4M2.9 4.8h10.2M2.9 11.2h10.2"
+                + "M8 1.8a2.9 6.2 0 1 0 0 12.4a2.9 6.2 0 1 0 0 -12.4");
     }
 
     /** A compass (Material "explore") — Safari. */

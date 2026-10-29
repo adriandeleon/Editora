@@ -181,7 +181,8 @@ public final class NoteHover {
     private Node render(String body) {
         Node node;
         try {
-            node = MarkdownRenderer.renderDocument(MarkdownRenderer.parseForRender(body), baseDir.get());
+            node = MarkdownRenderer.renderPopup( // a popup: nothing in it takes the editor's keys
+                    MarkdownRenderer.parseForRender(body), baseDir.get(), null, MarkdownRenderer.ImagePolicy.DOCUMENT);
         } catch (RuntimeException ex) {
             Label fallback = new Label(body);
             fallback.setWrapText(true);

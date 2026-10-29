@@ -15,10 +15,10 @@ void main() {
 --- end
 === html-page
 --- sample.html caret=187
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>My Title</title>
 </head>
@@ -654,10 +654,11 @@ end_of_line = crlf
 --- end
 === html-bundle
 --- sample.html
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>My Title</title>
     <link rel="stylesheet" href="sample.css">
 </head>

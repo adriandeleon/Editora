@@ -73,13 +73,18 @@ public record DoctorCheck(
     }
 
     /** The tips of a server that is installed but crashes or fails, which tell the user to click Install…. */
-    private static final java.util.Set<String> REINSTALL_TIPS =
-            java.util.Set.of("doctor.tip.serverCrashing", "doctor.tip.serverFailing", "doctor.tip.serverCrashLoop");
+    private static final java.util.Set<String> REINSTALL_TIPS = java.util.Set.of(
+            "doctor.tip.serverCrashing",
+            "doctor.tip.serverCrashingXml",
+            "doctor.tip.serverFailing",
+            "doctor.tip.serverCrashLoop");
 
     /** The tips of a server this window has given up on, which a "Restart Language Servers" may bring back. */
     private static final java.util.Set<String> RESTART_TIPS = java.util.Set.of(
             "doctor.tip.serverCrashing",
+            "doctor.tip.serverCrashingXml",
             "doctor.tip.serverFailing",
+            "doctor.tip.serverTroubleOwn",
             "doctor.tip.serverCrashLoop",
             "doctor.tip.serverNeedsNode");
 

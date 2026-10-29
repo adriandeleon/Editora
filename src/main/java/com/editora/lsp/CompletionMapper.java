@@ -78,9 +78,26 @@ public final class CompletionMapper {
                             item.getCommitCharacters(),
                             item.getInsertTextMode() == null
                                     ? 0
-                                    : item.getInsertTextMode().getValue())));
+                                    : item.getInsertTextMode().getValue(),
+                            editorCommandOf(item))));
         }
         return out;
+    }
+
+    /**
+     * The item's command when the editor runs it itself after the accept — the HTML/CSS servers' {@code
+     * editor.action.triggerSuggest} on a CSS property ({@code color: } then its values) or a directory in a path
+     * ({@code css/} then its files) — else null (HTML review B7). Pure.
+     */
+    static @Nullable String editorCommandOf(CompletionItem item) {
+        var c = item.getCommand();
+        return c != null && Completion.Protocol.editorCommand(c.getCommand()) ? c.getCommand() : null;
+    }
+
+    /** The item's command when it is the server's to run ({@code workspace/executeCommand}), else null. Pure. */
+    public static org.eclipse.lsp4j.@Nullable Command serverCommandOf(CompletionItem item) {
+        var c = item.getCommand();
+        return c == null || c.getCommand() == null || Completion.Protocol.editorCommand(c.getCommand()) ? null : c;
     }
 
     /** What the typed prefix is matched against: a method's name only, never its parameter list (A16). Pure. */

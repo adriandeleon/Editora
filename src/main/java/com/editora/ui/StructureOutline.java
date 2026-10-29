@@ -203,6 +203,9 @@ final class StructureOutline {
         if ("yaml".equals(src.language())) {
             return yamlKeyNodes(src.lineAt(), paras);
         }
+        if (com.editora.text.HtmlElements.isHtmlLanguage(src.language())) {
+            return HtmlOutline.build(src.text()); // tag#id.class, as the server labels them (HTML review C14)
+        }
         if ("xml".equals(src.language()) && !src.pom()) {
             List<StructureNode> elements = XmlOutline.build(src.text()); // by qualified name and naming attribute
             return elements.isEmpty() ? DtdOutline.build(src.text()) : elements; // a DTD has declarations instead

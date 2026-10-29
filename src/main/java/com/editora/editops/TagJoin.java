@@ -3,7 +3,8 @@ package com.editora.editops;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
+
+import com.editora.text.HtmlElements;
 
 /**
  * Pure: whether a close tag the user starts typing by hand may join the {@code </name>} already after the caret
@@ -21,28 +22,6 @@ public final class TagJoin {
 
     /** How much text before the caret is read (bounds the scan; it runs only on a {@code /} typed after {@code <}). */
     public static final int MAX_SCAN = 100_000;
-
-    /** HTML elements whose end tag may be left out: an open one does not stop a closer of its parent joining. */
-    static final Set<String> OPTIONAL_END_TAG = Set.of(
-            "body",
-            "caption",
-            "colgroup",
-            "dd",
-            "dt",
-            "head",
-            "html",
-            "li",
-            "optgroup",
-            "option",
-            "p",
-            "rp",
-            "rt",
-            "tbody",
-            "td",
-            "tfoot",
-            "th",
-            "thead",
-            "tr");
 
     private TagJoin() {}
 
@@ -63,7 +42,7 @@ public final class TagJoin {
             if (html ? name.equalsIgnoreCase(closerName) : name.equals(closerName)) {
                 return true;
             }
-            if (!html || !OPTIONAL_END_TAG.contains(name.toLowerCase(Locale.ROOT))) {
+            if (!html || !HtmlElements.OPTIONAL_END.contains(name.toLowerCase(Locale.ROOT))) {
                 return false;
             }
         }
@@ -96,9 +75,9 @@ public final class TagJoin {
                 int[] end = TagRename.skipTag(text, nameEnd);
                 boolean closed = end[0] > nameEnd && text.charAt(end[0] - 1) == '>';
                 String lower = name.toLowerCase(Locale.ROOT);
-                if (closed && end[1] == 0 && !(html && TagRename.VOID_ELEMENTS.contains(lower))) {
+                if (closed && end[1] == 0 && !(html && HtmlElements.VOID.contains(lower))) {
                     stack.add(name);
-                    if (html && TagRename.RAW_TEXT_ELEMENTS.contains(lower)) {
+                    if (html && HtmlElements.RAW_TEXT.contains(lower)) {
                         i = TagRename.skipToCloseTag(text, end[0], name); // script/style content is not markup
                         continue;
                     }

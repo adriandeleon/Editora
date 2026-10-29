@@ -85,6 +85,16 @@ public final class JumpReveal {
         }
     }
 
+    /** Whether {@code a}'s caret line is on screen as last laid out ({@code false} before the first layout). */
+    static boolean caretParagraphVisible(CodeArea a) {
+        try {
+            int par = a.getCurrentParagraph();
+            return par >= a.firstVisibleParToAllParIndex() && par <= a.lastVisibleParToAllParIndex();
+        } catch (RuntimeException notLaidOut) {
+            return false;
+        }
+    }
+
     /** Scrolls {@code area} sideways so its caret, on a line already on screen, is inside the viewport. */
     private static void revealCaretColumn(CodeArea area) {
         area.layout();

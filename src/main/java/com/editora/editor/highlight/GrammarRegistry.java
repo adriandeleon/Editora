@@ -130,8 +130,15 @@ public final class GrammarRegistry {
      * TSX (see the extension table). They are languages a person picks, so {@link #pickableLanguageNames} lists
      * them — without them a .js buffer's status-bar picker showed Plain Text and offered only TypeScript.
      */
-    private static final Map<String, String> LANGUAGE_ALIASES =
-            Map.of("javascript", "source.tsx", "javascriptreact", "source.tsx");
+    private static final Map<String, String> LANGUAGE_ALIASES = Map.of(
+            "javascript",
+            "source.tsx",
+            "javascriptreact",
+            "source.tsx",
+            com.editora.text.HtmlElements.TEMPLATE_LANGUAGE,
+            "text.html.basic",
+            com.editora.text.HtmlElements.HANDLEBARS_LANGUAGE,
+            "text.html.basic");
 
     /** Language names that have a bundled grammar file (the grammar's resource name), sorted alphabetically. */
     public Set<String> availableLanguageNames() {
@@ -188,6 +195,10 @@ public final class GrammarRegistry {
             return null;
         }
         String ext = base.substring(dot + 1).toLowerCase(Locale.ROOT);
+        String inner = com.editora.text.LanguageRegistry.templateInnerExtension(base); // nginx.conf.j2: the inner file
+        if (inner != null) {
+            ext = inner;
+        }
         return com.editora.text.LanguageRegistry.isGoModule(base) ? null : extensionToScope.get(ext);
     }
 
@@ -327,6 +338,20 @@ public final class GrammarRegistry {
         mapExtensions("source.json", "json", "jsonc", "json5", "ipynb"); // a Jupyter notebook is JSON
         mapExtensions("source.css", "css");
         mapExtensions("text.html.basic", "html", "htm", "xhtml");
+        // HTML templates (HTML review C7): coloured as HTML, the template tags as text.
+        mapExtensions(
+                "text.html.basic",
+                "erb",
+                "ejs",
+                "njk",
+                "jinja",
+                "jinja2",
+                "j2",
+                "twig",
+                "liquid",
+                "mustache",
+                "hbs",
+                "handlebars");
         mapExtensions("source.astro", "astro");
         mapExtensions("source.yaml", "yaml", "yml");
         mapExtensions("source.ini", "ini", "cfg", "conf");

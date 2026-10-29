@@ -3020,6 +3020,9 @@ final class FileWorkflowCoordinator {
         host.editorSettings().spell().fileSaved(request.target()); // dictionary.txt edited by hand applies now
         ProjectPanel.noteLocalWrite(host.projectPanel(), request.target()); // ours: not an external change
         host.fileSaved(request.target());
+        if (!request.buffer().isDisposed()) {
+            host.htmlPreview().onBufferSaved(request.buffer()); // a saved file of a previewed site reloads it
+        }
         if (showFeedback && !request.buffer().isDisposed()) {
             host.setStatus(savedStatus(request, disk, autoSave));
             if (!autoSave) {

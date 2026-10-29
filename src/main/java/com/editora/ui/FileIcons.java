@@ -580,7 +580,7 @@ public final class FileIcons {
             case "groovy" -> "groovy";
             case "scala" -> "scala";
             case "clojure" -> "clojure";
-            case "html", "astro" -> "html";
+            case "html", "astro", "html-template", "handlebars" -> "html";
             case "css" -> "css";
             case "markdown" -> "markdown";
             case "yaml" -> "yaml";

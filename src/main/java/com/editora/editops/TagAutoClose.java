@@ -2,6 +2,7 @@ package com.editora.editops;
 
 import java.util.Locale;
 
+import com.editora.text.HtmlElements;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -119,7 +120,7 @@ public final class TagAutoClose {
             return null; // "i<n) return x": a tag name ends at whitespace, "/" or the ">" being typed
         }
         String name = beforeCaret.substring(nameStart, nameEnd);
-        if (html && TagRename.VOID_ELEMENTS.contains(name.toLowerCase(Locale.ROOT))) {
+        if (html && HtmlElements.VOID.contains(name.toLowerCase(Locale.ROOT))) {
             return null; // void element — it has no close tag
         }
         return "</" + name + ">";
@@ -127,7 +128,7 @@ public final class TagAutoClose {
 
     /** {@code "script"}/{@code "style"} when the tag starting at {@code lt} opens that raw-text element, else null. */
     private static @Nullable String rawTextElement(String s, int lt) {
-        for (String name : TagRename.RAW_TEXT_ELEMENTS) {
+        for (String name : HtmlElements.RAW_TEXT) {
             int end = lt + 1 + name.length();
             if (s.regionMatches(true, lt + 1, name, 0, name.length())
                     && end < s.length()

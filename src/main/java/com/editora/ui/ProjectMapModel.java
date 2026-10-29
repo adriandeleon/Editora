@@ -1312,8 +1312,19 @@ final class ProjectMapModel {
             "graphql",
             "http");
 
-    private static final Set<String> MARKUP_LANGUAGES =
-            Set.of("html", "astro", "markdown", "xml", "css", "mermaid", "markwhen", "typst", "dot", "plantuml");
+    private static final Set<String> MARKUP_LANGUAGES = Set.of(
+            "html",
+            "html-template",
+            "handlebars",
+            "astro",
+            "markdown",
+            "xml",
+            "css",
+            "mermaid",
+            "markwhen",
+            "typst",
+            "dot",
+            "plantuml");
 
     /** Plain data and text the registry knows but which is neither code, markup nor configuration. */
     private static final Set<String> OTHER_LANGUAGES = Set.of(LanguageRegistry.PLAINTEXT, "log", "csv", "diff");

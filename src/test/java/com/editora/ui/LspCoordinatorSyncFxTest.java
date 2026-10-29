@@ -315,7 +315,8 @@ class LspCoordinatorSyncFxTest {
                 .map(p -> p.getTextDocument().getText())
                 .toList();
         assertEquals(List.of(text), opened, "one didOpen, with the whole text");
-        assertEquals(new com.editora.lsp.FormattingIndent(2, true), manager.documentIndent(f));
+        // The recorded indent also carries the text's final newline, which the HTML server is answered with.
+        assertEquals(new com.editora.lsp.FormattingIndent(2, true, null, null, null, true), manager.documentIndent(f));
     }
 
     /** The indent a server is answered with follows the text: re-indented to tabs, it says tabs (B12). */
@@ -324,7 +325,9 @@ class LspCoordinatorSyncFxTest {
         EditorBuffer b = javaBuffer("A.java");
         FxTestSupport.runOnFx(() -> b.setContent("class A {\n  int x;\n}\n"));
         sync(b);
-        assertEquals(new com.editora.lsp.FormattingIndent(2, true), manager.documentIndent(b.getPath()));
+        assertEquals(
+                new com.editora.lsp.FormattingIndent(2, true, null, null, null, true),
+                manager.documentIndent(b.getPath()));
 
         FxTestSupport.runOnFx(() -> b.setContent("class A {\n\tint x;\n}\n"));
         sync(b); // a settings apply or a tab switch; the debounced didChange does the same as the user types

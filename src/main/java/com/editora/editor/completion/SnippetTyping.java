@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.function.BiFunction;
 
 import com.editora.editops.Commenter;
+import com.editora.editops.HtmlCaretRegion;
 import com.editora.editops.LineEndings;
 import com.editora.editor.EditorBuffer;
 import com.editora.snippet.Snippet;
@@ -40,10 +41,14 @@ public final class SnippetTyping {
     public static TabExpansion.@Nullable Match triggerAtCaret(
             CodeArea a, String language, boolean prose, BiFunction<String, String, Snippet> provider, boolean offered) {
         int caret = a.getCaretPosition();
+        String snippetLang = snippetLanguageAt(a, caret, language); // Tab after `col` in a <style> is CSS's (B5)
+        if (snippetLang == null) {
+            return null;
+        }
         int base =
                 Math.max(a.getAbsolutePosition(a.getCurrentParagraph(), 0), caret - BufferCompletion.PREFIX_LOOKBACK);
         String before = a.getText(base, caret);
-        TabExpansion.Match m = TabExpansion.find(before, prefix -> provider.apply(language, prefix));
+        TabExpansion.Match m = TabExpansion.find(before, prefix -> provider.apply(snippetLang, prefix));
         if (m == null) {
             return null;
         }
@@ -65,6 +70,19 @@ public final class SnippetTyping {
         int start = base + m.start();
         boolean scoped = inCommentOrString(a, start) || start > base && inCommentOrString(a, start - 1);
         return TabExpansion.allowed(language, prose, scoped) ? new TabExpansion.Match(start, m.snippet()) : null;
+    }
+
+    /**
+     * The language whose snippets suit the caret of a {@code language} buffer: in an HTML buffer, CSS in a {@code
+     * <style>}, JavaScript in a {@code <script>} and none (null) inside a tag ({@link HtmlCaretRegion}); otherwise
+     * the buffer's own.
+     */
+    public static @Nullable String snippetLanguageAt(CodeArea a, int caret, String language) {
+        if (!"html".equals(language) || caret <= 0) {
+            return language;
+        }
+        return HtmlCaretRegion.snippetLanguage(
+                language, a.getText(Math.max(0, caret - HtmlCaretRegion.MAX_SCAN), caret));
     }
 
     private static boolean inCommentOrString(CodeArea a, int offset) {

@@ -58,6 +58,20 @@ public final class LanguageRegistry {
             Map.entry("html", "html"),
             Map.entry("htm", "html"),
             Map.entry("xhtml", "html"),
+            // HTML templates (HTML review C7): the HTML grammar and Editora's tag features, never the HTML server
+            // (the template syntax would come back as errors and formatting edits); Handlebars, which the server
+            // serves too, under its own id. A name like config.yaml.j2 is the inner file's language: see forFileName.
+            Map.entry("erb", HtmlElements.TEMPLATE_LANGUAGE),
+            Map.entry("ejs", HtmlElements.TEMPLATE_LANGUAGE),
+            Map.entry("njk", HtmlElements.TEMPLATE_LANGUAGE),
+            Map.entry("jinja", HtmlElements.TEMPLATE_LANGUAGE),
+            Map.entry("jinja2", HtmlElements.TEMPLATE_LANGUAGE),
+            Map.entry("j2", HtmlElements.TEMPLATE_LANGUAGE),
+            Map.entry("twig", HtmlElements.TEMPLATE_LANGUAGE),
+            Map.entry("liquid", HtmlElements.TEMPLATE_LANGUAGE),
+            Map.entry("mustache", HtmlElements.TEMPLATE_LANGUAGE),
+            Map.entry("hbs", HtmlElements.HANDLEBARS_LANGUAGE),
+            Map.entry("handlebars", HtmlElements.HANDLEBARS_LANGUAGE),
             Map.entry("astro", "astro"),
             Map.entry("md", "markdown"),
             Map.entry("markdown", "markdown"),
@@ -246,7 +260,39 @@ public final class LanguageRegistry {
         if (isGoModule(base)) {
             return PLAINTEXT; // .mod is a DTD module, but Go's go.mod is not XML
         }
+        String inner = templateInnerExtension(base);
+        if (inner != null) {
+            ext = inner;
+        }
         return ShellFiles.isShellExtension(ext) ? "shell" : BY_EXTENSION.getOrDefault(ext, PLAINTEXT);
+    }
+
+    /**
+     * For a template named after the file it renders — {@code nginx.conf.j2}, {@code config.yml.erb},
+     * {@code theme.css.liquid} — the inner extension, whose language the file is (an Ansible or Chef template is not
+     * HTML); null for any other name, {@code page.html.erb} and {@code view.ejs} included, and for an inner extension
+     * Editora does not know. Shared with the grammar table so colours and language agree.
+     */
+    public static @org.jspecify.annotations.Nullable String templateInnerExtension(String baseName) {
+        int dot = baseName.lastIndexOf('.');
+        if (dot <= 0) {
+            return null;
+        }
+        String ext = baseName.substring(dot + 1).toLowerCase(Locale.ROOT);
+        if (!HtmlElements.isTemplateLanguage(BY_EXTENSION.get(ext))) {
+            return null;
+        }
+        int inner = baseName.lastIndexOf('.', dot - 1);
+        if (inner < 0 || inner == dot - 1) {
+            return null;
+        }
+        String innerExt = baseName.substring(inner + 1, dot).toLowerCase(Locale.ROOT);
+        if (innerExt.equals("html") || innerExt.equals("htm") || innerExt.equals("xhtml")) {
+            return null;
+        }
+        boolean known = ShellFiles.isShellExtension(innerExt)
+                || (BY_EXTENSION.containsKey(innerExt) && !HtmlElements.isTemplateLanguage(BY_EXTENSION.get(innerExt)));
+        return known ? innerExt : null;
     }
 
     /** Whether {@code baseName} is Go's module file, whose {@code .mod} extension otherwise reads as a DTD module. */

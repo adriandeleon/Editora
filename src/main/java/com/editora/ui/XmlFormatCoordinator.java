@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import javafx.application.Platform;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.format.HtmlFormatter;
 import com.editora.format.XmlFormatter;
 import org.jspecify.annotations.Nullable;
 
@@ -13,7 +14,8 @@ import static com.editora.i18n.Messages.tr;
 /**
  * Format Document on an XML file no language server formats — the XML server off, not installed, or LSP support
  * off altogether (XML review C8): Editora's own {@link XmlFormatter}, indenting with the buffer's indent unit,
- * applied as one undoable edit. A running server that formats keeps the job.
+ * applied as one undoable edit. A running server that formats keeps the job. An HTML file gets the same treatment
+ * with {@link HtmlFormatter} (HTML review C17).
  *
  * <p>The formatting itself runs on a virtual thread: a 6 MB file took over a second, all of it on the FX thread
  * (XML review 2 C10). The result is applied on the FX thread only when the tab is still the active one and its
@@ -42,12 +44,13 @@ final class XmlFormatCoordinator {
         this.askGrowth = ask;
     }
 
-    /** Formats the active buffer when it is XML a server will not format; true when it took the job. */
+    /** Formats the active buffer when it is XML (or HTML) a server will not format; true when it took the job. */
     boolean formatActive() {
         EditorBuffer buffer = host.activeBuffer();
-        if (buffer == null || !"xml".equals(buffer.getLanguage())) {
+        if (buffer == null || !("xml".equals(buffer.getLanguage()) || "html".equals(buffer.getLanguage()))) {
             return false;
         }
+        boolean html = "html".equals(buffer.getLanguage());
         Path path = buffer.getPath();
         if (path != null && host.serverFormats(path)) {
             return false;
@@ -69,27 +72,27 @@ final class XmlFormatCoordinator {
             String after = null;
             int newCaret = caret;
             try {
-                after = format(before, indent);
+                after = html ? formatHtml(before, indent) : format(before, indent);
                 newCaret = after == null ? caret : caretAfter(before, after, caret);
             } finally {
                 String formatted = after;
                 int at = newCaret;
                 Platform.runLater(() -> {
                     running = null;
-                    apply(buffer, before, formatted, at);
+                    apply(buffer, before, formatted, at, html);
                 });
             }
         });
         return true;
     }
 
-    private void apply(EditorBuffer buffer, String before, @Nullable String after, int caret) {
+    private void apply(EditorBuffer buffer, String before, @Nullable String after, int caret, boolean html) {
         if (buffer != host.activeBuffer() || !buffer.getArea().getText().equals(before)) {
             host.setStatus(tr("status.lsp.formatStale")); // edited (or left) mid-format: a re-run formats cleanly
             return;
         }
         if (after == null) {
-            host.setError(tr("status.xml.formatNotWellFormed"));
+            host.setError(tr(html ? "status.html.formatOpenConstruct" : "status.xml.formatNotWellFormed"));
             return;
         }
         int[] span = com.editora.format.PythonFormatter.changedSpan(before, after);
@@ -108,7 +111,7 @@ final class XmlFormatCoordinator {
         buffer.getArea().replaceText(span[0], span[1], after.substring(span[0], span[2]));
         buffer.getArea().moveTo(Math.min(caret, buffer.getArea().getLength()));
         buffer.getArea().requestFollowCaret();
-        host.setStatus(tr("status.xml.formatted"));
+        host.setStatus(tr(html ? "status.html.formatted" : "status.xml.formatted"));
     }
 
     private static long lines(String text) {
@@ -135,6 +138,14 @@ final class XmlFormatCoordinator {
         ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(format)).setDefaultButton(false);
         ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(cancel)).setDefaultButton(true);
         return alert.showAndWait().orElse(cancel) == format;
+    }
+
+    /**
+     * {@code text}, an HTML page, laid out by the built-in {@link HtmlFormatter} with {@code indent} per level (HTML
+     * review C17), or null when a tag, comment or script is left open.
+     */
+    static @Nullable String formatHtml(String text, @Nullable String indent) {
+        return HtmlFormatter.format(text, indent == null || indent.isEmpty() ? "  " : indent);
     }
 
     /** {@code text} formatted with {@code indent} per level, or null when it does not nest properly. */

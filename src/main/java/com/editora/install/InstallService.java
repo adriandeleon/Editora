@@ -262,6 +262,7 @@ public final class InstallService {
     private @Nullable String runStep(Step s, Path configDir) throws Exception {
         switch (s.kind()) {
             case NPM_GLOBAL -> runCommand(InstallCatalog.npmInstallGlobalArgv(s.npmPackages()), s.id());
+            case NPM_PREFIX -> installNpmPrefix(s, configDir);
             case PIP_TARGET -> {
                 Path dest = configDir.resolve(s.destSubpath());
                 Files.createDirectories(dest);
@@ -1085,6 +1086,25 @@ public final class InstallService {
         ProcessRunner.Result r = commands.apply(argv);
         if (!r.ok()) {
             throw new InstallException(id + ": " + (r.message().isBlank() ? "command failed" : r.message()));
+        }
+    }
+
+    /**
+     * {@code npm install --prefix} into the step's own folder under the config dir (npm updates it in place, keeping
+     * its lockfile), then, for the HTML/CSS/JSON package, the link its HTML server needs to find TypeScript's
+     * libraries ({@link WebServerInstall#linkTypeScriptLibs}, HTML review A2).
+     */
+    private void installNpmPrefix(Step s, Path configDir) throws Exception {
+        Path dest = configDir.resolve(s.destSubpath());
+        Files.createDirectories(dest);
+        runCommand(InstallCatalog.npmInstallPrefixArgv(dest, s.npmPackages()), s.id());
+        if (InstallCatalog.WEB_LS_PACKAGE.equals(s.id())) {
+            try {
+                WebServerInstall.linkTypeScriptLibs(dest);
+            } catch (IOException | RuntimeException e) {
+                throw new InstallException(s.id() + ": installed, but its HTML server cannot be given TypeScript's"
+                        + " libraries (" + e.getMessage() + ")");
+            }
         }
     }
 

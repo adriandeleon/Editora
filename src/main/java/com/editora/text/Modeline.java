@@ -124,6 +124,9 @@ public final class Modeline {
         if (ext == null && startsWithXmlDeclaration(head) && !namedAsText(fileName)) {
             ext = "xml"; // an AndroidManifest-style file with no telling extension (XML review A8)
         }
+        if (ext == null && startsWithHtml(head) && !namedAsText(fileName)) {
+            ext = "html"; // a saved page, CGI output or template with no extension, as VS Code sniffs it (HTML A13)
+        }
         return ext == null ? null : new Shebang.Result(ext, null);
     }
 
@@ -155,6 +158,45 @@ public final class Modeline {
         }
         char after = head.charAt(i + 5);
         return Character.isWhitespace(after) || after == '?';
+    }
+
+    /**
+     * Whether {@code head} opens with {@code <!doctype html} or an {@code <html>} tag (either case, then white space or
+     * {@code >}), after an optional byte-order mark, blank space and leading {@code <!-- … -->} comments. Pure.
+     */
+    public static boolean startsWithHtml(@Nullable String head) {
+        if (head == null) {
+            return false;
+        }
+        int i = 0;
+        int n = head.length();
+        if (i < n && head.charAt(i) == '\uFEFF') {
+            i++;
+        }
+        while (true) {
+            while (i < n && Character.isWhitespace(head.charAt(i))) {
+                i++;
+            }
+            if (!head.startsWith("<!--", i)) {
+                break;
+            }
+            int end = head.indexOf("-->", i + 4);
+            if (end < 0) {
+                return false;
+            }
+            i = end + 3;
+        }
+        return tagAt(head, i, "<!doctype html") || tagAt(head, i, "<html");
+    }
+
+    /** Whether {@code text} has {@code word} at {@code i}, ignoring case, followed by white space or {@code >}. */
+    private static boolean tagAt(String text, int i, String word) {
+        int end = i + word.length();
+        if (end >= text.length() || !text.regionMatches(true, i, word, 0, word.length())) {
+            return false;
+        }
+        char after = text.charAt(end);
+        return Character.isWhitespace(after) || after == '>';
     }
 
     /** The extension an emacs {@code -*- … -*-} line names: the first line, or the second after a shebang. */

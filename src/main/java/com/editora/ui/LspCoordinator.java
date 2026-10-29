@@ -304,6 +304,7 @@ final class LspCoordinator {
     /** Folder trust for the lemminx servers: which pom may reach lemminx-maven, and Trust Folder (E1, C6). */
     private final XmlFolderTrust xmlTrust;
 
+    final HtmlLspAids html; // HTML links, the markup check and colour swatches (HTML review B6, D5, D9)
     private final LibrarySources librarySourcesBar;
 
     private final WorkspaceFileOperations workspaceFiles;
@@ -368,6 +369,7 @@ final class LspCoordinator {
         this.lspManager = lspManager;
         this.ops = ops;
         this.xmlTrust = new XmlFolderTrust(this, host, lspManager, ops);
+        this.html = new HtmlLspAids(host, lspManager, ops);
         this.librarySourcesBar = new LibrarySources(lspManager, host::setStatus); // a decompiled tab's sources
         this.pythonInterpreters = new PythonInterpreterCoordinator(new PythonInterpreterCoordinator.Host() {
             @Override
@@ -1968,16 +1970,14 @@ final class LspCoordinator {
                 .commandFor(serverId, LspServerCommands.serverCommand(host.settings(), serverId), projectTrusted());
     }
 
-    /** The command a server is started with: {@link #serverCommand(String)}, a blank one filled in with
-     *  Editora's own copy where it keeps one outside PATH (lemminx, review A9; the pom server, review 2 A3). */
+    /** How a server is started: {@link #serverCommand(String)}, a blank one filled in ({@link #withOwnCopy}). */
     private String launchCommand(String serverId) {
         return withOwnCopy(
                 serverId, serverCommand(serverId), configDir(), host.settings().getMavenJdkHome());
     }
 
-    /** {@code command} for {@code serverId}, Editora's own copy standing in for a blank XML or pom command (the
-     *  Java lemminx after a fallback, the pom server's bundle) on the Maven JDK ({@code jdkHome}). Pure but for
-     *  file lookups. */
+    /** {@code command} for {@code serverId}: Editora's own copy, kept outside PATH, for a blank XML, pom, HTML, CSS or
+     *  JSON command (review A9, review 2 A3, HTML A2), on the Maven JDK ({@code jdkHome}). Pure but for file lookups. */
     static String withOwnCopy(
             String serverId, @Nullable String command, @Nullable Path configDir, @Nullable String jdkHome) {
         String raw = command == null ? "" : command;
@@ -1988,7 +1988,7 @@ final class LspCoordinator {
         }
         return "xml".equals(serverId)
                 ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir, jdk)
-                : raw;
+                : com.editora.install.WebServerInstall.effectiveCommand(serverId, raw, configDir); // HTML A2
     }
 
     /** {@link LspServerCommands#commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
@@ -2129,6 +2129,7 @@ final class LspCoordinator {
                 com.editora.lsp.XmlServerSettings.of(host.settings(), config == null ? null : config.getConfigDir()));
         XmlOutline.setLimit(host.settings().getXmlSymbolLimit()); // the outline without the server too (C9)
         xmlNotices.reset();
+        lspManager.setHtmlSettings(host.settings(), projectSettings().getHtml(), ops.lspProjectRoot()); // HTML's (B2)
     }
 
     /** Hands Bash servers their settings: {@link #bashIdeConfig()} in the project, the user's elsewhere (A1). */
@@ -2361,6 +2362,7 @@ final class LspCoordinator {
         applyOnTypeFormatting();
         applyBashIde();
         applyXmlSettings();
+        html.settingsChanged(); // the HTML markup check switched on or off (D5)
         xmlTrust.trustChanged(); // a pom moves to or off lemminx-maven with its folder's trust (E1)
         appliedProjectRoot = ops.lspProjectRoot();
         offerInterruptedEdits();
@@ -2391,36 +2393,7 @@ final class LspCoordinator {
 
     /** Sets a server's per-server enable toggle (mirrors {@link #serverEnabled}). */
     private void setServerEnabled(String serverId, boolean on) {
-        var s = host.settings();
-        switch (serverId) {
-            case "typescript" -> s.setTypescriptLspEnabled(on);
-            case "python" -> s.setPythonLspEnabled(on);
-            case "xml" -> s.setXmlLspEnabled(on);
-            case "json" -> s.setJsonLspEnabled(on);
-            case "bash" -> s.setBashLspEnabled(on);
-            case "yaml" -> s.setYamlLspEnabled(on);
-            case "go" -> s.setGoLspEnabled(on);
-            case "rust" -> s.setRustLspEnabled(on);
-            case "php" -> s.setPhpLspEnabled(on);
-            case "ruby" -> s.setRubyLspEnabled(on);
-            case "clangd" -> s.setClangdLspEnabled(on);
-            case "html" -> s.setHtmlLspEnabled(on);
-            case "css" -> s.setCssLspEnabled(on);
-            case "kotlin" -> s.setKotlinLspEnabled(on);
-            case "groovy" -> s.setGroovyLspEnabled(on);
-            case "scala" -> s.setScalaLspEnabled(on);
-            case "clojure" -> s.setClojureLspEnabled(on);
-            case "lua" -> s.setLuaLspEnabled(on);
-            case "dockerfile" -> s.setDockerfileLspEnabled(on);
-            case "sql" -> s.setSqlLspEnabled(on);
-            case "terraform" -> s.setTerraformLspEnabled(on);
-            case "toml" -> s.setTomlLspEnabled(on);
-            case "csharp" -> s.setCsharpLspEnabled(on);
-            case "typst" -> s.setTypstLspEnabled(on);
-            case "astro" -> s.setAstroLspEnabled(on);
-            case "maven-pom" -> s.setMavenPomLspEnabled(on);
-            default -> s.setJavaLspEnabled(on);
-        }
+        LspServerCommands.setServerEnabled(host.settings(), serverId, on);
     }
 
     /** Sets a server's configured command (blank ⇒ the server's default); mirrors {@link #serverCommand}. */
@@ -2825,7 +2798,7 @@ final class LspCoordinator {
         }
         if (eligible && path != null && serverId != null) {
             // Every sync re-records it (a settings apply, a language change); didChange keeps it current (B12).
-            lspManager.setDocumentIndent(path, formattingIndent(buffer)); // quick fixes keep its indent (B8)
+            lspManager.setDocumentIndent(path, LspDocumentFacts.indent(buffer)); // quick fixes keep its indent (B8)
             // Open when not yet managed, or re-open when the desired server changed — a pom.xml moving from the
             // plain XML server to lemminx-maven (once installed/enabled), or back. isManaged() alone can't tell:
             // it's keyed by URI, not server, so it stays true across a switch (which would otherwise never happen).
@@ -2957,6 +2930,9 @@ final class LspCoordinator {
         }
         Path resolved = com.editora.lsp.RootResolver.resolveTiered(
                 ops.lspProjectRoot(), file, com.editora.lsp.LspServerRegistry.rootMarkerTiersForServer(serverId));
+        if (resolved != null && "html".equals(serverId)) {
+            return com.editora.lsp.RootResolver.siteRoot(resolved, file, ops.lspProjectRoot()); // `/` links (A6)
+        }
         if (resolved != null && com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
             // A module pom's root is its reactor's: one lemminx-maven JVM per reactor, not per module (C11).
             return com.editora.lsp.RootResolver.outermostContiguous(resolved, "pom.xml", ops.lspProjectRoot());
@@ -3167,13 +3143,14 @@ final class LspCoordinator {
     /** The accept hook for a completion item: resolve it + apply any additional edits (a TypeScript
      *  auto-import's {@code import} line). Returns null when the item can't carry extra edits. */
     private @Nullable Runnable autoImportAccept(EditorBuffer buffer, org.eclipse.lsp4j.CompletionItem item) {
-        if (!com.editora.lsp.CompletionMapper.mayHaveAdditionalEdits(item) && item.getCommand() == null) return null;
+        var serverCommand = com.editora.lsp.CompletionMapper.serverCommandOf(item); // the editor's own run in it (B7)
+        if (!com.editora.lsp.CompletionMapper.mayHaveAdditionalEdits(item) && serverCommand == null) return null;
         return () -> {
             Path path = lspPath(buffer);
             if (path == null) return;
             Runnable command = () -> {
-                var c = item.getCommand();
-                if (c != null && c.getCommand() != null && path.equals(lspPath(buffer)) && !buffer.isDisposed()) {
+                var c = serverCommand;
+                if (c != null && path.equals(lspPath(buffer)) && !buffer.isDisposed()) {
                     buffer.sendLspChange();
                     // Tracked, so the workspace/applyEdit the command answers with has a basis to be
                     // validated against (an untracked one is refused unless it names current versions).
@@ -3370,17 +3347,16 @@ final class LspCoordinator {
 
     /** The program a server runs ("typescript-language-server"), as the status bar's LSP segment shows it. */
     private String serverProgram(String serverId) {
-        // Servers whose program name says the wrong thing — `java` for the Maven server, the platform-suffixed
-        // lemminx download for XML — have a display name of their own (Maven review C14).
-        String named = com.editora.lsp.LspServerRegistry.displayNameFor(serverId);
-        if (named != null) {
-            return named;
-        }
         String configured = serverCommand(serverId);
         String cmd = configured == null || configured.isBlank()
                 ? com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId)
                 : configured;
         List<String> toks = com.editora.run.ProgramArgs.commandLine(cmd);
+        // A program name that says the wrong thing (`java`, lemminx-linux-x86_64, `node`): its own name (C14, A15)
+        String named = com.editora.lsp.LspServerRegistry.displayNameFor(serverId, toks);
+        if (named != null) {
+            return named;
+        }
         String exe = toks.isEmpty() ? serverId : toks.get(0);
         try {
             return Path.of(exe).getFileName().toString();
@@ -4017,6 +3993,7 @@ final class LspCoordinator {
     /** Wires every LSP hook onto a freshly-added buffer (didChange/diagnostics/completion/format/nav), then
      *  opens+activates it if eligible. Called from {@code MainController.addBuffer}. */
     void wireBuffer(EditorBuffer buffer) {
+        html.wire(buffer); // the HTML markup check for a page no server serves (D5)
         // Debounced didChange sink + keep the Structure outline live as the document changes.
         buffer.getNode().addEventFilter(KeyEvent.KEY_PRESSED, event -> {
             if (event.getCode() == KeyCode.ESCAPE && buffer == host.activeBuffer()) {
@@ -4031,7 +4008,7 @@ final class LspCoordinator {
         buffer.setLspChangeListener(text -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) { // the indent servers are told follows the text (B12)
-                lspManager.setDocumentIndent(path, formattingIndent(buffer));
+                lspManager.setDocumentIndent(path, LspDocumentFacts.indent(buffer));
             }
             if (path != null && !lspManager.changeDocument(path, text)) {
                 // A net-zero edit (type + Backspace, edit + undo): the server was sent nothing and will
@@ -4097,9 +4074,9 @@ final class LspCoordinator {
         buffer.setLspRangeFormatter((sl, sc, el, ec, cb) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
-                com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
+                com.editora.lsp.FormattingIndent indent = LspDocumentFacts.indent(buffer);
                 buffer.sendLspChange(); // the didChange debounce may be pending: format the text on screen
-                lspManager.rangeFormatting(path, sl, sc, el, ec, indent.tabSize(), indent.insertSpaces(), cb);
+                lspManager.rangeFormatting(path, sl, sc, el, ec, indent, cb); // with its wrap column (HTML A3)
             } else {
                 cb.accept(java.util.List.of());
             }
@@ -4129,7 +4106,7 @@ final class LspCoordinator {
         buffer.setLspPasteImportsRequester((sl, sc, el, ec, text, stillValid) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
-                com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
+                com.editora.lsp.FormattingIndent indent = LspDocumentFacts.indent(buffer);
                 lspManager.handlePasteEvent(
                         path,
                         sl,
@@ -4159,7 +4136,7 @@ final class LspCoordinator {
         buffer.setLspOnTypeFormatter((line, character, ch, cb) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
-                com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
+                com.editora.lsp.FormattingIndent indent = LspDocumentFacts.indent(buffer);
                 buffer.sendLspChange(); // the server must have the character that triggered this
                 lspManager.onTypeFormatting(path, line, character, ch, indent.tabSize(), indent.insertSpaces(), cb);
             } else {
@@ -4260,6 +4237,7 @@ final class LspCoordinator {
      */
     void requestFoldingRanges(EditorBuffer buffer) {
         Path path = buffer == null ? null : lspPath(buffer);
+        html.requestColors(buffer, path); // colour swatches (D9) ride the same pulses
         if (path == null || !lspManager.isManaged(path) || !lspManager.supportsFoldingRanges(path)) {
             return;
         }
@@ -4663,7 +4641,7 @@ final class LspCoordinator {
         EditorBuffer buffer = activeLspBuffer();
         com.editora.lsp.FormattingIndent indent = buffer == null
                 ? new com.editora.lsp.FormattingIndent(projectScope.tabSize(host.settings()), true)
-                : formattingIndent(buffer);
+                : LspDocumentFacts.indent(buffer);
         return JdtlsRefactor.refactorEditParams(
                 request.name(), request.params(), indent.tabSize(), indent.insertSpaces(), arguments);
     }
@@ -5478,7 +5456,7 @@ final class LspCoordinator {
      * the answer has come back. It runs only on a jump that actually happened.
      */
     void gotoDefinition(@Nullable Runnable afterJump) {
-        gotoDefinition(afterJump, null);
+        gotoDefinition(afterJump, html.links::followAtCaret); // an HTML href/src: its file (B6)
     }
 
     /**
@@ -6698,18 +6676,14 @@ final class LspCoordinator {
                 });
     }
 
-    /** The indentation a formatting request describes for {@code buffer} (see {@link com.editora.lsp.FormattingIndent}). */
-    private static com.editora.lsp.FormattingIndent formattingIndent(EditorBuffer buffer) {
-        return com.editora.lsp.FormattingIndent.of(buffer.indentUnit(), buffer.getTabSize());
-    }
-
-    /** As {@link #formattingIndent}, with the trim / final-newline rules saving applies to {@code buffer} (D3). */
+    /** As {@link LspDocumentFacts#indent}, with the trim / final-newline rules saving applies to {@code buffer} (D3). */
     private com.editora.lsp.FormattingIndent formatRequestIndent(EditorBuffer buffer) {
         com.editora.editorconfig.EditorConfigProperties rules = projectScope.saveRules(
                 host.settings().isEditorConfigSupport()
                         ? buffer.getEditorConfigProps()
                         : com.editora.editorconfig.EditorConfigProperties.EMPTY);
-        return formattingIndent(buffer).withSaveRules(rules.trimTrailingWhitespace(), rules.insertFinalNewline());
+        return LspDocumentFacts.indent(buffer)
+                .withSaveRules(rules.trimTrailingWhitespace(), rules.insertFinalNewline());
     }
 
     /** Reformats the whole active file via its language server ({@code textDocument/formatting}), if the
@@ -6717,11 +6691,11 @@ final class LspCoordinator {
     void formatDocument() {
         EditorBuffer buffer = host.activeBuffer();
         Path path = buffer == null ? null : lspPath(buffer);
-        if (buffer == null || path == null || !ops.activeEditable()) {
-            host.setStatus(tr("status.lsp.formatUnavailable"));
-            return;
-        }
-        if (!lspManager.isManaged(path) || !lspManager.supportsFormatting(path)) {
+        if (buffer == null
+                || path == null
+                || !ops.activeEditable()
+                || !lspManager.isManaged(path)
+                || !lspManager.supportsFormatting(path)) {
             host.setStatus(tr("status.lsp.formatUnavailable"));
             return;
         }
@@ -6754,8 +6728,8 @@ final class LspCoordinator {
                 return;
             }
             if (edits.isEmpty() || com.editora.text.LspTextEdits.changesNothing(snapshot, edits)) {
-                // bash-language-server answers "no edits" when shfmt is missing or cannot parse the script, too
-                host.setStatus(BashLspUi.formatNoChange(
+                host.setStatus(FormatOutcomes.noChange( // a failed request, or shfmt's no-op (HTML A5, Bash B3)
+                        edits.isEmpty() ? lspManager.formatFailure(path) : null,
                         lspManager.managedServerId(path),
                         () -> !edits.isEmpty() || bashToolFound("shfmt"), // a no-op edit: shfmt ran
                         edits.isEmpty() ? lspManager.errorLoggedSince(path, errorsBefore) : null));
@@ -9445,11 +9419,8 @@ final class LspCoordinator {
         } else
             try {
                 // Links in a hover (documentation URLs) open through the window's link choke point.
-                content = MarkdownRenderer.renderDocument(
-                        MarkdownRenderer.parseForRender(markdown),
-                        null,
-                        host::openExternalUrl,
-                        MarkdownRenderer.ImagePolicy.DATA_ONLY);
+                content =
+                        MarkdownRenderer.renderPopup(MarkdownRenderer.parseForRender(markdown), host::openExternalUrl);
             } catch (RuntimeException e) {
                 Label label = new Label(markdown);
                 label.setWrapText(true);
@@ -9509,6 +9480,7 @@ final class LspCoordinator {
         });
 
         showAtCaret(popup, area);
+        scroll.setVvalue(0); // from its first line, whatever layout scrolled to (HTML review B8)
     }
 
     /**
@@ -9847,11 +9819,8 @@ final class LspCoordinator {
         }
         if (!active.documentation().isBlank()) {
             try {
-                Node doc = MarkdownRenderer.renderDocument(
-                        MarkdownRenderer.parseForRender(active.documentation()),
-                        null,
-                        host::openExternalUrl,
-                        MarkdownRenderer.ImagePolicy.DATA_ONLY);
+                Node doc = MarkdownRenderer.renderPopup(
+                        MarkdownRenderer.parseForRender(active.documentation()), host::openExternalUrl);
                 box.getChildren().add(doc);
             } catch (RuntimeException e) {
                 Label docLabel = new Label(active.documentation());

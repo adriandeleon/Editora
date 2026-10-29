@@ -209,12 +209,14 @@ class InstallCatalogTest {
 
     @Test
     void npmServersAreInstallableViaTheirPackages() {
-        // json/html/css all ship in one npm package.
+        // json/html/css all ship in one npm package, pinned into Editora's own prefix (HTML review A2/A12).
         for (String id : new String[] {"json", "html", "css"}) {
             List<Step> steps = InstallCatalog.serverInstall(id).orElseThrow();
             assertEquals(1, steps.size());
-            assertEquals(Kind.NPM_GLOBAL, steps.get(0).kind());
-            assertEquals(List.of("vscode-langservers-extracted"), steps.get(0).npmPackages());
+            assertEquals(Kind.NPM_PREFIX, steps.get(0).kind());
+            assertEquals(
+                    List.of("vscode-langservers-extracted@" + InstallCatalog.WEB_LS_VERSION),
+                    steps.get(0).npmPackages());
             assertTrue(steps.get(0).prereqs().contains(Prereq.NPM));
         }
         // the Bash server is pinned (Bash review A6), under its bare package name as the step id

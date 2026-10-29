@@ -570,6 +570,24 @@ public final class LspManager {
         }
     }
 
+    /** Whether Editora's own markup check joins the HTML server's diagnostics (HTML review D5); read off the FX thread. */
+    private volatile java.util.function.BooleanSupplier htmlMarkupChecks = () -> true;
+
+    /** Sets what says whether the markup check runs (Settings → Editor → HTML markup checks). */
+    public void setHtmlMarkupChecks(java.util.function.BooleanSupplier on) {
+        htmlMarkupChecks = on == null ? () -> true : on;
+    }
+
+    /** {@code mapped} with the markup check's diagnostics added for an HTML page (D5); null stays null. */
+    private @Nullable List<LspDiagnostic> withMarkupChecks(
+            LanguageServerSession s, @Nullable String documentUri, Path file, @Nullable List<LspDiagnostic> mapped) {
+        String text = documentUri == null || mapped == null
+                ? null
+                : s.documentSnapshots().get(documentUri);
+        return HtmlMarkupLint.merged(
+                s.serverId(), file, text, s.root(), mapped, text != null && htmlMarkupChecks.getAsBoolean());
+    }
+
     /** The XML servers' settings (Settings → LSP → XML); each session gets them for its own root. */
     private volatile XmlServerSettings xmlServerSettings = XmlServerSettings.defaults();
 
@@ -607,6 +625,47 @@ public final class LspManager {
             xml.put("logs", Map.of("client", true));
         }
         return Map.copyOf(xml);
+    }
+
+    /** Root → the HTML server's settings there (Settings → LSP → HTML, a project's {@code html} object). */
+    private volatile java.util.function.Function<Path, HtmlServerSettings> htmlSettings =
+            root -> HtmlServerSettings.defaults();
+
+    /**
+     * Sets the HTML servers' settings, each server given those for its root; a running one gets them pushed when they
+     * changed (HTML review B2, A4, D3). Called on every settings apply and project reload.
+     */
+    public void setHtmlSettings(java.util.function.@Nullable Function<Path, HtmlServerSettings> forRoot) {
+        htmlSettings = forRoot == null ? root -> HtmlServerSettings.defaults() : forRoot;
+        String prefix = sessionKeyPrefix(HtmlServerSettings.SERVER_ID);
+        sessionsByRoot.forEach((key, session) -> {
+            if (key.startsWith(prefix)) {
+                session.setHtmlSettings(htmlSettings.apply(session.root()));
+            }
+        });
+    }
+
+    /**
+     * As {@link #setHtmlSettings(java.util.function.Function)}: the user's settings {@code user}, with the project's
+     * {@code html} object ({@code projectHtml}) for servers on {@code projectRoot} (null = no project).
+     */
+    public void setHtmlSettings(
+            com.editora.config.Settings user,
+            java.util.@Nullable Map<String, Object> projectHtml,
+            @Nullable Path projectRoot) {
+        HtmlServerSettings own = HtmlServerSettings.of(user);
+        setHtmlSettings(HtmlServerSettings.perRoot(own.withProject(projectHtml), own, projectRoot));
+    }
+
+    /**
+     * A formatting request's options for {@code s}: {@code indent}'s, and for the HTML server the document's wrap
+     * column and final newline too, which it takes from settings it may have cached before they changed (A3, D6).
+     */
+    private static org.eclipse.lsp4j.FormattingOptions formattingOptions(
+            LanguageServerSession s, FormattingIndent indent) {
+        return HtmlServerSettings.SERVER_ID.equals(s.serverId())
+                ? s.htmlSettings().formattingOptions(indent)
+                : indent.options();
     }
 
     /**
@@ -2014,6 +2073,7 @@ public final class LspManager {
         session.setJavaCleanups(javaCleanups);
         session.setJavaFilteredTypes(javaFilteredTypes);
         session.setBashIde(bashIdeFor(root));
+        session.setHtmlSettings(htmlSettings.apply(root));
         if (TypeScriptServer.SERVER_ID.equals(serverId)) {
             session.setTypeScriptSettings(typeScriptSettings);
         }
@@ -2227,6 +2287,9 @@ public final class LspManager {
                     return;
                 }
                 tsserver = choice.tsserver();
+            }
+            if (!remote && (TypeScriptServer.SERVER_ID.equals(serverId) || nodeScriptServer(serverId))) {
+                // the Node.js chosen in Settings runs every npm server's "#!/usr/bin/env node", not only tsserver (A8)
                 session.setPathPrepend(nodeBinDir(root, nodeSetting));
             }
             Path tsserverPath = tsserver;
@@ -2903,16 +2966,23 @@ public final class LspManager {
         });
     }
 
-    /** The item's documentation as a string (markdown or plain text), or null/blank → null. */
-    private static @Nullable String documentationOf(CompletionItem item) {
+    /**
+     * The item's documentation as Markdown for the doc popup, or null/blank → null. Text marked {@code plaintext}
+     * is escaped first, as a hover's is, so a {@code *} or {@code <tag>} in it shows as written (HTML review D7).
+     */
+    static @Nullable String documentationOf(CompletionItem item) {
         var doc = item.getDocumentation();
         if (doc == null) {
             return null;
         }
-        String s = doc.isLeft()
-                ? doc.getLeft()
-                : (doc.getRight() == null ? null : doc.getRight().getValue());
-        return (s == null || s.isBlank()) ? null : s;
+        var markup = doc.isRight() ? doc.getRight() : null;
+        String s = doc.isLeft() ? doc.getLeft() : (markup == null ? null : markup.getValue());
+        if (s == null || s.isBlank()) {
+            return null;
+        }
+        return markup != null && org.eclipse.lsp4j.MarkupKind.PLAINTEXT.equals(markup.getKind())
+                ? HoverMarkdown.escapePlainText(s)
+                : s;
     }
 
     /** True if {@code file}'s server is ready and advertises whole-document formatting. */
@@ -3941,7 +4011,8 @@ public final class LspManager {
         }
         org.eclipse.lsp4j.Range range =
                 new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
-        s.rangeFormatting(uri(file), range, indent.options()).whenComplete((result, error) -> {
+        s.rangeFormatting(uri(file), range, formattingOptions(s, indent)).whenComplete((result, error) -> {
+            noteFormatOutcome(file, error);
             List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
             if (error == null && result != null) {
                 for (org.eclipse.lsp4j.TextEdit e : result) {
@@ -3960,8 +4031,28 @@ public final class LspManager {
     }
 
     /**
+     * Why the last format request of each file failed — {@link FormatFailure} — while it is the last outcome: a
+     * failed, timed-out or abandoned request delivers no edits, which read as "Already formatted" (HTML review A5).
+     */
+    private final Map<Path, FormatFailure> formatFailures = new ConcurrentHashMap<>();
+
+    /** How the last format request of {@code file} failed, or null when it was answered (or none was sent). */
+    public @Nullable FormatFailure formatFailure(Path file) {
+        return formatFailures.get(file);
+    }
+
+    private void noteFormatOutcome(Path file, @Nullable Throwable error) {
+        if (error == null) {
+            formatFailures.remove(file);
+        } else {
+            formatFailures.put(file, FormatFailure.of(error));
+        }
+    }
+
+    /**
      * Requests whole-document formatting ({@code textDocument/formatting}) for {@code file} and delivers the
-     * resulting edits to {@code cb} on the FX thread (empty list if the server returns nothing or errors).
+     * resulting edits to {@code cb} on the FX thread (empty list if the server returns nothing or errors; {@link
+     * #formatFailure} then says which).
      * {@code tabSize}/{@code insertSpaces} are formatter hints (many formatters use their own config).
      */
     public void formatDocument(
@@ -3973,10 +4064,12 @@ public final class LspManager {
     public void formatDocument(Path file, FormattingIndent indent, Consumer<List<com.editora.text.LspTextEdit>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
+            noteFormatOutcome(file, new IllegalStateException("language server not available"));
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
-        s.formatting(uri(file), indent.options()).whenComplete((result, error) -> {
+        s.formatting(uri(file), formattingOptions(s, indent)).whenComplete((result, error) -> {
+            noteFormatOutcome(file, error);
             List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
             if (error == null && result != null) {
                 for (org.eclipse.lsp4j.TextEdit e : result) {
@@ -4139,6 +4232,55 @@ public final class LspManager {
                     error == null ? LspFolding.toRegions(ranges) : List.of();
             Platform.runLater(() -> cb.accept(regions));
         });
+    }
+
+    /** True if {@code file}'s server is ready and advertises {@code colorProvider} (HTML review D9). */
+    public boolean supportsDocumentColor(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        var caps = s == null ? null : s.capabilities();
+        return caps != null && eitherTrue(caps.getColorProvider());
+    }
+
+    /**
+     * Requests the document's colour literals and delivers them on the FX thread, in document order (D9). Empty
+     * when the server has none or no colour provider.
+     */
+    public void documentColors(Path file, Consumer<List<com.editora.text.ColorSwatch>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || !supportsDocumentColor(file)) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        String uri = uri(file);
+        latest.issue(uri, "documentColor", stamp(s, uri, null), true, () -> s.documentColor(uri), (colors, error) -> {
+            List<com.editora.text.ColorSwatch> out = error == null ? swatches(colors) : List.of();
+            Platform.runLater(() -> cb.accept(out));
+        });
+    }
+
+    /** Pure: the server's colour informations as swatches, in document order (null-safe). */
+    static List<com.editora.text.ColorSwatch> swatches(@Nullable List<org.eclipse.lsp4j.ColorInformation> colors) {
+        if (colors == null || colors.isEmpty()) {
+            return List.of();
+        }
+        List<com.editora.text.ColorSwatch> out = new ArrayList<>(colors.size());
+        for (org.eclipse.lsp4j.ColorInformation c : colors) {
+            if (c == null || c.getRange() == null || c.getRange().getStart() == null || c.getColor() == null) {
+                continue;
+            }
+            Position at = c.getRange().getStart();
+            var color = c.getColor();
+            out.add(new com.editora.text.ColorSwatch(
+                    at.getLine(),
+                    at.getCharacter(),
+                    color.getRed(),
+                    color.getGreen(),
+                    color.getBlue(),
+                    color.getAlpha()));
+        }
+        out.sort(java.util.Comparator.comparingInt(com.editora.text.ColorSwatch::line)
+                .thenComparingInt(com.editora.text.ColorSwatch::column));
+        return List.copyOf(out);
     }
 
     /**
@@ -4791,6 +4933,47 @@ public final class LspManager {
                 ? notingMissingInclude(s, documentUri, new Position(line, character), cb)
                 : cb;
         requestLocations(s, documentUri, line, character, request, answer, null);
+    }
+
+    /**
+     * Where the server's document link at {@code line}/{@code character} of {@code file} points (HTML review B6),
+     * delivered on the FX thread; null when the server has no link there (or is not running). The HTML server
+     * percent-encodes a fragment ({@code about.html%23team}); the target comes back split into file and fragment.
+     */
+    public void documentLinkTarget(
+            Path file, int line, int character, Consumer<com.editora.editops.HtmlLinks.@Nullable Target> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        Position pos = new Position(line, character);
+        s.documentLinks(uri(file))
+                .thenCompose(links -> {
+                    org.eclipse.lsp4j.DocumentLink link = XmlServer.linkAt(links, pos);
+                    return link == null || link.getTarget() != null
+                            ? CompletableFuture.completedFuture(link)
+                            : s.resolveDocumentLink(link);
+                })
+                .<com.editora.editops.HtmlLinks.@Nullable Target>thenApply(link -> {
+                    String target = link == null ? null : link.getTarget();
+                    if (target == null) {
+                        return null;
+                    }
+                    if (target.startsWith("http://") || target.startsWith("https://")) {
+                        return com.editora.editops.HtmlLinks.fromUri(target);
+                    }
+                    Path to = s.uris().toPath(com.editora.editops.HtmlLinks.withoutFragment(target));
+                    return to == null
+                            ? null
+                            : new com.editora.editops.HtmlLinks.Target(
+                                    com.editora.editops.HtmlLinks.Kind.FILE,
+                                    to,
+                                    com.editora.editops.HtmlLinks.fragmentOf(target),
+                                    "");
+                })
+                .exceptionally(t -> null)
+                .thenAccept(target -> Platform.runLater(() -> cb.accept(target)));
     }
 
     /** {@code cb}, after noting when nothing was found on an include href that names no file (C26). */
@@ -5798,6 +5981,11 @@ public final class LspManager {
         }
     }
 
+    /** Whether {@code serverId}'s install is an npm package — a Node.js script (HTML, CSS, JSON, YAML, Bash…). Pure. */
+    static boolean nodeScriptServer(String serverId) {
+        return com.editora.install.InstallCatalog.npmPackage(serverId) != null;
+    }
+
     /** The bin folder of the Node.js a root's Node tools run with (Settings, .nvmrc, PATH), or null. */
     private static @Nullable Path nodeBinDir(Path root, String nodeSetting) {
         try {
@@ -5921,7 +6109,7 @@ public final class LspManager {
             if (error != null) {
                 return;
             }
-            List<LspDiagnostic> mapped = DiagnosticMapper.mapReport(report);
+            List<LspDiagnostic> mapped = withMarkupChecks(s, documentUri, file, DiagnosticMapper.mapReport(report));
             if (mapped == null) {
                 // An "unchanged" report: what was shown before the edit is still right. The editor cleared
                 // its marks on the edit, so say so rather than leave it showing a clean file.
@@ -6150,8 +6338,12 @@ public final class LspManager {
         Integer acceptedVersion = params.getVersion();
         List<org.eclipse.lsp4j.Diagnostic> raw =
                 params.getDiagnostics() == null ? List.of() : List.copyOf(params.getDiagnostics());
-        List<LspDiagnostic> mapped = MavenPomServer.adjustDiagnostics(
-                serverDisplayName(source.serverId()), DiagnosticMapper.map(params.getDiagnostics()));
+        List<LspDiagnostic> mapped = withMarkupChecks(
+                source,
+                sourceUri,
+                file,
+                MavenPomServer.adjustDiagnostics(
+                        serverDisplayName(source.serverId()), DiagnosticMapper.map(params.getDiagnostics())));
         Platform.runLater(() -> {
             if (source.isDisposed()
                     || !sessionsByRoot.containsValue(source)
