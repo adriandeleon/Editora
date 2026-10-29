@@ -3593,7 +3593,7 @@ public class EditorBuffer implements TabContent {
 
     /** Whether this buffer's language has a language server. */
     public boolean isLspLanguage() {
-        return LSP_LANGUAGES.contains(language);
+        return LSP_LANGUAGES.contains(language) || com.editora.text.HtmlElements.HANDLEBARS_LANGUAGE.equals(language);
     }
 
     /** Injects the debounced didChange sink (text → controller → server); null disables change notices. */
@@ -8883,7 +8883,7 @@ public class EditorBuffer implements TabContent {
      * <em>not</em> insert {@code c} (the caller does). Shared by the key filters and macro replay.
      */
     private void applyCloserDedent(CodeArea a, char c) {
-        Indenter.Style style = Indenter.styleFor(language);
+        Indenter.Style style = IndentWindow.styleAt(IndentKeys.doc(a), a.getCaretPosition(), language, c);
         int caret = a.getCaretPosition();
         int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
         String beforeCaret = a.getText(lineStart, caret);
@@ -8895,7 +8895,7 @@ public class EditorBuffer implements TabContent {
         // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
         String currentIndent = completionActions.leadingIndent(beforeCaret);
         String aligned = IndentWindow.closerAlignIndent(
-                style, IndentKeys.doc(a), caret, tabSize, currentIndent, c, indentUnit());
+                style, IndentKeys.doc(a), caret, tabSize, currentIndent, c, indentUnit(), language);
         if (!aligned.equals(currentIndent)) {
             a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
             a.moveTo(caret + aligned.length() - currentIndent.length()); // back after the closer, not the indent

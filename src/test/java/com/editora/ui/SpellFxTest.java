@@ -271,6 +271,25 @@ class SpellFxTest {
     }
 
     /**
+     * HTML review C13/E20: prose beside an inline script is checked, so are alt/title/placeholder values; code in
+     * {@code <code>} is not, and a {@code <pre>} named in a comment does not switch checking off below it.
+     */
+    @Test
+    void htmlChecksProseByColumnAndTheAttributesAVisitorReads() throws Exception {
+        EditorBuffer html = open(
+                "page.html",
+                "<!-- TODO: drop the <pre> wrapper -->\n"
+                        + "<p>Some <script>let mispeled = 1;</script> mor txet</p>\n"
+                        + "<p>Use <code>cnst</code> here. <img alt=\"lgo\" src=\"logo.png\"></p>\n"
+                        + "<a title=\"Clik here\" href=\"#\">Sumbit</a>\n");
+        List<String> flagged = squiggled(html);
+        assertTrue(flagged.containsAll(List.of("mor", "txet", "lgo", "Clik", "Sumbit")), flagged.toString());
+        for (String code : List.of("mispeled", "cnst", "logo")) {
+            assertFalse(flagged.contains(code), code + " is code: " + flagged);
+        }
+    }
+
+    /**
      * In a shell script the grammar scopes every bare argument as a string, so `pipefail`, `xzf` and package names
      * were underlined in almost every script. Arguments are not checked; comments, quoted strings and here-doc
      * text still are.

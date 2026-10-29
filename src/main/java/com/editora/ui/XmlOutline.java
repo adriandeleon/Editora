@@ -50,6 +50,11 @@ final class XmlOutline {
         limit = max < 1 ? MAX_NODES : max;
     }
 
+    /** The most elements an outline built without the server lists (Settings → LSP → XML's limit). */
+    static int limit() {
+        return limit;
+    }
+
     /** The element outline of {@code text}, at most the current limit of elements. */
     static List<StructureNode> build(String text) {
         return build(text, limit);

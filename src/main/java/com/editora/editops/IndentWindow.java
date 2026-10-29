@@ -1,5 +1,7 @@
 package com.editora.editops;
 
+import com.editora.text.HtmlElements;
+import com.editora.text.HtmlRegions;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -63,6 +65,10 @@ public final class IndentWindow {
     /** {@link Indenter#enterEdit(String, int, String, int, Boolean, Integer)} at {@code caret}, for {@code unit}. */
     public static Indenter.EnterEdit enterEdit(Doc doc, int caret, String language, String unit) {
         int line = doc.lineOf(caret);
+        Embedded embedded = embedded(doc, caret, language);
+        if (embedded != null) {
+            language = embedded.language(); // the brace rules inside an HTML page's <script> or <style> (C10)
+        }
         // Shell, Python, Lisp and brace languages read the stretch above the caret (blocks, quotes, wrapped
         // statements, open forms, case labels, open argument lists); the rest only the line.
         Indenter.Style style = Indenter.styleFor(language);
@@ -72,6 +78,9 @@ public final class IndentWindow {
                         || "python".equals(language)
                 ? backScanStart(doc, line)
                 : doc.lineStart(line);
+        if (embedded != null) {
+            start = Math.max(start, embedded.start()); // the markup above is not code to read
+        }
         int end = doc.lineStart(line) + doc.lineLength(line);
         if (style == Indenter.Style.BRACES) {
             end = Math.min(doc.length(), end + LOOK_BELOW_CHARS); // is a `/**` here already closed below?
@@ -94,10 +103,76 @@ public final class IndentWindow {
             String currentIndent,
             char typed,
             @Nullable String unit) {
+        return closerAlignIndent(style, doc, caret, tabSize, currentIndent, typed, unit, null);
+    }
+
+    /**
+     * As above in a {@code language} buffer: in an HTML page's {@code <script>} or {@code <style>} the opener is
+     * looked for in the element's content only (HTML review C10).
+     */
+    public static String closerAlignIndent(
+            Indenter.Style style,
+            Doc doc,
+            int caret,
+            int tabSize,
+            String currentIndent,
+            char typed,
+            @Nullable String unit,
+            @Nullable String language) {
         int line = doc.lineOf(caret);
         int start = backScanStart(doc, line);
+        Embedded embedded = language == null ? null : embedded(doc, caret, language);
+        if (embedded != null) {
+            start = Math.max(start, embedded.start());
+        }
         String window = doc.text(start, doc.lineStart(line) + doc.lineLength(line));
         return Indenter.closerAlignIndent(style, window, caret - start, tabSize, currentIndent, typed, unit);
+    }
+
+    /**
+     * The indentation style at {@code caret} of a {@code language} buffer: {@link Indenter#styleFor} of the language,
+     * or the brace style inside an HTML page's {@code <script>} or {@code <style>} (HTML review C10), so a {@code }}
+     * typed there steps back to its opener. Only a bracket closer {@code typed} is looked into: this runs on every
+     * character typed.
+     */
+    public static Indenter.Style styleAt(Doc doc, int caret, String language, char typed) {
+        if (typed != '}' && typed != ')' && typed != ']') {
+            return Indenter.styleFor(language);
+        }
+        Embedded embedded = embedded(doc, caret, language);
+        return Indenter.styleFor(embedded != null ? embedded.language() : language);
+    }
+
+    /** An HTML page's script or style the caret is in: its language and the first line start of its content. */
+    private record Embedded(String language, int start) {}
+
+    /**
+     * The {@code <script>} or {@code <style>} of an HTML-family buffer that {@code caret} sits in, read back over the
+     * slice a back-scan may see, or null — also when the caret is still on the line of the element's start tag,
+     * which indents as markup ({@code <script>} then Enter opens an indented line).
+     */
+    private static @Nullable Embedded embedded(Doc doc, int caret, String language) {
+        if (!HtmlElements.isHtmlLanguage(language) || doc.length() == 0) {
+            return null;
+        }
+        int line = doc.lineOf(caret);
+        int start = backScanStart(doc, line);
+        String slice = doc.text(start, caret);
+        int[] contentStart = new int[1];
+        String embedded = HtmlRegions.embeddedBefore(slice, slice.length(), contentStart);
+        if (embedded == null) {
+            return null;
+        }
+        int content = start + contentStart[0];
+        int contentLine = doc.lineOf(content);
+        int lineEnd = doc.lineStart(contentLine) + doc.lineLength(contentLine);
+        if (doc.text(content, lineEnd).isBlank()) {
+            contentLine++; // "<script>" alone on its line: the code starts on the next one
+        }
+        if (line < contentLine) {
+            return null;
+        }
+        return new Embedded(embedded, doc.lineStart(contentLine));
     }
 
     /**

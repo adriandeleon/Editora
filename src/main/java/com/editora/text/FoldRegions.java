@@ -63,7 +63,8 @@ public final class FoldRegions {
         return switch (language == null ? "" : language) {
             case "markdown" -> markdown(text);
             case "markwhen" -> markwhen(text);
-            case "xml", "html", "astro" -> xml(text);
+            case "xml" -> xml(text, false);
+            case "html", "astro", HtmlElements.TEMPLATE_LANGUAGE, HtmlElements.HANDLEBARS_LANGUAGE -> xml(text, true);
             // Brace-delimited languages fold on matched {} / [].
             case "java",
                     "json",
@@ -191,7 +192,7 @@ public final class FoldRegions {
         if (text == null || text.isEmpty() || language == null) {
             return List.of();
         }
-        if ("xml".equals(language) || "html".equals(language) || "astro".equals(language)) {
+        if ("xml".equals(language) || "astro".equals(language) || HtmlElements.isHtmlLanguage(language)) {
             return xmlComments(text);
         }
         if (!SLASH_STAR_LANGUAGES.contains(language)) {
@@ -612,7 +613,13 @@ public final class FoldRegions {
 
     // --- XML element nesting (xml, fxml, html) ---
 
-    private static List<Region> xml(String text) {
+    /**
+     * Element regions by matched tags. In HTML ({@code html}) names match whatever their case ({@code <DIV>} …
+     * {@code </div>}), void elements open nothing, and the content of a raw-text element ({@code <script>},
+     * {@code <style>}, {@code <textarea>}…) is skipped to its own end tag, so {@code if (a<b)} in a script is not read
+     * as a tag that swallows the {@code </script>} (HTML review C11).
+     */
+    private static List<Region> xml(String text, boolean html) {
         List<Region> out = new ArrayList<>();
         int[] newlines = newlineOffsets(text);
         Deque<int[]> stack = new ArrayDeque<>(); // {nameHash, line}
@@ -629,6 +636,25 @@ public final class FoldRegions {
                 continue;
             }
             int line = lineOf(newlines, m.start());
+            if (html) {
+                name = name.toLowerCase(java.util.Locale.ROOT);
+                if (!closing && HtmlElements.isVoid(name)) {
+                    continue;
+                }
+                if (!closing && HtmlElements.isRawText(name)) {
+                    int close = rawTextEnd(text, m.end(), name);
+                    if (close < 0) {
+                        break; // never closed: the rest is its content
+                    }
+                    int endLine = lineOf(newlines, close);
+                    if (endLine > line) {
+                        out.add(new Region(line, endLine));
+                    }
+                    int gt = text.indexOf('>', close);
+                    m.region(gt < 0 ? text.length() : gt + 1, text.length());
+                    continue;
+                }
+            }
             if (closing) {
                 // Pop until we find the matching open tag (lenient about unbalanced markup).
                 while (!names.isEmpty() && !names.peek().equals(name)) {
@@ -648,6 +674,23 @@ public final class FoldRegions {
             }
         }
         return out;
+    }
+
+    /** Where the end tag {@code </name} (any case) of a raw-text element whose content starts at {@code from} is. */
+    private static int rawTextEnd(String text, int from, String name) {
+        int k = from;
+        while (true) {
+            int e = text.indexOf("</", k);
+            if (e < 0) {
+                return -1;
+            }
+            int after = e + 2 + name.length();
+            if (text.regionMatches(true, e + 2, name, 0, name.length())
+                    && (after == text.length() || !Character.isLetterOrDigit(text.charAt(after)))) {
+                return e;
+            }
+            k = e + 2;
+        }
     }
 
     // --- Markdown (code fences, front matter, comment blocks, heading sections, quotes, list items) ---

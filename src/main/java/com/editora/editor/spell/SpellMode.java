@@ -4,6 +4,8 @@ import java.util.BitSet;
 import java.util.Collection;
 import java.util.function.IntFunction;
 
+import com.editora.text.HtmlElements;
+import com.editora.text.HtmlRegions;
 import com.editora.text.LanguageRegistry;
 
 /**
@@ -43,7 +45,7 @@ public enum SpellMode {
         }
         return switch (language) {
             case "markdown" -> MARKDOWN;
-            case "html" -> HTML;
+            case "html", HtmlElements.TEMPLATE_LANGUAGE, HtmlElements.HANDLEBARS_LANGUAGE -> HTML;
             case "typst" -> TYPST;
             default -> CODE;
         };
@@ -91,16 +93,28 @@ public enum SpellMode {
 
     /**
      * The 0-based lines that are code as a whole and so never checked, whatever their words are styled as:
-     * Markdown fenced blocks, an HTML page's {@code <script>}, {@code <style>} and {@code <pre>} blocks, and
+     * Markdown fenced blocks, the lines an HTML page's {@code <script>}, {@code <style>}, {@code <pre>} or {@code <code>}
+     * content covers whole (the rest is by column: {@link #skips}), and
      * Typst lines that open with a {@code #} instruction. Empty for prose and code buffers.
      */
     public BitSet codeLines(int count, IntFunction<String> lineAt) {
         return switch (this) {
             case MARKDOWN -> markdownCodeLines(count, lineAt);
-            case HTML -> htmlCodeLines(count, lineAt);
+            case HTML -> skips(joined(count, lineAt)).lines(); // the lines that are code as a whole
             case TYPST -> typstCodeLines(count, lineAt);
             default -> new BitSet();
         };
+    }
+
+    private static String joined(int count, IntFunction<String> lineAt) {
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            if (i > 0) {
+                b.append('\n');
+            }
+            b.append(lineAt.apply(i));
+        }
+        return b.toString();
     }
 
     /**
@@ -149,6 +163,9 @@ public enum SpellMode {
      * the text in it was never checked.
      */
     public String prose(String line) {
+        if (this == HTML) {
+            return htmlProse(line);
+        }
         if (this != MARKDOWN || (line.indexOf(']') < 0 && line.indexOf('<') < 0)) {
             return line;
         }
@@ -163,49 +180,182 @@ public enum SpellMode {
         return new String(out);
     }
 
-    private static final String[] HTML_CODE_BLOCKS = {"script", "style", "pre"};
+    /** The elements whose content an HTML page's spell check skips: code, not prose (HTML review C13). */
+    static final java.util.Set<String> HTML_CODE_ELEMENTS = java.util.Set.of("pre", "code", "kbd", "samp", "var");
 
-    static BitSet htmlCodeLines(int count, IntFunction<String> lineAt) {
-        BitSet code = new BitSet();
-        String open = null; // the element whose closing tag ends the current block
-        for (int i = 0; i < count; i++) {
-            String line = lineAt.apply(i);
-            int from = 0;
-            if (open == null) {
-                if (line.indexOf('<') < 0) {
-                    continue; // the usual line: no tag at all
-                }
-                int at = -1;
-                for (String name : HTML_CODE_BLOCKS) {
-                    int found = indexOfTag(line, "<" + name, 0);
-                    if (found >= 0 && (at < 0 || found < at)) {
-                        at = found;
-                        open = name;
-                    }
-                }
-                if (open == null) {
-                    continue;
-                }
-                from = at + 1;
-            }
-            code.set(i);
-            if (indexOfTag(line, "</" + open, from) >= 0) {
-                open = null; // closed on this line (the line itself stays marked: it holds code)
+    /** The attributes whose values a visitor reads, so spell check reads them too (HTML review C13). */
+    static final java.util.Set<String> HTML_PROSE_ATTRIBUTES =
+            java.util.Set.of("alt", "title", "placeholder", "aria-label", "aria-description");
+
+    private static final java.util.regex.Pattern HTML_PROSE_ATTRIBUTE = java.util.regex.Pattern.compile(
+            "(?i)(?<![\\w-])(?:alt|title|placeholder|aria-label|aria-description)\\s*=\\s*([\"'])");
+
+    /**
+     * What spell check skips and reads in a text of this mode (see {@link Skips}): for HTML, the content of
+     * {@code <script>}, {@code <style>}, {@code <pre>}, {@code <code>}, {@code <kbd>}, {@code <samp>} and
+     * {@code <var>} — by column, so the prose around an inline script on the same line is still checked — and, read
+     * although they are strings, the values of {@code alt}, {@code title}, {@code placeholder}, {@code aria-label} and
+     * {@code aria-description}. A tag mentioned in a comment opens nothing (E20). Other modes: their
+     * {@link #codeLines(String)}.
+     */
+    public Skips skips(String text) {
+        if (this != HTML) {
+            return new Skips(codeLines(text), java.util.Map.of(), java.util.Map.of());
+        }
+        int[] starts = lineStarts(text);
+        BitSet lines = new BitSet();
+        java.util.Map<Integer, int[]> skip = new java.util.HashMap<>();
+        java.util.Map<Integer, int[]> read = new java.util.HashMap<>();
+        for (HtmlRegions.Region r :
+                HtmlRegions.scan(text, false, text.length(), HTML_CODE_ELEMENTS, HTML_PROSE_ATTRIBUTES)) {
+            switch (r.kind()) {
+                case ATTRIBUTE -> addColumns(read, null, starts, text.length(), r.start(), r.end());
+                case SCRIPT, DATA, OTHER_SCRIPT, STYLE, ELEMENT ->
+                    addColumns(skip, lines, starts, text.length(), r.start(), r.end());
+                default -> {}
             }
         }
-        return code;
+        return new Skips(lines, skip, read);
     }
 
-    /** The index of {@code tag} (case-insensitive, followed by something that ends a tag name), or -1. */
-    private static int indexOfTag(String line, String tag, int from) {
-        int n = tag.length();
-        for (int i = line.indexOf('<', from); i >= 0; i = line.indexOf('<', i + 1)) {
-            if (line.regionMatches(true, i, tag, 0, n)
-                    && (i + n == line.length() || !Character.isLetterOrDigit(line.charAt(i + n)))) {
-                return i;
+    /** Line {@code i}'s start offset, for every line of {@code text}. */
+    private static int[] lineStarts(String text) {
+        int count = 1;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                count++;
             }
         }
-        return -1;
+        int[] starts = new int[count];
+        int line = 1;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == '\n') {
+                starts[line++] = i + 1;
+            }
+        }
+        return starts;
+    }
+
+    /**
+     * Adds {@code [from, to)} to {@code columns} as per-line column pairs; a line it covers whole goes into
+     * {@code whole} instead, when given.
+     */
+    private static void addColumns(
+            java.util.Map<Integer, int[]> columns,
+            @org.jspecify.annotations.Nullable BitSet whole,
+            int[] starts,
+            int length,
+            int from,
+            int to) {
+        if (to <= from) {
+            return;
+        }
+        int line = lineOf(starts, from);
+        while (line < starts.length && starts[line] < to) {
+            int lineStart = starts[line];
+            int lineEnd = line + 1 < starts.length ? starts[line + 1] - 1 : length;
+            int a = Math.max(from, lineStart);
+            int b = Math.min(to, lineEnd);
+            if (whole != null && a == lineStart && b == lineEnd) {
+                whole.set(line);
+            } else if (b > a) {
+                int[] old = columns.get(line);
+                int[] grown = old == null ? new int[2] : java.util.Arrays.copyOf(old, old.length + 2);
+                grown[grown.length - 2] = a - lineStart;
+                grown[grown.length - 1] = b - lineStart;
+                columns.put(line, grown);
+            }
+            line++;
+        }
+    }
+
+    private static int lineOf(int[] starts, int offset) {
+        int i = java.util.Arrays.binarySearch(starts, offset);
+        return i >= 0 ? i : -i - 2;
+    }
+
+    /**
+     * What a spell-check scan found: lines that are code as a whole, column ranges of other lines that are code
+     * ({@code skip}), and column ranges read as prose whatever their syntax style ({@code read}: an HTML
+     * {@code alt}/{@code title} value is a string). Column pairs are {@code {from, to, from, to…}}, per 0-based line.
+     */
+    public record Skips(BitSet lines, java.util.Map<Integer, int[]> skip, java.util.Map<Integer, int[]> read) {
+        public static final Skips NONE = new Skips(new BitSet(), java.util.Map.of(), java.util.Map.of());
+
+        /** Whether column {@code col} of line {@code line} is code, not checked. */
+        public boolean skips(int line, int col) {
+            return lines.get(line) || within(skip.get(line), col);
+        }
+
+        /** Whether column {@code col} of line {@code line} is prose whatever its style says. */
+        public boolean reads(int line, int col) {
+            return within(read.get(line), col);
+        }
+
+        public boolean isEmpty() {
+            return lines.isEmpty() && skip.isEmpty() && read.isEmpty();
+        }
+
+        /** Equal when they skip and read the same columns (the column arrays compared by content). */
+        @Override
+        public boolean equals(@org.jspecify.annotations.Nullable Object o) {
+            return o instanceof Skips other
+                    && lines.equals(other.lines)
+                    && sameColumns(skip, other.skip)
+                    && sameColumns(read, other.read);
+        }
+
+        @Override
+        public int hashCode() {
+            return lines.hashCode() * 31 + skip.size() * 7 + read.size();
+        }
+
+        private static boolean sameColumns(java.util.Map<Integer, int[]> a, java.util.Map<Integer, int[]> b) {
+            if (a.size() != b.size()) {
+                return false;
+            }
+            for (java.util.Map.Entry<Integer, int[]> e : a.entrySet()) {
+                if (!java.util.Arrays.equals(e.getValue(), b.get(e.getKey()))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static boolean within(int @org.jspecify.annotations.Nullable [] pairs, int col) {
+            if (pairs == null) {
+                return false;
+            }
+            for (int k = 0; k + 1 < pairs.length; k += 2) {
+                if (col >= pairs[k] && col < pairs[k + 1]) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    /**
+     * An HTML line with the name, {@code =} and quotes of an {@code alt}/{@code title}/… attribute blanked out, same
+     * length: its value is then words of its own ({@code title="Clik here"} was one structured token, never checked).
+     */
+    private static String htmlProse(String line) {
+        if (line.indexOf('=') < 0) {
+            return line;
+        }
+        java.util.regex.Matcher m = HTML_PROSE_ATTRIBUTE.matcher(line);
+        if (!m.find()) {
+            return line;
+        }
+        char[] out = line.toCharArray();
+        do {
+            java.util.Arrays.fill(out, m.start(), m.end(), ' ');
+            int close = line.indexOf(m.group(1).charAt(0), m.end());
+            if (close >= 0) {
+                out[close] = ' ';
+            }
+        } while (m.find());
+        return new String(out);
     }
 
     static BitSet typstCodeLines(int count, IntFunction<String> lineAt) {
