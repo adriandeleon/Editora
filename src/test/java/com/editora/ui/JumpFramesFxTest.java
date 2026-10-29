@@ -113,7 +113,7 @@ class JumpFramesFxTest {
         }
     }
 
-    /** The target stays visible: below the pinned rows, not under them. */
+    /** The target stays visible: two lines of context below the pinned rows, not under them. */
     @Test
     void goToLineAboveTheViewportLandsClearOfThePinnedRows() throws Exception {
         NavigationCoordinator navigation = FxTestSupport.field(fx.controller, "navigation");
@@ -128,10 +128,30 @@ class JumpFramesFxTest {
             area.firstVisibleParToAllParIndex(), ((List<?>) FxTestSupport.field(buffer, "stickyLines")).size()
         });
         int target = 3 + 12 * 20;
+        int below = target - (view[0] + view[1]);
         assertTrue(
-                view[0] + view[1] <= target && target <= view[0] + view[1] + 1,
-                "line " + target + " shows right below the " + view[1] + " rows pinned over a viewport from "
-                        + view[0]);
+                below >= 2 && below <= 3,
+                "line " + target + " shows " + below + " rows below the " + view[1]
+                        + " rows pinned over a viewport from " + view[0]);
+    }
+
+    /** A click on a scrollbar mark lands its line where a Structure click would: two lines below the pinned rows. */
+    @Test
+    void scrollbarMarkLandsLikeAStructureClick() throws Exception {
+        CodeArea area = buffer.getArea();
+        int target = 5 + 12 * 30; // inside m30, so the class and the method are pinned
+        FxTestSupport.runOnFx(() -> area.showParagraphAtTop(0));
+        jump(
+                "scrollbar mark",
+                target,
+                () -> FxTestSupport.call(
+                        buffer, "revealLine", new Class<?>[] {CodeArea.class, int.class}, area, target));
+        int[] view = FxTestSupport.callOnFx(() -> new int[] {
+            area.firstVisibleParToAllParIndex(), ((List<?>) FxTestSupport.field(buffer, "stickyLines")).size()
+        });
+        assertTrue(view[1] > 0, "rows are pinned over the target's method");
+        int below = target - (view[0] + view[1]);
+        assertTrue(below >= 2 && below <= 3, "line " + target + " shows " + below + " rows below the pinned ones");
     }
 
     private void jump(String what, int line, Runnable jump) throws Exception {

@@ -3,6 +3,7 @@ package com.editora.editor.todo;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntConsumer;
+import java.util.function.ObjIntConsumer;
 
 import javafx.application.Platform;
 import javafx.scene.Cursor;
@@ -43,6 +44,8 @@ public final class TodoStripe extends Region implements SecondaryPane.Followed {
     private @Nullable Tooltip tooltip;
     private @Nullable String shownText;
     private IntConsumer onActivate = line -> {};
+    /** What a click on a split's copy of this stripe does, given that copy's view. */
+    private ObjIntConsumer<CodeArea> onActivateIn = SecondaryPane::jumpToLine;
 
     public TodoStripe(CodeArea area) {
         this.area = area;
@@ -63,7 +66,7 @@ public final class TodoStripe extends Region implements SecondaryPane.Followed {
     @Override
     public TodoStripe follower(CodeArea view) {
         TodoStripe second = new TodoStripe(view);
-        second.onActivate = line -> SecondaryPane.jumpToLine(view, line);
+        second.onActivate = line -> onActivateIn.accept(view, line);
         second.setMarks(marks);
         second.setActive(active);
         follower = second;
@@ -111,6 +114,12 @@ public final class TodoStripe extends Region implements SecondaryPane.Followed {
         setMouseTransparent(!active || m.isEmpty());
         requestLayout();
         scheduleRedraw();
+    }
+
+    /** Injects the click-to-jump action for this stripe and its split copies, with the view clicked beside. */
+    public void setOnActivateIn(ObjIntConsumer<CodeArea> onActivateIn) {
+        this.onActivateIn = onActivateIn;
+        this.onActivate = line -> onActivateIn.accept(area, line);
     }
 
     public void setOnActivate(IntConsumer onActivate) {

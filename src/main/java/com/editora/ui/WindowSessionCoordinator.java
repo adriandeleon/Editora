@@ -877,7 +877,8 @@ final class WindowSessionCoordinator {
                             new NavigationHistory.Location(
                                     file, host.navigation().documentLine(buffer, targetLine), targetCol));
         }
-        // At the top, below any sticky-scroll rows (the line under them was hidden), in the frame that moves the
+        // Near the top, a little below any sticky-scroll rows (the line under them was hidden), in the frame that moves
+        // the
         // caret when the editor is already on screen.
         buffer.jumps().reveal(area, targetLine, widened);
         if (focusEditor) {

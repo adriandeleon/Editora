@@ -1976,6 +1976,22 @@ public class EditorBuffer implements TabContent {
         area.requestFocus();
     }
 
+    /**
+     * Moves {@code view}'s caret to the start of {@code line} (0-based) and shows it the way a Structure click
+     * does: near the top, clear of the sticky-scroll rows. For the scrollbar's marks, where following the caret
+     * left a warning on the bottom row or under the pinned rows.
+     */
+    private void revealLine(CodeArea view, int line) {
+        int total = view.getParagraphs().size();
+        if (total == 0) {
+            return;
+        }
+        int p = Math.max(0, Math.min(line, total - 1));
+        view.moveTo(p, 0);
+        jumps.reveal(view, p, false);
+        view.requestFocus();
+    }
+
     /** The editor's right-click menu, built on the first request: a {@code ContextMenu} is a popup window
      *  with a scene of its own, which most buffers never open. */
     private @Nullable ContextMenu contextMenu;
@@ -2552,7 +2568,7 @@ public class EditorBuffer implements TabContent {
     private DiagnosticStripe diagnosticStripe() {
         if (diagnosticStripe == null) {
             diagnosticStripe = attachLazyStripe(new DiagnosticStripe(area), OverlayLayer.DIAGNOSTIC_STRIPE);
-            diagnosticStripe.setOnActivate(this::jumpToLine);
+            diagnosticStripe.setOnActivateIn(this::revealLine);
             updateDiagnosticStripe(); // its inset and on/off state, as if it had been there all along
         }
         return diagnosticStripe;
@@ -2561,7 +2577,7 @@ public class EditorBuffer implements TabContent {
     private MarkdownLintStripe mdLintStripe() {
         if (mdLintStripe == null) {
             mdLintStripe = attachLazyStripe(new MarkdownLintStripe(area), OverlayLayer.MARKDOWN_LINT_STRIPE);
-            mdLintStripe.setOnActivate(this::jumpToLine);
+            mdLintStripe.setOnActivateIn(this::revealLine);
             updateMarkdownLintStripe(); // its inset and on/off state, as if it had been there all along
         }
         return mdLintStripe;
@@ -2570,7 +2586,7 @@ public class EditorBuffer implements TabContent {
     private TodoStripe todoStripe() {
         if (todoStripe == null) {
             todoStripe = attachLazyStripe(new TodoStripe(area), OverlayLayer.TODO_STRIPE);
-            todoStripe.setOnActivate(this::jumpToLine);
+            todoStripe.setOnActivateIn(this::revealLine);
             updateTodoStripe(); // its inset and on/off state, as if it had been there all along
         }
         return todoStripe;
@@ -9600,7 +9616,7 @@ public class EditorBuffer implements TabContent {
         area.moveTo(Math.min(prefix + caret, area.getLength()));
         if (shown) { // a re-narrow's listeners (the Structure outline) must not see the whole file in between
             folds.carryRegions(regions);
-            jumps.reveal(area, held.firstLine() + Math.max(0, top), top < 0);
+            jumps.keepAtTop(area, held.firstLine() + Math.max(0, top), top < 0);
         }
         moveSplitCaret(prefix + caret2);
         narrowView.widened(area2);
