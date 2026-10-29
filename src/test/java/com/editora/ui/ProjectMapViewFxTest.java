@@ -383,8 +383,17 @@ class ProjectMapViewFxTest {
                 assertEquals(tr("project.map.filter.hideUnmatched"), hide.getText());
                 boxFor(surface, notes); // faded, but still on the map
                 assertFalse(badge.isVisible());
+                for (Path file : List.of(javaFile, notes)) {
+                    FxTestSupport.call(surface, "setSelected", new Class<?>[] {Path.class}, file);
+                    FxTestSupport.call(mapView, "previewSelection", new Class<?>[] {Path.class}, file);
+                }
+                assertTrue(previewFor(mapView, notes).isVisible(), "a faded row's card stays while rows only fade");
 
                 hide.setSelected(true);
+
+                assertTrue(previewFor(mapView, javaFile).isVisible());
+                assertFalse(previewFor(mapView, notes).isVisible(), "the card goes with its row");
+                assertEquals(2, previews(mapView).size(), "hiding a card must not close it");
 
                 assertEquals(List.of(true), remembered);
                 boxFor(surface, javaFile);
@@ -404,6 +413,7 @@ class ProjectMapViewFxTest {
                 openFilter.fire(); // no filter: nothing is faded, so nothing is hidden
                 assertFalse(badge.isVisible());
                 boxFor(surface, notes);
+                assertTrue(previewFor(mapView, notes).isVisible(), "the card comes back with its row");
 
                 openFilter.fire();
                 hide.setSelected(false);

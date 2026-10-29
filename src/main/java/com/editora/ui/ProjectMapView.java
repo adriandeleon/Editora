@@ -335,7 +335,7 @@ final class ProjectMapView extends VBox {
         printButton.setOnAction(event -> onPrint.accept(mapOutput()));
         exportPdfButton.setOnAction(event -> onExportPdf.accept(mapOutput()));
         // Listeners rather than action handlers, so a restored value applies exactly like a click.
-        hideOpenNotes.selectedProperty().addListener((obs, old, selected) -> updateNotePreviewVisibility());
+        hideOpenNotes.selectedProperty().addListener((obs, old, selected) -> updateCardVisibility());
         keepZoomOnOpen
                 .selectedProperty()
                 .addListener((obs, old, selected) -> surface.setKeepZoomOnColumnOpen(selected));
@@ -415,7 +415,7 @@ final class ProjectMapView extends VBox {
             bookmarksFilter.setSelected(false);
             personalNotesFilter.setSelected(false);
             hideOpenNotes.setSelected(false);
-            updateNotePreviewVisibility();
+            updateCardVisibility();
             typeFilter.setValue(ProjectMapModel.TypeFilter.ALL);
             surface.clearColumnFilters();
             updateFilters();
@@ -1039,8 +1039,9 @@ final class ProjectMapView extends VBox {
 
     /** Escape: close the open cards, else clear the search, else leave the map for the editor. */
     private void escapePressed() {
-        // Note cards hidden by the "Hide all open Personal Notes" toggle are not on screen: leave them be.
-        List<ProjectMapPreview> cards = List.copyOf(previews.values());
+        // Cards hidden by "Hide unmatched" or "Hide all open Personal Notes" are not on screen: leave them be.
+        List<ProjectMapPreview> cards =
+                previews.values().stream().filter(ProjectMapPreview::isVisible).toList();
         List<ProjectMapNotePreview> notes = notePreviews.values().stream()
                 .filter(ProjectMapNotePreview::isVisible)
                 .toList();
@@ -1730,7 +1731,7 @@ final class ProjectMapView extends VBox {
         Path selected = path.toAbsolutePath().normalize();
         ProjectMapNotePreview existing = notePreviews.get(selected);
         if (existing != null) {
-            existing.setVisible(!hideOpenNotes.isSelected());
+            updateCardVisibility();
             touchCard(existing, true);
             existing.focusContent();
             return;
@@ -1769,7 +1770,7 @@ final class ProjectMapView extends VBox {
                 canvasHost.getWidth(),
                 canvasHost.getHeight());
         preview.showNotes(selected, values, placement);
-        updateNotePreviewVisibility();
+        updateCardVisibility();
     }
 
     private ProjectMapPreview createPreview(Path path) {
@@ -1919,10 +1920,20 @@ final class ProjectMapView extends VBox {
         repaintPreviewConnectors();
     }
 
-    private void updateNotePreviewVisibility() {
-        boolean visible = !hideOpenNotes.isSelected();
-        notePreviews.values().forEach(preview -> preview.setVisible(visible));
-        stickyNotes.values().forEach(notes -> notes.setHidden(!visible));
+    /**
+     * A card stays open but out of sight while "Hide unmatched" has taken its file's row off the map, and comes
+     * back with the row; a note card, and a code card's sticky notes, are also hidden by "Hide all open Personal
+     * Notes".
+     */
+    private void updateCardVisibility() {
+        for (Map.Entry<Path, ProjectMapPreview> entry : previews.entrySet()) {
+            Path key = entry.getKey();
+            Path file = ProjectMapStructure.isSymbolPath(key) ? structure.fileOf(key) : key;
+            entry.getValue().setVisible(file == null || !surface.narrowsAway(file));
+        }
+        boolean notes = !hideOpenNotes.isSelected();
+        notePreviews.forEach((path, card) -> card.setVisible(notes && !surface.narrowsAway(path)));
+        stickyNotes.values().forEach(stuck -> stuck.setHidden(!notes)); // a hidden card hides its own as well
         repaintPreviewConnectors();
     }
 
@@ -3079,6 +3090,11 @@ final class ProjectMapView extends VBox {
             return hideUnmatched;
         }
 
+        /** Whether "Hide unmatched" takes {@code path}'s row off the map: the filters are on and would fade it. */
+        boolean narrowsAway(Path path) {
+            return hideUnmatched && filters != null && filters.active() && !emphasized.contains(path);
+        }
+
         /** Told how many rows "Hide unmatched" takes off the map, whenever that number changes. */
         void setOnNarrowedChanged(java.util.function.IntConsumer callback) {
             onNarrowedChanged = callback == null ? count -> {} : callback;
@@ -3206,7 +3222,8 @@ final class ProjectMapView extends VBox {
                 }
                 completedPaints++;
                 moveCardsWithViewport();
-                repaintPreviewConnectors();
+                updateCardVisibility(); // repaints the connectors
+
             } finally {
                 painting = false;
             }
