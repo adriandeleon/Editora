@@ -27,6 +27,7 @@ import javafx.event.EventHandler;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
+import javafx.scene.AccessibleAttribute;
 import javafx.scene.AccessibleRole;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
@@ -40,6 +41,7 @@ import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Control;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.MenuButton;
@@ -52,8 +54,6 @@ import javafx.scene.image.Image;
 import javafx.scene.image.WritableImage;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyCodeCombination;
-import javafx.scene.input.KeyCombination;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
@@ -131,6 +131,9 @@ final class ProjectMapView extends VBox {
     private final CheckMenuItem hideOpenNotes = optionItem("project.map.filter.hideOpenNotes", false);
     private final CheckMenuItem keepZoomOnOpen = optionItem("project.map.navigation.keepZoom", true);
     private final CheckMenuItem focusNewColumn = optionItem("project.map.navigation.focusNewColumn", true);
+    /** Off: a click only selects a file row; a double-click or Enter opens it (the editor stays behind). */
+    private final CheckMenuItem singleClickOpens = optionItem("project.map.navigation.singleClickOpens", true);
+
     private final ComboBox<ProjectMapModel.TypeFilter> typeFilter = new ComboBox<>();
     /** "Hide unmatched": rows the filters would fade are taken off the map, and the badge says how many. */
     private final CheckBox hideUnmatched = new CheckBox(tr("project.map.filter.hideUnmatched"));
@@ -192,6 +195,10 @@ final class ProjectMapView extends VBox {
     private final Set<Path> searchClosed = new HashSet<>();
     /** The query whose first match was last selected, so re-running it does not steal the selection again. */
     private String searchSelectionQuery = "";
+    /** The selection when the current query was started, restored when it is cleared. */
+    private @Nullable Path searchReturnSelection;
+    /** The row the current query selected by itself (its first match), as opposed to one the user picked. */
+    private @Nullable Path searchSelected;
     /** Row limits raised by "+N more", by directory. */
     private final Map<Path, Integer> directoryLimits = new HashMap<>();
     /** Revealed paths that must stay loaded even when they sort beyond their directory's row limit. */
@@ -278,6 +285,7 @@ final class ProjectMapView extends VBox {
         surface.setOnPreview(this::previewSelection);
         surface.setOnStructure(this::toggleStructure);
         surface.setOnNotesPreview(this::previewNotes);
+        surface.onTogglePreview = this::togglePreview;
         surface.setOnSelectionChanged(this::selectionChanged);
         surface.setStatusSuppliers(this.isOpen, this.isModified);
         loadingLabel.getStyleClass().addAll("project-map-zoom-control", "project-map-loading");
@@ -326,6 +334,7 @@ final class ProjectMapView extends VBox {
                 .addAll(
                         keepZoomOnOpen,
                         focusNewColumn,
+                        singleClickOpens,
                         hideOpenNotes,
                         new SeparatorMenuItem(),
                         printButton,
@@ -340,6 +349,7 @@ final class ProjectMapView extends VBox {
                 .selectedProperty()
                 .addListener((obs, old, selected) -> surface.setKeepZoomOnColumnOpen(selected));
         focusNewColumn.selectedProperty().addListener((obs, old, selected) -> surface.setFocusNewColumn(selected));
+        singleClickOpens.selectedProperty().addListener((obs, old, selected) -> surface.singleClickOpens = selected);
 
         HBox row = new HBox(3, backButton, forwardButton, breadcrumbs, help, options);
         row.getStyleClass().add("project-map-navigation");
@@ -365,6 +375,15 @@ final class ProjectMapView extends VBox {
 
     void setFocusNewColumn(boolean focus) {
         focusNewColumn.setSelected(focus);
+    }
+
+    /** Whether a single click on a file row opens it (default); otherwise it selects and a double-click opens. */
+    boolean isSingleClickOpens() {
+        return singleClickOpens.isSelected();
+    }
+
+    void setSingleClickOpens(boolean opens) {
+        singleClickOpens.setSelected(opens);
     }
 
     private FlowPane buildFilters() {
@@ -414,8 +433,11 @@ final class ProjectMapView extends VBox {
             gitFilter.setSelected(false);
             bookmarksFilter.setSelected(false);
             personalNotesFilter.setSelected(false);
-            hideOpenNotes.setSelected(false);
-            updateCardVisibility();
+            // The search is a filter too and goes with the rest; "Hide all open Personal Notes" is a view
+            // option in the ⋯ menu, not a filter, and is left as it is (B23).
+            if (!query.isBlank()) {
+                onClearSearch.run();
+            }
             typeFilter.setValue(ProjectMapModel.TypeFilter.ALL);
             surface.clearColumnFilters();
             updateFilters();
@@ -503,7 +525,28 @@ final class ProjectMapView extends VBox {
         surface.setOnNoMatchesChanged(this::noMatchesChanged);
         previewConnectorCanvas.setManaged(false);
         previewConnectorCanvas.setMouseTransparent(true);
-        StackPane host = new StackPane(surface, previewConnectorCanvas, noMatchesLabel, zoomBar);
+        StackPane host =
+                new StackPane(surface, previewConnectorCanvas, noMatchesLabel, zoomBar, surface.overviewLayer());
+        // Cards are added after these and raised to the front when used. The zoom bar, the overview and the two
+        // notices are drawn and picked above every card whatever the child order (C8); only the zoom bar's
+        // buttons take clicks, not the gaps between them (B3).
+        for (Node overlay : List.of(zoomBar, noMatchesLabel, loadingLabel)) {
+            overlay.setViewOrder(-1);
+        }
+        zoomBar.setPickOnBounds(false);
+        // Tab past a card's last control: the scene's traversal wraps to the window's first control, the search
+        // field. Keep the keyboard on the map instead (C18).
+        host.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == KeyCode.TAB
+                    && !event.isShiftDown()
+                    && !event.isControlDown()
+                    && !event.isAltDown()
+                    && !event.isMetaDown()
+                    && event.getTarget() instanceof Node target
+                    && cardFocusInCard(target)) {
+                Platform.runLater(this::cardFocusKeptOnMap);
+            }
+        });
         host.getStyleClass().add("project-map-host");
         // Cards sit on the canvas and may reach past its edges (dragged, panned or zoomed there): the part
         // outside is not drawn, and takes no clicks, over the filter bar above or anything else around.
@@ -596,39 +639,78 @@ final class ProjectMapView extends VBox {
         }
     }
 
+    /**
+     * The popover's content: what the Map is for, then the pointer, cards and notes, keyboard and filter-row
+     * models in two columns. It follows the doc's interaction reference (E8). Key names are spelled in the
+     * user's language and modifiers as the platform shows them (⌘ ⌥ ⇧ on macOS), never English key-code names.
+     */
     private static Node buildHelp() {
-        GridPane grid = new GridPane();
-        grid.getStyleClass().add("project-map-help");
-        grid.setHgap(12);
-        grid.setVgap(3);
-        int row = 0;
-        row = helpHeading(grid, row, "project.map.help.mouse");
+        Label intro = new Label(tr("project.map.help.intro"));
+        intro.getStyleClass().addAll("project-map-help-text", "project-map-help-intro");
+        intro.setWrapText(true);
+        intro.setMaxWidth(560);
+
+        GridPane pointer = helpGrid();
+        int row = helpHeading(pointer, 0, "project.map.help.mouse");
         for (String id : List.of(
                 "click",
+                "doubleClick",
                 "chevron",
                 "preview",
                 "structure",
                 "symbol",
-                "wheel",
-                "panWheel",
-                "dragCanvas",
-                "dragHeader")) {
-            row = helpRow(grid, row, tr("project.map.help." + id + ".gesture"), "project.map.help." + id);
+                "symbolChevron",
+                "noteBadge",
+                "rightClick")) {
+            row = helpRow(pointer, row, tr("project.map.help." + id + ".gesture"), "project.map.help." + id);
         }
-        row = helpHeading(grid, row, "project.map.help.keyboard");
-        row = helpRow(grid, row, "↑ ↓ ← →", "project.map.help.arrows");
-        row = helpRow(grid, row, keyNames(KeyCode.ENTER, KeyCode.SPACE), "project.map.help.activate");
-        row = helpRow(grid, row, keyNames(KeyCode.BACK_SPACE), "project.map.help.parent");
-        row = helpRow(grid, row, keyNames(KeyCode.HOME), "project.map.help.home");
-        row = helpRow(grid, row, keyNames(KeyCode.PAGE_UP, KeyCode.PAGE_DOWN), "project.map.help.page");
-        row = helpRow(grid, row, "/", "project.map.help.columnFilter");
+        row = helpRow(pointer, row, tr("project.map.help.wheel.gesture"), "project.map.help.wheel");
         row = helpRow(
-                grid,
+                pointer,
                 row,
-                chord(KeyCode.LEFT, KeyCombination.ALT_DOWN) + " / " + chord(KeyCode.RIGHT, KeyCombination.ALT_DOWN),
-                "project.map.help.history");
-        row = helpRow(grid, row, chord(KeyCode.DIGIT0, KeyCombination.SHORTCUT_DOWN), "project.map.help.fit");
-        helpRow(grid, row, keyNames(KeyCode.ESCAPE), "project.map.help.escape");
+                tr("project.map.help.fastWheel.gesture", helpModifier("shortcut")),
+                "project.map.help.fastWheel");
+        for (String id : List.of(
+                "swipe", "pinch", "panWheel", "dragCanvas", "middleDrag", "dragHeader", "lock", "close", "overview")) {
+            row = helpRow(pointer, row, tr("project.map.help." + id + ".gesture"), "project.map.help." + id);
+        }
+        row = helpHeading(pointer, row, "project.map.help.cards");
+        for (String id : List.of("cardTitle", "cardGrip", "cardNotes", "addNote", "sticky")) {
+            row = helpRow(pointer, row, tr("project.map.help." + id + ".gesture"), "project.map.help." + id);
+        }
+
+        GridPane keys = helpGrid();
+        row = helpHeading(keys, 0, "project.map.help.keyboard");
+        row = helpRow(keys, row, "↑ ↓ ← →", "project.map.help.arrows");
+        row = helpRow(
+                keys, row, helpChord("control", "N") + " / " + helpChord("control", "P"), "project.map.help.siblings");
+        row = helpRow(keys, row, helpKey("enter") + " / " + helpKey("space"), "project.map.help.activate");
+        row = helpRow(keys, row, helpChord("shift", helpKey("enter")), "project.map.help.shiftEnter");
+        row = helpRow(keys, row, helpKey("backspace"), "project.map.help.parent");
+        row = helpRow(keys, row, helpKey("home"), "project.map.help.home");
+        row = helpRow(keys, row, helpKey("pageUp") + " / " + helpKey("pageDown"), "project.map.help.page");
+        row = helpRow(keys, row, "/", "project.map.help.columnFilter");
+        row = helpRow(keys, row, helpChord("alt", "←") + " / " + helpChord("alt", "→"), "project.map.help.history");
+        row = helpRow(keys, row, helpChord("shortcut", "0"), "project.map.help.fit");
+        row = helpRow(keys, row, "F2", "project.map.help.rename");
+        row = helpRow(keys, row, helpKey("delete"), "project.map.help.delete");
+        row = helpRow(keys, row, helpKey("menu") + " / " + helpChord("shift", "F10"), "project.map.help.menu");
+        row = helpRow(keys, row, helpKey("escape"), "project.map.help.escape");
+        row = helpHeading(keys, row, "project.map.help.controls");
+        row = helpRow(keys, row, tr("project.map.help.chips.gesture"), "project.map.help.chips");
+        row = helpRow(keys, row, tr("project.map.filter.hideUnmatched"), "project.map.help.hideUnmatched");
+        helpRow(keys, row, tr("project.map.filter.clear"), "project.map.help.clear");
+
+        HBox columns = new HBox(24, pointer, keys);
+        VBox help = new VBox(8, intro, columns);
+        help.getStyleClass().add("project-map-help");
+        return help;
+    }
+
+    private static GridPane helpGrid() {
+        GridPane grid = new GridPane();
+        grid.setHgap(12);
+        grid.setVgap(3);
         return grid;
     }
 
@@ -652,20 +734,28 @@ final class ProjectMapView extends VBox {
         return row + 1;
     }
 
-    /** Key names as the platform spells them; these are fixed map keys, not keymap bindings. */
-    private static String keyNames(KeyCode... codes) {
-        StringBuilder names = new StringBuilder();
-        for (KeyCode code : codes) {
-            if (!names.isEmpty()) {
-                names.append(" / ");
-            }
-            names.append(code.getName());
-        }
-        return names.toString();
+    /** A key's name in the user's language ("Eingabe", "Rücktaste"); these are fixed map keys, not bindings. */
+    static String helpKey(String id) {
+        return tr("project.map.help.key." + id);
     }
 
-    private static String chord(KeyCode code, KeyCombination.Modifier modifier) {
-        return new KeyCodeCombination(code, modifier).getDisplayText();
+    /** A modifier as the platform writes it: ⌘ ⌥ ⇧ ⌃ on macOS, the localised name ("Strg", "Umschalt") elsewhere. */
+    static String helpModifier(String id) {
+        if (com.editora.command.KeymapManager.isMac()) {
+            return switch (id) {
+                case "shortcut" -> "⌘";
+                case "alt" -> "⌥";
+                case "shift" -> "⇧";
+                default -> "⌃";
+            };
+        }
+        return helpKey(id.equals("shortcut") ? "control" : id);
+    }
+
+    /** {@code modifier} with {@code key}: "Strg+N", "⌃N". */
+    static String helpChord(String modifier, String key) {
+        String name = helpModifier(modifier);
+        return com.editora.command.KeymapManager.isMac() ? name + key : name + "+" + key;
     }
 
     private static ToggleButton filterButton(String key) {
@@ -862,12 +952,19 @@ final class ProjectMapView extends VBox {
         searchOpened.clear();
         searchClosed.clear();
         searchSelectionQuery = "";
+        searchReturnSelection = null;
+        searchSelected = null;
     }
 
     void setQuery(String query) {
         String value = query == null ? "" : query;
         if (!this.query.equals(value)) {
             boolean hadSearchState = !searchExpanded.isEmpty() || !searchOpened.isEmpty() || !searchClosed.isEmpty();
+            if (this.query.isBlank()) {
+                searchReturnSelection = surface.selectedPath(); // where Escape (or an emptied field) comes back to
+            } else if (value.isBlank()) {
+                searchRestoreSelection(hadSearchState);
+            }
             this.query = value;
             // What was opened or closed by hand belonged to the previous query's results.
             searchOpened.clear();
@@ -881,6 +978,42 @@ final class ProjectMapView extends VBox {
                 }
             }
         }
+    }
+
+    /**
+     * The query is being cleared. The selection goes back to where it was before the search, unless the user
+     * picked a row of their own meanwhile that stays on the map once the search's folders close (B26).
+     */
+    private void searchRestoreSelection(boolean reloads) {
+        Path before = searchReturnSelection;
+        searchReturnSelection = null;
+        Path current = surface.selectedPath();
+        if (before == null || root == null || !before.startsWith(root)) {
+            return;
+        }
+        boolean ownPick = current != null && !current.equals(searchSelected) && staysLoadedWithoutSearch(current);
+        searchSelected = null;
+        if (ownPick || before.equals(current)) {
+            return;
+        }
+        if (reloads) {
+            pendingSelection = before; // applied, and revealed, by the reload that closes the search's folders
+        } else if (surface.contains(before)) {
+            surface.select(before);
+        }
+    }
+
+    /** Whether {@code path}'s row is still listed once only the manually opened folders are open. */
+    private boolean staysLoadedWithoutSearch(Path path) {
+        for (Path parent = path.getParent(); parent != null && root != null; parent = parent.getParent()) {
+            if (!expanded.contains(parent)) {
+                return false;
+            }
+            if (parent.equals(root)) {
+                return true;
+            }
+        }
+        return path.equals(root);
     }
 
     void setSearchMatches(String query, List<Path> matches) {
@@ -905,6 +1038,7 @@ final class ProjectMapView extends VBox {
         searchSelectionQuery = value;
         if (newQuery) {
             pendingSelection = firstMatch;
+            searchSelected = firstMatch;
         }
         if (changed || newQuery && firstMatch != null && !surface.contains(firstMatch)) {
             announceMatches = true;
@@ -1109,7 +1243,78 @@ final class ProjectMapView extends VBox {
                         ? null
                         : entry -> entry.isPlaceholder()
                                 ? null
-                                : entry.isSymbol() ? symbolMenu(entry) : factory.apply(entry));
+                                : menuWithMapItems(entry, entry.isSymbol() ? symbolMenu(entry) : factory.apply(entry)));
+    }
+
+    /**
+     * Puts the Map's own row actions at the top of a row's menu (after a declaration's own items) — Preview,
+     * Show / Hide Structure, Personal Notes and Close Column — so the Menu key or Shift+F10 reaches every card and column the pointer can (B6). They
+     * act in the Map, so the shared menu's "raise the editor window" wrapping leaves them alone.
+     */
+    private @Nullable ContextMenu menuWithMapItems(ProjectMapModel.Entry entry, @Nullable ContextMenu menu) {
+        if (menu == null) {
+            return null;
+        }
+        List<MenuItem> items = new ArrayList<>();
+        if (entry.isFile()) {
+            items.add(mapMenuItem("project.map.menu.preview", () -> previewFileEntry(entry)));
+        }
+        if (entry.isFile() && surface.hasStructure(entry) || entry.isSymbol() && surface.branches(entry)) {
+            String key = structure.isOpen(entry.path())
+                    ? "project.map.menu.hideStructure"
+                    : "project.map.menu.showStructure";
+            items.add(mapMenuItem(key, () -> toggleStructure(entry)));
+        }
+        if (!entry.isSymbol() && surface.notedPaths.contains(entry.path())) {
+            items.add(mapMenuItem("project.map.menu.personalNotes", () -> previewNotes(entry.path())));
+        }
+        if (entry.depth() > 0 && entry.parent() != null) {
+            Path column = entry.parent();
+            items.add(mapMenuItem("project.map.menu.closeColumn", () -> closeColumn(column)));
+        }
+        if (items.isEmpty()) {
+            return menu;
+        }
+        if (entry.isSymbol()) {
+            // A declaration's own menu already starts with its card: the column actions follow it.
+            menu.getItems().add(new SeparatorMenuItem());
+            menu.getItems().addAll(items);
+        } else {
+            if (!menu.getItems().isEmpty()) {
+                items.add(new SeparatorMenuItem());
+            }
+            menu.getItems().addAll(0, items);
+        }
+        return menu;
+    }
+
+    private static MenuItem mapMenuItem(String key, Runnable action) {
+        MenuItem item = new MenuItem(tr(key));
+        item.setOnAction(event -> action.run());
+        item.getProperties().put(ProjectPanel.STAYS_IN_MAP, Boolean.TRUE);
+        return item;
+    }
+
+    /** Shift+Enter on a file or declaration row: opens its preview card, or closes the one that is open. */
+    private void togglePreview(ProjectMapModel.Entry entry) {
+        ProjectMapPreview open = previews.get(entry.path().toAbsolutePath().normalize());
+        if (open == null && entry.isSymbol()) {
+            open = previews.get(entry.path());
+        }
+        if (open != null) {
+            closePreview(open);
+            surface.requestFocus(); // the keyboard stays on the map, ready for the next Shift+Enter
+        } else if (entry.isSymbol()) {
+            previewSymbol(entry);
+        } else if (entry.isFile()) {
+            previewFileEntry(entry);
+        }
+    }
+
+    /** The eye's action for {@code entry}, from a key or the row menu: the row is selected first. */
+    private void previewFileEntry(ProjectMapModel.Entry entry) {
+        surface.select(entry.path());
+        previewSelection(entry.path());
     }
 
     /** A declaration row's menu: its card, the file opened at it, the file opened narrowed to its block. */
@@ -1364,6 +1569,9 @@ final class ProjectMapView extends VBox {
         if (pendingSelection != null) {
             if (loadedPaths.contains(pendingSelection) || surface.contains(pendingSelection)) {
                 surface.setSelected(pendingSelection);
+                // A search's first match, a reveal or a history step that had to be loaded is brought into
+                // view as one that was already loaded is (E1).
+                surface.revealAfterLoad(pendingSelection);
             } else {
                 dropHistory(pendingSelection); // gone: it must not be selected if it ever reappears
             }
@@ -1393,16 +1601,21 @@ final class ProjectMapView extends VBox {
                 .resolve(ProjectMapModel.PLACEHOLDER_NAME)
                 .toAbsolutePath()
                 .normalize();
-        if (moreRow.equals(selectedBefore) && !loadedPaths.contains(moreRow)) {
-            // The whole folder is loaded now, so the row that was selected is gone: move to its last row.
-            Path last = null;
-            for (ProjectMapModel.Entry entry : loaded.entries()) {
-                if (directory.equals(entry.parent()) && !entry.isPlaceholder()) {
-                    last = entry.path();
+        if (moreRow.equals(selectedBefore)) {
+            // The "+N more" row keeps its path from chunk to chunk; left on it, the selection would sit on the
+            // next placeholder far below. Continue where the user was reading: the first row that arrived.
+            List<Path> rows = new ArrayList<>();
+            ProjectMapModel.Entry folder = surface.entryByPath.get(directory);
+            if (folder != null) {
+                for (ProjectMapModel.Entry entry : columnRowsInOrder(
+                        loaded.entries(), new ProjectMapModel.ColumnId(folder.depth() + 1, directory))) {
+                    if (!entry.isPlaceholder()) {
+                        rows.add(entry.path());
+                    }
                 }
             }
-            if (last != null) {
-                surface.select(last);
+            if (!rows.isEmpty()) {
+                surface.select(rows.get(Math.min(loadMorePreviousLoaded, rows.size() - 1)));
             }
         }
     }
@@ -1911,6 +2124,7 @@ final class ProjectMapView extends VBox {
         if (preview == null) {
             return;
         }
+        boolean focused = focusReturnsFrom(preview);
         notePreviews.entrySet().removeIf(entry -> entry.getValue() == preview);
         cardTouches.remove(preview);
         if (canvasHost != null) {
@@ -1918,6 +2132,59 @@ final class ProjectMapView extends VBox {
         }
         preview.dispose();
         repaintPreviewConnectors();
+        focusReturnToMap(focused);
+    }
+
+    /**
+     * Whether the keyboard is in {@code card} (or, for a code card, on one of its sticky notes): closing it
+     * must then hand the keyboard back to the map. Left to the scene, it went to the window's first control,
+     * the search field, and the next arrow key typed there (C18).
+     */
+    private boolean focusReturnsFrom(Region card) {
+        Scene scene = getScene();
+        Node owner = scene == null ? null : scene.getFocusOwner();
+        if (owner == null) {
+            return false;
+        }
+        boolean hasSheets = card instanceof ProjectMapPreview code && stickyNotes.containsKey(code);
+        for (Node current = owner; current != null; current = current.getParent()) {
+            if (current == card || hasSheets && current.getStyleClass().contains("project-map-sticky-note")) {
+                return true; // a sheet is the card's own: it closes with it
+            }
+        }
+        return false;
+    }
+
+    /** Whether {@code node} is inside an open code or note card, or on a sticky note. */
+    private static boolean cardFocusInCard(Node node) {
+        for (Node current = node; current != null; current = current.getParent()) {
+            if (current instanceof ProjectMapPreview
+                    || current instanceof ProjectMapNotePreview
+                    || current.getStyleClass().contains("project-map-sticky-note")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** After a Tab out of a card: when the keyboard left the map area altogether, it goes to the map. */
+    private void cardFocusKeptOnMap() {
+        Scene scene = getScene();
+        Node owner = scene == null ? null : scene.getFocusOwner();
+        for (Node current = owner; current != null; current = current.getParent()) {
+            if (current == canvasHost) {
+                return;
+            }
+        }
+        if (!disposed && scene != null) {
+            surface.requestFocus();
+        }
+    }
+
+    private void focusReturnToMap(boolean focused) {
+        if (focused && !disposed) {
+            surface.requestFocus();
+        }
     }
 
     /**
@@ -1941,6 +2208,7 @@ final class ProjectMapView extends VBox {
         if (preview == null) {
             return;
         }
+        boolean focused = focusReturnsFrom(preview);
         previews.entrySet().removeIf(entry -> entry.getValue() == preview);
         cardTouches.remove(preview);
         closeCardNotes(preview);
@@ -1949,6 +2217,7 @@ final class ProjectMapView extends VBox {
         }
         preview.dispose();
         repaintPreviewConnectors();
+        focusReturnToMap(focused);
     }
 
     private void closeAllPreviews() {
@@ -2378,6 +2647,9 @@ final class ProjectMapView extends VBox {
             revealPins.remove(revealPins.iterator().next());
         }
         pendingSelection = normalized;
+        if (!navigatingHistory) {
+            recordSelection(normalized); // as select() records a loaded target; dropped again if it never loads
+        }
         reloadForUser();
         onExpandedChanged.run();
     }
@@ -2385,7 +2657,10 @@ final class ProjectMapView extends VBox {
     private void updateNavigation() {
         backButton.setDisable(historyIndex <= 0);
         forwardButton.setDisable(historyIndex < 0 || historyIndex >= selectionHistory.size() - 1);
-        Path selected = surface.selectedEntry().map(ProjectMapModel.Entry::path).orElse(pendingSelection);
+        // A "+N more" or stub row is not a place: the trail ends at its folder, never at a "…" crumb.
+        Path selected = surface.selectedEntry()
+                .map(entry -> entry.isPlaceholder() ? entry.parent() : entry.path())
+                .orElse(pendingSelection);
         // The surface may still hold the previous root's selection, which can be on another connection.
         if (selected == null
                 || root == null
@@ -2587,6 +2862,18 @@ final class ProjectMapView extends VBox {
         private static final int OUTPUT_TILE = 2_048;
 
         private static final double CONNECTOR_VIEWPORT_OVERSCAN = 24;
+        /** How far a primary press on a row must move before it pans the map. */
+        private static final double ROW_PAN_THRESHOLD = 5;
+        /** Below this surface size the overview is not drawn: it would cover too much of the map (B3). */
+        private static final double OVERVIEW_MIN_SURFACE_WIDTH = 600;
+
+        private static final double OVERVIEW_MIN_SURFACE_HEIGHT = 400;
+        /** The overview frame's longest sides; it shrinks to the map's shape inside them (B2). */
+        private static final double OVERVIEW_MAX_WIDTH = 150;
+
+        private static final double OVERVIEW_MAX_HEIGHT = 86;
+        private static final double OVERVIEW_MIN_SIDE = 28;
+        private static final double OVERVIEW_INSET = 5;
         /** Zoom levels tried, in order, to bring a hidden column filter back for the {@code /} key. */
         private static final double[] FILTER_ZOOM_STEPS = {0.8, 1.0};
         /** The same light palette for the row icons, which are styled nodes rasterized through CSS. */
@@ -2596,6 +2883,8 @@ final class ProjectMapView extends VBox {
                 + " -color-fg-muted: #59636e;";
 
         private final Canvas liveCanvas = new Canvas(1, 1);
+        /** The overview, on a canvas of its own above the cards; see {@link #drawOverview}. */
+        private final Canvas overviewCanvas = new Canvas(1, 1);
         /** What {@link #paint} draws on: the live Canvas, or an off-scene one while output is rendered. */
         private Canvas canvas = liveCanvas;
         /** Non-null only while print/PDF output is rendered: the light colours that replace the theme's. */
@@ -2697,12 +2986,16 @@ final class ProjectMapView extends VBox {
         private Consumer<Path> onPreview = path -> {};
         private Consumer<ProjectMapModel.Entry> onStructure = entry -> {};
         private Consumer<Path> onNotesPreview = path -> {};
+        private Consumer<ProjectMapModel.Entry> onTogglePreview = entry -> {};
         private Consumer<Path> onSelectionChanged = path -> {};
         private Function<ProjectMapModel.Entry, @Nullable ContextMenu> contextMenuFactory = entry -> null;
         private Runnable onZoomChanged = () -> {};
         private double zoom = 1.0;
         private boolean keepZoomOnColumnOpen = true;
         private boolean focusNewColumn = true;
+        /** The ⋯ menu's "Single-click opens files" (see ProjectMapView.singleClickOpens). */
+        private boolean singleClickOpens = true;
+
         private double offsetX;
         private double offsetY;
         /** The viewport the open cards were last moved for; NaN until the first paint. */
@@ -2722,6 +3015,10 @@ final class ProjectMapView extends VBox {
         private @Nullable Scene dismissScene;
         private @Nullable EventHandler<MouseEvent> dismissFilter;
         private boolean panning;
+        /** The pan was pressed on a row: it starts only past {@link #ROW_PAN_THRESHOLD}. */
+        private boolean panFromRow;
+        /** The press landed in the overview: drags keep moving the view rectangle. */
+        private boolean overviewDragging;
         /** The pointer moved the viewport or a column since the last press, so its release is not a click. */
         private boolean dragMoved;
         /** Set while {@link #moveSibling} selects, so the history can fold a run of such moves into one entry. */
@@ -2788,8 +3085,13 @@ final class ProjectMapView extends VBox {
                             violetProbe,
                             structureProbe);
             setMinSize(80, 100);
+            overviewForwardsInput();
             setFocusTraversable(true);
-            setAccessibleRole(AccessibleRole.TREE_VIEW);
+            // PARENT, not TREE_VIEW: the canvas has no item nodes, and a tree role made screen readers look for
+            // rows, find none and announce an empty tree. PARENT is a plain group (AXGroup on macOS, a pane in
+            // UI Automation) that promises no items; its TEXT names the selection and its states and changes
+            // with it (updateAccessibleText), and its children are the real column controls (B5).
+            setAccessibleRole(AccessibleRole.PARENT);
             setAccessibleHelp(tr("project.map.accessibleHelp"));
             nodeTooltip.setShowDelay(Duration.millis(350));
             nodeTooltip.setHideDelay(Duration.millis(100));
@@ -2829,6 +3131,8 @@ final class ProjectMapView extends VBox {
             addEventHandler(MouseEvent.MOUSE_DRAGGED, this::mouseDragged);
             addEventHandler(MouseEvent.MOUSE_RELEASED, event -> {
                 panning = false;
+                panFromRow = false;
+                overviewDragging = false;
                 draggedColumn = null;
             });
             addEventHandler(MouseEvent.MOUSE_MOVED, this::mouseMoved);
@@ -2956,8 +3260,9 @@ final class ProjectMapView extends VBox {
             snapshotStates();
             recomputeEmphasis();
             syncColumnControls();
-            updateAccessibleText();
             repaint();
+            keepSelectionDrawn();
+            updateAccessibleText();
             if (!viewportInitialized && !this.entries.isEmpty()) {
                 viewportInitialized = true;
                 initialFitPending = true;
@@ -3083,6 +3388,8 @@ final class ProjectMapView extends VBox {
             if (hide != hideUnmatched) {
                 hideUnmatched = hide;
                 repaint();
+                keepSelectionDrawn();
+                updateAccessibleText();
             }
         }
 
@@ -3167,14 +3474,32 @@ final class ProjectMapView extends VBox {
 
         void setSelected(@Nullable Path selected) {
             this.selected = selected;
-            updateAccessibleText();
             repaint();
+            updateAccessibleText();
+        }
+
+        /**
+         * Brings a selection that arrived with a load into view: now, and once more after the deferred
+         * "show the opened column" and first-view passes that {@link #setEntries} queued, so the selected row
+         * wins over the start of its new column.
+         */
+        void revealAfterLoad(Path path) {
+            revealSelected();
+            repaint();
+            Platform.runLater(() -> {
+                if (path.equals(selected)) {
+                    revealSelected();
+                    repaint();
+                }
+            });
         }
 
         void setFilters(ProjectMapModel.Filters filters) {
             this.filters = filters;
             recomputeEmphasis();
             repaint();
+            keepSelectionDrawn();
+            updateAccessibleText();
         }
 
         void setGitState(Map<Path, GitFileStatus> status, Set<Path> directories) {
@@ -3182,17 +3507,20 @@ final class ProjectMapView extends VBox {
             gitDirectories = directories == null ? Set.of() : directories;
             recomputeEmphasis();
             repaint();
+            keepSelectionDrawn();
+            updateAccessibleText();
         }
 
         void stateChanged() {
             snapshotStates();
             recomputeEmphasis();
-            updateAccessibleText();
             entries.stream()
                     .filter(entry -> entry.path().equals(hovered))
                     .findFirst()
                     .ifPresent(entry -> nodeTooltip.setText(tooltipText(entry)));
             repaint();
+            keepSelectionDrawn();
+            updateAccessibleText();
         }
 
         void dispose() {
@@ -3702,6 +4030,7 @@ final class ProjectMapView extends VBox {
                         columnQueries.put(id, value);
                     }
                     repaint();
+                    updateAccessibleText(); // the column's count of drawn rows changed
                     if (selected != null
                             && boxes.stream()
                                     .noneMatch(box -> box.entry().path().equals(selected))) {
@@ -3848,6 +4177,7 @@ final class ProjectMapView extends VBox {
             boxes.clear();
             columnBoxes.clear();
             overviewBox = null;
+            overviewCanvas.setVisible(false); // drawOverview shows it again when there is one
             lastPaintedConnectorCount = 0;
             if (entries.isEmpty()) {
                 columnControls.values().forEach(controls -> {
@@ -3981,11 +4311,14 @@ final class ProjectMapView extends VBox {
                     case BOTTOM_TO_TOP -> columnWorldY - COLUMN_TOP_INSET;
                 };
                 flowBand.merge(depth, farEdge - shift, direction > 0 ? Math::max : Math::min);
+                layout.pushX = 0;
+                layout.pushY = 0;
                 if (parentColumn != null) {
                     if (verticalFlow) {
                         double minimum = nextCrossEdge.getOrDefault(depth, Double.NEGATIVE_INFINITY);
                         double cardLeft = columnWorldX - 10;
                         if (cardLeft < minimum) {
+                            layout.pushX = minimum - cardLeft; // read back by a header drag (B4)
                             columnWorldX += minimum - cardLeft;
                         }
                         nextCrossEdge.put(depth, columnWorldX - 10 + cardWidth + COLUMN_GAP);
@@ -3993,6 +4326,7 @@ final class ProjectMapView extends VBox {
                         double minimum = nextCrossEdge.getOrDefault(depth, Double.NEGATIVE_INFINITY);
                         double cardTop = columnWorldY - COLUMN_TOP_INSET;
                         if (cardTop < minimum) {
+                            layout.pushY = minimum - cardTop; // read back by a header drag (B4)
                             columnWorldY += minimum - cardTop;
                         }
                         nextCrossEdge.put(depth, columnWorldY - COLUMN_TOP_INSET + cardHeight + COLUMN_GAP);
@@ -4292,7 +4626,28 @@ final class ProjectMapView extends VBox {
                 if (!visibleIds.contains(id)) {
                     setColumnControlsVisible(controls, false);
                 }
+                syncControlTraversal(controls);
             });
+        }
+
+        /**
+         * Tab stops only at column controls that lie inside the viewport. Every laid-out column keeps its
+         * controls, wherever it is, and Tab used to walk through dozens of them off-screen, leaving the keyboard
+         * in a filter nobody could see (B7). The column filter of an off-screen column is still reached with
+         * {@code /}, which scrolls it into view.
+         */
+        private void syncControlTraversal(ColumnControls controls) {
+            for (Control control :
+                    List.of(controls.filter(), controls.showHidden(), controls.pin(), controls.close())) {
+                boolean onScreen = control.isVisible()
+                        && control.getLayoutX() >= 0
+                        && control.getLayoutY() >= 0
+                        && control.getLayoutX() + control.getWidth() <= getWidth()
+                        && control.getLayoutY() + control.getHeight() <= getHeight();
+                if (control.isFocusTraversable() != onScreen) {
+                    control.setFocusTraversable(onScreen);
+                }
+            }
         }
 
         /** The checkbox's width with its whole label, remembered while the label itself is hidden. */
@@ -4326,8 +4681,14 @@ final class ProjectMapView extends VBox {
             controls.close().setVisible(visible);
         }
 
-        /** Compact overview for large or manually spread layouts; the bright rectangle is the viewport. */
-        private void drawOverview(GraphicsContext g, double viewportWidth, double viewportHeight) {
+        /**
+         * Compact overview for large or manually spread layouts; the bright rectangle is the viewport. It is
+         * drawn on its own small canvas ({@link #overviewCanvas}) that sits above the cards and the zoom bar's
+         * layer, so a card never hides it (C8). The frame takes the map's shape inside at most 150 × 86, with
+         * the map centred in it, so there is little empty frame that would hide rows for nothing (B2).
+         */
+        private void drawOverview(GraphicsContext ignored, double viewportWidth, double viewportHeight) {
+            overviewCanvas.setVisible(false);
             if (outputPalette != null || columnBoxes.isEmpty()) {
                 return;
             }
@@ -4338,30 +4699,57 @@ final class ProjectMapView extends VBox {
             if (minX >= 0 && minY >= 0 && maxX <= viewportWidth && maxY <= viewportHeight) {
                 return; // everything is on screen: nothing to navigate to
             }
-            double overviewWidth = Math.min(150, Math.max(90, viewportWidth * 0.18));
-            double overviewHeight = 86;
+            if (viewportWidth < OVERVIEW_MIN_SURFACE_WIDTH || viewportHeight < OVERVIEW_MIN_SURFACE_HEIGHT) {
+                return; // a small window: the frame would hide too many rows (Fit and Center still navigate)
+            }
+            double contentWidth = Math.max(1, maxX - minX);
+            double contentHeight = Math.max(1, maxY - minY);
+            double maxWidth = Math.min(OVERVIEW_MAX_WIDTH, Math.max(90, viewportWidth * 0.18));
+            double scale = Math.min(
+                    (maxWidth - OVERVIEW_INSET * 2) / contentWidth,
+                    (OVERVIEW_MAX_HEIGHT - OVERVIEW_INSET * 2) / contentHeight);
+            double overviewWidth = Math.max(OVERVIEW_MIN_SIDE, contentWidth * scale + OVERVIEW_INSET * 2);
+            double overviewHeight = Math.max(OVERVIEW_MIN_SIDE, contentHeight * scale + OVERVIEW_INSET * 2);
             double x = viewportWidth - overviewWidth - 10;
             double y = viewportHeight - overviewHeight - 10;
             if (x < reservedBarWidth + 6) {
                 return; // too narrow to sit beside the zoom bar, and anywhere else it would cover rows
             }
-            double contentWidth = Math.max(1, maxX - minX);
-            double contentHeight = Math.max(1, maxY - minY);
-            double scale = Math.min((overviewWidth - 10) / contentWidth, (overviewHeight - 10) / contentHeight);
-            overviewBox = new OverviewBox(x, y, overviewWidth, overviewHeight, minX, minY, scale);
+            double insetX = (overviewWidth - contentWidth * scale) / 2;
+            double insetY = (overviewHeight - contentHeight * scale) / 2;
+            overviewBox = new OverviewBox(
+                    x,
+                    y,
+                    overviewWidth,
+                    overviewHeight,
+                    minX,
+                    minY,
+                    scale,
+                    insetX,
+                    insetY,
+                    contentWidth,
+                    contentHeight);
+            if (overviewCanvas.getWidth() != overviewWidth || overviewCanvas.getHeight() != overviewHeight) {
+                overviewCanvas.setWidth(overviewWidth);
+                overviewCanvas.setHeight(overviewHeight);
+            }
+            overviewCanvas.relocate(getLayoutX() + x, getLayoutY() + y);
+            overviewCanvas.setVisible(true);
+            GraphicsContext g = overviewCanvas.getGraphicsContext2D();
+            g.clearRect(0, 0, overviewWidth, overviewHeight);
             g.setGlobalAlpha(0.94);
             g.setFill(color(surfaceProbe, Color.web("#161d27")));
-            g.fillRoundRect(x, y, overviewWidth, overviewHeight, 8, 8);
+            g.fillRoundRect(0.5, 0.5, overviewWidth - 1, overviewHeight - 1, 8, 8);
             g.setStroke(rowBorder());
             g.setLineWidth(1);
-            g.strokeRoundRect(x, y, overviewWidth, overviewHeight, 8, 8);
+            g.strokeRoundRect(0.5, 0.5, overviewWidth - 1, overviewHeight - 1, 8, 8);
             Color muted = color(mutedProbe, Color.web("#8b949e"));
             Color structureMuted = mix(muted, structureTint(), 0.6);
             for (ColumnBox box : columnBoxes) {
                 g.setFill(isStructureColumn(box.column().id()) ? structureMuted : muted);
                 g.fillRoundRect(
-                        x + 5 + (box.x() - minX) * scale,
-                        y + 5 + (box.y() - minY) * scale,
+                        insetX + (box.x() - minX) * scale,
+                        insetY + (box.y() - minY) * scale,
                         Math.max(2, box.width() * scale),
                         Math.max(3, box.height() * scale),
                         2,
@@ -4369,18 +4757,49 @@ final class ProjectMapView extends VBox {
             }
             // The viewport rectangle is clipped to the frame: panned far from the content it used to be
             // drawn outside the overview altogether.
-            double frameLeft = x + 3;
-            double frameTop = y + 3;
-            double frameRight = x + overviewWidth - 3;
-            double frameBottom = y + overviewHeight - 3;
-            double left = clampTo(x + 5 - minX * scale, frameLeft, frameRight);
-            double top = clampTo(y + 5 - minY * scale, frameTop, frameBottom);
-            double right = clampTo(x + 5 + (viewportWidth - minX) * scale, frameLeft, frameRight);
-            double bottom = clampTo(y + 5 + (viewportHeight - minY) * scale, frameTop, frameBottom);
+            double frameRight = overviewWidth - 3;
+            double frameBottom = overviewHeight - 3;
+            double left = clampTo(insetX - minX * scale, 3, frameRight);
+            double top = clampTo(insetY - minY * scale, 3, frameBottom);
+            double right = clampTo(insetX + (viewportWidth - minX) * scale, 3, frameRight);
+            double bottom = clampTo(insetY + (viewportHeight - minY) * scale, 3, frameBottom);
             g.setStroke(color(accentProbe, Color.web("#58a6ff")));
             g.setLineWidth(1.5);
             g.strokeRect(left, top, Math.max(2, right - left), Math.max(2, bottom - top));
             g.setGlobalAlpha(1);
+        }
+
+        /** The overview's own canvas, a child of the map area above the cards (see {@link #drawOverview}). */
+        Node overviewLayer() {
+            return overviewCanvas;
+        }
+
+        /**
+         * The overview canvas lies above the surface, so the pointer's events reach it first. They are the
+         * surface's to handle — its press, drag and click logic already knows the overview — and are passed on
+         * in the surface's coordinates.
+         */
+        private void overviewForwardsInput() {
+            overviewCanvas.setManaged(false);
+            overviewCanvas.setVisible(false);
+            overviewCanvas.setViewOrder(-1);
+            overviewCanvas.getStyleClass().add("project-map-overview");
+            overviewCanvas.setCursor(Cursor.HAND);
+            for (javafx.event.EventType<MouseEvent> type : List.of(
+                    MouseEvent.MOUSE_PRESSED,
+                    MouseEvent.MOUSE_DRAGGED,
+                    MouseEvent.MOUSE_RELEASED,
+                    MouseEvent.MOUSE_CLICKED,
+                    MouseEvent.MOUSE_MOVED)) {
+                overviewCanvas.addEventHandler(type, event -> {
+                    javafx.event.Event.fireEvent(this, event.copyFor(this, this));
+                    event.consume();
+                });
+            }
+            overviewCanvas.addEventHandler(ScrollEvent.ANY, event -> {
+                javafx.event.Event.fireEvent(this, event.copyFor(this, this));
+                event.consume();
+            });
         }
 
         private static double clampTo(double value, double minimum, double maximum) {
@@ -5035,7 +5454,9 @@ final class ProjectMapView extends VBox {
             pressY = event.getY();
             pressOffsetX = offsetX;
             pressOffsetY = offsetY;
+            overviewDragging = false;
             if (event.getButton() == MouseButton.PRIMARY && navigateFromOverview(event.getX(), event.getY())) {
+                overviewDragging = true; // dragging on in the overview moves the view rectangle along (B2)
                 event.consume();
                 return;
             }
@@ -5045,20 +5466,39 @@ final class ProjectMapView extends VBox {
                 ColumnLayout layout = columnLayouts.computeIfAbsent(id, ignored -> new ColumnLayout());
                 if (!layout.locked) {
                     draggedColumn = id;
-                    columnPressOffsetX = layout.x;
-                    columnPressOffsetY = layout.y;
+                    // Start from where the column is drawn: a push from a packed neighbour in the last paint
+                    // becomes part of its offset, so the drag moves it at once (B4).
+                    columnPressOffsetX = layout.x + layout.pushX;
+                    columnPressOffsetY = layout.y + layout.pushY;
+                    layout.pushX = 0;
+                    layout.pushY = 0;
                     event.consume();
                     return;
                 }
             }
-            panning = event.getButton() == MouseButton.MIDDLE
-                    || event.getButton() == MouseButton.PRIMARY && hit(event.getX(), event.getY()) == null;
+            // Rows have no drag action of their own, so a primary drag pans wherever it starts — past a small
+            // threshold when it starts on a row, so a click that wobbles stays a click (B24).
+            panning = event.getButton() == MouseButton.MIDDLE || event.getButton() == MouseButton.PRIMARY;
+            panFromRow = event.getButton() == MouseButton.PRIMARY && hit(event.getX(), event.getY()) != null;
         }
 
         private void mouseDragged(MouseEvent event) {
+            if (overviewDragging) {
+                flushPendingRepaint();
+                navigateFromOverview(event.getX(), event.getY());
+                dragMoved = true;
+                event.consume();
+                return;
+            }
             if (draggedColumn != null) {
                 ColumnLayout layout = columnLayouts.get(draggedColumn);
                 if (layout != null && !layout.locked) {
+                    // The last paint pushed the column clear of a packed neighbour: take that push into the
+                    // offset, so dragging back moves it at once instead of first unwinding a hidden overshoot.
+                    columnPressOffsetX += layout.pushX;
+                    columnPressOffsetY += layout.pushY;
+                    layout.pushX = 0;
+                    layout.pushY = 0;
                     // Store what the layout will actually use: an offset past the parent-side limit would
                     // have to be dragged back out again before the column moved.
                     boolean limited = draggedColumn.depth() > 0;
@@ -5073,6 +5513,11 @@ final class ProjectMapView extends VBox {
                 return;
             }
             if (!panning) {
+                return;
+            }
+            if (panFromRow
+                    && !dragMoved
+                    && Math.hypot(event.getX() - pressX, event.getY() - pressY) < ROW_PAN_THRESHOLD) {
                 return;
             }
             offsetX = pressOffsetX + event.getX() - pressX;
@@ -5248,6 +5693,11 @@ final class ProjectMapView extends VBox {
             } else if (entry.isSymbol()) {
                 if (event.getClickCount() == 1) {
                     onActivate.accept(entry); // its card
+                }
+            } else if (entry.isFile() && !singleClickOpens) {
+                // "Single-click opens files" off: the click above selected the row, a double-click opens it.
+                if (event.getClickCount() == 2) {
+                    onActivate.accept(entry);
                 }
             } else if (event.getClickCount() == 1) {
                 // A folder that is already open is only selected; its chevron (or the column's close
@@ -5455,7 +5905,17 @@ final class ProjectMapView extends VBox {
                 case PAGE_UP -> moveSibling(-10);
                 case PAGE_DOWN -> moveSibling(10);
                 case BACK_SPACE -> selectParent();
-                case ENTER, SPACE -> activateSelection();
+                case ENTER, SPACE -> {
+                    if (event.getCode() == KeyCode.ENTER && event.isShiftDown() && plain) {
+                        flushPendingRepaint();
+                        // Shift+Enter: the selected file's or declaration's preview card, opened or closed (B6).
+                        selectedEntry()
+                                .filter(entry -> nodeBox(entry.path()) != null)
+                                .ifPresent(onTogglePreview);
+                    } else {
+                        activateSelection();
+                    }
+                }
                 case HOME -> select(entries.getFirst().path());
                 default -> {
                     if (onlyControl && event.getCode() == KeyCode.N) {
@@ -5590,12 +6050,85 @@ final class ProjectMapView extends VBox {
                 return;
             }
             int index = column.indexOf(current);
+            int target = index >= 0
+                    ? siblingIndex(index, delta, column.size())
+                    : selectionStepFromHidden(current, column, delta);
             movingSibling = true;
             try {
-                select(column.get(siblingIndex(index < 0 ? 0 : index, delta, column.size()))
-                        .path());
+                select(column.get(target).path());
             } finally {
                 movingSibling = false;
+            }
+        }
+
+        /**
+         * A sibling step from a selection a filter hid: the first drawn row after it (or before it, upwards)
+         * counts as the first step, so the move starts from where the row would be, not from the top (B16).
+         */
+        private int selectionStepFromHidden(
+                ProjectMapModel.Entry current, List<ProjectMapModel.Entry> drawn, int delta) {
+            List<ProjectMapModel.Entry> all = selectionSiblings(current);
+            int position = all.indexOf(current);
+            int anchor = -1;
+            if (delta > 0) {
+                for (int i = position + 1; i < all.size() && anchor < 0; i++) {
+                    anchor = drawn.indexOf(all.get(i));
+                }
+                if (anchor < 0) {
+                    return Math.abs(delta) == 1 ? 0 : drawn.size() - 1;
+                }
+                return Math.clamp(anchor + delta - 1, 0, drawn.size() - 1);
+            }
+            for (int i = position - 1; i >= 0 && anchor < 0; i--) {
+                anchor = drawn.indexOf(all.get(i));
+            }
+            if (anchor < 0) {
+                return Math.abs(delta) == 1 ? drawn.size() - 1 : 0;
+            }
+            return Math.clamp(anchor + delta + 1, 0, drawn.size() - 1);
+        }
+
+        /** Every loaded row of {@code entry}'s column, drawn or not, in the order the column shows them. */
+        private List<ProjectMapModel.Entry> selectionSiblings(ProjectMapModel.Entry entry) {
+            return columnRowsInOrder(entries, columnId(entry));
+        }
+
+        /**
+         * "Hide unmatched" took the selected row off the map: the selection moves to the nearest row still drawn
+         * in its column, else to its nearest drawn ancestor, so the keyboard and the breadcrumb keep a visible
+         * anchor (B16).
+         */
+        private void keepSelectionDrawn() {
+            Path current = selected;
+            ProjectMapModel.Entry entry = current == null ? null : entryByPath.get(current);
+            if (current == null || entry == null || !narrowsAway(current) || nodeBox(current) != null) {
+                return;
+            }
+            Path target = null;
+            List<ProjectMapModel.Entry> siblings = selectionSiblings(entry);
+            int position = siblings.indexOf(entry);
+            for (int distance = 1; target == null && distance < siblings.size(); distance++) {
+                for (int index : new int[] {position + distance, position - distance}) {
+                    if (target == null && index >= 0 && index < siblings.size()) {
+                        ProjectMapModel.Entry candidate = siblings.get(index);
+                        if (!candidate.isPlaceholder() && nodeBox(candidate.path()) != null) {
+                            target = candidate.path();
+                        }
+                    }
+                }
+            }
+            for (Path parent = entry.parent(); target == null && parent != null; parent = parent.getParent()) {
+                if (nodeBox(parent) != null) {
+                    target = parent;
+                }
+            }
+            if (target != null) {
+                movingSibling = true; // a forced move, folded into the history like a sibling step
+                try {
+                    select(target);
+                } finally {
+                    movingSibling = false;
+                }
             }
         }
 
@@ -5646,9 +6179,9 @@ final class ProjectMapView extends VBox {
 
         private void select(Path path) {
             selected = path;
-            updateAccessibleText();
             revealSelected();
             repaint();
+            updateAccessibleText();
             onSelectionChanged.accept(path);
         }
 
@@ -5819,15 +6352,21 @@ final class ProjectMapView extends VBox {
             return false;
         }
 
+        /**
+         * Centres the view on the map point under an overview press or drag. The point is clamped to the map's
+         * bounds, so a press on the frame's margin never pans the view into empty space (B2).
+         */
         private boolean navigateFromOverview(double x, double y) {
             OverviewBox overview = overviewBox;
             if (overview == null || !overview.contains(x, y)) {
                 return false;
             }
-            double contentX = overview.minX() + (x - overview.x() - 5) / overview.scale();
-            double contentY = overview.minY() + (y - overview.y() - 5) / overview.scale();
-            offsetX += getWidth() / 2 - contentX;
-            offsetY += getHeight() / 2 - contentY;
+            double mapX =
+                    clampTo((x - overview.x() - overview.insetX()) / overview.scale(), 0, overview.contentWidth());
+            double mapY =
+                    clampTo((y - overview.y() - overview.insetY()) / overview.scale(), 0, overview.contentHeight());
+            offsetX += getWidth() / 2 - (overview.minX() + mapX);
+            offsetY += getHeight() / 2 - (overview.minY() + mapY);
             repaint();
             return true;
         }
@@ -5923,59 +6462,93 @@ final class ProjectMapView extends VBox {
         }
 
         private void updateAccessibleText() {
+            String text = accessibleSelectionText();
+            if (!text.equals(getAccessibleText())) {
+                setAccessibleText(text);
+                // The property alone tells no one: a screen reader hears of the change only through this.
+                notifyAccessibleAttributeChanged(AccessibleAttribute.TEXT);
+            }
+        }
+
+        /**
+         * What a tree item would expose, in one string: the row, its kind, its states and where it stands among
+         * the rows its column draws — not those a column filter or "Hide unmatched" took out, nor a "+N more"
+         * row (B5).
+         */
+        private String accessibleSelectionText() {
             ProjectMapModel.Entry current = selectedEntry().orElse(null);
             if (current == null) {
-                setAccessibleText(tr("project.map.accessibleSelection", tr("project.map.empty")));
-                return;
+                return tr("project.map.accessibleSelection", tr("project.map.empty"));
             }
-            // The surface is one accessible node, so its text carries what a tree item would expose: the
-            // kind of row, whether a folder is open, and where the row stands among its siblings.
-            ProjectMapModel.ColumnId column = columnId(current);
-            java.util.Comparator<ProjectMapModel.Entry> order =
-                    ProjectPathOrder.directoriesFirst(ProjectMapModel.Entry::directory, ProjectMapModel.Entry::name);
-            int position = 1;
-            int siblings = 0;
-            for (ProjectMapModel.Entry entry : entries) {
-                if (columnId(entry).equals(column)) {
-                    siblings++;
-                    if (order.compare(entry, current) < 0) {
-                        position++; // rows are shown in this order, whatever order they were loaded in
-                    }
+            ProjectMapModel.ColumnId id = columnId(current);
+            boolean narrowing = hideUnmatched && filters != null && filters.active();
+            List<ProjectMapModel.Entry> drawn = List.of();
+            for (ProjectMapModel.Column column : ProjectMapModel.columnsById(
+                    entries, columnQueries, columnShowHidden, narrowing ? emphasized : null)) {
+                if (column.id().equals(id)) {
+                    drawn = column.entries().stream()
+                            .filter(row -> !row.isPlaceholder())
+                            .toList();
+                    break;
                 }
             }
+            int index = drawn.indexOf(current);
+            List<String> states = new ArrayList<>();
+            int position;
+            if (index >= 0) {
+                position = index + 1;
+            } else {
+                // Hidden by its column's filter: say so, and where it would stand.
+                List<ProjectMapModel.Entry> all = selectionSiblings(current);
+                int at = all.indexOf(current);
+                position = 1
+                        + (int) drawn.stream()
+                                .filter(row -> all.indexOf(row) < at)
+                                .count();
+                states.add(tr("project.map.accessible.state.filtered"));
+            }
+            int count = drawn.size();
             ProjectMapModel.Symbol symbol = current.symbol();
+            String base;
             if (symbol != null) {
-                // A structure column is shown in the order its declarations are written: count in that order.
-                int index = 1;
-                int count = 0;
-                for (ProjectMapModel.Entry entry : entries) {
-                    if (columnId(entry).equals(column) && !entry.isPlaceholder()) {
-                        count++;
-                        if (entry == current) {
-                            index = count;
-                        }
-                    }
-                }
-                setAccessibleText(tr(
+                base = tr(
                         "project.map.accessible.symbol",
                         current.name(),
                         symbol.kind() == null ? "" : symbol.kind(),
                         symbol.line() + 1,
-                        index,
-                        count));
-                return;
-            }
-            String key;
-            if (current.directory()) {
-                key = expandedSnapshot.contains(current.path())
-                        ? "project.map.accessible.folderExpanded"
-                        : "project.map.accessible.folderCollapsed";
+                        position,
+                        count);
             } else {
-                key = openPaths.contains(current.path())
-                        ? "project.map.accessible.fileOpen"
-                        : "project.map.accessible.file";
+                String key;
+                if (current.directory()) {
+                    key = expandedSnapshot.contains(current.path())
+                            ? "project.map.accessible.folderExpanded"
+                            : "project.map.accessible.folderCollapsed";
+                } else {
+                    key = openPaths.contains(current.path())
+                            ? "project.map.accessible.fileOpen"
+                            : "project.map.accessible.file";
+                }
+                base = tr(key, current.name(), position, count);
+                Path path = current.path();
+                if (modifiedPaths.contains(path)) {
+                    states.add(tr("project.map.tooltip.unsaved"));
+                }
+                GitFileStatus git = gitState.get(path);
+                if (git != null || gitDirectories.contains(path)) {
+                    states.add(tr("project.map.tooltip.gitChanged"));
+                }
+                if (bookmarkedPaths.contains(path)) {
+                    states.add(tr("project.map.tooltip.bookmarked"));
+                }
+                if (notedPaths.contains(path)) {
+                    states.add(tr("project.map.tooltip.personalNotes"));
+                }
+                if (current.isFile() && structure.isOpen(path)) {
+                    states.add(tr("project.map.accessible.state.structureOpen"));
+                }
             }
-            setAccessibleText(tr(key, current.name(), position, siblings));
+            return states.isEmpty() ? base : tr("project.map.accessible.withStates", base, String.join(", ", states));
         }
 
         private Rectangle probe(String styleClass) {
@@ -6040,8 +6613,19 @@ final class ProjectMapView extends VBox {
 
         private record ColumnControls(TextField filter, CheckBox showHidden, ToggleButton pin, Button close) {}
 
+        /** The overview frame in surface pixels, and where the map's bounds lie inside it. */
         private record OverviewBox(
-                double x, double y, double width, double height, double minX, double minY, double scale) {
+                double x,
+                double y,
+                double width,
+                double height,
+                double minX,
+                double minY,
+                double scale,
+                double insetX,
+                double insetY,
+                double contentWidth,
+                double contentHeight) {
             private boolean contains(double px, double py) {
                 return px >= x && px <= x + width && py >= y && py <= y + height;
             }
@@ -6050,10 +6634,25 @@ final class ProjectMapView extends VBox {
         private static final class ColumnLayout {
             private double x;
             private double y;
+            /** How far the last paint pushed the column past {@link #x}/{@link #y}, clear of a packed neighbour. */
+            private double pushX;
+
+            private double pushY;
             private boolean locked;
         }
 
         private record IconKey(String kind, String statusClass) {}
+    }
+
+    /** One column's rows, filters aside, in the order the map shows them (the model's sort). */
+    private static List<ProjectMapModel.Entry> columnRowsInOrder(
+            List<ProjectMapModel.Entry> rows, ProjectMapModel.ColumnId id) {
+        for (ProjectMapModel.Column column : ProjectMapModel.columnsById(rows, Map.of(), Map.of(), null)) {
+            if (column.id().equals(id)) {
+                return column.entries();
+            }
+        }
+        return List.of();
     }
 
     /** What one wheel or touchpad scroll event does to the viewport. */
@@ -6123,7 +6722,7 @@ final class ProjectMapView extends VBox {
 
     /** The chord tokens the focused map surface takes ahead of the keymap; see {@code MapSurface.claimKeys}. */
     static Set<String> claimedChords(boolean mac) {
-        return Set.of("M-left", "M-right", mac ? "Cmd-0" : "C-0", "C-n", "C-p", "f2", "delete");
+        return Set.of("M-left", "M-right", mac ? "Cmd-0" : "C-0", "C-n", "C-p", "f2", "delete", "S-enter");
     }
 
     private static boolean safeTest(Predicate<Path> predicate, Path path) {
