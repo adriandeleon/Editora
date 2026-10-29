@@ -930,7 +930,7 @@ final class DoctorCoordinator {
             specs.add(probe(
                     browsers,
                     base -> base.ok(Browsers.detect().stream()
-                            .map(Browsers.Browser::displayName)
+                            .map(HtmlPreviewCoordinator::label) // "System Default" in the UI's language
                             .reduce((a, b) -> a + " · " + b)
                             .orElse(""))));
         }
@@ -1085,15 +1085,19 @@ final class DoctorCoordinator {
         DoctorCheck row = DoctorCheck.checking("lsp." + serverId, "lsp", serverLabel(serverId), String.join(" ", argv))
                 .withSettings("lsp");
         DoctorCheck.Install install = installKindFor(serverId);
-        if (install != DoctorCheck.Install.NONE) {
+        boolean configured = ops.lspServerCommandSet(serverId);
+        Path config = host.configDir();
+        // The user's own command (not one Editora's install wrote, inside the config dir): Install changes nothing it
+        // runs, so the row offers Settings… only (HTML review A10).
+        boolean ownCommand = configured && !PinnedVersions.anyInside(argv, config);
+        if (install != DoctorCheck.Install.NONE && !ownCommand) {
             row = row.withInstall(install, installArgFor(serverId));
         }
         String npmPackage = InstallCatalog.npmPackage(serverId);
-        boolean configured = ops.lspServerCommandSet(serverId);
         LspCoordinator.ServerTrouble failing = ops.lspServerFailure(serverId);
         PinnedVersions.Pin pin = PinnedVersions.forServer(serverId).orElse(null);
-        Path config = host.configDir();
         String latest = latestFor(row.id());
+        String nodeSetting = host.settings().getNodePath();
         String mavenJdk = host.settings().getMavenJdkHome();
         Path projectRoot = ops.projectRoot();
         return probe(row, base -> {
@@ -1117,7 +1121,7 @@ final class DoctorCoordinator {
                         argv.get(0));
             }
             String node = DoctorRules.launcherNode(Path.of(path));
-            if (node != null && DoctorProbes.resolvedPath(List.of(node)).isEmpty()) {
+            if (node != null && DoctorProbes.resolvedPath(List.of(node)).isEmpty() && !nodeChosen(nodeSetting)) {
                 // an npm launcher (#!/usr/bin/env node) with no Node.js: it can only die at start (Bash review A3)
                 return base.warn(path, "doctor.tip.serverNeedsNode");
             }
@@ -1139,8 +1143,7 @@ final class DoctorCoordinator {
             }
             if (failing != null) {
                 // it starts, then fails every request (C2); or it exits before it is ready, saying why (XML A4)
-                return base.warn(
-                        failing.detail(), failing.crashed() ? "doctor.tip.serverCrashing" : "doctor.tip.serverFailing");
+                return base.warn(failing.detail(), troubleTip(serverId, failing.crashed(), base.install()));
             }
             if (pin != null) {
                 // Which release, and whether it is older than the one Editora installs and is tested with (D8).
@@ -1149,8 +1152,15 @@ final class DoctorCoordinator {
                 Path own = com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(serverId) ? Path.of(path) : null;
                 Supplier<String> printed = InstallCatalog.CLOJURE_LSP_ID.equals(pin.stepId())
                         ? () -> DoctorProbes.output(withArgs(argv, "--version"))
-                        : null;
+                        : npmPackage != null ? () -> DoctorRules.npmPackageVersion(Path.of(path)) : null;
                 DoctorCheck pinned = pinnedRow(base, pin, config, locations, own, printed, path, true);
+                if ("html".equals(serverId)
+                        && com.editora.install.WebServerInstall.typeScriptLibsMissing(Path.of(path))) {
+                    // its <script> has no DOM or standard library: the server logs "Unable to load library" (A2)
+                    return ownCommand
+                            ? base.warn(pinned.detail(), "doctor.tip.htmlNoTsLibsOwn")
+                            : base.outdated(pinned.detail(), "doctor.tip.htmlNoTsLibs");
+                }
                 return own != null ? jdtlsRuntime(pinned, mavenJdk, path, projectRoot) : pinned;
             }
             // An npm launcher prints no version (Pyright) or none Doctor asks for; its package.json says (review B16,
@@ -1164,6 +1174,35 @@ final class DoctorCoordinator {
             }
             return withNewer(base.ok(detail), serverId, argv, path, latest);
         });
+    }
+
+    /**
+     * The tip of a server given up on: it crashes at start or fails its requests. Install… is offered when it can help;
+     * for the user's own command ({@code install} NONE) the tip says to fix it there instead, and only the XML tip
+     * mentions lemminx's Java fallback (HTML review A10). Pure.
+     */
+    static String troubleTip(String serverId, boolean crashed, DoctorCheck.Install install) {
+        if (install == DoctorCheck.Install.NONE) {
+            return "doctor.tip.serverTroubleOwn";
+        }
+        if (!crashed) {
+            return "doctor.tip.serverFailing";
+        }
+        return "xml".equals(serverId) ? "doctor.tip.serverCrashingXml" : "doctor.tip.serverCrashing";
+    }
+
+    /**
+     * Whether the Node.js chosen in Settings ({@code setting}, blank = none) is a program that exists: the language
+     * servers that are Node.js scripts get its folder on their PATH, so a missing {@code node} on PATH does not stop
+     * them (HTML review A8). File reads only.
+     */
+    static boolean nodeChosen(@Nullable String setting) {
+        if (setting == null || setting.isBlank()) {
+            return false;
+        }
+        var bin = com.editora.run.NodeRuntimes.resolveLocal(null, null, "", setting)
+                .binDir();
+        return bin.isPresent() && java.nio.file.Files.isDirectory(bin.get());
     }
 
     /**
@@ -1466,13 +1505,33 @@ final class DoctorCoordinator {
             List<String> argv = new ArrayList<>(node.command());
             argv.add("--version");
             String version = DoctorRules.firstLine(DoctorProbes.output(argv).strip(), "");
-            boolean needed = needs.openServers().contains("typescript") || needs.rootHasAny(List.of("package.json"));
+            boolean forScripts =
+                    needs.openServers().contains("typescript") || needs.rootHasAny(List.of("package.json"));
+            // an open file's server that is a Node.js script (HTML, CSS, JSON, YAML, Bash…) needs it too (HTML A8)
+            String servers = nodeServers(needs.openServers());
+            boolean needed = forScripts || !servers.isEmpty();
             return switch (com.editora.doctor.NodeRuntimeRow.status(version, needed)) {
                 case OK -> base.ok(com.editora.doctor.NodeRuntimeRow.detail(version, node));
-                case MISSING -> base.missing("doctor.tip.nodeMissing", node.executable());
+                case MISSING ->
+                    forScripts
+                            ? base.missing("doctor.tip.nodeMissing", node.executable())
+                            : base.missing("doctor.tip.nodeMissingServers", node.executable(), servers);
                 default -> base.optional("doctor.tip.nodeOptional");
             };
         });
+    }
+
+    /**
+     * The names of {@code openServers} other than TypeScript's that are installed with npm — Node.js scripts — joined
+     * for a sentence ("HTML, CSS"); "" for none. Pure.
+     */
+    static String nodeServers(Set<String> openServers) {
+        return openServers.stream()
+                .filter(id -> !com.editora.lsp.TypeScriptServer.SERVER_ID.equals(id))
+                .filter(id -> InstallCatalog.npmPackage(id) != null)
+                .sorted()
+                .map(DoctorCoordinator::serverLabel)
+                .collect(java.util.stream.Collectors.joining(", "));
     }
 
     /** A Run-section interpreter row: absent, it is only "not installed" (needed just for that file type). */

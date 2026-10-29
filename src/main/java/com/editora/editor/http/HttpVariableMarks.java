@@ -17,6 +17,10 @@ import org.jspecify.annotations.Nullable;
  * keeps the buffer side out of {@link EditorBuffer}: when it is on, and handing the result to the squiggle
  * overlay. It reuses the Markdown-lint overlay and hover: a buffer is one language, so the two never share it.
  * Runs on the settled-edit pause, never per keystroke.
+ *
+ * <p>An HTML page no language server serves shows Editora's markup check here the same way (HTML review D5,
+ * {@link #setMarkupCheck}): with a server the check joins the server's diagnostics instead, so its gate is asked
+ * again on every check and the marks go off when the page's server starts.
  */
 public final class HttpVariableMarks {
 
@@ -27,6 +31,10 @@ public final class HttpVariableMarks {
     private final BooleanSupplier sharedUse;
 
     private @Nullable BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> validator;
+    /** The HTML markup check and when it applies (an HTML page, the setting on, no server serving it). */
+    private @Nullable BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> markup;
+
+    private BooleanSupplier markupEligible = () -> false;
     private boolean enabled;
     /** Bumped on every request and on/off switch: a result for an older one is dropped. */
     private int generation;
@@ -56,9 +64,31 @@ public final class HttpVariableMarks {
         update();
     }
 
+    /**
+     * An HTML page's markup check: {@code check} runs ({@code accept(text, marks -> …)}) while {@code eligible}
+     * says it applies (an HTML page, the setting on, no server serving it).
+     */
+    public record MarkupCheck(
+            BooleanSupplier eligible, BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> check) {}
+
+    /** Injects the HTML markup check and its gate. */
+    public void setMarkupCheck(MarkupCheck check) {
+        this.markupEligible = check.eligible();
+        this.markup = check.check();
+        update();
+    }
+
+    /** The check that runs now: the {@code {{variable}}} one for a {@code .http} file, else the markup one, or null. */
+    private @Nullable BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> active() {
+        if (validator != null && eligible.getAsBoolean()) {
+            return validator;
+        }
+        return markup != null && markupEligible.getAsBoolean() ? markup : null;
+    }
+
     /** Re-evaluates whether the marks are on (language, feature switch, validator) and checks again if so. */
     public void update() {
-        boolean on = validator != null && eligible.getAsBoolean();
+        boolean on = active() != null;
         if (on != enabled) {
             enabled = on;
             generation++;
@@ -87,11 +117,15 @@ public final class HttpVariableMarks {
 
     /** Checks the document again (an edit settled, or the environment / env files changed). */
     public void schedule() {
-        if (!enabled || validator == null) {
+        BiConsumer<String, Consumer<List<MarkdownLint.Diagnostic>>> check = enabled ? active() : null;
+        if (check == null) {
+            if (enabled) {
+                update(); // the gate closed since (an HTML page's server started): take the marks back
+            }
             return;
         }
         int asked = ++generation;
-        validator.accept(text.get(), diags -> {
+        check.accept(text.get(), diags -> {
             if (enabled && asked == generation) {
                 shown = diags;
                 overlay.get().setDiagnostics(diags);

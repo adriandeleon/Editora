@@ -1,5 +1,7 @@
 package com.editora.install;
 
+import java.util.List;
+
 import com.editora.install.LatestVersions.Registry;
 import com.editora.install.LatestVersions.Source;
 import org.junit.jupiter.api.Test;
@@ -16,10 +18,10 @@ class LatestVersionsTest {
         assertEquals(
                 new Source(Registry.NPM, "pyright"),
                 LatestVersions.forServer("python").orElseThrow());
-        assertEquals(
-                LatestVersions.forServer("json").orElseThrow(),
-                LatestVersions.forServer("css").orElseThrow(),
-                "one npm package serves JSON, HTML and CSS");
+        for (String web : List.of("json", "html", "css")) {
+            // one pinned npm package serves the three (HTML review A12): an Editora release adopts its new versions
+            assertTrue(LatestVersions.forServer(web).isEmpty(), web);
+        }
         assertEquals(Registry.GO, LatestVersions.forServer("go").orElseThrow().registry());
         assertEquals(
                 Registry.HASHICORP,

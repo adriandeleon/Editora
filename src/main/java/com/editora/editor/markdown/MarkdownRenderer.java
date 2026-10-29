@@ -225,8 +225,8 @@ public final class MarkdownRenderer {
      * Overload that also wires links to a click handler — invoked with the link's raw destination
      * (as written in the Markdown; never resolved/normalized) when a rendered link is clicked. Used by the
      * live, interactive preview so a link opens in the system browser; pass {@code null} for
-     * non-interactive renders (print/PDF don't build this JavaFX tree at all, and the hover/completion-doc
-     * popups pass null since they're ephemeral display surfaces, not meant to be clicked through).
+     * non-interactive renders (print/PDF don't build this JavaFX tree at all). A popup over the editor uses
+     * {@link #renderPopup} instead, whose links are never keyboard-focused.
      */
     public static Node renderDocument(
             org.commonmark.node.Node ast,
@@ -280,7 +280,32 @@ public final class MarkdownRenderer {
                         null,
                         null,
                         null,
-                        null));
+                        null,
+                        false));
+    }
+
+    /**
+     * The render for a popup over the editor — a hover, a completion's documentation, signature help: a click on a
+     * link follows it, but nothing in it is a Tab stop. A JavaFX popup takes the owner window's key events first,
+     * and its first focus-traversable node becomes its focus owner, so a link there took the Enter or Tab meant for
+     * the completion list (it opened MDN instead of accepting {@code <button>}), and the popup opened scrolled to
+     * that link at its bottom (HTML review B1/B8). Images as {@code images} allows; text from a language server
+     * passes {@link ImagePolicy#DATA_ONLY}.
+     */
+    public static Node renderPopup(
+            org.commonmark.node.Node ast,
+            @Nullable Path baseDir,
+            java.util.function.@Nullable Consumer<String> onLinkClick,
+            ImagePolicy images) {
+        return renderDocument(
+                ast, new RenderContext(baseDir, onLinkClick, images, false, null, null, null, null, true));
+    }
+
+    /** {@link #renderPopup(org.commonmark.node.Node, Path, java.util.function.Consumer, ImagePolicy)} for text
+     *  from a language server: no base folder, {@code data:} images only. */
+    public static Node renderPopup(
+            org.commonmark.node.Node ast, java.util.function.@Nullable Consumer<String> onLinkClick) {
+        return renderPopup(ast, null, onLinkClick, ImagePolicy.DATA_ONLY);
     }
 
     /**
@@ -301,7 +326,7 @@ public final class MarkdownRenderer {
     public static Node renderForPrint(
             org.commonmark.node.Node ast, @Nullable Path baseDir, @Nullable MarkdownPrintAssets assets) {
         return renderDocument(
-                ast, new RenderContext(baseDir, null, ImagePolicy.DOCUMENT, true, assets, null, null, null));
+                ast, new RenderContext(baseDir, null, ImagePolicy.DOCUMENT, true, assets, null, null, null, false));
     }
 
     private static Node renderDocument(org.commonmark.node.Node ast, RenderContext ctx) {
@@ -315,7 +340,8 @@ public final class MarkdownRenderer {
                     ctx.assets(),
                     ctx.dark(),
                     footnoteNumbers(ast),
-                    ctx.live());
+                    ctx.live(),
+                    ctx.popup());
             appendBlocks(ast, content, numbered);
         }
         return wrapColumn(content);
@@ -351,7 +377,7 @@ public final class MarkdownRenderer {
             @Nullable Boolean dark,
             Map<String, Integer> footnotes,
             Live live) {
-        return new RenderContext(baseDir, onLinkClick, ImagePolicy.DOCUMENT, false, null, dark, footnotes, live);
+        return new RenderContext(baseDir, onLinkClick, ImagePolicy.DOCUMENT, false, null, dark, footnotes, live, false);
     }
 
     /**
@@ -440,7 +466,8 @@ public final class MarkdownRenderer {
             @Nullable MarkdownPrintAssets assets,
             @Nullable Boolean dark,
             @Nullable Map<String, Integer> footnotes,
-            @Nullable Live live) {
+            @Nullable Live live,
+            boolean popup) {
 
         /** What a reference to (or the definition of) footnote {@code label} shows: its number, else the label. */
         String footnoteMark(String label) {
@@ -922,7 +949,7 @@ public final class MarkdownRenderer {
             apply.run();
         };
         header.setCursor(javafx.scene.Cursor.HAND);
-        header.setFocusTraversable(true);
+        header.setFocusTraversable(!ctx.popup()); // a popup's keys belong to the editor (renderPopup)
         header.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON);
         header.setOnMouseClicked(e -> {
             if (followsLink(e.getButton(), e.isStillSincePress())) {
@@ -1906,7 +1933,7 @@ public final class MarkdownRenderer {
                     onLinkClick.accept(dest);
                 }
             });
-            if (first) {
+            if (first && !ctx.popup()) { // a popup's links are clicked, never focused (renderPopup)
                 // One Tab stop per link, on its first run.
                 child.setFocusTraversable(true);
                 child.setAccessibleRole(javafx.scene.AccessibleRole.HYPERLINK);

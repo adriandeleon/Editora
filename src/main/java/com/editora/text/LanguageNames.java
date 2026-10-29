@@ -29,6 +29,7 @@ public final class LanguageNames {
             case "json" -> "JSON";
             case "yaml" -> "YAML";
             case "html" -> "HTML";
+            case HtmlElements.TEMPLATE_LANGUAGE -> "HTML Template";
             case "css" -> "CSS";
             case "sql" -> "SQL";
             case "toml" -> "TOML";

@@ -984,8 +984,19 @@ final class EditingCoordinator {
                             ? "status.noCommentSyntax"
                             : onlyShebang(buffer)
                                     ? "status.commentShebang"
-                                    : intoHereDoc(buffer) ? "status.commentHereDoc" : "status.commentCannotNest"));
+                                    : intoHereDoc(buffer)
+                                            ? "status.commentHereDoc"
+                                            : mixesLanguages(buffer)
+                                                    ? "status.commentMixedLanguages"
+                                                    : "status.commentCannotNest"));
         }
+    }
+
+    /** Whether the selection runs from HTML markup into an embedded script, style or PHP block (HTML review C3). */
+    private static boolean mixesLanguages(EditorBuffer buffer) {
+        org.fxmisc.richtext.CodeArea a = buffer.getFocusedArea() != null ? buffer.getFocusedArea() : buffer.getArea();
+        return com.editora.editops.Commenter.mixesLanguages(
+                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), buffer.getLanguage());
     }
 
     /** Whether the selection is just a {@code #!} line, which Toggle Comment leaves alone. */

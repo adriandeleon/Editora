@@ -2260,15 +2260,19 @@ final class WindowCommandRegistrar {
                                             host.settingsWindow().syncAll();
                                         })));
         host.registry().register(Command.of("lsp.gotoDefinition", () -> {
-            // A server's answer first; without one (LSP off, no server for the file, nothing found) the
-            // server-free symbol index answers for the languages it reads.
+            // A server's answer first; without one (LSP off, no server for the file, nothing found) an HTML
+            // page's href/src opens its file (HTML review B6), else the server-free symbol index answers for
+            // the languages it reads.
+            HtmlLinkFollow links = host.lspCoordinator().html.links;
+            java.util.function.BooleanSupplier fallback =
+                    () -> links.followAtCaret() || host.indexCoordinator().gotoDefinitionAtCaret();
             boolean[] lsp = {false};
             host.ifLsp(() -> {
                 lsp[0] = true;
-                host.lspCoordinator().gotoDefinition(null, host.indexCoordinator()::gotoDefinitionAtCaret);
+                host.lspCoordinator().gotoDefinition(null, fallback);
             });
             if (!lsp[0]) {
-                host.indexCoordinator().gotoDefinitionAtCaret(); // false: ifLsp's "LSP is off" stays
+                fallback.getAsBoolean(); // false: ifLsp's "LSP is off" stays
             }
         }));
         host.registry()

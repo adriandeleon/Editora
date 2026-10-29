@@ -86,6 +86,8 @@ public final class PinnedVersions {
             new Pin(InstallCatalog.KOTLIN_LSP_STEP, InstallCatalog.KOTLIN_LSP_VERSION, "kotlin", null, false),
             new Pin(InstallCatalog.CLOJURE_LSP_ID, InstallCatalog.CLOJURE_LSP_VERSION, "clojure", null, false),
             new Pin(InstallCatalog.LEMMINX_STEP, InstallCatalog.LEMMINX_VERSION, "xml", null, false),
+            // one package for HTML, CSS and JSON: forServer answers all three with it (HTML review A12)
+            new Pin(InstallCatalog.WEB_LS_PACKAGE, InstallCatalog.WEB_LS_VERSION, "html", null, false),
             new Pin("shellcheck", InstallCatalog.SHELLCHECK_VERSION, null, null, true),
             new Pin("shfmt", InstallCatalog.SHFMT_VERSION, null, null, true));
 
@@ -101,8 +103,9 @@ public final class PinnedVersions {
 
     /** The pin of the server {@code serverId} Editora installs ({@code java} → jdtls), or empty. */
     public static Optional<Pin> forServer(@Nullable String serverId) {
+        String id = WebServerInstall.serves(serverId) ? "html" : serverId; // the CSS and JSON servers share its package
         return PINS.stream()
-                .filter(p -> p.serverId() != null && p.serverId().equals(serverId))
+                .filter(p -> p.serverId() != null && p.serverId().equals(id))
                 .findFirst();
     }
 
@@ -183,6 +186,7 @@ public final class PinnedVersions {
                 case "gls" -> jarVersion(location, GLS_JAR);
                 case "metals" -> jarVersion(location.resolve("lib"), METALS_JAR);
                 case "js-debug" -> jsDebugVersion(location.resolve("js-debug/src/dapDebugServer.js"));
+                case InstallCatalog.WEB_LS_PACKAGE -> WebServerInstall.installedVersion(location);
                 default -> null;
             };
         } catch (IOException | RuntimeException e) {
@@ -208,6 +212,12 @@ public final class PinnedVersions {
         };
         if (m != null) {
             return m.find() ? m.group(1) : null;
+        }
+        if (InstallCatalog.WEB_LS_PACKAGE.equals(stepId)) {
+            // what Doctor reads from the package.json beside a user's own launcher: "vscode-langservers-extracted
+            // 4.10.0"
+            String prefix = InstallCatalog.WEB_LS_PACKAGE + " ";
+            return output.startsWith(prefix) ? Versions.firstNumber(output.substring(prefix.length())) : null;
         }
         return "shfmt".equals(stepId) ? Versions.firstNumber(output) : null;
     }

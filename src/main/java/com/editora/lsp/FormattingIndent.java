@@ -17,16 +17,25 @@ import org.jspecify.annotations.Nullable;
  * already looks like what saving writes: lemminx adds the final newline only when the request asks for it. Tab
  * re-indent and on-type formatting leave them out — they touch one line while the user types.
  *
+ * <p>Two facts about the document ride along for formatters that take them as settings rather than request
+ * options — the HTML server wraps at its {@code html.format.wrapLineLength} and keeps the final newline only for
+ * {@code html.format.endWithNewline} (HTML review A3, D6): the EditorConfig {@code max_line_length} and whether the
+ * text ends with a line break. {@link #options} never sends them.
+ *
  * @param tabSize the indent width in columns (for a tab-indented file: the width a tab is shown with)
  * @param insertSpaces whether the document indents with spaces
  * @param trimTrailingWhitespace the file's {@code trim_trailing_whitespace}; null when unset (not sent)
  * @param insertFinalNewline the file's {@code insert_final_newline}; null when unset (not sent)
+ * @param maxLineLength the file's EditorConfig {@code max_line_length} ({@code -1} for {@code off}); null when unset
+ * @param endsWithNewline whether the document's text ends with a line break; null when unknown
  */
 public record FormattingIndent(
         int tabSize,
         boolean insertSpaces,
         @Nullable Boolean trimTrailingWhitespace,
-        @Nullable Boolean insertFinalNewline) {
+        @Nullable Boolean insertFinalNewline,
+        @Nullable Integer maxLineLength,
+        @Nullable Boolean endsWithNewline) {
 
     /** What is sent when nothing better is known. */
     static final int DEFAULT_TAB_SIZE = 4;
@@ -36,9 +45,32 @@ public record FormattingIndent(
         this(tabSize, insertSpaces, null, null);
     }
 
+    /** Indentation and save rules, with nothing known about the document's text. */
+    public FormattingIndent(
+            int tabSize,
+            boolean insertSpaces,
+            @Nullable Boolean trimTrailingWhitespace,
+            @Nullable Boolean insertFinalNewline) {
+        this(tabSize, insertSpaces, trimTrailingWhitespace, insertFinalNewline, null, null);
+    }
+
     /** This indentation with the file's save rules (each null when the file leaves it unset). */
     public FormattingIndent withSaveRules(@Nullable Boolean trim, @Nullable Boolean finalNewline) {
-        return new FormattingIndent(tabSize, insertSpaces, trim, finalNewline);
+        return new FormattingIndent(tabSize, insertSpaces, trim, finalNewline, maxLineLength, endsWithNewline);
+    }
+
+    /** This indentation with the document's EditorConfig {@code max_line_length} and its last character. */
+    public FormattingIndent withDocument(@Nullable Integer maxLength, @Nullable Boolean endsWithLineBreak) {
+        return new FormattingIndent(
+                tabSize, insertSpaces, trimTrailingWhitespace, insertFinalNewline, maxLength, endsWithLineBreak);
+    }
+
+    /**
+     * Whether a formatter that decides the final newline itself should end the text with one: the file's
+     * {@code insert_final_newline} when it sets one, else whether the text ends with one now (null: unknown).
+     */
+    public @Nullable Boolean finalNewline() {
+        return insertFinalNewline != null ? insertFinalNewline : endsWithNewline;
     }
 
     /** The request's {@code FormattingOptions}: the indentation, plus each save rule the file sets. */

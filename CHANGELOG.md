@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **HTML: links, markup checks and colour swatches** (HTML review: links).
+  - Go to Definition and Ctrl-click on an `href` or `src` open the file it names, at the element whose `id` its
+    `#fragment` names; a `#fragment` alone moves in the page, a web address goes to the browser after asking, and a
+    missing file says "File not found: missing.html" instead of "No definition found". Works with the HTML language
+    server (its document links) and without one or with LSP off (the value resolved against the page).
+  - Editora checks an HTML page's markup itself: an element that is never closed, an end tag that closes nothing,
+    and a local link whose file does not exist are marked as warnings (source "editora"). With the HTML server they
+    join its diagnostics in the Problems window; without it they show as squiggles in the page. Void elements,
+    optional end tags (`<li>`, `<p>`, `<td>` …), `<script>`/`<style>` content, comments and web addresses never
+    count. Settings → Editor → "HTML markup checks" (on) turns it off.
+  - Related File from a page offers the stylesheets and scripts it loads (`<link href>`, `<script src>`) first, and
+    from a stylesheet or script the project's pages that load it.
+  - A CSS colour in a stylesheet, a `<style>` block or a `style=""` gets a small swatch in its colour before it, from
+    the HTML and CSS servers' colour provider.
 - **Java: library sources.** A Maven library's sources are fetched as its class opens, when a repository has them.
   A library class that has none, shown decompiled (a `lib/` or system jar, an artifact only installed locally, a JDK
   without `src.zip`), says so in its tab, with **Download Sources** for one a repository may have and **Choose
@@ -89,6 +103,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   folder columns (the overview tints them too). Themes can retune it with `.project-map-probe-structure`.
 
 ### Fixed
+
+- **HTML completion and popups (HTML review: comp).**
+  - Enter and Tab accept an HTML tag, attribute or CSS property again while its documentation is showing. The docs'
+    "MDN Reference" link took those keys (Enter opened the browser, Tab moved between links). Links in the
+    completion docs, hovers, signature help and note hovers are now followed by a click only, for every language.
+  - A hover opens at its first line instead of scrolled to the link at its end.
+  - Completion docs from the HTML, CSS, Python and Java servers arrive as Markdown: links, code and the Baseline
+    badge instead of a bare "MDN Reference: https://…" line.
+  - Structure, Go to Symbol and breadcrumbs keep repeated sibling elements in an HTML page (every link of a nav, a
+    second `<script>` and its functions).
+  - In a page's `<style>` the snippets offered are CSS's, in a `<script>` JavaScript's, and inside a tag none: `col`
+    no longer preselects `<col>` above `color`, nor `<a hr` the `<hr>` snippet.
+  - Typing a closer by hand where Editora already inserted one (`<p>a</`) no longer opens a list whose Enter renamed
+    `</p>` to `</body>`.
+  - Accepting a CSS property opens the list of its values, and accepting a folder in a path the list of its files,
+    as the server asks.
+  - In an HTML start tag, typing `=` after an attribute name inserts `""` with the caret inside (with Auto-close
+    tags on); a `"` typed straight after is taken as the opening quote.
+- **HTML: Format Document keeps `<pre>`, `<code>` and `<textarea>` as written** (HTML review B2). The HTML server
+  is now sent VS Code's defaults for its settings; before, it got none, and formatting collapsed the spaces in
+  preformatted text and textarea values.
+- **HTML: Format Document keeps the final newline and wraps at the file's `max_line_length`** (A3). The file's
+  EditorConfig `insert_final_newline` decides, else the newline the file has; `max_line_length` (or `off`) sets the
+  wrap column, else Settings → LSP → HTML (120).
+- **HTML: completion no longer offers a closing tag Editora already inserted** (D3). The server is told Editora closes
+  tags itself, and told again when the auto-close setting changes.
+- **Settings → LSP → HTML** (A4): wrap column, attribute wrapping, elements whose content is kept as written,
+  quotes for completed attributes, and checking embedded scripts and styles. A project can override them with an
+  `html` object in `.editora/settings.json` (VS Code's key names). Settings schema 154 → 155.
+- **HTML Live Preview (HTML review: preview).**
+  - A video, archive or other big file next to the page no longer loads whole into Editora's memory (it could run
+    out of memory): files are streamed, with byte ranges, so `<video>` and `<audio>` play and seek (Safari too),
+    and media, PDF, CSV and web-manifest files get their real types.
+  - The preview serves the whole site: the project folder for a file in the project, else the nearest folder up
+    with an `index.html`. A page in `pages/` loads `../css/site.css` and links back to `../index.html`.
+  - Hidden files and folders (`.env`, `.git/`, `.ssh/`, `.npmrc`…) and private keys (`*.pem`, `*.key`, `id_*`) are
+    never served to the page's scripts, and a page sitting directly in Downloads, Desktop, Documents or the temp
+    folder is refused like one in the home folder.
+  - A remote (SFTP) file is never previewed, also from the HTML Preview commands.
+  - Editing or saving any file of the site reloads the page, a stylesheet without a reload; closing a file serves
+    it from disk again.
+  - Previewing a page of another folder no longer breaks the tabs already open; each site has its own address.
+  - Open preview tabs no longer tie up the server (a few tabs, or idle connections, stalled page loads), and a page
+    whose server has gone backs off and says so instead of polling hundreds of times a second.
+  - A Turkish page with many capital İ no longer fails with an error, and the reload script goes before the last
+    `</body>`, not into one in a script or comment.
+  - Other pages of the site keep their own encoding (Latin-1 no longer turns into �).
+  - The preview address changes every time the server starts; only GET and HEAD are answered, with `nosniff`.
+  - Status messages tell a server problem from a browser one, say when the chosen browser was missing and the
+    default one opened the page, and report a browser that quit at once.
+  - More browsers are offered: Chromium (no longer shown as Google Chrome), Brave, Vivaldi, Opera, Firefox
+    Developer Edition, Arc, Flatpak and Snap installs, any other Linux browser with a launcher, and per-user
+    Windows installs; a browser installed later shows up without reopening the window.
+  - Settings → Web names a remembered browser that is no longer installed ("Brave (not found)"), and Doctor's
+    Web Browsers row is translated.
+  - The open-in-browser button is a real globe, and it appears on an HTML file recognised by its modeline.
+
+- **HTML editing (HTML review: edit).**
+  - Templates open as HTML: `.html.erb`, `.erb`, `.ejs`, `.njk`, `.jinja`, `.jinja2`, `.j2`, `.twig`, `.liquid` and
+    `.mustache` files are "HTML Template", `.hbs`/`.handlebars` "Handlebars", with the HTML colours, tag auto-close and
+    rename, folding, Structure, spell checking, the HTML snippets and `<!-- -->` comments. They are not sent to the
+    HTML language server, except Handlebars, which it completes, hovers and formats. A template named after the file
+    it renders (`nginx.conf.j2`, `config.yml.erb`) is that file's language.
+  - Toggle Comment writes `/* */` in a `<style>` and `//` in a `<script>` instead of `<!-- -->`, and in PHP writes
+    `<!-- -->` in the HTML part instead of `//`; a selection that runs from the markup into a script is refused.
+  - Enter inside a `<script>` or `<style>` indents after `{`, and a typed `}` steps back to its opener.
+  - Folding without the server folds `<DIV>`…`</div>` and a `<script>` holding `a<b`.
+  - Spell checking reads `alt`, `title`, `placeholder`, `aria-label` and `aria-description` values, checks the rest of
+    a line that holds an inline `<script>`, skips `<code>`, `<kbd>`, `<samp>` and `<var>`, and a `<pre>` mentioned in a
+    comment no longer turns checking off for the rest of the file.
+  - Structure without the server labels elements as the server does (`header#hero.card`) and lists one-line headings
+    and elements with an `id`.
+  - Format Document formats HTML without the language server (Editora's own formatter, which keeps `<pre>`,
+    `<textarea>`, `<script>` and `<style>` content and your blank lines).
+  - Snippets: `!` selects `en`, `doctype` is `<!DOCTYPE html>`, `html5`'s body is indented, `link` is a stylesheet
+    link, the obsolete `big`, `command`, `keygen` and `menuitem` are gone; the New File HTML pages agree with them.
+- **HTML: install, start-up and status (HTML review, install).** Install for HTML, CSS and JSON now puts
+  vscode-langservers-extracted **4.10.0** (pinned, not npm's latest) into Editora's own folder
+  (`plugins/lsp/web` under the config folder) instead of `npm install -g`, with the link its HTML server needs to find
+  TypeScript's libraries: JavaScript in `<script>` and `on…=""` gets the DOM and standard library again (completion
+  after `document.`, parameter help, real hovers), which no npm install of the package had. A blank HTML, CSS or JSON
+  command runs that copy first, then PATH. Doctor's HTML row warns when the server in use cannot load those libraries,
+  with Update; its version is checked against the pin. Format Document no longer says "Already formatted" when the
+  request failed, timed out or was cut off by a restart: it says which. A server whose requests time out twice in a
+  row is reported as not responding (with Restart Language Servers), and as responding again once it answers. The
+  Node.js chosen in Settings now runs every npm-installed server (HTML, CSS, JSON, YAML, Bash, Pyright…), not only
+  TypeScript's, and Doctor's Node.js row counts those servers as needing it. The first HTML or CSS file asks to turn
+  on code intelligence, and the install banner says what Install runs and that it needs Node.js (before the click,
+  when npm is missing). Doctor's crash tip no longer talks about lemminx outside XML, and a server run by the user's
+  own command offers Settings…, not an Install that would change nothing. A `node …/htmlServerNodeMain.js` command is
+  shown as vscode-html-language-server, not "node". An extensionless file starting `<!doctype html` or `<html` opens
+  as HTML. A loose page of a static site without `package.json` or `.git` is served from the highest folder above it
+  holding an `index.html` (below home), so `/css/…` links resolve. HTML files keep their server up to 50,000 lines.
 
 - **XML editing (XML/pom review 3: xmlui).**
   - XML: Generate Grammar…'s two XSD choices work in untrusted folders. lemminx needed the W3C `xml.xsd`, which it

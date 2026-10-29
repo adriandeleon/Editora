@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.editora.text.HtmlElements;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -23,7 +24,6 @@ import org.jspecify.annotations.Nullable;
  */
 public final class HtmlToMarkdown {
 
-    private static final Set<String> VOID = Set.of("br", "img", "hr", "meta", "link", "input", "col", "wbr", "source");
     private static final Set<String> SKIPPED = Set.of("head", "style", "script", "title", "template", "noscript");
     private static final Set<String> BLOCKS = Set.of(
             "p",
@@ -258,7 +258,7 @@ public final class HtmlToMarkdown {
             }
             Node node = new Node(name, attrs);
             stack.get(stack.size() - 1).children.add(node);
-            if (!VOID.contains(name) && !tag.endsWith("/")) {
+            if (!HtmlElements.VOID.contains(name) && !tag.endsWith("/")) {
                 stack.add(node);
             }
         }

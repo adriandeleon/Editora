@@ -113,8 +113,37 @@ class SpellModeTest {
                 + "raw blokk\n" // 10
                 + "</pre>\n" // 11
                 + "<prefix>not pre</prefix> <stylesheet>\n"; // 12
-        assertEquals(bits(1, 2, 3, 4, 5, 6, 8, 9, 10, 11), codeLines(SpellMode.HTML, page));
-        assertEquals(bits(0, 1, 2), codeLines(SpellMode.HTML, "<script>\nnever closed\n"), "runs to the end");
+        // Whole lines only where the code covers them; the tag lines are skipped by column (HTML review C13).
+        assertEquals(bits(2, 5, 10), codeLines(SpellMode.HTML, page));
+        assertEquals(bits(1), codeLines(SpellMode.HTML, "<script>\nnever closed\n"), "runs to the end");
+        SpellMode.Skips skips = SpellMode.HTML.skips(page);
+        assertTrue(skips.skips(8, "<script>".length()), "inline() is code");
+        assertFalse(skips.skips(6, "</script><p>".length()), "\"after\" is prose");
+        assertFalse(skips.skips(12, 1), "<prefix> is not <pre>");
+    }
+
+    @Test
+    void htmlSkipsByColumnReadsVisibleAttributesAndIgnoresTagsInComments() {
+        String page = "<p>Use <script src=\"a.js\"></script> then reed this sentense</p>\n" // 0
+                + "<!-- TODO: drop the <pre> wrapper later -->\n" // 1
+                + "<p>Speling <code>cnst</code> <img alt=\"lgo\" title='Clik here' src=\"x.png\"></p>\n" // 2
+                + "<input\n  placeholder=\"Serch\">\n"; // 3, 4
+        SpellMode.Skips skips = SpellMode.HTML.skips(page);
+        String[] lines = page.split("\n", -1);
+        assertFalse(skips.skips(0, lines[0].indexOf("reed")), "prose after an inline script on its line");
+        assertFalse(skips.skips(2, lines[2].indexOf("Speling")), "a <pre> in a comment opens nothing (E20)");
+        assertTrue(skips.skips(2, lines[2].indexOf("cnst")), "<code> content");
+        assertTrue(skips.reads(2, lines[2].indexOf("lgo")), "alt is read");
+        assertTrue(skips.reads(2, lines[2].indexOf("Clik")), "title is read");
+        assertFalse(skips.reads(2, lines[2].indexOf("x.png")), "src is not");
+        assertTrue(skips.reads(4, lines[4].indexOf("Serch")), "an attribute on a tag's second line");
+        // The value becomes words of its own: name, '=' and quotes are blanked.
+        String prose = SpellMode.HTML.prose(lines[2]);
+        assertEquals(lines[2].length(), prose.length());
+        assertTrue(prose.contains(" lgo "), prose);
+        assertTrue(prose.contains(" Clik here "), prose);
+        assertTrue(prose.contains("src=\"x.png\""), "other attributes are left alone: " + prose);
+        assertEquals(SpellMode.HTML, SpellMode.forLanguage("html-template"));
     }
 
     @Test

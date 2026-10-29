@@ -171,6 +171,120 @@ class LspCompletionFlowFxTest {
                 "a method lands with its parentheses");
     }
 
+    /**
+     * The HTML and CSS servers end nearly every item's documentation with an MDN link. A link was a Tab stop, and a
+     * popup takes its owner window's keys first, so Enter followed the link (opening the browser) and Tab moved
+     * between links: no tag, attribute or property could be accepted from the keyboard (HTML review B1/C1).
+     */
+    @Test
+    void enterAndTabAcceptAnItemWhoseDocumentationEndsInALink() throws Exception {
+        for (KeyCode key : List.of(KeyCode.ENTER, KeyCode.TAB)) {
+            EditorBuffer b = lspBuffer(
+                    "<bu",
+                    List.of(Completion.lsp(
+                            "button", "button", null, null, CompletionIconKind.OTHER, null, false, false, "button")));
+            List<String> opened = new CopyOnWriteArrayList<>();
+            EditorFx.onFx(() -> {
+                b.setOpenUrlHandler(opened::add);
+                b.setCompletionDocEnabled(true);
+                b.setCompletionDocResolver((token, answer) -> answer.accept("The button element.\n\n"
+                        + "[MDN Reference](https://developer.mozilla.org/docs/Web/HTML/Reference/Elements/button)"));
+            });
+            open(b);
+            BufferCompletion c = completion(b);
+            await("the documentation popup", () -> c.docPopup().isShowing());
+            assertEquals(
+                    null,
+                    EditorFx.callFx(() -> ((javafx.stage.Popup) EditorFx.field(c.docPopup(), "popup"))
+                            .getScene()
+                            .getFocusOwner()),
+                    "nothing in the documentation takes the keyboard");
+
+            EditorFx.onFx(() -> b.getArea().fireEvent(EditorFx.pressed(key, false, false)));
+            await(key + " to accept", () -> !c.completionPopupShowing());
+            assertEquals("<button", EditorFx.callFx(() -> b.getArea().getText()), key + " accepts the item");
+            assertEquals(List.of(), opened, key + " opens no link");
+        }
+    }
+
+    /**
+     * An HTML page's local snippets are those of the language at the caret: CSS's in a {@code <style>}, none in a
+     * start tag — the {@code col} and {@code hr} element snippets were preselected there (HTML review B5/C4).
+     */
+    @Test
+    void anHtmlPageAsksForTheSnippetsOfTheLanguageAtTheCaret() throws Exception {
+        for (String[] probe : new String[][] {
+            {"<style>\np { col", "css"}, {"<script>\n  var", "javascript"}, {"<a hr", "none"}, {"<p>\n  hr", "html"}
+        }) {
+            List<String> asked = new CopyOnWriteArrayList<>();
+            EditorBuffer b = lspBuffer(probe[0], List.of(Completion.lsp("zzz", "zzz", null)));
+            EditorFx.onFx(() -> {
+                b.setLanguageOverride("html");
+                b.setAutocomplete(true, true, true, true);
+                b.setCompletionProvider((lang, dict, prefix, wide, prose) -> {
+                    asked.add(lang);
+                    return List.of();
+                });
+                b.triggerCompletion();
+            });
+            EditorFx.drain();
+            assertEquals(probe[1].equals("none") ? List.of() : List.of(probe[1]), asked, probe[0]);
+        }
+    }
+
+    /**
+     * A closer typed by hand joins the one Editora inserted ({@code <p>a</|p>}). The server, asked there, offers the
+     * next open ancestor, and the Enter that followed renamed {@code </p>} to {@code </body>} (HTML review C6): no
+     * list opens in a whole end tag, and the rest of the name steps over the closer.
+     */
+    @Test
+    void noListOpensWhereAHandTypedCloserJoinsTheOneThere() throws Exception {
+        EditorBuffer b = lspBuffer("<body>\n<p>a</p>\n</body>", List.of(Completion.lsp("/body", "/body>", null)));
+        CodeArea a = EditorFx.callFx(b::getArea);
+        EditorFx.onFx(() -> {
+            b.setLanguageOverride("html");
+            b.setLspTriggerChars(Set.of('<', '/'));
+            b.setAutoCloseTags(true);
+            a.moveTo("<body>\n<p>a".length());
+            a.fireEvent(EditorFx.typed("<"));
+            a.fireEvent(EditorFx.typed("/"));
+        });
+        assertEquals("<body>\n<p>a</p>\n</body>", EditorFx.callFx(a::getText), "precondition: the closer joined");
+        Thread.sleep(700); // past the typing pause
+        EditorFx.drain();
+        assertFalse(EditorFx.callFx(() -> completion(b).completionPopupShowing()), "no list in a whole end tag");
+        EditorFx.onFx(() -> {
+            a.fireEvent(EditorFx.typed("p"));
+            a.fireEvent(EditorFx.typed(">"));
+        });
+        assertEquals("<body>\n<p>a</p>\n</body>", EditorFx.callFx(a::getText), "the closer is typed over, once");
+        assertEquals("<body>\n<p>a</p>".length(), EditorFx.callFx(a::getCaretPosition));
+    }
+
+    /**
+     * The CSS server's property item inserts {@code color: } and asks for the list again, for the values; the
+     * command was dropped and the second step never came (HTML review B7).
+     */
+    @Test
+    void anItemThatAsksForTheListAgainOpensItOnceAccepted() throws Exception {
+        List<String> prefixes = new CopyOnWriteArrayList<>();
+        Completion color = Completion.lsp("color", "color: ", null)
+                .withProtocol(
+                        new Completion.Protocol("color", null, List.of(), 0, Completion.Protocol.TRIGGER_SUGGEST));
+        EditorBuffer b = lspBuffer("a { colo", List.of(color));
+        EditorFx.onFx(() -> b.setLspCompletionProvider((position, answer) -> {
+            prefixes.add(b.getArea().getText());
+            answer.accept(prefixes.size() == 1 ? List.of(color) : List.of(Completion.lsp("red", "red", null)));
+        }));
+        open(b);
+        EditorFx.onFx(() -> b.getArea().fireEvent(EditorFx.pressed(KeyCode.ENTER, false, false)));
+        await("the list of values", () -> prefixes.size() == 2 && completion(b).completionPopupShowing());
+        assertEquals("a { color: ", EditorFx.callFx(() -> b.getArea().getText()));
+        assertEquals(
+                "red",
+                EditorFx.callFx(() -> completion(b).completionPopup().selected().label()));
+    }
+
     @Test
     void typingAPrefixNoItemMatchesClosesTheList() throws Exception {
         EditorBuffer b = lspBuffer("out.pr", List.of(Completion.lsp("println", "println", "void println()")));

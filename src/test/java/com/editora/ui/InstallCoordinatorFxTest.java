@@ -404,6 +404,80 @@ class InstallCoordinatorFxTest {
         }
     }
 
+    /**
+     * HTML review A2/A12: Install for HTML runs npm into Editora's own prefix at the pinned version (never
+     * {@code npm -g}), even where a global copy is found, and links TypeScript's libraries where the package's HTML
+     * server looks for them; the receipt names the pin. npm is faked: it lays out what it would have installed.
+     */
+    @Test
+    void theHtmlServerInstallsPinnedIntoItsOwnPrefixWithTheTypeScriptLink() throws Exception {
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, "html-prefix");
+            rig.window.lsp.add("html"); // a global vscode-langservers-extracted is on PATH, without the libraries
+            List<List<String>> ran = new java.util.concurrent.CopyOnWriteArrayList<>();
+            InstallTestAccess.packageManagers(
+                    rig.service, Set.of(InstallCatalog.Prereq.NPM), () -> "v24.18.1", argv -> {
+                        ran.add(argv);
+                        try {
+                            InstallTestAccess.webServersLayout(Path.of(argv.get(3)), true);
+                        } catch (Exception e) {
+                            return new ProcessRunner.Result(1, "", e.toString());
+                        }
+                        return new ProcessRunner.Result(0, "", "");
+                    });
+
+            rig.installServer("html");
+            settleUntilReported(rig);
+
+            assertEquals(List.of(true), rig.outcomes, String.valueOf(rig.alerts));
+            Path prefix = rig.dir(com.editora.install.WebServerInstall.DEST);
+            assertEquals(
+                    List.of(InstallCatalog.npmInstallPrefixArgv(
+                            prefix, List.of("vscode-langservers-extracted@" + InstallCatalog.WEB_LS_VERSION))),
+                    ran,
+                    "no -g: the user's global npm folder is not touched");
+            Path launcher = com.editora.install.WebServerInstall.ownLauncher(rig.window.configDir, "html");
+            assertTrue(launcher != null, "the launcher a blank command now runs");
+            assertFalse(com.editora.install.WebServerInstall.typeScriptLibsMissing(
+                    prefix.resolve("node_modules/vscode-langservers-extracted/bin/vscode-html-language-server")));
+            var receipt = com.editora.install.InstallReceipt.read(prefix);
+            assertEquals(InstallCatalog.WEB_LS_VERSION, receipt == null ? null : receipt.version());
+        }
+    }
+
+    /** npm installed the package without TypeScript: the install fails and says why, not "installed". */
+    @Test
+    void anHtmlInstallWithoutTypeScriptFailsAndSaysWhy() throws Exception {
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, "html-no-ts");
+            rig.window.lsp.add("html");
+            InstallTestAccess.packageManagers(
+                    rig.service, Set.of(InstallCatalog.Prereq.NPM), () -> "v24.18.1", argv -> {
+                        try {
+                            Path prefix = Path.of(argv.get(3));
+                            InstallTestAccess.webServersLayout(prefix, true);
+                            try (var files = java.nio.file.Files.walk(prefix.resolve("node_modules/typescript"))) {
+                                for (Path f : files.sorted(java.util.Comparator.reverseOrder())
+                                        .toList()) {
+                                    java.nio.file.Files.delete(f);
+                                }
+                            }
+                        } catch (Exception e) {
+                            return new ProcessRunner.Result(1, "", e.toString());
+                        }
+                        return new ProcessRunner.Result(0, "", "");
+                    });
+
+            rig.installServer("html");
+            settleUntilReported(rig);
+
+            assertEquals(List.of(false), rig.outcomes, String.valueOf(rig.alerts));
+            assertTrue(
+                    String.valueOf(rig.alerts).contains("TypeScript"),
+                    "the failure names the missing libraries: " + rig.alerts);
+        }
+    }
+
     @Test
     void aServerThatIsAlreadyThereIsNotDownloadedAgain() throws Exception {
         try (AsyncTestScope scope = new AsyncTestScope()) {

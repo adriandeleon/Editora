@@ -1,5 +1,7 @@
 package com.editora.lsp;
 
+import java.util.List;
+
 import org.eclipse.lsp4j.ClientCapabilities;
 import org.eclipse.lsp4j.ResourceOperationKind;
 import org.junit.jupiter.api.Test;
@@ -90,6 +92,10 @@ class ClientCapabilitiesTest {
                 resolve.getProperties().contains("documentation"),
                 "jdtls computes an item's Javadoc in resolve only when documentation is listed (Java review A1)");
         assertFalse(resolve.getProperties().contains("detail"), "detail stays eager: the rows' type column");
+        assertEquals(
+                List.of("markdown", "plaintext"),
+                item.getDocumentationFormat(),
+                "the HTML/CSS servers send plain-text docs (a raw MDN URL) to a client that does not list markdown");
     }
 
     // --- the features whose absence is invisible ----------------------------------------------------
@@ -98,6 +104,8 @@ class ClientCapabilitiesTest {
     void theOptInFeatureCapabilitiesAreAllDeclared() {
         var td = CAPS.getTextDocument();
         assertNotNull(td.getInlayHint(), "inlay hints (#681)");
+        assertNotNull(td.getColorProvider(), "colour swatches (HTML review D9)");
+        assertNotNull(td.getDocumentLink(), "document links: XML, and HTML href/src (HTML review B6)");
         assertNotNull(td.getDocumentHighlight(), "occurrences (#675)");
         assertNotNull(td.getCallHierarchy(), "call hierarchy (#682)");
         assertNotNull(td.getTypeHierarchy(), "type hierarchy (#682)");

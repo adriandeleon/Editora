@@ -355,14 +355,63 @@ final class LanguageServerSession implements LanguageClient {
                         timer.get().cancel(false);
                     }
                 } else {
+                    if (owner != null) {
+                        owner.requestTimedOut(); // before the cancel: whoever sees it done sees it counted
+                    }
                     request.cancel(true);
                 }
             }
         };
         timer.set(REQUEST_TIMER.schedule(
                 expire, Math.max(1, timeout.toMillis()), java.util.concurrent.TimeUnit.MILLISECONDS));
-        request.whenComplete((result, error) -> timer.get().cancel(false));
+        request.whenComplete((result, error) -> {
+            timer.get().cancel(false);
+            if (owner != null
+                    && !(error instanceof java.util.concurrent.CancellationException)
+                    && !(error instanceof IllegalStateException)) {
+                owner.requestAnswered(); // an answer, an error answer included: the server is responding
+            }
+        });
         return request;
+    }
+
+    /** Requests in a row that ran out of time; an answer resets it. */
+    private final java.util.concurrent.atomic.AtomicInteger timeoutsInARow =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** Whether "not responding" has been said and not yet taken back. */
+    private final java.util.concurrent.atomic.AtomicBoolean saidNotResponding =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** How many requests in a row must time out before the server is called not responding. */
+    static final int NOT_RESPONDING_AFTER = 2;
+
+    /**
+     * A request ran out of time. The second in a row with no answer between says, once, that the server is not
+     * responding and that Restart Language Servers brings it back: a hung server used to leave every request waiting
+     * 30 s while the status still read "Loaded and ready" (HTML review A11).
+     */
+    void requestTimedOut() {
+        if (timeoutsInARow.incrementAndGet() >= NOT_RESPONDING_AFTER
+                && !disposed
+                && saidNotResponding.compareAndSet(false, true)) {
+            LOG.warning(
+                    () -> serverId + " is not responding: " + NOT_RESPONDING_AFTER + " requests in a row timed out");
+            onStatus.accept("Message", com.editora.i18n.Messages.tr("lsp.status.notResponding"));
+        }
+    }
+
+    /** The server answered a request: a "not responding" said before is taken back. */
+    void requestAnswered() {
+        timeoutsInARow.set(0);
+        if (saidNotResponding.compareAndSet(true, false) && !disposed) {
+            onStatus.accept("Message", com.editora.i18n.Messages.tr("lsp.status.respondingAgain"));
+        }
+    }
+
+    /** Whether this session has been reported as not responding (Doctor, tests). */
+    boolean notResponding() {
+        return saidNotResponding.get();
     }
 
     /**
@@ -924,6 +973,9 @@ final class LanguageServerSession implements LanguageClient {
         completionItem.setResolveSupport(new org.eclipse.lsp4j.CompletionItemResolveSupportCapabilities(
                 java.util.List.of("additionalTextEdits", "documentation")));
         completionItem.setPreselectSupport(true);
+        // The doc popup renders Markdown. Without this the HTML and CSS servers (and jdtls, Pyright) send their
+        // docs as plain text: a bare "MDN Reference: https://…" line instead of a link (HTML review D7).
+        completionItem.setDocumentationFormat(List.of("markdown", "plaintext"));
         completionItem.setDeprecatedSupport(true);
         completionItem.setInsertReplaceSupport(true);
         completionItem.setCommitCharactersSupport(true);
@@ -1035,6 +1087,8 @@ final class LanguageServerSession implements LanguageClient {
         // Document links (XML review B5): lemminx names the schema a schemaLocation, DOCTYPE or xml-model refers
         // to; Go to Definition falls back to them for XML. Requested only where that fallback asks.
         td.setDocumentLink(new org.eclipse.lsp4j.DocumentLinkCapabilities(false, false));
+        // Colours (HTML review D9): the HTML and CSS servers name each colour literal; the editor draws a swatch.
+        td.setColorProvider(new org.eclipse.lsp4j.ColorProviderCapabilities(false));
         td.setFormatting(new org.eclipse.lsp4j.FormattingCapabilities(true));
         td.setRangeFormatting(new org.eclipse.lsp4j.RangeFormattingCapabilities(true));
         td.setOnTypeFormatting(new org.eclipse.lsp4j.OnTypeFormattingCapabilities(true));
@@ -1279,6 +1333,9 @@ final class LanguageServerSession implements LanguageClient {
         if (xml != null && XmlServerSettings.isLemminx(serverId)) {
             settings = Map.of(XmlServerSettings.SECTION, xml); // lemminx's own; for a pom, with lemminx-maven's
         }
+        if (HtmlServerSettings.SERVER_ID.equals(serverId)) {
+            settings = htmlSettings.push(); // VS Code's defaults and the user's; the server re-asks per document
+        }
         if (settings == null) {
             return;
         }
@@ -1400,6 +1457,27 @@ final class LanguageServerSession implements LanguageClient {
     /** The {@code xml} object this session was last given (null: none). */
     java.util.@Nullable Map<String, Object> xmlSettings() {
         return xmlSettings;
+    }
+
+    /** The HTML server's settings for this session's root ({@link HtmlServerSettings}). */
+    private volatile HtmlServerSettings htmlSettings = HtmlServerSettings.defaults();
+
+    /**
+     * Sets the HTML server's settings; a running HTML server gets them pushed when they changed, which makes it drop
+     * every document's cached answer and ask again (HTML review B2, D3: the auto-close switch takes effect at once).
+     */
+    void setHtmlSettings(@Nullable HtmlServerSettings settings) {
+        HtmlServerSettings next = settings == null ? HtmlServerSettings.defaults() : settings;
+        boolean changed = !next.equals(htmlSettings);
+        htmlSettings = next;
+        if (changed && HtmlServerSettings.SERVER_ID.equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
+    /** The HTML server's settings this session was last given (the defaults until then). */
+    HtmlServerSettings htmlSettings() {
+        return htmlSettings;
     }
 
     /** typescript-language-server's {@code javascript}/{@code typescript} settings (null: none to send). */
@@ -2394,10 +2472,10 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         DocumentFormattingParams params = new DocumentFormattingParams(doc(uri), options);
-        return bounded(server().getTextDocumentService().formatting(params)).exceptionally(t -> List.of());
+        return bounded(server().getTextDocumentService().formatting(params)); // a failure is not "no edits" (A5)
     }
 
-    /** Range formatting ({@code textDocument/rangeFormatting}) over {@code range} → the edits, or empty. */
+    /** Range formatting ({@code textDocument/rangeFormatting}) over {@code range} → the edits; fails as the request does. */
     CompletableFuture<List<? extends TextEdit>> rangeFormatting(
             String uri, org.eclipse.lsp4j.Range range, FormattingOptions options) {
         if (!ready()) {
@@ -2405,8 +2483,7 @@ final class LanguageServerSession implements LanguageClient {
         }
         org.eclipse.lsp4j.DocumentRangeFormattingParams params =
                 new org.eclipse.lsp4j.DocumentRangeFormattingParams(doc(uri), options, range);
-        return bounded(server().getTextDocumentService().rangeFormatting(params))
-                .exceptionally(t -> List.of());
+        return bounded(server().getTextDocumentService().rangeFormatting(params));
     }
 
     /** Resolves a completion item ({@code completionItem/resolve}) to fill in its {@code additionalTextEdits}
@@ -2556,6 +2633,20 @@ final class LanguageServerSession implements LanguageClient {
         return cancelling(
                 request,
                 request.<List<org.eclipse.lsp4j.FoldingRange>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                        .exceptionally(t -> List.of()));
+    }
+
+    /** The document's colour literals ({@code textDocument/documentColor}, HTML review D9); empty when unsupported. */
+    CompletableFuture<List<org.eclipse.lsp4j.ColorInformation>> documentColor(String uri) {
+        ServerCapabilities c = capabilities;
+        if (!ready() || c == null || c.getColorProvider() == null) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        var request = bounded(
+                server().getTextDocumentService().documentColor(new org.eclipse.lsp4j.DocumentColorParams(doc(uri))));
+        return cancelling(
+                request,
+                request.<List<org.eclipse.lsp4j.ColorInformation>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                         .exceptionally(t -> List.of()));
     }
 
@@ -3150,9 +3241,9 @@ final class LanguageServerSession implements LanguageClient {
 
     /**
      * Answers {@code workspace/configuration} per server and section from {@link LspServerSettings}: Pyright's
-     * {@code python} / {@code python.analysis} objects, bash-language-server's {@code bashIde} section, and an
-     * empty object for the CSS and HTML servers' own sections (they throw on {@code null}). Any other section
-     * returns null so the server keeps its own default.
+     * {@code python} / {@code python.analysis} objects, bash-language-server's {@code bashIde} section, an empty
+     * object for the CSS server's own sections (it throws on {@code null}), and the HTML server's from
+     * {@link HtmlServerSettings}. Any other section returns null so the server keeps its own default.
      */
     @Override
     public CompletableFuture<List<Object>> configuration(org.eclipse.lsp4j.ConfigurationParams params) {
@@ -3172,6 +3263,9 @@ final class LanguageServerSession implements LanguageClient {
 
     /** A non-TypeScript server's answer for one {@code workspace/configuration} item. */
     private @Nullable Object answerFor(org.eclipse.lsp4j.ConfigurationItem item) {
+        if (HtmlServerSettings.SERVER_ID.equals(serverId)) { // per document: its wrap column and final newline
+            return htmlSettings.answer(item.getSection(), indentForUri(item.getScopeUri()));
+        }
         Object answer = LspServerSettings.answer(serverId, item.getSection(), effectiveBashIde(), pythonPath);
         if (answer == null && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && item.getScopeUri() != null) {
             answer = LspServerSettings.javaFormatAnswer(item.getSection(), indentForUri(item.getScopeUri()));
@@ -3412,6 +3506,11 @@ final class LanguageServerSession implements LanguageClient {
             LOG.fine(() -> "[" + serverId + "] " + firstLine(message.getMessage()));
             return;
         }
+        if (com.editora.install.WebServerInstall.unableToLoadLibrary(message.getMessage()) && !saidNoTsLibs) {
+            // a Log-level line, which the Debug Log never showed: <script> gets no DOM or standard library (HTML A2)
+            saidNoTsLibs = true;
+            LOG.warning("[" + serverId + "] " + message.getMessage() + " (Doctor's HTML row says how to fix it)");
+        }
         if (type == org.eclipse.lsp4j.MessageType.Error && importError(message.getMessage())) {
             lastErrorLog = firstLine(message.getMessage());
         }
@@ -3428,6 +3527,9 @@ final class LanguageServerSession implements LanguageClient {
             LOG.fine(message.getMessage());
         }
     }
+
+    /** Whether the HTML server's "Unable to load library" has been put in the Debug Log (once per session). */
+    private volatile boolean saidNoTsLibs;
 
     /** The first line of the last error this server logged: a failed Gradle import's reason is only there. */
     private volatile @Nullable String lastErrorLog;

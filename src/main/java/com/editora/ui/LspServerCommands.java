@@ -98,6 +98,39 @@ final class LspServerCommands {
         };
     }
 
+    /** Sets {@code serverId}'s per-server enable toggle in {@code s} — the mirror of the window's enable read. */
+    static void setServerEnabled(com.editora.config.Settings s, String serverId, boolean on) {
+        switch (serverId) {
+            case "typescript" -> s.setTypescriptLspEnabled(on);
+            case "python" -> s.setPythonLspEnabled(on);
+            case "xml" -> s.setXmlLspEnabled(on);
+            case "json" -> s.setJsonLspEnabled(on);
+            case "bash" -> s.setBashLspEnabled(on);
+            case "yaml" -> s.setYamlLspEnabled(on);
+            case "go" -> s.setGoLspEnabled(on);
+            case "rust" -> s.setRustLspEnabled(on);
+            case "php" -> s.setPhpLspEnabled(on);
+            case "ruby" -> s.setRubyLspEnabled(on);
+            case "clangd" -> s.setClangdLspEnabled(on);
+            case "html" -> s.setHtmlLspEnabled(on);
+            case "css" -> s.setCssLspEnabled(on);
+            case "kotlin" -> s.setKotlinLspEnabled(on);
+            case "groovy" -> s.setGroovyLspEnabled(on);
+            case "scala" -> s.setScalaLspEnabled(on);
+            case "clojure" -> s.setClojureLspEnabled(on);
+            case "lua" -> s.setLuaLspEnabled(on);
+            case "dockerfile" -> s.setDockerfileLspEnabled(on);
+            case "sql" -> s.setSqlLspEnabled(on);
+            case "terraform" -> s.setTerraformLspEnabled(on);
+            case "toml" -> s.setTomlLspEnabled(on);
+            case "csharp" -> s.setCsharpLspEnabled(on);
+            case "typst" -> s.setTypstLspEnabled(on);
+            case "astro" -> s.setAstroLspEnabled(on);
+            case "maven-pom" -> s.setMavenPomLspEnabled(on);
+            default -> s.setJavaLspEnabled(on);
+        }
+    }
+
     /** Known server ids in Settings-page order (read by the Doctor screen's check catalog). */
     static java.util.List<String> serverIds() {
         return java.util.List.of(SERVER_IDS);

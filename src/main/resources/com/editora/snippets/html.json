@@ -3,14 +3,14 @@
         "prefix": "!",
         "body": [
             "<!DOCTYPE html>",
-            "<html lang=\"$1en\">",
+            "<html lang=\"${1:en}\">",
             "<head>",
             "\t<meta charset=\"UTF-8\">",
             "\t<meta name=\"viewport\" content=\"width=${2:device-width}, initial-scale=${3:1.0}\">",
-            "\t<title>${5:Document}</title>",
+            "\t<title>${4:Document}</title>",
             "</head>",
             "<body>",
-            "\t${6}",
+            "\t$0",
             "</body>",
             "</html>"
         ],
@@ -19,7 +19,7 @@
     },
     "doctype": {
         "prefix": "doctype",
-        "body": ["<!DOCTYPE>", "$1"],
+        "body": ["<!DOCTYPE html>", "$0"],
         "description": "HTML - Defines the document type",
         "scope": "text.html"
     },
@@ -37,7 +37,7 @@
     },
     "address": {
         "prefix": "address",
-        "body": ["<address>", "$1", "</address>"],
+        "body": ["<address>", "\t$1", "</address>"],
         "description": "HTML - Defines an address element",
         "scope": "text.html"
     },
@@ -85,14 +85,8 @@
     },
     "bdo": {
         "prefix": "bdo",
-        "body": ["<bdo dir=\"$1\">", "$2", "</bdo>"],
+        "body": ["<bdo dir=\"$1\">", "\t$2", "</bdo>"],
         "description": "HTML - Defines the direction of text display",
-        "scope": "text.html"
-    },
-    "big": {
-        "prefix": "big",
-        "body": "<big>$1</big>$2",
-        "description": "HTML - Used to make text bigger",
         "scope": "text.html"
     },
     "blockquote": {
@@ -153,12 +147,6 @@
         "prefix": "colgroup",
         "body": ["<colgroup>", "\t$1", "</colgroup>"],
         "description": "HTML - Defines group of table columns",
-        "scope": "text.html"
-    },
-    "command": {
-        "prefix": "command",
-        "body": "<command>$1</command>$2",
-        "description": "HTML - Defines a command button [not supported]",
         "scope": "text.html"
     },
     "datalist": {
@@ -335,7 +323,7 @@
             "\t\t<link href=\"${3:css/style.css}\" rel=\"stylesheet\">",
             "\t</head>",
             "\t<body>",
-            "\t$0",
+            "\t\t$0",
             "\t</body>",
             "</html>"
         ],
@@ -372,12 +360,6 @@
         "description": "HTML - Defines inserted text",
         "scope": "text.html"
     },
-    "keygen": {
-        "prefix": "keygen",
-        "body": "<keygen name=\"$1\">$2",
-        "description": "HTML - Defines a generated key in a form",
-        "scope": "text.html"
-    },
     "kbd": {
         "prefix": "kbd",
         "body": "<kbd>$1</kbd>$2",
@@ -404,7 +386,7 @@
     },
     "link": {
         "prefix": "link",
-        "body": "<link rel=\"$1\" type=\"$2\" href=\"$3\">$4",
+        "body": "<link rel=\"${1:stylesheet}\" href=\"$2\">$0",
         "description": "HTML - Defines a resource reference",
         "scope": "text.html"
     },
@@ -432,12 +414,6 @@
         "description": "HTML - Defines a menu list",
         "scope": "text.html"
     },
-    "menuitem": {
-        "prefix": "menuitem",
-        "body": "<menuitem>$1</menuitem>$2",
-        "description": "HTML - Defines a menu item [firefox only]",
-        "scope": "text.html"
-    },
     "meta": {
         "prefix": "meta",
         "body": "<meta name=\"$1\" content=\"$2\">$3",
@@ -458,7 +434,7 @@
     },
     "noscript": {
         "prefix": "noscript",
-        "body": ["<noscript>", "$1", "</noscript>"],
+        "body": ["<noscript>", "\t$1", "</noscript>"],
         "description": "HTML - Defines a noscript section",
         "scope": "text.html"
     },
@@ -536,7 +512,7 @@
     },
     "ruby": {
         "prefix": "ruby",
-        "body": ["<ruby>", "$1", "</ruby>"],
+        "body": ["<ruby>", "\t$1", "</ruby>"],
         "description": "HTML - Defines ruby annotations",
         "scope": "text.html"
     },
@@ -596,7 +572,7 @@
     },
     "style": {
         "prefix": "style",
-        "body": ["<style>", "$1", "</style>"],
+        "body": ["<style>", "\t$1", "</style>"],
         "description": "HTML - Defines a style definition",
         "scope": "text.html"
     },
@@ -650,7 +626,7 @@
     },
     "thead": {
         "prefix": "thead",
-        "body": ["<thead>", "$1", "</thead>"],
+        "body": ["<thead>", "\t$1", "</thead>"],
         "description": "HTML - Defines a table head",
         "scope": "text.html"
     },

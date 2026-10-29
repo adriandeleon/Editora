@@ -331,6 +331,7 @@ public class SettingsWindow {
     private CheckBox autoRenameTagCheck;
     private CheckBox autoFillCheck;
     private CheckBox autoCloseTagsCheck;
+    private CheckBox htmlMarkupChecksCheck;
     private CheckBox todoHighlightCheck;
     private @Nullable TodoSettingsPane todoSettings;
     private @Nullable VBox markdownLintRulesBox;
@@ -420,6 +421,7 @@ public class SettingsWindow {
     private final ComboBox<String> htmlBrowserCombo = new ComboBox<>();
 
     private final Map<String, String> htmlBrowserNames = new java.util.HashMap<>();
+    private boolean htmlBrowsersDetected; // until then a stored id is not "missing", just not looked up yet
     private final ToolStatusRow httpNodeStatus = new ToolStatusRow("node");
     private CheckBox mcpCheck;
     private CheckBox aiMasterCheck;
@@ -1517,6 +1519,7 @@ public class SettingsWindow {
         autoRenameTagCheck = viewCheck(tr("settings.autoRenameTag"), Settings::setAutoRenameTag);
         autoFillCheck = viewCheck(tr("settings.autoFill"), Settings::setAutoFill);
         autoCloseTagsCheck = viewCheck(tr("settings.autoCloseTags"), Settings::setAutoCloseTags);
+        htmlMarkupChecksCheck = viewCheck(tr("settings.htmlMarkupChecks"), Settings::setHtmlMarkupChecks);
         todoHighlightCheck = viewCheck(tr("settings.todoHighlight"), Settings::setTodoHighlight);
         multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
         copyLineNoSelectionCheck =
@@ -2989,6 +2992,12 @@ public class SettingsWindow {
         checkRow(
                 editing,
                 Category.EDITOR,
+                htmlMarkupChecksCheck,
+                tr("settings.htmlMarkupChecks.note"),
+                "html markup check validation unclosed element stray end tag broken link missing file lint");
+        checkRow(
+                editing,
+                Category.EDITOR,
                 autoFillCheck,
                 tr("settings.autoFill.desc"),
                 "auto fill mode break wrap prose lines fill column emacs");
@@ -4376,7 +4385,7 @@ public class SettingsWindow {
         htmlBrowserCombo.setConverter(new StringConverter<>() {
             @Override
             public String toString(String id) {
-                return id == null ? "" : htmlBrowserNames.getOrDefault(id, id);
+                return id == null ? "" : browserComboLabel(id, htmlBrowserNames, htmlBrowsersDetected);
             }
 
             @Override
@@ -4400,17 +4409,15 @@ public class SettingsWindow {
         Thread.ofVirtual().name("settings-browsers").start(() -> {
             List<com.editora.web.Browsers.Browser> found = com.editora.web.Browsers.detect(); // file probes
             javafx.application.Platform.runLater(() -> {
-                found.forEach(b -> htmlBrowserNames.put(
-                        b.id(),
-                        com.editora.web.Browsers.SYSTEM_DEFAULT.equals(b.id())
-                                ? tr("htmlPreview.systemDefault")
-                                : b.displayName()));
+                found.forEach(b -> htmlBrowserNames.put(b.id(), HtmlPreviewCoordinator.label(b)));
+                htmlBrowsersDetected = true;
                 boolean prev = loading;
                 loading = true;
                 try {
                     htmlBrowserCombo
                             .getItems()
                             .setAll(found.stream().map(b -> b.id()).toList());
+                    htmlBrowserCombo.setValue(null); // re-label a stored id that detection did not find
                     syncHtmlBrowser();
                 } finally {
                     loading = prev;
@@ -5179,6 +5186,18 @@ public class SettingsWindow {
                 tr("settings.search.gitignore.desc"),
                 "search exclude gitignore ignored target node_modules build dist folders files");
         return p;
+    }
+
+    /**
+     * The "Open the preview in" label for a browser id: its detected name, else (once detection has run) the known
+     * name marked as not found — a remembered browser that was uninstalled, never a raw id like {@code brave}.
+     */
+    static String browserComboLabel(String id, Map<String, String> detectedNames, boolean detected) {
+        String name = detectedNames.get(id);
+        if (name != null) {
+            return name;
+        }
+        return detected ? tr("htmlPreview.browserMissing", com.editora.web.Browsers.knownName(id)) : id;
     }
 
     /** Shows the stored preview browser, or System Default when none was chosen yet. */
@@ -7239,6 +7258,8 @@ public class SettingsWindow {
                 SettingsBashRows.add(this, c);
             } else if (com.editora.lsp.XmlServerSettings.SERVER_ID.equals(srv.id())) {
                 SettingsXmlRows.add(this, c);
+            } else if (com.editora.lsp.HtmlServerSettings.SERVER_ID.equals(srv.id())) {
+                SettingsHtmlRows.add(this, c); // the server's html.* settings (HTML review A4)
             } else if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(srv.id())) {
                 typeScriptServerRows(c);
             }
@@ -8028,7 +8049,7 @@ public class SettingsWindow {
     /** The program a server runs, as its pill names it: the display-name table first (the pom.xml server runs
      *  through java; the native XML download is platform-suffixed — Maven review C14), else the command's name. */
     private static String lspToolName(String serverId, List<String> argv) {
-        String named = com.editora.lsp.LspServerRegistry.displayNameFor(serverId);
+        String named = com.editora.lsp.LspServerRegistry.displayNameFor(serverId, argv); // `node …` names HTML (A15)
         return named != null ? named : ToolStatusRow.toolName(argv, serverId);
     }
 
@@ -8948,6 +8969,7 @@ public class SettingsWindow {
                 abbrevModeCheck.setSelected(settings.isAbbrevMode());
             }
             autoCloseTagsCheck.setSelected(settings.isAutoCloseTags());
+            htmlMarkupChecksCheck.setSelected(settings.isHtmlMarkupChecks());
             todoHighlightCheck.setSelected(settings.isTodoHighlight());
             if (todoSettings != null) {
                 todoSettings.load();
@@ -9630,6 +9652,7 @@ public class SettingsWindow {
                 abbrevModeCheck.setSelected(s.isAbbrevMode());
             }
             autoCloseTagsCheck.setSelected(s.isAutoCloseTags());
+            htmlMarkupChecksCheck.setSelected(s.isHtmlMarkupChecks());
             todoHighlightCheck.setSelected(s.isTodoHighlight());
             if (todoSettings != null) {
                 todoSettings.rebuildRows();

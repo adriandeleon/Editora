@@ -853,4 +853,43 @@ class DoctorCatalogFxTest {
         assertEquals("doctor.tip.serverCrashing", crashing.tipKey());
         assertEquals("version `GLIBC_2.34' not found", crashing.detail());
     }
+
+    /**
+     * HTML review A2/A10: the HTML row flags a vscode-langservers-extracted whose HTML server cannot load TypeScript's
+     * libraries (every plain npm install of 4.10.0), with Update, which installs Editora's own copy; for the user's own
+     * command it says what to do in Settings instead. A crash under the user's own command offers no Install.
+     */
+    @Test
+    void theHtmlRowFlagsMissingTypeScriptLibrariesAndRespectsTheUsersCommand(@TempDir Path dir) throws Exception {
+        Host host = new Host();
+        Ops ops = new Ops();
+        Path prefix = dir.resolve("npm-global");
+        Path pkg = com.editora.install.InstallTestAccess.webServersLayout(prefix, true);
+        Path launcher = executable(pkg.resolve("bin/vscode-html-language-server"), "#!/bin/sh\nexit 0\n");
+        ops.servers = List.of("html");
+        ops.argv.put("html", List.of(launcher.toString(), "--stdio"));
+
+        DoctorCheck row = spec(specs(host, ops), "lsp.html").probe().get();
+        assertEquals(DoctorStatus.WARN, row.status(), row.detail());
+        assertEquals("doctor.tip.htmlNoTsLibs", row.tipKey());
+        assertEquals(DoctorCheck.Install.SERVER, row.install(), "Update installs Editora's own copy");
+        assertTrue(row.detail().startsWith("4.10.0 — "), row.detail());
+
+        ops.configured = Set.of("html");
+        DoctorCheck own = spec(specs(host, ops), "lsp.html").probe().get();
+        assertEquals("doctor.tip.htmlNoTsLibsOwn", own.tipKey());
+        assertEquals(DoctorCheck.Install.NONE, own.install(), "Install would not change the user's command (A10)");
+
+        com.editora.install.WebServerInstall.linkTypeScriptLibs(prefix);
+        ops.configured = Set.of();
+        DoctorCheck fixed = spec(specs(host, ops), "lsp.html").probe().get();
+        assertEquals(DoctorStatus.OK, fixed.status(), fixed.tipKey());
+
+        ops.configured = Set.of("html");
+        ops.crashes.put("html", "SyntaxError: Unexpected token");
+        DoctorCheck crashing = spec(specs(host, ops), "lsp.html").probe().get();
+        assertEquals("doctor.tip.serverTroubleOwn", crashing.tipKey());
+        assertFalse(crashing.reinstallable());
+        assertTrue(crashing.restartable());
+    }
 }

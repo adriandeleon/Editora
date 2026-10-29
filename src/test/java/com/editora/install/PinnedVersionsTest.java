@@ -68,7 +68,10 @@ class PinnedVersionsTest {
             steps.addAll(InstallCatalog.toolInstall(tool).orElseThrow());
         }
         for (Step s : steps) {
-            boolean pinnedRelease = exact.contains(s.kind()) || s.id().equals("jdtls") || s.id().equals("js-debug");
+            boolean pinnedRelease = exact.contains(s.kind())
+                    || s.id().equals("jdtls")
+                    || s.id().equals("js-debug")
+                    || s.id().equals(InstallCatalog.WEB_LS_PACKAGE); // npm, pinned with a receipt (HTML A12)
             assertEquals(
                     pinnedRelease,
                     PinnedVersions.forStep(s.id()).isPresent(),
@@ -85,6 +88,13 @@ class PinnedVersionsTest {
                 "lemminx-maven",
                 PinnedVersions.forServer("maven-pom").orElseThrow().stepId());
         assertEquals("lemminx", PinnedVersions.forServer("xml").orElseThrow().stepId(), "XML review A3");
+        for (String web : List.of("html", "css", "json")) {
+            // one package, one pin (HTML review A12)
+            assertEquals(
+                    InstallCatalog.WEB_LS_PACKAGE,
+                    PinnedVersions.forServer(web).orElseThrow().stepId(),
+                    web);
+        }
         assertTrue(PinnedVersions.forServer("python").isEmpty(), "Pyright installs whatever npm has");
         assertTrue(PinnedVersions.forServer(null).isEmpty());
     }
