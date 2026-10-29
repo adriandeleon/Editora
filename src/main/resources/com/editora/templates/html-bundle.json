@@ -5,10 +5,11 @@
     {
       "path": "${baseName:index}.html",
       "body": [
-        "<!doctype html>",
+        "<!DOCTYPE html>",
         "<html lang=\"en\">",
         "<head>",
-        "    <meta charset=\"utf-8\">",
+        "    <meta charset=\"UTF-8\">",
+        "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
         "    <title>${title:Document}</title>",
         "    <link rel=\"stylesheet\" href=\"${baseName:index}.css\">",
         "</head>",

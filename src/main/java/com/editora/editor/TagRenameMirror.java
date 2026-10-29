@@ -8,6 +8,7 @@ import java.util.function.Supplier;
 import com.editora.editops.DoubleClickWord;
 import com.editora.editops.TagRename;
 import com.editora.editor.undo.CompletionUndoManager;
+import com.editora.text.HtmlElements;
 import com.editora.text.LanguageRegistry;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.EditableStyledDocument;
@@ -86,7 +87,7 @@ final class TagRenameMirror {
             return;
         }
         String lang = language.get();
-        boolean html = "html".equals(lang);
+        boolean html = HtmlElements.isHtmlLanguage(lang); // templates too (HTML review C7)
         if (!html && !"xml".equals(lang)) {
             return;
         }
