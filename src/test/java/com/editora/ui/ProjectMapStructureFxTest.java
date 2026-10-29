@@ -343,8 +343,12 @@ class ProjectMapStructureFxTest {
                         List.of(
                                 tr("project.map.structure.preview"),
                                 tr("project.map.structure.openAt"),
-                                tr("project.map.preview.openNarrowed")),
-                        menu.getItems().stream().map(MenuItem::getText).toList());
+                                tr("project.map.preview.openNarrowed"),
+                                tr("project.map.menu.closeColumn")),
+                        menu.getItems().stream()
+                                .map(MenuItem::getText)
+                                .filter(java.util.Objects::nonNull)
+                                .toList());
                 // F2 / Delete never reach a declaration.
                 FxTestSupport.call(map.surface(), "select", new Class<?>[] {Path.class}, add);
                 assertFalse((boolean)

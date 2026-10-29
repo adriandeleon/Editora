@@ -885,7 +885,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** Property on a menu item whose action stays in the Map window (its own dialog, or nothing to show). */
-    private static final String STAYS_IN_MAP = "editora.project.staysInMap";
+    static final String STAYS_IN_MAP = "editora.project.staysInMap";
 
     /**
      * The Map window's copy of a row's context menu: each item that does its work in the editor window

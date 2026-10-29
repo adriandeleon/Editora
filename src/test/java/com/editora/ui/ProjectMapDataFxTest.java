@@ -346,9 +346,9 @@ class ProjectMapDataFxTest {
             });
             waitForFx(() -> contains(surface, big.resolve(fileName(349))) && !contains(surface, moreRow));
             FxTestSupport.runOnFx(() -> assertEquals(
-                    big.resolve(fileName(349)),
+                    big.resolve(fileName(300)),
                     FxTestSupport.field(surface, "selected"),
-                    "the selection moves to the last row once the more row is gone"));
+                    "the selection moves to the first row that arrived, where the more row was"));
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
         }

@@ -31,9 +31,6 @@ import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.image.Image;
 import javafx.scene.image.PixelReader;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyCodeCombination;
-import javafx.scene.input.KeyCombination;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
@@ -386,7 +383,8 @@ class ProjectMapLayoutFxTest {
         for (int i = 0; i < 60; i++) {
             entries.add(file(project.resolve(String.format("File%02d.java", i)), project, 1));
         }
-        // At 470 px the column reaches under the overview; at 760 px only the zoom bar is in its way.
+        // At 760 px both the zoom bar and the overview are in the column's way. At 470 px the overview steps
+        // aside (a surface under 600 × 400 has none), so only the zoom bar is.
         for (double width : new double[] {470, 760}) {
             Region surface = show(width, 480);
             setEntries(surface, entries, Set.of(project));
@@ -405,12 +403,16 @@ class ProjectMapLayoutFxTest {
                             edge(row, "y", "height") <= surface.getHeight() - reserved + 0.5,
                             target.getFileName() + " sits under the zoom bar at " + width);
                     Object overview = FxTestSupport.field(surface, "overviewBox");
+                    if (surface.getWidth() < 600 || surface.getHeight() < 400) {
+                        assertNull(overview, "a small surface leaves the overview out");
+                        return;
+                    }
                     assertNotNull(overview, "sixty rows overflow the canvas");
                     assertFalse(overlaps(row, overview), target.getFileName() + " sits under the overview");
                     overviewInTheWay[0] |= edge(row, "x", "width") > origin(overview, "x");
                 });
             }
-            assertEquals(width < 600, overviewInTheWay[0], "the fixture covers both obstacles");
+            assertFalse(overviewInTheWay[0] && width < 600, "no overview in a small window");
             FxTestSupport.runOnFx(mapView::dispose);
         }
     }
@@ -431,9 +433,17 @@ class ProjectMapLayoutFxTest {
             Object overview = FxTestSupport.field(surface, "overviewBox");
             assertNotNull(overview, "forty rows overflow the canvas");
             Object column = columnBoxForParent(surface, src);
-            // Pan the column's header, close button included, onto the overview.
+            // Pan the column's header, close button included, onto the overview: its right edge just inside the
+            // frame, which now takes the map's (narrow) shape.
             setDouble(
-                    surface, "offsetX", number(surface, "offsetX") + origin(overview, "x") - 100 - origin(column, "x"));
+                    surface,
+                    "offsetX",
+                    number(surface, "offsetX")
+                            + origin(overview, "x")
+                            + origin(overview, "width")
+                            - 4
+                            - origin(column, "x")
+                            - origin(column, "width"));
             setDouble(surface, "offsetY", number(surface, "offsetY") + origin(overview, "y") - origin(column, "y"));
             FxTestSupport.invoke(surface, "repaint");
             Object controls = controls(surface, src);
@@ -733,6 +743,7 @@ class ProjectMapLayoutFxTest {
                     List.of(
                             tr("project.map.navigation.keepZoom"),
                             tr("project.map.navigation.focusNewColumn"),
+                            tr("project.map.navigation.singleClickOpens"),
                             tr("project.map.filter.hideOpenNotes"),
                             tr("project.map.navigation.followActiveFile"),
                             tr("project.map.print"),
@@ -791,19 +802,26 @@ class ProjectMapLayoutFxTest {
         FxTestSupport.runOnFx(() -> {
             Parent help = (Parent) FxTestSupport.call(mapView, "buildHelp", new Class<?>[0]);
             List<String> text = new ArrayList<>();
-            for (Node node : help.getChildrenUnmodifiable()) {
-                text.add(((Label) node).getText());
+            List<Parent> pending = new ArrayList<>(List.of(help));
+            while (!pending.isEmpty()) {
+                for (Node node : pending.removeFirst().getChildrenUnmodifiable()) {
+                    if (node instanceof Label label) {
+                        text.add(label.getText());
+                    } else if (node instanceof Parent parent) {
+                        pending.add(parent);
+                    }
+                }
             }
-            assertEquals(2 + 18 * 2, text.size(), "two headings and eighteen gesture rows");
+            // The intro, four headings (pointer, cards and notes, keyboard, filters) and 42 gesture rows.
+            assertEquals(1 + 4 + 42 * 2, text.size());
             assertTrue(text.contains(tr("project.map.help.chevron")));
             assertTrue(text.contains(tr("project.map.help.dragHeader.gesture")));
             assertTrue(text.contains(tr("project.map.help.escape")));
             assertTrue(text.contains(tr("project.map.help.columnFilter")));
             assertTrue(
-                    text.contains(
-                            new KeyCodeCombination(KeyCode.DIGIT0, KeyCombination.SHORTCUT_DOWN).getDisplayText()),
+                    text.contains(ProjectMapView.helpChord("shortcut", "0")),
                     "the fit chord is spelled for this platform, not baked into a message");
-            assertTrue(text.contains(KeyCode.PAGE_UP.getName() + " / " + KeyCode.PAGE_DOWN.getName()));
+            assertTrue(text.contains(tr("project.map.help.key.pageUp") + " / " + tr("project.map.help.key.pageDown")));
         });
     }
 

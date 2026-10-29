@@ -76,13 +76,14 @@ right-to-left to left-to-right once (`ConfigMigrations.resetRightToLeftMapFlow`)
 | --- | --- |
 | Single-click a folder | Select and expand it; if it is already expanded, select it and bring its column into view |
 | Click a folder's chevron (the row's trailing edge) | Expand or collapse it; collapsing closes its descendant columns |
-| Single-click a file | Open it in a normal editor tab |
+| Single-click a file | Open it in a normal editor tab; with the ⋯ menu's default-on **Single-click opens files** off, only select it |
+| Double-click a file | Open it (what opens a file while **Single-click opens files** is off) |
 | Click a file's preview icon | Open or focus that file's floating read-only preview on the canvas |
 | Click a file's Structure icon (just before the eye) | Open or close the file's structure column |
 | Click a declaration | Open or focus a floating preview of only its lines |
 | Click a declaration's chevron | Open or close the column of the declarations it holds |
-| Right-click a node | Select it and open the same context menu as the Project tree, including first-line bookmark and Personal Note actions |
-| Drag empty canvas space | Pan the map |
+| Right-click a node | Select it and open its menu: the Map's own **Preview**, **Show Structure** / **Hide Structure**, **Personal Notes** (when the row has some) and **Close Column** (the column the row is in) first, then the same context menu as the Project tree, including first-line bookmark and Personal Note actions |
+| Drag empty canvas space, or a row | Pan the map (from a row, once the pointer has moved 5 px, so a click stays a click) |
 | Middle-button drag | Pan the map, wherever the drag starts (including on a row) |
 | Mouse wheel | Zoom around the pointer position; scroll inertia does not zoom |
 | Shortcut + mouse wheel | Zoom faster around the pointer position |
@@ -95,8 +96,8 @@ right-to-left to left-to-right once (`ConfigMigrations.resetRightToLeftMapFlow`)
 | Click a column close button | Close that branch and all of its descendant columns |
 | Options (⋯) menu → **Print…** | Open the standard print preview for the complete map layout |
 | Options (⋯) menu → **PDF…** | Export the complete map layout using the configured PDF page size |
-| Click **?** | Show the mouse and keyboard model in a popover |
-| Click the overview | Recenter the canvas around that content position |
+| Click **?** | Show what the Map is for and its pointer, cards and notes, keyboard and filter models in a popover (key names in the user's language, modifiers as the platform writes them) |
+| Click or drag in the overview | Centre the view on that point of the map, clamped to the map's bounds |
 
 Preview and note cards sit on the canvas: a pan or zoom carries each card's corner with the map under it
 and draws the card at the map's zoom from that corner (`MapSurface.moveCardsWithViewport`, run after every
@@ -143,7 +144,9 @@ modification time differs. A card follows an in-app rename or move of its file (
 whose file was deleted, or renamed outside Editora, keeps its last text, says the file no longer exists,
 and disables **Open**.
 
-`Escape` in a focused card closes it and returns focus to the map; `Tab` leaves the preview's text.
+`Escape` in a focused card closes it and returns focus to the map; `Tab` leaves the preview's text, and a `Tab`
+past the card's last control comes back to the map instead of wrapping to the search field. Closing a card that
+holds the keyboard — its ×, Shift+Enter, or a sticky note's card — also hands the keyboard back to the map.
 Global chords still act on the active editor tab while a card has focus (the app-wide key policy), so a
 focused card has an accent border and its text area's accessible name states the file and that it is
 read-only. Cards cannot be moved or resized from the keyboard.
@@ -247,15 +250,16 @@ files match".
 | `Ctrl-N` / `Ctrl-P` | Select the next or previous sibling |
 | `Page Down` / `Page Up` | Move ten siblings forward or backward, stopping at the last or first row |
 | `Enter` or `Space` | Open the selected file or declaration card, or expand or collapse the selected folder |
+| `Shift-Enter` | Open the selected file's or declaration's preview card, or close it when it is open |
 | `F2` | Rename the selected file or folder (not the project root), as in the Project tree |
 | `Delete` | Delete the selected file through the Project tree's confirmed delete |
-| Menu key / `Shift-F10` | Open the selected node's context menu at its row |
+| Menu key / `Shift-F10` | Open the selected node's context menu at its row (with the Map's Preview, Structure, Personal Notes and Close Column items) |
 | `Backspace` | Select the parent |
 | `Home` | Select the project root |
 | `Alt-Left` / `Alt-Right` | Move backward or forward through map selection history |
 | `/` | Focus and select the selected column's filter text |
 | Shortcut + `0` | Fit all visible columns |
-| `Escape` | Close the open preview and note cards; otherwise clear the Map's search query; otherwise return focus to the editor (in the editor window) |
+| `Escape` | Close the open preview and note cards; otherwise clear the Map's search query (the selection returns to where it was before the search, unless a row picked during it stays on the map); otherwise return focus to the editor (in the editor window) |
 
 Single sibling steps (perpendicular arrows, `Ctrl-N` / `Ctrl-P`) wrap around the column; page moves do
 not. `/` is matched by the character typed rather than the key, so it works where the slash is a
@@ -266,13 +270,15 @@ that in the status bar.
 Text fields own their keystrokes. In particular, `Backspace`, arrows, `Home`, `F2`, and `Delete` edit a
 focused column filter rather than triggering map navigation. Pressing Enter in a column filter returns
 focus to the map and selects that column's first remaining row unless the selection is already one of
-them. Activating a selection whose row a column filter has hidden does nothing. If a focused column
-control is hidden (zooming out) or removed (closing its column), focus returns to the map surface.
+them. Activating a selection whose row a column filter has hidden does nothing; a sibling step from it starts
+where its row would be. If a focused column control is hidden (zooming out) or removed (closing its column),
+focus returns to the map surface. Tab stops only at column controls that lie inside the viewport
+(`MapSurface.syncControlTraversal`); `/` still reaches an off-screen column's filter and scrolls it into view.
 
 The scene-level `KeyDispatcher` sees every key before the map. While the surface itself is the focus
-owner it declares `Alt-Left`, `Alt-Right`, Shortcut + `0`, `Ctrl-N`, `Ctrl-P`, `F2`, and `Delete` through
-`KeyDispatcher.CLAIMED_KEYS`, so they reach it in every bundled keymap instead of running the keymap's
-command for the same chord (text-zoom reset, New File, Print, Find File, symbol rename) or being
+owner it declares `Alt-Left`, `Alt-Right`, Shortcut + `0`, `Ctrl-N`, `Ctrl-P`, `F2`, `Delete`, and `Shift-Enter`
+through `KeyDispatcher.CLAIMED_KEYS`, so they reach it in every bundled keymap instead of running the keymap's
+command for the same chord (text-zoom reset, New File, Print, Find File, symbol rename, insert line below) or being
 swallowed as an unbound `Alt` chord. The surface always consumes them; the dispatcher consumes a
 claimed `Alt` chord that comes back unconsumed, so none reaches the native menu. The shared Project
 search field claims `Ctrl-N` / `Ctrl-P` the same way.
@@ -295,10 +301,15 @@ percentage: zoom out, zoom in, Fit, Center selection, and Reset. Manual zoom run
 - **Reset** restores 100%, clears manual column positions and locks, and returns to the first view.
 
 Reveal, Fit and the first view reserve the strip the zoom bar covers, and a revealed row is also lifted
-clear of the overview.
+clear of the overview. A selection that arrives with a load — a search's first match, a reveal, a breadcrumb
+or a history step whose column had been closed — is revealed the same way, once more after the deferred
+"show the opened column" pass, so the selected row wins over the new column's start
+(`MapSurface.revealAfterLoad`). The zoom bar, the overview and the Loading / No matches notices are drawn and
+picked above every card (`viewOrder`), and only the zoom bar's buttons take clicks, not the gaps between them.
 
 The options (⋯) menu in the navigation row holds the default-on **Keep current zoom** and **Focus new
-column** options, remembered per workspace (`isKeepZoom()` / `isFocusNewColumn()` and their setters on the view). Opening a
+column** options, remembered per workspace (`isKeepZoom()` / `isFocusNewColumn()` and their setters on the view),
+and the default-on **Single-click opens files** (`isSingleClickOpens()` / `setSingleClickOpens`). Opening a
 folder therefore preserves the user's scale and brings the new column in from its start: the whole card
 when it fits beside the row that opened it, otherwise its header and first rows together with that row.
 Either effect can be disabled independently; disabling zoom preservation restores auto-fit on expansion.
@@ -342,6 +353,10 @@ keep set, so a folder taken out takes its open columns with it, as a column filt
 ("+N more", "Empty folder") stay. Each column counts what it lost (`Column.narrowed`): its header reads
 "shown/total", an italic "N hidden" footer sits under its rows (or on its empty row when none are left), and
 an amber "N rows hidden" badge beside the checkbox totals them. With no filter active it changes nothing.
+When it takes the selected row off the map the selection moves to the nearest row its column still draws, else
+to its nearest drawn ancestor (`MapSurface.keepSelectionDrawn`), so the keys and the breadcrumb keep a visible
+anchor. **Clear** resets the search (through the shared search field), the chips, the type and every column's
+filter and Show hidden checkbox; it leaves the ⋯ menu's "Hide all open Personal Notes" as it is.
 Column widths are still measured from every loaded row, so switching it does not resize the cards.
 An open preview or note card whose file it takes off the map is hidden with the row, not closed
 (`MapSurface.narrowsAway`, checked by `updateCardVisibility` after every paint; a declaration card follows its
@@ -455,8 +470,12 @@ Controls that would reach into the overview are hidden too: they are children ab
 paint over it and take its clicks. The controls are not drawn into the canvas, which preserves native
 text editing, focus traversal, and accessibility.
 
-The overview appears only while some content is off-screen, sits beside the zoom bar (it is left out when
-the surface is too narrow for both), and clamps its viewport rectangle to its frame.
+The overview appears only while some content is off-screen and the surface is at least 600 × 400, sits beside
+the zoom bar (it is left out when the surface is too narrow for both), and clamps its viewport rectangle to its
+frame. The frame takes the map's shape inside at most 150 × 86 with the map centred in it, and is drawn on a
+small canvas of its own above the cards (`MapSurface.overviewLayer`), which passes its pointer events to the
+surface. A press or drag in it centres the view on that point, clamped to the map, so it never pans into
+empty space.
 
 ## Architecture and data flow
 
@@ -493,7 +512,10 @@ Responsibilities are split as follows:
   independent branch expansions, groups entries by owning parent, applies ordering and filters,
   classifies file types, and determines emphasized ancestor paths.
 - `ProjectMapView.MapSurface` owns paint, layout, transforms, hit-testing, pointer/keyboard input,
-  column controls, icon snapshots, and accessibility text.
+  column controls, icon snapshots, and accessibility text. The surface has the `PARENT` role (a plain group, not
+  a tree: it has no item nodes) and its accessible TEXT names the selection with its kind, open / unsaved / Git /
+  bookmark / Personal Notes / Structure states and its place among the rows its column draws (not those a
+  filter took out, nor a "+N more" row); every change is announced with `notifyAccessibleAttributeChanged`.
 - `ProjectMapPreview` owns one bounded read-only RichTextFX card, off-thread file loading and syntax
   highlighting, in-place refresh, drag/resize behavior, and promotion to an editor tab.
 - `ProjectMapStructure` owns the structure columns: which files and declarations have one open, the
@@ -541,7 +563,9 @@ for it again, and the Map reloads when it finally answers.
 `ProjectMapModel.load` reads only the root and the expanded directories, under two limits:
 
 - **per directory**, `DIRECTORY_CHUNK` (300) rows. A longer directory ends in a "+N more…" row; activating
-  it (click, Enter, or the arrow that expands) raises that directory's limit by another chunk.
+  it (click, Enter, or the arrow that expands) raises that directory's limit by another chunk, and a selection
+  on it moves to the first row that arrived. The breadcrumb never ends in a placeholder: its trail stops at the
+  folder.
 - **overall**, `MAX_VISIBLE_ITEMS` (1,200) real rows. Pinned paths — the search's matches and a revealed
   file — are charged first, with the rows that lead to them, wherever they sort; the rest is handed out
   breadth-first.
@@ -641,6 +665,11 @@ The focused coverage lives in:
   project, cards and row states across a close and reopen, the theme mirror, a maximized window, New Folder
   and Rename from the Map, an unreadable folder's status line, Reveal Active File and its option, a card's
   note prompt over the Map, the output dialogs' owner and page note, and the Map at startup.
+- `ProjectMapNavReviewFxTest` for reveal after a load, the selection under Hide unmatched, "+N more" and the
+  search's return selection, the overview (shape, clamping, drag, small windows), the zoom bar and overview above
+  cards, column drag against a packed neighbour, drag-to-pan from a row, Single-click opens files, the row menu's
+  Map items, Shift-Enter, Tab past off-screen column controls and out of a card, the accessible text, and the help
+  popover in English and German.
 
 When extending the map:
 
