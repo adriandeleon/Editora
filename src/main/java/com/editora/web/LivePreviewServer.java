@@ -647,10 +647,22 @@ public final class LivePreviewServer {
         return siteRoot(file, projectRoot, userHome());
     }
 
+    /**
+     * {@code p} canonicalized. A path that does not exist yet is canonicalized through its nearest existing
+     * ancestor, so it still compares equal to the same folder reached through a canonical parent (macOS
+     * {@code /var} → {@code /private/var}, Windows 8.3 short names).
+     */
     private static Path real(Path p) {
         Path abs = p.toAbsolutePath().normalize();
+        Path existing = abs;
+        while (existing != null && !Files.exists(existing)) {
+            existing = existing.getParent();
+        }
+        if (existing == null) {
+            return abs;
+        }
         try {
-            return abs.toRealPath();
+            return existing.toRealPath().resolve(existing.relativize(abs));
         } catch (IOException e) {
             return abs;
         }

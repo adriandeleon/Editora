@@ -9,6 +9,8 @@ import java.util.function.UnaryOperator;
 import com.editora.web.Browsers.Browser;
 import com.editora.web.Browsers.Os;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -199,6 +201,9 @@ class BrowsersTest {
     }
 
     @Test
+    @DisabledOnOs(
+            value = OS.WINDOWS,
+            disabledReason = "XDG folder lists are colon-separated; .desktop launchers are Linux-only")
     void desktopEntriesAreReadFromTheFoldersUserFirst(@org.junit.jupiter.api.io.TempDir Path tmp) throws Exception {
         Path user = java.nio.file.Files.createDirectories(tmp.resolve("data/applications"));
         Path system = java.nio.file.Files.createDirectories(tmp.resolve("sys/applications"));

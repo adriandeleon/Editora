@@ -205,6 +205,18 @@ class LivePreviewServerTest {
 
     // --- unsafe roots and the site root (E2, E3, E4) --------------------------------------------
 
+    /** A missing catch-all folder under a home reached through a link (macOS /var → /private/var). */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS) // symlinks need a right
+    void aMissingCatchAllFolderIsUnsafeWhenHomeIsReachedThroughALink(@TempDir Path tmp) throws Exception {
+        Path realHome = Files.createDirectories(tmp.resolve("private/home/alice"));
+        Path link = Files.createSymbolicLink(tmp.resolve("home"), realHome.getParent());
+        Path home = link.resolve("alice");
+        assertTrue(LivePreviewServer.isUnsafeDocRoot(home.resolve("Desktop"), home), "Desktop, not created yet");
+        assertTrue(LivePreviewServer.isUnsafeDocRoot(realHome.resolve("Documents"), home), "through the real path");
+        assertFalse(LivePreviewServer.isUnsafeDocRoot(home.resolve("projects/site"), home));
+    }
+
     @Test
     void homeItsAncestorsCatchAllFoldersTempAndRootsAreUnsafe(@TempDir Path tmp) throws Exception {
         Path home = Files.createDirectories(tmp.resolve("home/alice"));
