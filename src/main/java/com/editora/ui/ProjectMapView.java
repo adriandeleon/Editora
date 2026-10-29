@@ -1044,6 +1044,62 @@ final class ProjectMapView extends VBox {
         if (selected != null && renamed != null && selected.startsWith(renamed)) {
             pendingSelection = ProjectMapModel.remap(selected, from, to);
         }
+        renamedCarryCards(from, to);
+        listings.invalidateAll(); // the folders on both sides of the move are listed afresh
+        // A load that is listing the old tree may be in flight. Its snapshot would prune the folders just
+        // remapped (they are not in it) and close them: it must not land, and the new tree is listed instead.
+        if (active) {
+            reload();
+        } else {
+            generation.incrementAndGet();
+            loadFinished();
+        }
+    }
+
+    /** Preview and note cards of a renamed file, or of files under a renamed folder, follow it (C21). */
+    private void renamedCarryCards(Path from, Path to) {
+        Path source = ProjectMapModel.normalize(from);
+        if (source == null) {
+            return;
+        }
+        boolean moved = false;
+        for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
+            if (!entry.getKey().startsWith(source)) {
+                continue;
+            }
+            ProjectMapPreview card = entry.getValue();
+            previews.remove(entry.getKey());
+            Path key = ProjectMapModel.remap(entry.getKey(), from, to);
+            Path file = card.path();
+            if (key == null || file == null) {
+                closePreview(card);
+                continue;
+            }
+            Path movedFile = ProjectMapModel.remap(file, from, to);
+            if (movedFile != null) {
+                card.pathRenamed(movedFile);
+            }
+            previews.put(key, card);
+            moved = true;
+        }
+        for (Map.Entry<Path, ProjectMapNotePreview> entry : List.copyOf(notePreviews.entrySet())) {
+            if (!entry.getKey().startsWith(source)) {
+                continue;
+            }
+            notePreviews.remove(entry.getKey());
+            Path key = ProjectMapModel.remap(entry.getKey(), from, to);
+            if (key == null) {
+                closeNotePreview(entry.getValue());
+                continue;
+            }
+            entry.getValue().pathRenamed(key);
+            notePreviews.put(key, entry.getValue());
+            moved = true;
+        }
+        if (moved) {
+            repaintPreviewConnectors();
+            scheduleCardRefresh(); // note cards re-read the store once the notes have moved with the file
+        }
     }
 
     private static void remapAll(Set<Path> paths, Path from, Path to) {

@@ -120,8 +120,10 @@ action promotes the previewed file to a normal editor tab.
 An open preview is kept current without being moved or re-scrolled: a card that mirrors an open buffer
 looks for edits once a second while the Map is on screen and replaces only the range that changed; any
 other card re-reads its file when the Project watcher reports a change and the file's size or
-modification time differs. A card whose file was deleted or renamed keeps its last text, says the file
-no longer exists, and disables **Open**.
+modification time differs. A card follows an in-app rename or move of its file (or of a folder above it):
+`pathRenamed` re-keys preview and note cards to the new path and the card reads the file there. A card
+whose file was deleted, or renamed outside Editora, keeps its last text, says the file no longer exists,
+and disables **Open**.
 
 `Escape` in a focused card closes it and returns focus to the map; `Tab` leaves the preview's text.
 Global chords still act on the active editor tab while a card has focus (the app-wide key policy), so a

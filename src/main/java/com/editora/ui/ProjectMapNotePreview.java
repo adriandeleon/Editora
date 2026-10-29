@@ -151,13 +151,8 @@ final class ProjectMapNotePreview extends StackPane {
     }
 
     void showNotes(Path path, List<PersonalNote> values, ProjectMapPreview.Placement placement) {
-        title.setText(
-                path.getFileName() == null
-                        ? path.toString()
-                        : path.getFileName().toString());
+        pathRenamed(path);
         title.setGraphic(Icons.notes());
-        title.setTooltip(new Tooltip(path.toString()));
-        setAccessibleText(tr("project.map.notes.accessible", path.toString()));
         rebuild(values == null ? List.of() : values, Map.of());
         setVisible(true);
         resizeRelocate(placement.x(), placement.y(), placement.width(), placement.height());
@@ -165,6 +160,16 @@ final class ProjectMapNotePreview extends StackPane {
         preferredHeight = placement.height();
         placed = true;
         toFront();
+    }
+
+    /** Names the file whose notes the card lists: on show, and when the file is renamed inside Editora. */
+    void pathRenamed(Path path) {
+        title.setText(
+                path.getFileName() == null
+                        ? path.toString()
+                        : path.getFileName().toString());
+        title.setTooltip(new Tooltip(path.toString()));
+        setAccessibleText(tr("project.map.notes.accessible", path.toString()));
     }
 
     /**
