@@ -63,9 +63,10 @@ class ProjectMapOutputPlanTest {
         ProjectMapOutputPlan.Plan plan = ProjectMapOutputPlan.plan(content, rows, PAGE_WIDTH, PAGE_HEIGHT);
 
         assertTrue(plan.tiled());
-        assertEquals(ProjectMapOutputPlan.MIN_PAPER_SCALE, plan.paperScale(), 1e-9);
+        // 7 pt labels need 40 pages; 6.75 pt saves one, and the largest size that saves a page is taken.
+        assertEquals(6.75 / ProjectMapOutputPlan.LABEL_SIZE, plan.paperScale(), 1e-9);
         assertEquals(1, plan.columns());
-        assertTrue(plan.rows() >= 40, () -> "49,200 px at 7 pt labels needs about forty pages: " + plan.rows());
+        assertEquals(39, plan.rows(), "49,200 px at 6.75 pt labels needs 39 pages");
         assertEquals(plan.rows(), plan.pages().size());
         for (ProjectMapOutputPlan.Cell page : plan.pages()) {
             assertTrue(page.height() * plan.paperScale() <= PAGE_HEIGHT + 0.01, "a page never overflows the paper");
