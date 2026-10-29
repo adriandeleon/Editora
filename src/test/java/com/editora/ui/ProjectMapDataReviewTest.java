@@ -232,6 +232,26 @@ class ProjectMapDataReviewTest {
     }
 
     @Test
+    void aCachedListingThatLacksAnOpenFolderIsListedAgainBeforeTheWatcherCatchesUp() throws Exception {
+        Path root = root();
+        folderWithFiles(root, "old", 2);
+        try (Listings listings = new Listings(5_000, null)) {
+            listings.setWatched(Set.of(root));
+            ProjectMapModel.load(new Request(root, Set.of(root), false), listings);
+            assertTrue(listings.cached(root, false));
+
+            // Made outside Editora and opened (a reveal) before the watcher's event reaches the cache.
+            Path fresh = folderWithFiles(root, "fresh", 1);
+            Snapshot after = ProjectMapModel.load(new Request(root, Set.of(root, fresh), false), listings);
+            assertTrue(
+                    childrenOf(after, root).stream()
+                            .anyMatch(entry -> entry.path().equals(fresh)),
+                    "the stale cached root listing was replaced");
+            assertFalse(childrenOf(after, fresh).isEmpty(), "and the new folder was listed, so it stays open");
+        }
+    }
+
+    @Test
     void aFolderThatDoesNotAnswerIsMarkedNotRespondingAndTheLoadGoesOn() throws Exception {
         Path root = root();
         Path slow = folderWithFiles(root, "slow", 2);

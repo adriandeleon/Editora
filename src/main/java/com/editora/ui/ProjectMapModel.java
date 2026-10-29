@@ -386,9 +386,13 @@ final class ProjectMapModel {
      * the folder cannot be read; {@code timedOut} when the listing did not finish in time; {@code cancelled}
      * when the load was superseded while it waited.
      */
-    private record Listed(@Nullable List<Item> items, boolean timedOut, boolean cancelled) {
-        static final Listed CANCELLED = new Listed(null, false, true);
-        static final Listed TIMED_OUT = new Listed(null, true, false);
+    private record Listed(@Nullable List<Item> items, boolean timedOut, boolean cancelled, boolean cached) {
+        static final Listed CANCELLED = new Listed(null, false, true, false);
+        static final Listed TIMED_OUT = new Listed(null, true, false, false);
+
+        Listed(@Nullable List<Item> items, boolean timedOut, boolean cancelled) {
+            this(items, timedOut, cancelled, false);
+        }
     }
 
     /**
@@ -497,7 +501,7 @@ final class ProjectMapModel {
             if (cacheable) {
                 List<Item> known = cache.get(key);
                 if (known != null) {
-                    return new Listed(known, false, false);
+                    return new Listed(known, false, false, true);
                 }
             }
             long epochBefore = epoch.get();
@@ -721,6 +725,12 @@ final class ProjectMapModel {
             Map<Path, Item> pinnedHere = pins.getOrDefault(directory, Map.of());
             boolean showHidden = request.hiddenOverrides().getOrDefault(directory, request.showHidden());
             Listed listing = listings.list(directory, showHidden, request.cancelled());
+            if (listing.cached() && missesKnownChild(listing.items(), directory, expanded, pinnedHere)) {
+                // The watcher has not reported a child that is open or being revealed yet: a cached listing taken
+                // before it appeared would drop it from the open set, so this folder is listed again.
+                listings.invalidate(List.of(directory));
+                listing = listings.list(directory, showHidden, request.cancelled());
+            }
             if (listing.cancelled()) {
                 return null;
             }
@@ -1287,6 +1297,27 @@ final class ProjectMapModel {
             return null;
         }
         return result;
+    }
+
+    /** Whether a cached listing lacks a folder the user keeps open below it, or a row a reveal pinned there. */
+    private static boolean missesKnownChild(
+            @Nullable List<Item> items, Path directory, Set<Path> expanded, Map<Path, Item> pinnedHere) {
+        if (items == null) {
+            return false;
+        }
+        Set<Path> present = new HashSet<>();
+        items.forEach(item -> present.add(item.path()));
+        for (Path open : expanded) {
+            if (directory.equals(open.getParent()) && !present.contains(open)) {
+                return true;
+            }
+        }
+        for (Path pinned : pinnedHere.keySet()) {
+            if (!present.contains(pinned)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static @Nullable Path normalize(@Nullable Path path) {
