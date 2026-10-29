@@ -1455,12 +1455,19 @@
 .project-map-navigation {
     -fx-padding: 0 2 4 2;
 }
+/* The toolbar's small text is 0.85em of the UI size, not a fixed 10px under a 14px search field, and every
+   navigation target is at least 24x24 (WCAG 2.5.8; Map review B13, B25). */
 .project-map-nav-button,
 .project-map-breadcrumb {
     -fx-background-color: transparent;
     -fx-padding: 2 5 2 5;
-    -fx-font-size: 10px;
+    -fx-font-size: 0.85em;
     -fx-text-fill: -color-fg-muted;
+    -fx-min-height: 24px;
+}
+.project-map-nav-button {
+    -fx-min-width: 24px;
+    -fx-alignment: center;
 }
 .project-map-nav-button:hover,
 .project-map-breadcrumb:hover {
@@ -1529,14 +1536,14 @@
     -fx-text-fill: -color-fg-muted;
 }
 .project-map-breadcrumb-separator {
-    -fx-font-size: 10px;
+    -fx-font-size: 0.85em;
     -fx-text-fill: -color-fg-muted;
 }
 .project-map-filter-chip,
 .project-map-type-filter,
 .project-map-flow-filter,
 .project-map-filter-clear {
-    -fx-font-size: 10px;
+    -fx-font-size: 0.85em;
 }
 .project-map-filter-chip {
     -fx-background-color: -color-bg-subtle;
@@ -1552,13 +1559,13 @@
     -fx-text-fill: -color-accent-fg;
 }
 .project-map-hide-unmatched {
-    -fx-font-size: 10px;
+    -fx-font-size: 0.85em;
     -fx-text-fill: -color-fg-muted;
     -fx-padding: 0 0 0 4;
 }
 /* Rows are off the map, not faded: the badge keeps that from going unnoticed. */
 .project-map-narrowed-badge {
-    -fx-font-size: 10px;
+    -fx-font-size: 0.85em;
     -fx-background-color: -color-warning-subtle;
     -fx-background-radius: 10;
     -fx-border-color: -color-warning-muted;
@@ -1597,7 +1604,7 @@
     -fx-effect: innershadow(gaussian, -color-accent-muted, 4, 0.1, 0, 0);
 }
 .project-map-column-filter {
-    -fx-font-size: 10px;
+    -fx-font-size: 0.85em;
     -fx-padding: 2 6 2 6;
     -fx-background-color: -color-bg-overlay;
     -fx-background-radius: 5;
@@ -1612,7 +1619,7 @@
     -fx-prompt-text-fill: -color-fg-muted;
 }
 .project-map-column-hidden {
-    -fx-font-size: 9px;
+    -fx-font-size: 0.85em;
     -fx-text-fill: -color-fg-muted;
     -fx-padding: 1 0 1 0;
 }

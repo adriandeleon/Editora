@@ -717,7 +717,9 @@ class ProjectMapLayoutFxTest {
                             assertWhole(node, where);
                         }
                         assertWhole(view.lookup(".project-map-options"), where);
-                        assertTrue(filters.getBoundsInParent().getHeight() <= 120, where + ": the filter block");
+                        // The chips are 0.85em of the UI size (Map review B13), so the narrowest windows wrap them
+                        // onto more lines; the block still never takes more than a quarter of the window.
+                        assertTrue(filters.getBoundsInParent().getHeight() <= 700 / 4.0, where + ": the filter block");
                     } finally {
                         view.dispose();
                     }
@@ -912,7 +914,9 @@ class ProjectMapLayoutFxTest {
         }
         Path leaf = parent.resolve("AVeryLongLeafFileNameForTheBreadcrumb.java");
         entries.add(file(leaf, parent, 8));
-        Region surface = show(345, 500);
+        // Wide enough for the 0.85em crumbs and 24 px navigation targets (Map review B13, B25) as 345 px was
+        // for the 10 px ones.
+        Region surface = show(420, 500);
         setField(mapView, "root", project);
         setEntries(surface, entries, expanded);
         settle();
