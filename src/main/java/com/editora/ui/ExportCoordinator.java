@@ -86,7 +86,7 @@ final class ExportCoordinator {
             DiagramCoordinator diagram,
             TypstCoordinator typst,
             Consumer<Path> openPath) {
-        this(host, mermaid, diagram, typst, openPath, chooser -> chooser.showSaveDialog(host.window()));
+        this(host, mermaid, diagram, typst, openPath, null);
     }
 
     /** Allows tests to exercise exports and cancellation without opening a native file dialog. */
@@ -96,8 +96,9 @@ final class ExportCoordinator {
             DiagramCoordinator diagram,
             TypstCoordinator typst,
             Consumer<Path> openPath,
-            java.util.function.Function<javafx.stage.FileChooser, java.io.File> chooseDestination) {
-        this.chooseDestination = chooseDestination;
+            java.util.function.@Nullable Function<javafx.stage.FileChooser, java.io.File> chooseDestination) {
+        this.chooseDestination =
+                chooseDestination != null ? chooseDestination : chooser -> chooser.showSaveDialog(dialogOwner());
         this.host = host;
         this.mermaid = mermaid;
         this.diagram = diagram;
@@ -430,8 +431,13 @@ final class ExportCoordinator {
      * Exports the complete Project Map layout—not merely the visible viewport—to a PDF. The map is rendered
      * only after a destination was chosen, on a landscape page when it is wider than tall.
      */
+    void exportProjectMapPdf(ProjectMapOutput output) {
+        exportProjectMapPdf(output, output.baseName());
+    }
+
+    /** As {@link #exportProjectMapPdf(ProjectMapOutput)}, suggesting {@code baseName} for the file. */
     void exportProjectMapPdf(ProjectMapOutput output, @Nullable String baseName) {
-        java.io.File file = choosePdfDestination(baseName, null);
+        java.io.File file = overMapWindow(output, () -> choosePdfDestination(baseName, null));
         if (file == null) {
             return;
         }
@@ -469,7 +475,10 @@ final class ExportCoordinator {
         }
         PrintPreview.Job job = printJobs.get();
         if (job == null) {
-            noPrinter(() -> exportProjectMapPdf(output, null));
+            overMapWindow(output, () -> {
+                noPrinter(() -> exportProjectMapPdf(output));
+                return null;
+            });
             return;
         }
         if (output.landscape()) {
@@ -484,8 +493,33 @@ final class ExportCoordinator {
         }
         String note = projectMapOutputNote(preview.plan());
         host.setStatus(note == null ? tr("status.print.preparing") : note);
-        openPrintPreview(
-                job, new com.editora.print.PrintService.Prepared(projectMapPaginator(output, first, preview), null));
+        overMapWindow(output, () -> {
+            openPrintPreview(
+                    job,
+                    new com.editora.print.PrintService.Prepared(projectMapPaginator(output, first, preview), null));
+            return null;
+        });
+    }
+
+    /** The window this coordinator's dialogs are opened over while a Project Map output asks; else none. */
+    private javafx.stage.@Nullable Window dialogOwnerOverride;
+
+    /** Whose window a dialog belongs over: the Map window's during its Print/PDF, else this editor window. */
+    javafx.stage.Window dialogOwner() {
+        javafx.stage.Window override = dialogOwnerOverride;
+        return override != null ? override : host.window();
+    }
+
+    /** Runs {@code work} with the output's window (the Map's) as the owner of the dialogs it opens. */
+    private <T> @Nullable T overMapWindow(ProjectMapOutput output, java.util.function.Supplier<@Nullable T> work) {
+        javafx.stage.Window previous = dialogOwnerOverride;
+        javafx.stage.Window owner = output == null ? null : output.owner(); // tests hand in no map at all
+        dialogOwnerOverride = owner != null && owner.isShowing() ? owner : previous;
+        try {
+            return work.get();
+        } finally {
+            dialogOwnerOverride = previous;
+        }
     }
 
     /** Reuses the render made for {@code first}; any other layout (chosen in the print dialog) renders again. */
@@ -509,7 +543,7 @@ final class ExportCoordinator {
             return tr("status.projectMap.outputCannotKeepDetail", plan.pages().size());
         }
         if (plan.tiled()) {
-            return tr("status.projectMap.outputTiled", plan.pages().size(), plan.columns(), plan.rows());
+            return tr("status.projectMap.outputPages", plan.pages().size()); // pages, not the grid's cells
         }
         if (plan.scaledDown()) {
             return tr("status.projectMap.outputScaled", (int) Math.round(plan.paperScale() * 100));
@@ -1155,7 +1189,7 @@ final class ExportCoordinator {
     /** Asks whether an export may replace {@code file}; the wording is Save As's. */
     private boolean confirmReplace(java.io.File file) {
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-        alert.initOwner(host.window());
+        alert.initOwner(dialogOwner());
         alert.setTitle(tr("dialog.saveAs.overwrite.title"));
         alert.setHeaderText(tr("dialog.saveAs.overwrite.header", file.getName()));
         alert.setContentText(tr("dialog.saveAs.overwrite.content"));
@@ -1518,7 +1552,7 @@ final class ExportCoordinator {
     /** The "No printer is available" dialog: Export to PDF… (its first button) or Cancel. */
     Alert noPrinterAlert() {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.initOwner(host.window());
+        alert.initOwner(dialogOwner());
         alert.setTitle(tr("dialog.print.title"));
         alert.setHeaderText(tr("dialog.print.noPrinter.header"));
         alert.setContentText(tr("dialog.print.noPrinter.content"));
@@ -1552,7 +1586,7 @@ final class ExportCoordinator {
         }
         try {
             PrintPreview preview = new PrintPreview(
-                    host.window(),
+                    dialogOwner(),
                     job,
                     prepared.paginator(),
                     result -> {

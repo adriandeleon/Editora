@@ -295,6 +295,7 @@ class ProjectMapViewFxTest {
         Path javaFile = Files.writeString(root.resolve("Main.java"), "class Main {}")
                 .toAbsolutePath()
                 .normalize();
+        Files.createDirectory(root.resolve("docs")); // the root is the first column's title, not a folder row
         List<ProjectMapModel.Entry> entries = ProjectMapModel.loadVisible(root, Set.of(root), false);
         Set<Path> openFiles = new HashSet<>();
         ProjectMapView mapView =
@@ -314,6 +315,7 @@ class ProjectMapViewFxTest {
                 Region surface = FxTestSupport.field(mapView, "surface");
                 FxTestSupport.call(
                         surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(root));
+                FxTestSupport.invoke(surface, "paintNow"); // the icons are rasterized as the Canvas is drawn
 
                 Map<?, Image> images = FxTestSupport.field(surface, "iconImages");
                 assertTrue(
@@ -1041,7 +1043,10 @@ class ProjectMapViewFxTest {
                                 + contentWidth
                                 + " > "
                                 + editorScroll.getWidth());
-                assertEquals(420, preview.getHeight(), 0.001);
+                // As tall as it can be where it covers least (review C7): here a little less than its 420.
+                assertTrue(
+                        preview.getHeight() >= ProjectMapPreview.MIN_HEIGHT && preview.getHeight() <= 420,
+                        () -> "height " + preview.getHeight());
                 javafx.scene.layout.BorderPane frame = FxTestSupport.field(preview, "frame");
                 assertSame(
                         FxTestSupport.field(preview, "textPane"),
@@ -1219,8 +1224,10 @@ class ProjectMapViewFxTest {
                 assertEquals(18, grip.getWidth(), 0.001, "the resize handle must not cover the editable note body");
                 assertEquals(18, grip.getHeight(), 0.001, "the resize handle must only occupy the lower corner");
                 javafx.scene.layout.VBox notes = FxTestSupport.field(card, "notes");
-                javafx.scene.control.TextArea editor =
-                        (javafx.scene.control.TextArea) notes.getChildren().getFirst();
+                javafx.scene.control.TextArea editor = (javafx.scene.control.TextArea) notes.getChildren().stream()
+                        .filter(javafx.scene.control.TextArea.class::isInstance) // after its heading (review C14)
+                        .findFirst()
+                        .orElseThrow();
                 assertTrue(editor.isEditable());
                 editor.setText("edited note");
                 editor.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, true, false, true));
@@ -1386,10 +1393,11 @@ class ProjectMapViewFxTest {
                 ContextMenu menu = FxTestSupport.field(preview, "editorContextMenu");
                 assertEquals(
                         List.of(
-                                tr("editmenu.copy"),
+                                tr("project.map.preview.copyAll"), // nothing selected: Copy takes it all
                                 tr("editmenu.selectAll"),
                                 tr("editmenu.addBookmark"),
-                                tr("editmenu.addNote")),
+                                tr("editmenu.addNote"),
+                                tr("project.map.preview.moveToFreeSpace")),
                         menu.getItems().stream()
                                 .filter(item -> !(item instanceof javafx.scene.control.SeparatorMenuItem))
                                 .map(MenuItem::getText)
@@ -1608,7 +1616,8 @@ class ProjectMapViewFxTest {
 
     @Test
     void columnsExpandToShowFullNamesWithoutBreakingDirectionalSpacing() throws Exception {
-        String longName = "a_very_long_directory_name_that_must_remain_fully_visible_in_the_canvas";
+        // Long, but under the row's width cap (a longer one is elided: ProjectMapLayoutReviewFxTest).
+        String longName = "a_long_directory_name_kept_whole";
         Path longFolder = root.resolve(longName).toAbsolutePath().normalize();
         Path shortFile = root.resolve("z.txt").toAbsolutePath().normalize();
         Path child = longFolder.resolve("Child.java");
@@ -1719,6 +1728,9 @@ class ProjectMapViewFxTest {
         try {
             FxTestSupport.runOnFx(() -> {
                 new Scene(mapView, 900, 600);
+                // The selector's skin fires its action on a value change. It used to be created by the CSS pass
+                // a synchronous paint ran (rasterizing icons); the Canvas is drawn at the pulse now.
+                mapView.applyCss();
                 mapView.resize(900, 600);
                 mapView.layout();
                 Region surface = FxTestSupport.field(mapView, "surface");
@@ -1885,13 +1897,21 @@ class ProjectMapViewFxTest {
 
                 List<ProjectMapModel.Entry> entries = new ArrayList<>();
                 Path normalizedRoot = root.toAbsolutePath().normalize();
+                // The root is the first column's title: the 120 rows hang from a folder row of that column.
+                Path folder = normalizedRoot.resolve("folder");
                 entries.add(new ProjectMapModel.Entry(normalizedRoot, null, 0, true));
+                entries.add(new ProjectMapModel.Entry(folder, normalizedRoot, 1, true));
+                entries.add(new ProjectMapModel.Entry(normalizedRoot.resolve("readme.txt"), normalizedRoot, 1, false));
                 for (int i = 0; i < 120; i++) {
-                    entries.add(new ProjectMapModel.Entry(
-                            normalizedRoot.resolve("file-" + i + ".txt"), normalizedRoot, 1, false));
+                    entries.add(new ProjectMapModel.Entry(folder.resolve("file-" + i + ".txt"), folder, 2, false));
                 }
                 FxTestSupport.call(
-                        surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(normalizedRoot));
+                        surface,
+                        "setEntries",
+                        new Class<?>[] {List.class, Set.class},
+                        entries,
+                        Set.of(normalizedRoot, folder));
+                FxTestSupport.invoke(surface, "paintNow");
 
                 int painted = FxTestSupport.field(surface, "lastPaintedConnectorCount");
                 assertTrue(painted > 0, "visible destination rows should retain their connectors");

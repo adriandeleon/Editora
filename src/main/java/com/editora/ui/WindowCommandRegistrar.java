@@ -464,11 +464,25 @@ final class WindowCommandRegistrar {
         // The Project Map's own window: opened (or brought forward), or closed when it is the window in use.
         host.registry().register(Command.of("project.toggleMapView", () -> {
             if (!host.projectsEnabled()) {
+                host.setStatus(projectsOff()); // a key bound to it says why nothing opens
                 return;
             }
             ProjectPanel panel = host.builtProjectPanel(); // the Map's window needs no Project tool window
             if (panel.isMapShowing() || panel.getRoot() != null) {
                 panel.toggleMapView();
+            } else {
+                host.setStatus(tr("status.projectMap.noProject"));
+            }
+        }));
+        // Opens (or raises) the Map window and selects the file being edited on it.
+        host.registry().register(Command.of("projectMap.revealActiveFile", () -> {
+            if (!host.projectsEnabled()) {
+                host.setStatus(projectsOff());
+                return;
+            }
+            ProjectPanel panel = host.builtProjectPanel();
+            if (panel.isMapShowing() || panel.getRoot() != null) {
+                panel.revealActiveFileInMap();
             } else {
                 host.setStatus(tr("status.projectMap.noProject"));
             }
@@ -3431,5 +3445,10 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of(EncryptionCoordinator.CLEAR_SIGN, e::clearSign));
         host.registry().register(Command.of(EncryptionCoordinator.SIGN_DETACHED, e::signDetached));
         host.registry().register(Command.of(EncryptionCoordinator.VERIFY, e::verifySignature));
+    }
+
+    /** The palette's "this feature is turned off" line, naming the command that turns Project support on. */
+    private static String projectsOff() {
+        return tr("palette.disabled.featureOff", tr("command.view.toggleProjects"));
     }
 }

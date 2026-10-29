@@ -151,8 +151,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private static final java.util.logging.Logger LOG =
             java.util.logging.Logger.getLogger(ProjectPanel.class.getName());
 
-    private static final int MAX_VISIT = 20_000;
+    static final int MAX_VISIT = 20_000;
     private static final int MAX_MATCHES = 300;
+    /** The shortest query the Map searches the whole project for; a shorter one filters what is loaded. */
+    static final int MIN_MAP_SEARCH_LENGTH = 2;
+
     private static final int MAX_DEPTH = 25;
 
     private final Consumer<Path> onOpenFile;
@@ -280,6 +283,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             addPersonalNote(file);
         }
 
+        /**
+         * As {@link #addPersonalNote(Path, NoteDraft)}, asked from a Project Map card: the prompt shows in
+         * {@code over} (the Map window's overlay), where the user is, and names the file and lines.
+         */
+        default void addPersonalNote(Path file, NoteDraft draft, OverlayHost over) {
+            addPersonalNote(file, draft);
+        }
+
         default List<PersonalNote> personalNotes(Path path) {
             return List.of();
         }
@@ -332,8 +343,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final ProjectMapWindow mapWindow;
     /** The editor window this panel belongs to, for when the panel itself is not on screen. */
     private java.util.function.Supplier<javafx.stage.@Nullable Window> editorWindow = () -> null;
-    /** The workspace remembered the Map window as open: reopen it once there is a project and a window. */
+    /**
+     * The workspace remembered the Map window as open, or the project it showed closed under it: reopen it once
+     * there is a project and a window.
+     */
     private boolean reopenMap;
+    /**
+     * The folder the Map shows: {@link #root}, except in a window whose root follows the active tab (the No
+     * Project window), where an open Map stays on the folder it was opened on (see {@link #setMapRootPinned}).
+     */
+    private @Nullable Path mapRoot;
+    /** Whether this window's root follows its active tab, so an open Map keeps its own root. */
+    private java.util.function.BooleanSupplier mapRootPinned = () -> false;
+    /** When the Map last asked to create a file in a folder (New ▸ from a Map row), to reveal the result. */
+    private @Nullable Path mapNewFileFolder;
+
+    private long mapNewFileAt;
 
     private Runnable onFocusEditor = () -> {};
     /** The tree currently holds the lazy project tree (not flat filter results) built for {@link #root}. */
@@ -382,9 +407,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private volatile boolean disposed;
     // In-app rename/delete update the tree directly (instantly); the watcher then re-fires for that same
     // change (the OS delivers the event a beat later — ~1 s on macOS) and would run a redundant full
-    // refreshTree() rebuild that reads as the edit "settling" a second later. Skip the watcher refresh for a
-    // short window after an in-app filesystem change so the instant update is the only one the user sees.
-    private volatile long lastLocalChangeMs;
+    // refreshTree() rebuild that reads as the edit "settling" a second later. The paths an in-app operation
+    // touched (path -> when) are recorded, and for a short window the watcher's events for them — and only
+    // them — are taken for that operation's echo. Somebody else's change landing in the same window is not.
+    private final java.util.Map<Path, Long> localChanges = new java.util.HashMap<>();
 
     private static final long SELF_CHANGE_WINDOW_MS = 1500;
     // What the watcher reported since the last debounce tick, by directory (FX thread only).
@@ -455,21 +481,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.isModified = isModified;
         this.isOpen = isOpen == null ? path -> false : isOpen;
         this.mapView = new ProjectMapView(this::openFromMap, isOpen, isModified, previewContent);
-        this.mapView.setActive(false); // nothing is listed for the Map until it is first shown
+        this.mapView.setShowing(false); // nothing is listed for the Map until its window first shows
         this.mapView.setShowHidden(showHidden);
         this.mapView.setOnExpandedChanged(this::syncWatches);
         this.mapView.setContextMenuFactory(entry -> raisingEditorWindow(contextMenuFor(
-                new TreeItem<>(entry.path()), entry.directory(), entry.path().equals(root))));
+                new MapRowItem(entry.path()), entry.directory(), entry.path().equals(mapRoot))));
         // F2 / Delete on the map's selection run the tree's row actions (see onKey), with the same limits.
         this.mapView.setRowActions(
                 entry -> {
-                    if (!entry.path().equals(root)) {
-                        renameItem(new TreeItem<>(entry.path()));
+                    if (!entry.path().equals(mapRoot)) {
+                        renameItem(new MapRowItem(entry.path()));
                     }
                 },
-                entry -> deleteSelected(new TreeItem<>(entry.path())));
+                entry -> deleteSelected(new MapRowItem(entry.path())));
         this.mapView.setEscapeActions(mapFilterField::clear, this::leaveMap);
         this.mapWindow = new ProjectMapWindow(buildMapWindowContent());
+        this.mapWindow.setOnShowing(mapView::setShowing); // refreshes, polls and loads follow the window
         this.mapWindow.setOnHidden(this::mapWindowHidden);
         this.mapWindow.setOnUserClosed(() -> onMapWindowChanged.accept(false));
         getStyleClass().add("project-panel");
@@ -653,23 +680,91 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** {@code remember}: whether opening it is the user's choice to store (not a restore of what was stored). */
     private void showMapWindow(boolean focus, boolean remember) {
-        if (root == null) {
-            return;
+        boolean wasShowing = mapWindow.isShowing();
+        if (!wasShowing) {
+            if (root == null) {
+                return;
+            }
+            // Opened (not brought forward): the Map maps what the tree shows now. Only an open Map keeps a
+            // root of its own, in the window whose tree follows the active tab.
+            if (!com.editora.config.PathKeys.samePath(mapRoot, root)) {
+                applyMapRoot(root);
+            }
         }
         reopenMap = false;
-        boolean wasShowing = mapWindow.isShowing();
         updateMapWindowTitle();
-        mapWindow.show(editorWindow());
+        mapWindow.show(editorWindow()); // its showing drives the Map's first load (and every reload on reopen)
         if (!wasShowing) {
-            mapView.setActive(true); // the first open (and every reopen) lists the project afresh
             syncWatches();
             if (remember) {
                 onMapWindowChanged.accept(true);
             }
+            revealActiveFileOnOpen();
         }
         if (focus) {
             mapView.focusMap();
         }
+    }
+
+    /** Opened with nothing chosen on it (the root alone is selected): the Map starts at the file being edited. */
+    private void revealActiveFileOnOpen() {
+        Path selected = mapView.windowSelectedPath();
+        if (activeFile != null && (selected == null || com.editora.config.PathKeys.samePath(selected, mapRoot))) {
+            mapView.revealPath(activeFile);
+        }
+    }
+
+    /** Points the Map at {@code next}, which clears what it showed of the previous folder (its search too). */
+    private void applyMapRoot(@Nullable Path next) {
+        mapRoot = next;
+        mapView.setRoot(next);
+        mapView.setGitStatus(gitStatus); // recompute changed-directory ancestry against the new root
+        loading = true;
+        mapFilterField.clear();
+        loading = false;
+        mapView.setQuery("");
+        updateMapWindowTitle();
+    }
+
+    /**
+     * Whether this window's tree root follows its active tab (the No Project window, with no remote folder
+     * mounted). There an open Map keeps the folder it was opened on: opening a file from it, or switching to
+     * a tab in another folder or to one with no folder at all, leaves it as it is. It takes the tree's root
+     * again only when it is opened anew, or when {@link #revealActiveFileInMap} needs a file it does not hold.
+     */
+    public void setMapRootPinned(java.util.function.BooleanSupplier pinned) {
+        mapRootPinned = pinned == null ? () -> false : pinned;
+    }
+
+    /** The folder the Map shows (it differs from {@link #getRoot()} only while pinned; tests). */
+    @Nullable
+    Path mapRoot() {
+        return mapRoot;
+    }
+
+    /**
+     * {@code projectMap.revealActiveFile}: opens the Map window (or brings it forward) and selects the active
+     * file on it. A pinned Map that does not hold the file takes the tree's root first. Says so when there is
+     * no file to reveal.
+     */
+    public void revealActiveFileInMap() {
+        Path file = activeFile;
+        if (file != null
+                && root != null
+                && mapRoot != null
+                && !com.editora.config.PathKeys.isAtOrUnder(file, mapRoot)
+                && com.editora.config.PathKeys.isAtOrUnder(file, root)) {
+            applyMapRoot(root); // the open Map's pinned folder does not hold the file the user asked for
+        }
+        showMapWindow(true, true);
+        if (!isMapShowing()) {
+            return;
+        }
+        if (file == null || mapRoot == null || !com.editora.config.PathKeys.isAtOrUnder(file, mapRoot)) {
+            onStatus.accept(tr("status.projectMap.noActiveFile"));
+            return;
+        }
+        mapView.revealPath(file);
     }
 
     /**
@@ -701,6 +796,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      */
     void setEditorWindow(java.util.function.Supplier<javafx.stage.@Nullable Window> window) {
         editorWindow = window == null ? () -> null : window;
+        mapView.setEditorFontSource(this::editorWindow); // the Map's cards use that window's editor font
     }
 
     /** What the Map window's scene gets, as the editor window's did: its key dispatcher. */
@@ -714,7 +810,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     private void updateMapWindowTitle() {
-        Path name = root == null ? null : root.getFileName();
+        Path name = mapRoot == null ? null : mapRoot.getFileName();
         mapWindow.setTitle(
                 name == null ? tr("project.map.windowTitleNoName") : tr("project.map.windowTitle", name.toString()));
     }
@@ -722,9 +818,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** The Map window stopped showing (closed by the user, its editor window, or the project going away). */
     private void mapWindowHidden() {
         mapSearchGen.incrementAndGet(); // a search still in flight has nowhere to land
-        mapView.setActive(false);
-        mapView.suspendPreviews(); // cards keep their place for the next open
-        syncWatches(); // the Map's open folders need no watching now
+        syncWatches(); // the Map's open folders need no watching now; its cards keep their place
     }
 
     /** Runs the Map window's search: the whole project, off the FX thread, as the tree's filter does. */
@@ -733,29 +827,37 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         String q = mapFilterField.getText().trim();
         mapView.setQuery(q);
         syncWatches();
-        Path searchRoot = root;
+        Path searchRoot = mapRoot;
         if (q.isEmpty() || searchRoot == null || !isMapShowing()) {
             return;
         }
         boolean includeHidden = showHidden;
         boolean useGitignore = respectGitignore && com.editora.vfs.Vfs.isLocal(searchRoot);
+        if (q.codePointCount(0, q.length()) < MIN_MAP_SEARCH_LENGTH) {
+            // One character matches most of a project: walking it, opening the folders of 300 matches and
+            // drawing them stalled every window for a third of a second on a mid-size repository. It filters
+            // the rows already on the map instead, and the status says how to search the whole project.
+            mapView.setSearchMatches(q, List.of(), 0, false);
+            onStatus.accept(tr("project.map.status.searchTooShort", MIN_MAP_SEARCH_LENGTH));
+            return;
+        }
         submitUnlessDisposed(searchExecutor, () -> {
             com.editora.search.GitignoreFilter gitignore = useGitignore
                     ? com.editora.search.GitignoreFilter.load(searchRoot)
                     : com.editora.search.GitignoreFilter.NONE;
-            List<Path> matches = search(searchRoot, q, includeHidden, gitignore, () -> gen != mapSearchGen.get());
+            SearchResult found = searchRanked(searchRoot, q, includeHidden, gitignore, () -> gen != mapSearchGen.get());
             Platform.runLater(() -> {
                 if (gen != mapSearchGen.get() || !isMapShowing()) {
                     return;
                 }
-                mapView.setSearchMatches(q, matches);
+                mapView.setSearchMatches(q, found.matches(), found.total(), found.partial());
             });
         });
     }
 
     /** Re-runs a Map search on show, after a setting changed what it finds. */
     private void searchMapAgain() {
-        if (root != null && isMapShowing() && !mapFilterField.getText().isBlank()) {
+        if (mapRoot != null && isMapShowing() && !mapFilterField.getText().isBlank()) {
             searchMap();
         }
     }
@@ -784,7 +886,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** Property on a menu item whose action stays in the Map window (its own dialog, or nothing to show). */
-    private static final String STAYS_IN_MAP = "editora.project.staysInMap";
+    static final String STAYS_IN_MAP = "editora.project.staysInMap";
 
     /**
      * The Map window's copy of a row's context menu: each item that does its work in the editor window
@@ -884,6 +986,47 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         activeFile = next;
         tree.refresh();
         mapView.refreshStates();
+        if (next != null
+                && isMapShowing()
+                && mapRoot != null
+                && com.editora.config.PathKeys.isAtOrUnder(next, mapRoot)) {
+            if (mapView.isFollowActiveFile() || createdFromMap(next)) {
+                mapView.revealPath(next); // "Always select opened file", or the file New ▸ just made from the Map
+            }
+        }
+    }
+
+    /** How long after New ▸ on a Map row the file it opens is taken to be that one (the name prompt is open). */
+    private static final long MAP_NEW_FILE_WINDOW_MS = 5 * 60_000L;
+
+    /** Whether {@code file} is the one New ▸ on a Map row asked for: opened in that folder since. Once only. */
+    private boolean createdFromMap(Path file) {
+        Path folder = mapNewFileFolder;
+        if (folder == null || System.currentTimeMillis() - mapNewFileAt > MAP_NEW_FILE_WINDOW_MS) {
+            return false;
+        }
+        if (!com.editora.config.PathKeys.isAtOrUnder(file, folder) || java.nio.file.Files.isDirectory(file)) {
+            return false;
+        }
+        mapNewFileFolder = null;
+        return true;
+    }
+
+    /** A folder or file just created from a Map row: shown and selected on the Map, as the tree reveals it. */
+    private void revealCreatedOnMap(TreeItem<Path> origin, Path created) {
+        if (origin instanceof MapRowItem && isMapShowing()) {
+            mapView.revealPath(created);
+        }
+    }
+
+    /**
+     * A Map row's stand-in for the tree item the shared row actions take: a detached item, so expanding it
+     * reveals nothing; what it was made for is the Map, which reveals the result itself.
+     */
+    private static final class MapRowItem extends TreeItem<Path> {
+        MapRowItem(Path path) {
+            super(path);
+        }
     }
 
     /** Reveals and selects a file or folder in the project tree. */
@@ -989,7 +1132,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Re-lists just {@code dirs} (those the tree currently shows expanded); the rest of the tree is untouched. */
     private void refreshDirectories(java.util.Collection<Path> dirs) {
         if (isMapShowing()) {
-            mapView.refresh();
+            mapView.refresh(dirs); // the Map lists these again and reuses the rest
         }
         if (root == null || filtering || !(tree.getRoot() instanceof PathItem rootItem)) {
             return;
@@ -1017,6 +1160,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         long now = localWriteClockForTest.getAsLong();
         localWrites.values().removeIf(at -> now - at >= localWriteWindowMs);
         localWrites.put(file.toAbsolutePath().normalize(), now);
+        Path parent = file.toAbsolutePath().normalize().getParent();
+        if (parent != null) {
+            mapView.listingsChanged(List.of(parent)); // its size and time changed; no entry came or went
+        }
     }
 
     /**
@@ -1052,12 +1199,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (disposed) {
             return;
         }
-        if (System.currentTimeMillis() - lastLocalChangeMs < SELF_CHANGE_WINDOW_MS) {
-            watchChanges.clear();
-            syncWatches(); // our own edit already refreshed the tree; just keep the watch set current
-            return;
-        }
-        ProjectWatchChanges.Plan plan = watchChanges.drain(this::recentlyWrittenLocally);
+        // Events for what an in-app rename, move, delete or create touched are its echo: that operation already
+        // refreshed the tree. Everything else in the batch is applied as usual.
+        ProjectWatchChanges.Plan plan = watchChanges.drain(this::recentlyWrittenLocally, this::changedLocally);
         if (plan.relistAll()) {
             refreshTree();
         } else {
@@ -1073,6 +1217,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         syncWatches(); // a newly-created folder that's expanded would need watching
         if (plan.hasExternal()) {
+            java.util.Set<Path> rewritten = new java.util.HashSet<>();
+            for (FsChange change : plan.external()) {
+                if (change.kind() == FsKind.CHANGED && change.path().getParent() != null) {
+                    rewritten.add(change.path().getParent());
+                }
+            }
+            mapView.listingsChanged(rewritten); // a rewritten file's size and time, read with its next listing
             mapView.filesChangedOnDisk(); // a Map preview card re-reads a file that was rewritten
             // An external change → refresh Git/Commit stripe, build markers, diffs (#529).
             queuedExternal.addAll(plan.external());
@@ -1145,21 +1296,27 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         lastMove = List.of(); // an undo must not reach back into the project that was open before
         pendingTreeSelection = null;
         pendingTreeReveal = null;
-        mapView.setRoot(root);
-        mapView.setGitStatus(gitStatus); // recompute changed-directory ancestry against the new root
         loading = true;
         filterField.clear();
-        mapFilterField.clear();
         loading = false;
-        mapView.setQuery("");
-        if (root == null) {
-            mapWindow.closeQuietly(); // nothing to map; a project opened later does not bring it back
-            reopenMap = false;
-        } else {
-            updateMapWindowTitle();
+        // In the No Project window the tree follows the active tab, but the Map does not: an open Map keeps the
+        // folder it shows (a local one), and a closed one takes the tree's root when it is next opened
+        // (showMapWindow), so its cards survive the tab switches in between.
+        boolean pinned = mapRootPinned.getAsBoolean();
+        boolean keepMapRoot =
+                pinned && (!mapWindow.isShowing() || mapRoot != null && com.editora.vfs.Vfs.isLocal(mapRoot));
+        if (!keepMapRoot) {
+            if (root == null && mapWindow.isShowing()) {
+                mapWindow.closeQuietly(); // the project closed under it: it comes back with the next, as at startup
+                reopenMap = !pinned;
+            }
+            applyMapRoot(root);
         }
         ensureWatchOrStop(); // start a watcher for a local root (or stop it for remote/none)
         rebuildBody(); // ends with syncWatches() — registers the new root's dirs, cancels the old root's
+        if (root == null && isMapShowing()) {
+            syncWatches(); // the placeholder registers nothing: keep watching what the pinned Map shows
+        }
         GitPathScope.learnRemote(root, true); // a remote project: where its repositories are, for the menus
         reopenMapWhenReady();
     }
@@ -1403,6 +1560,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         if (root != null && watchedOnTarget(root)) {
             cancelAllWatches(); // watched where its tools run: this machine's watcher would see nothing, or twice
+            mapView.setWatchedDirectories(java.util.Set.of());
             return;
         }
         java.util.Set<Path> desired = new java.util.HashSet<>();
@@ -1450,6 +1608,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 // a dir we can't watch (perms, vanished) is simply not watched
             }
         }
+        // The Map reuses a folder's listing only while this watcher would tell it the folder changed. The
+        // style-only folders' events refresh nothing, so they do not count.
+        java.util.Set<Path> followed = new java.util.HashSet<>(watchKeys.values());
+        followed.removeAll(style);
+        mapView.setWatchedDirectories(followed);
     }
 
     private void cancelAllWatches() {
@@ -1623,33 +1786,69 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             boolean includeHidden,
             com.editora.search.GitignoreFilter gitignore,
             java.util.function.BooleanSupplier cancelled) {
+        return searchRanked(root, query, includeHidden, gitignore, cancelled).matches();
+    }
+
+    /**
+     * What a filename search found: the best {@link #MAX_MATCHES} matches, best first; how many names matched
+     * in all; and whether the walk stopped at {@link #MAX_VISIT} entries before it saw the whole project.
+     */
+    record SearchResult(List<Path> matches, int total, boolean partial) {
+        static final SearchResult NONE = new SearchResult(List.of(), 0, false);
+
+        /** Whether more matched (or may have) than {@link #matches()} holds. */
+        boolean truncated() {
+            return partial || total > matches.size();
+        }
+    }
+
+    /**
+     * As {@link #search}, with the counts. The walk is bounded by the entries it visits, not by the matches it
+     * has found: stopping at the first {@link #MAX_MATCHES} hits of a breadth-first walk kept shallow files and
+     * never reached the deep one a short query named. Every match is ranked as it is found and only the best
+     * {@link #MAX_MATCHES} are kept (a bounded heap), so the result is the best of everything visited.
+     */
+    static SearchResult searchRanked(
+            Path root,
+            String query,
+            boolean includeHidden,
+            com.editora.search.GitignoreFilter gitignore,
+            java.util.function.BooleanSupplier cancelled) {
         if (cancelled.getAsBoolean()) {
-            return List.of(); // superseded while it sat in the queue
+            return SearchResult.NONE; // superseded while it sat in the queue
         }
         String q = query.toLowerCase(Locale.ROOT);
         com.editora.search.GitignoreFilter rootIgnore =
                 gitignore == null ? com.editora.search.GitignoreFilter.NONE : gitignore;
-        List<Path> matches = new ArrayList<>();
+        // Worst first, so the heap's head is what a better match pushes out.
+        java.util.PriorityQueue<SearchHit> best = new java.util.PriorityQueue<>(SearchHit.ORDER.reversed());
+        int total = 0;
+        boolean partial = false;
         // Each queued directory carries the ignore rules in force inside it: the root's, plus those of any
         // .gitignore met on the way down (packages/<name>/.gitignore naming node_modules).
         record Dir(Path path, int depth, com.editora.search.GitignoreFilter ignore) {}
         java.util.Deque<Dir> queue = new java.util.ArrayDeque<>();
         queue.add(new Dir(root, 0, rootIgnore));
         int visited = 0;
-        while (!queue.isEmpty() && visited <= MAX_VISIT && matches.size() < MAX_MATCHES) {
+        while (!queue.isEmpty()) {
             if (cancelled.getAsBoolean()) {
-                return List.of();
+                return SearchResult.NONE;
+            }
+            if (visited > MAX_VISIT) {
+                partial = true;
+                break;
             }
             Dir current = queue.poll();
             com.editora.search.GitignoreFilter ignore = current.ignore();
             boolean useGitignore = !ignore.isEmpty();
             try (java.nio.file.DirectoryStream<Path> entries = Files.newDirectoryStream(current.path())) {
                 for (Path p : entries) {
-                    if (++visited > MAX_VISIT || matches.size() >= MAX_MATCHES) {
+                    if (++visited > MAX_VISIT) {
+                        partial = true;
                         break;
                     }
                     if ((visited & 0xFF) == 0 && cancelled.getAsBoolean()) {
-                        return List.of(); // one huge directory must not pin the thread either
+                        return SearchResult.NONE; // one huge directory must not pin the thread either
                     }
                     String name = p.getFileName().toString();
                     boolean hidden = name.startsWith(".");
@@ -1666,34 +1865,54 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                             queue.add(new Dir(p, current.depth() + 1, ignore.nested(p, rel)));
                         }
                     } else if ((includeHidden || !hidden) && FuzzyMatch.of(name, q) != null) {
-                        matches.add(p);
+                        total++;
+                        SearchHit hit = SearchHit.of(root, p, name, q);
+                        if (best.size() < MAX_MATCHES) {
+                            best.add(hit);
+                        } else if (SearchHit.ORDER.compare(hit, best.peek()) < 0) {
+                            best.poll();
+                            best.add(hit);
+                        }
                     }
                 }
             } catch (IOException | RuntimeException ex) {
                 // Unreadable directory — skip it, keep searching the rest (best effort).
             }
         }
-        // Relevance, not the alphabet. Alphabetical order is arbitrary with respect to what was typed, so
-        // the file actually being looked for sat wherever its initial happened to fall. Scoring the whole
-        // relative path (rather than just the name) is what lets a query name a directory as well as a
-        // file, and ofPath keeps a basename hit above a file that merely lives in a folder of that name.
-        record Scored(Path path, int score, String name) {}
-        List<Scored> scored = new ArrayList<>(matches.size());
-        for (Path p : matches) {
-            Path rel = root.relativize(p);
-            FuzzyMatch.Match m = FuzzyMatch.ofPath(rel.toString().replace(java.io.File.separatorChar, '/'), q);
+        List<SearchHit> ranked = new ArrayList<>(best);
+        ranked.sort(SearchHit.ORDER);
+        return new SearchResult(ranked.stream().map(SearchHit::path).toList(), total, partial);
+    }
+
+    /**
+     * One filename match and how it ranks. Relevance, not the alphabet: first how the name answers the query
+     * ({@link ProjectSearchRank#tier} — the exact name, then a prefix, then whole words…), then, among names
+     * that answer it as well, the shorter name (fewer characters the user did not type), then the fuzzy score
+     * of the whole relative path, which lets a query name a directory as well as a file, then the shallower
+     * path and the name.
+     */
+    private record SearchHit(Path path, int tier, int nameLength, int score, int depth, String name) {
+        static final java.util.Comparator<SearchHit> ORDER = java.util.Comparator.comparingInt(SearchHit::tier)
+                .thenComparingInt(hit -> hit.tier() == ProjectSearchRank.FUZZY ? 0 : hit.nameLength())
+                .thenComparing(
+                        java.util.Comparator.comparingInt(SearchHit::score).reversed())
+                .thenComparingInt(SearchHit::depth)
+                .thenComparing(SearchHit::name, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(hit -> hit.path().toString());
+
+        static SearchHit of(Path root, Path path, String name, String query) {
+            Path rel = root.relativize(path);
+            FuzzyMatch.Match m = FuzzyMatch.ofPath(rel.toString().replace(java.io.File.separatorChar, '/'), query);
             // The walk matched on the file name, so a path-level score can be absent (a name-only match
-            // whose characters don't line up across the whole path); such a row keeps a floor score and
-            // sorts alphabetically among its peers rather than dropping out of a list it belongs in.
-            scored.add(new Scored(
-                    p,
+            // whose characters don't line up across the whole path); such a row keeps a floor score.
+            return new SearchHit(
+                    path,
+                    ProjectSearchRank.tier(name, query),
+                    name.length(),
                     m == null ? Integer.MIN_VALUE : m.score(),
-                    p.getFileName().toString()));
+                    rel.getNameCount(),
+                    name);
         }
-        scored.sort(java.util.Comparator.comparingInt((Scored s) -> s.score())
-                .reversed()
-                .thenComparing(s -> s.name(), String.CASE_INSENSITIVE_ORDER));
-        return scored.stream().map(Scored::path).toList();
     }
 
     // --- keyboard navigation (mirrors StructurePanel) ---
@@ -2003,8 +2222,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /**
-     * Restores what the workspace remembers of this panel — Tree or Map, the Map's flow, its two
-     * navigation options and "Hide unmatched" — and writes later changes back through {@code state} and {@code save}.
+     * Restores what the workspace remembers of this panel — Tree or Map, the Map's flow, its ⋯ options and
+     * "Hide unmatched" — and writes later changes back through {@code state} and {@code save}.
      */
     public void setRememberedMapState(
             java.util.function.Supplier<com.editora.config.WorkspaceState> state, Runnable save) {
@@ -2023,9 +2242,28 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             state.get().setProjectMapHideUnmatched(hide);
             save.run();
         });
+        mapView.setRememberedOptions(
+                stored.isProjectMapSingleClickOpens(),
+                opens -> {
+                    state.get().setProjectMapSingleClickOpens(opens);
+                    save.run();
+                },
+                stored.isProjectMapCompactChains(),
+                compact -> {
+                    state.get().setProjectMapCompactChains(compact);
+                    save.run();
+                },
+                stored.isProjectMapFollowActiveFile(),
+                follow -> {
+                    state.get().setProjectMapFollowActiveFile(follow);
+                    save.run();
+                });
         mapWindow.setBoundsMemory(
                 () -> state.get().getProjectMapWindowBounds(),
                 bounds -> state.get().setProjectMapWindowBounds(bounds));
+        mapWindow.setMaximizedMemory(
+                () -> state.get().isProjectMapWindowMaximized(),
+                maximized -> state.get().setProjectMapWindowMaximized(maximized));
         onMapWindowChanged = open -> {
             state.get()
                     .setProjectViewMode(
@@ -2074,7 +2312,36 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Injects the window-owned print and PDF handlers for a full Project Map snapshot. */
     void setMapOutputActions(Consumer<ProjectMapOutput> print, Consumer<ProjectMapOutput> pdf) {
-        mapView.setOutputActions(print, pdf);
+        mapView.setOutputActions(
+                output -> print.accept(fromMapWindow(output)), output -> pdf.accept(fromMapWindow(output)));
+    }
+
+    /** {@code output}, asked for in the Map window: its dialogs open over that window, its file named for the Map. */
+    private ProjectMapOutput fromMapWindow(ProjectMapOutput output) {
+        javafx.stage.Window owner = mapWindow.stage();
+        Path folder = mapRoot == null ? null : mapRoot.getFileName();
+        String base = (folder == null ? "project" : folder.toString()) + "-map";
+        return new ProjectMapOutput() {
+            @Override
+            public boolean landscape() {
+                return output.landscape();
+            }
+
+            @Override
+            public @Nullable Rendered render(double pageWidth, double pageHeight) {
+                return output.render(pageWidth, pageHeight);
+            }
+
+            @Override
+            public javafx.stage.@Nullable Window owner() {
+                return owner;
+            }
+
+            @Override
+            public String baseName() {
+                return base;
+            }
+        };
     }
 
     /** Whether the Project Map's window is open and the Map has something to print or export. */
@@ -2189,7 +2456,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
                             @Override
                             public void addPersonalNote(Path file, NoteDraft draft) {
-                                markerActions.addPersonalNote(file, draft);
+                                // A card is only ever in the Map window: its prompt belongs over the Map.
+                                markerActions.addPersonalNote(file, draft, mapWindow.overlayHost());
                             }
                         });
         mapView.setMarkerCandidates(
@@ -2296,6 +2564,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         : FileIcons.forFileName(type.suggestedFileName()));
         item.setOnAction(e -> {
             dirItem.setExpanded(true); // reveal where the new file will land
+            if (dirItem instanceof MapRowItem) {
+                mapNewFileFolder = dirItem.getValue(); // the file it opens is revealed on the Map (setActiveFile)
+                mapNewFileAt = System.currentTimeMillis();
+                revealCreatedOnMap(dirItem, dirItem.getValue());
+            }
             onNewFile.accept(dirItem.getValue(), type);
         });
         return item;
@@ -2324,9 +2597,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 showError(tr("project.newFolderError", name, ex.getMessage()));
                 return;
             }
-            markLocalChange(); // tree re-listed below; suppress the watcher's redundant refresh
+            markLocalChange(List.of(target)); // tree re-listed below; the watcher skips its echo
             dirItem.setExpanded(true); // reveal the new folder under its parent
             refreshAfterChange();
+            revealCreatedOnMap(dirItem, target);
         });
     }
 
@@ -2346,7 +2620,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         return;
                     }
                     Path target = path.resolveSibling(name);
-                    if (target.equals(path) || Files.exists(target)) {
+                    if (target.equals(path)) {
+                        return; // the same name: nothing to do
+                    }
+                    if (Files.exists(target) && !caseOnlyRename(path, target)) {
+                        showError(tr("project.newFolderExists", name)); // taken: say so, do not just close
                         return;
                     }
                     renameParticipant.willRename(path, target, ok -> {
@@ -2357,14 +2635,53 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 });
     }
 
+    /**
+     * Whether renaming {@code path} to {@code target} only changes the case of its name on a file system that
+     * ignores case (macOS, Windows): {@code target} then "exists" — it is the file itself.
+     */
+    static boolean caseOnlyRename(Path path, Path target) {
+        Path from = path.getFileName();
+        Path to = target.getFileName();
+        if (from == null || to == null || from.toString().equals(to.toString())) {
+            return false;
+        }
+        if (!from.toString().equalsIgnoreCase(to.toString())) {
+            return false;
+        }
+        try {
+            return Files.isSameFile(path, target);
+        } catch (IOException | RuntimeException unknown) {
+            return false;
+        }
+    }
+
+    /**
+     * Renames {@code path} to {@code target}. A case-only rename goes through a temporary name in the same
+     * folder: on a case-insensitive file system a direct move to the other case is a no-op or "already exists".
+     */
+    static void moveRenaming(Path path, Path target) throws IOException {
+        if (!caseOnlyRename(path, target)) {
+            Files.move(path, target);
+            return;
+        }
+        Path step = path.resolveSibling(path.getFileName() + ".editora-rename-" + System.nanoTime());
+        Files.move(path, step);
+        try {
+            Files.move(step, target);
+        } catch (IOException ex) {
+            Files.move(step, path); // put it back under the name it had
+            throw ex;
+        }
+    }
+
     private void move(Path path, Path target) {
         try {
-            Files.move(path, target);
+            moveRenaming(path, target);
         } catch (IOException ex) {
             showError(tr("project.renameError", path.getFileName(), ex.getMessage()));
             return;
         }
-        markLocalChange(); // tree re-listed below; suppress the watcher's redundant refresh
+        markLocalChange(List.of(path, target)); // tree re-listed below; the watcher skips its echo
         mapView.pathRenamed(path, target); // a renamed open folder stays open in the Map
         refreshAfterChange();
         onFileRenamed.accept(path, target);
@@ -2543,8 +2860,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         moveThrough(planned, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             int moved = done.size();
             if (moved > 0) {
-                lastMove = List.copyOf(done);
-                markLocalChange();
+                lastMove = List.copyOf(done); // each move was recorded as a local change when it was made
                 refreshAfterChange();
             }
             int notMoved = alreadySkipped + failed - refused[0];
@@ -2594,6 +2910,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             } else {
                 try {
                     Files.move(m.from(), m.to());
+                    markLocalChange(List.of(m.from(), m.to()));
                     mapView.pathRenamed(m.from(), m.to());
                     onFileRenamed.accept(m.from(), m.to()); // the open buffer(s) of a moved file / under a moved dir
                     done.add(m);
@@ -2670,8 +2987,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         renameParticipant.beginMove(javaItems(back));
         moveThrough(back, 0, new ArrayList<>(), new int[] {0}, (done, failed) -> {
             if (!done.isEmpty()) {
-                markLocalChange();
-                refreshAfterChange();
+                refreshAfterChange(); // each move back was recorded as a local change when it was made
             }
             // a "No" to moving back without edits is the user's choice, not a conflict (sixth review BV3)
             int notBack = alreadyStuck + failed - refused[0];
@@ -2819,7 +3135,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         }
         if (deleted > 0) {
-            markLocalChange();
+            markLocalChange(files);
             refreshAfterChange();
         }
         if (trashed == 1) {
@@ -2848,9 +3164,33 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** Records an in-app filesystem change so the watcher skips its redundant refresh for a short window. */
-    private void markLocalChange() {
-        lastLocalChangeMs = System.currentTimeMillis();
+    /**
+     * Records the paths an in-app filesystem change touched (a renamed or moved item at both ends, a deleted
+     * one, a created folder), so the watcher's echo of that change does not refresh again for a short window.
+     * Only events at or under these paths are skipped: an outside change in the same window still lands.
+     */
+    private void markLocalChange(java.util.Collection<Path> paths) {
+        long now = localWriteClockForTest.getAsLong();
+        localChanges.values().removeIf(at -> now - at >= localWriteWindowMs);
+        for (Path path : paths) {
+            if (path != null) {
+                localChanges.put(path.toAbsolutePath().normalize(), now);
+            }
+        }
+    }
+
+    private boolean changedLocally(Path path) {
+        if (localChanges.isEmpty()) {
+            return false;
+        }
+        long now = localWriteClockForTest.getAsLong();
+        Path normalized = path.toAbsolutePath().normalize();
+        for (java.util.Map.Entry<Path, Long> change : localChanges.entrySet()) {
+            if (now - change.getValue() < localWriteWindowMs && normalized.startsWith(change.getKey())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Shows a modal error dialog when a filesystem operation (rename/delete) fails. */

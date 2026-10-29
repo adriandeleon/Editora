@@ -155,12 +155,13 @@ class ProjectMapCardsFxTest {
     @Test
     void outputIsTiledAtALegibleScaleAndSaysSo() throws Exception {
         root = projectRoot();
-        for (int i = 0; i < 60; i++) {
-            Files.writeString(root.resolve(String.format("File%02d.java", i)), "class A {}");
+        // 120 rows: sixty would now fit one page at the 6 pt the plan allows when that saves a page.
+        for (int i = 0; i < 120; i++) {
+            Files.writeString(root.resolve(String.format("File%03d.java", i)), "class A {}");
         }
         MapFixture map = openMap(700, 500, path -> null);
         try {
-            waitForRow(map, root.resolve("File59.java"));
+            waitForRow(map, root.resolve("File119.java"));
             FxTestSupport.runOnFx(() -> {
                 AtomicReference<ProjectMapOutput> job = new AtomicReference<>();
                 map.view.setOutputActions(ignored -> {}, job::set);
@@ -171,8 +172,9 @@ class ProjectMapCardsFxTest {
                 ProjectMapOutput.Rendered rendered = job.get().render(540, 720);
 
                 ProjectMapOutputPlan.Plan plan = rendered.plan();
-                assertTrue(plan.tiled(), "sixty rows do not fit one Letter page at a readable size");
-                assertEquals(ProjectMapOutputPlan.MIN_PAPER_SCALE, plan.paperScale(), 1e-9);
+                assertTrue(plan.tiled(), "120 rows do not fit one Letter page at a readable size");
+                assertTrue(plan.paperScale() >= ProjectMapOutputPlan.TOLERATED_MIN_PAPER_SCALE - 1e-9);
+                assertTrue(plan.paperScale() <= ProjectMapOutputPlan.MIN_PAPER_SCALE + 1e-9);
                 assertEquals(plan.pages().size(), rendered.pages().size());
                 assertTrue(rendered.pages().size() >= 3);
                 for (Image page : rendered.pages()) {
@@ -183,7 +185,7 @@ class ProjectMapCardsFxTest {
                             "every page shows part of the map");
                 }
                 assertEquals(
-                        tr("status.projectMap.outputTiled", plan.pages().size(), plan.columns(), plan.rows()),
+                        tr("status.projectMap.outputPages", plan.pages().size()),
                         ExportCoordinator.projectMapOutputNote(plan));
             });
         } finally {
@@ -249,11 +251,7 @@ class ProjectMapCardsFxTest {
                 exports[0].exportProjectMapPdf(counting, "map");
                 assertEquals(1, renders.get());
             });
-            String note = tr(
-                    "status.projectMap.outputTiled",
-                    plan.get().pages().size(),
-                    plan.get().columns(),
-                    plan.get().rows());
+            String note = tr("status.projectMap.outputPages", plan.get().pages().size());
             waitFor(() -> statuses.contains(note), "the export must say that the map was split across pages");
             assertEquals(note, statuses.getLast(), "the note is what stays in the status bar");
             assertTrue(statuses.contains(tr("status.pdf.exported", pdf.toString())));
@@ -1021,7 +1019,10 @@ class ProjectMapCardsFxTest {
 
     private static TextArea noteEditor(MapFixture map, Path path) {
         VBox notes = FxTestSupport.field(noteCards(map).get(path), "notes");
-        return (TextArea) notes.getChildren().getFirst();
+        return (TextArea) notes.getChildren().stream() // after its heading (review C14)
+                .filter(TextArea.class::isInstance)
+                .findFirst()
+                .orElseThrow();
     }
 
     private static String statusOf(ProjectMapPreview card) {

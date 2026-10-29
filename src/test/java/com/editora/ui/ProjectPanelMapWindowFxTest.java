@@ -201,6 +201,33 @@ class ProjectPanelMapWindowFxTest {
     }
 
     @Test
+    void theNewerMapOptionsAreRestoredAndRememberedPerWorkspace(@TempDir Path dir) throws Exception {
+        try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
+            WorkspaceState state = new WorkspaceState();
+            state.setProjectMapSingleClickOpens(false);
+            state.setProjectMapCompactChains(false);
+            state.setProjectMapFollowActiveFile(true);
+            AtomicInteger saves = new AtomicInteger();
+            FxTestSupport.runOnFx(() -> {
+                r.panel.setRememberedMapState(() -> state, saves::incrementAndGet);
+                ProjectMapView view = map(r);
+                assertFalse(view.isSingleClickOpens());
+                assertFalse(view.isCompactChains());
+                assertTrue(view.isFollowActiveFile());
+                assertEquals(0, saves.get(), "restoring what was stored is not a change to store");
+
+                view.setSingleClickOpens(true);
+                view.setCompactChains(true);
+                view.setFollowActiveFile(false);
+                assertTrue(state.isProjectMapSingleClickOpens());
+                assertTrue(state.isProjectMapCompactChains());
+                assertFalse(state.isProjectMapFollowActiveFile());
+                assertEquals(3, saves.get());
+            });
+        }
+    }
+
+    @Test
     void theMapWindowsOwnFieldSearchesTheMapForMatchesAnywhereInTheProject(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             openMap(r);

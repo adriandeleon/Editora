@@ -39,6 +39,9 @@ final class ProjectMapModel {
     /** File name of a placeholder row's synthetic path. Shown as-is by path-based chrome (breadcrumbs). */
     static final String PLACEHOLDER_NAME = "\u2026";
 
+    /** The most single-child folders one expansion opens on its own ("Compact folder chains"). */
+    static final int MAX_CHAIN = 32;
+
     /** What a non-file row stands for. */
     enum PlaceholderKind {
         /** The directory has {@link Placeholder#remaining()} more children than were loaded. */
@@ -46,7 +49,14 @@ final class ProjectMapModel {
         /** The directory was listed and has no (visible) children. */
         EMPTY,
         /** The directory could not be listed. */
-        UNREADABLE
+        UNREADABLE,
+        /**
+         * The directory is open, but the overall {@link #MAX_VISIBLE_ITEMS} limit left no room for its rows. It
+         * stays open and loads again once a column is closed; {@link Placeholder#remaining()} is its child count.
+         */
+        OVER_LIMIT,
+        /** Listing the directory did not finish within the listing timeout (a stalled mount or connection). */
+        NOT_RESPONDING
     }
 
     /** Marks an {@link Entry} as a row that is not a file or folder; {@code label} is its display text. */
@@ -58,6 +68,8 @@ final class ProjectMapModel {
             case MORE -> "+" + remaining + " more\u2026";
             case EMPTY -> "Empty folder";
             case UNREADABLE -> "Cannot read this folder";
+            case OVER_LIMIT -> "Not loaded \u2014 over the " + MAX_VISIBLE_ITEMS + "-row limit";
+            case NOT_RESPONDING -> "Not responding";
         };
 
         String label(PlaceholderKind kind, int remaining);
@@ -205,13 +217,23 @@ final class ProjectMapModel {
 
     /**
      * One Miller-style column containing the children of exactly one parent directory. {@code narrowed} counts
-     * the rows the map-wide filters took out of it while the Map hides what does not match.
+     * the rows the map-wide filters took out of it while the Map hides what does not match. {@code chain} is
+     * empty for an ordinary column. For a compacted one ("Compact folder chains") it lists the folders the
+     * column stands for, from the row it hangs from down to {@code parent}: {@code src}, {@code main}, …,
+     * {@code acme} for the column of {@code src/main/java/com/acme}'s children. The one-row columns between
+     * them are not drawn; paths and depths stay those of the real folders.
      */
-    record Column(int depth, @Nullable Path parent, List<Entry> entries, int totalEntries, int narrowed) {
+    record Column(
+            int depth, @Nullable Path parent, List<Entry> entries, int totalEntries, int narrowed, List<Path> chain) {
         Column {
             parent = normalize(parent);
             entries = entries == null ? List.of() : List.copyOf(entries);
             narrowed = Math.max(0, narrowed);
+            chain = chain == null ? List.of() : List.copyOf(chain);
+        }
+
+        Column(int depth, @Nullable Path parent, List<Entry> entries, int totalEntries, int narrowed) {
+            this(depth, parent, entries, totalEntries, narrowed, List.of());
         }
 
         Column(int depth, @Nullable Path parent, List<Entry> entries, int totalEntries) {
@@ -220,6 +242,17 @@ final class ProjectMapModel {
 
         ColumnId id() {
             return new ColumnId(depth, parent);
+        }
+
+        /** Whether this column stands for a chain of single-child folders. */
+        boolean compacted() {
+            return !chain.isEmpty();
+        }
+
+        /** The row the column hangs from: its parent, or for a compacted column the first folder of the chain. */
+        @Nullable
+        Path anchor() {
+            return chain.isEmpty() ? parent : chain.getFirst();
         }
 
         /** Real rows on show: the placeholder row is not counted. */
@@ -244,8 +277,13 @@ final class ProjectMapModel {
      * One load. {@code expanded} are the directories to list; {@code hiddenOverrides} carries a column's own
      * "Show hidden" choice by directory, falling back to {@code showHidden}; {@code limits} raises a
      * directory's row limit above {@link #DIRECTORY_CHUNK}; {@code pinned} paths (search matches, a revealed
-     * file) are loaded first, with the rows that lead to them, wherever they sort. {@code cancelled} is
-     * polled between directories.
+     * file) are loaded first, with the rows that lead to them, wherever they sort. {@code columnQueries} holds
+     * a column's own filter by the directory it lists: in a folder longer than its row limit the rows that
+     * filter matches are loaded too, so the filter searches the whole folder rather than the rows that
+     * happened to load. {@code cancelled} is polled between directories (and while a listing is awaited).
+     * With {@code compactChains} a listed folder (not the root) whose only child is a folder lists that child
+     * too, as if it were expanded (not through a symbolic link, and at most {@link #MAX_CHAIN} folders deep): one
+     * click on {@code src} opens {@code src/main/java/com/acme}, which the Map draws as one column.
      */
     record Request(
             Path root,
@@ -255,7 +293,9 @@ final class ProjectMapModel {
             Map<Path, Integer> limits,
             List<Path> pinned,
             Labels labels,
-            BooleanSupplier cancelled) {
+            BooleanSupplier cancelled,
+            Map<Path, String> columnQueries,
+            boolean compactChains) {
         Request {
             root = normalize(root);
             Set<Path> normalizedExpanded = new HashSet<>();
@@ -272,6 +312,65 @@ final class ProjectMapModel {
             pinned = pinned == null ? List.of() : List.copyOf(pinned);
             labels = labels == null ? Labels.PLAIN : labels;
             cancelled = cancelled == null ? () -> false : cancelled;
+            Map<Path, String> queries = new HashMap<>();
+            if (columnQueries != null) {
+                columnQueries.forEach((directory, query) -> {
+                    Path normalized = normalize(directory);
+                    String value = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
+                    if (normalized != null && !value.isEmpty()) {
+                        queries.put(normalized, value);
+                    }
+                });
+            }
+            columnQueries = Map.copyOf(queries);
+        }
+
+        Request(
+                Path root,
+                Set<Path> expanded,
+                boolean showHidden,
+                Map<Path, Boolean> hiddenOverrides,
+                Map<Path, Integer> limits,
+                List<Path> pinned,
+                Labels labels,
+                BooleanSupplier cancelled) {
+            this(root, expanded, showHidden, hiddenOverrides, limits, pinned, labels, cancelled, Map.of(), false);
+        }
+
+        Request(
+                Path root,
+                Set<Path> expanded,
+                boolean showHidden,
+                Map<Path, Boolean> hiddenOverrides,
+                Map<Path, Integer> limits,
+                List<Path> pinned,
+                Labels labels,
+                BooleanSupplier cancelled,
+                Map<Path, String> columnQueries) {
+            this(root, expanded, showHidden, hiddenOverrides, limits, pinned, labels, cancelled, columnQueries, false);
+        }
+
+        Request(
+                Path root,
+                Set<Path> expanded,
+                boolean showHidden,
+                Map<Path, Boolean> hiddenOverrides,
+                Map<Path, Integer> limits,
+                List<Path> pinned,
+                Labels labels,
+                BooleanSupplier cancelled,
+                boolean compactChains) {
+            this(
+                    root,
+                    expanded,
+                    showHidden,
+                    hiddenOverrides,
+                    limits,
+                    pinned,
+                    labels,
+                    cancelled,
+                    Map.of(),
+                    compactChains);
         }
 
         Request(Path root, Set<Path> expanded, boolean showHidden) {
@@ -291,9 +390,10 @@ final class ProjectMapModel {
     }
 
     /**
-     * A bounded load. {@code directories} holds every expanded directory that was listed (and so may be drawn
+     * A bounded load. {@code directories} holds every expanded directory that was listed (and so is drawn
      * expanded); {@code skipped} the expanded directories whose children did not fit {@link
-     * #MAX_VISIBLE_ITEMS}; {@code capped} whether that overall limit dropped anything at all.
+     * #MAX_VISIBLE_ITEMS} at all — still listed in {@code directories}, drawn open with an "over the limit"
+     * stub row and kept open; {@code capped} whether that overall limit dropped anything at all.
      */
     record Snapshot(
             List<Entry> entries,
@@ -339,18 +439,275 @@ final class ProjectMapModel {
         }
     }
 
+    private static final java.util.Comparator<Item> ITEM_ORDER =
+            ProjectPathOrder.directoriesFirst(Item::directory, Item::name);
+
+    /** How long one directory listing may take before its folder is drawn as "Not responding". */
+    static final long LISTING_TIMEOUT_MILLIS = 10_000;
+
+    /**
+     * One directory's listing as {@link Listings#list} answers it: the sorted children, or {@code null} when
+     * the folder cannot be read; {@code timedOut} when the listing did not finish in time; {@code cancelled}
+     * when the load was superseded while it waited.
+     */
+    private record Listed(@Nullable List<Item> items, boolean timedOut, boolean cancelled, boolean cached) {
+        static final Listed CANCELLED = new Listed(null, false, true, false);
+        static final Listed TIMED_OUT = new Listed(null, true, false, false);
+
+        Listed(@Nullable List<Item> items, boolean timedOut, boolean cancelled) {
+            this(items, timedOut, cancelled, false);
+        }
+    }
+
+    /**
+     * Where a view's loads get their directory listings. Two things keep a load from costing a full re-list
+     * of every open folder per click:
+     *
+     * <ul>
+     *   <li>A per-directory cache, used only for the folders the Project watcher follows ({@link
+     *       #setWatched}): a watcher event for a folder ({@link #invalidate}), an in-app change or a
+     *       focus-regain refresh ({@link #invalidateAll}) drops its entry, and a folder that stops being
+     *       watched is dropped too. A remote root has no local watcher, so it keeps listing afresh.
+     *   <li>A timeout per listing: the listing runs on a worker, and a folder that does not answer in time
+     *       is reported as not responding instead of holding up the loader (one hung listing used to block
+     *       every later load of the window). When it does answer, {@link #setOnRecovered} hears so.
+     * </ul>
+     *
+     * Thread-safe: the loader lists, the FX thread invalidates and sets the watched set.
+     */
+    static final class Listings implements AutoCloseable {
+
+        /** No cache, no worker: lists on the calling thread (pure loads and tests). */
+        static final Listings DIRECT = new Listings(0, null);
+
+        private record Key(Path directory, boolean showHidden) {}
+
+        /** A listing on a worker, and when it began; {@code late} once some load gave up waiting for it. */
+        private static final class InFlight {
+            final java.util.concurrent.CompletableFuture<@Nullable List<Item>> future;
+            final long startedNanos = System.nanoTime();
+            volatile boolean late;
+
+            InFlight(java.util.concurrent.CompletableFuture<@Nullable List<Item>> future) {
+                this.future = future;
+            }
+        }
+
+        private final long timeoutMillis;
+        private final java.util.function.@Nullable Consumer<Path> beforeListForTest;
+        private final Map<Key, List<Item>> cache = new java.util.concurrent.ConcurrentHashMap<>();
+        private final Map<Key, InFlight> inFlight = new java.util.concurrent.ConcurrentHashMap<>();
+        private final Map<Path, Long> versions = new java.util.concurrent.ConcurrentHashMap<>();
+        private final java.util.concurrent.atomic.AtomicLong epoch = new java.util.concurrent.atomic.AtomicLong();
+        private volatile Set<Path> watched = Set.of();
+        private volatile Runnable onRecovered = () -> {};
+        private java.util.concurrent.@Nullable ExecutorService workers;
+        private volatile boolean closed;
+        /** How many directories were actually listed (not answered from the cache); for tests. */
+        final java.util.concurrent.atomic.AtomicInteger listedForTest = new java.util.concurrent.atomic.AtomicInteger();
+
+        /**
+         * @param timeoutMillis how long one listing may take; {@code <= 0} lists on the calling thread
+         * @param beforeListForTest runs on the listing thread before each listing (a test stalls it there)
+         */
+        Listings(long timeoutMillis, java.util.function.@Nullable Consumer<Path> beforeListForTest) {
+            this.timeoutMillis = timeoutMillis;
+            this.beforeListForTest = beforeListForTest;
+        }
+
+        /** The folders the Project watcher follows now; only these are cached, the rest are dropped. */
+        void setWatched(Set<Path> directories) {
+            Set<Path> next = new HashSet<>();
+            if (directories != null) {
+                for (Path directory : directories) {
+                    Path normalized = normalize(directory);
+                    if (normalized != null) {
+                        next.add(normalized);
+                    }
+                }
+            }
+            watched = Set.copyOf(next);
+            cache.keySet().removeIf(key -> !next.contains(key.directory()));
+        }
+
+        /** Runs (on a worker thread) when a listing that had been reported as not responding finishes. */
+        void setOnRecovered(Runnable action) {
+            onRecovered = action == null ? () -> {} : action;
+        }
+
+        /** Something in these folders came or went, or changed: their next load lists them again. */
+        void invalidate(java.util.Collection<Path> directories) {
+            for (Path directory : directories) {
+                Path normalized = normalize(directory);
+                if (normalized == null) {
+                    continue;
+                }
+                versions.merge(normalized, 1L, Long::sum);
+                cache.remove(new Key(normalized, true));
+                cache.remove(new Key(normalized, false));
+            }
+        }
+
+        /** Anything may have changed (a focus regain, an in-app file operation, a new root). */
+        void invalidateAll() {
+            epoch.incrementAndGet();
+            cache.clear();
+        }
+
+        boolean cached(Path directory, boolean showHidden) {
+            Path normalized = normalize(directory);
+            return normalized != null && cache.containsKey(new Key(normalized, showHidden));
+        }
+
+        private Listed list(Path directory, boolean showHidden, BooleanSupplier cancelled) {
+            Key key = new Key(directory, showHidden);
+            boolean cacheable = !closed && watched.contains(directory);
+            if (cacheable) {
+                List<Item> known = cache.get(key);
+                if (known != null) {
+                    return new Listed(known, false, false, true);
+                }
+            }
+            long epochBefore = epoch.get();
+            long versionBefore = versions.getOrDefault(directory, 0L);
+            @Nullable List<Item> items;
+            if (timeoutMillis <= 0) {
+                items = listSorted(directory, showHidden);
+            } else {
+                Listed awaited = await(key, cancelled);
+                if (awaited.cancelled() || awaited.timedOut()) {
+                    return awaited;
+                }
+                items = awaited.items();
+            }
+            // Cached only when nothing invalidated the folder while it was being listed, and it was watched
+            // from before the listing began: an event in between is then never lost.
+            if (cacheable
+                    && items != null
+                    && epoch.get() == epochBefore
+                    && versions.getOrDefault(directory, 0L) == versionBefore
+                    && watched.contains(directory)) {
+                cache.put(key, items);
+            }
+            return new Listed(items, false, false);
+        }
+
+        private Listed await(Key key, BooleanSupplier cancelled) {
+            InFlight running = inFlight.get(key);
+            if (running == null) {
+                InFlight fresh = new InFlight(new java.util.concurrent.CompletableFuture<>());
+                InFlight prior = inFlight.putIfAbsent(key, fresh);
+                running = prior != null ? prior : fresh;
+                if (prior == null) {
+                    try {
+                        start(key, fresh); // registered first, so finishing always removes it again
+                    } catch (java.util.concurrent.RejectedExecutionException shutDown) {
+                        inFlight.remove(key, fresh);
+                        return Listed.CANCELLED;
+                    }
+                }
+            }
+            long deadline = running.startedNanos + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+            while (true) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0) {
+                    running.late = true; // the folder's next load says "Not responding" without waiting again
+                    return Listed.TIMED_OUT;
+                }
+                try {
+                    @Nullable
+                    List<Item> items = running.future.get(
+                            Math.min(remaining, java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(100)),
+                            java.util.concurrent.TimeUnit.NANOSECONDS);
+                    return new Listed(items, false, false);
+                } catch (java.util.concurrent.TimeoutException stillListing) {
+                    if (cancelled.getAsBoolean()) {
+                        return Listed.CANCELLED; // the listing goes on; the next load picks its answer up
+                    }
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return Listed.CANCELLED;
+                } catch (java.util.concurrent.ExecutionException | RuntimeException failed) {
+                    return new Listed(null, false, false);
+                }
+            }
+        }
+
+        private void start(Key key, InFlight running) {
+            java.util.concurrent.CompletableFuture<@Nullable List<Item>> future = running.future;
+            workers().execute(() -> {
+                try {
+                    future.complete(listSorted(key.directory(), key.showHidden()));
+                } catch (RuntimeException failed) {
+                    ProjectMapLog.unexpected("listing a folder", failed);
+                    future.complete(null);
+                } finally {
+                    inFlight.remove(key, running);
+                    if (running.late && !closed) {
+                        onRecovered.run();
+                    }
+                }
+            });
+        }
+
+        private synchronized java.util.concurrent.ExecutorService workers() {
+            if (closed) {
+                throw new java.util.concurrent.RejectedExecutionException("closed");
+            }
+            if (workers == null) {
+                workers = java.util.concurrent.Executors.newCachedThreadPool(runnable -> {
+                    Thread thread = new Thread(runnable, "project-map-listing");
+                    thread.setDaemon(true);
+                    return thread;
+                });
+            }
+            return workers;
+        }
+
+        private @Nullable List<Item> listSorted(Path directory, boolean showHidden) {
+            if (beforeListForTest != null) {
+                beforeListForTest.accept(directory);
+            }
+            listedForTest.incrementAndGet();
+            List<Item> items = listDirectory(directory, showHidden);
+            if (items == null) {
+                return null;
+            }
+            items.sort(ITEM_ORDER);
+            return List.copyOf(items);
+        }
+
+        @Override
+        public synchronized void close() {
+            closed = true;
+            cache.clear();
+            if (workers != null) {
+                workers.shutdownNow(); // a hung listing's thread is a daemon; it is not waited for
+            }
+        }
+    }
+
     /**
      * Loads the root and the children of every expanded directory. Two limits bound it: each directory shows
      * at most its row limit ({@link #DIRECTORY_CHUNK} unless raised), and the whole snapshot at most
      * {@link #MAX_VISIBLE_ITEMS} real rows. Pinned paths are spent first so a search match or a revealed file
      * is present even when its siblings are not; the remaining budget is handed out breadth-first. Nothing is
      * dropped silently: a truncated directory ends in a "+N more" row, an empty or unreadable one holds a
-     * single stub row, and a directory that got no rows at all is reported in {@link Snapshot#skipped()}
-     * rather than listed as loaded.
+     * single stub row, and a directory that got no rows at all holds an "over the limit" stub and is reported
+     * in {@link Snapshot#skipped()}.
      *
      * @return the snapshot, or {@code null} when {@code request.cancelled()} turned true part-way
      */
     static @Nullable Snapshot load(Request request) {
+        return load(request, Listings.DIRECT);
+    }
+
+    /**
+     * As {@link #load(Request)}, listing directories through {@code listings}: a view's cache of the folders
+     * the Project watcher follows, and its listing timeout. A folder whose listing does not finish in time
+     * holds a "Not responding" stub and the load moves on to the next.
+     */
+    static @Nullable Snapshot load(Request request, Listings listings) {
         Path root = request.root();
         if (root == null) {
             return Snapshot.EMPTY;
@@ -414,14 +771,14 @@ final class ProjectMapModel {
             pinnedLoaded++;
         }
 
-        record Pending(Path directory, int depth) {}
+        record Pending(Path directory, int depth, int chain) {}
         Deque<Pending> queue = new ArrayDeque<>();
         List<Entry> result = new ArrayList<>();
         Map<Path, DirectoryFacts> directories = new HashMap<>();
         Set<Path> skipped = new HashSet<>();
         result.add(entry(rootItem, null, 0));
         if (expanded.contains(root)) {
-            queue.add(new Pending(root, 0));
+            queue.add(new Pending(root, 0, 0));
         }
         while (!queue.isEmpty()) {
             if (request.cancelled().getAsBoolean()) {
@@ -432,23 +789,45 @@ final class ProjectMapModel {
             int childDepth = pending.depth() + 1;
             Map<Path, Item> pinnedHere = pins.getOrDefault(directory, Map.of());
             boolean showHidden = request.hiddenOverrides().getOrDefault(directory, request.showHidden());
-            List<Item> listed = listDirectory(directory, showHidden);
+            Listed listing = listings.list(directory, showHidden, request.cancelled());
+            if (listing.cached() && missesKnownChild(listing.items(), directory, expanded, pinnedHere)) {
+                // The watcher has not reported a child that is open or being revealed yet: a cached listing taken
+                // before it appeared would drop it from the open set, so this folder is listed again.
+                listings.invalidate(List.of(directory));
+                listing = listings.list(directory, showHidden, request.cancelled());
+            }
+            if (listing.cancelled()) {
+                return null;
+            }
+            if (listing.timedOut()) {
+                // Nothing is known below it, so nothing beneath is forgotten (pruneExpansion keeps it).
+                directories.put(directory, new DirectoryFacts(0, 0, true));
+                result.add(placeholder(directory, childDepth, PlaceholderKind.NOT_RESPONDING, 0, request.labels()));
+                continue;
+            }
+            List<Item> listed = listing.items();
             if (listed == null && pinnedHere.isEmpty()) {
                 directories.put(directory, new DirectoryFacts(0, 0, true));
                 result.add(placeholder(directory, childDepth, PlaceholderKind.UNREADABLE, 0, request.labels()));
                 continue;
             }
-            List<Item> all = new ArrayList<>(listed == null ? List.of() : listed);
+            List<Item> all = listed == null ? new ArrayList<>() : listed; // sorted already
             if (!pinnedHere.isEmpty()) {
+                all = new ArrayList<>(all);
                 Set<Path> present = new HashSet<>();
                 all.forEach(item -> present.add(item.path()));
+                boolean added = false;
                 for (Item item : pinnedHere.values()) {
                     if (!present.contains(item.path())) {
                         all.add(item); // a hidden row the search still matched, or one created a moment ago
+                        added = true;
                     }
                 }
+                if (added) {
+                    all.sort(ITEM_ORDER);
+                }
             }
-            all.sort(ProjectPathOrder.directoriesFirst(Item::directory, Item::name));
+            String columnQuery = request.columnQueries().get(directory);
             int total = all.size();
             if (total == 0) {
                 directories.put(directory, new DirectoryFacts(0, 0, false));
@@ -460,8 +839,8 @@ final class ProjectMapModel {
             for (int index = 0; index < total; index++) {
                 Item item = all.get(index);
                 if (!pinnedHere.containsKey(item.path())) {
-                    if (index >= limit) {
-                        continue;
+                    if (index >= limit && (columnQuery == null || FuzzyMatch.of(item.name(), columnQuery) == null)) {
+                        continue; // beyond the row limit, and not a row the column's own filter is looking for
                     }
                     if (budget <= 0) {
                         capped = true;
@@ -472,11 +851,24 @@ final class ProjectMapModel {
                 loaded++;
                 result.add(entry(item, directory, childDepth));
                 if (item.directory() && expanded.contains(item.path())) {
-                    queue.addLast(new Pending(item.path(), childDepth));
+                    queue.addLast(new Pending(item.path(), childDepth, 0));
+                } else if (item.directory()
+                        && request.compactChains()
+                        && total == 1
+                        && !directory.equals(root)
+                        && !item.symbolicLink()
+                        && pending.chain() < MAX_CHAIN) {
+                    // The folder's only child is a folder: it opens with it (a compacted column). Not the root's
+                    // only child: the root's children are the first column, and that row must still close.
+                    queue.addLast(new Pending(item.path(), childDepth, pending.chain() + 1));
                 }
             }
             if (loaded == 0) {
-                skipped.add(directory); // no budget left for even one row: not loaded, so not drawn expanded
+                // No budget left for even one row. The folder stays open (the user opened it) with a stub that
+                // says why it is empty; it fills again as soon as a column is closed and the budget allows.
+                skipped.add(directory);
+                directories.put(directory, new DirectoryFacts(total, 0, false));
+                result.add(placeholder(directory, childDepth, PlaceholderKind.OVER_LIMIT, total, request.labels()));
                 continue;
             }
             directories.put(directory, new DirectoryFacts(total, loaded, false));
@@ -582,6 +974,76 @@ final class ProjectMapModel {
      * and a folder taken out takes its open columns with it, as a column's own filter does.
      */
     static List<Column> columnsById(
+            List<Entry> entries,
+            Map<ColumnId, String> columnQueries,
+            Map<ColumnId, Boolean> showHiddenByColumn,
+            @Nullable Set<Path> keep) {
+        return columnsById(entries, columnQueries, showHiddenByColumn, keep, false);
+    }
+
+    /**
+     * As {@link #columnsById(List, Map, Map, Set)}, and with {@code compactChains} a run of one-row columns
+     * is folded into the column it leads to ("Compact folder chains"): a folder column whose only child is an
+     * open folder — nothing filtered or capped away, no filter of its own — is left out, and the column it
+     * opens records the run in {@link Column#chain()}. {@code src} › {@code main} › {@code java} › {@code com}
+     * › {@code acme} becomes one column of {@code acme}'s children, hanging from the {@code src} row. The
+     * root's children are always a column of their own.
+     */
+    static List<Column> columnsById(
+            List<Entry> entries,
+            Map<ColumnId, String> columnQueries,
+            Map<ColumnId, Boolean> showHiddenByColumn,
+            @Nullable Set<Path> keep,
+            boolean compactChains) {
+        List<Column> columns = columnsByIdUncompacted(entries, columnQueries, showHiddenByColumn, keep);
+        return compactChains ? compactChains(columns, columnQueries) : columns;
+    }
+
+    private static List<Column> compactChains(List<Column> columns, @Nullable Map<ColumnId, String> columnQueries) {
+        Set<Path> parents = new HashSet<>();
+        for (Column column : columns) {
+            if (column.parent() != null) {
+                parents.add(column.parent());
+            }
+        }
+        // Parents come before their children (the listing is breadth-first), so a run is carried down in order.
+        Map<Path, List<Path>> runs = new HashMap<>();
+        List<Column> result = new ArrayList<>(columns.size());
+        for (Column column : columns) {
+            Path parent = column.parent();
+            List<Path> run = parent == null ? null : runs.remove(parent);
+            Entry only = column.entries().size() == 1 ? column.entries().getFirst() : null;
+            String query = columnQueries == null ? null : columnQueries.get(column.id());
+            // The root's row and its children's column (the Map's first column) are never folded away.
+            boolean folds = parent != null
+                    && column.depth() > 1
+                    && only != null
+                    && only.directory()
+                    && !only.isPlaceholder()
+                    && !only.isSymbol()
+                    && column.totalEntries() == 1
+                    && column.narrowed() == 0
+                    && (query == null || query.isBlank())
+                    && parents.contains(only.path());
+            if (folds && only != null) {
+                List<Path> longer = new ArrayList<>(run == null ? List.of() : run);
+                longer.add(parent);
+                runs.put(only.path(), longer);
+                continue;
+            }
+            if (run == null) {
+                result.add(column);
+            } else {
+                List<Path> chain = new ArrayList<>(run);
+                chain.add(parent);
+                result.add(new Column(
+                        column.depth(), parent, column.entries(), column.totalEntries(), column.narrowed(), chain));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<Column> columnsByIdUncompacted(
             List<Entry> entries,
             Map<ColumnId, String> columnQueries,
             Map<ColumnId, Boolean> showHiddenByColumn,
@@ -779,7 +1241,8 @@ final class ProjectMapModel {
      * What survives of a manual expansion set after a load: the root, and every directory that loaded as a
      * folder row under a parent that itself survives. A folder that was renamed, deleted or replaced by a
      * file drops out with everything beneath it, so recreating the name later does not reopen old columns.
-     * Folders beneath one that could not be read are kept as they were.
+     * Folders beneath one that could not be read, or that the overall row limit left unloaded, are kept as
+     * they were.
      */
     static Set<Path> pruneExpansion(@Nullable Path root, Set<Path> expanded, Snapshot snapshot) {
         Path normalizedRoot = normalize(root);
@@ -804,7 +1267,9 @@ final class ProjectMapModel {
                 result.add(path);
             } else if (parent == null || !result.contains(parent)) {
                 continue;
-            } else if (unknown.contains(parent) || unreadable(snapshot, parent)) {
+            } else if (unknown.contains(parent)
+                    || unreadable(snapshot, parent)
+                    || snapshot.skipped().contains(parent)) {
                 result.add(path);
                 unknown.add(path);
             } else if (folders.contains(path)) {
@@ -872,9 +1337,13 @@ final class ProjectMapModel {
     private static final Set<String> EXTRA_MARKUP =
             Set.of("scss", "sass", "less", "adoc", "asciidoc", "rst", "tex", "latex", "org", "mdx", "textile");
 
+    /**
+     * Configuration extensions, checked before the registry: it may know the format ({@code .plist} is XML) and
+     * would file it under the format's bucket instead.
+     */
     private static final Set<String> EXTRA_CONFIG = Set.of("env", "editorconfig", "cmake", "plist", "lock");
 
-    /** Build and tool files whose language would otherwise file them as source or markup. */
+    /** Build and tool files whose language would otherwise file them as source, markup or other. */
     private static final Set<String> CONFIG_NAMES = Set.of(
             "pom.xml",
             "cmakelists.txt",
@@ -888,7 +1357,27 @@ final class ProjectMapModel {
             "build.mill",
             "deps.edn",
             "bb.edn",
-            "project.clj");
+            "project.clj",
+            "go.mod",
+            "go.sum",
+            "go.work",
+            "gemfile",
+            "rakefile",
+            "vagrantfile",
+            "procfile",
+            "codeowners",
+            "requirements.txt",
+            "mvnw",
+            "mvnw.cmd",
+            "gradlew",
+            "gradlew.bat");
+
+    /**
+     * Extension-less project documents. Plain text the registry knows only as {@code plaintext}, which would
+     * otherwise land in Other; {@code .txt} files are documents too.
+     */
+    private static final Set<String> DOCUMENT_NAMES =
+            Set.of("readme", "license", "licence", "changelog", "notice", "authors", "copying");
 
     /**
      * The Type filter's bucket for a file name. It asks {@link LanguageRegistry} — the registry behind the
@@ -896,11 +1385,21 @@ final class ProjectMapModel {
      * program languages are {@link TypeFilter#SOURCE}, document and style languages {@link TypeFilter#MARKUP},
      * and every other recognized language (data formats, unit files, the name-determined config files) is
      * {@link TypeFilter#CONFIG}. A short extension table covers common types the registry does not know.
+     * Build and tool files ({@code CONFIG_NAMES}, {@code *.gradle}) and configuration extensions are pinned to
+     * Config before the registry is asked, and plain-text documents ({@code .txt}, README, LICENSE…) are Markup.
      */
     static TypeFilter classify(String fileName) {
         String name = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
-        if (CONFIG_NAMES.contains(name)) {
+        int dot = name.lastIndexOf('.');
+        String extension = dot < 0 ? "" : name.substring(dot + 1);
+        if (CONFIG_NAMES.contains(name)
+                || name.endsWith(".gradle")
+                || name.endsWith(".gradle.kts")
+                || EXTRA_CONFIG.contains(extension)) {
             return TypeFilter.CONFIG;
+        }
+        if (DOCUMENT_NAMES.contains(name) || extension.equals("txt")) {
+            return TypeFilter.MARKUP; // plain-text documents: README, LICENSE, notes.txt
         }
         String language = LanguageRegistry.forFileName(name);
         if (SOURCE_LANGUAGES.contains(language)) {
@@ -912,16 +1411,11 @@ final class ProjectMapModel {
         if (!OTHER_LANGUAGES.contains(language)) {
             return TypeFilter.CONFIG;
         }
-        int dot = name.lastIndexOf('.');
-        String extension = dot < 0 ? "" : name.substring(dot + 1);
         if (EXTRA_SOURCE.contains(extension)) {
             return TypeFilter.SOURCE;
         }
         if (EXTRA_MARKUP.contains(extension)) {
             return TypeFilter.MARKUP;
-        }
-        if (EXTRA_CONFIG.contains(extension)) {
-            return TypeFilter.CONFIG;
         }
         return TypeFilter.OTHER;
     }
@@ -945,6 +1439,9 @@ final class ProjectMapModel {
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
             for (Path child : stream) {
                 Path fileName = child.getFileName();
+                if (fileName != null && ProjectWatchChanges.isInternalName(fileName.toString())) {
+                    continue; // a save's temporary sibling: gone in a moment, and its removal raises no event
+                }
                 if (!showHidden && fileName != null && fileName.toString().startsWith(".")) {
                     continue;
                 }
@@ -955,6 +1452,27 @@ final class ProjectMapModel {
             return null;
         }
         return result;
+    }
+
+    /** Whether a cached listing lacks a folder the user keeps open below it, or a row a reveal pinned there. */
+    private static boolean missesKnownChild(
+            @Nullable List<Item> items, Path directory, Set<Path> expanded, Map<Path, Item> pinnedHere) {
+        if (items == null) {
+            return false;
+        }
+        Set<Path> present = new HashSet<>();
+        items.forEach(item -> present.add(item.path()));
+        for (Path open : expanded) {
+            if (directory.equals(open.getParent()) && !present.contains(open)) {
+                return true;
+            }
+        }
+        for (Path pinned : pinnedHere.keySet()) {
+            if (!present.contains(pinned)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static @Nullable Path normalize(@Nullable Path path) {

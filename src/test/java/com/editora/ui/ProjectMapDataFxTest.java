@@ -138,7 +138,8 @@ class ProjectMapDataFxTest {
 
             Files.delete(other); // what the context menu's Delete does, before it refreshes the panel
             FxTestSupport.runOnFx(() -> {
-                FxTestSupport.invoke(panel, "markLocalChange");
+                FxTestSupport.call(
+                        panel, "markLocalChange", new Class<?>[] {java.util.Collection.class}, List.of(other));
                 long before = generation.get();
                 FxTestSupport.invoke(panel, "refreshAfterChange");
                 assertTrue(generation.get() > before, "the Map must be reloaded, not only searched again");
@@ -345,16 +346,16 @@ class ProjectMapDataFxTest {
             });
             waitForFx(() -> contains(surface, big.resolve(fileName(349))) && !contains(surface, moreRow));
             FxTestSupport.runOnFx(() -> assertEquals(
-                    big.resolve(fileName(349)),
+                    big.resolve(fileName(300)),
                     FxTestSupport.field(surface, "selected"),
-                    "the selection moves to the last row once the more row is gone"));
+                    "the selection moves to the first row that arrived, where the more row was"));
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
         }
     }
 
     @Test
-    void aFolderTheOverallLimitLeavesEmptyIsNotShownExpandedAndTheUserIsTold() throws Exception {
+    void aFolderTheOverallLimitLeavesEmptyStaysOpenWithAStubAndTheUserIsTold() throws Exception {
         List<Path> folders = new ArrayList<>();
         for (String name : List.of("a", "b", "c", "d")) {
             folders.add(folderWithFiles(name, 300));
@@ -379,11 +380,14 @@ class ProjectMapDataFxTest {
             assertEquals(limit, statuses.getLast());
             FxTestSupport.runOnFx(() -> {
                 assertFalse(contains(surface, last.resolve(fileName(0))));
-                assertFalse(
+                // Since the Map review (A3) it stays open, with a stub row saying why it is empty, and
+                // fills again when a column is closed (ProjectMapDataReviewFxTest).
+                assertTrue(
                         FxTestSupport.<Set<Path>>field(surface, "expandedSnapshot")
                                 .contains(last),
-                        "no rows loaded, so the folder must not look open");
-                assertFalse(mapView.expandedDirectories().contains(last));
+                        "the folder the user opened stays open");
+                assertTrue(mapView.expandedDirectories().contains(last));
+                assertTrue(contains(surface, last.resolve(ProjectMapModel.PLACEHOLDER_NAME)));
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
@@ -415,8 +419,8 @@ class ProjectMapDataFxTest {
                 assertTrue(FxTestSupport.<Set<Path>>field(surface, "expandedSnapshot")
                         .contains(empty));
                 assertTrue(
-                        FxTestSupport.<List<?>>field(surface, "columnBoxes").size() >= 3,
-                        "the empty folder gets a column of its own");
+                        FxTestSupport.<List<?>>field(surface, "columnBoxes").size() >= 2,
+                        "the empty folder gets a column of its own (the root's children are the first)");
                 long before = generation.get();
                 activate(mapView, row);
                 assertEquals(before, generation.get(), "a stub row is inert");
@@ -629,6 +633,9 @@ class ProjectMapDataFxTest {
             waitForFx(() -> contains(surface, sub));
             FxTestSupport.runOnFx(() -> activate(mapView, entry(surface, sub)));
             waitForFx(() -> contains(surface, leaf));
+            // With folder chains compacted, sub (a's only child) was listed with a, so leaf was on the map already:
+            // let the load that opening sub started finish, or Windows refuses to rename a folder being listed.
+            waitForFx(() -> !FxTestSupport.<Boolean>field(mapView, "loadInFlight"));
 
             Files.move(a, renamed);
             FxTestSupport.runOnFx(() -> {

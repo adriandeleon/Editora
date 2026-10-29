@@ -27,6 +27,7 @@ import javafx.event.EventHandler;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
+import javafx.scene.AccessibleAttribute;
 import javafx.scene.AccessibleRole;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
@@ -40,6 +41,7 @@ import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Control;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.MenuButton;
@@ -52,8 +54,6 @@ import javafx.scene.image.Image;
 import javafx.scene.image.WritableImage;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyCodeCombination;
-import javafx.scene.input.KeyCombination;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
@@ -131,6 +131,19 @@ final class ProjectMapView extends VBox {
     private final CheckMenuItem hideOpenNotes = optionItem("project.map.filter.hideOpenNotes", false);
     private final CheckMenuItem keepZoomOnOpen = optionItem("project.map.navigation.keepZoom", true);
     private final CheckMenuItem focusNewColumn = optionItem("project.map.navigation.focusNewColumn", true);
+    /** "Always select opened file": the Map selects each file the editor makes active (off by default). */
+    private final CheckMenuItem followActiveFile = optionItem("project.map.navigation.followActiveFile", false);
+    /** Off: a click only selects a file row; a double-click or Enter opens it (the editor stays behind). */
+    private final CheckMenuItem singleClickOpens = optionItem("project.map.navigation.singleClickOpens", true);
+
+    /** "Compact folder chains": a run of single-child folders opens, and is drawn, as one column. */
+    private final CheckMenuItem compactChainsOption = optionItem("project.map.layout.compactChains", true);
+    // Where the three options above are remembered (the workspace); see setRememberedOptions.
+    private Consumer<Boolean> onSingleClickChanged = ignored -> {};
+    private Consumer<Boolean> onCompactChainsChanged = ignored -> {};
+    private Consumer<Boolean> onFollowActiveFileChanged = ignored -> {};
+    private boolean optionsRemembered;
+
     private final ComboBox<ProjectMapModel.TypeFilter> typeFilter = new ComboBox<>();
     /** "Hide unmatched": rows the filters would fade are taken off the map, and the badge says how many. */
     private final CheckBox hideUnmatched = new CheckBox(tr("project.map.filter.hideUnmatched"));
@@ -144,6 +157,10 @@ final class ProjectMapView extends VBox {
     private final MenuItem exportPdfButton = new MenuItem(tr("project.map.exportPdf"));
     private final HBox breadcrumbs = new HBox(2);
     private final Label breadcrumbEllipsis = new Label("…");
+    /** The paths the breadcrumb buttons stand for, and the buttons, root first. */
+    private final List<Path> crumbTrail = new ArrayList<>();
+
+    private final List<Button> crumbButtons = new ArrayList<>();
     private final Label breadcrumbEllipsisSeparator = new Label("›");
     private final Label noMatchesLabel = new Label();
     private final PauseTransition noMatchesDelay = new PauseTransition(NO_MATCHES_DELAY);
@@ -176,6 +193,9 @@ final class ProjectMapView extends VBox {
         return thread;
     });
     private final AtomicLong generation = new AtomicLong();
+    /** Directory listings: cached for the folders the Project watcher follows, each one with a timeout. */
+    final ProjectMapModel.Listings listings =
+            new ProjectMapModel.Listings(ProjectMapModel.LISTING_TIMEOUT_MILLIS, null);
     /** How many queued loads actually began listing (the rest were superseded first). */
     final java.util.concurrent.atomic.AtomicInteger loadsStartedForTest =
             new java.util.concurrent.atomic.AtomicInteger();
@@ -190,8 +210,16 @@ final class ProjectMapView extends VBox {
     private final Set<Path> searchOpened = new HashSet<>();
 
     private final Set<Path> searchClosed = new HashSet<>();
+    /** How many names the current query matched in all, and whether its walk stopped short of the project. */
+    private int searchMatchesTotal;
+
+    private boolean searchMatchesPartial;
     /** The query whose first match was last selected, so re-running it does not steal the selection again. */
     private String searchSelectionQuery = "";
+    /** The selection when the current query was started, restored when it is cleared. */
+    private @Nullable Path searchReturnSelection;
+    /** The row the current query selected by itself (its first match), as opposed to one the user picked. */
+    private @Nullable Path searchSelected;
     /** Row limits raised by "+N more", by directory. */
     private final Map<Path, Integer> directoryLimits = new HashMap<>();
     /** Revealed paths that must stay loaded even when they sort beyond their directory's row limit. */
@@ -206,8 +234,18 @@ final class ProjectMapView extends VBox {
 
     private @Nullable Path root;
     private boolean disposed;
-    /** False while the Project panel shows the Tree: loads wait until the Map is on screen. */
+    /**
+     * Whether the Map's window is showing ({@link #setShowing}). While it is not, nothing is listed, no card is
+     * refreshed or polled and row states are not snapshotted: the window's scene outlives {@code hide()}, so
+     * being in a scene no longer means being on screen. True for a view used outside the Map window (tests).
+     */
     private boolean active = true;
+    /** Row states changed while the window was hidden: the next show snapshots them once. */
+    private boolean showingStatesStale;
+    /** Whether {@link #setOpenFiles} and {@link #setMarkerCandidates} were given, so rows are looked up from them. */
+    private boolean showingOpenFilesGiven;
+
+    private boolean showingMarkersGiven;
     /** The Project "show hidden files" setting: each column's default, and what the loader lists. */
     private boolean showHiddenDefault = true;
 
@@ -240,6 +278,23 @@ final class ProjectMapView extends VBox {
     private Consumer<ProjectMapOutput> onPrint = ignored -> {};
     private Consumer<ProjectMapOutput> onExportPdf = ignored -> {};
     private ProjectMapPreview.@Nullable MarkerActions previewMarkerActions;
+    /** The text zoom of the card last zoomed with −/+: new cards open at it. */
+    private double cardTextZoom = 1.0;
+    /** The editor window whose editor font the cards use (see {@link ProjectMapPreview#EDITOR_FONT_KEY}). */
+    private java.util.function.Supplier<javafx.stage.@Nullable Window> cardFontSource = () -> null;
+
+    private javafx.stage.@Nullable Window cardFontWindow;
+    /** Follows the editor window's font; weakly held by the window, so a closed view is not kept. */
+    private final javafx.collections.MapChangeListener<Object, Object> cardFontListener = change -> {
+        if (ProjectMapPreview.EDITOR_FONT_KEY.equals(change.getKey())
+                && change.getValueAdded() instanceof javafx.scene.text.Font font) {
+            previews.values().forEach(card -> card.setEditorFont(font));
+        }
+    };
+
+    private final javafx.collections.WeakMapChangeListener<Object, Object> weakCardFontListener =
+            new javafx.collections.WeakMapChangeListener<>(cardFontListener);
+
     private ProjectPanel.@Nullable MarkerActions notePreviewActions;
     private StackPane canvasHost;
     /** The open structure columns and the outlines behind them. */
@@ -263,6 +318,8 @@ final class ProjectMapView extends VBox {
         this.isModified = isModified == null ? path -> false : isModified;
         this.previewContent = previewContent == null ? path -> null : previewContent;
         this.structure = new ProjectMapStructure(this::previewContentFor);
+        // A folder that stopped answering and then answers is listed again by the next load.
+        listings.setOnRecovered(() -> Platform.runLater(this::reload));
         structure.setOnChanged(this::structureChanged);
         getStyleClass().add("project-map-view");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
@@ -278,6 +335,7 @@ final class ProjectMapView extends VBox {
         surface.setOnPreview(this::previewSelection);
         surface.setOnStructure(this::toggleStructure);
         surface.setOnNotesPreview(this::previewNotes);
+        surface.onTogglePreview = this::togglePreview;
         surface.setOnSelectionChanged(this::selectionChanged);
         surface.setStatusSuppliers(this.isOpen, this.isModified);
         loadingLabel.getStyleClass().addAll("project-map-zoom-control", "project-map-loading");
@@ -326,7 +384,10 @@ final class ProjectMapView extends VBox {
                 .addAll(
                         keepZoomOnOpen,
                         focusNewColumn,
+                        singleClickOpens,
+                        compactChainsOption,
                         hideOpenNotes,
+                        followActiveFile,
                         new SeparatorMenuItem(),
                         printButton,
                         exportPdfButton);
@@ -340,6 +401,8 @@ final class ProjectMapView extends VBox {
                 .selectedProperty()
                 .addListener((obs, old, selected) -> surface.setKeepZoomOnColumnOpen(selected));
         focusNewColumn.selectedProperty().addListener((obs, old, selected) -> surface.setFocusNewColumn(selected));
+        singleClickOpens.selectedProperty().addListener((obs, old, selected) -> surface.singleClickOpens = selected);
+        compactChainsOption.selectedProperty().addListener((obs, old, selected) -> layoutCompactChanged(selected));
 
         HBox row = new HBox(3, backButton, forwardButton, breadcrumbs, help, options);
         row.getStyleClass().add("project-map-navigation");
@@ -347,6 +410,30 @@ final class ProjectMapView extends VBox {
         HBox.setHgrow(breadcrumbs, Priority.ALWAYS);
         updateNavigation();
         return row;
+    }
+
+    /** Whether a run of single-child folders opens, and is drawn, as one column ("Compact folder chains"). */
+    boolean isCompactChains() {
+        return compactChainsOption.isSelected();
+    }
+
+    void setCompactChains(boolean compact) {
+        compactChainsOption.setSelected(compact);
+    }
+
+    /**
+     * The chains open with their first folder while the option is on. Turning it off keeps the folders such a
+     * chain opened open, so the columns stay where they are, only drawn one per folder again.
+     */
+    private void layoutCompactChanged(boolean compact) {
+        if (!compact && !searching()) {
+            boolean changed = expanded.addAll(snapshot.loadedDirectories());
+            if (changed) {
+                onExpandedChanged.run();
+            }
+        }
+        surface.setCompactChains(compact);
+        reload();
     }
 
     /** Whether opening a folder keeps the current zoom (otherwise the map is fitted again). */
@@ -365,6 +452,30 @@ final class ProjectMapView extends VBox {
 
     void setFocusNewColumn(boolean focus) {
         focusNewColumn.setSelected(focus);
+    }
+
+    /** Whether the Map selects (revealing it) each file the editor makes active: "Always select opened file". */
+    boolean isFollowActiveFile() {
+        return followActiveFile.isSelected();
+    }
+
+    void setFollowActiveFile(boolean follow) {
+        followActiveFile.setSelected(follow);
+    }
+
+    /** The selected row's path, or null (the Map window asks whether anything but the root is chosen). */
+    @Nullable
+    Path windowSelectedPath() {
+        return surface.selectedPath();
+    }
+
+    /** Whether a single click on a file row opens it (default); otherwise it selects and a double-click opens. */
+    boolean isSingleClickOpens() {
+        return singleClickOpens.isSelected();
+    }
+
+    void setSingleClickOpens(boolean opens) {
+        singleClickOpens.setSelected(opens);
     }
 
     private FlowPane buildFilters() {
@@ -414,8 +525,11 @@ final class ProjectMapView extends VBox {
             gitFilter.setSelected(false);
             bookmarksFilter.setSelected(false);
             personalNotesFilter.setSelected(false);
-            hideOpenNotes.setSelected(false);
-            updateCardVisibility();
+            // The search is a filter too and goes with the rest; "Hide all open Personal Notes" is a view
+            // option in the ⋯ menu, not a filter, and is left as it is (B23).
+            if (!query.isBlank()) {
+                onClearSearch.run();
+            }
             typeFilter.setValue(ProjectMapModel.TypeFilter.ALL);
             surface.clearColumnFilters();
             updateFilters();
@@ -503,7 +617,28 @@ final class ProjectMapView extends VBox {
         surface.setOnNoMatchesChanged(this::noMatchesChanged);
         previewConnectorCanvas.setManaged(false);
         previewConnectorCanvas.setMouseTransparent(true);
-        StackPane host = new StackPane(surface, previewConnectorCanvas, noMatchesLabel, zoomBar);
+        StackPane host =
+                new StackPane(surface, previewConnectorCanvas, noMatchesLabel, zoomBar, surface.overviewLayer());
+        // Cards are added after these and raised to the front when used. The zoom bar, the overview and the two
+        // notices are drawn and picked above every card whatever the child order (C8); only the zoom bar's
+        // buttons take clicks, not the gaps between them (B3).
+        for (Node overlay : List.of(zoomBar, noMatchesLabel, loadingLabel)) {
+            overlay.setViewOrder(-1);
+        }
+        zoomBar.setPickOnBounds(false);
+        // Tab past a card's last control: the scene's traversal wraps to the window's first control, the search
+        // field. Keep the keyboard on the map instead (C18).
+        host.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == KeyCode.TAB
+                    && !event.isShiftDown()
+                    && !event.isControlDown()
+                    && !event.isAltDown()
+                    && !event.isMetaDown()
+                    && event.getTarget() instanceof Node target
+                    && cardFocusInCard(target)) {
+                Platform.runLater(this::cardFocusKeptOnMap);
+            }
+        });
         host.getStyleClass().add("project-map-host");
         // Cards sit on the canvas and may reach past its edges (dragged, panned or zoomed there): the part
         // outside is not drawn, and takes no clicks, over the filter bar above or anything else around.
@@ -596,39 +731,78 @@ final class ProjectMapView extends VBox {
         }
     }
 
+    /**
+     * The popover's content: what the Map is for, then the pointer, cards and notes, keyboard and filter-row
+     * models in two columns. It follows the doc's interaction reference (E8). Key names are spelled in the
+     * user's language and modifiers as the platform shows them (⌘ ⌥ ⇧ on macOS), never English key-code names.
+     */
     private static Node buildHelp() {
-        GridPane grid = new GridPane();
-        grid.getStyleClass().add("project-map-help");
-        grid.setHgap(12);
-        grid.setVgap(3);
-        int row = 0;
-        row = helpHeading(grid, row, "project.map.help.mouse");
+        Label intro = new Label(tr("project.map.help.intro"));
+        intro.getStyleClass().addAll("project-map-help-text", "project-map-help-intro");
+        intro.setWrapText(true);
+        intro.setMaxWidth(560);
+
+        GridPane pointer = helpGrid();
+        int row = helpHeading(pointer, 0, "project.map.help.mouse");
         for (String id : List.of(
                 "click",
+                "doubleClick",
                 "chevron",
                 "preview",
                 "structure",
                 "symbol",
-                "wheel",
-                "panWheel",
-                "dragCanvas",
-                "dragHeader")) {
-            row = helpRow(grid, row, tr("project.map.help." + id + ".gesture"), "project.map.help." + id);
+                "symbolChevron",
+                "noteBadge",
+                "rightClick")) {
+            row = helpRow(pointer, row, tr("project.map.help." + id + ".gesture"), "project.map.help." + id);
         }
-        row = helpHeading(grid, row, "project.map.help.keyboard");
-        row = helpRow(grid, row, "↑ ↓ ← →", "project.map.help.arrows");
-        row = helpRow(grid, row, keyNames(KeyCode.ENTER, KeyCode.SPACE), "project.map.help.activate");
-        row = helpRow(grid, row, keyNames(KeyCode.BACK_SPACE), "project.map.help.parent");
-        row = helpRow(grid, row, keyNames(KeyCode.HOME), "project.map.help.home");
-        row = helpRow(grid, row, keyNames(KeyCode.PAGE_UP, KeyCode.PAGE_DOWN), "project.map.help.page");
-        row = helpRow(grid, row, "/", "project.map.help.columnFilter");
+        row = helpRow(pointer, row, tr("project.map.help.wheel.gesture"), "project.map.help.wheel");
         row = helpRow(
-                grid,
+                pointer,
                 row,
-                chord(KeyCode.LEFT, KeyCombination.ALT_DOWN) + " / " + chord(KeyCode.RIGHT, KeyCombination.ALT_DOWN),
-                "project.map.help.history");
-        row = helpRow(grid, row, chord(KeyCode.DIGIT0, KeyCombination.SHORTCUT_DOWN), "project.map.help.fit");
-        helpRow(grid, row, keyNames(KeyCode.ESCAPE), "project.map.help.escape");
+                tr("project.map.help.fastWheel.gesture", helpModifier("shortcut")),
+                "project.map.help.fastWheel");
+        for (String id : List.of(
+                "swipe", "pinch", "panWheel", "dragCanvas", "middleDrag", "dragHeader", "lock", "close", "overview")) {
+            row = helpRow(pointer, row, tr("project.map.help." + id + ".gesture"), "project.map.help." + id);
+        }
+        row = helpHeading(pointer, row, "project.map.help.cards");
+        for (String id : List.of("cardTitle", "cardGrip", "cardNotes", "addNote", "sticky")) {
+            row = helpRow(pointer, row, tr("project.map.help." + id + ".gesture"), "project.map.help." + id);
+        }
+
+        GridPane keys = helpGrid();
+        row = helpHeading(keys, 0, "project.map.help.keyboard");
+        row = helpRow(keys, row, "↑ ↓ ← →", "project.map.help.arrows");
+        row = helpRow(
+                keys, row, helpChord("control", "N") + " / " + helpChord("control", "P"), "project.map.help.siblings");
+        row = helpRow(keys, row, helpKey("enter") + " / " + helpKey("space"), "project.map.help.activate");
+        row = helpRow(keys, row, helpChord("shift", helpKey("enter")), "project.map.help.shiftEnter");
+        row = helpRow(keys, row, helpKey("backspace"), "project.map.help.parent");
+        row = helpRow(keys, row, helpKey("home"), "project.map.help.home");
+        row = helpRow(keys, row, helpKey("pageUp") + " / " + helpKey("pageDown"), "project.map.help.page");
+        row = helpRow(keys, row, "/", "project.map.help.columnFilter");
+        row = helpRow(keys, row, helpChord("alt", "←") + " / " + helpChord("alt", "→"), "project.map.help.history");
+        row = helpRow(keys, row, helpChord("shortcut", "0"), "project.map.help.fit");
+        row = helpRow(keys, row, "F2", "project.map.help.rename");
+        row = helpRow(keys, row, helpKey("delete"), "project.map.help.delete");
+        row = helpRow(keys, row, helpKey("menu") + " / " + helpChord("shift", "F10"), "project.map.help.menu");
+        row = helpRow(keys, row, helpKey("escape"), "project.map.help.escape");
+        row = helpHeading(keys, row, "project.map.help.controls");
+        row = helpRow(keys, row, tr("project.map.help.chips.gesture"), "project.map.help.chips");
+        row = helpRow(keys, row, tr("project.map.filter.hideUnmatched"), "project.map.help.hideUnmatched");
+        helpRow(keys, row, tr("project.map.filter.clear"), "project.map.help.clear");
+
+        HBox columns = new HBox(24, pointer, keys);
+        VBox help = new VBox(8, intro, columns);
+        help.getStyleClass().add("project-map-help");
+        return help;
+    }
+
+    private static GridPane helpGrid() {
+        GridPane grid = new GridPane();
+        grid.setHgap(12);
+        grid.setVgap(3);
         return grid;
     }
 
@@ -652,20 +826,28 @@ final class ProjectMapView extends VBox {
         return row + 1;
     }
 
-    /** Key names as the platform spells them; these are fixed map keys, not keymap bindings. */
-    private static String keyNames(KeyCode... codes) {
-        StringBuilder names = new StringBuilder();
-        for (KeyCode code : codes) {
-            if (!names.isEmpty()) {
-                names.append(" / ");
-            }
-            names.append(code.getName());
-        }
-        return names.toString();
+    /** A key's name in the user's language ("Eingabe", "Rücktaste"); these are fixed map keys, not bindings. */
+    static String helpKey(String id) {
+        return tr("project.map.help.key." + id);
     }
 
-    private static String chord(KeyCode code, KeyCombination.Modifier modifier) {
-        return new KeyCodeCombination(code, modifier).getDisplayText();
+    /** A modifier as the platform writes it: ⌘ ⌥ ⇧ ⌃ on macOS, the localised name ("Strg", "Umschalt") elsewhere. */
+    static String helpModifier(String id) {
+        if (com.editora.command.KeymapManager.isMac()) {
+            return switch (id) {
+                case "shortcut" -> "⌘";
+                case "alt" -> "⌥";
+                case "shift" -> "⇧";
+                default -> "⌃";
+            };
+        }
+        return helpKey(id.equals("shortcut") ? "control" : id);
+    }
+
+    /** {@code modifier} with {@code key}: "Strg+N", "⌃N". */
+    static String helpChord(String modifier, String key) {
+        String name = helpModifier(modifier);
+        return com.editora.command.KeymapManager.isMac() ? name + key : name + "+" + key;
     }
 
     private static ToggleButton filterButton(String key) {
@@ -810,17 +992,34 @@ final class ProjectMapView extends VBox {
     }
 
     /**
-     * Whether the Map is on screen. While it is not, nothing is listed: the first load waits until the Map is
-     * first shown, and every return to it reloads, so changes made while the Tree was showing are picked up.
+     * Whether the Map's window is showing; {@link ProjectMapWindow} drives it. While it is not, nothing is
+     * listed, no card is refreshed or polled and row states wait: the first load waits until the window is
+     * first shown, and every return to it reloads, snapshots the row states once and refreshes the cards
+     * (which re-arms the once-a-second poll of a card that mirrors an open buffer), so whatever changed while
+     * it was closed is picked up. Hiding stops that work; the cards stay where they are for the next show.
      */
-    void setActive(boolean active) {
-        if (this.active == active) {
+    void setShowing(boolean showing) {
+        if (this.active == showing) {
             return;
         }
-        this.active = active;
-        if (active) {
-            reload();
+        this.active = showing;
+        if (!showing) {
+            cardRefresh.stop();
+            cardPoll.stop();
+            cardDiskRefresh.stop();
+            return;
         }
+        reload();
+        if (showingStatesStale) {
+            showingStatesStale = false;
+            surface.stateChanged();
+        }
+        scheduleCardRefresh();
+    }
+
+    /** Whether the view is on screen: its window showing ({@link #setShowing}) and the view in a scene. */
+    private boolean showingOnScreen() {
+        return active && getScene() != null;
     }
 
     /** Follows the Project "show hidden files" setting: every column goes back to it and the map reloads. */
@@ -838,11 +1037,31 @@ final class ProjectMapView extends VBox {
     /** Open editor files, for the Open / Modified chips to mark the collapsed folders that hold them. */
     void setOpenFiles(java.util.function.Supplier<java.util.Collection<Path>> supplier) {
         openFiles = supplier == null ? List::of : supplier;
+        showingOpenFilesGiven = supplier != null;
+        showingUpdateStateCandidates();
     }
 
     /** Paths that may carry a bookmark or Personal Note (the stores' keys); the predicates decide. */
     void setMarkerCandidates(java.util.function.Supplier<java.util.Collection<Path>> supplier) {
         markerCandidates = supplier == null ? List::of : supplier;
+        showingMarkersGiven = supplier != null;
+        showingUpdateStateCandidates();
+    }
+
+    /**
+     * Once both the open files and the marker candidates are known, a state snapshot looks those few paths up
+     * among the rows instead of asking four predicates of every row (each of which scans the editor's tabs).
+     */
+    private void showingUpdateStateCandidates() {
+        if (showingOpenFilesGiven && showingMarkersGiven) {
+            surface.setStateCandidates(() -> {
+                List<Path> candidates = new ArrayList<>(openFiles.get());
+                candidates.addAll(markerCandidates.get());
+                return candidates;
+            });
+        } else {
+            surface.setStateCandidates(null);
+        }
     }
 
     /** A column's own "Show hidden" checkbox was clicked: its folder has to be listed again. */
@@ -859,15 +1078,24 @@ final class ProjectMapView extends VBox {
     private void clearSearchState() {
         searchExpanded = Set.of();
         searchMatches = List.of();
+        searchMatchesTotal = 0;
+        searchMatchesPartial = false;
         searchOpened.clear();
         searchClosed.clear();
         searchSelectionQuery = "";
+        searchReturnSelection = null;
+        searchSelected = null;
     }
 
     void setQuery(String query) {
         String value = query == null ? "" : query;
         if (!this.query.equals(value)) {
             boolean hadSearchState = !searchExpanded.isEmpty() || !searchOpened.isEmpty() || !searchClosed.isEmpty();
+            if (this.query.isBlank()) {
+                searchReturnSelection = surface.selectedPath(); // where Escape (or an emptied field) comes back to
+            } else if (value.isBlank()) {
+                searchRestoreSelection(hadSearchState);
+            }
             this.query = value;
             // What was opened or closed by hand belonged to the previous query's results.
             searchOpened.clear();
@@ -883,11 +1111,58 @@ final class ProjectMapView extends VBox {
         }
     }
 
+    /**
+     * The query is being cleared. The selection goes back to where it was before the search, unless the user
+     * picked a row of their own meanwhile that stays on the map once the search's folders close (B26).
+     */
+    private void searchRestoreSelection(boolean reloads) {
+        Path before = searchReturnSelection;
+        searchReturnSelection = null;
+        Path current = surface.selectedPath();
+        if (before == null || root == null || !before.startsWith(root)) {
+            return;
+        }
+        boolean ownPick = current != null && !current.equals(searchSelected) && staysLoadedWithoutSearch(current);
+        searchSelected = null;
+        if (ownPick || before.equals(current)) {
+            return;
+        }
+        if (reloads) {
+            pendingSelection = before; // applied, and revealed, by the reload that closes the search's folders
+        } else if (surface.contains(before)) {
+            surface.select(before);
+        }
+    }
+
+    /** Whether {@code path}'s row is still listed once only the manually opened folders are open. */
+    private boolean staysLoadedWithoutSearch(Path path) {
+        for (Path parent = path.getParent(); parent != null && root != null; parent = parent.getParent()) {
+            if (!expanded.contains(parent)) {
+                return false;
+            }
+            if (parent.equals(root)) {
+                return true;
+            }
+        }
+        return path.equals(root);
+    }
+
     void setSearchMatches(String query, List<Path> matches) {
+        setSearchMatches(query, matches, matches == null ? 0 : matches.size(), false);
+    }
+
+    /**
+     * The global search's answer: {@code matches}, best first, out of {@code total} names that matched;
+     * {@code partial} when the walk stopped before it saw the whole project. When fewer are shown than
+     * matched, the status line says so (A5): a search that kept only the best few never says it found all.
+     */
+    void setSearchMatches(String query, List<Path> matches, int total, boolean partial) {
         String value = query == null ? "" : query;
         if (disposed || value.isBlank() || !this.query.equals(value)) {
             return;
         }
+        searchMatchesTotal = Math.max(total, matches == null ? 0 : matches.size());
+        searchMatchesPartial = partial;
         List<Path> nextMatches = matches == null
                 ? List.of()
                 : matches.stream()
@@ -905,6 +1180,7 @@ final class ProjectMapView extends VBox {
         searchSelectionQuery = value;
         if (newQuery) {
             pendingSelection = firstMatch;
+            searchSelected = firstMatch;
         }
         if (changed || newQuery && firstMatch != null && !surface.contains(firstMatch)) {
             announceMatches = true;
@@ -939,6 +1215,10 @@ final class ProjectMapView extends VBox {
     }
 
     void refreshStates() {
+        if (!active) {
+            showingStatesStale = true; // nobody sees the rows: snapshot them once when the window shows again
+            return;
+        }
         surface.stateChanged();
         scheduleCardRefresh();
     }
@@ -958,9 +1238,31 @@ final class ProjectMapView extends VBox {
         previews.values().forEach(this::updateCardNotes);
     }
 
+    /** Anything on disk may have changed (a focus regain, an in-app file operation): every folder is listed again. */
     void refresh() {
+        listings.invalidateAll();
         reload();
         scheduleCardRefresh();
+    }
+
+    /** The Project watcher saw entries come or go in {@code directories}: those are listed again, the rest kept. */
+    void refresh(java.util.Collection<Path> directories) {
+        listings.invalidate(directories);
+        reload();
+        scheduleCardRefresh();
+    }
+
+    /**
+     * Files in {@code directories} were rewritten (sizes and times changed, no entry came or went): their next
+     * listing reads them again, but nothing is reloaded for it now.
+     */
+    void listingsChanged(java.util.Collection<Path> directories) {
+        listings.invalidate(directories);
+    }
+
+    /** The folders the Project watcher follows now: only their listings may be reused between loads. */
+    void setWatchedDirectories(Set<Path> directories) {
+        listings.setWatched(directories);
     }
 
     /**
@@ -999,6 +1301,62 @@ final class ProjectMapView extends VBox {
         Path renamed = ProjectMapModel.normalize(from);
         if (selected != null && renamed != null && selected.startsWith(renamed)) {
             pendingSelection = ProjectMapModel.remap(selected, from, to);
+        }
+        renamedCarryCards(from, to);
+        listings.invalidateAll(); // the folders on both sides of the move are listed afresh
+        // A load that is listing the old tree may be in flight. Its snapshot would prune the folders just
+        // remapped (they are not in it) and close them: it must not land, and the new tree is listed instead.
+        if (active) {
+            reload();
+        } else {
+            generation.incrementAndGet();
+            loadFinished();
+        }
+    }
+
+    /** Preview and note cards of a renamed file, or of files under a renamed folder, follow it (C21). */
+    private void renamedCarryCards(Path from, Path to) {
+        Path source = ProjectMapModel.normalize(from);
+        if (source == null) {
+            return;
+        }
+        boolean moved = false;
+        for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
+            if (!entry.getKey().startsWith(source)) {
+                continue;
+            }
+            ProjectMapPreview card = entry.getValue();
+            previews.remove(entry.getKey());
+            Path key = ProjectMapModel.remap(entry.getKey(), from, to);
+            Path file = card.path();
+            if (key == null || file == null) {
+                closePreview(card);
+                continue;
+            }
+            Path movedFile = ProjectMapModel.remap(file, from, to);
+            if (movedFile != null) {
+                card.pathRenamed(movedFile);
+            }
+            previews.put(key, card);
+            moved = true;
+        }
+        for (Map.Entry<Path, ProjectMapNotePreview> entry : List.copyOf(notePreviews.entrySet())) {
+            if (!entry.getKey().startsWith(source)) {
+                continue;
+            }
+            notePreviews.remove(entry.getKey());
+            Path key = ProjectMapModel.remap(entry.getKey(), from, to);
+            if (key == null) {
+                closeNotePreview(entry.getValue());
+                continue;
+            }
+            entry.getValue().pathRenamed(key);
+            notePreviews.put(key, entry.getValue());
+            moved = true;
+        }
+        if (moved) {
+            repaintPreviewConnectors();
+            scheduleCardRefresh(); // note cards re-read the store once the notes have moved with the file
         }
     }
 
@@ -1090,6 +1448,34 @@ final class ProjectMapView extends VBox {
         onHideUnmatchedChanged = callback == null ? ignored -> {} : callback;
     }
 
+    /**
+     * Restores the ⋯ menu's Single-click opens files, Compact folder chains and Always select opened file, and
+     * reports each later change to its callback.
+     */
+    void setRememberedOptions(
+            boolean singleClick,
+            Consumer<Boolean> onSingleClick,
+            boolean compact,
+            Consumer<Boolean> onCompact,
+            boolean follow,
+            Consumer<Boolean> onFollow) {
+        onSingleClickChanged = ignored -> {};
+        onCompactChainsChanged = ignored -> {};
+        onFollowActiveFileChanged = ignored -> {};
+        singleClickOpens.setSelected(singleClick);
+        compactChainsOption.setSelected(compact);
+        followActiveFile.setSelected(follow);
+        if (!optionsRemembered) {
+            optionsRemembered = true;
+            singleClickOpens.selectedProperty().addListener((obs, old, on) -> onSingleClickChanged.accept(on));
+            compactChainsOption.selectedProperty().addListener((obs, old, on) -> onCompactChainsChanged.accept(on));
+            followActiveFile.selectedProperty().addListener((obs, old, on) -> onFollowActiveFileChanged.accept(on));
+        }
+        onSingleClickChanged = onSingleClick == null ? ignored -> {} : onSingleClick;
+        onCompactChainsChanged = onCompact == null ? ignored -> {} : onCompact;
+        onFollowActiveFileChanged = onFollow == null ? ignored -> {} : onFollow;
+    }
+
     /** The badge beside "Hide unmatched": how many rows are off the map, shown only while some are. */
     private void showNarrowed(int count) {
         boolean any = count > 0;
@@ -1109,7 +1495,78 @@ final class ProjectMapView extends VBox {
                         ? null
                         : entry -> entry.isPlaceholder()
                                 ? null
-                                : entry.isSymbol() ? symbolMenu(entry) : factory.apply(entry));
+                                : menuWithMapItems(entry, entry.isSymbol() ? symbolMenu(entry) : factory.apply(entry)));
+    }
+
+    /**
+     * Puts the Map's own row actions at the top of a row's menu (after a declaration's own items) — Preview,
+     * Show / Hide Structure, Personal Notes and Close Column — so the Menu key or Shift+F10 reaches every card and column the pointer can (B6). They
+     * act in the Map, so the shared menu's "raise the editor window" wrapping leaves them alone.
+     */
+    private @Nullable ContextMenu menuWithMapItems(ProjectMapModel.Entry entry, @Nullable ContextMenu menu) {
+        if (menu == null) {
+            return null;
+        }
+        List<MenuItem> items = new ArrayList<>();
+        if (entry.isFile()) {
+            items.add(mapMenuItem("project.map.menu.preview", () -> previewFileEntry(entry)));
+        }
+        if (entry.isFile() && surface.hasStructure(entry) || entry.isSymbol() && surface.branches(entry)) {
+            String key = structure.isOpen(entry.path())
+                    ? "project.map.menu.hideStructure"
+                    : "project.map.menu.showStructure";
+            items.add(mapMenuItem(key, () -> toggleStructure(entry)));
+        }
+        if (!entry.isSymbol() && surface.notedPaths.contains(entry.path())) {
+            items.add(mapMenuItem("project.map.menu.personalNotes", () -> previewNotes(entry.path())));
+        }
+        Path closable = surface.closeTargetFor(entry);
+        if (closable != null) {
+            items.add(mapMenuItem("project.map.menu.closeColumn", () -> closeColumn(closable)));
+        }
+        if (items.isEmpty()) {
+            return menu;
+        }
+        if (entry.isSymbol()) {
+            // A declaration's own menu already starts with its card: the column actions follow it.
+            menu.getItems().add(new SeparatorMenuItem());
+            menu.getItems().addAll(items);
+        } else {
+            if (!menu.getItems().isEmpty()) {
+                items.add(new SeparatorMenuItem());
+            }
+            menu.getItems().addAll(0, items);
+        }
+        return menu;
+    }
+
+    private static MenuItem mapMenuItem(String key, Runnable action) {
+        MenuItem item = new MenuItem(tr(key));
+        item.setOnAction(event -> action.run());
+        item.getProperties().put(ProjectPanel.STAYS_IN_MAP, Boolean.TRUE);
+        return item;
+    }
+
+    /** Shift+Enter on a file or declaration row: opens its preview card, or closes the one that is open. */
+    private void togglePreview(ProjectMapModel.Entry entry) {
+        ProjectMapPreview open = previews.get(entry.path().toAbsolutePath().normalize());
+        if (open == null && entry.isSymbol()) {
+            open = previews.get(entry.path());
+        }
+        if (open != null) {
+            closePreview(open);
+            surface.requestFocus(); // the keyboard stays on the map, ready for the next Shift+Enter
+        } else if (entry.isSymbol()) {
+            previewSymbol(entry);
+        } else if (entry.isFile()) {
+            previewFileEntry(entry);
+        }
+    }
+
+    /** The eye's action for {@code entry}, from a key or the row menu: the row is selected first. */
+    private void previewFileEntry(ProjectMapModel.Entry entry) {
+        surface.select(entry.path());
+        previewSelection(entry.path());
     }
 
     /** A declaration row's menu: its card, the file opened at it, the file opened narrowed to its block. */
@@ -1158,16 +1615,6 @@ final class ProjectMapView extends VBox {
     }
 
     /**
-     * The Map is being swapped for the Tree. Cards stay open where they are for when it returns; only the
-     * work that keeps them current stops, and resumes with one refresh when the Map is shown again.
-     */
-    void suspendPreviews() {
-        cardRefresh.stop();
-        cardPoll.stop();
-        cardDiskRefresh.stop();
-    }
-
-    /**
      * A file under the root was rewritten on disk. That changes no listing, so no reload follows; it is
      * only of interest to a preview card showing the file. Checked at most once per
      * {@link #CARD_POLL_INTERVAL}, after the first change rather than after the last, so a file that never
@@ -1176,7 +1623,7 @@ final class ProjectMapView extends VBox {
     void filesChangedOnDisk() {
         if (disposed
                 || previews.isEmpty() && !structure.hasOpenColumns()
-                || getScene() == null
+                || !showingOnScreen() // the show that follows refreshes every card
                 || cardDiskRefresh.getStatus() == javafx.animation.Animation.Status.RUNNING) {
             return;
         }
@@ -1190,6 +1637,7 @@ final class ProjectMapView extends VBox {
         cardDiskRefresh.stop();
         generation.incrementAndGet();
         loader.shutdownNow();
+        listings.close();
         structure.dispose();
         loadInFlight = false;
         loadingDelay.stop();
@@ -1235,7 +1683,7 @@ final class ProjectMapView extends VBox {
 
     private java.util.function.Consumer<String> onStatus = message -> {};
 
-    /** Where a folder that could not be read is reported (the window's status bar). */
+    /** Where a folder that could not be read, or the limits, are reported (the window's status bar). */
     void setOnStatus(java.util.function.Consumer<String> onStatus) {
         this.onStatus = onStatus == null ? message -> {} : onStatus;
     }
@@ -1251,7 +1699,7 @@ final class ProjectMapView extends VBox {
             return; // a late callback after the window closed: the loader is gone
         }
         if (!active) {
-            return; // setActive(true) reloads when the Map is next shown
+            return; // setShowing(true) reloads when the Map window is next shown
         }
         long requested = generation.incrementAndGet();
         Path requestedRoot = root;
@@ -1271,7 +1719,10 @@ final class ProjectMapView extends VBox {
                 directoryLimits,
                 pinned,
                 ProjectMapView::placeholderLabel,
-                () -> requested != generation.get());
+                () -> requested != generation.get(),
+                surface.columnFilterQueries(),
+                // A search opens exactly the folders that lead to its matches: no chain opens on its own.
+                compactChainsOption.isSelected() && !searching());
         loadStarted();
         try {
             loader.submit(() -> {
@@ -1281,8 +1732,9 @@ final class ProjectMapView extends VBox {
                 loadsStartedForTest.incrementAndGet();
                 ProjectMapModel.Snapshot loaded;
                 try {
-                    loaded = ProjectMapModel.load(request);
+                    loaded = ProjectMapModel.load(request, listings);
                 } catch (RuntimeException unreadable) {
+                    ProjectMapLog.unexpected("loading the map", unreadable);
                     // a closed SFTP file system throws unchecked; the map must still hear back
                     loaded = ProjectMapModel.Snapshot.EMPTY;
                 }
@@ -1302,6 +1754,8 @@ final class ProjectMapView extends VBox {
             case MORE -> tr("project.map.row.more", remaining);
             case EMPTY -> tr("project.map.row.emptyFolder");
             case UNREADABLE -> tr("project.map.row.unreadableFolder");
+            case OVER_LIMIT -> tr("project.map.row.overLimit", ProjectMapModel.MAX_VISIBLE_ITEMS);
+            case NOT_RESPONDING -> tr("project.map.row.notResponding");
         };
     }
 
@@ -1337,10 +1791,10 @@ final class ProjectMapView extends VBox {
         boolean expansionChanged = false;
         if (!loaded.entries().isEmpty()) {
             if (!searching()) {
-                // Folders that did not load (renamed, deleted, replaced by a file) leave the manual set, and
-                // so do those the overall limit left without a single row: neither is drawn as open.
+                // Folders that did not load (renamed, deleted, replaced by a file) leave the manual set. One the
+                // overall limit left without a single row stays: it is drawn open with an "over the limit" stub
+                // and loads again when a column closes.
                 Set<Path> kept = ProjectMapModel.pruneExpansion(root, expanded, loaded);
-                kept.removeAll(loaded.skipped());
                 if (!kept.equals(expanded)) {
                     expanded.clear();
                     expanded.addAll(kept);
@@ -1364,6 +1818,9 @@ final class ProjectMapView extends VBox {
         if (pendingSelection != null) {
             if (loadedPaths.contains(pendingSelection) || surface.contains(pendingSelection)) {
                 surface.setSelected(pendingSelection);
+                // A search's first match, a reveal or a history step that had to be loaded is brought into
+                // view as one that was already loaded is (E1).
+                surface.revealAfterLoad(pendingSelection);
             } else {
                 dropHistory(pendingSelection); // gone: it must not be selected if it ever reappears
             }
@@ -1371,6 +1828,7 @@ final class ProjectMapView extends VBox {
         }
         finishLoadMore(loaded, loadedPaths, selectedBefore);
         reportLimits(loaded, loadedPaths);
+        windowReportUnreadable(requestedRoot, loaded);
         updateNavigation();
         if (expansionChanged) {
             onExpandedChanged.run();
@@ -1393,18 +1851,49 @@ final class ProjectMapView extends VBox {
                 .resolve(ProjectMapModel.PLACEHOLDER_NAME)
                 .toAbsolutePath()
                 .normalize();
-        if (moreRow.equals(selectedBefore) && !loadedPaths.contains(moreRow)) {
-            // The whole folder is loaded now, so the row that was selected is gone: move to its last row.
-            Path last = null;
-            for (ProjectMapModel.Entry entry : loaded.entries()) {
-                if (directory.equals(entry.parent()) && !entry.isPlaceholder()) {
-                    last = entry.path();
+        if (moreRow.equals(selectedBefore)) {
+            // The "+N more" row keeps its path from chunk to chunk; left on it, the selection would sit on the
+            // next placeholder far below. Continue where the user was reading: the first row that arrived.
+            List<Path> rows = new ArrayList<>();
+            ProjectMapModel.Entry folder = surface.entryByPath.get(directory);
+            if (folder != null) {
+                for (ProjectMapModel.Entry entry : columnRowsInOrder(
+                        loaded.entries(), new ProjectMapModel.ColumnId(folder.depth() + 1, directory))) {
+                    if (!entry.isPlaceholder()) {
+                        rows.add(entry.path());
+                    }
                 }
             }
-            if (last != null) {
-                surface.select(last);
+            if (!rows.isEmpty()) {
+                surface.select(rows.get(Math.min(loadMorePreviousLoaded, rows.size() - 1)));
             }
         }
+    }
+
+    /** The folders the last load could not read, so each is reported once, when it becomes unreadable. */
+    private Set<Path> windowUnreadable = Set.of();
+
+    /**
+     * A folder that newly could not be read is said in the status bar, not only by the stub in its column,
+     * which may be scrolled away or zoomed out. A closed remote connection is reported above instead.
+     */
+    private void windowReportUnreadable(Path requestedRoot, ProjectMapModel.Snapshot loaded) {
+        Set<Path> now = new HashSet<>();
+        loaded.directories().forEach((directory, facts) -> {
+            if (facts.unreadable()) {
+                now.add(directory);
+            }
+        });
+        if (!RemoteReadFailure.connectionClosed(requestedRoot)) {
+            for (Path directory : now) {
+                if (!windowUnreadable.contains(directory)) {
+                    Path name = directory.getFileName();
+                    onStatus.accept(tr("project.map.status.unreadable", name == null ? directory : name));
+                    break; // one line: the stubs show the rest
+                }
+            }
+        }
+        windowUnreadable = Set.copyOf(now);
     }
 
     /** Nothing is dropped silently: say when matches or folders did not fit the overall limit. */
@@ -1419,6 +1908,11 @@ final class ProjectMapView extends VBox {
                 }
                 if (shown < searchMatches.size()) {
                     onStatus.accept(tr("project.map.status.matchesShown", shown, searchMatches.size()));
+                } else if (searchMatchesTotal > searchMatches.size()) {
+                    onStatus.accept(tr("project.map.status.searchTruncated", searchMatches.size(), searchMatchesTotal));
+                } else if (searchMatchesPartial) {
+                    onStatus.accept(
+                            tr("project.map.status.searchPartial", searchMatches.size(), ProjectPanel.MAX_VISIT));
                 }
             }
         } else if (loaded.capped() && (announceLimit || !wasCapped)) {
@@ -1476,6 +1970,9 @@ final class ProjectMapView extends VBox {
      */
     private void toggleDirectory(Path directory) {
         Path path = ProjectMapModel.normalize(directory);
+        if (path == null) {
+            return;
+        }
         if (searching()) {
             if (expandedDirectories().contains(path)) {
                 closeDuringSearch(path);
@@ -1492,10 +1989,29 @@ final class ProjectMapView extends VBox {
         onExpandedChanged.run();
     }
 
-    private void closeDuringSearch(@Nullable Path directory) {
+    private void closeDuringSearch(Path directory) {
         searchOpened.removeIf(path -> path.startsWith(directory));
         searchClosed.removeIf(path -> path.startsWith(directory));
         searchClosed.add(directory);
+    }
+
+    /**
+     * A column's own filter changed. In a folder with more rows than its limit loads, the filter has to see
+     * the rows that did not load as well, so the folder is listed again with the filter (B8); the listing
+     * cache makes that cheap. A folder that loaded whole is filtered where it is.
+     */
+    private void truncatedColumnFilterChanged(@Nullable Path directory) {
+        Path path = ProjectMapModel.normalize(directory);
+        ProjectMapModel.DirectoryFacts facts =
+                path == null ? null : snapshot.directories().get(path);
+        if (facts == null) {
+            return;
+        }
+        int limit = Math.max(
+                ProjectMapModel.DIRECTORY_CHUNK, directoryLimits.getOrDefault(path, ProjectMapModel.DIRECTORY_CHUNK));
+        if (facts.truncated() || facts.loaded() > limit) {
+            reload();
+        }
     }
 
     /** Raises one truncated directory's row limit by a chunk; the overall limit still applies. */
@@ -1581,8 +2097,16 @@ final class ProjectMapView extends VBox {
             if (!ProjectMapStructure.isSymbolPath(entry.getKey())) {
                 continue;
             }
-            ProjectMapStructure.Node node = structure.node(entry.getKey());
+            Path key = entry.getKey();
+            ProjectMapStructure.Node node = structure.node(key);
             ProjectMapPreview card = entry.getValue();
+            Path next = node == null ? structure.successor(key) : null;
+            if (next != null && !previews.containsKey(next)) {
+                // Its parameter list was edited: the card follows the declaration to its new path.
+                previews.remove(key);
+                previews.put(next, card);
+                node = structure.node(next);
+            }
             Path file = structure.fileOf(entry.getKey());
             if (node == null) {
                 if (file != null && structure.hasOutline(file)) {
@@ -1598,6 +2122,45 @@ final class ProjectMapView extends VBox {
 
     private static ProjectMapPreview.Range rangeOf(ProjectMapModel.Symbol symbol) {
         return new ProjectMapPreview.Range(symbol.label(), symbol.line(), symbol.startLine(), symbol.endLine());
+    }
+
+    /** Where the cards' editor font comes from: the editor window this Map belongs to. */
+    void setEditorFontSource(java.util.function.Supplier<javafx.stage.@Nullable Window> source) {
+        cardFontSource = source == null ? () -> null : source;
+    }
+
+    /** The editor window's editor font for cards, following the window from now on; null when not known. */
+    private javafx.scene.text.@Nullable Font cardEditorFont() {
+        javafx.stage.Window window;
+        try {
+            window = cardFontSource.get();
+        } catch (RuntimeException unknown) {
+            window = null;
+        }
+        if (window != cardFontWindow) {
+            if (cardFontWindow != null) {
+                cardFontWindow.getProperties().removeListener(weakCardFontListener);
+            }
+            cardFontWindow = window;
+            if (window != null) {
+                window.getProperties().addListener(weakCardFontListener);
+            }
+        }
+        return window != null
+                        && window.getProperties().get(ProjectMapPreview.EDITOR_FONT_KEY)
+                                instanceof javafx.scene.text.Font font
+                ? font
+                : null;
+    }
+
+    /** The path a card is open under now (a declaration card follows its declaration), else {@code fallback}. */
+    private Path cardKeyOf(ProjectMapPreview card, Path fallback) {
+        for (Map.Entry<Path, ProjectMapPreview> entry : previews.entrySet()) {
+            if (entry.getValue() == card) {
+                return entry.getKey();
+            }
+        }
+        return fallback;
     }
 
     /** The files a declaration card is open for: their outlines are kept to follow the cards' lines. */
@@ -1634,7 +2197,7 @@ final class ProjectMapView extends VBox {
         ProjectMapPreview preview = createPreview(key);
         preview.setOnOpenAt((path, line) -> onOpenAt.accept(path, line));
         preview.setOnOpenNarrowed(() -> {
-            ProjectMapStructure.Node node = structure.node(key);
+            ProjectMapStructure.Node node = structure.node(cardKeyOf(preview, key));
             ProjectMapModel.Symbol current = node == null ? symbol : node.symbol();
             com.editora.text.FoldRegions.Region block = current.block();
             onOpenNarrowed.accept(
@@ -1719,7 +2282,8 @@ final class ProjectMapView extends VBox {
     private ProjectMapPreview.@Nullable Content previewContentFor(Path path) {
         try {
             return previewContent.apply(path);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException failed) {
+            ProjectMapLog.unexpected("reading a card's open buffer", failed);
             return null;
         }
     }
@@ -1755,6 +2319,7 @@ final class ProjectMapView extends VBox {
             surface.requestFocus();
         });
         preview.setOnBlankRejected(() -> onStatus.accept(tr("status.projectMap.noteBlankRestored")));
+        preview.setOnOpenAt((file, line) -> onOpenAt.accept(file, line)); // a note's heading opens the file there
         preview.setMapScale(surface.cardZoom());
         installPreviewListeners(preview);
         notePreviews.put(selected, preview);
@@ -1777,6 +2342,9 @@ final class ProjectMapView extends VBox {
         makeRoomForCard();
         ProjectMapPreview preview = new ProjectMapPreview(onOpenFile);
         preview.setMapScale(surface.cardZoom());
+        preview.setEditorFont(cardEditorFont());
+        preview.setInitialContentZoom(cardTextZoom); // the last −/+ zoom, so it need not be set on every card
+        preview.setOnContentZoomed(zoom -> cardTextZoom = zoom);
         preview.setMarkerActions(previewMarkerActions);
         preview.setOnClose(() -> closePreview(preview));
         preview.setOnActivate(() -> touchCard(preview, true));
@@ -1786,6 +2354,10 @@ final class ProjectMapView extends VBox {
             surface.requestFocus();
         });
         preview.setOnNotesToggled(shown -> showCardNotes(preview, shown));
+        preview.setNotesSuppressed(hideOpenNotes.isSelected());
+        preview.setOnShowSuppressedNotes(() -> hideOpenNotes.setSelected(false)); // the Notes button asks for them
+        preview.setOnMoveToFreeSpace(() -> cardMoveToFreeSpace(preview, path));
+        preview.setOnTextShown(() -> updateCardNotes(preview)); // stored notes are found again in the new text
         // A sticky note's connector meets its line in the text, which scrolls under it.
         preview.editor().estimatedScrollYProperty().addListener((obs, old, value) -> {
             if (stickyNotes.containsKey(preview)) {
@@ -1844,8 +2416,11 @@ final class ProjectMapView extends VBox {
             return List.of();
         }
         try {
-            return ProjectMapStickyNotes.notesFor(actions.personalNotes(file), card.range());
-        } catch (RuntimeException ignored) {
+            // Found again in the card's text first: a file changed outside Editora moved them (C5).
+            return ProjectMapStickyNotes.notesFor(
+                    ProjectMapStickyNotes.reanchored(actions.personalNotes(file), card.fullText()), card.range());
+        } catch (RuntimeException failed) {
+            ProjectMapLog.unexpected("reading a card's Personal Notes", failed);
             return List.of();
         }
     }
@@ -1874,6 +2449,12 @@ final class ProjectMapView extends VBox {
                         this::repaintPreviewConnectors,
                         () -> onStatus.accept(tr("status.projectMap.noteBlankRestored")),
                         () -> touchCard(card, false)));
+        stuck.setOnMore(() -> {
+            Path file = card.path();
+            if (file != null) {
+                previewNotes(file); // the note card lists every note of the file
+            }
+        });
         stuck.setHidden(hideOpenNotes.isSelected());
         stuck.show(cardNotes(card));
         touchCard(card, true);
@@ -1911,6 +2492,7 @@ final class ProjectMapView extends VBox {
         if (preview == null) {
             return;
         }
+        boolean focused = focusReturnsFrom(preview);
         notePreviews.entrySet().removeIf(entry -> entry.getValue() == preview);
         cardTouches.remove(preview);
         if (canvasHost != null) {
@@ -1918,6 +2500,59 @@ final class ProjectMapView extends VBox {
         }
         preview.dispose();
         repaintPreviewConnectors();
+        focusReturnToMap(focused);
+    }
+
+    /**
+     * Whether the keyboard is in {@code card} (or, for a code card, on one of its sticky notes): closing it
+     * must then hand the keyboard back to the map. Left to the scene, it went to the window's first control,
+     * the search field, and the next arrow key typed there (C18).
+     */
+    private boolean focusReturnsFrom(Region card) {
+        Scene scene = getScene();
+        Node owner = scene == null ? null : scene.getFocusOwner();
+        if (owner == null) {
+            return false;
+        }
+        boolean hasSheets = card instanceof ProjectMapPreview code && stickyNotes.containsKey(code);
+        for (Node current = owner; current != null; current = current.getParent()) {
+            if (current == card || hasSheets && current.getStyleClass().contains("project-map-sticky-note")) {
+                return true; // a sheet is the card's own: it closes with it
+            }
+        }
+        return false;
+    }
+
+    /** Whether {@code node} is inside an open code or note card, or on a sticky note. */
+    private static boolean cardFocusInCard(Node node) {
+        for (Node current = node; current != null; current = current.getParent()) {
+            if (current instanceof ProjectMapPreview
+                    || current instanceof ProjectMapNotePreview
+                    || current.getStyleClass().contains("project-map-sticky-note")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** After a Tab out of a card: when the keyboard left the map area altogether, it goes to the map. */
+    private void cardFocusKeptOnMap() {
+        Scene scene = getScene();
+        Node owner = scene == null ? null : scene.getFocusOwner();
+        for (Node current = owner; current != null; current = current.getParent()) {
+            if (current == canvasHost) {
+                return;
+            }
+        }
+        if (!disposed && scene != null) {
+            surface.requestFocus();
+        }
+    }
+
+    private void focusReturnToMap(boolean focused) {
+        if (focused && !disposed) {
+            surface.requestFocus();
+        }
     }
 
     /**
@@ -1932,6 +2567,7 @@ final class ProjectMapView extends VBox {
             entry.getValue().setVisible(file == null || !surface.narrowsAway(file));
         }
         boolean notes = !hideOpenNotes.isSelected();
+        previews.values().forEach(card -> card.setNotesSuppressed(!notes)); // their Notes buttons say why
         notePreviews.forEach((path, card) -> card.setVisible(notes && !surface.narrowsAway(path)));
         stickyNotes.values().forEach(stuck -> stuck.setHidden(!notes)); // a hidden card hides its own as well
         repaintPreviewConnectors();
@@ -1941,6 +2577,7 @@ final class ProjectMapView extends VBox {
         if (preview == null) {
             return;
         }
+        boolean focused = focusReturnsFrom(preview);
         previews.entrySet().removeIf(entry -> entry.getValue() == preview);
         cardTouches.remove(preview);
         closeCardNotes(preview);
@@ -1949,6 +2586,7 @@ final class ProjectMapView extends VBox {
         }
         preview.dispose();
         repaintPreviewConnectors();
+        focusReturnToMap(focused);
     }
 
     private void closeAllPreviews() {
@@ -2028,9 +2666,9 @@ final class ProjectMapView extends VBox {
     /** Asks for {@link #refreshCards} once the notifications that prompted it have settled. */
     private void scheduleCardRefresh() {
         if (disposed
-                || getScene() == null
+                || !showingOnScreen()
                 || previews.isEmpty() && notePreviews.isEmpty() && !structure.hasOpenColumns()) {
-            return; // off screen (the Tree is showing): the next time the Map is shown refreshes them
+            return; // the Map window is closed: setShowing(true) refreshes them when it opens again
         }
         cardRefresh.playFromStart();
     }
@@ -2045,27 +2683,39 @@ final class ProjectMapView extends VBox {
             return;
         }
         boolean mirrors = false;
+        // One look at each file per pass, shared by its cards and its outline: a buffer's text is read once.
+        Map<Path, ProjectMapPreview.@Nullable Content> cardTick = new HashMap<>();
+        Function<Path, ProjectMapPreview.@Nullable Content> cardContent =
+                file -> cardTick.containsKey(file) ? cardTick.get(file) : cardTickPut(cardTick, file);
         for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
             ProjectMapPreview card = entry.getValue();
+            Path file = card.path();
             if (!polled || card.showsOpenBuffer()) {
-                Path file = card.path();
-                card.refresh(previewContentFor(file != null ? file : entry.getKey()));
+                card.refresh(cardContent.apply(file != null ? file : entry.getKey()));
             }
             mirrors |= card.showsOpenBuffer();
+            card.setUnsaved(card.showsOpenBuffer() && file != null && safeTest(isModified, file));
         }
         // Structure columns follow their file too: an open buffer's edits, or a closed file rewritten on disk.
         if (structure.hasOpenColumns() || !symbolCardFiles().isEmpty()) {
-            structure.refresh(symbolCardFiles());
+            structure.refresh(symbolCardFiles(), cardContent);
             mirrors |= structure.openFiles().stream().anyMatch(file -> safeTest(isOpen, file));
         }
         if (!polled) {
             refreshNoteCards();
         }
-        if (mirrors && getScene() != null) {
+        if (mirrors && showingOnScreen()) { // a closed window's cards are refreshed when it shows again
             cardPoll.playFromStart();
         } else {
             cardPoll.stop();
         }
+    }
+
+    private ProjectMapPreview.@Nullable Content cardTickPut(
+            Map<Path, ProjectMapPreview.@Nullable Content> tick, Path file) {
+        ProjectMapPreview.Content content = previewContentFor(file);
+        tick.put(file, content);
+        return content;
     }
 
     private void refreshNoteCards() {
@@ -2076,7 +2726,8 @@ final class ProjectMapView extends VBox {
             List<PersonalNote> values;
             try {
                 values = enabled && actions != null ? actions.personalNotes(entry.getKey()) : List.of();
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException failed) {
+                ProjectMapLog.unexpected("reading a note card's notes", failed);
                 continue;
             }
             entry.getValue().refreshNotes(values);
@@ -2084,6 +2735,29 @@ final class ProjectMapView extends VBox {
                 closeNotePreview(entry.getValue()); // its notes were deleted elsewhere: nothing left to show
             }
         }
+    }
+
+    /**
+     * The card menu's Move to Free Space: the card is placed again, at its present size, where placement would
+     * put a new card for its row — the spot that covers the least of the map. The map is not panned.
+     */
+    private void cardMoveToFreeSpace(Region card, Path key) {
+        if (canvasHost == null || !cardTouches.containsKey(card)) {
+            return;
+        }
+        double scale = cardScale(card);
+        ProjectMapPreview.Placement placement = previewPlacement(
+                card,
+                key,
+                card.getWidth(),
+                card.getHeight(),
+                Math.min(card.getWidth(), ProjectMapPreview.MIN_WIDTH),
+                Math.min(card.getHeight(), ProjectMapPreview.MIN_HEIGHT),
+                canvasHost.getWidth(),
+                canvasHost.getHeight());
+        card.resize(placement.width(), placement.height());
+        card.relocate(placement.x(), placement.y());
+        ProjectMapPreview.announceGeometry(card, scale);
     }
 
     private void constrainPreviews(double width, double height) {
@@ -2121,7 +2795,15 @@ final class ProjectMapView extends VBox {
                 drawn.x(), drawn.y(), drawn.width() / scale, drawn.height() / scale, drawn.growLeft());
     }
 
-    /** {@link #previewPlacement} in panel pixels: every size here is a card as drawn. */
+    /**
+     * {@link #previewPlacement} in panel pixels: every size here is a card as drawn. The spot that covers the least:
+     * beside the row's column after it, before it, above or below the columns' band, or any free part of the
+     * panel, scored by how much of the columns, the zoom bar, the overview and the other cards it would cover (see
+     * {@link #cardOverlapCost}). The columns that lead to the row weigh most, and so does the band where the row's
+     * next column — its folder's, or its file's Structure column — would open. The map is never panned. A card
+     * used to take the side after its column, else the side before it, which is where the columns leading to it
+     * are, and so often covered the very path to its row.
+     */
     private ProjectMapPreview.Placement drawnPlacement(
             Region preview,
             Path path,
@@ -2131,74 +2813,171 @@ final class ProjectMapView extends VBox {
             double minimumHeight,
             double parentWidth,
             double parentHeight) {
-        ProjectMapPreview.Placement preferred =
-                surface.previewPlacement(path, width, height, minimumWidth, minimumHeight, parentWidth, parentHeight);
-        if (!overlapsPreview(preview, preferred.x(), preferred.y(), preferred.width(), preferred.height())) {
-            return preferred;
+        MapSurface.CardSite site = surface.cardSite(path);
+        double margin = ProjectMapPreview.EDGE_MARGIN;
+        double roomWidth = parentWidth - margin * 2;
+        double roomHeight = parentHeight - margin * 2;
+        double fullWidth = cardBounded(width, minimumWidth, roomWidth);
+        double fullHeight = cardBounded(height, minimumHeight, roomHeight);
+        if (site.row() == null) {
+            // The row is not on the map (filtered, scrolled off): against the panel's far edge, as before.
+            return new ProjectMapPreview.Placement(
+                    Math.max(margin, parentWidth - fullWidth - margin), margin, fullWidth, fullHeight);
         }
-
-        boolean horizontal = flowFilter.getValue() == FlowDirection.LEFT_TO_RIGHT
-                || flowFilter.getValue() == FlowDirection.RIGHT_TO_LEFT;
-        double maximum = horizontal
-                ? Math.max(
-                        ProjectMapPreview.EDGE_MARGIN,
-                        parentHeight - preferred.height() - ProjectMapPreview.EDGE_MARGIN)
-                : Math.max(
-                        ProjectMapPreview.EDGE_MARGIN, parentWidth - preferred.width() - ProjectMapPreview.EDGE_MARGIN);
-        double origin = horizontal ? preferred.y() : preferred.x();
-        double step = (horizontal ? preferred.height() : preferred.width()) + PREVIEW_CASCADE;
-        int others = previews.size() + notePreviews.size();
-        for (int ring = 1; ring <= others; ring++) {
-            for (int sign : new int[] {1, -1}) {
-                double shifted = clampPreview(origin + sign * ring * step, ProjectMapPreview.EDGE_MARGIN, maximum);
-                double x = horizontal ? preferred.x() : shifted;
-                double y = horizontal ? shifted : preferred.y();
-                if (!overlapsPreview(preview, x, y, preferred.width(), preferred.height())) {
-                    return new ProjectMapPreview.Placement(
-                            x, y, preferred.width(), preferred.height(), preferred.growLeft());
+        List<double[]> obstacles = new ArrayList<>(site.obstacles());
+        List<Region> cards = new ArrayList<>(previews.values());
+        cards.addAll(notePreviews.values());
+        for (Region other : cards) {
+            if (other != preview && other.isVisible() && other.getWidth() > 0) {
+                double scale = cardScale(other);
+                obstacles.add(new double[] {
+                    other.getLayoutX() - PREVIEW_CASCADE / 2,
+                    other.getLayoutY() - PREVIEW_CASCADE / 2,
+                    other.getWidth() * scale + PREVIEW_CASCADE,
+                    other.getHeight() * scale + PREVIEW_CASCADE,
+                    CARD_WEIGHT_CARD
+                });
+            }
+        }
+        double[] row = site.row();
+        double[] column = site.column();
+        double[] band = site.band();
+        boolean horizontal = surface.flowDirection == FlowDirection.LEFT_TO_RIGHT
+                || surface.flowDirection == FlowDirection.RIGHT_TO_LEFT;
+        double gap = MapSurface.PREVIEW_COLUMN_GAP;
+        double rowX = row[0] + row[2] / 2;
+        double rowY = row[1] + row[3] / 2;
+        List<double[]> spots = new ArrayList<>();
+        if (horizontal) {
+            double y = rowY - fullHeight / 2;
+            double afterX = column[0] + column[2] + gap;
+            cardSpot(spots, afterX, y, Math.min(fullWidth, parentWidth - margin - afterX), fullHeight, minimumWidth, 1);
+            double beforeEnd = column[0] - gap;
+            double beforeWidth = Math.min(fullWidth, beforeEnd - margin);
+            cardSpot(spots, beforeEnd - beforeWidth, y, beforeWidth, fullHeight, minimumWidth, 1);
+            double aboveHeight = Math.min(fullHeight, band[1] - gap - margin);
+            cardSpot(
+                    spots, rowX - fullWidth / 2, band[1] - gap - aboveHeight, fullWidth, aboveHeight, minimumHeight, 0);
+            double belowY = band[1] + band[3] + gap;
+            cardSpot(
+                    spots,
+                    rowX - fullWidth / 2,
+                    belowY,
+                    fullWidth,
+                    Math.min(fullHeight, parentHeight - margin - belowY),
+                    minimumHeight,
+                    0);
+        } else {
+            double x = rowX - fullWidth / 2;
+            double afterY = column[1] + column[3] + gap;
+            cardSpot(
+                    spots,
+                    x,
+                    afterY,
+                    fullWidth,
+                    Math.min(fullHeight, parentHeight - margin - afterY),
+                    minimumHeight,
+                    0);
+            double beforeEnd = column[1] - gap;
+            double beforeHeight = Math.min(fullHeight, beforeEnd - margin);
+            cardSpot(spots, x, beforeEnd - beforeHeight, fullWidth, beforeHeight, minimumHeight, 0);
+            double leftWidth = Math.min(fullWidth, band[0] - gap - margin);
+            cardSpot(spots, band[0] - gap - leftWidth, rowY - fullHeight / 2, leftWidth, fullHeight, minimumWidth, 1);
+            double rightX = band[0] + band[2] + gap;
+            cardSpot(
+                    spots,
+                    rightX,
+                    rowY - fullHeight / 2,
+                    Math.min(fullWidth, parentWidth - margin - rightX),
+                    fullHeight,
+                    minimumWidth,
+                    1);
+        }
+        // Any free part of the panel: the card against each obstacle's edges, and against the panel's.
+        java.util.TreeSet<Double> xs = new java.util.TreeSet<>(List.of(margin, parentWidth - fullWidth - margin));
+        java.util.TreeSet<Double> ys = new java.util.TreeSet<>(List.of(margin, parentHeight - fullHeight - margin));
+        for (double[] o : obstacles) {
+            xs.add(o[0] + o[2] + gap);
+            xs.add(o[0] - fullWidth - gap);
+            ys.add(o[1] + o[3] + gap);
+            ys.add(o[1] - fullHeight - gap);
+        }
+        for (double x : xs) {
+            for (double y : ys) {
+                spots.add(new double[] {x, y, fullWidth, fullHeight});
+                // The largest card from that corner that stays inside the panel, down to the card's minimum:
+                // a free spot a little smaller beats covering the path to the row.
+                double fitWidth = Math.min(fullWidth, parentWidth - margin - x);
+                double fitHeight = Math.min(fullHeight, parentHeight - margin - y);
+                if (x >= margin
+                        && y >= margin
+                        && (fitWidth < fullWidth || fitHeight < fullHeight)
+                        && fitWidth >= Math.min(minimumWidth, fullWidth)
+                        && fitHeight >= Math.min(minimumHeight, fullHeight)) {
+                    spots.add(new double[] {x, y, fitWidth, fitHeight});
                 }
             }
         }
-
-        int index = Math.max(1, others - 1);
-        double x = horizontal
-                ? preferred.x()
-                : clampPreview(
-                        preferred.x() + index * PREVIEW_CASCADE,
-                        ProjectMapPreview.EDGE_MARGIN,
-                        Math.max(
-                                ProjectMapPreview.EDGE_MARGIN,
-                                parentWidth - preferred.width() - ProjectMapPreview.EDGE_MARGIN));
-        double y = horizontal
-                ? clampPreview(
-                        preferred.y() + index * PREVIEW_CASCADE,
-                        ProjectMapPreview.EDGE_MARGIN,
-                        Math.max(
-                                ProjectMapPreview.EDGE_MARGIN,
-                                parentHeight - preferred.height() - ProjectMapPreview.EDGE_MARGIN))
-                : preferred.y();
-        return new ProjectMapPreview.Placement(x, y, preferred.width(), preferred.height(), preferred.growLeft());
-    }
-
-    private boolean overlapsPreview(Region candidate, double x, double y, double width, double height) {
-        List<Region> all = new ArrayList<>(previews.values());
-        all.addAll(notePreviews.values());
-        for (Region other : all) {
-            if (other == candidate || !other.isVisible()) {
-                continue;
-            }
-            double scale = cardScale(other);
-            if (x < other.getLayoutX() + other.getWidth() * scale + PREVIEW_CASCADE
-                    && x + width + PREVIEW_CASCADE > other.getLayoutX()
-                    && y < other.getLayoutY() + other.getHeight() * scale + PREVIEW_CASCADE
-                    && y + height + PREVIEW_CASCADE > other.getLayoutY()) {
-                return true;
+        double[] best = null;
+        double bestCost = Double.MAX_VALUE;
+        for (double[] spot : spots) {
+            double w = spot[2];
+            double h = spot[3];
+            double x = clampInto(spot[0], margin, Math.max(margin, parentWidth - w - margin));
+            double y = clampInto(spot[1], margin, Math.max(margin, parentHeight - h - margin));
+            // Least covered first; between spots that cover alike, the one nearer its row, then the larger.
+            double distance = Math.hypot(x + w / 2 - rowX, y + h / 2 - rowY);
+            // A card cut narrower than its lines needs makes them scroll sideways: that weighs more than height.
+            double cost = cardOverlapCost(x, y, w, h, obstacles)
+                    + distance * 0.5
+                    - w * h * 0.05
+                    + Math.max(0, fullWidth - w) * h * 0.1;
+            if (cost < bestCost) {
+                bestCost = cost;
+                best = new double[] {x, y, w, h};
             }
         }
-        return false;
+        if (best == null) {
+            return new ProjectMapPreview.Placement(margin, margin, fullWidth, fullHeight);
+        }
+        boolean growLeft = horizontal && best[0] + best[2] <= row[0];
+        return new ProjectMapPreview.Placement(best[0], best[1], best[2], best[3], growLeft);
     }
 
-    private static double clampPreview(double value, double minimum, double maximum) {
+    /** How much a card of the other cards weighs against a spot, per pixel it would cover (columns: 1–6). */
+    private static final double CARD_WEIGHT_CARD = 5;
+
+    /** Adds a spot whose extent along {@code axis} (0 height, 1 width) is at least the card's minimum there. */
+    private static void cardSpot(
+            List<double[]> spots, double x, double y, double w, double h, double minimum, int axis) {
+        if ((axis == 1 ? w : h) >= minimum && w > 0 && h > 0) {
+            spots.add(new double[] {x, y, w, h});
+        }
+    }
+
+    private static double cardBounded(double requested, double minimum, double available) {
+        double maximum = Math.max(1, available);
+        return Math.min(Math.max(Math.min(minimum, maximum), requested), maximum);
+    }
+
+    /**
+     * What a card at {@code x, y} sized {@code w × h} covers: the area of each obstacle {@code {x, y, w, h, weight}}
+     * under it, times the obstacle's weight. Pure.
+     */
+    static double cardOverlapCost(double x, double y, double w, double h, List<double[]> obstacles) {
+        double cost = 0;
+        for (double[] o : obstacles) {
+            double across = Math.min(x + w, o[0] + o[2]) - Math.max(x, o[0]);
+            double down = Math.min(y + h, o[1] + o[3]) - Math.max(y, o[1]);
+            if (across > 0 && down > 0) {
+                cost += across * down * o[4];
+            }
+        }
+        return cost;
+    }
+
+    /** {@code value} within [{@code minimum}, {@code maximum}]; unlike {@link Math#clamp} it tolerates an empty range. */
+    private static double clampInto(double value, double minimum, double maximum) {
         return Math.max(minimum, Math.min(maximum, value));
     }
 
@@ -2258,14 +3037,14 @@ final class ProjectMapView extends VBox {
         double top = preview.getLayoutY();
         double width = preview.getWidth() * cardScale(preview);
         double height = preview.getHeight() * cardScale(preview);
-        boolean horizontal = flowFilter.getValue() == FlowDirection.LEFT_TO_RIGHT
-                || flowFilter.getValue() == FlowDirection.RIGHT_TO_LEFT;
+        boolean horizontal = surface.flowDirection == FlowDirection.LEFT_TO_RIGHT
+                || surface.flowDirection == FlowDirection.RIGHT_TO_LEFT;
         if (horizontal) {
             boolean previewAfter = left + width / 2 >= anchor.x() + anchor.width() / 2;
             x1 = previewAfter ? anchor.x() + anchor.width() : anchor.x();
             y1 = anchor.y() + anchor.height() / 2;
             x2 = previewAfter ? left : left + width;
-            y2 = clampPreview(y1, top, top + height);
+            y2 = clampInto(y1, top, top + height);
             double control = Math.max(18, Math.abs(x2 - x1) * 0.45);
             g.beginPath();
             g.moveTo(x1, y1);
@@ -2275,7 +3054,7 @@ final class ProjectMapView extends VBox {
             boolean previewAfter = top + height / 2 >= anchor.y() + anchor.height() / 2;
             x1 = anchor.x() + anchor.width() / 2;
             y1 = previewAfter ? anchor.y() + anchor.height() : anchor.y();
-            x2 = clampPreview(x1, left, left + width);
+            x2 = clampInto(x1, left, left + width);
             y2 = previewAfter ? top : top + height;
             double control = Math.max(18, Math.abs(y2 - y1) * 0.45);
             g.beginPath();
@@ -2378,6 +3157,9 @@ final class ProjectMapView extends VBox {
             revealPins.remove(revealPins.iterator().next());
         }
         pendingSelection = normalized;
+        if (!navigatingHistory) {
+            recordSelection(normalized); // as select() records a loaded target; dropped again if it never loads
+        }
         reloadForUser();
         onExpandedChanged.run();
     }
@@ -2385,13 +3167,19 @@ final class ProjectMapView extends VBox {
     private void updateNavigation() {
         backButton.setDisable(historyIndex <= 0);
         forwardButton.setDisable(historyIndex < 0 || historyIndex >= selectionHistory.size() - 1);
-        Path selected = surface.selectedEntry().map(ProjectMapModel.Entry::path).orElse(pendingSelection);
+        // A "+N more" or stub row is not a place: the trail ends at its folder, never at a "…" crumb.
+        Path selected = surface.selectedEntry()
+                .map(entry -> entry.isPlaceholder() ? entry.parent() : entry.path())
+                .orElse(pendingSelection);
+        javafx.collections.ObservableList<Node> children = breadcrumbs.getChildren();
         // The surface may still hold the previous root's selection, which can be on another connection.
         if (selected == null
                 || root == null
                 || !com.editora.config.PathKeys.sameFileSystem(selected, root)
                 || !selected.startsWith(root)) {
-            breadcrumbs.getChildren().clear();
+            children.clear();
+            crumbTrail.clear();
+            crumbButtons.clear();
             return;
         }
         List<Path> trail = new ArrayList<>();
@@ -2401,22 +3189,53 @@ final class ProjectMapView extends VBox {
                 break;
             }
         }
-        List<Node> nodes = new ArrayList<>();
-        for (Path path : trail.reversed()) {
-            Button crumb = new Button(crumbLabel(path));
-            crumb.getStyleClass().add("project-map-breadcrumb");
-            crumb.setTooltip(new Tooltip(path.toString()));
-            crumb.setOnAction(event -> revealPath(path));
-            nodes.add(crumb);
-            if (!com.editora.config.PathKeys.samePath(path, selected)) {
-                Label separator = new Label("›");
-                separator.getStyleClass().add("project-map-breadcrumb-separator");
-                separator.setMinWidth(Region.USE_PREF_SIZE);
-                nodes.add(separator);
-            }
+        List<Path> paths = trail.reversed();
+        // Only the crumbs after the part the old and new trails share are replaced: an arrow key in one column
+        // changes the last crumb, not the whole row of buttons (Map review D15).
+        children.removeAll(List.of(breadcrumbEllipsis, breadcrumbEllipsisSeparator));
+        int kept = 0;
+        while (kept < paths.size()
+                && kept < crumbTrail.size()
+                && com.editora.config.PathKeys.samePath(crumbTrail.get(kept), paths.get(kept))
+                && crumbButtons.get(kept).getText().equals(crumbLabel(paths.get(kept)))) {
+            kept++;
         }
-        breadcrumbs.getChildren().setAll(nodes);
+        if (kept < crumbTrail.size() || kept < paths.size() || children.size() != crumbTrail.size() * 2 - 1) {
+            // crumb, separator, crumb, … crumb: the separator after the last kept crumb stays when one follows.
+            boolean separatorKept = kept > 0 && kept < crumbTrail.size() && kept < paths.size();
+            int keptNodes = Math.min(children.size(), kept == 0 ? 0 : kept * 2 - (separatorKept ? 0 : 1));
+            children.remove(keptNodes, children.size());
+            crumbTrail.subList(kept, crumbTrail.size()).clear();
+            crumbButtons.subList(kept, crumbButtons.size()).clear();
+            List<Node> added = new ArrayList<>();
+            for (int index = kept; index < paths.size(); index++) {
+                if (index > 0 && !(index == kept && separatorKept)) {
+                    Label separator = new Label("›");
+                    separator.getStyleClass().add("project-map-breadcrumb-separator");
+                    separator.setMinWidth(Region.USE_PREF_SIZE);
+                    added.add(separator);
+                }
+                Button crumb = breadcrumbButton(paths.get(index));
+                crumbTrail.add(paths.get(index));
+                crumbButtons.add(crumb);
+                added.add(crumb);
+            }
+            children.addAll(added);
+        }
         fitBreadcrumbs();
+    }
+
+    /** One crumb; its tooltip (the full path) is made the first time the pointer rests on it. */
+    private Button breadcrumbButton(Path path) {
+        Button crumb = new Button(crumbLabel(path));
+        crumb.getStyleClass().add("project-map-breadcrumb");
+        crumb.setOnMouseEntered(event -> {
+            if (crumb.getTooltip() == null) {
+                crumb.setTooltip(new Tooltip(path.toString()));
+            }
+        });
+        crumb.setOnAction(event -> revealPath(path));
+        return crumb;
     }
 
     /** A breadcrumb's text: the folder or file name, or a declaration's label. */
@@ -2516,6 +3335,13 @@ final class ProjectMapView extends VBox {
     private final class MapSurface extends Region {
 
         private static final double MIN_NODE_WIDTH = 164;
+        /** The widest a column's rows grow for a long name; the name is elided in the middle beyond it. */
+        private static final double MAX_NODE_WIDTH = 360;
+
+        private static final String FALLBACK_FONT_FAMILY = "System";
+        /** Between the folder names in a compacted column's title: {@code src / main / java}. */
+        private static final String CHAIN_SEPARATOR = " / ";
+
         private static final double NODE_HEIGHT = 32;
         private static final double COLUMN_GAP = 50;
         private static final double ROW_GAP = 9;
@@ -2556,7 +3382,6 @@ final class ProjectMapView extends VBox {
         private static final double MIN_COLUMN_FILTER_WIDTH = 46;
         private static final double MIN_COLUMN_HIDDEN_WIDTH = 50;
         private static final double MIN_COLUMN_PIN_WIDTH = 22;
-        private static final double PREVIEW_EDGE_MARGIN = 14;
         private static final double PREVIEW_COLUMN_GAP = 18;
         private static final DateTimeFormatter TOOLTIP_TIME = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
                 .withLocale(Locale.getDefault())
@@ -2567,8 +3392,12 @@ final class ProjectMapView extends VBox {
         private static final double MAX_ZOOM = 2.25;
         /** The smallest scale the map picks by itself; below it labels stop being readable. */
         private static final double MIN_AUTO_FIT_ZOOM = 0.85;
-        /** Rows that do not match an active filter keep this much of their ink. */
+        /** Rows that do not match an active filter keep this much of their fill and border. */
         private static final double DIMMED_ALPHA = 0.38;
+        /** …this much of their icons and marks… */
+        private static final double DIMMED_MARK_ALPHA = 0.7;
+        /** …and their labels fade no further than this contrast with the row (Map review B19). */
+        private static final double FADED_LABEL_CONTRAST = 3.5;
         /** How far a Structure column's card, and its declaration rows, lean toward the structure tint. */
         private static final double STRUCTURE_COLUMN_TINT = 0.16;
 
@@ -2587,15 +3416,29 @@ final class ProjectMapView extends VBox {
         private static final int OUTPUT_TILE = 2_048;
 
         private static final double CONNECTOR_VIEWPORT_OVERSCAN = 24;
+        /** How far a primary press on a row must move before it pans the map. */
+        private static final double ROW_PAN_THRESHOLD = 5;
+        /** Below this surface size the overview is not drawn: it would cover too much of the map (B3). */
+        private static final double OVERVIEW_MIN_SURFACE_WIDTH = 600;
+
+        private static final double OVERVIEW_MIN_SURFACE_HEIGHT = 400;
+        /** The overview frame's longest sides; it shrinks to the map's shape inside them (B2). */
+        private static final double OVERVIEW_MAX_WIDTH = 150;
+
+        private static final double OVERVIEW_MAX_HEIGHT = 86;
+        private static final double OVERVIEW_MIN_SIDE = 28;
+        private static final double OVERVIEW_INSET = 5;
         /** Zoom levels tried, in order, to bring a hidden column filter back for the {@code /} key. */
         private static final double[] FILTER_ZOOM_STEPS = {0.8, 1.0};
         /** The same light palette for the row icons, which are styled nodes rasterized through CSS. */
         private static final String OUTPUT_ICON_STYLE = "-project-folder-color: #0969da; -project-file-color: #59636e;"
-                + " -state-amber: #9a6700; -state-olive: #6e7b25; -state-violet: #8250df;"
+                + " -state-amber: #9a6700; -state-olive: #4f5c10; -state-violet: #6538c2;"
                 + " -color-accent-fg: #0969da; -color-success-fg: #1a7f37; -color-danger-fg: #d1242f;"
                 + " -color-fg-muted: #59636e;";
 
         private final Canvas liveCanvas = new Canvas(1, 1);
+        /** The overview, on a canvas of its own above the cards; see {@link #drawOverview}. */
+        private final Canvas overviewCanvas = new Canvas(1, 1);
         /** What {@link #paint} draws on: the live Canvas, or an off-scene one while output is rendered. */
         private Canvas canvas = liveCanvas;
         /** Non-null only while print/PDF output is rendered: the light colours that replace the theme's. */
@@ -2645,7 +3488,7 @@ final class ProjectMapView extends VBox {
                     return;
                 }
                 viewportRepaintPending = false;
-                repaint();
+                paintNow();
             }
         };
 
@@ -2660,8 +3503,12 @@ final class ProjectMapView extends VBox {
         private Predicate<Path> modifiedState = path -> false;
         private Predicate<Path> bookmarkState = path -> false;
         private Predicate<Path> noteState = path -> false;
+        private java.util.function.@Nullable Supplier<java.util.Collection<Path>> stateCandidates;
         private Map<Path, GitFileStatus> gitState = Map.of();
         private Set<Path> gitDirectories = Set.of();
+        /** Paths Git reports as untracked; a folder among them makes everything under it untracked too. */
+        private Set<Path> gitUntrackedRoots = Set.of();
+
         private Set<Path> openPaths = Set.of();
         private Set<Path> modifiedPaths = Set.of();
         private Set<Path> bookmarkedPaths = Set.of();
@@ -2697,12 +3544,16 @@ final class ProjectMapView extends VBox {
         private Consumer<Path> onPreview = path -> {};
         private Consumer<ProjectMapModel.Entry> onStructure = entry -> {};
         private Consumer<Path> onNotesPreview = path -> {};
+        private Consumer<ProjectMapModel.Entry> onTogglePreview = entry -> {};
         private Consumer<Path> onSelectionChanged = path -> {};
         private Function<ProjectMapModel.Entry, @Nullable ContextMenu> contextMenuFactory = entry -> null;
         private Runnable onZoomChanged = () -> {};
         private double zoom = 1.0;
         private boolean keepZoomOnColumnOpen = true;
         private boolean focusNewColumn = true;
+        /** The ⋯ menu's "Single-click opens files" (see ProjectMapView.singleClickOpens). */
+        private boolean singleClickOpens = true;
+
         private double offsetX;
         private double offsetY;
         /** The viewport the open cards were last moved for; NaN until the first paint. */
@@ -2722,6 +3573,10 @@ final class ProjectMapView extends VBox {
         private @Nullable Scene dismissScene;
         private @Nullable EventHandler<MouseEvent> dismissFilter;
         private boolean panning;
+        /** The pan was pressed on a row: it starts only past {@link #ROW_PAN_THRESHOLD}. */
+        private boolean panFromRow;
+        /** The press landed in the overview: drags keep moving the view rectangle. */
+        private boolean overviewDragging;
         /** The pointer moved the viewport or a column since the last press, so its release is not a click. */
         private boolean dragMoved;
         /** Set while {@link #moveSibling} selects, so the history can fold a run of such moves into one entry. */
@@ -2741,14 +3596,40 @@ final class ProjectMapView extends VBox {
         private boolean syncingHidden;
 
         private double showHiddenLabelWidth;
-        private @Nullable Font rowFont;
-        private @Nullable Font rowFontBold;
         private final Map<String, String> elidedTitles = new HashMap<>();
         private final String columnNoMatches = tr("project.map.column.noMatches");
         private final String columnFilterPrompt = tr("project.map.column.filter");
         private final String columnFilterShortPrompt = tr("project.map.column.filterShort");
         private int lastPaintedConnectorCount;
+        /** Canvas draws so far: at most one per pulse (Map review D5). */
         private long completedPaints;
+        /** The last world layout and what it was computed from (see {@link #worldLayout}). */
+        private @Nullable WorldLayout cachedLayout;
+
+        private @Nullable LayoutKey cachedLayoutKey;
+        /** The world layout the current boxes were projected from; null while the map is empty. */
+        private @Nullable WorldLayout projected;
+
+        private @Nullable WorldLayout cachedFirstColumnsFor;
+        /** World layouts computed so far: a pan, a hover or a new selection computes none. */
+        private long layoutsComputed;
+        /** "Compact folder chains": a run of single-child folders is drawn as one column (Map review E4). */
+        private boolean compactChains = true;
+        /** A pan or zoom moved the map since the boxes were last projected. */
+        private boolean boxesStale;
+        /** Inside {@link #layoutChildren}: a draw asked for now is left to the pulse. */
+        private boolean laying;
+        /** The columns that hang from no row: the root's children (the root is their title). */
+        private Set<ProjectMapModel.ColumnId> firstColumns = Set.of();
+        /** An empty Text the UI font is resolved on by CSS, as the colours are on the probes (Map review B13). */
+        private final Text fontProbe = new Text();
+
+        private final Map<FontKey, Font> fonts = new HashMap<>();
+        private @Nullable String measuredFamily;
+        /** The ground a faded row's label is drawn on, while {@link #drawNode} draws one; null otherwise. */
+        private @Nullable Color dimmedGround;
+
+        private final Map<List<Color>, Color> fadedInks = new HashMap<>();
 
         MapSurface() {
             // The project-tree class supplies the same per-editor-theme folder/file looked-up colors used
@@ -2757,7 +3638,7 @@ final class ProjectMapView extends VBox {
             setClip(viewportClip);
             viewportClip.widthProperty().bind(widthProperty());
             viewportClip.heightProperty().bind(heightProperty());
-            textMeasurer.setFont(Font.font("System", FontWeight.SEMI_BOLD, 12));
+            textMeasurer.setFont(Font.font(FALLBACK_FONT_FAMILY, FontWeight.SEMI_BOLD, 12));
             iconRasterizer.setManaged(false);
             iconRasterizer.setMouseTransparent(true);
             iconRasterizer.setMinSize(ICON_SIZE, ICON_SIZE);
@@ -2765,10 +3646,15 @@ final class ProjectMapView extends VBox {
             iconRasterizer.setMaxSize(ICON_SIZE, ICON_SIZE);
             iconRasterizer.resize(ICON_SIZE, ICON_SIZE);
             iconRasterizer.relocate(-ICON_SIZE * 2, -ICON_SIZE * 2);
+            fontProbe.getStyleClass().add("project-map-probe-font");
+            fontProbe.setManaged(false);
+            fontProbe.setMouseTransparent(true);
+            fontProbe.fontProperty().addListener((obs, old, value) -> repaint());
             getChildren()
                     .addAll(
                             canvas,
                             iconRasterizer,
+                            fontProbe,
                             bgProbe,
                             surfaceProbe,
                             borderProbe,
@@ -2788,8 +3674,13 @@ final class ProjectMapView extends VBox {
                             violetProbe,
                             structureProbe);
             setMinSize(80, 100);
+            overviewForwardsInput();
             setFocusTraversable(true);
-            setAccessibleRole(AccessibleRole.TREE_VIEW);
+            // PARENT, not TREE_VIEW: the canvas has no item nodes, and a tree role made screen readers look for
+            // rows, find none and announce an empty tree. PARENT is a plain group (AXGroup on macOS, a pane in
+            // UI Automation) that promises no items; its TEXT names the selection and its states and changes
+            // with it (updateAccessibleText), and its children are the real column controls (B5).
+            setAccessibleRole(AccessibleRole.PARENT);
             setAccessibleHelp(tr("project.map.accessibleHelp"));
             nodeTooltip.setShowDelay(Duration.millis(350));
             nodeTooltip.setHideDelay(Duration.millis(100));
@@ -2829,6 +3720,8 @@ final class ProjectMapView extends VBox {
             addEventHandler(MouseEvent.MOUSE_DRAGGED, this::mouseDragged);
             addEventHandler(MouseEvent.MOUSE_RELEASED, event -> {
                 panning = false;
+                panFromRow = false;
+                overviewDragging = false;
                 draggedColumn = null;
             });
             addEventHandler(MouseEvent.MOUSE_MOVED, this::mouseMoved);
@@ -2892,6 +3785,11 @@ final class ProjectMapView extends VBox {
             noteState = noted == null ? path -> false : noted;
         }
 
+        /** The few paths that can be open or marked, looked up among the rows; null: every row is asked. */
+        void setStateCandidates(java.util.function.@Nullable Supplier<java.util.Collection<Path>> candidates) {
+            stateCandidates = candidates;
+        }
+
         void setLoadPending(boolean pending) {
             if (loadPending != pending) {
                 loadPending = pending;
@@ -2904,6 +3802,17 @@ final class ProjectMapView extends VBox {
         @Nullable
         Path selectedPath() {
             return selected;
+        }
+
+        /** Each column's own filter text, by the directory it lists (the loader matches a long folder's rest). */
+        Map<Path, String> columnFilterQueries() {
+            Map<Path, String> result = new HashMap<>();
+            columnQueries.forEach((id, value) -> {
+                if (id.parent() != null && value != null && !value.isBlank()) {
+                    result.put(id.parent(), value);
+                }
+            });
+            return result;
         }
 
         /** Each column's own "Show hidden" choice, by the directory it lists; absent means the setting. */
@@ -2956,8 +3865,9 @@ final class ProjectMapView extends VBox {
             snapshotStates();
             recomputeEmphasis();
             syncColumnControls();
-            updateAccessibleText();
             repaint();
+            keepSelectionDrawn();
+            updateAccessibleText();
             if (!viewportInitialized && !this.entries.isEmpty()) {
                 viewportInitialized = true;
                 initialFitPending = true;
@@ -2972,6 +3882,13 @@ final class ProjectMapView extends VBox {
 
         void setKeepZoomOnColumnOpen(boolean keep) {
             keepZoomOnColumnOpen = keep;
+        }
+
+        void setCompactChains(boolean compact) {
+            if (compactChains != compact) {
+                compactChains = compact;
+                repaint();
+            }
         }
 
         void setFocusNewColumn(boolean focus) {
@@ -3083,11 +4000,9 @@ final class ProjectMapView extends VBox {
             if (hide != hideUnmatched) {
                 hideUnmatched = hide;
                 repaint();
+                keepSelectionDrawn();
+                updateAccessibleText();
             }
-        }
-
-        boolean isHideUnmatched() {
-            return hideUnmatched;
         }
 
         /** Whether "Hide unmatched" takes {@code path}'s row off the map: the filters are on and would fade it. */
@@ -3167,36 +4082,65 @@ final class ProjectMapView extends VBox {
 
         void setSelected(@Nullable Path selected) {
             this.selected = selected;
-            updateAccessibleText();
             repaint();
+            updateAccessibleText();
+        }
+
+        /**
+         * Brings a selection that arrived with a load into view: now, and once more after the deferred
+         * "show the opened column" and first-view passes that {@link #setEntries} queued, so the selected row
+         * wins over the start of its new column.
+         */
+        void revealAfterLoad(Path path) {
+            revealSelected();
+            repaint();
+            Platform.runLater(() -> {
+                if (path.equals(selected)) {
+                    revealSelected();
+                    repaint();
+                }
+            });
         }
 
         void setFilters(ProjectMapModel.Filters filters) {
             this.filters = filters;
             recomputeEmphasis();
             repaint();
+            keepSelectionDrawn();
+            updateAccessibleText();
         }
 
         void setGitState(Map<Path, GitFileStatus> status, Set<Path> directories) {
             gitState = status == null ? Map.of() : status;
             gitDirectories = directories == null ? Set.of() : directories;
+            Set<Path> untracked = new HashSet<>();
+            gitState.forEach((path, value) -> {
+                if (value == GitFileStatus.UNTRACKED) {
+                    untracked.add(path);
+                }
+            });
+            gitUntrackedRoots = Set.copyOf(untracked);
             recomputeEmphasis();
             repaint();
+            keepSelectionDrawn();
+            updateAccessibleText();
         }
 
         void stateChanged() {
             snapshotStates();
             recomputeEmphasis();
-            updateAccessibleText();
             entries.stream()
                     .filter(entry -> entry.path().equals(hovered))
                     .findFirst()
                     .ifPresent(entry -> nodeTooltip.setText(tooltipText(entry)));
             repaint();
+            keepSelectionDrawn();
+            updateAccessibleText();
         }
 
         void dispose() {
             viewportRepaintPending = false;
+            boxesStale = false;
             viewportRepaintTimer.stop();
             dismissContextMenu();
             clearNodeTooltip();
@@ -3208,7 +4152,34 @@ final class ProjectMapView extends VBox {
             measuredLabelWidths.clear();
         }
 
+        /**
+         * Something the map shows changed. The hit boxes, the overview frame and the column controls follow at
+         * once, so whatever reads them next sees the new layout; the Canvas itself is drawn at the next pulse,
+         * once for any number of changes in between (Map review D5). {@link #paintNow} draws at once.
+         */
         void repaint() {
+            if (painting || getWidth() <= 0 || getHeight() <= 0) {
+                return;
+            }
+            boolean layoutBefore = cachedLayout != null;
+            long layoutsBefore = layoutsComputed;
+            painting = true;
+            try {
+                boxesStale = false;
+                projectLayout();
+                syncHover(); // the row under a resting pointer changed with the rows
+                moveCardsWithViewport();
+                if (!layoutBefore || layoutsComputed != layoutsBefore) {
+                    updateCardVisibility(); // what "Hide unmatched" leaves may have changed
+                }
+            } finally {
+                painting = false;
+            }
+            scheduleDraw();
+        }
+
+        /** Projects and draws now: the pulse's draw, Print/PDF, and tests that read the Canvas. */
+        void paintNow() {
             if (painting || getWidth() <= 0 || getHeight() <= 0) {
                 return;
             }
@@ -3216,16 +4187,29 @@ final class ProjectMapView extends VBox {
             viewportRepaintTimer.stop();
             painting = true;
             try {
-                paint();
-                if (syncHover()) {
-                    paint(); // the row under a resting pointer changed with the viewport
-                }
+                boxesStale = false;
+                projectLayout();
+                syncHover(); // the row under a resting pointer changed with the viewport
+                drawCanvas();
                 completedPaints++;
                 moveCardsWithViewport();
                 updateCardVisibility(); // repaints the connectors
-
             } finally {
                 painting = false;
+            }
+        }
+
+        /**
+         * Asks for one draw: at the next pulse, or at the next layout pass if one comes first (a snapshot runs
+         * one, so a snapshot always shows what was asked for).
+         */
+        private void scheduleDraw() {
+            if (!viewportRepaintPending) {
+                viewportRepaintPending = true;
+                viewportRepaintTimer.start();
+            }
+            if (!laying) {
+                setNeedsLayout(true); // this node only: its parents are not laid out again
             }
         }
 
@@ -3259,13 +4243,16 @@ final class ProjectMapView extends VBox {
             return Double.isNaN(cardsZoom) ? zoom : cardsZoom;
         }
 
-        /** Coalesces continuous viewport gestures so they submit no more than one Canvas render per pulse. */
+        /**
+         * Coalesces continuous viewport gestures so they submit no more than one Canvas render per pulse. The
+         * boxes are projected again when something reads them ({@link #flushPendingRepaint}) or at the pulse.
+         */
         private void requestViewportRepaint() {
-            if (viewportRepaintPending || getWidth() <= 0 || getHeight() <= 0) {
+            if (getWidth() <= 0 || getHeight() <= 0) {
                 return;
             }
-            viewportRepaintPending = true;
-            viewportRepaintTimer.start();
+            boxesStale = true;
+            scheduleDraw();
         }
 
         /** World-space bounds of every laid-out column plus the paper margin, or null for an empty map. */
@@ -3513,12 +4500,12 @@ final class ProjectMapView extends VBox {
                 }
             }
             if (selectedBox == null || !selectedBox.entry().path().equals(selected)) {
-                return;
-            }
-            if (selectedBox.entry().depth() == 0) {
-                // Nothing chosen yet: show where the project starts, as the first view does.
-                panToColumnStart(
-                        pan, new ProjectMapModel.ColumnId(1, selectedBox.entry().path()));
+                // The root (nothing chosen yet) or a folder of a compacted chain: its column's header stands
+                // for it, so show where that column starts, as the first view does.
+                ColumnBox header = headerFor(selected);
+                if (header != null) {
+                    panToColumnStart(pan, header.column().id());
+                }
                 return;
             }
             ColumnBox column = columnBox(columnId(selectedBox.entry()));
@@ -3553,38 +4540,20 @@ final class ProjectMapView extends VBox {
                 fit(1.0, 1.0);
                 return;
             }
-            ColumnBox rootColumn = columnBoxes.getFirst();
-            ColumnBox first = null;
-            for (ColumnBox candidate : columnBoxes) {
-                if (candidate.column().depth() == rootColumn.column().depth() + 1) {
-                    first = candidate;
-                    break;
-                }
-            }
-            if (mayShrink && first != null) {
-                double span = isVerticalFlow()
-                        ? Math.max(rootColumn.y() + rootColumn.height(), first.y() + first.height())
-                                - Math.min(rootColumn.y(), first.y())
-                        : Math.max(rootColumn.x() + rootColumn.width(), first.x() + first.width())
-                                - Math.min(rootColumn.x(), first.x());
+            // The first column holds the root's children (the root is its title, not a column of its own).
+            ColumnBox first = columnBoxes.getFirst();
+            if (mayShrink) {
+                double span = isVerticalFlow() ? first.height() : first.width();
                 double available = isVerticalFlow() ? viewBottom() - viewTop() : viewRight() - viewLeft();
                 if (span > available) {
                     zoom = Math.max(MIN_AUTO_FIT_ZOOM, available / span);
                     repaint();
-                    rootColumn = columnBoxes.getFirst();
-                    first = columnBox(first.column().id());
+                    ColumnBox scaled = columnBox(first.column().id());
+                    first = scaled != null ? scaled : columnBoxes.getFirst();
                 }
             }
             double[] pan = new double[2];
-            include(
-                    pan,
-                    rootColumn.x(),
-                    rootColumn.y(),
-                    rootColumn.x() + rootColumn.width(),
-                    rootColumn.y() + rootColumn.height());
-            if (first != null) {
-                panToColumnStart(pan, first.column().id());
-            }
+            panToColumnStart(pan, first.column().id());
             offsetX += pan[0];
             offsetY += pan[1];
             onZoomChanged.run();
@@ -3654,13 +4623,25 @@ final class ProjectMapView extends VBox {
 
         @Override
         protected void layoutChildren() {
-            if (outputPalette != null) {
-                return; // rasterizing an icon lays the scene out mid-output; renderOutput asks again afterwards
+            if (outputPalette != null || painting) {
+                // Rasterizing an icon lays the scene out mid-paint (and mid-output); the pending draw and the
+                // first-view fit wait for the next pass instead of moving the map under the paint.
+                return;
             }
-            liveCanvas.setWidth(Math.max(1, getWidth()));
-            liveCanvas.setHeight(Math.max(1, getHeight()));
-            repaint();
-            fitIfPending();
+            laying = true;
+            try {
+                double width = Math.max(1, getWidth());
+                double height = Math.max(1, getHeight());
+                boolean resized = liveCanvas.getWidth() != width || liveCanvas.getHeight() != height;
+                liveCanvas.setWidth(width);
+                liveCanvas.setHeight(height);
+                if (resized || viewportRepaintPending || boxesStale || completedPaints == 0) {
+                    paintNow();
+                }
+                fitIfPending();
+            } finally {
+                laying = false;
+            }
         }
 
         private void fitIfPending() {
@@ -3701,7 +4682,9 @@ final class ProjectMapView extends VBox {
                     } else {
                         columnQueries.put(id, value);
                     }
+                    truncatedColumnFilterChanged(id.parent());
                     repaint();
+                    updateAccessibleText(); // the column's count of drawn rows changed
                     if (selected != null
                             && boxes.stream()
                                     .noneMatch(box -> box.entry().path().equals(selected))) {
@@ -3749,11 +4732,36 @@ final class ProjectMapView extends VBox {
                 close.getStyleClass().add("project-map-column-close");
                 close.setTooltip(new Tooltip(tr("project.map.column.close")));
                 close.setAccessibleText(tr("project.map.column.close"));
-                close.setOnAction(event -> onCloseColumn.accept(id.parent()));
+                close.setOnAction(event -> onCloseColumn.accept(closeTarget(id)));
 
                 columnControls.put(id, new ColumnControls(filter, showHidden, pin, close));
                 getChildren().addAll(filter, showHidden, pin, close);
             }
+        }
+
+        /**
+         * A row's Git status: its own, or untracked when it lies under a folder Git reports as untracked. In
+         * its default mode {@code git status} names a new folder ({@code ? deep/}), not the files in it.
+         */
+        private @Nullable GitFileStatus gitStatusOf(Path path) {
+            GitFileStatus own = gitState.get(path);
+            if (own != null || gitUntrackedRoots.isEmpty()) {
+                return own;
+            }
+            for (Path parent = path.getParent(); parent != null; parent = parent.getParent()) {
+                if (gitUntrackedRoots.contains(parent)) {
+                    return GitFileStatus.UNTRACKED;
+                }
+                if (parent.equals(root)) {
+                    break;
+                }
+            }
+            return null;
+        }
+
+        /** Whether the Git chip counts a row: it has a status, or is a folder holding a change. */
+        private boolean gitChanged(Path path) {
+            return gitDirectories.contains(path) || gitStatusOf(path) != null;
         }
 
         private void recomputeEmphasis() {
@@ -3763,9 +4771,13 @@ final class ProjectMapView extends VBox {
             }
             Set<Path> direct = new HashSet<>();
             Set<Path> loadedPaths = new HashSet<>();
+            List<ProjectMapModel.Entry> symbolRows = new ArrayList<>();
             for (ProjectMapModel.Entry entry : entries) {
                 Path path = entry.path();
                 loadedPaths.add(path);
+                if (entry.isSymbol()) {
+                    symbolRows.add(entry);
+                }
                 if (entry.isPlaceholder() || entry.isSymbol()) {
                     continue;
                 }
@@ -3774,7 +4786,7 @@ final class ProjectMapView extends VBox {
                         filters,
                         openPaths.contains(path),
                         modifiedPaths.contains(path),
-                        gitState.containsKey(path) || gitDirectories.contains(path),
+                        gitChanged(path),
                         bookmarkedPaths.contains(path),
                         notedPaths.contains(path))) {
                     direct.add(path);
@@ -3789,7 +4801,50 @@ final class ProjectMapView extends VBox {
                     result.add(entry.path());
                 }
             }
+            result.addAll(ProjectMapModel.emphasized(entries, searchMatchingSymbols(symbolRows), root));
             emphasized = result;
+        }
+
+        /**
+         * The declarations on screen whose name the query matches (E6): an open Structure column is searched
+         * as its file's rows are, without reading anything. A match lights itself and the rows that lead to
+         * it, not its siblings. The other filters still have to accept the declaration's file.
+         */
+        private Set<Path> searchMatchingSymbols(List<ProjectMapModel.Entry> symbolRows) {
+            if (filters.query().isEmpty() || symbolRows.isEmpty()) {
+                return Set.of();
+            }
+            ProjectMapModel.Filters fileFilters = new ProjectMapModel.Filters(
+                    "",
+                    filters.open(),
+                    filters.modified(),
+                    filters.gitChanged(),
+                    filters.bookmarked(),
+                    filters.personalNotes(),
+                    filters.type());
+            Set<Path> result = new HashSet<>();
+            Map<Path, Boolean> fileAccepted = new HashMap<>();
+            for (ProjectMapModel.Entry entry : symbolRows) {
+                ProjectMapModel.Symbol symbol = entry.symbol();
+                if (symbol == null || com.editora.search.FuzzyMatch.of(entry.name(), filters.query()) == null) {
+                    continue;
+                }
+                Path file = symbol.file();
+                boolean accepted = fileAccepted.computeIfAbsent(
+                        file,
+                        ignored -> ProjectMapModel.matches(
+                                new ProjectMapModel.Entry(file, file.getParent(), 0, false),
+                                fileFilters,
+                                openPaths.contains(file),
+                                modifiedPaths.contains(file),
+                                gitChanged(file),
+                                bookmarkedPaths.contains(file),
+                                notedPaths.contains(file)));
+                if (accepted) {
+                    result.add(entry.path());
+                }
+            }
+            return result;
         }
 
         /**
@@ -3809,7 +4864,8 @@ final class ProjectMapView extends VBox {
                 if (markers) {
                     candidates.addAll(markerCandidates.get());
                 }
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException failed) {
+                ProjectMapLog.unexpected("listing open and marked files", failed);
                 return;
             }
             for (Path candidate : candidates) {
@@ -3838,17 +4894,17 @@ final class ProjectMapView extends VBox {
             }
         }
 
-        private void paint() {
-            double width = canvas.getWidth();
-            double height = canvas.getHeight();
-            GraphicsContext g = canvas.getGraphicsContext2D();
-            g.setGlobalAlpha(1);
-            g.setFill(color(bgProbe, Color.web("#0f141c")));
-            g.fillRect(0, 0, width, height);
+        /**
+         * Brings the hit boxes, the overview frame and the native column controls up to date with the current
+         * rows, filters and viewport. The world layout behind them is reused while nothing it depends on
+         * changed ({@link #worldLayout}); only the projection to the screen is redone, which is what a pan, a
+         * hover or a new selection needs.
+         */
+        private void projectLayout() {
             boxes.clear();
             columnBoxes.clear();
             overviewBox = null;
-            lastPaintedConnectorCount = 0;
+            projected = null;
             if (entries.isEmpty()) {
                 columnControls.values().forEach(controls -> {
                     controls.filter().setVisible(false);
@@ -3856,22 +4912,42 @@ final class ProjectMapView extends VBox {
                     controls.pin().setVisible(false);
                     controls.close().setVisible(false);
                 });
-                g.setFill(color(mutedProbe, Color.web("#8b949e")));
-                g.setFont(Font.font(13));
-                g.fillText(tr(loadPending ? "project.map.loading" : "project.map.empty"), 18, 28);
                 reportNoMatches(false);
                 reportNarrowed(0);
                 return;
             }
-
-            // "Hide unmatched" keeps what the filters keep prominent: the matches and the folders that lead to them.
-            boolean narrowing = hideUnmatched && filters != null && filters.active();
-            List<ProjectMapModel.Column> columns = ProjectMapModel.columnsById(
-                    entries, columnQueries, columnShowHidden, narrowing ? emphasized : null);
-            int narrowedTotal = 0;
-            for (ProjectMapModel.Column column : columns) {
-                narrowedTotal += column.narrowed();
+            WorldLayout world = worldLayout();
+            for (ColumnBox column : world.columns()) {
+                columnBoxes.add(new ColumnBox(
+                        column.column(),
+                        screenX(column.x()),
+                        screenY(column.y()),
+                        column.width() * zoom,
+                        column.height() * zoom));
             }
+            for (NodeBox row : world.rows()) {
+                boxes.add(new NodeBox(
+                        row.entry(), screenX(row.x()), screenY(row.y()), row.width() * zoom, row.height() * zoom));
+            }
+            projected = world;
+            if (world != cachedFirstColumnsFor) {
+                Set<ProjectMapModel.ColumnId> unanchored = new HashSet<>();
+                for (int index = 0; index < world.columns().size(); index++) {
+                    if (world.anchorRows().get(index) < 0) {
+                        unanchored.add(world.columns().get(index).column().id());
+                    }
+                }
+                firstColumns = Set.copyOf(unanchored);
+                cachedFirstColumnsFor = world;
+            }
+            overviewBox = outputPaint ? null : overviewGeometry(canvas.getWidth(), canvas.getHeight());
+            layoutColumnControls();
+            reportNoMatches(filters != null && filters.active() && emphasized.isEmpty());
+            reportNarrowed(world.narrowed());
+        }
+
+        /** The world layout for the current inputs: the cached one while they are unchanged (Map review D8). */
+        private WorldLayout worldLayout() {
             // Column widths allow for the checkbox label, so it is measured before they are computed (it
             // changes once, when the controls are first styled).
             for (ColumnControls controls : columnControls.values()) {
@@ -3880,27 +4956,89 @@ final class ProjectMapView extends VBox {
                     break;
                 }
             }
-            Map<ProjectMapModel.ColumnId, Double> nodeWidths = new HashMap<>();
-            for (ProjectMapModel.Column column : columns) {
-                nodeWidths.put(column.id(), nodeWidthFor(column));
+            boolean narrowing = hideUnmatched && filters != null && filters.active();
+            Map<ProjectMapModel.ColumnId, javafx.geometry.Point2D> offsets = new HashMap<>();
+            columnLayouts.forEach((id, layout) -> {
+                if (layout.x != 0 || layout.y != 0) {
+                    offsets.put(id, new javafx.geometry.Point2D(layout.x, layout.y));
+                }
+            });
+            LayoutKey key = new LayoutKey(
+                    entries,
+                    Map.copyOf(columnQueries),
+                    Map.copyOf(columnShowHidden),
+                    narrowing ? emphasized : null,
+                    flowDirection,
+                    zoom,
+                    outputPaint,
+                    offsets,
+                    showHiddenLabelWidth,
+                    bookmarkedPaths,
+                    notedPaths,
+                    fontFamily(),
+                    compactChains);
+            WorldLayout cached = cachedLayout;
+            if (cached != null && key.equals(cachedLayoutKey)) {
+                return cached;
             }
-            Map<Path, NodeBox> byPath = new HashMap<>();
-            Map<ProjectMapModel.ColumnId, ColumnBox> columnsById = new HashMap<>();
+            WorldLayout computed = computeWorldLayout(narrowing);
+            cachedLayout = computed;
+            cachedLayoutKey = key;
+            layoutsComputed++;
+            return computed;
+        }
+
+        /**
+         * Lays the columns out in world units. The root is not a column of its own: its children are the first
+         * column, titled with its name (Map review E5). A compacted column hangs from the first folder of its
+         * chain (E4).
+         */
+        private WorldLayout computeWorldLayout(boolean narrowing) {
+            List<ProjectMapModel.Column> columns = ProjectMapModel.columnsById(
+                    entries, columnQueries, columnShowHidden, narrowing ? emphasized : null, compactChains);
+            int narrowedTotal = 0;
+            for (ProjectMapModel.Column column : columns) {
+                narrowedTotal += column.narrowed();
+            }
+            // Every row of a column counts for its width, filtered or not, so a filter does not make it jump.
+            Map<ProjectMapModel.ColumnId, List<ProjectMapModel.Entry>> rowsByColumn = new HashMap<>();
+            for (ProjectMapModel.Entry entry : entries) {
+                rowsByColumn
+                        .computeIfAbsent(columnId(entry), ignored -> new ArrayList<>())
+                        .add(entry);
+            }
+            List<ColumnBox> columnList = new ArrayList<>(columns.size());
+            List<NodeBox> rowList = new ArrayList<>();
+            List<Integer> anchorRows = new ArrayList<>(columns.size());
+            List<Integer> anchorColumns = new ArrayList<>(columns.size());
+            Map<Path, Integer> rowIndex = new HashMap<>();
+            Map<ProjectMapModel.ColumnId, Integer> columnIndex = new HashMap<>();
+            Map<ProjectMapModel.ColumnId, Integer> levels = new HashMap<>();
             Map<Integer, Double> nextCrossEdge = new HashMap<>();
-            // Along the flow every depth gets a band of its own, starting beyond the widest card of the
-            // depth before it; a card that only started beyond its own parent could run through a wider
+            // Along the flow every level gets a band of its own, starting beyond the widest card of the
+            // level before it; a card that only started beyond its own parent could run through a wider
             // sibling of that parent. Manual offsets are left out of the band (flowShift), so dragging
-            // one column does not move the other branches.
+            // one column does not move the other branches. A level is a column's distance from the first
+            // column, which a compacted chain keeps at one step whatever its depth on disk.
             Map<Integer, Double> flowBand = new HashMap<>();
             Map<ProjectMapModel.ColumnId, Double> flowShift = new HashMap<>();
             boolean verticalFlow = isVerticalFlow();
             double direction = isReverseFlow() ? -1 : 1;
             for (ProjectMapModel.Column column : columns) {
-                int depth = column.depth();
+                if (column.depth() == 0) {
+                    continue; // the root row: the first column's title stands for it
+                }
                 ProjectMapModel.ColumnId id = column.id();
                 ColumnLayout layout = columnLayouts.computeIfAbsent(id, ignored -> new ColumnLayout());
-                Double measured = nodeWidths.get(id); // every column's, put just above
-                double nodeWidth = measured != null ? measured : nodeWidthFor(column);
+                double nodeWidth = nodeWidthFor(column, rowsByColumn.getOrDefault(id, List.of()));
+                Integer anchorRow = column.anchor() == null ? null : rowIndex.get(column.anchor());
+                NodeBox parent = anchorRow == null ? null : rowList.get(anchorRow);
+                Integer anchorColumn = parent == null ? null : columnIndex.get(columnId(parent.entry()));
+                ColumnBox parentColumn = anchorColumn == null ? null : columnList.get(anchorColumn);
+                int level = parentColumn == null
+                        ? 0
+                        : levels.getOrDefault(parentColumn.column().id(), 0) + 1;
+                levels.put(id, level);
                 double depthStep = verticalFlow
                         ? COLUMN_TOP_INSET + COLUMN_HEADER_HEIGHT + NODE_HEIGHT + COLUMN_BOTTOM_PADDING + COLUMN_GAP
                         : 0;
@@ -3910,50 +5048,48 @@ final class ProjectMapView extends VBox {
                 double rowsHeight = rowSlots * NODE_HEIGHT + (rowSlots - 1) * ROW_GAP;
                 double rowsWidth = rowSlots * nodeWidth + (rowSlots - 1) * ROW_GAP;
                 double cardWidth = verticalFlow ? rowsWidth + 20 : nodeWidth + 20;
-                double headerHeight = columnHeaderHeight(depth, cardWidth);
+                double headerHeight = columnHeaderHeight(column.depth(), cardWidth);
                 double cardHeight = COLUMN_TOP_INSET
                         + headerHeight
                         + (verticalFlow ? NODE_HEIGHT : rowsHeight)
                         + narrowedFooterHeight(column)
                         + COLUMN_BOTTOM_PADDING;
                 double baseWorldX = WORLD_PADDING;
-                double baseWorldY = WORLD_PADDING + (verticalFlow ? direction * depth * depthStep : 0);
-                NodeBox parent = byPath.get(column.parent());
-                ColumnBox parentColumn = parent == null ? null : columnsById.get(columnId(parent.entry()));
+                double baseWorldY = WORLD_PADDING + (verticalFlow ? direction * level * depthStep : 0);
                 double inheritedShift = 0;
                 if (parent != null && parentColumn != null) {
                     // Along the cross-axis a card is centred on the row that opened it, or hangs from it
                     // when it is long (MAX_COLUMN_LEAD). Along the flow axis it starts beyond its parent's
-                    // card and beyond every other card of the parent's depth.
-                    double parentCenterX = (parent.x() + parent.width() / 2 - offsetX) / zoom;
-                    double parentCenterY = (parent.y() + parent.height() / 2 - offsetY) / zoom;
+                    // card and beyond every other card of the parent's level.
+                    double parentCenterX = parent.x() + parent.width() / 2;
+                    double parentCenterY = parent.y() + parent.height() / 2;
                     double horizontalCardGap = COLUMN_GAP - 20;
                     inheritedShift =
                             flowShift.getOrDefault(parentColumn.column().id(), 0.0);
-                    Double band = flowBand.get(depth - 1);
+                    Double band = flowBand.get(level - 1);
                     double leadY = Math.min(cardHeight / 2, MAX_COLUMN_LEAD);
                     double leadX = Math.min(cardWidth / 2, nodeWidth * 1.5 + 10);
                     switch (flowDirection) {
                         case LEFT_TO_RIGHT -> {
-                            double edge = (parentColumn.x() + parentColumn.width() - offsetX) / zoom;
+                            double edge = parentColumn.x() + parentColumn.width();
                             edge = band == null ? edge : Math.max(edge, band + inheritedShift);
                             baseWorldX = edge + horizontalCardGap + 10;
                             baseWorldY = parentCenterY + COLUMN_TOP_INSET - leadY;
                         }
                         case RIGHT_TO_LEFT -> {
-                            double edge = (parentColumn.x() - offsetX) / zoom;
+                            double edge = parentColumn.x();
                             edge = band == null ? edge : Math.min(edge, band + inheritedShift);
                             baseWorldX = edge - horizontalCardGap + 10 - cardWidth;
                             baseWorldY = parentCenterY + COLUMN_TOP_INSET - leadY;
                         }
                         case TOP_TO_BOTTOM -> {
-                            double edge = (parentColumn.y() + parentColumn.height() - offsetY) / zoom;
+                            double edge = parentColumn.y() + parentColumn.height();
                             edge = band == null ? edge : Math.max(edge, band + inheritedShift);
                             baseWorldX = parentCenterX + 10 - leadX;
                             baseWorldY = edge + COLUMN_GAP + COLUMN_TOP_INSET;
                         }
                         case BOTTOM_TO_TOP -> {
-                            double edge = (parentColumn.y() - offsetY) / zoom;
+                            double edge = parentColumn.y();
                             edge = band == null ? edge : Math.min(edge, band + inheritedShift);
                             baseWorldX = parentCenterX + 10 - leadX;
                             baseWorldY = edge - COLUMN_GAP + COLUMN_TOP_INSET - cardHeight;
@@ -3980,56 +5116,83 @@ final class ProjectMapView extends VBox {
                     case TOP_TO_BOTTOM -> columnWorldY - COLUMN_TOP_INSET + cardHeight;
                     case BOTTOM_TO_TOP -> columnWorldY - COLUMN_TOP_INSET;
                 };
-                flowBand.merge(depth, farEdge - shift, direction > 0 ? Math::max : Math::min);
+                flowBand.merge(level, farEdge - shift, direction > 0 ? Math::max : Math::min);
+                layout.pushX = 0;
+                layout.pushY = 0;
                 if (parentColumn != null) {
                     if (verticalFlow) {
-                        double minimum = nextCrossEdge.getOrDefault(depth, Double.NEGATIVE_INFINITY);
+                        double minimum = nextCrossEdge.getOrDefault(level, Double.NEGATIVE_INFINITY);
                         double cardLeft = columnWorldX - 10;
                         if (cardLeft < minimum) {
+                            layout.pushX = minimum - cardLeft; // read back by a header drag (B4)
                             columnWorldX += minimum - cardLeft;
                         }
-                        nextCrossEdge.put(depth, columnWorldX - 10 + cardWidth + COLUMN_GAP);
+                        nextCrossEdge.put(level, columnWorldX - 10 + cardWidth + COLUMN_GAP);
                     } else {
-                        double minimum = nextCrossEdge.getOrDefault(depth, Double.NEGATIVE_INFINITY);
+                        double minimum = nextCrossEdge.getOrDefault(level, Double.NEGATIVE_INFINITY);
                         double cardTop = columnWorldY - COLUMN_TOP_INSET;
                         if (cardTop < minimum) {
+                            layout.pushY = minimum - cardTop; // read back by a header drag (B4)
                             columnWorldY += minimum - cardTop;
                         }
-                        nextCrossEdge.put(depth, columnWorldY - COLUMN_TOP_INSET + cardHeight + COLUMN_GAP);
+                        nextCrossEdge.put(level, columnWorldY - COLUMN_TOP_INSET + cardHeight + COLUMN_GAP);
                     }
                 }
                 for (int row = 0; row < column.entries().size(); row++) {
                     double worldX = columnWorldX + (verticalFlow ? row * (nodeWidth + ROW_GAP) : 0);
                     double worldY = columnWorldY + headerHeight + (verticalFlow ? 0 : row * (NODE_HEIGHT + ROW_GAP));
-                    NodeBox box = new NodeBox(
-                            column.entries().get(row),
-                            screenX(worldX),
-                            screenY(worldY),
-                            nodeWidth * zoom,
-                            NODE_HEIGHT * zoom);
-                    boxes.add(box);
-                    byPath.put(box.entry().path(), box);
+                    NodeBox box = new NodeBox(column.entries().get(row), worldX, worldY, nodeWidth, NODE_HEIGHT);
+                    rowIndex.put(box.entry().path(), rowList.size());
+                    rowList.add(box);
                 }
-                ColumnBox columnBox = new ColumnBox(
-                        column,
-                        screenX(columnWorldX - 10),
-                        screenY(columnWorldY - COLUMN_TOP_INSET),
-                        cardWidth * zoom,
-                        cardHeight * zoom);
-                columnBoxes.add(columnBox);
-                columnsById.put(id, columnBox);
+                columnIndex.put(id, columnList.size());
+                columnList.add(new ColumnBox(
+                        column, columnWorldX - 10, columnWorldY - COLUMN_TOP_INSET, cardWidth, cardHeight));
+                anchorRows.add(anchorRow == null || anchorColumn == null ? -1 : anchorRow);
+                anchorColumns.add(anchorRow == null || anchorColumn == null ? -1 : anchorColumn);
             }
+            return new WorldLayout(
+                    List.copyOf(columnList),
+                    List.copyOf(rowList),
+                    List.copyOf(anchorRows),
+                    List.copyOf(anchorColumns),
+                    narrowedTotal);
+        }
 
+        /** Draws the last projection: cards, connectors, rows and the overview. */
+        private void paint() {
+            projectLayout();
+            drawCanvas();
+        }
+
+        private void drawCanvas() {
+            double width = canvas.getWidth();
+            double height = canvas.getHeight();
+            GraphicsContext g = canvas.getGraphicsContext2D();
+            g.setGlobalAlpha(1);
+            g.setFill(color(bgProbe, Color.web("#0f141c")));
+            g.fillRect(0, 0, width, height);
+            lastPaintedConnectorCount = 0;
+            WorldLayout world = projected;
+            if (entries.isEmpty() || world == null) {
+                g.setFill(color(mutedProbe, Color.web("#8b949e")));
+                g.setFont(mapFont(FontWeight.NORMAL, FontPosture.REGULAR, 13));
+                g.fillText(tr(loadPending ? "project.map.loading" : "project.map.empty"), 18, 28);
+                return;
+            }
             drawColumns(g);
             g.setStroke(color(accentProbe, Color.web("#58a6ff")));
             // Rows were added column by column, so the two lists are walked together: a column's rows
             // share one parent row and, in a vertical flow, one card edge to route to.
             int next = 0;
-            for (ColumnBox childColumn : columnBoxes) {
+            for (int index = 0; index < columnBoxes.size(); index++) {
+                ColumnBox childColumn = columnBoxes.get(index);
                 int rows = childColumn.column().entries().size();
-                NodeBox parent =
-                        rows == 0 ? null : byPath.get(childColumn.column().parent());
-                ColumnBox parentColumn = parent == null ? null : columnsById.get(columnId(parent.entry()));
+                int anchorRow = world.anchorRows().get(index);
+                NodeBox parent = rows == 0 || anchorRow < 0 ? null : boxes.get(anchorRow);
+                ColumnBox parentColumn = parent == null
+                        ? null
+                        : columnBoxes.get(world.anchorColumns().get(index));
                 for (int row = 0; row < rows; row++) {
                     NodeBox child = boxes.get(next++);
                     if (parent == null || parentColumn == null || !connectorInViewport(child, width, height)) {
@@ -4043,7 +5206,6 @@ final class ProjectMapView extends VBox {
                     lastPaintedConnectorCount++;
                 }
             }
-            rowFont = null;
             for (NodeBox box : boxes) {
                 if (inViewport(box, width, height)) {
                     drawNode(g, box);
@@ -4052,10 +5214,7 @@ final class ProjectMapView extends VBox {
             if (!outputPaint) {
                 drawOverview(g, width, height);
             }
-            layoutColumnControls();
             g.setGlobalAlpha(1);
-            reportNoMatches(filters != null && filters.active() && emphasized.isEmpty());
-            reportNarrowed(narrowedTotal);
         }
 
         private void reportNarrowed(int count) {
@@ -4080,12 +5239,14 @@ final class ProjectMapView extends VBox {
             }
         }
 
-        private double nodeWidthFor(ProjectMapModel.Column column) {
+        /**
+         * A column's row width: its widest label with its row's marks, at least {@link #MIN_NODE_WIDTH} and at
+         * most {@link #MAX_NODE_WIDTH} (a longer name is elided in the middle; its tooltip has it whole).
+         */
+        private double nodeWidthFor(ProjectMapModel.Column column, List<ProjectMapModel.Entry> rows) {
             double required = measuredLabelWidth(columnTitle(column)) + 52;
-            for (ProjectMapModel.Entry entry : entries) {
-                if (columnId(entry).equals(column.id())) {
-                    required = Math.max(required, measuredLabelWidth(entry.name()) + rowExtraWidth(entry));
-                }
+            for (ProjectMapModel.Entry entry : rows) {
+                required = Math.max(required, measuredLabelWidth(entry.name()) + rowExtraWidth(entry));
             }
             if (column.depth() > 0 && showHiddenLabelWidth > 0 && !isStructureColumn(column.id())) {
                 // At 100% the header row must hold the filter, the labelled checkbox and the lock, whatever
@@ -4093,7 +5254,7 @@ final class ProjectMapView extends VBox {
                 required = Math.max(
                         required, MIN_COLUMN_FILTER_WIDTH + showHiddenLabelWidth + 25 + COLUMN_CONTROL_GAP * 2 - 2);
             }
-            return Math.max(MIN_NODE_WIDTH, Math.ceil(required));
+            return Math.max(MIN_NODE_WIDTH, Math.min(MAX_NODE_WIDTH, Math.ceil(required)));
         }
 
         /** Width a row needs besides its label: icon and padding, then the marks at its trailing end. */
@@ -4173,6 +5334,9 @@ final class ProjectMapView extends VBox {
             if (column.depth() == 0) {
                 return tr("project.map.column.project");
             }
+            if (column.compacted()) {
+                return String.join(CHAIN_SEPARATOR, chainNames(column));
+            }
             Path parent = column.parent();
             if (parent == null) {
                 return tr("project.map.column.level", column.depth());
@@ -4186,6 +5350,16 @@ final class ProjectMapView extends VBox {
             }
             Path name = parent.getFileName();
             return name == null ? parent.toString() : name.toString();
+        }
+
+        /** The folder names of a compacted column's chain, first to last. */
+        private static List<String> chainNames(ProjectMapModel.Column column) {
+            List<String> names = new ArrayList<>(column.chain().size());
+            for (Path folder : column.chain()) {
+                Path name = folder.getFileName();
+                names.add(name == null ? folder.toString() : name.toString());
+            }
+            return names;
         }
 
         /**
@@ -4211,8 +5385,12 @@ final class ProjectMapView extends VBox {
             return availableWidth >= minimumWidth && availableHeight >= Math.max(MIN_COLUMN_CONTROL_HEIGHT, 24 * zoom);
         }
 
+        /** The first column (the root's children) has no ×: there is no row it could fold back into. */
         private boolean closeFits(ColumnBox box) {
-            return box.column().depth() > 0 && zoom >= 0.65 && box.width() >= closeSize() + 42;
+            return box.column().depth() > 0
+                    && !firstColumns.contains(box.column().id())
+                    && zoom >= 0.65
+                    && box.width() >= closeSize() + 42;
         }
 
         private double closeSize() {
@@ -4292,7 +5470,28 @@ final class ProjectMapView extends VBox {
                 if (!visibleIds.contains(id)) {
                     setColumnControlsVisible(controls, false);
                 }
+                syncControlTraversal(controls);
             });
+        }
+
+        /**
+         * Tab stops only at column controls that lie inside the viewport. Every laid-out column keeps its
+         * controls, wherever it is, and Tab used to walk through dozens of them off-screen, leaving the keyboard
+         * in a filter nobody could see (B7). The column filter of an off-screen column is still reached with
+         * {@code /}, which scrolls it into view.
+         */
+        private void syncControlTraversal(ColumnControls controls) {
+            for (Control control :
+                    List.of(controls.filter(), controls.showHidden(), controls.pin(), controls.close())) {
+                boolean onScreen = control.isVisible()
+                        && control.getLayoutX() >= 0
+                        && control.getLayoutY() >= 0
+                        && control.getLayoutX() + control.getWidth() <= getWidth()
+                        && control.getLayoutY() + control.getHeight() <= getHeight();
+                if (control.isFocusTraversable() != onScreen) {
+                    control.setFocusTraversable(onScreen);
+                }
+            }
         }
 
         /** The checkbox's width with its whole label, remembered while the label itself is hidden. */
@@ -4326,42 +5525,95 @@ final class ProjectMapView extends VBox {
             controls.close().setVisible(visible);
         }
 
-        /** Compact overview for large or manually spread layouts; the bright rectangle is the viewport. */
-        private void drawOverview(GraphicsContext g, double viewportWidth, double viewportHeight) {
+        /**
+         * Where the overview sits for the projected columns, or null when everything is on screen or the map
+         * area is too small. The frame takes the map's shape inside at most 150 × 86, with the map centred in it,
+         * so there is little empty frame that would hide rows for nothing (B2).
+         */
+        private @Nullable OverviewBox overviewGeometry(double viewportWidth, double viewportHeight) {
             if (outputPalette != null || columnBoxes.isEmpty()) {
-                return;
+                return null;
             }
             double minX = contentMinX();
             double minY = contentMinY();
             double maxX = contentMaxX();
             double maxY = contentMaxY();
             if (minX >= 0 && minY >= 0 && maxX <= viewportWidth && maxY <= viewportHeight) {
-                return; // everything is on screen: nothing to navigate to
+                return null; // everything is on screen: nothing to navigate to
             }
-            double overviewWidth = Math.min(150, Math.max(90, viewportWidth * 0.18));
-            double overviewHeight = 86;
-            double x = viewportWidth - overviewWidth - 10;
-            double y = viewportHeight - overviewHeight - 10;
-            if (x < reservedBarWidth + 6) {
-                return; // too narrow to sit beside the zoom bar, and anywhere else it would cover rows
+            if (viewportWidth < OVERVIEW_MIN_SURFACE_WIDTH || viewportHeight < OVERVIEW_MIN_SURFACE_HEIGHT) {
+                return null; // a small window: the frame would hide too many rows (Fit and Center still navigate)
             }
             double contentWidth = Math.max(1, maxX - minX);
             double contentHeight = Math.max(1, maxY - minY);
-            double scale = Math.min((overviewWidth - 10) / contentWidth, (overviewHeight - 10) / contentHeight);
-            overviewBox = new OverviewBox(x, y, overviewWidth, overviewHeight, minX, minY, scale);
+            double maxWidth = Math.min(OVERVIEW_MAX_WIDTH, Math.max(90, viewportWidth * 0.18));
+            double scale = Math.min(
+                    (maxWidth - OVERVIEW_INSET * 2) / contentWidth,
+                    (OVERVIEW_MAX_HEIGHT - OVERVIEW_INSET * 2) / contentHeight);
+            double overviewWidth = Math.max(OVERVIEW_MIN_SIDE, contentWidth * scale + OVERVIEW_INSET * 2);
+            double overviewHeight = Math.max(OVERVIEW_MIN_SIDE, contentHeight * scale + OVERVIEW_INSET * 2);
+            double x = viewportWidth - overviewWidth - 10;
+            double y = viewportHeight - overviewHeight - 10;
+            if (x < reservedBarWidth + 6) {
+                return null; // too narrow to sit beside the zoom bar, and anywhere else it would cover rows
+            }
+            double insetX = (overviewWidth - contentWidth * scale) / 2;
+            double insetY = (overviewHeight - contentHeight * scale) / 2;
+            return new OverviewBox(
+                    x,
+                    y,
+                    overviewWidth,
+                    overviewHeight,
+                    minX,
+                    minY,
+                    scale,
+                    insetX,
+                    insetY,
+                    contentWidth,
+                    contentHeight);
+        }
+
+        /**
+         * Compact overview for large or manually spread layouts; the bright rectangle is the viewport. It is
+         * drawn on its own small canvas ({@link #overviewCanvas}) that sits above the cards and the zoom bar's
+         * layer, so a card never hides it (C8).
+         */
+        private void drawOverview(GraphicsContext ignored, double viewportWidth, double viewportHeight) {
+            OverviewBox overview = overviewBox;
+            if (overview == null) {
+                overviewCanvas.setVisible(false);
+                return;
+            }
+            double x = overview.x();
+            double y = overview.y();
+            double overviewWidth = overview.width();
+            double overviewHeight = overview.height();
+            double minX = overview.minX();
+            double minY = overview.minY();
+            double scale = overview.scale();
+            double insetX = overview.insetX();
+            double insetY = overview.insetY();
+            if (overviewCanvas.getWidth() != overviewWidth || overviewCanvas.getHeight() != overviewHeight) {
+                overviewCanvas.setWidth(overviewWidth);
+                overviewCanvas.setHeight(overviewHeight);
+            }
+            overviewCanvas.relocate(getLayoutX() + x, getLayoutY() + y);
+            overviewCanvas.setVisible(true);
+            GraphicsContext g = overviewCanvas.getGraphicsContext2D();
+            g.clearRect(0, 0, overviewWidth, overviewHeight);
             g.setGlobalAlpha(0.94);
             g.setFill(color(surfaceProbe, Color.web("#161d27")));
-            g.fillRoundRect(x, y, overviewWidth, overviewHeight, 8, 8);
+            g.fillRoundRect(0.5, 0.5, overviewWidth - 1, overviewHeight - 1, 8, 8);
             g.setStroke(rowBorder());
             g.setLineWidth(1);
-            g.strokeRoundRect(x, y, overviewWidth, overviewHeight, 8, 8);
+            g.strokeRoundRect(0.5, 0.5, overviewWidth - 1, overviewHeight - 1, 8, 8);
             Color muted = color(mutedProbe, Color.web("#8b949e"));
             Color structureMuted = mix(muted, structureTint(), 0.6);
             for (ColumnBox box : columnBoxes) {
                 g.setFill(isStructureColumn(box.column().id()) ? structureMuted : muted);
                 g.fillRoundRect(
-                        x + 5 + (box.x() - minX) * scale,
-                        y + 5 + (box.y() - minY) * scale,
+                        insetX + (box.x() - minX) * scale,
+                        insetY + (box.y() - minY) * scale,
                         Math.max(2, box.width() * scale),
                         Math.max(3, box.height() * scale),
                         2,
@@ -4369,22 +5621,49 @@ final class ProjectMapView extends VBox {
             }
             // The viewport rectangle is clipped to the frame: panned far from the content it used to be
             // drawn outside the overview altogether.
-            double frameLeft = x + 3;
-            double frameTop = y + 3;
-            double frameRight = x + overviewWidth - 3;
-            double frameBottom = y + overviewHeight - 3;
-            double left = clampTo(x + 5 - minX * scale, frameLeft, frameRight);
-            double top = clampTo(y + 5 - minY * scale, frameTop, frameBottom);
-            double right = clampTo(x + 5 + (viewportWidth - minX) * scale, frameLeft, frameRight);
-            double bottom = clampTo(y + 5 + (viewportHeight - minY) * scale, frameTop, frameBottom);
+            double frameRight = overviewWidth - 3;
+            double frameBottom = overviewHeight - 3;
+            double left = clampInto(insetX - minX * scale, 3, frameRight);
+            double top = clampInto(insetY - minY * scale, 3, frameBottom);
+            double right = clampInto(insetX + (viewportWidth - minX) * scale, 3, frameRight);
+            double bottom = clampInto(insetY + (viewportHeight - minY) * scale, 3, frameBottom);
             g.setStroke(color(accentProbe, Color.web("#58a6ff")));
             g.setLineWidth(1.5);
             g.strokeRect(left, top, Math.max(2, right - left), Math.max(2, bottom - top));
             g.setGlobalAlpha(1);
         }
 
-        private static double clampTo(double value, double minimum, double maximum) {
-            return Math.max(minimum, Math.min(maximum, value));
+        /** The overview's own canvas, a child of the map area above the cards (see {@link #drawOverview}). */
+        Node overviewLayer() {
+            return overviewCanvas;
+        }
+
+        /**
+         * The overview canvas lies above the surface, so the pointer's events reach it first. They are the
+         * surface's to handle — its press, drag and click logic already knows the overview — and are passed on
+         * in the surface's coordinates.
+         */
+        private void overviewForwardsInput() {
+            overviewCanvas.setManaged(false);
+            overviewCanvas.setVisible(false);
+            overviewCanvas.setViewOrder(-1);
+            overviewCanvas.getStyleClass().add("project-map-overview");
+            overviewCanvas.setCursor(Cursor.HAND);
+            for (javafx.event.EventType<MouseEvent> type : List.of(
+                    MouseEvent.MOUSE_PRESSED,
+                    MouseEvent.MOUSE_DRAGGED,
+                    MouseEvent.MOUSE_RELEASED,
+                    MouseEvent.MOUSE_CLICKED,
+                    MouseEvent.MOUSE_MOVED)) {
+                overviewCanvas.addEventHandler(type, event -> {
+                    javafx.event.Event.fireEvent(this, event.copyFor(this, this));
+                    event.consume();
+                });
+            }
+            overviewCanvas.addEventHandler(ScrollEvent.ANY, event -> {
+                javafx.event.Event.fireEvent(this, event.copyFor(this, this));
+                event.consume();
+            });
         }
 
         private void drawColumns(GraphicsContext g) {
@@ -4392,6 +5671,9 @@ final class ProjectMapView extends VBox {
             Color border = color(borderProbe, Color.web("#303946"));
             Color structureSurface = mix(surface, structureTint(), STRUCTURE_COLUMN_TINT);
             Color structureBorder = mix(border, structureTint(), 0.35);
+            Color accent = color(accentProbe, Color.web("#388bfd"));
+            // The root and the folders of a compacted chain have no row: their column's title is selected.
+            ColumnBox selectedHeader = headerFor(selected);
             for (ColumnBox box : columnBoxes) {
                 ProjectMapModel.Column column = box.column();
                 double x = box.x();
@@ -4399,12 +5681,24 @@ final class ProjectMapView extends VBox {
                 double w = box.width();
                 double h = box.height();
                 boolean structure = isStructureColumn(column.id());
+                boolean headerSelected = box == selectedHeader;
                 g.setGlobalAlpha(0.64);
                 g.setFill(structure ? structureSurface : surface);
                 g.fillRoundRect(x, y, w, h, 12 * zoom, 12 * zoom);
                 g.setStroke(structure ? structureBorder : border);
                 g.setLineWidth(1);
                 g.strokeRoundRect(x, y, w, h, 12 * zoom, 12 * zoom);
+                if (headerSelected) {
+                    g.setGlobalAlpha(1);
+                    g.setStroke(accent);
+                    g.setLineWidth(1.8 * zoom);
+                    g.strokeRoundRect(x, y, w, h, 12 * zoom, 12 * zoom);
+                    if (isFocused() && !outputPaint) {
+                        g.setStroke(color(focusRingProbe, accent));
+                        g.setLineWidth(2);
+                        g.strokeRoundRect(x + 3 * zoom, y + 2 * zoom, w - 6 * zoom, 22 * zoom, 7 * zoom, 7 * zoom);
+                    }
+                }
 
                 // The header fonts stop shrinking at a legible size while the card keeps scaling, so the
                 // title is measured against the room it really has: it is elided, and the count gives way
@@ -4423,13 +5717,25 @@ final class ProjectMapView extends VBox {
                 if (!showCount) {
                     titleRoom = right - titleLeft;
                 }
-                g.setGlobalAlpha(0.88);
-                g.setFill(color(textProbe, Color.web("#d8dee9")));
-                g.setFont(Font.font("System", FontWeight.SEMI_BOLD, titleSize));
-                g.fillText(titleWidth <= titleRoom ? title : elide(title, titleSize, titleRoom), titleLeft, baseline);
+                g.setGlobalAlpha(headerSelected ? 1 : 0.88);
+                g.setFill(headerSelected ? color(accentTextProbe, accent) : color(textProbe, Color.web("#d8dee9")));
+                g.setFont(mapFont(FontWeight.SEMI_BOLD, FontPosture.REGULAR, titleSize));
+                boolean titleFits = titleWidth <= titleRoom;
+                // A chain keeps its last folders (the ones its rows are in) when it must be cut.
+                g.fillText(
+                        titleFits
+                                ? title
+                                : column.compacted()
+                                        ? elideMiddle(title, titleSize, titleRoom)
+                                        : elide(title, titleSize, titleRoom),
+                        titleLeft,
+                        baseline);
+                if (headerSelected && titleFits && column.compacted()) {
+                    underlineChainFolder(g, column, titleLeft, baseline, titleSize);
+                }
                 g.setFill(color(mutedProbe, Color.web("#8b949e")));
                 if (showCount) {
-                    g.setFont(Font.font(countSize));
+                    g.setFont(mapFont(FontWeight.NORMAL, FontPosture.REGULAR, countSize));
                     g.setTextAlign(TextAlignment.RIGHT);
                     g.fillText(count, right, baseline);
                     g.setTextAlign(TextAlignment.LEFT);
@@ -4437,7 +5743,7 @@ final class ProjectMapView extends VBox {
                 String narrowed = column.narrowed() > 0 ? tr("project.map.column.narrowed", column.narrowed()) : null;
                 if (column.entries().isEmpty()) {
                     // Its own filter (or the hidden-files checkbox, or "Hide unmatched") removed every row.
-                    g.setFont(Font.font(Math.max(9, 11 * zoom)));
+                    g.setFont(mapFont(FontWeight.NORMAL, FontPosture.REGULAR, Math.max(9, 11 * zoom)));
                     double header = columnHeaderHeight(column.depth(), w / zoom);
                     g.fillText(
                             narrowed != null ? narrowed : columnNoMatches,
@@ -4445,7 +5751,7 @@ final class ProjectMapView extends VBox {
                             y + (COLUMN_TOP_INSET + header) * zoom + 20.5 * zoom,
                             Math.max(1, w - 20 * zoom));
                 } else if (narrowed != null) {
-                    g.setFont(Font.font("System", FontPosture.ITALIC, Math.max(8, 10 * zoom)));
+                    g.setFont(mapFont(FontWeight.NORMAL, FontPosture.ITALIC, Math.max(8, 10 * zoom)));
                     g.fillText(
                             narrowed,
                             titleLeft,
@@ -4454,6 +5760,65 @@ final class ProjectMapView extends VBox {
                 }
             }
             g.setGlobalAlpha(1);
+        }
+
+        /** Underlines, in a compacted column's title, the folder of the chain that is selected. */
+        private void underlineChainFolder(
+                GraphicsContext g, ProjectMapModel.Column column, double left, double baseline, double size) {
+            List<String> names = chainNames(column);
+            StringBuilder before = new StringBuilder();
+            for (int index = 0; index < names.size(); index++) {
+                if (column.chain().get(index).equals(selected)) {
+                    double start = left + measuredLabelWidth(before.toString()) * size / 12;
+                    double width = measuredLabelWidth(names.get(index)) * size / 12;
+                    g.setLineWidth(Math.max(1, 1.2 * zoom));
+                    g.strokeLine(start, baseline + 2.5 * zoom, start + width, baseline + 2.5 * zoom);
+                    return;
+                }
+                before.append(names.get(index)).append(CHAIN_SEPARATOR);
+            }
+        }
+
+        /**
+         * {@code text} cut to fit {@code room} at {@code fontSize} by taking characters out of its middle: a
+         * long file name keeps its start and its extension, a chain its first and last folders.
+         */
+        private String elideMiddle(String text, double fontSize, double room) {
+            if (elidedTitles.size() > 256) {
+                elidedTitles.clear();
+            }
+            String key = text + '\u0001' + (int) room + '\u0001' + (int) (fontSize * 8);
+            return elidedTitles.computeIfAbsent(key, ignored -> {
+                int low = 0;
+                int high = text.length();
+                while (low < high) { // the most characters that still fit around the ellipsis
+                    int middle = (low + high + 1) / 2;
+                    if (measuredLabelWidth(middleCut(text, middle)) * fontSize / 12 <= room) {
+                        low = middle;
+                    } else {
+                        high = middle - 1;
+                    }
+                }
+                return low == 0 ? "" : middleCut(text, low);
+            });
+        }
+
+        /** {@code text} with {@code kept} of its characters around an ellipsis, a little more of the end. */
+        static String middleCut(String text, int kept) {
+            if (kept >= text.length()) {
+                return text;
+            }
+            int tail = (kept + 1) / 2;
+            int head = kept - tail;
+            int end = text.length() - tail;
+            // Never split a surrogate pair (an emoji in a file name).
+            if (head > 0 && Character.isHighSurrogate(text.charAt(head - 1))) {
+                head--;
+            }
+            if (end < text.length() && Character.isLowSurrogate(text.charAt(end))) {
+                end++;
+            }
+            return text.substring(0, head) + "…" + text.substring(end);
         }
 
         /** {@code text} cut to fit {@code room} at {@code fontSize}, ending in an ellipsis. */
@@ -4490,13 +5855,18 @@ final class ProjectMapView extends VBox {
             // The accent fill says "keys act here": it is kept for the selection while the surface has
             // keyboard focus. Without focus (and in printed output) the selection is a tinted row.
             boolean focusedSelection = isSelected && isFocused() && !outputPaint;
-            double alpha = prominence(entry.path()) || isSelected ? 1.0 : DIMMED_ALPHA;
-            g.setGlobalAlpha(alpha);
+            boolean dimmed = !prominence(entry.path()) && !isSelected;
+            // A faded row recedes through its fill and border; its label only fades as far as a readable
+            // floor, and its marks keep most of their ink (Map review B19).
+            g.setGlobalAlpha(dimmed ? DIMMED_ALPHA : 1.0);
             Color accent = color(accentProbe, Color.web("#388bfd"));
             Color surface = color(surfaceProbe, Color.web("#202938"));
             if (entry.isSymbol()) {
                 surface = mix(surface, structureTint(), STRUCTURE_ROW_TINT);
             }
+            dimmedGround = dimmed
+                    ? mix(mix(color(bgProbe, Color.web("#0f141c")), color(surfaceProbe, surface), 0.64), surface, 0.38)
+                    : null;
             Color fill = focusedSelection
                     ? accent
                     : isSelected ? color(accentSubtleProbe, mix(surface, accent, 0.22)) : surface;
@@ -4515,6 +5885,7 @@ final class ProjectMapView extends VBox {
                 g.strokeRoundRect(
                         box.x() - 3, box.y() - 3, box.width() + 6, box.height() + 6, 8 * zoom + 6, 8 * zoom + 6);
             }
+            g.setGlobalAlpha(dimmed ? DIMMED_MARK_ALPHA : 1.0);
             drawOpenMarker(g, entry, box, focusedSelection);
 
             double iconX = box.x() + 7 * zoom;
@@ -4523,16 +5894,22 @@ final class ProjectMapView extends VBox {
             if (entry.isSymbol()) {
                 drawSymbolRow(g, entry, box, focusedSelection, isSelected);
                 g.setGlobalAlpha(1);
+                dimmedGround = null;
                 return;
             }
-            g.setFill(
-                    focusedSelection
-                            ? onAccent()
-                            : openPaths.contains(entry.path())
-                                    ? color(accentTextProbe, accent)
-                                    : color(textProbe, Color.web("#d8dee9")));
+            Color ink = focusedSelection
+                    ? onAccent()
+                    : openPaths.contains(entry.path())
+                            ? color(accentTextProbe, accent)
+                            : color(textProbe, Color.web("#d8dee9"));
             g.setFont(rowFont(isSelected));
-            g.fillText(entry.name(), box.x() + 31 * zoom, box.y() + 20.5 * zoom);
+            // A name wider than the row (the width is capped) loses its middle; the tooltip has it whole.
+            String label = entry.name();
+            double room = box.width() - rowExtraWidth(entry) * zoom;
+            if (measuredLabelWidth(label) * zoom > room) {
+                label = elideMiddle(label, 12 * zoom, room);
+            }
+            fillLabel(g, ink, label, box.x() + 31 * zoom, box.y() + 20.5 * zoom);
 
             drawStatusMarks(g, entry, box, focusedSelection);
             drawFileMarkers(g, entry, box, focusedSelection);
@@ -4545,6 +5922,7 @@ final class ProjectMapView extends VBox {
                 }
             }
             g.setGlobalAlpha(1);
+            dimmedGround = null;
         }
 
         /**
@@ -4559,17 +5937,21 @@ final class ProjectMapView extends VBox {
             String line = symbol == null ? "" : tr("structure.line", symbol.line() + 1);
             Color muted = onAccentFill ? onAccent() : color(mutedProbe, Color.web("#8b949e"));
             g.setFill(muted);
-            g.setFont(Font.font("System", FontWeight.NORMAL, Math.max(8, 10 * zoom)));
+            g.setFont(mapFont(FontWeight.NORMAL, FontPosture.REGULAR, Math.max(8, 10 * zoom)));
             g.setTextAlign(TextAlignment.RIGHT);
             g.fillText(line, right - 2 * zoom, box.y() + 20 * zoom);
             g.setTextAlign(TextAlignment.LEFT);
             double labelLeft = box.x() + 31 * zoom;
             double room = right - SYMBOL_LINE_WIDTH * zoom - labelLeft;
-            g.setFill(onAccentFill ? onAccent() : color(textProbe, Color.web("#d8dee9")));
             g.setFont(rowFont(bold));
             String label = entry.name();
             double width = measuredLabelWidth(label) * zoom;
-            g.fillText(width <= room ? label : elide(label, 12 * zoom, room), labelLeft, box.y() + 20.5 * zoom);
+            fillLabel(
+                    g,
+                    onAccentFill ? onAccent() : color(textProbe, Color.web("#d8dee9")),
+                    width <= room ? label : elide(label, 12 * zoom, room),
+                    labelLeft,
+                    box.y() + 20.5 * zoom);
             if (chevron) {
                 drawChevron(g, entry, box, onAccentFill);
             }
@@ -4647,17 +6029,62 @@ final class ProjectMapView extends VBox {
                 g.strokeRoundRect(box.x(), box.y(), box.width(), box.height(), 8 * zoom, 8 * zoom);
             }
             g.setFill(more ? color(textProbe, Color.web("#d8dee9")) : color(mutedProbe, Color.web("#8b949e")));
-            g.setFont(Font.font("System", more ? FontWeight.SEMI_BOLD : FontWeight.NORMAL, 12 * zoom));
+            g.setFont(mapFont(more ? FontWeight.SEMI_BOLD : FontWeight.NORMAL, FontPosture.REGULAR, 12 * zoom));
             g.fillText(entry.name(), box.x() + 10 * zoom, box.y() + 20.5 * zoom);
         }
 
-        /** Row label fonts for this paint; every row shares one of the two. */
-        private @Nullable Font rowFont(boolean bold) {
-            if (rowFont == null) {
-                rowFont = Font.font("System", FontWeight.NORMAL, 12 * zoom);
-                rowFontBold = Font.font("System", FontWeight.SEMI_BOLD, 12 * zoom);
+        /**
+         * A row's label in {@code ink}: on a faded row the ink is mixed toward the row's ground only as far as
+         * {@link #FADED_LABEL_CONTRAST} allows, and drawn at full opacity.
+         */
+        private void fillLabel(GraphicsContext g, Color ink, String label, double x, double y) {
+            Color ground = dimmedGround;
+            if (ground == null) {
+                g.setFill(ink);
+                g.fillText(label, x, y);
+                return;
             }
-            return bold ? rowFontBold : rowFont;
+            double alpha = g.getGlobalAlpha();
+            if (fadedInks.size() > 32) {
+                fadedInks.clear();
+            }
+            g.setGlobalAlpha(1);
+            g.setFill(fadedInks.computeIfAbsent(
+                    List.of(ink, ground), key -> fadedInk(ink, ground, FADED_LABEL_CONTRAST, 1 - DIMMED_ALPHA)));
+            g.fillText(label, x, y);
+            g.setGlobalAlpha(alpha);
+        }
+
+        /** Row label font at the current zoom; every row shares one of the two. */
+        private Font rowFont(boolean bold) {
+            return mapFont(bold ? FontWeight.SEMI_BOLD : FontWeight.NORMAL, FontPosture.REGULAR, 12 * zoom);
+        }
+
+        /**
+         * A canvas font in the UI's family (read from CSS through {@link #fontProbe}: Inter, as the controls
+         * around the canvas use), created once per weight, posture and size rather than on every paint.
+         */
+        private Font mapFont(FontWeight weight, FontPosture posture, double size) {
+            if (fonts.size() > 64) {
+                fonts.clear(); // a zoom gesture asks for a new size on every step
+            }
+            String family = fontFamily();
+            return fonts.computeIfAbsent(
+                    new FontKey(family, weight, posture, size), key -> Font.font(family, weight, posture, size));
+        }
+
+        /** The UI font family, as CSS resolves it for the map; the measurer follows it. */
+        private String fontFamily() {
+            Font font = fontProbe.getFont();
+            String family = font == null ? FALLBACK_FONT_FAMILY : font.getFamily();
+            if (!family.equals(measuredFamily)) {
+                measuredFamily = family;
+                textMeasurer.setFont(Font.font(family, FontWeight.SEMI_BOLD, 12));
+                measuredLabelWidths.clear();
+                elidedTitles.clear();
+                fonts.clear();
+            }
+            return family;
         }
 
         /** The border that separates a row from its card (see {@link #rowBorderColor}). */
@@ -4810,12 +6237,12 @@ final class ProjectMapView extends VBox {
 
         private String iconStatusClass(ProjectMapModel.Entry entry) {
             if (entry.directory()) {
-                return gitDirectories.contains(entry.path()) ? "git-status-dir-changed" : "";
+                return gitChanged(entry.path()) ? "git-status-dir-changed" : "";
             }
             if (modifiedPaths.contains(entry.path())) {
                 return "modified-file";
             }
-            GitFileStatus status = gitState.get(entry.path());
+            GitFileStatus status = gitStatusOf(entry.path());
             return status == null ? "" : status.cssClass();
         }
 
@@ -4865,10 +6292,10 @@ final class ProjectMapView extends VBox {
                     + (notedPaths.contains(entry.path()) ? MARKER_WIDTH : 0);
             // Keep Structure and Preview in the final strip and the semantic markers immediately to its left.
             double x = box.x() + box.width() - (trailingZone(entry) + 3 + markerWidth) * zoom;
-            GitFileStatus status = gitState.get(entry.path());
+            GitFileStatus status = gitStatusOf(entry.path());
             if (status != null) {
                 g.setFill(onAccentFill ? onAccent() : gitColor(status));
-                g.setFont(Font.font("System", FontWeight.BOLD, 10 * zoom));
+                g.setFont(mapFont(FontWeight.BOLD, FontPosture.REGULAR, 10 * zoom));
                 g.setTextAlign(TextAlignment.RIGHT);
                 g.fillText(status.letter(), x, box.y() + 20 * zoom);
                 g.setTextAlign(TextAlignment.LEFT);
@@ -4998,7 +6425,34 @@ final class ProjectMapView extends VBox {
             Set<Path> modified = new HashSet<>();
             Set<Path> bookmarked = new HashSet<>();
             Set<Path> noted = new HashSet<>();
-            for (ProjectMapModel.Entry entry : entries) {
+            java.util.function.Supplier<java.util.Collection<Path>> candidates = stateCandidates;
+            Iterable<ProjectMapModel.Entry> rows = entries;
+            java.util.Collection<Path> candidatePaths = null;
+            if (candidates != null) {
+                try {
+                    candidatePaths = candidates.get();
+                } catch (RuntimeException unavailable) {
+                    candidatePaths = null; // ask every row, as without candidates
+                }
+            }
+            if (candidatePaths != null) {
+                // Open tabs and marked paths are few; the rows can be 1,200, each predicate a scan of the tabs.
+                List<ProjectMapModel.Entry> found = new ArrayList<>();
+                Set<Path> seen = new HashSet<>();
+                for (Path candidate : candidatePaths) {
+                    try {
+                        Path path = candidate == null ? null : ProjectMapModel.normalize(candidate);
+                        ProjectMapModel.Entry entry = path == null ? null : entryByPath.get(path);
+                        if (entry != null && seen.add(path)) {
+                            found.add(entry);
+                        }
+                    } catch (RuntimeException otherConnection) {
+                        // a path on another SFTP connection throws from equals(): it is not one of these rows
+                    }
+                }
+                rows = found;
+            }
+            for (ProjectMapModel.Entry entry : rows) {
                 if (entry.isPlaceholder() || entry.isSymbol()) {
                     continue; // a declaration is not a file: it is neither open nor marked
                 }
@@ -5035,7 +6489,9 @@ final class ProjectMapView extends VBox {
             pressY = event.getY();
             pressOffsetX = offsetX;
             pressOffsetY = offsetY;
+            overviewDragging = false;
             if (event.getButton() == MouseButton.PRIMARY && navigateFromOverview(event.getX(), event.getY())) {
+                overviewDragging = true; // dragging on in the overview moves the view rectangle along (B2)
                 event.consume();
                 return;
             }
@@ -5045,23 +6501,42 @@ final class ProjectMapView extends VBox {
                 ColumnLayout layout = columnLayouts.computeIfAbsent(id, ignored -> new ColumnLayout());
                 if (!layout.locked) {
                     draggedColumn = id;
-                    columnPressOffsetX = layout.x;
-                    columnPressOffsetY = layout.y;
+                    // Start from where the column is drawn: a push from a packed neighbour in the last paint
+                    // becomes part of its offset, so the drag moves it at once (B4).
+                    columnPressOffsetX = layout.x + layout.pushX;
+                    columnPressOffsetY = layout.y + layout.pushY;
+                    layout.pushX = 0;
+                    layout.pushY = 0;
                     event.consume();
                     return;
                 }
             }
-            panning = event.getButton() == MouseButton.MIDDLE
-                    || event.getButton() == MouseButton.PRIMARY && hit(event.getX(), event.getY()) == null;
+            // Rows have no drag action of their own, so a primary drag pans wherever it starts — past a small
+            // threshold when it starts on a row, so a click that wobbles stays a click (B24).
+            panning = event.getButton() == MouseButton.MIDDLE || event.getButton() == MouseButton.PRIMARY;
+            panFromRow = event.getButton() == MouseButton.PRIMARY && hit(event.getX(), event.getY()) != null;
         }
 
         private void mouseDragged(MouseEvent event) {
+            if (overviewDragging) {
+                flushPendingRepaint();
+                navigateFromOverview(event.getX(), event.getY());
+                dragMoved = true;
+                event.consume();
+                return;
+            }
             if (draggedColumn != null) {
                 ColumnLayout layout = columnLayouts.get(draggedColumn);
                 if (layout != null && !layout.locked) {
+                    // The last paint pushed the column clear of a packed neighbour: take that push into the
+                    // offset, so dragging back moves it at once instead of first unwinding a hidden overshoot.
+                    columnPressOffsetX += layout.pushX;
+                    columnPressOffsetY += layout.pushY;
+                    layout.pushX = 0;
+                    layout.pushY = 0;
                     // Store what the layout will actually use: an offset past the parent-side limit would
                     // have to be dragged back out again before the column moved.
-                    boolean limited = draggedColumn.depth() > 0;
+                    boolean limited = draggedColumn.depth() > 0 && !firstColumns.contains(draggedColumn);
                     layout.x = flowLimitedOffset(
                             flowDirection, true, limited, columnPressOffsetX + (event.getX() - pressX) / zoom);
                     layout.y = flowLimitedOffset(
@@ -5073,6 +6548,11 @@ final class ProjectMapView extends VBox {
                 return;
             }
             if (!panning) {
+                return;
+            }
+            if (panFromRow
+                    && !dragMoved
+                    && Math.hypot(event.getX() - pressX, event.getY() - pressY) < ROW_PAN_THRESHOLD) {
                 return;
             }
             offsetX = pressOffsetX + event.getX() - pressX;
@@ -5193,7 +6673,7 @@ final class ProjectMapView extends VBox {
             if (modifiedPaths.contains(entry.path())) {
                 statuses.add(tr("project.map.tooltip.unsaved"));
             }
-            if (gitState.containsKey(entry.path()) || gitDirectories.contains(entry.path())) {
+            if (gitChanged(entry.path())) {
                 statuses.add(tr("project.map.tooltip.gitChanged"));
             }
             if (bookmarkedPaths.contains(entry.path())) {
@@ -5249,6 +6729,11 @@ final class ProjectMapView extends VBox {
                 if (event.getClickCount() == 1) {
                     onActivate.accept(entry); // its card
                 }
+            } else if (entry.isFile() && !singleClickOpens) {
+                // "Single-click opens files" off: the click above selected the row, a double-click opens it.
+                if (event.getClickCount() == 2) {
+                    onActivate.accept(entry);
+                }
             } else if (event.getClickCount() == 1) {
                 // A folder that is already open is only selected; its chevron (or the column's close
                 // button) collapses it. Collapsing on any click threw away the whole subtree's expansion.
@@ -5278,6 +6763,7 @@ final class ProjectMapView extends VBox {
             dismissContextMenu();
             flushPendingRepaint();
             NodeBox hit;
+            ProjectMapModel.Entry target;
             double screenX = event.getScreenX();
             double screenY = event.getScreenY();
             if (event.isKeyboardTrigger()) {
@@ -5290,12 +6776,30 @@ final class ProjectMapView extends VBox {
                 revealSelected();
                 repaint();
                 hit = nodeBox(selected);
-                if (hit == null) {
+                ColumnBox header = hit == null ? headerFor(selected) : null;
+                target = hit != null ? hit.entry() : header != null ? entryByPath.get(selected) : null;
+                if (target == null) {
+                    event.consume();
+                    return;
+                }
+                // The root and a folder of a compacted chain open their menu under their column's title.
+                double anchorLeft;
+                double anchorWidth;
+                double anchorBottom;
+                if (hit != null) {
+                    anchorLeft = hit.x();
+                    anchorWidth = hit.width();
+                    anchorBottom = hit.y() + hit.height();
+                } else if (header != null) {
+                    anchorLeft = header.x();
+                    anchorWidth = header.width();
+                    anchorBottom = header.y() + 22 * zoom;
+                } else {
                     event.consume();
                     return;
                 }
                 javafx.geometry.Point2D anchor =
-                        localToScreen(hit.x() + RowContextMenu.anchorX(hit.width()), hit.y() + hit.height());
+                        localToScreen(anchorLeft + RowContextMenu.anchorX(anchorWidth), anchorBottom);
                 if (anchor != null) {
                     screenX = anchor.getX();
                     screenY = anchor.getY();
@@ -5305,14 +6809,23 @@ final class ProjectMapView extends VBox {
                     return;
                 }
                 hit = hit(event.getX(), event.getY());
-                if (hit == null) {
+                if (hit != null) {
+                    target = hit.entry();
+                } else {
+                    // A column's title stands for the folder (or file) whose rows it lists: the first column's
+                    // for the root, a compacted column's for the last folder of its chain.
+                    ColumnBox header = headerHit(event.getX(), event.getY());
+                    Path owner = header == null ? null : header.column().parent();
+                    target = owner == null ? null : entryByPath.get(owner);
+                }
+                if (target == null) {
                     return;
                 }
-                select(hit.entry().path());
+                select(target.path());
             }
             requestFocus();
             clearNodeTooltip();
-            ContextMenu menu = contextMenuFactory.apply(hit.entry());
+            ContextMenu menu = contextMenuFactory.apply(target);
             if (menu != null && !menu.getItems().isEmpty()) {
                 activeContextMenu = menu;
                 menu.addEventHandler(WindowEvent.WINDOW_HIDDEN, hidden -> {
@@ -5455,8 +6968,22 @@ final class ProjectMapView extends VBox {
                 case PAGE_UP -> moveSibling(-10);
                 case PAGE_DOWN -> moveSibling(10);
                 case BACK_SPACE -> selectParent();
-                case ENTER, SPACE -> activateSelection();
-                case HOME -> select(entries.getFirst().path());
+                case ENTER, SPACE -> {
+                    if (event.getCode() == KeyCode.ENTER && event.isShiftDown() && plain) {
+                        flushPendingRepaint();
+                        // Shift+Enter: the selected file's or declaration's preview card, opened or closed (B6).
+                        selectedEntry()
+                                .filter(entry -> nodeBox(entry.path()) != null)
+                                .ifPresent(onTogglePreview);
+                    } else {
+                        activateSelection();
+                    }
+                }
+                case HOME ->
+                    select(
+                            boxes.isEmpty()
+                                    ? entries.getFirst().path()
+                                    : boxes.getFirst().entry().path());
                 default -> {
                     if (onlyControl && event.getCode() == KeyCode.N) {
                         moveSibling(1);
@@ -5580,6 +7107,12 @@ final class ProjectMapView extends VBox {
         }
 
         private void moveSibling(int delta) {
+            ColumnBox header = headerFor(selected);
+            if (header != null) {
+                // The root or a folder of a compacted chain is its column's header: step into the column.
+                stepIntoColumn(header, delta < 0);
+                return;
+            }
             ProjectMapModel.Entry current = selectedEntry().orElse(entries.getFirst());
             ProjectMapModel.ColumnId currentColumn = columnId(current);
             List<ProjectMapModel.Entry> column = boxes.stream()
@@ -5590,20 +7123,167 @@ final class ProjectMapView extends VBox {
                 return;
             }
             int index = column.indexOf(current);
+            int target = index >= 0
+                    ? siblingIndex(index, delta, column.size())
+                    : selectionStepFromHidden(current, column, delta);
             movingSibling = true;
             try {
-                select(column.get(siblingIndex(index < 0 ? 0 : index, delta, column.size()))
-                        .path());
+                select(column.get(target).path());
             } finally {
                 movingSibling = false;
             }
         }
 
+        /**
+         * A sibling step from a selection a filter hid: the first drawn row after it (or before it, upwards)
+         * counts as the first step, so the move starts from where the row would be, not from the top (B16).
+         */
+        private int selectionStepFromHidden(
+                ProjectMapModel.Entry current, List<ProjectMapModel.Entry> drawn, int delta) {
+            List<ProjectMapModel.Entry> all = selectionSiblings(current);
+            int position = all.indexOf(current);
+            int anchor = -1;
+            if (delta > 0) {
+                for (int i = position + 1; i < all.size() && anchor < 0; i++) {
+                    anchor = drawn.indexOf(all.get(i));
+                }
+                if (anchor < 0) {
+                    return Math.abs(delta) == 1 ? 0 : drawn.size() - 1;
+                }
+                return Math.clamp(anchor + delta - 1, 0, drawn.size() - 1);
+            }
+            for (int i = position - 1; i >= 0 && anchor < 0; i--) {
+                anchor = drawn.indexOf(all.get(i));
+            }
+            if (anchor < 0) {
+                return Math.abs(delta) == 1 ? drawn.size() - 1 : 0;
+            }
+            return Math.clamp(anchor + delta + 1, 0, drawn.size() - 1);
+        }
+
+        /** Every loaded row of {@code entry}'s column, drawn or not, in the order the column shows them. */
+        private List<ProjectMapModel.Entry> selectionSiblings(ProjectMapModel.Entry entry) {
+            return columnRowsInOrder(entries, columnId(entry));
+        }
+
+        /**
+         * "Hide unmatched" took the selected row off the map: the selection moves to the nearest row still drawn
+         * in its column, else to its nearest drawn ancestor, so the keyboard and the breadcrumb keep a visible
+         * anchor (B16).
+         */
+        private void keepSelectionDrawn() {
+            Path current = selected;
+            ProjectMapModel.Entry entry = current == null ? null : entryByPath.get(current);
+            if (current == null || entry == null || !narrowsAway(current) || nodeBox(current) != null) {
+                return;
+            }
+            Path target = null;
+            List<ProjectMapModel.Entry> siblings = selectionSiblings(entry);
+            int position = siblings.indexOf(entry);
+            for (int distance = 1; target == null && distance < siblings.size(); distance++) {
+                for (int index : new int[] {position + distance, position - distance}) {
+                    if (target == null && index >= 0 && index < siblings.size()) {
+                        ProjectMapModel.Entry candidate = siblings.get(index);
+                        if (!candidate.isPlaceholder() && nodeBox(candidate.path()) != null) {
+                            target = candidate.path();
+                        }
+                    }
+                }
+            }
+            for (Path parent = entry.parent(); target == null && parent != null; parent = parent.getParent()) {
+                // The root and a compacted chain's folders have no row: their column's title stands for them.
+                if (nodeBox(parent) != null || headerFor(parent) != null) {
+                    target = parent;
+                }
+            }
+            if (target != null) {
+                movingSibling = true; // a forced move, folded into the history like a sibling step
+                try {
+                    select(target);
+                } finally {
+                    movingSibling = false;
+                }
+            }
+        }
+
+        /**
+         * The row the selection's column hangs from. A compacted column's rows (and the folders of its chain)
+         * go to the chain's first folder, the row on the map; the first column's rows go to the root, which is
+         * that column's header.
+         */
         private void selectParent() {
-            selectedEntry()
-                    .map(ProjectMapModel.Entry::parent)
-                    .filter(java.util.Objects::nonNull)
-                    .ifPresent(this::select);
+            Path parent = selectedEntry().map(ProjectMapModel.Entry::parent).orElse(null);
+            while (parent != null && nodeBox(parent) == null && headerFor(parent) == null) {
+                ProjectMapModel.Entry folder = entryByPath.get(parent);
+                parent = folder == null ? null : folder.parent();
+            }
+            if (parent == null) {
+                return;
+            }
+            ColumnBox header = headerFor(parent);
+            if (header != null
+                    && header.column().compacted()
+                    && nodeBox(header.column().anchor()) != null) {
+                parent = header.column().anchor(); // a folder inside the chain: the row the chain starts at
+            }
+            if (parent != null) {
+                select(parent);
+            }
+        }
+
+        /** Selects a column's first row, or its last with {@code last}. */
+        private void stepIntoColumn(ColumnBox column, boolean last) {
+            List<ProjectMapModel.Entry> rows = column.column().entries();
+            if (!rows.isEmpty()) {
+                select((last ? rows.getLast() : rows.getFirst()).path());
+            }
+        }
+
+        /**
+         * The column a path's children are drawn in: the column it opens, or the compacted column whose chain
+         * it starts or belongs to. Null when that column is not on the map.
+         */
+        private @Nullable ColumnBox columnOpenedBy(@Nullable Path path) {
+            if (path == null) {
+                return null;
+            }
+            for (ColumnBox box : columnBoxes) {
+                ProjectMapModel.Column column = box.column();
+                if (path.equals(column.parent()) || column.chain().contains(path)) {
+                    return box;
+                }
+            }
+            return null;
+        }
+
+        /** What closing {@code id}'s column closes: a compacted column folds back into the row its chain starts at. */
+        private @Nullable Path closeTarget(ProjectMapModel.ColumnId id) {
+            ColumnBox box = columnBox(id);
+            return box != null && box.column().compacted() ? box.column().anchor() : id.parent();
+        }
+
+        /**
+         * What the row menu's Close Column closes for {@code entry}'s column, or null for the first column (the
+         * root's children), which has no close button.
+         */
+        @Nullable
+        Path closeTargetFor(ProjectMapModel.Entry entry) {
+            Path parent = entry.parent();
+            if (parent == null || parent.equals(root)) {
+                return null;
+            }
+            return closeTarget(columnId(entry));
+        }
+
+        /**
+         * The column whose header stands for {@code path}: the root's (the first column), or a compacted
+         * column's for a folder of its chain that has no row of its own. Null when the path has a row.
+         */
+        private @Nullable ColumnBox headerFor(@Nullable Path path) {
+            if (path == null || nodeBox(path) != null) {
+                return null;
+            }
+            return columnOpenedBy(path);
         }
 
         /**
@@ -5619,6 +7299,11 @@ final class ProjectMapView extends VBox {
             boolean folder = entry.directory() && !entry.isPlaceholder();
             boolean structured = entry.isFile() && hasStructure(entry) || entry.isSymbol() && branches(entry);
             if (!folder && !structured) {
+                return;
+            }
+            ColumnBox opened = columnOpenedBy(entry.path());
+            if (opened != null && !opened.column().entries().isEmpty()) {
+                stepIntoColumn(opened, false); // into a compacted column too, past the folders of its chain
                 return;
             }
             List<ProjectMapModel.Entry> children = boxes.stream()
@@ -5646,9 +7331,9 @@ final class ProjectMapView extends VBox {
 
         private void select(Path path) {
             selected = path;
-            updateAccessibleText();
             revealSelected();
             repaint();
+            updateAccessibleText();
             onSelectionChanged.accept(path);
         }
 
@@ -5669,8 +7354,10 @@ final class ProjectMapView extends VBox {
          * project column has no filter; say so instead of swallowing the key.
          */
         private void focusSelectedColumnFilter() {
-            ProjectMapModel.ColumnId id =
-                    selectedEntry().map(MapSurface::columnId).orElse(null);
+            ColumnBox header = headerFor(selected);
+            ProjectMapModel.ColumnId id = header != null
+                    ? header.column().id()
+                    : selectedEntry().map(MapSurface::columnId).orElse(null);
             ColumnControls controls = id == null ? null : columnControls.get(id);
             if (controls == null) {
                 onStatus.accept(tr("project.map.status.rootColumnNoFilter"));
@@ -5742,9 +7429,12 @@ final class ProjectMapView extends VBox {
             }
         }
 
-        /** Input handlers hit-test the boxes of the last paint; bring them up to date with a coalesced pan or zoom. */
+        /**
+         * Input handlers hit-test the boxes of the last projection; bring them up to date with a coalesced pan or
+         * zoom. The Canvas is still drawn at the pulse.
+         */
         private void flushPendingRepaint() {
-            if (viewportRepaintPending) {
+            if (boxesStale) {
                 repaint();
             }
         }
@@ -5752,21 +7442,37 @@ final class ProjectMapView extends VBox {
         private void revealSelected() {
             flushPendingRepaint();
             NodeBox box = nodeBox(selected);
-            if (box == null) {
+            ColumnBox header = box == null ? headerFor(selected) : null;
+            double x;
+            double y;
+            double width;
+            double height;
+            if (box != null) {
+                x = box.x();
+                y = box.y();
+                width = box.width();
+                height = box.height();
+            } else if (header != null) {
+                // The root or a folder of a compacted chain: its column's title strip.
+                x = header.x();
+                y = header.y();
+                width = header.width();
+                height = Math.min(header.height(), COMPACT_HEADER_HEIGHT * zoom);
+            } else {
                 return;
             }
             double[] pan = new double[2];
-            include(pan, box.x(), box.y(), box.x() + box.width(), box.y() + box.height());
+            include(pan, x, y, x + width, y + height);
             // The overview floats over the bottom-right corner: a row revealed there would sit under it.
             OverviewBox overview = overviewBox;
             if (overview != null) {
-                double left = box.x() + pan[0];
-                double top = box.y() + pan[1];
-                if (left + box.width() > overview.x() - 4
+                double left = x + pan[0];
+                double top = y + pan[1];
+                if (left + width > overview.x() - 4
                         && left < overview.x() + overview.width()
-                        && top + box.height() > overview.y() - 4
+                        && top + height > overview.y() - 4
                         && top < overview.y() + overview.height()) {
-                    pan[1] -= top + box.height() - (overview.y() - 8);
+                    pan[1] -= top + height - (overview.y() - 8);
                 }
             }
             offsetX += pan[0];
@@ -5819,15 +7525,21 @@ final class ProjectMapView extends VBox {
             return false;
         }
 
+        /**
+         * Centres the view on the map point under an overview press or drag. The point is clamped to the map's
+         * bounds, so a press on the frame's margin never pans the view into empty space (B2).
+         */
         private boolean navigateFromOverview(double x, double y) {
             OverviewBox overview = overviewBox;
             if (overview == null || !overview.contains(x, y)) {
                 return false;
             }
-            double contentX = overview.minX() + (x - overview.x() - 5) / overview.scale();
-            double contentY = overview.minY() + (y - overview.y() - 5) / overview.scale();
-            offsetX += getWidth() / 2 - contentX;
-            offsetY += getHeight() / 2 - contentY;
+            double mapX =
+                    clampInto((x - overview.x() - overview.insetX()) / overview.scale(), 0, overview.contentWidth());
+            double mapY =
+                    clampInto((y - overview.y() - overview.insetY()) / overview.scale(), 0, overview.contentHeight());
+            offsetX += getWidth() / 2 - (overview.minX() + mapX);
+            offsetY += getHeight() / 2 - (overview.minY() + mapY);
             repaint();
             return true;
         }
@@ -5838,81 +7550,86 @@ final class ProjectMapView extends VBox {
         }
 
         /**
-         * Where a card for {@code path} opens: beside its column on the side the flow leaves free (else the
-         * other side) when at least the card's minimum fits there, otherwise over the map against the
-         * panel edge. Reads the layout only — the viewport is never moved to make room.
+         * What card placement needs to know about the row at {@code path}, in panel pixels (see {@code
+         * drawnPlacement}): the row and its column as {@code {x, y, w, h}}, the extent of the columns on screen, and
+         * what a card should not cover, as {@code {x, y, w, h, weight}} — every column on screen (the row's own
+         * weighs 6, those that lead to it 4, others 1), the band where the row's next column would open (3), and the
+         * zoom bar and the overview (4). Reads the layout only.
          */
-        private ProjectMapPreview.Placement previewPlacement(
-                Path path,
-                double requestedWidth,
-                double requestedHeight,
-                double minimumWidth,
-                double minimumHeight,
-                double parentWidth,
-                double parentHeight) {
+        private CardSite cardSite(Path path) {
             NodeBox node = boxes.stream()
                     .filter(box -> box.entry().path().equals(path))
                     .findFirst()
                     .orElse(null);
-            ColumnBox column = node == null
+            ColumnBox own = node == null
                     ? null
                     : columnBoxes.stream()
                             .filter(box -> box.column().id().equals(columnId(node.entry())))
                             .findFirst()
                             .orElse(null);
-            double fullWidth = boundedPreviewSize(requestedWidth, minimumWidth, parentWidth - PREVIEW_EDGE_MARGIN * 2);
-            double fullHeight =
-                    boundedPreviewSize(requestedHeight, minimumHeight, parentHeight - PREVIEW_EDGE_MARGIN * 2);
-            double farX = Math.max(PREVIEW_EDGE_MARGIN, parentWidth - fullWidth - PREVIEW_EDGE_MARGIN);
-            double farY = Math.max(PREVIEW_EDGE_MARGIN, parentHeight - fullHeight - PREVIEW_EDGE_MARGIN);
-            if (node == null || column == null) {
-                return new ProjectMapPreview.Placement(farX, PREVIEW_EDGE_MARGIN, fullWidth, fullHeight);
+            if (node == null || own == null) {
+                return new CardSite(null, new double[4], new double[4], List.of());
             }
-
+            List<double[]> obstacles = new ArrayList<>();
+            double top = Double.MAX_VALUE;
+            double bottom = -Double.MAX_VALUE;
+            double left = Double.MAX_VALUE;
+            double right = -Double.MAX_VALUE;
+            for (ColumnBox column : columnBoxes) {
+                if (column.x() > getWidth()
+                        || column.x() + column.width() < 0
+                        || column.y() > getHeight()
+                        || column.y() + column.height() < 0) {
+                    continue; // off screen: a card there covers nothing of it
+                }
+                Path listed = column.column().parent();
+                double weight = column == own
+                        ? 6
+                        : listed != null && path.startsWith(listed) ? 4 : 1; // a column that leads to the row
+                obstacles.add(new double[] {column.x(), column.y(), column.width(), column.height(), weight});
+                top = Math.min(top, column.y());
+                bottom = Math.max(bottom, column.y() + column.height());
+                left = Math.min(left, column.x());
+                right = Math.max(right, column.x() + column.width());
+            }
+            boolean horizontal =
+                    flowDirection == FlowDirection.LEFT_TO_RIGHT || flowDirection == FlowDirection.RIGHT_TO_LEFT;
             boolean forward =
                     flowDirection == FlowDirection.LEFT_TO_RIGHT || flowDirection == FlowDirection.TOP_TO_BOTTOM;
-            if (flowDirection == FlowDirection.LEFT_TO_RIGHT || flowDirection == FlowDirection.RIGHT_TO_LEFT) {
-                double y = clampPreview(node.y() + node.height() / 2 - fullHeight / 2, PREVIEW_EDGE_MARGIN, farY);
-                double afterX = Math.max(PREVIEW_EDGE_MARGIN, column.x() + column.width() + PREVIEW_COLUMN_GAP);
-                double afterRoom = parentWidth - PREVIEW_EDGE_MARGIN - afterX;
-                double beforeEnd = Math.min(parentWidth - PREVIEW_EDGE_MARGIN, column.x() - PREVIEW_COLUMN_GAP);
-                double beforeRoom = beforeEnd - PREVIEW_EDGE_MARGIN;
-                boolean after =
-                        forward ? afterRoom >= minimumWidth || beforeRoom < minimumWidth : beforeRoom < minimumWidth;
-                double room = after ? afterRoom : beforeRoom;
-                if (room < minimumWidth) {
-                    // No side has room (a tool-window-wide panel): lie over the map rather than shrink to a sliver.
-                    return new ProjectMapPreview.Placement(
-                            forward ? farX : PREVIEW_EDGE_MARGIN, y, fullWidth, fullHeight, !forward);
-                }
-                double width = Math.min(fullWidth, room);
-                return new ProjectMapPreview.Placement(
-                        after ? afterX : beforeEnd - width, y, width, fullHeight, !after);
+            ProjectMapModel.Entry entry = node.entry();
+            ProjectMapModel.Symbol symbol = entry.symbol();
+            boolean opensColumn = entry.directory() && !entry.isPlaceholder()
+                    || hasStructure(entry)
+                    || entry.isSymbol() && symbol != null && symbol.branches();
+            if (opensColumn) { // where its next column — a folder's, or a file's Structure column — opens
+                double step = PREVIEW_COLUMN_GAP + (horizontal ? own.width() : own.height());
+                double nextX = horizontal ? own.x() + (forward ? step : -step) : own.x();
+                double nextY = horizontal ? own.y() : own.y() + (forward ? step : -step);
+                obstacles.add(new double[] {nextX, nextY, own.width(), own.height(), 3});
             }
-
-            double x = clampPreview(node.x() + node.width() / 2 - fullWidth / 2, PREVIEW_EDGE_MARGIN, farX);
-            double afterY = Math.max(PREVIEW_EDGE_MARGIN, column.y() + column.height() + PREVIEW_COLUMN_GAP);
-            double afterRoom = parentHeight - PREVIEW_EDGE_MARGIN - afterY;
-            double beforeEnd = Math.min(parentHeight - PREVIEW_EDGE_MARGIN, column.y() - PREVIEW_COLUMN_GAP);
-            double beforeRoom = beforeEnd - PREVIEW_EDGE_MARGIN;
-            boolean after =
-                    forward ? afterRoom >= minimumHeight || beforeRoom < minimumHeight : beforeRoom < minimumHeight;
-            double room = after ? afterRoom : beforeRoom;
-            if (room < minimumHeight) {
-                return new ProjectMapPreview.Placement(x, forward ? farY : PREVIEW_EDGE_MARGIN, fullWidth, fullHeight);
+            if (reservedBarWidth > 0 && reservedBottom > 0) {
+                obstacles.add(new double[] {0, getHeight() - reservedBottom, reservedBarWidth, reservedBottom, 4});
             }
-            double height = Math.min(fullHeight, room);
-            return new ProjectMapPreview.Placement(x, after ? afterY : beforeEnd - height, fullWidth, height);
+            OverviewBox overview = overviewBox;
+            if (overview != null) {
+                obstacles.add(new double[] {overview.x(), overview.y(), overview.width(), overview.height(), 4});
+            }
+            if (top > bottom) {
+                top = own.y();
+                bottom = own.y() + own.height();
+                left = own.x();
+                right = own.x() + own.width();
+            }
+            return new CardSite(
+                    new double[] {node.x(), node.y(), node.width(), node.height()},
+                    new double[] {own.x(), own.y(), own.width(), own.height()},
+                    new double[] {left, Math.max(0, top), right - left, Math.min(getHeight(), bottom) - Math.max(0, top)
+                    },
+                    obstacles);
         }
 
-        private double boundedPreviewSize(double requested, double minimum, double available) {
-            double maximum = Math.max(1, available);
-            return Math.min(Math.max(Math.min(minimum, maximum), requested), maximum);
-        }
-
-        private double clampPreview(double value, double minimum, double maximum) {
-            return Math.max(minimum, Math.min(maximum, value));
-        }
+        /** See {@link #cardSite}; {@code row} is null when the row is not on the map. */
+        private record CardSite(double @Nullable [] row, double[] column, double[] band, List<double[]> obstacles) {}
 
         private double screenX(double worldX) {
             return offsetX + worldX * zoom;
@@ -5923,59 +7640,93 @@ final class ProjectMapView extends VBox {
         }
 
         private void updateAccessibleText() {
+            String text = accessibleSelectionText();
+            if (!text.equals(getAccessibleText())) {
+                setAccessibleText(text);
+                // The property alone tells no one: a screen reader hears of the change only through this.
+                notifyAccessibleAttributeChanged(AccessibleAttribute.TEXT);
+            }
+        }
+
+        /**
+         * What a tree item would expose, in one string: the row, its kind, its states and where it stands among
+         * the rows its column draws — not those a column filter or "Hide unmatched" took out, nor a "+N more"
+         * row (B5).
+         */
+        private String accessibleSelectionText() {
             ProjectMapModel.Entry current = selectedEntry().orElse(null);
             if (current == null) {
-                setAccessibleText(tr("project.map.accessibleSelection", tr("project.map.empty")));
-                return;
+                return tr("project.map.accessibleSelection", tr("project.map.empty"));
             }
-            // The surface is one accessible node, so its text carries what a tree item would expose: the
-            // kind of row, whether a folder is open, and where the row stands among its siblings.
-            ProjectMapModel.ColumnId column = columnId(current);
-            java.util.Comparator<ProjectMapModel.Entry> order =
-                    ProjectPathOrder.directoriesFirst(ProjectMapModel.Entry::directory, ProjectMapModel.Entry::name);
-            int position = 1;
-            int siblings = 0;
-            for (ProjectMapModel.Entry entry : entries) {
-                if (columnId(entry).equals(column)) {
-                    siblings++;
-                    if (order.compare(entry, current) < 0) {
-                        position++; // rows are shown in this order, whatever order they were loaded in
-                    }
+            ProjectMapModel.ColumnId id = columnId(current);
+            boolean narrowing = hideUnmatched && filters != null && filters.active();
+            List<ProjectMapModel.Entry> drawn = List.of();
+            for (ProjectMapModel.Column column : ProjectMapModel.columnsById(
+                    entries, columnQueries, columnShowHidden, narrowing ? emphasized : null)) {
+                if (column.id().equals(id)) {
+                    drawn = column.entries().stream()
+                            .filter(row -> !row.isPlaceholder())
+                            .toList();
+                    break;
                 }
             }
+            int index = drawn.indexOf(current);
+            List<String> states = new ArrayList<>();
+            int position;
+            if (index >= 0) {
+                position = index + 1;
+            } else {
+                // Hidden by its column's filter: say so, and where it would stand.
+                List<ProjectMapModel.Entry> all = selectionSiblings(current);
+                int at = all.indexOf(current);
+                position = 1
+                        + (int) drawn.stream()
+                                .filter(row -> all.indexOf(row) < at)
+                                .count();
+                states.add(tr("project.map.accessible.state.filtered"));
+            }
+            int count = drawn.size();
             ProjectMapModel.Symbol symbol = current.symbol();
+            String base;
             if (symbol != null) {
-                // A structure column is shown in the order its declarations are written: count in that order.
-                int index = 1;
-                int count = 0;
-                for (ProjectMapModel.Entry entry : entries) {
-                    if (columnId(entry).equals(column) && !entry.isPlaceholder()) {
-                        count++;
-                        if (entry == current) {
-                            index = count;
-                        }
-                    }
-                }
-                setAccessibleText(tr(
+                base = tr(
                         "project.map.accessible.symbol",
                         current.name(),
                         symbol.kind() == null ? "" : symbol.kind(),
                         symbol.line() + 1,
-                        index,
-                        count));
-                return;
-            }
-            String key;
-            if (current.directory()) {
-                key = expandedSnapshot.contains(current.path())
-                        ? "project.map.accessible.folderExpanded"
-                        : "project.map.accessible.folderCollapsed";
+                        position,
+                        count);
             } else {
-                key = openPaths.contains(current.path())
-                        ? "project.map.accessible.fileOpen"
-                        : "project.map.accessible.file";
+                String key;
+                if (current.directory()) {
+                    key = expandedSnapshot.contains(current.path())
+                            ? "project.map.accessible.folderExpanded"
+                            : "project.map.accessible.folderCollapsed";
+                } else {
+                    key = openPaths.contains(current.path())
+                            ? "project.map.accessible.fileOpen"
+                            : "project.map.accessible.file";
+                }
+                base = tr(key, current.name(), position, count);
+                Path path = current.path();
+                if (modifiedPaths.contains(path)) {
+                    states.add(tr("project.map.tooltip.unsaved"));
+                }
+                GitFileStatus git = gitState.get(path);
+                if (git != null || gitDirectories.contains(path)) {
+                    states.add(tr("project.map.tooltip.gitChanged"));
+                }
+                if (bookmarkedPaths.contains(path)) {
+                    states.add(tr("project.map.tooltip.bookmarked"));
+                }
+                if (notedPaths.contains(path)) {
+                    states.add(tr("project.map.tooltip.personalNotes"));
+                }
+                if (current.isFile() && structure.isOpen(path)) {
+                    states.add(tr("project.map.accessible.state.structureOpen"));
+                }
             }
-            setAccessibleText(tr(key, current.name(), position, siblings));
+            return states.isEmpty() ? base : tr("project.map.accessible.withStates", base, String.join(", ", states));
         }
 
         private Rectangle probe(String styleClass) {
@@ -6036,12 +7787,55 @@ final class ProjectMapView extends VBox {
 
         private record NodeBox(ProjectMapModel.Entry entry, double x, double y, double width, double height) {}
 
+        /**
+         * Columns and rows in world units, in drawing order. {@code anchorRows} and {@code anchorColumns} give,
+         * per column, the index of the row it hangs from and of that row's column (-1 for the first column).
+         */
+        private record WorldLayout(
+                List<ColumnBox> columns,
+                List<NodeBox> rows,
+                List<Integer> anchorRows,
+                List<Integer> anchorColumns,
+                int narrowed) {}
+
+        /**
+         * Everything a world layout depends on. Lists and sets are the surface's own (replaced, never mutated,
+         * when they change), so comparing two keys is cheap while nothing changed.
+         */
+        private record LayoutKey(
+                List<ProjectMapModel.Entry> entries,
+                Map<ProjectMapModel.ColumnId, String> queries,
+                Map<ProjectMapModel.ColumnId, Boolean> hidden,
+                @Nullable Set<Path> keep,
+                FlowDirection flow,
+                double zoom,
+                boolean output,
+                Map<ProjectMapModel.ColumnId, javafx.geometry.Point2D> offsets,
+                double hiddenLabelWidth,
+                Set<Path> bookmarks,
+                Set<Path> notes,
+                String fontFamily,
+                boolean compactChains) {}
+
+        private record FontKey(String family, FontWeight weight, FontPosture posture, double size) {}
+
         private record ColumnBox(ProjectMapModel.Column column, double x, double y, double width, double height) {}
 
         private record ColumnControls(TextField filter, CheckBox showHidden, ToggleButton pin, Button close) {}
 
+        /** The overview frame in surface pixels, and where the map's bounds lie inside it. */
         private record OverviewBox(
-                double x, double y, double width, double height, double minX, double minY, double scale) {
+                double x,
+                double y,
+                double width,
+                double height,
+                double minX,
+                double minY,
+                double scale,
+                double insetX,
+                double insetY,
+                double contentWidth,
+                double contentHeight) {
             private boolean contains(double px, double py) {
                 return px >= x && px <= x + width && py >= y && py <= y + height;
             }
@@ -6050,10 +7844,25 @@ final class ProjectMapView extends VBox {
         private static final class ColumnLayout {
             private double x;
             private double y;
+            /** How far the last paint pushed the column past {@link #x}/{@link #y}, clear of a packed neighbour. */
+            private double pushX;
+
+            private double pushY;
             private boolean locked;
         }
 
         private record IconKey(String kind, String statusClass) {}
+    }
+
+    /** One column's rows, filters aside, in the order the map shows them (the model's sort). */
+    private static List<ProjectMapModel.Entry> columnRowsInOrder(
+            List<ProjectMapModel.Entry> rows, ProjectMapModel.ColumnId id) {
+        for (ProjectMapModel.Column column : ProjectMapModel.columnsById(rows, Map.of(), Map.of(), null)) {
+            if (column.id().equals(id)) {
+                return column.entries();
+            }
+        }
+        return List.of();
     }
 
     /** What one wheel or touchpad scroll event does to the viewport. */
@@ -6123,19 +7932,61 @@ final class ProjectMapView extends VBox {
 
     /** The chord tokens the focused map surface takes ahead of the keymap; see {@code MapSurface.claimKeys}. */
     static Set<String> claimedChords(boolean mac) {
-        return Set.of("M-left", "M-right", mac ? "Cmd-0" : "C-0", "C-n", "C-p", "f2", "delete");
+        return Set.of("M-left", "M-right", mac ? "Cmd-0" : "C-0", "C-n", "C-p", "f2", "delete", "S-enter");
     }
 
     private static boolean safeTest(Predicate<Path> predicate, Path path) {
         try {
             return predicate != null && predicate.test(path);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException failed) {
+            ProjectMapLog.unexpected("checking a row's state", failed);
             return false;
         }
     }
 
     private static Color mix(Color base, Color overlay, double amount) {
         return base.interpolate(overlay, amount);
+    }
+
+    /**
+     * {@code ink} mixed toward {@code ground} by as much as {@code maxFade} while it keeps {@code floor}
+     * contrast with it: a faded label recedes but stays readable. Ink already under the floor is kept. Pure —
+     * tested.
+     */
+    static Color fadedInk(Color ink, Color ground, double floor, double maxFade) {
+        if (contrastRatio(ink, ground) <= floor) {
+            return ink;
+        }
+        Color full = ink.interpolate(ground, maxFade);
+        if (contrastRatio(full, ground) >= floor) {
+            return full;
+        }
+        double low = 0;
+        double high = maxFade;
+        for (int step = 0; step < 14; step++) {
+            double middle = (low + high) / 2;
+            if (contrastRatio(ink.interpolate(ground, middle), ground) >= floor) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+        return ink.interpolate(ground, low);
+    }
+
+    /** WCAG 2 contrast ratio of two opaque colours. */
+    static double contrastRatio(Color a, Color b) {
+        double la = relativeLuminance(a);
+        double lb = relativeLuminance(b);
+        return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+    }
+
+    private static double relativeLuminance(Color c) {
+        return 0.2126 * linear(c.getRed()) + 0.7152 * linear(c.getGreen()) + 0.0722 * linear(c.getBlue());
+    }
+
+    private static double linear(double channel) {
+        return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
     }
 
     /**

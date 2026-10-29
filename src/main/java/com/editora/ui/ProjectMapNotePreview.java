@@ -74,6 +74,10 @@ final class ProjectMapNotePreview extends StackPane {
     private Runnable onTouch = () -> {};
     private Runnable onEscape = () -> onClose.run();
     private Runnable onBlankRejected = () -> {};
+    private java.util.function.BiConsumer<Path, Integer> onOpenAt = (file, line) -> {};
+    /** The file or folder the notes are on. */
+    private @org.jspecify.annotations.Nullable Path path;
+
     private boolean placed;
     private double preferredWidth = DEFAULT_WIDTH;
     /** The map's zoom, applied from the card's top-left corner (see {@link ProjectMapPreview#setMapScale}). */
@@ -138,7 +142,15 @@ final class ProjectMapNotePreview extends StackPane {
             }
         });
         addEventFilter(ScrollEvent.SCROLL, event -> onTouch.run());
+        // Alt+arrows move the card, Alt+Shift+arrows resize it (see ProjectMapPreview.geometryStep).
+        getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, ProjectMapPreview.GEOMETRY_KEYS);
         addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            double[] step = ProjectMapPreview.geometryStep(event);
+            if (step != null) {
+                moveOrResizeBy(step);
+                event.consume();
+                return;
+            }
             if (event.getCode() == KeyCode.ESCAPE
                     && !event.isShiftDown()
                     && !event.isControlDown()
@@ -151,13 +163,8 @@ final class ProjectMapNotePreview extends StackPane {
     }
 
     void showNotes(Path path, List<PersonalNote> values, ProjectMapPreview.Placement placement) {
-        title.setText(
-                path.getFileName() == null
-                        ? path.toString()
-                        : path.getFileName().toString());
+        pathRenamed(path);
         title.setGraphic(Icons.notes());
-        title.setTooltip(new Tooltip(path.toString()));
-        setAccessibleText(tr("project.map.notes.accessible", path.toString()));
         rebuild(values == null ? List.of() : values, Map.of());
         setVisible(true);
         resizeRelocate(placement.x(), placement.y(), placement.width(), placement.height());
@@ -165,6 +172,17 @@ final class ProjectMapNotePreview extends StackPane {
         preferredHeight = placement.height();
         placed = true;
         toFront();
+    }
+
+    /** Names the file whose notes the card lists: on show, and when the file is renamed inside Editora. */
+    void pathRenamed(Path path) {
+        this.path = path;
+        title.setText(
+                path.getFileName() == null
+                        ? path.toString()
+                        : path.getFileName().toString());
+        title.setTooltip(new Tooltip(path.toString()));
+        setAccessibleText(tr("project.map.notes.accessible", path.toString()));
     }
 
     /**
@@ -215,6 +233,10 @@ final class ProjectMapNotePreview extends StackPane {
                     Math.max(3, Math.min(8, note.body().lines().toList().size() + 1)));
             editor.getStyleClass().add("project-map-note-preview-editor");
             Row row = new Row(note, editor);
+            javafx.scene.Node header = header(note);
+            if (header != null) {
+                notes.getChildren().add(header);
+            }
             String edit = edits.get(note.id());
             if (edit != null) {
                 editor.setText(edit);
@@ -258,6 +280,44 @@ final class ProjectMapNotePreview extends StackPane {
             row.saved = value; // before the callback: the store answers with a refresh of this very card
             onSave.accept(row.note, value);
         }
+    }
+
+    /**
+     * A note's heading, as its sticky sheet has: the line or lines it is on, with the noted text as its tooltip; a
+     * press opens the file there, as the Notes panel does. A folder's note has none. With several notes the rows
+     * were bare text boxes, with nothing to tell which note was about which code.
+     */
+    private javafx.scene.@org.jspecify.annotations.Nullable Node header(PersonalNote note) {
+        if (note.scope() == com.editora.config.NoteScope.FOLDER) {
+            return null;
+        }
+        Button where = new Button(ProjectMapStickyNotes.where(note), Icons.notes());
+        where.getStyleClass().addAll("flat", "project-map-note-preview-where");
+        String quoted = note.anchor().selectedText().strip();
+        where.setTooltip(new Tooltip(
+                quoted.isEmpty() ? tr("project.map.notes.openAt") : quoted + "\n" + tr("project.map.notes.openAt")));
+        where.setAccessibleHelp(tr("project.map.notes.openAt"));
+        int line = note.anchor().line();
+        where.setOnAction(event -> {
+            Path file = path;
+            if (file != null) {
+                onOpenAt.accept(file, line);
+            }
+        });
+        return where;
+    }
+
+    /** Where a note's heading goes: its file, opened at the note's 0-based line. */
+    void setOnOpenAt(java.util.function.BiConsumer<Path, Integer> callback) {
+        onOpenAt = callback == null ? (file, line) -> {} : callback;
+    }
+
+    /** The headings of the notes, in order (for tests). */
+    List<String> headings() {
+        return notes.getChildren().stream()
+                .filter(Button.class::isInstance)
+                .map(node -> ((Button) node).getText())
+                .toList();
     }
 
     /** Moves keyboard focus to the first note. */
@@ -324,6 +384,24 @@ final class ProjectMapNotePreview extends StackPane {
         frame.resizeRelocate(0, 0, getWidth(), getHeight());
         double grip = 18;
         resizeGrip.resizeRelocate(Math.max(0, getWidth() - grip), Math.max(0, getHeight() - grip), grip, grip);
+    }
+
+    private void moveOrResizeBy(double[] step) {
+        double scale = mapScale();
+        if (step[0] != 0 || step[1] != 0) {
+            relocate(getLayoutX() + step[0], getLayoutY() + step[1]);
+        } else if (getParent() instanceof Region parent) {
+            preferredWidth = ProjectMapPreview.boundedSize(
+                    getWidth() + step[2] / scale,
+                    MIN_WIDTH,
+                    Math.max(1, ProjectMapPreview.unzoomedRoom(parent.getWidth(), scale)));
+            preferredHeight = ProjectMapPreview.boundedSize(
+                    getHeight() + step[3] / scale,
+                    MIN_HEIGHT,
+                    Math.max(1, ProjectMapPreview.unzoomedRoom(parent.getHeight(), scale)));
+            resize(preferredWidth, preferredHeight);
+        }
+        ProjectMapPreview.announceGeometry(this, scale);
     }
 
     private void dragPressed(MouseEvent event) {

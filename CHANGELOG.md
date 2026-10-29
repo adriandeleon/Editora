@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Project Map: compact folder chains, Reveal Active File, and keyboard reach (Map review).**
+  - A chain of single-child folders (`src/main/java/com/acme`) opens with one click and shows as one column titled
+    `src / main / java / com / acme`; each folder stays in the breadcrumb, and Left/Backspace step back through it.
+    ⋯ → **Compact folder chains** turns it off.
+  - New command **Project Map: Reveal Active File** (`projectMap.revealActiveFile`) opens or raises the Map window on
+    the file being edited, and ⋯ → **Always select opened file** (off) follows every file you open. A Map opened with
+    nothing selected starts at the current file.
+  - ⋯ → **Single-click opens files** (on): turn it off to select a file with a click and open it with a double-click
+    or Enter.
+  - **Shift+Enter** opens or closes the selected file's or declaration's preview card, and the row menu (right-click,
+    Menu key, Shift+F10) gains **Preview**, **Show/Hide Structure**, **Personal Notes** and **Close Column**.
+  - Cards, note cards and sticky notes move with **Alt+arrows**, and cards and note cards resize with
+    **Alt+Shift+arrows**; a card's menu has **Move to Free Space**.
+  - The ⋯ options are remembered per workspace, as is a maximized Map window (workspace schema 26 → 27).
+  - The **?** popover lists every gesture and key, including cards, notes and filters, with key names in your
+    language.
+
 - **HTML: links, markup checks and colour swatches** (HTML review: links).
   - Go to Definition and Ctrl-click on an `href` or `src` open the file it names, at the element whose `id` its
     `#fragment` names; a `#fragment` alone moves in the page, a web address goes to the browser after asking, and a
@@ -88,6 +105,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Project Map: the first column is the project's own files (Map review).** The one-row "Project" column is gone:
+  the first column lists the project's files and folders under the project's name. Click that title (or the first
+  breadcrumb) to select the project folder and right-click it for the folder's menu; Home selects the first row.
+- **Project Map: names and text.** Long names are cut in the middle (a row is at most 360 px wide; the tooltip has
+  the full name), rows faded by a filter keep readable labels, the canvas uses the UI font, toolbar text follows
+  the UI size, and the back, forward and help buttons are larger targets. Map cards use the editor font and keep
+  the last text zoom. Git "untracked" and "renamed" colours and the Structure tint read well on dark themes.
+- **Project tree and Map: numbered files sort by number** (note-2 before note-10).
+- **Project Map: Type buckets.** Plain-text documents (README, LICENSE, `.txt`) count as Markup, and build files
+  (`go.mod`, `Gemfile`, Gradle and Maven wrappers, `*.gradle`, `.plist`) as Config.
+- **Project and Map search finds the file you name first** (`Settings.java` for "Settings"), searches the whole
+  project instead of stopping at the first 300 hits, and says when it shows only the best matches. A one-letter
+  Map search filters the rows on the map instead of opening hundreds of folders.
+- **Project Map: Clear** also clears the search and no longer turns off "Hide all open Personal Notes"; in German
+  and Italian it reads "Zurücksetzen" / "Azzera".
+
 - **Project Map: the Modified chip is now Unsaved.** It always matched files with unsaved changes; next to the Git "M"
   letter it read as Git-modified, which is what Git changed matches.
 - **Project Map: every workspace starts left to right.** A workspace that stored right to left, the default saved by
@@ -103,6 +136,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   folder columns (the overview tints them too). Themes can retune it with `.project-map-probe-structure`.
 
 ### Fixed
+
+- **Project Map window (Map review).**
+  - In the No Project window the Map keeps the folder it was opened on: opening a file from it, or switching to a
+    tab in another folder or an untitled tab, no longer re-roots it (losing its columns and cards) or closes it.
+  - A Map window closed with its project reopens with the project in the same session, and one left open reopens
+    at startup even with the Project tool window closed.
+  - A card that mirrors an open file keeps following its edits after the Map window is closed and reopened, and a
+    closed Map no longer polls cards, re-reads buffers or repaints on every tab switch.
+  - An editor-theme switch reaches an open Map window and floating tool windows.
+  - Print and PDF dialogs open over the Map window; a map just over one page is shrunk slightly (labels down to
+    6 pt) instead of split, and the status says how many pages it took.
+  - New Folder and New File from a Map row show and select the result; renaming to a taken name says so, and a
+    case-only rename works on case-insensitive disks; a folder the Map cannot read is reported in the status bar;
+    the Map commands say when Project support is off.
+- **Project Map loading and search (Map review).**
+  - An outside change made just after a rename, move, delete or new folder in Editora shows in the tree and the
+    Map instead of being lost.
+  - Opening a folder no longer re-reads every open folder (listings are cached per watched folder), and a folder
+    that stops responding shows "Not responding" instead of freezing the Map's loading.
+  - A folder the 1,200-row limit cannot fit stays open with a "Not loaded" row and fills in once a column closes.
+  - Renaming or moving a folder while the Map is loading keeps it open, and preview and note cards follow a file
+    renamed in Editora.
+  - A column filter in a long folder searches the whole folder, the Git chip matches files inside a new untracked
+    folder (with their "U"), and the search matches declarations in open Structure columns.
+- **Project Map navigation (Map review).**
+  - A search's first match, a breadcrumb, Back/Forward and a reveal scroll the selected row into view, even when its
+    folder had to load first. Escape on the search returns to the row selected before it.
+  - With Hide unmatched, the selection moves to the nearest row still shown; after "+N more…" it continues at the
+    first new row.
+  - The overview fits the map's shape, can be dragged, never pans into empty space, stays above cards, and is
+    hidden in small windows; cards never cover the zoom bar.
+  - A column blocked by its neighbour moves at once when dragged back, and a drag that starts on a row pans.
+  - Tab skips off-screen column controls, and closing or tabbing out of a card returns the keyboard to the map.
+  - Screen readers hear the selected row's states and its place among the visible rows instead of an empty tree.
+  - Drawing happens at most once per frame and reuses the layout when only the view moves, so hovering, arrow keys
+    and reloads stay smooth on large maps.
+- **Project Map cards and notes (Map review).**
+  - Note and bookmark shortcuts typed in a card (`C-c n`, `C-c m` in Emacs) mark the card's file instead of the
+    active tab's; Add Personal Note on a card asks over the Map window and names the file and lines; the Menu-key
+    menu of a card acts on the caret's line.
+  - A card opens where it covers least, never over the columns leading to its row or where its next column opens.
+  - A declaration card keeps its lines when its declaration is deleted, follows it when lines move above it, and
+    follows an edited signature; methods are labelled with their parameter types, so inserting an overload no
+    longer switches an open card to another method.
+  - Structure columns list one-line members in every language, CSS selectors and at-rules, and YAML keys such as
+    `on:`; a file past the read cap says its outline is partial; `.http` cards show the request's headers and body;
+    `#` comments above a declaration belong to its card.
+  - Card notes follow edits made outside Editora; many notes collapse into a "+K more notes" sheet and the Notes
+    button counts them all; note cards head each note with its line, which opens the file there; the Notes button
+    explains when "Hide all open Personal Notes" hides them.
+  - Binary files and oversized images get a compact facts card; long files are coloured up to a line the status
+    names; a card mirroring unsaved edits says so; Copy reads "Copy All" with nothing selected.
+  - Cards share two loader threads and no longer re-read unchanged buffers every second.
+  - Failures the Map recovers from but did not expect now reach the debug log.
 
 - **HTML completion and popups (HTML review: comp).**
   - Enter and Tab accept an HTML tag, attribute or CSS property again while its documentation is showing. The docs'

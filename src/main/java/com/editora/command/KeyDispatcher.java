@@ -401,6 +401,10 @@ public class KeyDispatcher {
             event.consume();
             consumedPress = true; // set before run(): a modal command defers the paired KEY_TYPED
             reset();
+            if (handledByFocusOwner(event.getTarget(), commandId)) {
+                prefixArg.reset(); // the component ran its own version of the command, once
+                return;
+            }
             dispatch(commandId);
             return;
         }
@@ -689,6 +693,30 @@ public class KeyDispatcher {
                     && node.getProperties().get(CLAIMED_KEYS) instanceof java.util.Set<?> keys
                     && keys.contains(token)) {
                 return true;
+            }
+            node = node.getParent();
+        }
+        return false;
+    }
+
+    /**
+     * Node property for a component that runs a few <em>global</em> commands itself, on what it shows, while it
+     * holds the focus: a {@code Predicate<String>} that is handed the command id a completed chord resolved to
+     * — multi-key chords included ({@code C-c n}) — and answers whether it ran it. A Project Map card adds a
+     * Personal Note or a bookmark to its own file this way: dispatched globally the command acted on the active
+     * editor tab, a different file. Unlike {@link #CLAIMED_KEYS} it is keyed by command, so it follows the user's
+     * keymap and leaves a prefix such as {@code C-c} alone.
+     */
+    public static final String HANDLED_COMMANDS = "editora.handlesCommands";
+
+    private static boolean handledByFocusOwner(EventTarget target, String commandId) {
+        Node node = target instanceof Node n ? n : null;
+        while (node != null) {
+            if (node.hasProperties()
+                    && node.getProperties().get(HANDLED_COMMANDS) instanceof java.util.function.Predicate<?> rule) {
+                @SuppressWarnings("unchecked")
+                var runs = (java.util.function.Predicate<String>) rule;
+                return runs.test(commandId);
             }
             node = node.getParent();
         }

@@ -947,6 +947,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         palette.refreshBindings(); // built before the plugins bound their chords: show theirs, drop the replaced
         snippetCoordinator.checkUserFilesAtStartup(); // a broken user snippet file is reported now, not on first use
         toolWindows.restore();
+        if (projectsEnabled()
+                && WorkspaceState.PROJECT_VIEW_MAP.equals(
+                        config.getWorkspaceState().getProjectViewMode())) {
+            projectPanel(); // a Map window open last time reopens with the Project tool window closed too
+        }
         // Honor a persisted Zen/Expert state on launch: the view options + chrome already read the flags via
         // the apply paths; this hides the side stripes (restore() opened nothing — windows were
         // persisted closed when a focus mode was entered).
@@ -1467,8 +1472,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
         panel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
         panel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
-        panel.setMapOutputActions(
-                exports::printProjectMap, image -> exports.exportProjectMapPdf(image, projectMapBaseName()));
+        panel.setMapOutputActions(exports::printProjectMap, exports::exportProjectMapPdf);
+        panel.setMapRootPinned( // the No Project window: its tree follows the active tab, an open Map does not
+                () -> windowProject == null && (remoteCoordinator == null || !remoteCoordinator.isMounted()));
         // An external program (a terminal `git`, another editor, a build) changed files under the repo while
         // Editora already had focus: re-evaluate the working-tree-anchored surfaces the focus-regain handler
         // also refreshes — Git status + the Commit stripe, build-tool markers, and open diffs (#529).
@@ -8996,7 +9002,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         var area = buffer.getArea();
         int length = area.getLength();
         int end = Math.min(length, ProjectMapPreview.MAX_PREVIEW_CHARS);
-        return new ProjectMapPreview.Content(area.getText(0, end), end < length);
+        return ProjectMapPreview.Content.buffer(() -> area.getText(0, end), end < length, buffer.docVersion());
     }
 
     /**
@@ -9700,12 +9706,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         java.nio.file.Path root = com.editora.lsp.RootResolver.resolve(windowProjectRoot(), file, java.util.List.of());
         return root != null ? root : file; // resolve answers null only for a null file
-    }
-
-    private String projectMapBaseName() {
-        Path root = projectRoot();
-        Path name = root == null ? null : root.getFileName();
-        return (name == null ? "project" : name.toString()) + "-map";
     }
 
     /** Whether the app (AtlantaFX) theme is dark — seeds/decides the "follow app" preview theme + glyph. */

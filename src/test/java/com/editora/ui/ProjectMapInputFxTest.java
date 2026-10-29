@@ -40,7 +40,6 @@ import com.editora.command.CommandRegistry;
 import com.editora.command.KeyDispatcher;
 import com.editora.command.KeymapManager;
 import com.editora.editor.EditorBuffer;
-import com.editora.i18n.Messages;
 import com.editora.ui.ProjectMapView.FlowDirection;
 import com.editora.ui.ProjectMapView.WheelAction;
 import org.junit.jupiter.api.AfterAll;
@@ -246,7 +245,7 @@ class ProjectMapInputFxTest {
     }
 
     @Test
-    void slashBringsBackAFilterHiddenByLowZoomAndSaysWhyOnTheRootColumn() throws Exception {
+    void slashBringsBackAFilterHiddenByLowZoomAndTheRootUsesTheFirstColumns() throws Exception {
         try (Harness h = open()) {
             FxTestSupport.runOnFx(() -> {
                 select(h.surface(), h.file(3));
@@ -276,12 +275,12 @@ class ProjectMapInputFxTest {
                         "and it was scrolled into the viewport");
                 assertTrue(h.statuses().isEmpty());
 
-                // The project column has no filter: say so rather than swallow the key.
+                // The root is the first column's title (Map review E5): "/" there filters that column.
                 h.surface().requestFocus();
                 select(h.surface(), h.project());
                 typeChar(h.scene(), KeyCode.SLASH, false, "/");
-                assertSame(h.surface(), h.scene().getFocusOwner());
-                assertEquals(List.of(Messages.tr("project.map.status.rootColumnNoFilter")), h.statuses());
+                assertSame(filterOf(h.surface(), h.project()), h.scene().getFocusOwner());
+                assertTrue(h.statuses().isEmpty());
             });
         }
     }
@@ -727,6 +726,8 @@ class ProjectMapInputFxTest {
             if (panel.getScene() == null) {
                 registry.run("tool.project");
             }
+            // The fixture's is the No Project window, where an open Map keeps its folder: closed, it opens anew.
+            panel.mapWindow().closeQuietly();
             panel.setRoot(project);
             panel.openMapWindow(true);
         });
