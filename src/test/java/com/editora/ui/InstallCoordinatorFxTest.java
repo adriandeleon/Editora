@@ -445,6 +445,39 @@ class InstallCoordinatorFxTest {
         }
     }
 
+    /** npm installed the package without TypeScript: the install fails and says why, not "installed". */
+    @Test
+    void anHtmlInstallWithoutTypeScriptFailsAndSaysWhy() throws Exception {
+        try (AsyncTestScope scope = new AsyncTestScope()) {
+            Rig rig = new Rig(scope, "html-no-ts");
+            rig.window.lsp.add("html");
+            InstallTestAccess.packageManagers(
+                    rig.service, Set.of(InstallCatalog.Prereq.NPM), () -> "v24.18.1", argv -> {
+                        try {
+                            Path prefix = Path.of(argv.get(3));
+                            InstallTestAccess.webServersLayout(prefix, true);
+                            try (var files = java.nio.file.Files.walk(prefix.resolve("node_modules/typescript"))) {
+                                for (Path f : files.sorted(java.util.Comparator.reverseOrder())
+                                        .toList()) {
+                                    java.nio.file.Files.delete(f);
+                                }
+                            }
+                        } catch (Exception e) {
+                            return new ProcessRunner.Result(1, "", e.toString());
+                        }
+                        return new ProcessRunner.Result(0, "", "");
+                    });
+
+            rig.installServer("html");
+            settleUntilReported(rig);
+
+            assertEquals(List.of(false), rig.outcomes, String.valueOf(rig.alerts));
+            assertTrue(
+                    String.valueOf(rig.alerts).contains("TypeScript"),
+                    "the failure names the missing libraries: " + rig.alerts);
+        }
+    }
+
     @Test
     void aServerThatIsAlreadyThereIsNotDownloadedAgain() throws Exception {
         try (AsyncTestScope scope = new AsyncTestScope()) {

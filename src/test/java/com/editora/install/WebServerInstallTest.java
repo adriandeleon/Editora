@@ -58,6 +58,48 @@ class WebServerInstallTest {
         assertTrue(WebServerInstall.typeScriptLibsMissing(pkg.resolve("bin/vscode-html-language-server")));
     }
 
+    /** A dangling link left by an earlier install is replaced by a working one. */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS) // symlinks need a right
+    void aDanglingLinkFromAnEarlierInstallIsReplaced(@TempDir Path dir) throws Exception {
+        Path pkg = npmLayout(dir, true);
+        Path wanted = WebServerInstall.expectedTypeScript(pkg);
+        Files.createDirectories(wanted.getParent());
+        Files.createSymbolicLink(wanted, dir.resolve("gone"));
+
+        WebServerInstall.linkTypeScriptLibs(dir);
+
+        assertFalse(WebServerInstall.typeScriptLibsMissing(pkg.resolve("bin/vscode-html-language-server")));
+    }
+
+    /** Where a link cannot go (a folder already sits there), the libraries are copied instead, lib files only. */
+    @Test
+    void theLibrariesAreCopiedWhereNoLinkCanBeMade(@TempDir Path dir) throws Exception {
+        Path pkg = npmLayout(dir, true);
+        Path wanted = WebServerInstall.expectedTypeScript(pkg);
+        Files.createDirectories(wanted); // an empty folder, not a link
+        Path typescriptLib = WebServerInstall.installedTypeScript(pkg).resolve("lib");
+        Files.writeString(typescriptLib.resolve("tsserver.js"), "// not a library");
+
+        WebServerInstall.linkTypeScriptLibs(dir);
+
+        assertFalse(Files.isSymbolicLink(wanted));
+        assertTrue(Files.isRegularFile(wanted.resolve("lib/lib.es2020.full.d.ts")));
+        assertFalse(Files.exists(wanted.resolve("lib/tsserver.js")), "only lib.*.d.ts are copied");
+        assertFalse(WebServerInstall.typeScriptLibsMissing(pkg.resolve("bin/vscode-html-language-server")));
+    }
+
+    /** A package.json that is not this package's, or not a file, names no package. */
+    @Test
+    void aLauncherOutsideAnyPackageHasNone(@TempDir Path dir) throws Exception {
+        Path bin = Files.createDirectories(dir.resolve("bin"));
+        Path launcher = Files.writeString(bin.resolve("vscode-html-language-server"), "#!/bin/sh\n");
+        Files.createDirectories(dir.resolve("package.json")); // a folder by that name
+        assertNull(WebServerInstall.packageOf(launcher));
+        assertNull(WebServerInstall.packageOf(dir.resolve("missing/launcher")));
+        assertFalse(WebServerInstall.typeScriptLibsMissing(launcher), "not the package: nothing to flag");
+    }
+
     @Test
     void aGlobalInstallsLinkedLauncherIsFollowedToItsPackage(@TempDir Path dir) throws Exception {
         // npm -g: <prefix>/lib/node_modules/<pkg>, launcher <prefix>/bin/<name> → ../lib/node_modules/<pkg>/bin/<name>
