@@ -20,7 +20,8 @@ import org.jspecify.annotations.Nullable;
  *   <li>vscode-css-language-server (and the HTML server's embedded-CSS mode) hands a {@code null}
  *       configuration answer straight to a validator that throws on it, so their own sections are answered
  *       with an empty object. The HTML server's {@code js/ts} section is the exception: {@code {}} there makes
- *       its JavaScript mode throw, so it stays {@code null}.</li>
+ *       its JavaScript mode throw, so it stays {@code null}. Its {@code html} section is VS Code's defaults
+ *       ({@link HtmlServerSettings}): {@code {}} there switched off the formatter's {@code <pre>} protection.</li>
  *   <li>Pyright sets {@code autoSearchPaths = !!analysis.autoSearchPaths} as soon as an {@code analysis}
  *       object is present, so a partial object switches its default-on {@code src/} search path off. Every
  *       analysis object built here therefore carries {@code autoSearchPaths}.</li>
@@ -133,8 +134,9 @@ final class LspServerSettings {
             return s.equals("css") || s.equals("scss") || s.equals("less") ? new HashMap<String, Object>() : null;
         }
         if (HTML_SERVER_ID.equals(serverId)) {
-            // Not "js/ts": an empty object there throws in the server's JavaScript mode.
-            return s.equals("css") || s.equals("html") || s.equals("javascript") ? new HashMap<String, Object>() : null;
+            // VS Code's defaults, not {}: the server has none of its own (HTML review B2). A session answers with its
+            // own settings and the document's facts; this is the answer with neither.
+            return HtmlServerSettings.defaults().answer(s, null);
         }
         return null;
     }

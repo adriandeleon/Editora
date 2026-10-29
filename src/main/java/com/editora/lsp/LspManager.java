@@ -609,6 +609,47 @@ public final class LspManager {
         return Map.copyOf(xml);
     }
 
+    /** Root → the HTML server's settings there (Settings → LSP → HTML, a project's {@code html} object). */
+    private volatile java.util.function.Function<Path, HtmlServerSettings> htmlSettings =
+            root -> HtmlServerSettings.defaults();
+
+    /**
+     * Sets the HTML servers' settings, each server given those for its root; a running one gets them pushed when they
+     * changed (HTML review B2, A4, D3). Called on every settings apply and project reload.
+     */
+    public void setHtmlSettings(java.util.function.@Nullable Function<Path, HtmlServerSettings> forRoot) {
+        htmlSettings = forRoot == null ? root -> HtmlServerSettings.defaults() : forRoot;
+        String prefix = sessionKeyPrefix(HtmlServerSettings.SERVER_ID);
+        sessionsByRoot.forEach((key, session) -> {
+            if (key.startsWith(prefix)) {
+                session.setHtmlSettings(htmlSettings.apply(session.root()));
+            }
+        });
+    }
+
+    /**
+     * As {@link #setHtmlSettings(java.util.function.Function)}: the user's settings {@code user}, with the project's
+     * {@code html} object ({@code projectHtml}) for servers on {@code projectRoot} (null = no project).
+     */
+    public void setHtmlSettings(
+            com.editora.config.Settings user,
+            java.util.@Nullable Map<String, Object> projectHtml,
+            @Nullable Path projectRoot) {
+        HtmlServerSettings own = HtmlServerSettings.of(user);
+        setHtmlSettings(HtmlServerSettings.perRoot(own.withProject(projectHtml), own, projectRoot));
+    }
+
+    /**
+     * A formatting request's options for {@code s}: {@code indent}'s, and for the HTML server the document's wrap
+     * column and final newline too, which it takes from settings it may have cached before they changed (A3, D6).
+     */
+    private static org.eclipse.lsp4j.FormattingOptions formattingOptions(
+            LanguageServerSession s, FormattingIndent indent) {
+        return HtmlServerSettings.SERVER_ID.equals(s.serverId())
+                ? s.htmlSettings().formattingOptions(indent)
+                : indent.options();
+    }
+
     /**
      * Sets bash-language-server's {@code bashIde} configuration: answered when a Bash server asks for it, and
      * pushed to the running ones when it changed (they re-read it and re-lint).
@@ -2014,6 +2055,7 @@ public final class LspManager {
         session.setJavaCleanups(javaCleanups);
         session.setJavaFilteredTypes(javaFilteredTypes);
         session.setBashIde(bashIdeFor(root));
+        session.setHtmlSettings(htmlSettings.apply(root));
         if (TypeScriptServer.SERVER_ID.equals(serverId)) {
             session.setTypeScriptSettings(typeScriptSettings);
         }
@@ -3948,7 +3990,7 @@ public final class LspManager {
         }
         org.eclipse.lsp4j.Range range =
                 new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
-        s.rangeFormatting(uri(file), range, indent.options()).whenComplete((result, error) -> {
+        s.rangeFormatting(uri(file), range, formattingOptions(s, indent)).whenComplete((result, error) -> {
             List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
             if (error == null && result != null) {
                 for (org.eclipse.lsp4j.TextEdit e : result) {
@@ -3983,7 +4025,7 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
-        s.formatting(uri(file), indent.options()).whenComplete((result, error) -> {
+        s.formatting(uri(file), formattingOptions(s, indent)).whenComplete((result, error) -> {
             List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
             if (error == null && result != null) {
                 for (org.eclipse.lsp4j.TextEdit e : result) {

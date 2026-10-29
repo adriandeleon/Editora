@@ -117,9 +117,22 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   and section: the Python server's `python` / `*.analysis` objects (always with `autoSearchPaths: true`
   beside `autoImportCompletions`, because Pyright turns its default-on `src/` search path off as soon as an
   `analysis` object without that key exists); `{}` for the CSS server's `css`/`scss`/`less` and the HTML
-  server's `css`/`html`/`javascript`, whose validators throw on `null`; and `null` for everything else —
+  server's `css`/`javascript`, whose validators throw on `null`; and `null` for everything else —
   including the HTML server's `js/ts`, where `{}` makes its JavaScript mode throw. A new server's sections
   must be checked against the real server before anything other than `null` is answered.
+- **The HTML server's `html` section** (`lsp/HtmlServerSettings`, Settings → LSP, the HTML card) is VS Code's
+  defaults — the server has none of its own, and with `{}` its formatter protected only `script`, so Format
+  Document re-spaced every `<pre>` and `<textarea>` — with the user's values (wrap column, wrap attributes, content
+  kept as written, attribute quotes, embedded script/style validation), `autoClosingTags` from Editora's own
+  auto-close switch (so completion does not offer a closer Editora already typed), and a project's `html` object
+  from `.editora/settings.json` (VS Code's key names, known keys of the right type only) for servers on the
+  project's root. The answer is per document (`scopeUri` → the recorded `FormattingIndent`):
+  `format.wrapLineLength` is the file's EditorConfig `max_line_length` when set (`off` = 0, never wrap), and
+  `format.endWithNewline` its `insert_final_newline`, else whether the text ends with a newline now. The server
+  caches each document's answer until `didChangeConfiguration` or `didClose`, so every change is pushed
+  (`LanguageServerSession.setHtmlSettings`) and a formatting request repeats the two per-document values as
+  `FormattingOptions`, which the server lays over its settings. Proven against the real server by
+  `HtmlServerFormatNodeProbeFxTest` (opt-in, `-Dgroups=node -Dnode.probe=true`).
 - **lemminx's settings** (`lsp/XmlServerSettings`, Settings → LSP, the XML card) go to the `xml` and `maven-pom`
   servers through all three channels: `initializationOptions.settings.xml` (so the first validation already
   has them), a push on change (`LspManager.setXmlSettings`, run by every `LspCoordinator.applySupport`, so a

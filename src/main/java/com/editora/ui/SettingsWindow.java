@@ -7239,6 +7239,8 @@ public class SettingsWindow {
                 SettingsBashRows.add(this, c);
             } else if (com.editora.lsp.XmlServerSettings.SERVER_ID.equals(srv.id())) {
                 SettingsXmlRows.add(this, c);
+            } else if (com.editora.lsp.HtmlServerSettings.SERVER_ID.equals(srv.id())) {
+                SettingsHtmlRows.add(this, c); // the server's html.* settings (HTML review A4)
             } else if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(srv.id())) {
                 typeScriptServerRows(c);
             }

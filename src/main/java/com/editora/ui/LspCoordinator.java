@@ -2129,6 +2129,7 @@ final class LspCoordinator {
                 com.editora.lsp.XmlServerSettings.of(host.settings(), config == null ? null : config.getConfigDir()));
         XmlOutline.setLimit(host.settings().getXmlSymbolLimit()); // the outline without the server too (C9)
         xmlNotices.reset();
+        lspManager.setHtmlSettings(host.settings(), projectSettings().getHtml(), ops.lspProjectRoot()); // HTML's (B2)
     }
 
     /** Hands Bash servers their settings: {@link #bashIdeConfig()} in the project, the user's elsewhere (A1). */
@@ -2825,7 +2826,7 @@ final class LspCoordinator {
         }
         if (eligible && path != null && serverId != null) {
             // Every sync re-records it (a settings apply, a language change); didChange keeps it current (B12).
-            lspManager.setDocumentIndent(path, formattingIndent(buffer)); // quick fixes keep its indent (B8)
+            lspManager.setDocumentIndent(path, LspDocumentFacts.indent(buffer)); // quick fixes keep its indent (B8)
             // Open when not yet managed, or re-open when the desired server changed — a pom.xml moving from the
             // plain XML server to lemminx-maven (once installed/enabled), or back. isManaged() alone can't tell:
             // it's keyed by URI, not server, so it stays true across a switch (which would otherwise never happen).
@@ -4032,7 +4033,7 @@ final class LspCoordinator {
         buffer.setLspChangeListener(text -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) { // the indent servers are told follows the text (B12)
-                lspManager.setDocumentIndent(path, formattingIndent(buffer));
+                lspManager.setDocumentIndent(path, LspDocumentFacts.indent(buffer));
             }
             if (path != null && !lspManager.changeDocument(path, text)) {
                 // A net-zero edit (type + Backspace, edit + undo): the server was sent nothing and will
@@ -4098,9 +4099,9 @@ final class LspCoordinator {
         buffer.setLspRangeFormatter((sl, sc, el, ec, cb) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
-                com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
+                com.editora.lsp.FormattingIndent indent = LspDocumentFacts.indent(buffer);
                 buffer.sendLspChange(); // the didChange debounce may be pending: format the text on screen
-                lspManager.rangeFormatting(path, sl, sc, el, ec, indent.tabSize(), indent.insertSpaces(), cb);
+                lspManager.rangeFormatting(path, sl, sc, el, ec, indent, cb); // with its wrap column (HTML A3)
             } else {
                 cb.accept(java.util.List.of());
             }
@@ -4130,7 +4131,7 @@ final class LspCoordinator {
         buffer.setLspPasteImportsRequester((sl, sc, el, ec, text, stillValid) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
-                com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
+                com.editora.lsp.FormattingIndent indent = LspDocumentFacts.indent(buffer);
                 lspManager.handlePasteEvent(
                         path,
                         sl,
@@ -4160,7 +4161,7 @@ final class LspCoordinator {
         buffer.setLspOnTypeFormatter((line, character, ch, cb) -> {
             Path path = lspPath(buffer);
             if (path != null && lspManager.isManaged(path)) {
-                com.editora.lsp.FormattingIndent indent = formattingIndent(buffer);
+                com.editora.lsp.FormattingIndent indent = LspDocumentFacts.indent(buffer);
                 buffer.sendLspChange(); // the server must have the character that triggered this
                 lspManager.onTypeFormatting(path, line, character, ch, indent.tabSize(), indent.insertSpaces(), cb);
             } else {
@@ -4664,7 +4665,7 @@ final class LspCoordinator {
         EditorBuffer buffer = activeLspBuffer();
         com.editora.lsp.FormattingIndent indent = buffer == null
                 ? new com.editora.lsp.FormattingIndent(projectScope.tabSize(host.settings()), true)
-                : formattingIndent(buffer);
+                : LspDocumentFacts.indent(buffer);
         return JdtlsRefactor.refactorEditParams(
                 request.name(), request.params(), indent.tabSize(), indent.insertSpaces(), arguments);
     }
@@ -6699,18 +6700,14 @@ final class LspCoordinator {
                 });
     }
 
-    /** The indentation a formatting request describes for {@code buffer} (see {@link com.editora.lsp.FormattingIndent}). */
-    private static com.editora.lsp.FormattingIndent formattingIndent(EditorBuffer buffer) {
-        return com.editora.lsp.FormattingIndent.of(buffer.indentUnit(), buffer.getTabSize());
-    }
-
-    /** As {@link #formattingIndent}, with the trim / final-newline rules saving applies to {@code buffer} (D3). */
+    /** As {@link LspDocumentFacts#indent}, with the trim / final-newline rules saving applies to {@code buffer} (D3). */
     private com.editora.lsp.FormattingIndent formatRequestIndent(EditorBuffer buffer) {
         com.editora.editorconfig.EditorConfigProperties rules = projectScope.saveRules(
                 host.settings().isEditorConfigSupport()
                         ? buffer.getEditorConfigProps()
                         : com.editora.editorconfig.EditorConfigProperties.EMPTY);
-        return formattingIndent(buffer).withSaveRules(rules.trimTrailingWhitespace(), rules.insertFinalNewline());
+        return LspDocumentFacts.indent(buffer)
+                .withSaveRules(rules.trimTrailingWhitespace(), rules.insertFinalNewline());
     }
 
     /** Reformats the whole active file via its language server ({@code textDocument/formatting}), if the
@@ -6718,11 +6715,11 @@ final class LspCoordinator {
     void formatDocument() {
         EditorBuffer buffer = host.activeBuffer();
         Path path = buffer == null ? null : lspPath(buffer);
-        if (buffer == null || path == null || !ops.activeEditable()) {
-            host.setStatus(tr("status.lsp.formatUnavailable"));
-            return;
-        }
-        if (!lspManager.isManaged(path) || !lspManager.supportsFormatting(path)) {
+        if (buffer == null
+                || path == null
+                || !ops.activeEditable()
+                || !lspManager.isManaged(path)
+                || !lspManager.supportsFormatting(path)) {
             host.setStatus(tr("status.lsp.formatUnavailable"));
             return;
         }

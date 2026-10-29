@@ -107,6 +107,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     as the server asks.
   - In an HTML start tag, typing `=` after an attribute name inserts `""` with the caret inside (with Auto-close
     tags on); a `"` typed straight after is taken as the opening quote.
+- **HTML: Format Document keeps `<pre>`, `<code>` and `<textarea>` as written** (HTML review B2). The HTML server
+  is now sent VS Code's defaults for its settings; before, it got none, and formatting collapsed the spaces in
+  preformatted text and textarea values.
+- **HTML: Format Document keeps the final newline and wraps at the file's `max_line_length`** (A3). The file's
+  EditorConfig `insert_final_newline` decides, else the newline the file has; `max_line_length` (or `off`) sets the
+  wrap column, else Settings → LSP → HTML (120).
+- **HTML: completion no longer offers a closing tag Editora already inserted** (D3). The server is told Editora closes
+  tags itself, and told again when the auto-close setting changes.
+- **Settings → LSP → HTML** (A4): wrap column, attribute wrapping, elements whose content is kept as written,
+  quotes for completed attributes, and checking embedded scripts and styles. A project can override them with an
+  `html` object in `.editora/settings.json` (VS Code's key names). Settings schema 154 → 155.
 - **XML editing (XML/pom review 3: xmlui).**
   - XML: Generate Grammar…'s two XSD choices work in untrusted folders. lemminx needed the W3C `xml.xsd`, which it
     could not download there; Editora now ships it.
