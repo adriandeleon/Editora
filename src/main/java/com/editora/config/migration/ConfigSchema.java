@@ -354,7 +354,8 @@ public enum ConfigSchema {
                     // v154→155: + the HTML server's settings: htmlFormatWrapLineLength (120), htmlFormatWrapAttributes
                     // ("auto"), htmlFormatContentUnformatted ("pre,code,textarea"), htmlAttributeQuotes
                     // ("doublequotes"), htmlValidateScripts and htmlValidateStyles (on) — VS Code's defaults, which the
-                    // server was never sent (HTML review B2, A4). Additive: absent is the default.
+                    // server was never sent (HTML review B2, A4); htmlMarkupChecks (on), Editora's own unclosed-tag
+                    // and missing-link checks (D5). Additive: absent is the default.
                     Map.entry(154, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
