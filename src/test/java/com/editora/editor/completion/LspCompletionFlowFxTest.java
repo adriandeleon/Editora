@@ -171,6 +171,42 @@ class LspCompletionFlowFxTest {
                 "a method lands with its parentheses");
     }
 
+    /**
+     * The HTML and CSS servers end nearly every item's documentation with an MDN link. A link was a Tab stop, and a
+     * popup takes its owner window's keys first, so Enter followed the link (opening the browser) and Tab moved
+     * between links: no tag, attribute or property could be accepted from the keyboard (HTML review B1/C1).
+     */
+    @Test
+    void enterAndTabAcceptAnItemWhoseDocumentationEndsInALink() throws Exception {
+        for (KeyCode key : List.of(KeyCode.ENTER, KeyCode.TAB)) {
+            EditorBuffer b = lspBuffer(
+                    "<bu",
+                    List.of(Completion.lsp(
+                            "button", "button", null, null, CompletionIconKind.OTHER, null, false, false, "button")));
+            List<String> opened = new CopyOnWriteArrayList<>();
+            EditorFx.onFx(() -> {
+                b.setOpenUrlHandler(opened::add);
+                b.setCompletionDocEnabled(true);
+                b.setCompletionDocResolver((token, answer) -> answer.accept("The button element.\n\n"
+                        + "[MDN Reference](https://developer.mozilla.org/docs/Web/HTML/Reference/Elements/button)"));
+            });
+            open(b);
+            BufferCompletion c = completion(b);
+            await("the documentation popup", () -> c.docPopup().isShowing());
+            assertEquals(
+                    null,
+                    EditorFx.callFx(() -> ((javafx.stage.Popup) EditorFx.field(c.docPopup(), "popup"))
+                            .getScene()
+                            .getFocusOwner()),
+                    "nothing in the documentation takes the keyboard");
+
+            EditorFx.onFx(() -> b.getArea().fireEvent(EditorFx.pressed(key, false, false)));
+            await(key + " to accept", () -> !c.completionPopupShowing());
+            assertEquals("<button", EditorFx.callFx(() -> b.getArea().getText()), key + " accepts the item");
+            assertEquals(List.of(), opened, key + " opens no link");
+        }
+    }
+
     @Test
     void typingAPrefixNoItemMatchesClosesTheList() throws Exception {
         EditorBuffer b = lspBuffer("out.pr", List.of(Completion.lsp("println", "println", "void println()")));

@@ -9445,11 +9445,8 @@ final class LspCoordinator {
         } else
             try {
                 // Links in a hover (documentation URLs) open through the window's link choke point.
-                content = MarkdownRenderer.renderDocument(
-                        MarkdownRenderer.parseForRender(markdown),
-                        null,
-                        host::openExternalUrl,
-                        MarkdownRenderer.ImagePolicy.DATA_ONLY);
+                content =
+                        MarkdownRenderer.renderPopup(MarkdownRenderer.parseForRender(markdown), host::openExternalUrl);
             } catch (RuntimeException e) {
                 Label label = new Label(markdown);
                 label.setWrapText(true);
@@ -9509,6 +9506,7 @@ final class LspCoordinator {
         });
 
         showAtCaret(popup, area);
+        scroll.setVvalue(0); // from its first line, whatever layout scrolled to (HTML review B8)
     }
 
     /**
@@ -9847,11 +9845,8 @@ final class LspCoordinator {
         }
         if (!active.documentation().isBlank()) {
             try {
-                Node doc = MarkdownRenderer.renderDocument(
-                        MarkdownRenderer.parseForRender(active.documentation()),
-                        null,
-                        host::openExternalUrl,
-                        MarkdownRenderer.ImagePolicy.DATA_ONLY);
+                Node doc = MarkdownRenderer.renderPopup(
+                        MarkdownRenderer.parseForRender(active.documentation()), host::openExternalUrl);
                 box.getChildren().add(doc);
             } catch (RuntimeException e) {
                 Label docLabel = new Label(active.documentation());

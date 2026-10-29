@@ -466,9 +466,9 @@ public final class BufferCompletion {
 
     /**
      * A completion's documentation as nodes, or null when there is none (or it cannot be rendered). Its links
-     * are live — a click, or Enter on one, hands the destination to the window's link opener, which treats it
-     * as it would a link in the document — and its images are still limited to {@code data:} ones: the text
-     * comes from a language server, not from the user.
+     * are live — a click on one hands the destination to the window's link opener, which treats it as it would
+     * a link in the document — but never focusable: Enter and Tab accept the item (HTML review B1). Its images
+     * are still limited to {@code data:} ones: the text comes from a language server, not from the user.
      */
     javafx.scene.@Nullable Node renderDoc(String doc) {
         if (doc == null || doc.isBlank()) {
@@ -476,11 +476,8 @@ public final class BufferCompletion {
         }
         try {
             java.util.function.Consumer<String> open = linkOpener;
-            return MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseForRender(doc.strip()),
-                    null,
-                    open == null ? null : open::accept,
-                    MarkdownRenderer.ImagePolicy.DATA_ONLY);
+            return MarkdownRenderer.renderPopup(
+                    MarkdownRenderer.parseForRender(doc.strip()), open == null ? null : open::accept);
         } catch (RuntimeException ex) {
             return null;
         }
