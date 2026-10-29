@@ -74,8 +74,12 @@ public class WorkspaceState {
      *
      * <p>v24 → v25 added {@code projectMapHideUnmatched} (the Map's "Hide unmatched": rows the filters do not
      * match are taken off the map rather than faded). Additive; absent means off, the fading every Map did before.
+     *
+     * <p>v25 → v26 resets a stored right-to-left {@code projectMapFlow} to left-to-right, once. Right-to-left was
+     * the default written into every file from v11 to v12, and v13 kept it, so most of those stored values were
+     * never chosen. Every workspace starts left-to-right after the step; another flow is still remembered.
      */
-    public static final int SCHEMA_VERSION = 25;
+    public static final int SCHEMA_VERSION = 26;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";

@@ -571,6 +571,24 @@ public final class ConfigMigrations {
     }
 
     /**
+     * v25 → v26 for a workspace file: a stored {@code projectMapFlow} of {@code "RIGHT_TO_LEFT"} becomes
+     * {@code "LEFT_TO_RIGHT"}.
+     *
+     * <p>Right-to-left was the default from v11, and the default was written into the file, so a stored
+     * right-to-left cannot be told apart from one nobody picked. v13 changed the default but kept stored flows;
+     * this step makes left-to-right the start for every workspace. The vertical flows were always a choice and
+     * are kept. Safe to repeat.
+     */
+    static JsonNode resetRightToLeftMapFlow(JsonNode input) {
+        if (input instanceof ObjectNode o
+                && o.path("projectMapFlow").isTextual()
+                && "RIGHT_TO_LEFT".equals(o.get("projectMapFlow").asText())) {
+            o.put("projectMapFlow", "LEFT_TO_RIGHT");
+        }
+        return input;
+    }
+
+    /**
      * The names the auto-saved last recording was stored under before v2 — one per UI language. They were
      * the entry's identity, so switching language orphaned it; these literals are frozen here (not read from
      * the catalogs, which may change) only to recognize the old entries.
