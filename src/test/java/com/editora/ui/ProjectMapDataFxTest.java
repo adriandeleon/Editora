@@ -419,8 +419,8 @@ class ProjectMapDataFxTest {
                 assertTrue(FxTestSupport.<Set<Path>>field(surface, "expandedSnapshot")
                         .contains(empty));
                 assertTrue(
-                        FxTestSupport.<List<?>>field(surface, "columnBoxes").size() >= 3,
-                        "the empty folder gets a column of its own");
+                        FxTestSupport.<List<?>>field(surface, "columnBoxes").size() >= 2,
+                        "the empty folder gets a column of its own (the root's children are the first)");
                 long before = generation.get();
                 activate(mapView, row);
                 assertEquals(before, generation.get(), "a stub row is inert");

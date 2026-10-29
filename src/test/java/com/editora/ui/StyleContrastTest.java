@@ -347,4 +347,42 @@ class StyleContrastTest {
         }
         assertTrue(problems.isEmpty(), String.join("\n", problems));
     }
+
+    /**
+     * The Git "untracked" olive and "renamed" violet (also the Project Map's Structure tint) are ladders of the
+     * app theme's ground like {@code -state-key}: one fixed light-theme hex read at 3.2:1 on Editora Dark. Each
+     * reads at 4.5:1 on the default and subtle surfaces of every bundled app theme (Map review B20).
+     */
+    @Test
+    void theGitOliveAndVioletFollowTheAppThemesGround() throws Exception {
+        String app = read("app.css");
+        List<String> problems = new ArrayList<>();
+        for (String token : List.of("-state-olive", "-state-violet")) {
+            Matcher decl = Pattern.compile(Pattern.quote(token) + ":\\s*ladder\\(-color-bg-default,([^;]+)\\);")
+                    .matcher(app);
+            assertTrue(decl.find(), token + " is a ladder of the app theme's ground");
+            List<double[]> offsets = new ArrayList<>();
+            List<Color> colors = new ArrayList<>();
+            Matcher stop = Pattern.compile("(#[0-9a-fA-F]{6})\\s+([0-9.]+)%").matcher(decl.group(1));
+            while (stop.find()) {
+                colors.add(Color.web(stop.group(1)));
+                offsets.add(new double[] {Double.parseDouble(stop.group(2)) / 100});
+            }
+            assertTrue(colors.size() >= 2, token);
+            for (String name : Themes.NAMES) {
+                String[] bundled = Themes.BUNDLED.get(name);
+                Map<String, String> p = bundled != null
+                        ? palette(bundled[0])
+                        : builtInPalette(name.toLowerCase(java.util.Locale.ROOT).replace(' ', '-'));
+                Color ink = ladder(color(p, "-color-bg-default"), offsets, colors);
+                for (String surface : List.of("-color-bg-default", "-color-bg-subtle")) {
+                    double ratio = contrast(ink, color(p, surface));
+                    if (ratio < 4.5) {
+                        problems.add(String.format("%s %s %s: %.2f", token, name, surface, ratio));
+                    }
+                }
+            }
+        }
+        assertTrue(problems.isEmpty(), "Git state colours under 4.5:1:\n" + String.join("\n", problems));
+    }
 }

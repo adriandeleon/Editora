@@ -39,6 +39,9 @@ final class ProjectMapModel {
     /** File name of a placeholder row's synthetic path. Shown as-is by path-based chrome (breadcrumbs). */
     static final String PLACEHOLDER_NAME = "\u2026";
 
+    /** The most single-child folders one expansion opens on its own ("Compact folder chains"). */
+    static final int MAX_CHAIN = 32;
+
     /** What a non-file row stands for. */
     enum PlaceholderKind {
         /** The directory has {@link Placeholder#remaining()} more children than were loaded. */
@@ -214,13 +217,23 @@ final class ProjectMapModel {
 
     /**
      * One Miller-style column containing the children of exactly one parent directory. {@code narrowed} counts
-     * the rows the map-wide filters took out of it while the Map hides what does not match.
+     * the rows the map-wide filters took out of it while the Map hides what does not match. {@code chain} is
+     * empty for an ordinary column. For a compacted one ("Compact folder chains") it lists the folders the
+     * column stands for, from the row it hangs from down to {@code parent}: {@code src}, {@code main}, …,
+     * {@code acme} for the column of {@code src/main/java/com/acme}'s children. The one-row columns between
+     * them are not drawn; paths and depths stay those of the real folders.
      */
-    record Column(int depth, @Nullable Path parent, List<Entry> entries, int totalEntries, int narrowed) {
+    record Column(
+            int depth, @Nullable Path parent, List<Entry> entries, int totalEntries, int narrowed, List<Path> chain) {
         Column {
             parent = normalize(parent);
             entries = entries == null ? List.of() : List.copyOf(entries);
             narrowed = Math.max(0, narrowed);
+            chain = chain == null ? List.of() : List.copyOf(chain);
+        }
+
+        Column(int depth, @Nullable Path parent, List<Entry> entries, int totalEntries, int narrowed) {
+            this(depth, parent, entries, totalEntries, narrowed, List.of());
         }
 
         Column(int depth, @Nullable Path parent, List<Entry> entries, int totalEntries) {
@@ -229,6 +242,17 @@ final class ProjectMapModel {
 
         ColumnId id() {
             return new ColumnId(depth, parent);
+        }
+
+        /** Whether this column stands for a chain of single-child folders. */
+        boolean compacted() {
+            return !chain.isEmpty();
+        }
+
+        /** The row the column hangs from: its parent, or for a compacted column the first folder of the chain. */
+        @Nullable
+        Path anchor() {
+            return chain.isEmpty() ? parent : chain.getFirst();
         }
 
         /** Real rows on show: the placeholder row is not counted. */
@@ -257,6 +281,9 @@ final class ProjectMapModel {
      * a column's own filter by the directory it lists: in a folder longer than its row limit the rows that
      * filter matches are loaded too, so the filter searches the whole folder rather than the rows that
      * happened to load. {@code cancelled} is polled between directories (and while a listing is awaited).
+     * With {@code compactChains} a listed folder (not the root) whose only child is a folder lists that child
+     * too, as if it were expanded (not through a symbolic link, and at most {@link #MAX_CHAIN} folders deep): one
+     * click on {@code src} opens {@code src/main/java/com/acme}, which the Map draws as one column.
      */
     record Request(
             Path root,
@@ -267,7 +294,8 @@ final class ProjectMapModel {
             List<Path> pinned,
             Labels labels,
             BooleanSupplier cancelled,
-            Map<Path, String> columnQueries) {
+            Map<Path, String> columnQueries,
+            boolean compactChains) {
         Request {
             root = normalize(root);
             Set<Path> normalizedExpanded = new HashSet<>();
@@ -306,7 +334,43 @@ final class ProjectMapModel {
                 List<Path> pinned,
                 Labels labels,
                 BooleanSupplier cancelled) {
-            this(root, expanded, showHidden, hiddenOverrides, limits, pinned, labels, cancelled, Map.of());
+            this(root, expanded, showHidden, hiddenOverrides, limits, pinned, labels, cancelled, Map.of(), false);
+        }
+
+        Request(
+                Path root,
+                Set<Path> expanded,
+                boolean showHidden,
+                Map<Path, Boolean> hiddenOverrides,
+                Map<Path, Integer> limits,
+                List<Path> pinned,
+                Labels labels,
+                BooleanSupplier cancelled,
+                Map<Path, String> columnQueries) {
+            this(root, expanded, showHidden, hiddenOverrides, limits, pinned, labels, cancelled, columnQueries, false);
+        }
+
+        Request(
+                Path root,
+                Set<Path> expanded,
+                boolean showHidden,
+                Map<Path, Boolean> hiddenOverrides,
+                Map<Path, Integer> limits,
+                List<Path> pinned,
+                Labels labels,
+                BooleanSupplier cancelled,
+                boolean compactChains) {
+            this(
+                    root,
+                    expanded,
+                    showHidden,
+                    hiddenOverrides,
+                    limits,
+                    pinned,
+                    labels,
+                    cancelled,
+                    Map.of(),
+                    compactChains);
         }
 
         Request(Path root, Set<Path> expanded, boolean showHidden) {
@@ -706,14 +770,14 @@ final class ProjectMapModel {
             pinnedLoaded++;
         }
 
-        record Pending(Path directory, int depth) {}
+        record Pending(Path directory, int depth, int chain) {}
         Deque<Pending> queue = new ArrayDeque<>();
         List<Entry> result = new ArrayList<>();
         Map<Path, DirectoryFacts> directories = new HashMap<>();
         Set<Path> skipped = new HashSet<>();
         result.add(entry(rootItem, null, 0));
         if (expanded.contains(root)) {
-            queue.add(new Pending(root, 0));
+            queue.add(new Pending(root, 0, 0));
         }
         while (!queue.isEmpty()) {
             if (request.cancelled().getAsBoolean()) {
@@ -786,7 +850,16 @@ final class ProjectMapModel {
                 loaded++;
                 result.add(entry(item, directory, childDepth));
                 if (item.directory() && expanded.contains(item.path())) {
-                    queue.addLast(new Pending(item.path(), childDepth));
+                    queue.addLast(new Pending(item.path(), childDepth, 0));
+                } else if (item.directory()
+                        && request.compactChains()
+                        && total == 1
+                        && !directory.equals(root)
+                        && !item.symbolicLink()
+                        && pending.chain() < MAX_CHAIN) {
+                    // The folder's only child is a folder: it opens with it (a compacted column). Not the root's
+                    // only child: the root's children are the first column, and that row must still close.
+                    queue.addLast(new Pending(item.path(), childDepth, pending.chain() + 1));
                 }
             }
             if (loaded == 0) {
@@ -900,6 +973,76 @@ final class ProjectMapModel {
      * and a folder taken out takes its open columns with it, as a column's own filter does.
      */
     static List<Column> columnsById(
+            List<Entry> entries,
+            Map<ColumnId, String> columnQueries,
+            Map<ColumnId, Boolean> showHiddenByColumn,
+            @Nullable Set<Path> keep) {
+        return columnsById(entries, columnQueries, showHiddenByColumn, keep, false);
+    }
+
+    /**
+     * As {@link #columnsById(List, Map, Map, Set)}, and with {@code compactChains} a run of one-row columns
+     * is folded into the column it leads to ("Compact folder chains"): a folder column whose only child is an
+     * open folder — nothing filtered or capped away, no filter of its own — is left out, and the column it
+     * opens records the run in {@link Column#chain()}. {@code src} › {@code main} › {@code java} › {@code com}
+     * › {@code acme} becomes one column of {@code acme}'s children, hanging from the {@code src} row. The
+     * root's children are always a column of their own.
+     */
+    static List<Column> columnsById(
+            List<Entry> entries,
+            Map<ColumnId, String> columnQueries,
+            Map<ColumnId, Boolean> showHiddenByColumn,
+            @Nullable Set<Path> keep,
+            boolean compactChains) {
+        List<Column> columns = columnsByIdUncompacted(entries, columnQueries, showHiddenByColumn, keep);
+        return compactChains ? compactChains(columns, columnQueries) : columns;
+    }
+
+    private static List<Column> compactChains(List<Column> columns, @Nullable Map<ColumnId, String> columnQueries) {
+        Set<Path> parents = new HashSet<>();
+        for (Column column : columns) {
+            if (column.parent() != null) {
+                parents.add(column.parent());
+            }
+        }
+        // Parents come before their children (the listing is breadth-first), so a run is carried down in order.
+        Map<Path, List<Path>> runs = new HashMap<>();
+        List<Column> result = new ArrayList<>(columns.size());
+        for (Column column : columns) {
+            Path parent = column.parent();
+            List<Path> run = parent == null ? null : runs.remove(parent);
+            Entry only = column.entries().size() == 1 ? column.entries().getFirst() : null;
+            String query = columnQueries == null ? null : columnQueries.get(column.id());
+            // The root's row and its children's column (the Map's first column) are never folded away.
+            boolean folds = parent != null
+                    && column.depth() > 1
+                    && only != null
+                    && only.directory()
+                    && !only.isPlaceholder()
+                    && !only.isSymbol()
+                    && column.totalEntries() == 1
+                    && column.narrowed() == 0
+                    && (query == null || query.isBlank())
+                    && parents.contains(only.path());
+            if (folds && only != null) {
+                List<Path> longer = new ArrayList<>(run == null ? List.of() : run);
+                longer.add(parent);
+                runs.put(only.path(), longer);
+                continue;
+            }
+            if (run == null) {
+                result.add(column);
+            } else {
+                List<Path> chain = new ArrayList<>(run);
+                chain.add(parent);
+                result.add(new Column(
+                        column.depth(), parent, column.entries(), column.totalEntries(), column.narrowed(), chain));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<Column> columnsByIdUncompacted(
             List<Entry> entries,
             Map<ColumnId, String> columnQueries,
             Map<ColumnId, Boolean> showHiddenByColumn,
