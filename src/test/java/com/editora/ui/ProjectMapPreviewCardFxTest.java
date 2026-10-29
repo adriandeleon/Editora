@@ -12,6 +12,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.ToggleButton;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
@@ -19,6 +20,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Region;
 import javafx.stage.Stage;
@@ -665,5 +667,144 @@ class ProjectMapPreviewCardFxTest {
         assertFalse(closed.open());
         assertEquals("latin1", closed.editorConfigCharset());
         assertFalse(new ProjectMapPreview.Placement(1, 2, 3, 4).growLeft());
+    }
+
+    @Test
+    void aSelectionInTheTextBringsUpABarThatAddsAPersonalNoteForIt(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("a.txt"), "x");
+        try (Rig r = new Rig()) {
+            List<NoteDraft> drafts = new ArrayList<>();
+            boolean[] notes = {true};
+            FxTestSupport.runOnFx(() -> {
+                r.card.setMarkerActions(new ProjectMapPreview.MarkerActions() {
+                    @Override
+                    public boolean personalNotesEnabled() {
+                        return notes[0];
+                    }
+
+                    @Override
+                    public void addBookmark(Path target, int line) {}
+
+                    @Override
+                    public void addPersonalNote(Path target, NoteDraft draft) {
+                        drafts.add(draft);
+                    }
+                });
+                r.card.showFile(file, new Content("first line\nsecond line\nthird\n", false), null);
+                r.host.layout();
+                r.card.editor().requestFocus();
+                r.card.editor().selectRange(18, 22); // "line" on the second line
+            });
+            FxTestSupport.drainFx();
+            HBox bar = FxTestSupport.callOnFx(() -> FxTestSupport.field(r.card, "selectionBar"));
+            Button add = FxTestSupport.callOnFx(() -> FxTestSupport.field(r.card, "selectionNote"));
+            FxTestSupport.runOnFx(() -> {
+                assertTrue(bar.isVisible(), "a selection brings the bar up, as in a Markdown buffer");
+                assertEquals(tr("editmenu.addNote"), add.getText());
+                assertTrue(
+                        bar.getLayoutY()
+                                > FxTestSupport.<HBox>field(r.card, "titleBar").getHeight() - 1,
+                        "inside the text, never over the title bar");
+                assertFalse(add.isFocusTraversable(), "a click leaves the selection's text focused");
+
+                add.fire();
+                assertEquals(1, drafts.size());
+                assertEquals(NoteScope.WORD, drafts.get(0).scope());
+                assertEquals("line", drafts.get(0).anchor().selectedText());
+                assertEquals(1, drafts.get(0).anchor().line());
+                assertFalse(bar.isVisible(), "the note dialog takes over");
+
+                r.card.editor().selectRange(0, 3);
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                assertTrue(bar.isVisible());
+                assertTrue(r.press(KeyCode.ESCAPE, false, false));
+                assertFalse(bar.isVisible(), "Escape puts the bar away first");
+                assertTrue(r.card.isVisible(), "and leaves the card open");
+
+                r.card.editor().selectRange(0, 1);
+                r.card.editor().selectRange(0, 0);
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                assertFalse(bar.isVisible(), "no selection, no bar");
+                r.card.editor().selectRange(10, 11); // the line break alone: nothing to note
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                assertFalse(bar.isVisible(), "a blank selection brings no bar");
+                notes[0] = false;
+                r.card.editor().selectRange(0, 5);
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> assertFalse(bar.isVisible(), "nor does any selection with notes off"));
+        }
+    }
+
+    @Test
+    void theNotesButtonBeforeOpenCountsTheCardsNotesAndShowsThemWhenOneIsAdded(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("a.txt"), "x");
+        try (Rig r = new Rig()) {
+            FxTestSupport.runOnFx(() -> {
+                List<Boolean> toggles = new ArrayList<>();
+                r.card.setOnNotesToggled(toggles::add);
+                r.card.setMarkerActions(new ProjectMapPreview.MarkerActions() {
+                    @Override
+                    public boolean personalNotesEnabled() {
+                        return true;
+                    }
+
+                    @Override
+                    public void addBookmark(Path target, int line) {}
+
+                    @Override
+                    public void addPersonalNote(Path target, NoteDraft draft) {}
+                });
+                r.card.showFile(file, new Content("one\ntwo\n", false), null);
+                ToggleButton notes = FxTestSupport.field(r.card, "notes");
+                HBox titleBar = FxTestSupport.field(r.card, "titleBar");
+                assertSame(
+                        r.button("open"),
+                        titleBar.getChildren().get(titleBar.getChildren().indexOf(notes) + 1),
+                        "the Notes button sits just before Open");
+                assertFalse(notes.isVisible(), "nothing is known about notes yet");
+
+                r.card.setNoteCount(0, true);
+                assertTrue(notes.isVisible());
+                assertTrue(notes.isDisable(), "no notes here to show");
+                assertEquals(
+                        tr("project.map.preview.noNotes"), notes.getTooltip().getText());
+
+                r.card.setNoteCount(2, true);
+                assertFalse(notes.isDisable());
+                assertEquals("2", notes.getText());
+                assertEquals(
+                        tr("project.map.preview.showNotes", 2),
+                        notes.getTooltip().getText());
+                notes.fire();
+                assertTrue(r.card.notesShown());
+                assertEquals(List.of(true), toggles);
+                assertEquals(
+                        tr("project.map.preview.hideNotes"), notes.getTooltip().getText());
+
+                r.card.setNoteCount(0, true); // the last note was deleted elsewhere
+                assertFalse(r.card.notesShown());
+                assertEquals(List.of(true, false), toggles);
+
+                // Adding a note here brings the notes up once the store has it, and not before.
+                r.card.editor().selectRange(0, 3);
+                FxTestSupport.<Button>field(r.card, "selectionNote").fire();
+                r.card.setNoteCount(0, true);
+                assertFalse(r.card.notesShown(), "the dialog is still open");
+                r.card.setNoteCount(1, true);
+                assertTrue(r.card.notesShown(), "the new note is shown where it was written");
+                assertEquals(List.of(true, false, true), toggles);
+
+                r.card.setNoteCount(3, false);
+                assertFalse(notes.isVisible(), "Personal Notes switched off: no button");
+                assertFalse(r.card.notesShown());
+            });
+        }
     }
 }

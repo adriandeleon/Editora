@@ -154,6 +154,8 @@ final class ProjectMapView extends VBox {
     private final Map<Path, PreviewConnector> previewConnectors = new HashMap<>();
     private final Map<Path, ProjectMapPreview> previews = new LinkedHashMap<>(16, 0.75f, true);
     private final Map<Path, ProjectMapNotePreview> notePreviews = new LinkedHashMap<>(16, 0.75f, true);
+    /** The sticky notes a code card's Notes button stuck on it, by card. */
+    private final Map<ProjectMapPreview, ProjectMapStickyNotes> stickyNotes = new java.util.IdentityHashMap<>();
     /** When each open card was last used (pressed, focused, scrolled or opened); the oldest is evicted. */
     private final Map<Region, Long> cardTouches = new java.util.IdentityHashMap<>();
 
@@ -953,6 +955,7 @@ final class ProjectMapView extends VBox {
 
     void setNotePreviewActions(ProjectPanel.MarkerActions actions) {
         notePreviewActions = actions;
+        previews.values().forEach(this::updateCardNotes);
     }
 
     void refresh() {
@@ -1589,6 +1592,7 @@ final class ProjectMapView extends VBox {
             }
             card.setSymbolMissing(false);
             card.setRange(rangeOf(node.symbol()));
+            updateCardNotes(card); // the declaration's lines may hold other notes now
         }
     }
 
@@ -1650,6 +1654,7 @@ final class ProjectMapView extends VBox {
                         ProjectMapPreview.MIN_HEIGHT,
                         parentWidth,
                         parentHeight));
+        updateCardNotes(preview);
         scheduleCardRefresh();
     }
 
@@ -1707,6 +1712,7 @@ final class ProjectMapView extends VBox {
                         ProjectMapPreview.MIN_HEIGHT,
                         parentWidth,
                         parentHeight));
+        updateCardNotes(preview);
         scheduleCardRefresh(); // starts following the buffer when the card mirrors one
     }
 
@@ -1779,6 +1785,13 @@ final class ProjectMapView extends VBox {
             closePreview(preview);
             surface.requestFocus();
         });
+        preview.setOnNotesToggled(shown -> showCardNotes(preview, shown));
+        // A sticky note's connector meets its line in the text, which scrolls under it.
+        preview.editor().estimatedScrollYProperty().addListener((obs, old, value) -> {
+            if (stickyNotes.containsKey(preview)) {
+                repaintPreviewConnectors();
+            }
+        });
         installPreviewListeners(preview);
         previews.put(path, preview);
         cardTouches.put(preview, ++cardTouchSequence);
@@ -1802,6 +1815,74 @@ final class ProjectMapView extends VBox {
         cardTouches.put(card, ++cardTouchSequence);
         if (raise) {
             card.toFront();
+            ProjectMapStickyNotes notes = card instanceof ProjectMapPreview code ? stickyNotes.get(code) : null;
+            if (notes != null) {
+                notes.raise(); // a card's sticky notes stay on it
+            }
+        }
+    }
+
+    /**
+     * Counts, on a code card's Notes button, the Personal Notes of what it shows — and brings the sticky notes it
+     * has up, if any, in line with the store.
+     */
+    private void updateCardNotes(ProjectMapPreview card) {
+        ProjectPanel.MarkerActions actions = notePreviewActions;
+        boolean enabled = actions != null && actions.personalNotesEnabled();
+        List<PersonalNote> notes = cardNotes(card);
+        card.setNoteCount(notes.size(), enabled); // may bring the notes up: one the user asked for arrived
+        ProjectMapStickyNotes stuck = stickyNotes.get(card);
+        if (stuck != null && !notes.isEmpty()) {
+            stuck.refresh(notes);
+        }
+    }
+
+    private List<PersonalNote> cardNotes(ProjectMapPreview card) {
+        ProjectPanel.MarkerActions actions = notePreviewActions;
+        Path file = card.path();
+        if (actions == null || !actions.personalNotesEnabled() || file == null) {
+            return List.of();
+        }
+        try {
+            return ProjectMapStickyNotes.notesFor(actions.personalNotes(file), card.range());
+        } catch (RuntimeException ignored) {
+            return List.of();
+        }
+    }
+
+    /** The Notes button: sticks the card's notes beside it, or takes them off. */
+    private void showCardNotes(ProjectMapPreview card, boolean shown) {
+        if (!shown) {
+            ProjectMapStickyNotes stuck = stickyNotes.remove(card);
+            if (stuck != null) {
+                stuck.dispose();
+            }
+            return;
+        }
+        ProjectMapStickyNotes stuck = stickyNotes.computeIfAbsent(
+                card,
+                ignored -> new ProjectMapStickyNotes(
+                        card,
+                        canvasHost,
+                        (note, body) -> {
+                            ProjectPanel.MarkerActions actions = notePreviewActions;
+                            Path file = card.path();
+                            if (actions != null && file != null) {
+                                actions.updatePersonalNote(file, note, body);
+                            }
+                        },
+                        this::repaintPreviewConnectors,
+                        () -> onStatus.accept(tr("status.projectMap.noteBlankRestored")),
+                        () -> touchCard(card, false)));
+        stuck.setHidden(hideOpenNotes.isSelected());
+        stuck.show(cardNotes(card));
+        touchCard(card, true);
+    }
+
+    private void closeCardNotes(ProjectMapPreview card) {
+        ProjectMapStickyNotes stuck = stickyNotes.remove(card);
+        if (stuck != null) {
+            stuck.dispose();
         }
     }
 
@@ -1841,7 +1922,8 @@ final class ProjectMapView extends VBox {
 
     /**
      * A card stays open but out of sight while "Hide unmatched" has taken its file's row off the map, and comes
-     * back with the row; a note card is also hidden by "Hide all open Personal Notes".
+     * back with the row; a note card, and a code card's sticky notes, are also hidden by "Hide all open Personal
+     * Notes".
      */
     private void updateCardVisibility() {
         for (Map.Entry<Path, ProjectMapPreview> entry : previews.entrySet()) {
@@ -1851,6 +1933,7 @@ final class ProjectMapView extends VBox {
         }
         boolean notes = !hideOpenNotes.isSelected();
         notePreviews.forEach((path, card) -> card.setVisible(notes && !surface.narrowsAway(path)));
+        stickyNotes.values().forEach(stuck -> stuck.setHidden(!notes)); // a hidden card hides its own as well
         repaintPreviewConnectors();
     }
 
@@ -1860,6 +1943,7 @@ final class ProjectMapView extends VBox {
         }
         previews.entrySet().removeIf(entry -> entry.getValue() == preview);
         cardTouches.remove(preview);
+        closeCardNotes(preview);
         if (canvasHost != null) {
             canvasHost.getChildren().remove(preview);
         }
@@ -1874,6 +1958,8 @@ final class ProjectMapView extends VBox {
         cardTouches.clear();
         List<ProjectMapPreview> open = List.copyOf(previews.values());
         previews.clear();
+        List.copyOf(stickyNotes.values()).forEach(ProjectMapStickyNotes::dispose);
+        stickyNotes.clear();
         for (ProjectMapPreview preview : open) {
             if (canvasHost != null) {
                 canvasHost.getChildren().remove(preview);
@@ -1983,6 +2069,7 @@ final class ProjectMapView extends VBox {
     }
 
     private void refreshNoteCards() {
+        List.copyOf(previews.values()).forEach(this::updateCardNotes);
         ProjectPanel.MarkerActions actions = notePreviewActions;
         boolean enabled = actions != null && actions.personalNotesEnabled();
         for (Map.Entry<Path, ProjectMapNotePreview> entry : List.copyOf(notePreviews.entrySet())) {
@@ -2157,6 +2244,8 @@ final class ProjectMapView extends VBox {
             }
             drawPreviewConnector(g, anchor, preview);
         }
+        g.setFill(surface.noteColor());
+        stickyNotes.values().forEach(notes -> notes.drawConnectors(g));
         g.setGlobalAlpha(1);
     }
 

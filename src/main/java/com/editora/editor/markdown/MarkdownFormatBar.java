@@ -117,7 +117,7 @@ public final class MarkdownFormatBar {
      * Keeps the bar away while a selection is still being dragged out with the mouse: it comes up on
      * release ({@code onRelease} asks for the update), not over the text the pointer is heading for.
      */
-    static void trackMouse(org.fxmisc.richtext.CodeArea view, Runnable onRelease) {
+    public static void trackMouse(org.fxmisc.richtext.CodeArea view, Runnable onRelease) {
         view.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> {
             if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
                 view.getProperties().put(DRAGGING, Boolean.TRUE);
@@ -143,7 +143,7 @@ public final class MarkdownFormatBar {
      * selection runs upward from the caret — and takes the other side only when that one has no room, so it
      * covers the selected text only when there is nowhere else to be. Pure.
      */
-    static double placeY(double top, double bottom, double barH, double paneH, boolean below) {
+    public static double placeY(double top, double bottom, double barH, double paneH, boolean below) {
         double above = top - barH - GAP;
         double under = bottom + GAP;
         boolean aboveFits = above >= 0;

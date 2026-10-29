@@ -637,6 +637,111 @@ class ProjectMapCardsFxTest {
         }
     }
 
+    @Test
+    void aCodeCardsNotesAreStuckBesideItFollowItAndCloseWithIt() throws Exception {
+        root = projectRoot();
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < 40; i++) {
+            text.append("line ").append(i).append('\n');
+        }
+        Path file = Files.writeString(root.resolve("Stuck.java"), text);
+        NoteStore notes = new NoteStore(file, "on the first line");
+        notes.addAt(file, 6, "on line seven");
+        List<String> statuses = new ArrayList<>();
+        MapFixture map = openMap(1_600, 900, path -> new ProjectMapPreview.Content(text.toString(), false));
+        try {
+            waitForRow(map, file);
+            FxTestSupport.runOnFx(() -> {
+                showWindow(map);
+                map.view.setNotePreviewActions(notes);
+                map.view.setOnStatus(statuses::add);
+                openPreview(map, file);
+                map.view.applyCss();
+                map.view.layout();
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                ProjectMapPreview card = codeCards(map).get(file);
+                assertEquals(2, card.noteCount(), "the button counts the file's notes");
+                assertTrue(stickies(map).isEmpty(), "they are not shown until asked for");
+                assertTrue(card.noteSpans().isEmpty(), "nor are their lines marked");
+
+                card.setNotesShown(true);
+                map.view.applyCss();
+                map.view.layout();
+                List<Region> sheets = stickies(map);
+                assertEquals(2, sheets.size(), "one sheet per note");
+                // Each note's line is marked in the sheets' amber: "line 0" and "line 6", seven characters a line.
+                assertEquals(
+                        List.of(List.of(0, 6), List.of(42, 48)),
+                        card.noteSpans().stream()
+                                .map(span -> List.of(span[0], span[1]))
+                                .toList(),
+                        "a line note marks its whole line, as an editor tab does");
+                assertTrue(noteCards(map).isEmpty(), "they are not note cards, and take none of the card limit");
+                double scale = card.mapScale();
+                double cardRight = card.getLayoutX() + card.getWidth() * scale;
+                for (Region sheet : sheets) {
+                    assertTrue(sheet.isVisible());
+                    double sheetRight = sheet.getLayoutX() + ProjectMapStickyNotes.WIDTH * scale;
+                    assertTrue(
+                            sheet.getLayoutX() >= cardRight - 0.5 || sheetRight <= card.getLayoutX() + 0.5,
+                            "beside the card, on the side with room, not over its code");
+                }
+                assertTrue(
+                        sheets.get(0).getLayoutY() < sheets.get(1).getLayoutY(), "in line order, clear of each other");
+                assertTrue(
+                        sheets.get(1).getLayoutY()
+                                >= sheets.get(0).getLayoutY() + ProjectMapStickyNotes.HEIGHT * scale - 0.5,
+                        "stacked without overlapping");
+
+                // Moving the card carries its notes along.
+                double before = sheets.get(0).getLayoutX();
+                card.relocate(card.getLayoutX() - 40, card.getLayoutY() + 25);
+                assertEquals(before - 40, sheets.get(0).getLayoutX(), 0.5);
+
+                // A sheet saves an edit as a note card does, and a blank one comes back.
+                TextArea editor = (TextArea)
+                        ((javafx.scene.layout.VBox) sheets.get(1)).getChildren().getLast();
+                assertEquals("on line seven", editor.getText());
+                editor.setText("revised");
+                saveWithShortcut(editor);
+                assertEquals(List.of("revised"), notes.saves);
+                editor.setText("  ");
+                saveWithShortcut(editor);
+                assertEquals("revised", editor.getText());
+                assertEquals(List.of(tr("status.projectMap.noteBlankRestored")), statuses);
+
+                FxTestSupport.<javafx.scene.control.CheckMenuItem>field(map.view, "hideOpenNotes")
+                        .setSelected(true);
+                assertTrue(sheets.stream().noneMatch(Region::isVisible), "Hide all open Personal Notes hides them too");
+                assertTrue(card.noteSpans().isEmpty(), "and their marks");
+                FxTestSupport.<javafx.scene.control.CheckMenuItem>field(map.view, "hideOpenNotes")
+                        .setSelected(false);
+                assertTrue(sheets.stream().allMatch(Region::isVisible));
+                assertEquals(2, card.noteSpans().size());
+
+                notes.add(file, "a third, from elsewhere");
+                map.view.refreshStates();
+            });
+            waitFor(() -> stickies(map).size() == 3, "a note added elsewhere is stuck on too");
+            FxTestSupport.runOnFx(() -> {
+                ProjectMapPreview card = codeCards(map).get(file);
+                assertEquals(3, card.noteCount());
+                card.setNotesShown(false);
+                assertTrue(stickies(map).isEmpty(), "the Notes button takes them off");
+                assertTrue(card.noteSpans().isEmpty(), "marks and all");
+                card.setNotesShown(true);
+                assertEquals(3, stickies(map).size());
+
+                FxTestSupport.call(map.view, "closePreview", new Class<?>[] {ProjectMapPreview.class}, card);
+                assertTrue(stickies(map).isEmpty(), "they close with their card");
+            });
+        } finally {
+            map.close();
+        }
+    }
+
     // --- Keyboard ----------------------------------------------------------------------------------------
 
     @Test
@@ -905,6 +1010,15 @@ class ProjectMapCardsFxTest {
         return FxTestSupport.field(map.view, "notePreviews");
     }
 
+    /** The sticky-note sheets on the canvas, top to bottom. */
+    private static List<Region> stickies(MapFixture map) {
+        return map.host.getChildren().stream()
+                .filter(node -> node.getStyleClass().contains("project-map-sticky-note"))
+                .map(Region.class::cast)
+                .sorted(java.util.Comparator.comparingDouble(Region::getLayoutY))
+                .toList();
+    }
+
     private static TextArea noteEditor(MapFixture map, Path path) {
         VBox notes = FxTestSupport.field(noteCards(map).get(path), "notes");
         return (TextArea) notes.getChildren().getFirst();
@@ -1030,6 +1144,16 @@ class ProjectMapCardsFxTest {
                             FileIdentity.of(file),
                             NoteScope.LINE,
                             new TextAnchor(0, 0, 0, 0, "", "", ""),
+                            body,
+                            List.of()));
+        }
+
+        void addAt(Path file, int line, String body) {
+            notes.computeIfAbsent(file, ignored -> new ArrayList<>())
+                    .add(PersonalNote.create(
+                            FileIdentity.of(file),
+                            NoteScope.LINE,
+                            new TextAnchor(line, 0, line, 0, "", "", ""),
                             body,
                             List.of()));
         }
