@@ -415,8 +415,8 @@ class ProjectMapDataFxTest {
                 assertTrue(FxTestSupport.<Set<Path>>field(surface, "expandedSnapshot")
                         .contains(empty));
                 assertTrue(
-                        FxTestSupport.<List<?>>field(surface, "columnBoxes").size() >= 3,
-                        "the empty folder gets a column of its own");
+                        FxTestSupport.<List<?>>field(surface, "columnBoxes").size() >= 2,
+                        "the empty folder gets a column of its own (the root's children are the first)");
                 long before = generation.get();
                 activate(mapView, row);
                 assertEquals(before, generation.get(), "a stub row is inert");
@@ -620,6 +620,8 @@ class ProjectMapDataFxTest {
         Path sub = Files.createDirectory(a.resolve("sub"));
         Path leaf = Files.writeString(sub.resolve("leaf.txt"), "leaf");
         Path renamed = root.resolve("renamed");
+        // A second entry at the root: its only folder would otherwise open on its own (a compacted chain).
+        Files.writeString(root.resolve("README.md"), "");
         ProjectMapView mapView = newMap(new ArrayList<>());
         try {
             Region surface = FxTestSupport.field(mapView, "surface");

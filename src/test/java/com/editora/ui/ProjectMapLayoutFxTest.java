@@ -97,7 +97,8 @@ class ProjectMapLayoutFxTest {
             Object firstColumn = columnBoxForParent(surface, project);
             assertTrue(origin(firstColumn, "y") >= 0, "the first column starts in view, header included");
             assertTrue(origin(firstColumn, "y") < 60);
-            assertInView(surface, boxFor(surface, project), "the root row");
+            // The root is that column's title, not a column of its own (Map review E5).
+            assertNull(FxTestSupport.call(surface, "nodeBox", new Class<?>[] {Path.class}, project), "no root row");
             assertInView(surface, boxFor(surface, project.resolve("File00.java")), "the first row");
             assertTrue(edge(firstColumn, "x", "width") <= surface.getWidth());
         });
@@ -118,8 +119,10 @@ class ProjectMapLayoutFxTest {
             Object firstColumn = columnBoxForParent(surface, project);
             assertTrue(origin(firstColumn, "x") >= 0 && origin(firstColumn, "y") >= 0, "its header is in view");
             assertTrue(edge(firstColumn, "x", "width") <= surface.getWidth() + 0.5);
-            Object rootRow = boxFor(surface, project);
-            assertTrue(edge(rootRow, "x", "width") > 0, "the root column stays in view beside it");
+            assertEquals(
+                    1,
+                    FxTestSupport.<List<?>>field(surface, "columnBoxes").size(),
+                    "the root's children are the first column: there is no root column beside it");
         });
     }
 
@@ -174,7 +177,7 @@ class ProjectMapLayoutFxTest {
             assertTrue(origin(column, "y") >= 0, "its column header is in view");
             assertInView(surface, boxFor(surface, deepest.getParent()), "the nearest ancestor");
             assertTrue(
-                    edge(boxFor(surface, project), "x", "width") < 0,
+                    edge(boxFor(surface, project.resolve("level1")), "x", "width") < 0,
                     "the far end of the path is what gives way, not the selection");
         });
     }
@@ -257,6 +260,7 @@ class ProjectMapLayoutFxTest {
                 directory(a, project, 1),
                 directory(b, project, 1),
                 directory(sub, a, 2),
+                file(a.resolve("notes.txt"), a, 2), // a holds two entries: no compacted chain
                 // b's column is far wider than a's, and one depth up from sub's tall column.
                 file(b.resolve("AVeryLongFileNameThatMakesThisColumnMuchWiderThanItsSiblingColumn.properties"), b, 2)));
         for (int i = 0; i < 40; i++) {
@@ -270,7 +274,7 @@ class ProjectMapLayoutFxTest {
             settle();
             FxTestSupport.runOnFx(() -> {
                 List<?> columns = FxTestSupport.field(surface, "columnBoxes");
-                assertEquals(5, columns.size());
+                assertEquals(4, columns.size(), "the root's children, a's, b's and sub's");
                 for (int i = 0; i < columns.size(); i++) {
                     for (int j = i + 1; j < columns.size(); j++) {
                         assertFalse(
@@ -383,8 +387,10 @@ class ProjectMapLayoutFxTest {
     void keyboardSelectionStaysClearOfTheZoomBarAndTheOverview() throws Exception {
         Path project = project();
         List<ProjectMapModel.Entry> entries = new ArrayList<>(List.of(directory(project, null, 0)));
+        // Names long enough for the widest row (the width cap): the first column starts at the left edge.
+        String name = "AGeneratedSourceFileWithAVeryLongNameForTheMapToCut%02d.java";
         for (int i = 0; i < 60; i++) {
-            entries.add(file(project.resolve(String.format("File%02d.java", i)), project, 1));
+            entries.add(file(project.resolve(String.format(name, i)), project, 1));
         }
         // At 470 px the column reaches under the overview; at 760 px only the zoom bar is in its way.
         for (double width : new double[] {470, 760}) {
@@ -393,7 +399,7 @@ class ProjectMapLayoutFxTest {
             settle();
             boolean[] overviewInTheWay = new boolean[1];
             for (int i = 0; i < 60; i++) {
-                Path target = project.resolve(String.format("File%02d.java", i));
+                Path target = project.resolve(String.format(name, i));
                 FxTestSupport.runOnFx(() -> {
                     FxTestSupport.call(surface, "select", new Class<?>[] {Path.class}, target);
                     FxTestSupport.invoke(surface, "repaint");
@@ -733,6 +739,7 @@ class ProjectMapLayoutFxTest {
                     List.of(
                             tr("project.map.navigation.keepZoom"),
                             tr("project.map.navigation.focusNewColumn"),
+                            tr("project.map.layout.compactChains"),
                             tr("project.map.filter.hideOpenNotes"),
                             tr("project.map.print"),
                             tr("project.map.exportPdf")),
