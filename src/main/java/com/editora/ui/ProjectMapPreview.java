@@ -27,6 +27,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SeparatorMenuItem;
+import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
@@ -52,6 +53,7 @@ import com.editora.config.TextAnchor;
 import com.editora.editops.LineEndings;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
+import com.editora.editor.markdown.MarkdownFormatBar;
 import com.editora.editor.notes.NoteDraft;
 import com.editora.editorconfig.EditorConfigCharset;
 import org.eclipse.tm4e.core.grammar.IGrammar;
@@ -175,8 +177,15 @@ final class ProjectMapPreview extends StackPane {
     private final Label readOnly = new Label();
     private final Button zoomOut = new Button("−");
     private final Button zoomIn = new Button("+");
+    /** Shows or hides this card's Personal Notes, stuck beside it (see {@link ProjectMapStickyNotes}). */
+    private final ToggleButton notes = new ToggleButton();
+
     private final Button open = new Button();
     private final Button close = new Button("×");
+    /** The floating bar over a selection in the text, as in a Markdown buffer: here it adds a Personal Note. */
+    private final HBox selectionBar = new HBox(2);
+
+    private final Button selectionNote = new Button();
     private final CodeArea editor = AreaUndo.none(new CodeArea());
     private final VirtualizedScrollPane<CodeArea> editorScroll = new VirtualizedScrollPane<>(editor);
     private final ContextMenu editorContextMenu = new ContextMenu();
@@ -246,6 +255,13 @@ final class ProjectMapPreview extends StackPane {
     private Runnable onActivate = () -> {};
     private Runnable onTouch = () -> {};
     private Runnable onEscape = () -> onClose.run();
+    private Consumer<Boolean> onNotesToggled = shown -> {};
+    /** How many of the store's notes this card shows (see {@link #setNoteCount}). */
+    private int noteCount;
+    /** A note was asked for here: the notes come up when the store has one more. */
+    private boolean revealNotesOnAdd;
+
+    private boolean selectionBarPending;
 
     ProjectMapPreview(Consumer<Path> onOpenFile) {
         this.onOpenFile = onOpenFile == null ? ignored -> {} : onOpenFile;
@@ -286,6 +302,16 @@ final class ProjectMapPreview extends StackPane {
                 onOpenFile.accept(selected);
             }
         });
+        notes.getStyleClass().addAll("project-map-preview-button", "project-map-preview-notes");
+        notes.setGraphic(Icons.notes());
+        notes.setTooltip(new Tooltip());
+        notes.setVisible(false);
+        notes.setManaged(false);
+        notes.setOnAction(event -> {
+            revealNotesOnAdd = false;
+            updateNotesButton();
+            onNotesToggled.accept(notes.isSelected());
+        });
         close.getStyleClass().add("project-map-preview-button");
         close.setTooltip(new Tooltip(tr("project.map.preview.close")));
         close.setAccessibleText(tr("project.map.preview.close"));
@@ -293,7 +319,7 @@ final class ProjectMapPreview extends StackPane {
 
         titleBar.getStyleClass().add("project-map-preview-header");
         titleBar.setAlignment(Pos.CENTER_LEFT);
-        titleBar.getChildren().setAll(title, readOnly, status, zoomOut, zoomIn, open, close);
+        titleBar.getChildren().setAll(title, readOnly, status, zoomOut, zoomIn, notes, open, close);
         titleBar.addEventHandler(MouseEvent.MOUSE_PRESSED, this::dragPressed);
         titleBar.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::dragged);
 
@@ -317,7 +343,8 @@ final class ProjectMapPreview extends StackPane {
         resizeGrip.setAccessibleText(tr("project.map.preview.resize"));
         resizeGrip.addEventHandler(MouseEvent.MOUSE_PRESSED, this::resizePressed);
         resizeGrip.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::resized);
-        getChildren().addAll(frame, resizeGrip);
+        installSelectionBar();
+        getChildren().addAll(frame, resizeGrip, selectionBar);
         getTransforms().add(mapZoom);
 
         addEventHandler(MouseEvent.MOUSE_PRESSED, event -> {
@@ -348,6 +375,8 @@ final class ProjectMapPreview extends StackPane {
             if (editorContextMenu.isShowing() || menuDismissedByThisKey) {
                 menuDismissedByThisKey = false;
                 editorContextMenu.hide();
+            } else if (selectionBar.isVisible()) {
+                selectionBar.setVisible(false); // as in an editor: the bar goes first, the card on the next Escape
             } else {
                 onEscape.run();
             }
@@ -653,6 +682,7 @@ final class ProjectMapPreview extends StackPane {
     void hidePreview() {
         generation.incrementAndGet();
         editorContextMenu.hide();
+        selectionBar.setVisible(false);
         path = null;
         shownText = "";
         editor.replaceText("");
@@ -691,6 +721,105 @@ final class ProjectMapPreview extends StackPane {
         onEscape = callback == null ? () -> onClose.run() : callback;
     }
 
+    /** Called when the Notes button shows ({@code true}) or hides this card's Personal Notes. */
+    void setOnNotesToggled(Consumer<Boolean> callback) {
+        onNotesToggled = callback == null ? shown -> {} : callback;
+    }
+
+    /**
+     * How many Personal Notes the store holds for what this card shows — its file, or a declaration's lines —
+     * and whether notes are on at all; the Notes button counts them, and is gone while notes are off. A note
+     * the user just asked for here brings the card's notes up when it arrives.
+     */
+    void setNoteCount(int count, boolean enabled) {
+        int before = noteCount;
+        noteCount = enabled ? Math.max(0, count) : 0;
+        notes.setVisible(enabled);
+        notes.setManaged(enabled);
+        if (noteCount == 0 && notes.isSelected()) {
+            setNotesShown(false);
+        } else if (revealNotesOnAdd && noteCount > before) {
+            revealNotesOnAdd = false;
+            setNotesShown(true);
+        }
+        updateNotesButton();
+    }
+
+    int noteCount() {
+        return noteCount;
+    }
+
+    boolean notesShown() {
+        return notes.isSelected();
+    }
+
+    /** Shows or hides the card's notes as the Notes button does. */
+    void setNotesShown(boolean shown) {
+        boolean wanted = shown && noteCount > 0;
+        if (notes.isSelected() == wanted) {
+            return;
+        }
+        notes.setSelected(wanted);
+        updateNotesButton();
+        onNotesToggled.accept(wanted);
+    }
+
+    private void updateNotesButton() {
+        notes.setDisable(noteCount == 0);
+        notes.setText(noteCount == 0 ? "" : Integer.toString(noteCount));
+        String help = noteCount == 0
+                ? tr("project.map.preview.noNotes")
+                : notes.isSelected()
+                        ? tr("project.map.preview.hideNotes")
+                        : tr("project.map.preview.showNotes", noteCount);
+        notes.getTooltip().setText(help);
+        notes.setAccessibleText(help);
+    }
+
+    /** The map's zoom the card is drawn at, to follow: its sticky notes are drawn at it too. */
+    javafx.beans.property.DoubleProperty mapScaleProperty() {
+        return mapZoom.xProperty();
+    }
+
+    /**
+     * Where, in the parent's coordinates, a sticky note's connector meets the file's 0-based line {@code fileLine}:
+     * the middle of that line when it is on screen, otherwise the top or bottom of the text it is scrolled past.
+     * {@code NaN} when the card shows no text.
+     */
+    double noteAnchorY(int fileLine) {
+        if (frame.getCenter() != editorScroll || editor.getParagraphs().isEmpty()) {
+            return Double.NaN;
+        }
+        javafx.geometry.Bounds view = localToParent(frame.localToParent(editorScroll.getBoundsInParent()));
+        double top = view.getMinY() + 4;
+        double bottom = Math.max(top, view.getMaxY() - 4);
+        Range shown = range;
+        int line = Math.max(
+                0, Math.min(editor.getParagraphs().size() - 1, fileLine - (shown == null ? 0 : shown.startLine())));
+        int first;
+        int last;
+        try {
+            first = editor.firstVisibleParToAllParIndex();
+            last = editor.lastVisibleParToAllParIndex();
+        } catch (RuntimeException notLaidOut) {
+            return top;
+        }
+        if (line < first) {
+            return top;
+        }
+        if (line > last) {
+            return bottom;
+        }
+        javafx.geometry.Bounds screen = editor.getParagraphBoundsOnScreen(line).orElse(null);
+        javafx.geometry.Bounds local = screen == null ? null : screenToLocal(screen);
+        if (local != null) {
+            return clamp(
+                    localToParent(0, (local.getMinY() + local.getMaxY()) / 2).getY(), top, bottom);
+        }
+        // Not in a window (nothing has a screen position): the visible lines share the text's height evenly.
+        return top + (bottom - top) * (line - first + 0.5) / Math.max(1, last - first + 1);
+    }
+
     /**
      * Keeps the card, as drawn at the map's zoom, no larger than the panel. Where it stands is left alone: it
      * sits on the canvas, which may have it partly or wholly out of view.
@@ -723,6 +852,7 @@ final class ProjectMapPreview extends StackPane {
         disposed = true;
         generation.incrementAndGet();
         editorContextMenu.hide();
+        selectionBar.setVisible(false);
         loader.shutdownNow();
         path = null;
         shownText = "";
@@ -737,6 +867,95 @@ final class ProjectMapPreview extends StackPane {
      * close the card as well.
      */
     private boolean menuDismissedByThisKey;
+
+    /** Asks for a note on {@code draft}'s text; once the store has it the card's notes come up to show it. */
+    private void requestNote(MarkerActions actions, Path file, NoteDraft draft) {
+        selectionBar.setVisible(false);
+        revealNotesOnAdd = true;
+        actions.addPersonalNote(file, draft);
+    }
+
+    private void installSelectionBar() {
+        selectionBar.getStyleClass().addAll("markdown-format-bar", "project-map-selection-bar");
+        selectionBar.setManaged(false); // placed over the selection by updateSelectionBar
+        selectionBar.setFocusTraversable(false);
+        selectionBar.setPadding(new javafx.geometry.Insets(3));
+        selectionBar.setAlignment(Pos.CENTER_LEFT);
+        selectionBar.setVisible(false);
+        selectionNote.setText(tr("editmenu.addNote"));
+        selectionNote.setGraphic(Icons.notes());
+        selectionNote.getStyleClass().addAll("flat", "md-fmt-btn");
+        selectionNote.setFocusTraversable(false); // a click must leave the selection's text focused
+        selectionNote.setTooltip(new Tooltip(tr("project.map.preview.addNoteHelp")));
+        selectionNote.setOnAction(event -> {
+            Path selected = path;
+            MarkerActions actions = markerActions;
+            if (selected != null && actions != null && actions.personalNotesEnabled()) {
+                requestNote(actions, selected, noteDraftAt(editor.getCurrentParagraph()));
+            }
+        });
+        selectionBar.getChildren().setAll(selectionNote);
+
+        MarkdownFormatBar.trackMouse(editor, this::scheduleSelectionBar);
+        editor.selectionProperty().addListener((obs, old, now) -> scheduleSelectionBar());
+        editor.estimatedScrollYProperty().addListener((obs, old, now) -> scheduleSelectionBar());
+        editor.estimatedScrollXProperty().addListener((obs, old, now) -> scheduleSelectionBar());
+        editor.focusedProperty().addListener((obs, was, focused) -> {
+            if (!focused) {
+                selectionBar.setVisible(false);
+            }
+        });
+    }
+
+    /** Places the bar once per pulse, and only when it could come up or is up: these fire on every scroll step. */
+    private void scheduleSelectionBar() {
+        if (selectionBarPending || editor.getSelection().getLength() == 0 && !selectionBar.isVisible()) {
+            return;
+        }
+        selectionBarPending = true;
+        Platform.runLater(this::updateSelectionBar);
+    }
+
+    private void updateSelectionBar() {
+        selectionBarPending = false;
+        MarkerActions actions = markerActions;
+        boolean wanted = !disposed
+                && path != null
+                && actions != null
+                && actions.personalNotesEnabled()
+                && editor.isFocused()
+                && frame.getCenter() == editorScroll
+                && MarkdownFormatBar.wanted(editor);
+        javafx.geometry.Bounds caret = wanted ? editor.getCaretBounds().orElse(null) : null;
+        javafx.geometry.Bounds local = caret == null ? null : screenToLocal(caret);
+        if (local == null) {
+            selectionBar.setVisible(false);
+            return;
+        }
+        // The bar sits inside the text, next to the caret on the side the selection is not on (as a Markdown
+        // buffer's does), in the card's own unzoomed units: it is drawn at the map's zoom with the card.
+        javafx.geometry.Bounds text = frame.localToParent(editorScroll.getBoundsInParent());
+        selectionBar.setVisible(true);
+        selectionBar.applyCss();
+        double width = Math.min(selectionBar.prefWidth(-1), Math.max(60, text.getWidth()));
+        double height = selectionBar.prefHeight(width);
+        var selection = editor.getSelection();
+        boolean oneLine = editor.offsetToPosition(selection.getStart(), TwoDimensional.Bias.Forward)
+                        .getMajor()
+                == editor.offsetToPosition(selection.getEnd(), TwoDimensional.Bias.Backward)
+                        .getMajor();
+        boolean below = !oneLine && editor.getCaretPosition() >= selection.getEnd();
+        double x = clamp(local.getMinX(), text.getMinX(), Math.max(text.getMinX(), text.getMaxX() - width));
+        double y = text.getMinY()
+                + MarkdownFormatBar.placeY(
+                        local.getMinY() - text.getMinY(),
+                        local.getMaxY() - text.getMinY(),
+                        height,
+                        text.getHeight(),
+                        below);
+        selectionBar.resizeRelocate(x, y, width, height);
+        selectionBar.toFront();
+    }
 
     private void installEditorContextMenu() {
         editorContextMenu.getStyleClass().add("editor-context-menu");
@@ -789,7 +1008,7 @@ final class ProjectMapPreview extends StackPane {
             MenuItem note = new MenuItem(tr("editmenu.addNote"), Icons.notes());
             note.setDisable(!actions.personalNotesEnabled());
             NoteDraft draft = noteDraftAt(clickedLine);
-            note.setOnAction(ignored -> actions.addPersonalNote(selected, draft));
+            note.setOnAction(ignored -> requestNote(actions, selected, draft));
             items.add(note);
         }
         editorContextMenu.getItems().setAll(items);

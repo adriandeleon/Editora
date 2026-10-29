@@ -143,6 +143,22 @@ progress is kept), and it closes when its notes are deleted. A blanked note is n
 is restored and the status bar says so.
 A note card is styled from the theme's warning (amber) tokens, so it is a pale sheet on light themes and a
 dark amber one on dark themes.
+
+A code or declaration card carries its own Personal Notes. Selecting text in it brings up a floating bar over
+the selection — the Markdown buffer's (`MarkdownFormatBar.placeY`/`trackMouse`), with one **Add Personal Note**
+button — that is gone mid-drag, for a blank selection, with Personal Notes off, on focus loss and on a first
+Escape (a second closes the card). A **Notes** button before **Open** counts the notes on what the card shows —
+its file's, without folder notes, or those starting on a declaration's lines (`ProjectMapStickyNotes.notesFor`,
+at most 24) — is disabled at none and absent with Personal Notes off. It sticks them on the card as **sticky
+notes** (`ProjectMapStickyNotes`): one small editable amber sheet per note, headed by its line, each tied by a
+note-coloured connector from a dot on the card's edge at its line (the text's top or bottom when scrolled past)
+to the sheet. The sheets stand outside the card's right edge, else its left, else on the card against its right
+edge (`side`), each as near its line as the sheets above allow, a further column when they run past the card's
+foot (`stack`). They hold their place relative to the card's edge as it moves, resizes and zooms; one the user
+drags keeps its new spot until the card closes. They save like a note card (focus loss, Shortcut+Enter, a blanked
+note restored), follow the store, follow "Hide all open Personal Notes", rise with their card, and close with it;
+they are not cards and take nothing from the eight-card limit. A note added from a card — its bar or its menu —
+brings the card's notes up once the store has it.
 Marker state is read from an open buffer when available and otherwise from
 the active project's persisted stores, so adding an annotation refreshes both views without opening
 the target file.
@@ -438,6 +454,8 @@ Responsibilities are split as follows:
   builder), the made-up declaration paths, the rows they become, and their pruning.
 - `ProjectMapNotePreview` owns one editable Personal Notes card: a text area per note, saving, and
   adopting the store's notes on refresh.
+- `ProjectMapStickyNotes` owns one code card's sticky notes: their sheets, placement beside the card, following it,
+  saving, adopting the store's notes, and drawing their connectors onto the view's connector canvas.
 - `ProjectMapOutputPlan` is the JavaFX-free page plan for print/PDF; `ExportCoordinator` renders the
   `ProjectMapOutput` for the PDF page size or the print layout and reports how it was fitted.
 

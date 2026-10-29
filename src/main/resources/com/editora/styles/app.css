@@ -1751,6 +1751,8 @@
     -fx-background-color: -color-warning-subtle;
 }
 .project-map-note-preview-frame {
+    /* Over the opaque background: some themes' warning tints are translucent, and the map must not show through. */
+    -fx-background-color: -color-bg-default, -color-warning-subtle;
     -fx-border-color: -color-warning-muted;
 }
 .project-map-note-preview-header {
@@ -1781,6 +1783,49 @@
 }
 .project-map-note-preview-empty {
     -fx-text-fill: -color-fg-muted;
+}
+/* A code card's Notes button, lit while its notes are stuck on it. */
+.project-map-preview-notes:selected {
+    -fx-background-color: -color-warning-muted;
+    -fx-text-fill: -color-fg-default;
+}
+/* A code card's Personal Notes, one sticky sheet per note beside it, in the note card's amber family. Some
+   themes' warning tints are translucent: each sits on the opaque background so the map never shows through. */
+.project-map-sticky-note {
+    -fx-background-color: -color-bg-default, -color-warning-subtle;
+    -fx-background-radius: 3;
+    -fx-border-color: -color-warning-muted;
+    -fx-border-radius: 3;
+    -fx-border-width: 1;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.32), 12, 0.12, 2, 4);
+}
+.project-map-sticky-note-header {
+    -fx-background-color: -color-warning-muted;
+    -fx-background-radius: 3 3 0 0;
+    -fx-padding: 3 8 3 7;
+    -fx-cursor: move;
+}
+.project-map-sticky-note-where {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-sticky-note-where .toolbar-icon {
+    -fx-fill: -color-fg-default;
+}
+.project-map-sticky-note-editor,
+.project-map-sticky-note-editor .content,
+.project-map-sticky-note-editor .scroll-pane,
+.project-map-sticky-note-editor .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+.project-map-sticky-note-editor {
+    -fx-text-fill: -color-fg-default;
+    -fx-highlight-fill: -color-warning-muted;
+    -fx-highlight-text-fill: -color-fg-default;
+    -fx-background-insets: 0;
+    -fx-border-width: 0;
+    -fx-font-size: 12px;
 }
 
 /* Zero-sized Shapes let Canvas painting consume the active AtlantaFX palette after CSS resolution. */
