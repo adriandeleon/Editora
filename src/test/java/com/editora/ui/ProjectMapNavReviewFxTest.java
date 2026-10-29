@@ -480,8 +480,12 @@ class ProjectMapNavReviewFxTest {
                 assertTrue(option.isSelected(), "on by default");
                 h.view().setSingleClickOpens(false);
                 assertFalse(h.view().isSingleClickOpens());
-                select(h.surface(), h.file(0));
             });
+            // A click on another row first, so the next click on README is a first click, not a double-click's
+            // second (the wobble click above was on README a moment ago).
+            Point2D other = FxTestSupport.callOnFx(() -> rowCenterOnScreen(h.surface(), h.file(0)));
+            FxTestSupport.runOnFx(() -> robotClickAt(other));
+            settle();
             Point2D readme = FxTestSupport.callOnFx(() -> rowCenterOnScreen(h.surface(), h.readme()));
             FxTestSupport.runOnFx(() -> robotClickAt(readme));
             settle();
@@ -523,9 +527,9 @@ class ProjectMapNavReviewFxTest {
                                 tr("project.map.menu.preview"),
                                 tr("project.map.menu.showStructure"),
                                 tr("project.map.menu.personalNotes"),
-                                tr("project.map.menu.closeColumn"),
                                 "Rename"),
-                        labels);
+                        labels,
+                        "README is in the first column (the root's children), which has no close button");
                 assertTrue(shown.get().getItems().getFirst().getProperties().containsKey(ProjectPanel.STAYS_IN_MAP));
                 shown.get().getItems().getFirst().fire();
                 shown.get().hide();

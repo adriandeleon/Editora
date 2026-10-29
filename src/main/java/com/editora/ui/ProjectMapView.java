@@ -1470,9 +1470,9 @@ final class ProjectMapView extends VBox {
         if (!entry.isSymbol() && surface.notedPaths.contains(entry.path())) {
             items.add(mapMenuItem("project.map.menu.personalNotes", () -> previewNotes(entry.path())));
         }
-        if (entry.depth() > 0 && entry.parent() != null) {
-            Path column = entry.parent();
-            items.add(mapMenuItem("project.map.menu.closeColumn", () -> closeColumn(column)));
+        Path closable = surface.closeTargetFor(entry);
+        if (closable != null) {
+            items.add(mapMenuItem("project.map.menu.closeColumn", () -> closeColumn(closable)));
         }
         if (items.isEmpty()) {
             return menu;
@@ -4476,14 +4476,7 @@ final class ProjectMapView extends VBox {
                 close.getStyleClass().add("project-map-column-close");
                 close.setTooltip(new Tooltip(tr("project.map.column.close")));
                 close.setAccessibleText(tr("project.map.column.close"));
-                close.setOnAction(event -> {
-                    // A compacted column folds back into the row its chain starts at.
-                    ColumnBox box = columnBox(id);
-                    Path folder = box != null && box.column().compacted()
-                            ? box.column().anchor()
-                            : id.parent();
-                    onCloseColumn.accept(folder);
-                });
+                close.setOnAction(event -> onCloseColumn.accept(closeTarget(id)));
 
                 columnControls.put(id, new ColumnControls(filter, showHidden, pin, close));
                 getChildren().addAll(filter, showHidden, pin, close);
@@ -6945,7 +6938,8 @@ final class ProjectMapView extends VBox {
                 }
             }
             for (Path parent = entry.parent(); target == null && parent != null; parent = parent.getParent()) {
-                if (nodeBox(parent) != null) {
+                // The root and a compacted chain's folders have no row: their column's title stands for them.
+                if (nodeBox(parent) != null || headerFor(parent) != null) {
                     target = parent;
                 }
             }
@@ -7007,6 +7001,25 @@ final class ProjectMapView extends VBox {
                 }
             }
             return null;
+        }
+
+        /** What closing {@code id}'s column closes: a compacted column folds back into the row its chain starts at. */
+        private @Nullable Path closeTarget(ProjectMapModel.ColumnId id) {
+            ColumnBox box = columnBox(id);
+            return box != null && box.column().compacted() ? box.column().anchor() : id.parent();
+        }
+
+        /**
+         * What the row menu's Close Column closes for {@code entry}'s column, or null for the first column (the
+         * root's children), which has no close button.
+         */
+        @Nullable
+        Path closeTargetFor(ProjectMapModel.Entry entry) {
+            Path parent = entry.parent();
+            if (parent == null || parent.equals(root)) {
+                return null;
+            }
+            return closeTarget(columnId(entry));
         }
 
         /**
