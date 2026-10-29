@@ -824,4 +824,140 @@ class ProjectMapCardsReviewFxTest {
             FxTestSupport.runOnFx(structure::dispose);
         }
     }
+
+    // ---- C7 (with B10): a card opens where it covers least, never over the columns that lead to it ----
+
+    @Test
+    void aCardOpensClearOfTheColumnsThatLeadToItsRowAndOfItsFilesNextColumn(@TempDir Path temp) throws Exception {
+        Path root = Files.createDirectories(temp.resolve("project")).toRealPath();
+        Path acme = Files.createDirectories(root.resolve("src/main/java/com/acme"));
+        Path app = Files.writeString(acme.resolve("App.java"), "class App {\n  void a() {\n  }\n}\n");
+        for (int i = 0; i < 6; i++) {
+            Files.writeString(acme.resolve("Other" + i + ".java"), "class Other {}\n");
+        }
+        List<Path> folders = List.of(
+                root.resolve("src"),
+                root.resolve("src/main"),
+                root.resolve("src/main/java"),
+                root.resolve("src/main/java/com"),
+                acme);
+        ProjectMapView view = FxTestSupport.callOnFx(() -> {
+            ProjectMapView map = new ProjectMapView(path -> {}, path -> false, path -> false, path -> null);
+            Scene scene = new Scene(map, 1600, 820);
+            scene.getStylesheets()
+                    .add(ProjectMapCardsReviewFxTest.class
+                            .getResource("/com/editora/styles/app.css")
+                            .toExternalForm());
+            map.resize(1600, 820);
+            map.applyCss();
+            map.layout();
+            map.setRememberedFlow(ProjectMapView.FlowDirection.LEFT_TO_RIGHT.name(), ignored -> {});
+            map.setRememberedNavigation(true, false, (keep, focus) -> {});
+            map.setRoot(root);
+            FxTestSupport.<java.util.Set<Path>>field(map, "expanded").addAll(folders);
+            FxTestSupport.invoke(map, "reload");
+            return map;
+        });
+        try {
+            javafx.scene.layout.Region surface = FxTestSupport.callOnFx(() -> FxTestSupport.field(view, "surface"));
+            awaitFx("the App.java row", () -> rowBox(surface, app) != null);
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                view.layout();
+                FxTestSupport.call(surface, "setSelected", new Class<?>[] {Path.class}, app);
+                FxTestSupport.call(view, "previewSelection", new Class<?>[] {Path.class}, app);
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                ProjectMapPreview card = FxTestSupport.<java.util.Map<Path, ProjectMapPreview>>field(view, "previews")
+                        .get(app);
+                assertNotNull(card);
+                double[] rect = cardRect(card);
+                double covered = 0;
+                for (Object box : FxTestSupport.<List<?>>field(surface, "columnBoxes")) {
+                    ProjectMapModel.Column column =
+                            (ProjectMapModel.Column) FxTestSupport.call(box, "column", new Class<?>[0]);
+                    if (column.parent() != null && app.startsWith(column.parent())) {
+                        covered += overlap(rect, boxRect(box));
+                    }
+                }
+                assertEquals(0, covered, 0.5, "the card covers none of the columns that lead to App.java");
+            });
+            // B10: the file's Structure column opens in the band the card kept clear.
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    view, "toggleStructure", new Class<?>[] {ProjectMapModel.Entry.class}, rowEntry(surface, app)));
+            awaitFx("the Structure column", () -> columnOf(surface, app) != null);
+            FxTestSupport.runOnFx(() -> {
+                ProjectMapPreview card = FxTestSupport.<java.util.Map<Path, ProjectMapPreview>>field(view, "previews")
+                        .get(app);
+                assertEquals(0, overlap(cardRect(card), boxRect(columnOf(surface, app))), 0.5, "not under the card");
+            });
+        } finally {
+            FxTestSupport.runOnFx(view::dispose);
+        }
+    }
+
+    private static void awaitFx(String what, java.util.function.BooleanSupplier condition) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            if (FxTestSupport.callOnFx(condition::getAsBoolean)) {
+                return;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("timed out waiting for " + what);
+    }
+
+    private static Object rowBox(javafx.scene.layout.Region surface, Path path) {
+        for (Object box : FxTestSupport.<List<?>>field(surface, "boxes")) {
+            ProjectMapModel.Entry entry = (ProjectMapModel.Entry) FxTestSupport.call(box, "entry", new Class<?>[0]);
+            if (entry.path().equals(path)) {
+                return box;
+            }
+        }
+        return null;
+    }
+
+    private static ProjectMapModel.Entry rowEntry(javafx.scene.layout.Region surface, Path path) {
+        return (ProjectMapModel.Entry) FxTestSupport.call(rowBox(surface, path), "entry", new Class<?>[0]);
+    }
+
+    private static Object columnOf(javafx.scene.layout.Region surface, Path parent) {
+        for (Object box : FxTestSupport.<List<?>>field(surface, "columnBoxes")) {
+            ProjectMapModel.Column column = (ProjectMapModel.Column) FxTestSupport.call(box, "column", new Class<?>[0]);
+            if (parent.equals(column.parent())) {
+                return box;
+            }
+        }
+        return null;
+    }
+
+    private static double[] boxRect(Object box) {
+        return new double[] {
+            (double) FxTestSupport.call(box, "x", new Class<?>[0]),
+            (double) FxTestSupport.call(box, "y", new Class<?>[0]),
+            (double) FxTestSupport.call(box, "width", new Class<?>[0]),
+            (double) FxTestSupport.call(box, "height", new Class<?>[0])
+        };
+    }
+
+    private static double[] cardRect(ProjectMapPreview card) {
+        return new double[] {
+            card.getLayoutX(), card.getLayoutY(), card.getWidth() * card.mapScale(), card.getHeight() * card.mapScale()
+        };
+    }
+
+    private static double overlap(double[] a, double[] b) {
+        double across = Math.min(a[0] + a[2], b[0] + b[2]) - Math.max(a[0], b[0]);
+        double down = Math.min(a[1] + a[3], b[1] + b[3]) - Math.max(a[1], b[1]);
+        return across > 0 && down > 0 ? across * down : 0;
+    }
+
+    @Test
+    void theOverlapCostWeighsWhatACardWouldCover() {
+        List<double[]> obstacles = List.of(new double[] {0, 0, 100, 100, 4}, new double[] {200, 0, 100, 100, 1});
+        assertEquals(0, ProjectMapView.cardOverlapCost(100, 0, 100, 100, obstacles), 1e-9, "between them");
+        assertEquals(50 * 100 * 4, ProjectMapView.cardOverlapCost(50, 0, 100, 100, obstacles), 1e-9);
+        assertEquals(50 * 100 * 1, ProjectMapView.cardOverlapCost(150, 0, 100, 100, obstacles), 1e-9);
+    }
 }

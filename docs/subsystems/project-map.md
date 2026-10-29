@@ -95,10 +95,14 @@ close button removes only that card. An accent connector runs from every preview
 and follows map pan/zoom plus card movement and resizing.
 
 Code previews and note cards are placed by one path (`ProjectMapView.previewPlacement` over
-`MapSurface.previewPlacement`). A card opens beside its row's column — on the side the flow leaves free,
-else on the other — when at least the card's minimum size fits there; otherwise it lies over the map
-against the panel edge, which is the normal case in a tool-window-wide panel. It is then shifted or
-cascaded clear of the cards already open. **Placement never pans the map**, and a card is never smaller
+`MapSurface.cardSite`): the spot that covers least. The candidates are after and before the row's column,
+above and below the columns' band, and every corner of free panel the card fits against (at full size, or as
+large as fits down to its minimum); each is scored by what it would cover on screen
+(`ProjectMapView.cardOverlapCost`) — the row's own column weighs 6, the columns that lead to it 4, the band where
+the row's next column (a folder's, or a file's Structure column) would open 3, the zoom bar and the overview 4,
+other columns 1, other open cards 5 — then by nearness to the row and by size (narrower than its lines weighs
+more than shorter). A card used to take the side after its column, else the side before, which is where the
+columns leading to it are. **Placement never pans the map**, and a card is never smaller
 than its minimum (340 × 220 for code, 300 × 180 for notes) unless the panel itself is. Text that arrives
 after a card was placed only widens it where it stands, by at most 120 columns and never past the panel
 (a card already partly out of view is never narrowed);

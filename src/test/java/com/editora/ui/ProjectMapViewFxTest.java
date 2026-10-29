@@ -1041,7 +1041,10 @@ class ProjectMapViewFxTest {
                                 + contentWidth
                                 + " > "
                                 + editorScroll.getWidth());
-                assertEquals(420, preview.getHeight(), 0.001);
+                // As tall as it can be where it covers least (review C7): here a little less than its 420.
+                assertTrue(
+                        preview.getHeight() >= ProjectMapPreview.MIN_HEIGHT && preview.getHeight() <= 420,
+                        () -> "height " + preview.getHeight());
                 javafx.scene.layout.BorderPane frame = FxTestSupport.field(preview, "frame");
                 assertSame(
                         FxTestSupport.field(preview, "textPane"),
