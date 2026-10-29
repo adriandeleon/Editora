@@ -147,6 +147,10 @@ final class ProjectMapView extends VBox {
     private final MenuItem exportPdfButton = new MenuItem(tr("project.map.exportPdf"));
     private final HBox breadcrumbs = new HBox(2);
     private final Label breadcrumbEllipsis = new Label("…");
+    /** The paths the breadcrumb buttons stand for, and the buttons, root first. */
+    private final List<Path> crumbTrail = new ArrayList<>();
+
+    private final List<Button> crumbButtons = new ArrayList<>();
     private final Label breadcrumbEllipsisSeparator = new Label("›");
     private final Label noMatchesLabel = new Label();
     private final PauseTransition noMatchesDelay = new PauseTransition(NO_MATCHES_DELAY);
@@ -2417,12 +2421,15 @@ final class ProjectMapView extends VBox {
         backButton.setDisable(historyIndex <= 0);
         forwardButton.setDisable(historyIndex < 0 || historyIndex >= selectionHistory.size() - 1);
         Path selected = surface.selectedEntry().map(ProjectMapModel.Entry::path).orElse(pendingSelection);
+        javafx.collections.ObservableList<Node> children = breadcrumbs.getChildren();
         // The surface may still hold the previous root's selection, which can be on another connection.
         if (selected == null
                 || root == null
                 || !com.editora.config.PathKeys.sameFileSystem(selected, root)
                 || !selected.startsWith(root)) {
-            breadcrumbs.getChildren().clear();
+            children.clear();
+            crumbTrail.clear();
+            crumbButtons.clear();
             return;
         }
         List<Path> trail = new ArrayList<>();
@@ -2432,22 +2439,53 @@ final class ProjectMapView extends VBox {
                 break;
             }
         }
-        List<Node> nodes = new ArrayList<>();
-        for (Path path : trail.reversed()) {
-            Button crumb = new Button(crumbLabel(path));
-            crumb.getStyleClass().add("project-map-breadcrumb");
-            crumb.setTooltip(new Tooltip(path.toString()));
-            crumb.setOnAction(event -> revealPath(path));
-            nodes.add(crumb);
-            if (!com.editora.config.PathKeys.samePath(path, selected)) {
-                Label separator = new Label("›");
-                separator.getStyleClass().add("project-map-breadcrumb-separator");
-                separator.setMinWidth(Region.USE_PREF_SIZE);
-                nodes.add(separator);
-            }
+        List<Path> paths = trail.reversed();
+        // Only the crumbs after the part the old and new trails share are replaced: an arrow key in one column
+        // changes the last crumb, not the whole row of buttons (Map review D15).
+        children.removeAll(List.of(breadcrumbEllipsis, breadcrumbEllipsisSeparator));
+        int kept = 0;
+        while (kept < paths.size()
+                && kept < crumbTrail.size()
+                && com.editora.config.PathKeys.samePath(crumbTrail.get(kept), paths.get(kept))
+                && crumbButtons.get(kept).getText().equals(crumbLabel(paths.get(kept)))) {
+            kept++;
         }
-        breadcrumbs.getChildren().setAll(nodes);
+        if (kept < crumbTrail.size() || kept < paths.size() || children.size() != crumbTrail.size() * 2 - 1) {
+            // crumb, separator, crumb, … crumb: the separator after the last kept crumb stays when one follows.
+            boolean separatorKept = kept > 0 && kept < crumbTrail.size() && kept < paths.size();
+            int keptNodes = Math.min(children.size(), kept == 0 ? 0 : kept * 2 - (separatorKept ? 0 : 1));
+            children.remove(keptNodes, children.size());
+            crumbTrail.subList(kept, crumbTrail.size()).clear();
+            crumbButtons.subList(kept, crumbButtons.size()).clear();
+            List<Node> added = new ArrayList<>();
+            for (int index = kept; index < paths.size(); index++) {
+                if (index > 0 && !(index == kept && separatorKept)) {
+                    Label separator = new Label("›");
+                    separator.getStyleClass().add("project-map-breadcrumb-separator");
+                    separator.setMinWidth(Region.USE_PREF_SIZE);
+                    added.add(separator);
+                }
+                Button crumb = breadcrumbButton(paths.get(index));
+                crumbTrail.add(paths.get(index));
+                crumbButtons.add(crumb);
+                added.add(crumb);
+            }
+            children.addAll(added);
+        }
         fitBreadcrumbs();
+    }
+
+    /** One crumb; its tooltip (the full path) is made the first time the pointer rests on it. */
+    private Button breadcrumbButton(Path path) {
+        Button crumb = new Button(crumbLabel(path));
+        crumb.getStyleClass().add("project-map-breadcrumb");
+        crumb.setOnMouseEntered(event -> {
+            if (crumb.getTooltip() == null) {
+                crumb.setTooltip(new Tooltip(path.toString()));
+            }
+        });
+        crumb.setOnAction(event -> revealPath(path));
+        return crumb;
     }
 
     /** A breadcrumb's text: the folder or file name, or a declaration's label. */
