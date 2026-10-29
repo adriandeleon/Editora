@@ -63,6 +63,11 @@ final class ProjectTreeMarkerActions implements ProjectPanel.MarkerActions {
     }
 
     @Override
+    public void addPersonalNote(Path file, NoteDraft draft, OverlayHost over) {
+        notes.addPersonalNote(file, draft, over);
+    }
+
+    @Override
     public List<PersonalNote> personalNotes(Path path) {
         List<PersonalNote> found = notes.notesFor(path);
         return found == null ? List.of() : List.copyOf(found);

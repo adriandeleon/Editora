@@ -22,6 +22,16 @@ interface ProjectMapOutput {
     @Nullable
     Rendered render(double pageWidth, double pageHeight);
 
+    /** The window the job's dialogs (Save, Print Preview) belong over — the Map's own; null: the editor's. */
+    default javafx.stage.@Nullable Window owner() {
+        return null;
+    }
+
+    /** The PDF file name suggested, without its extension ({@code <folder>-map}); null: the default. */
+    default @Nullable String baseName() {
+        return null;
+    }
+
     /**
      * @param pages one image per output page, in reading order
      * @param pointsPerPixel the paper size of one image pixel, the same for every page

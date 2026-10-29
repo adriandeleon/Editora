@@ -283,6 +283,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             addPersonalNote(file);
         }
 
+        /**
+         * As {@link #addPersonalNote(Path, NoteDraft)}, asked from a Project Map card: the prompt shows in
+         * {@code over} (the Map window's overlay), where the user is, and names the file and lines.
+         */
+        default void addPersonalNote(Path file, NoteDraft draft, OverlayHost over) {
+            addPersonalNote(file, draft);
+        }
+
         default List<PersonalNote> personalNotes(Path path) {
             return List.of();
         }
@@ -335,8 +343,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final ProjectMapWindow mapWindow;
     /** The editor window this panel belongs to, for when the panel itself is not on screen. */
     private java.util.function.Supplier<javafx.stage.@Nullable Window> editorWindow = () -> null;
-    /** The workspace remembered the Map window as open: reopen it once there is a project and a window. */
+    /**
+     * The workspace remembered the Map window as open, or the project it showed closed under it: reopen it once
+     * there is a project and a window.
+     */
     private boolean reopenMap;
+    /**
+     * The folder the Map shows: {@link #root}, except in a window whose root follows the active tab (the No
+     * Project window), where an open Map stays on the folder it was opened on (see {@link #setMapRootPinned}).
+     */
+    private @Nullable Path mapRoot;
+    /** Whether this window's root follows its active tab, so an open Map keeps its own root. */
+    private java.util.function.BooleanSupplier mapRootPinned = () -> false;
+    /** When the Map last asked to create a file in a folder (New ▸ from a Map row), to reveal the result. */
+    private @Nullable Path mapNewFileFolder;
+
+    private long mapNewFileAt;
 
     private Runnable onFocusEditor = () -> {};
     /** The tree currently holds the lazy project tree (not flat filter results) built for {@link #root}. */
@@ -459,21 +481,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.isModified = isModified;
         this.isOpen = isOpen == null ? path -> false : isOpen;
         this.mapView = new ProjectMapView(this::openFromMap, isOpen, isModified, previewContent);
-        this.mapView.setActive(false); // nothing is listed for the Map until it is first shown
+        this.mapView.setShowing(false); // nothing is listed for the Map until its window first shows
         this.mapView.setShowHidden(showHidden);
         this.mapView.setOnExpandedChanged(this::syncWatches);
         this.mapView.setContextMenuFactory(entry -> raisingEditorWindow(contextMenuFor(
-                new TreeItem<>(entry.path()), entry.directory(), entry.path().equals(root))));
+                new MapRowItem(entry.path()), entry.directory(), entry.path().equals(mapRoot))));
         // F2 / Delete on the map's selection run the tree's row actions (see onKey), with the same limits.
         this.mapView.setRowActions(
                 entry -> {
-                    if (!entry.path().equals(root)) {
-                        renameItem(new TreeItem<>(entry.path()));
+                    if (!entry.path().equals(mapRoot)) {
+                        renameItem(new MapRowItem(entry.path()));
                     }
                 },
-                entry -> deleteSelected(new TreeItem<>(entry.path())));
+                entry -> deleteSelected(new MapRowItem(entry.path())));
         this.mapView.setEscapeActions(mapFilterField::clear, this::leaveMap);
         this.mapWindow = new ProjectMapWindow(buildMapWindowContent());
+        this.mapWindow.setOnShowing(mapView::setShowing); // refreshes, polls and loads follow the window
         this.mapWindow.setOnHidden(this::mapWindowHidden);
         this.mapWindow.setOnUserClosed(() -> onMapWindowChanged.accept(false));
         getStyleClass().add("project-panel");
@@ -657,23 +680,91 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** {@code remember}: whether opening it is the user's choice to store (not a restore of what was stored). */
     private void showMapWindow(boolean focus, boolean remember) {
-        if (root == null) {
-            return;
+        boolean wasShowing = mapWindow.isShowing();
+        if (!wasShowing) {
+            if (root == null) {
+                return;
+            }
+            // Opened (not brought forward): the Map maps what the tree shows now. Only an open Map keeps a
+            // root of its own, in the window whose tree follows the active tab.
+            if (!com.editora.config.PathKeys.samePath(mapRoot, root)) {
+                applyMapRoot(root);
+            }
         }
         reopenMap = false;
-        boolean wasShowing = mapWindow.isShowing();
         updateMapWindowTitle();
-        mapWindow.show(editorWindow());
+        mapWindow.show(editorWindow()); // its showing drives the Map's first load (and every reload on reopen)
         if (!wasShowing) {
-            mapView.setActive(true); // the first open (and every reopen) lists the project afresh
             syncWatches();
             if (remember) {
                 onMapWindowChanged.accept(true);
             }
+            revealActiveFileOnOpen();
         }
         if (focus) {
             mapView.focusMap();
         }
+    }
+
+    /** Opened with nothing chosen on it (the root alone is selected): the Map starts at the file being edited. */
+    private void revealActiveFileOnOpen() {
+        Path selected = mapView.windowSelectedPath();
+        if (activeFile != null && (selected == null || com.editora.config.PathKeys.samePath(selected, mapRoot))) {
+            mapView.revealPath(activeFile);
+        }
+    }
+
+    /** Points the Map at {@code next}, which clears what it showed of the previous folder (its search too). */
+    private void applyMapRoot(@Nullable Path next) {
+        mapRoot = next;
+        mapView.setRoot(next);
+        mapView.setGitStatus(gitStatus); // recompute changed-directory ancestry against the new root
+        loading = true;
+        mapFilterField.clear();
+        loading = false;
+        mapView.setQuery("");
+        updateMapWindowTitle();
+    }
+
+    /**
+     * Whether this window's tree root follows its active tab (the No Project window, with no remote folder
+     * mounted). There an open Map keeps the folder it was opened on: opening a file from it, or switching to
+     * a tab in another folder or to one with no folder at all, leaves it as it is. It takes the tree's root
+     * again only when it is opened anew, or when {@link #revealActiveFileInMap} needs a file it does not hold.
+     */
+    public void setMapRootPinned(java.util.function.BooleanSupplier pinned) {
+        mapRootPinned = pinned == null ? () -> false : pinned;
+    }
+
+    /** The folder the Map shows (it differs from {@link #getRoot()} only while pinned; tests). */
+    @Nullable
+    Path mapRoot() {
+        return mapRoot;
+    }
+
+    /**
+     * {@code projectMap.revealActiveFile}: opens the Map window (or brings it forward) and selects the active
+     * file on it. A pinned Map that does not hold the file takes the tree's root first. Says so when there is
+     * no file to reveal.
+     */
+    public void revealActiveFileInMap() {
+        Path file = activeFile;
+        if (file != null
+                && root != null
+                && mapRoot != null
+                && !com.editora.config.PathKeys.isAtOrUnder(file, mapRoot)
+                && com.editora.config.PathKeys.isAtOrUnder(file, root)) {
+            applyMapRoot(root); // the open Map's pinned folder does not hold the file the user asked for
+        }
+        showMapWindow(true, true);
+        if (!isMapShowing()) {
+            return;
+        }
+        if (file == null || mapRoot == null || !com.editora.config.PathKeys.isAtOrUnder(file, mapRoot)) {
+            onStatus.accept(tr("status.projectMap.noActiveFile"));
+            return;
+        }
+        mapView.revealPath(file);
     }
 
     /**
@@ -718,7 +809,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     private void updateMapWindowTitle() {
-        Path name = root == null ? null : root.getFileName();
+        Path name = mapRoot == null ? null : mapRoot.getFileName();
         mapWindow.setTitle(
                 name == null ? tr("project.map.windowTitleNoName") : tr("project.map.windowTitle", name.toString()));
     }
@@ -726,9 +817,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** The Map window stopped showing (closed by the user, its editor window, or the project going away). */
     private void mapWindowHidden() {
         mapSearchGen.incrementAndGet(); // a search still in flight has nowhere to land
-        mapView.setActive(false);
-        mapView.suspendPreviews(); // cards keep their place for the next open
-        syncWatches(); // the Map's open folders need no watching now
+        syncWatches(); // the Map's open folders need no watching now; its cards keep their place
     }
 
     /** Runs the Map window's search: the whole project, off the FX thread, as the tree's filter does. */
@@ -737,7 +826,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         String q = mapFilterField.getText().trim();
         mapView.setQuery(q);
         syncWatches();
-        Path searchRoot = root;
+        Path searchRoot = mapRoot;
         if (q.isEmpty() || searchRoot == null || !isMapShowing()) {
             return;
         }
@@ -767,7 +856,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Re-runs a Map search on show, after a setting changed what it finds. */
     private void searchMapAgain() {
-        if (root != null && isMapShowing() && !mapFilterField.getText().isBlank()) {
+        if (mapRoot != null && isMapShowing() && !mapFilterField.getText().isBlank()) {
             searchMap();
         }
     }
@@ -896,6 +985,47 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         activeFile = next;
         tree.refresh();
         mapView.refreshStates();
+        if (next != null
+                && isMapShowing()
+                && mapRoot != null
+                && com.editora.config.PathKeys.isAtOrUnder(next, mapRoot)) {
+            if (mapView.isFollowActiveFile() || createdFromMap(next)) {
+                mapView.revealPath(next); // "Always select opened file", or the file New ▸ just made from the Map
+            }
+        }
+    }
+
+    /** How long after New ▸ on a Map row the file it opens is taken to be that one (the name prompt is open). */
+    private static final long MAP_NEW_FILE_WINDOW_MS = 5 * 60_000L;
+
+    /** Whether {@code file} is the one New ▸ on a Map row asked for: opened in that folder since. Once only. */
+    private boolean createdFromMap(Path file) {
+        Path folder = mapNewFileFolder;
+        if (folder == null || System.currentTimeMillis() - mapNewFileAt > MAP_NEW_FILE_WINDOW_MS) {
+            return false;
+        }
+        if (!com.editora.config.PathKeys.isAtOrUnder(file, folder) || java.nio.file.Files.isDirectory(file)) {
+            return false;
+        }
+        mapNewFileFolder = null;
+        return true;
+    }
+
+    /** A folder or file just created from a Map row: shown and selected on the Map, as the tree reveals it. */
+    private void revealCreatedOnMap(TreeItem<Path> origin, Path created) {
+        if (origin instanceof MapRowItem && isMapShowing()) {
+            mapView.revealPath(created);
+        }
+    }
+
+    /**
+     * A Map row's stand-in for the tree item the shared row actions take: a detached item, so expanding it
+     * reveals nothing; what it was made for is the Map, which reveals the result itself.
+     */
+    private static final class MapRowItem extends TreeItem<Path> {
+        MapRowItem(Path path) {
+            super(path);
+        }
     }
 
     /** Reveals and selects a file or folder in the project tree. */
@@ -1165,21 +1295,27 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         lastMove = List.of(); // an undo must not reach back into the project that was open before
         pendingTreeSelection = null;
         pendingTreeReveal = null;
-        mapView.setRoot(root);
-        mapView.setGitStatus(gitStatus); // recompute changed-directory ancestry against the new root
         loading = true;
         filterField.clear();
-        mapFilterField.clear();
         loading = false;
-        mapView.setQuery("");
-        if (root == null) {
-            mapWindow.closeQuietly(); // nothing to map; a project opened later does not bring it back
-            reopenMap = false;
-        } else {
-            updateMapWindowTitle();
+        // In the No Project window the tree follows the active tab, but the Map does not: an open Map keeps the
+        // folder it shows (a local one), and a closed one takes the tree's root when it is next opened
+        // (showMapWindow), so its cards survive the tab switches in between.
+        boolean pinned = mapRootPinned.getAsBoolean();
+        boolean keepMapRoot =
+                pinned && (!mapWindow.isShowing() || mapRoot != null && com.editora.vfs.Vfs.isLocal(mapRoot));
+        if (!keepMapRoot) {
+            if (root == null && mapWindow.isShowing()) {
+                mapWindow.closeQuietly(); // the project closed under it: it comes back with the next, as at startup
+                reopenMap = !pinned;
+            }
+            applyMapRoot(root);
         }
         ensureWatchOrStop(); // start a watcher for a local root (or stop it for remote/none)
         rebuildBody(); // ends with syncWatches() — registers the new root's dirs, cancels the old root's
+        if (root == null && isMapShowing()) {
+            syncWatches(); // the placeholder registers nothing: keep watching what the pinned Map shows
+        }
         GitPathScope.learnRemote(root, true); // a remote project: where its repositories are, for the menus
         reopenMapWhenReady();
     }
@@ -2108,6 +2244,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapWindow.setBoundsMemory(
                 () -> state.get().getProjectMapWindowBounds(),
                 bounds -> state.get().setProjectMapWindowBounds(bounds));
+        mapWindow.setMaximizedMemory(
+                () -> state.get().isProjectMapWindowMaximized(),
+                maximized -> state.get().setProjectMapWindowMaximized(maximized));
         onMapWindowChanged = open -> {
             state.get()
                     .setProjectViewMode(
@@ -2156,7 +2295,36 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Injects the window-owned print and PDF handlers for a full Project Map snapshot. */
     void setMapOutputActions(Consumer<ProjectMapOutput> print, Consumer<ProjectMapOutput> pdf) {
-        mapView.setOutputActions(print, pdf);
+        mapView.setOutputActions(
+                output -> print.accept(fromMapWindow(output)), output -> pdf.accept(fromMapWindow(output)));
+    }
+
+    /** {@code output}, asked for in the Map window: its dialogs open over that window, its file named for the Map. */
+    private ProjectMapOutput fromMapWindow(ProjectMapOutput output) {
+        javafx.stage.Window owner = mapWindow.stage();
+        Path folder = mapRoot == null ? null : mapRoot.getFileName();
+        String base = (folder == null ? "project" : folder.toString()) + "-map";
+        return new ProjectMapOutput() {
+            @Override
+            public boolean landscape() {
+                return output.landscape();
+            }
+
+            @Override
+            public @Nullable Rendered render(double pageWidth, double pageHeight) {
+                return output.render(pageWidth, pageHeight);
+            }
+
+            @Override
+            public javafx.stage.@Nullable Window owner() {
+                return owner;
+            }
+
+            @Override
+            public String baseName() {
+                return base;
+            }
+        };
     }
 
     /** Whether the Project Map's window is open and the Map has something to print or export. */
@@ -2271,7 +2439,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
                             @Override
                             public void addPersonalNote(Path file, NoteDraft draft) {
-                                markerActions.addPersonalNote(file, draft);
+                                // A card is only ever in the Map window: its prompt belongs over the Map.
+                                markerActions.addPersonalNote(file, draft, mapWindow.overlayHost());
                             }
                         });
         mapView.setMarkerCandidates(
@@ -2378,6 +2547,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         : FileIcons.forFileName(type.suggestedFileName()));
         item.setOnAction(e -> {
             dirItem.setExpanded(true); // reveal where the new file will land
+            if (dirItem instanceof MapRowItem) {
+                mapNewFileFolder = dirItem.getValue(); // the file it opens is revealed on the Map (setActiveFile)
+                mapNewFileAt = System.currentTimeMillis();
+                revealCreatedOnMap(dirItem, dirItem.getValue());
+            }
             onNewFile.accept(dirItem.getValue(), type);
         });
         return item;
@@ -2409,6 +2583,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             markLocalChange(List.of(target)); // tree re-listed below; the watcher skips its echo
             dirItem.setExpanded(true); // reveal the new folder under its parent
             refreshAfterChange();
+            revealCreatedOnMap(dirItem, target);
         });
     }
 
@@ -2428,7 +2603,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         return;
                     }
                     Path target = path.resolveSibling(name);
-                    if (target.equals(path) || Files.exists(target)) {
+                    if (target.equals(path)) {
+                        return; // the same name: nothing to do
+                    }
+                    if (Files.exists(target) && !caseOnlyRename(path, target)) {
+                        showError(tr("project.newFolderExists", name)); // taken: say so, do not just close
                         return;
                     }
                     renameParticipant.willRename(path, target, ok -> {
@@ -2439,9 +2618,48 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 });
     }
 
+    /**
+     * Whether renaming {@code path} to {@code target} only changes the case of its name on a file system that
+     * ignores case (macOS, Windows): {@code target} then "exists" — it is the file itself.
+     */
+    static boolean caseOnlyRename(Path path, Path target) {
+        Path from = path.getFileName();
+        Path to = target.getFileName();
+        if (from == null || to == null || from.toString().equals(to.toString())) {
+            return false;
+        }
+        if (!from.toString().equalsIgnoreCase(to.toString())) {
+            return false;
+        }
+        try {
+            return Files.isSameFile(path, target);
+        } catch (IOException | RuntimeException unknown) {
+            return false;
+        }
+    }
+
+    /**
+     * Renames {@code path} to {@code target}. A case-only rename goes through a temporary name in the same
+     * folder: on a case-insensitive file system a direct move to the other case is a no-op or "already exists".
+     */
+    static void moveRenaming(Path path, Path target) throws IOException {
+        if (!caseOnlyRename(path, target)) {
+            Files.move(path, target);
+            return;
+        }
+        Path step = path.resolveSibling(path.getFileName() + ".editora-rename-" + System.nanoTime());
+        Files.move(path, step);
+        try {
+            Files.move(step, target);
+        } catch (IOException ex) {
+            Files.move(step, path); // put it back under the name it had
+            throw ex;
+        }
+    }
+
     private void move(Path path, Path target) {
         try {
-            Files.move(path, target);
+            moveRenaming(path, target);
         } catch (IOException ex) {
             showError(tr("project.renameError", path.getFileName(), ex.getMessage()));
             return;

@@ -9,7 +9,9 @@ import java.util.List;
  * <p>Everything is measured in <em>world</em> pixels (the map at 100% zoom, where a row label is
  * {@value #LABEL_SIZE} px) and paper points. The plan fits the whole map on one page while a label stays at
  * least {@value #MIN_LABEL_POINTS} pt tall; a larger map keeps that minimum scale and is tiled across a grid
- * of pages instead, cutting between columns and rows where one of the candidate positions allows it. The
+ * of pages instead, cutting between columns and rows where one of the candidate positions allows it. Labels
+ * may shrink further, down to {@value #TOLERATED_LABEL_POINTS} pt, when that saves a page — a map just over
+ * one page wide is shrunk a little rather than split onto two mostly empty pages. The
  * raster scale is then chosen under a per-page dimension cap and a total pixel budget; a map that cannot keep
  * a printable resolution inside them is reported as {@link Plan#detailReduced()} rather than shrunk silently.
  */
@@ -22,6 +24,14 @@ final class ProjectMapOutputPlan {
 
     /** Paper points per world pixel below which the output is tiled instead of shrunk further. */
     static final double MIN_PAPER_SCALE = MIN_LABEL_POINTS / LABEL_SIZE;
+
+    /** The smallest label the output goes down to, and only when that saves a page. */
+    static final double TOLERATED_LABEL_POINTS = 6;
+
+    static final double TOLERATED_MIN_PAPER_SCALE = TOLERATED_LABEL_POINTS / LABEL_SIZE;
+
+    /** How far each try below {@link #MIN_LABEL_POINTS} shrinks the labels, so the largest that saves a page wins. */
+    private static final double TOLERANCE_STEP_POINTS = 0.25;
 
     /** The map is never enlarged beyond one point per world pixel. */
     static final double MAX_PAPER_SCALE = 1.0;
@@ -68,8 +78,9 @@ final class ProjectMapOutputPlan {
      */
     record Plan(List<Cell> pages, double paperScale, double renderScale, int columns, int rows, boolean detailReduced) {
 
+        /** More than one page (the grid's empty cells are left out, so this counts pages, not cells). */
         boolean tiled() {
-            return columns * rows > 1;
+            return pages.size() > 1;
         }
 
         /** A single page that had to shrink the map to fit it. */
@@ -88,16 +99,35 @@ final class ProjectMapOutputPlan {
      * area in points. {@code obstacles} are the column cards and rows a page cut should avoid crossing.
      */
     static Plan plan(Box content, List<Box> obstacles, double pageWidth, double pageHeight) {
+        Plan readable = planAt(content, obstacles, pageWidth, pageHeight, MIN_PAPER_SCALE);
+        if (readable.pages().size() <= 1) {
+            return readable;
+        }
+        // Slightly smaller labels are better than one more page to tape on: the largest that saves a page wins.
+        for (double points = MIN_LABEL_POINTS - TOLERANCE_STEP_POINTS;
+                points >= TOLERATED_LABEL_POINTS - EPSILON;
+                points -= TOLERANCE_STEP_POINTS) {
+            Plan smaller = planAt(content, obstacles, pageWidth, pageHeight, points / LABEL_SIZE);
+            if (smaller.pages().size() < readable.pages().size()) {
+                return smaller;
+            }
+        }
+        return readable;
+    }
+
+    /** {@link #plan} with labels kept at least {@code minPaperScale} × {@link #LABEL_SIZE} pt tall. */
+    private static Plan planAt(
+            Box content, List<Box> obstacles, double pageWidth, double pageHeight, double minPaperScale) {
         double width = Math.max(1, content.width());
         double height = Math.max(1, content.height());
         double usableWidth = pageWidth > 0 ? pageWidth : width;
         double usableHeight = pageHeight > 0 ? pageHeight : height;
         double fit = Math.min(usableWidth / width, usableHeight / height);
-        double paperScale = Math.min(MAX_PAPER_SCALE, Math.max(MIN_PAPER_SCALE, fit));
+        double paperScale = Math.min(MAX_PAPER_SCALE, Math.max(minPaperScale, fit));
 
         double[] columnCuts = {content.x(), content.x() + width};
         double[] rowCuts = {content.y(), content.y() + height};
-        if (fit < MIN_PAPER_SCALE - EPSILON) {
+        if (fit < minPaperScale - EPSILON) {
             List<double[]> horizontal = new ArrayList<>(obstacles.size());
             List<double[]> vertical = new ArrayList<>(obstacles.size());
             for (Box box : obstacles) {

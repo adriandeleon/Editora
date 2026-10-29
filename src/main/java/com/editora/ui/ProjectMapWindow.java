@@ -5,7 +5,10 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
+import javafx.collections.ListChangeListener;
+import javafx.collections.ObservableList;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.scene.layout.Region;
@@ -45,11 +48,21 @@ final class ProjectMapWindow {
             closeQuietly(); // the editor window is going: so is its Map, which stays remembered as open
         }
     };
+    /** The editor scene's stylesheet list the Map scene mirrors, so a theme switch reaches an open Map. */
+    private @Nullable ObservableList<String> mirroredSheets;
+
+    private final ListChangeListener<String> sheetMirror = change -> mirrorSheets();
     private Consumer<Scene> sceneSetup = scene -> {};
     private Supplier<@Nullable List<Double>> loadBounds = () -> null;
     private Consumer<List<Double>> storeBounds = bounds -> {};
+    private java.util.function.BooleanSupplier loadMaximized = () -> false;
+    private Consumer<Boolean> storeMaximized = maximized -> {};
+    /** A move or resize is waiting to be remembered, once the window's maximized/iconified state has settled. */
+    private boolean boundsPending;
+
     private Runnable onUserClosed = () -> {};
     private Runnable onHidden = () -> {};
+    private Consumer<Boolean> onShowing = showing -> {};
     private String title = "";
 
     ProjectMapWindow(Region content) {
@@ -65,6 +78,20 @@ final class ProjectMapWindow {
     void setBoundsMemory(Supplier<@Nullable List<Double>> load, Consumer<List<Double>> store) {
         loadBounds = load == null ? () -> null : load;
         storeBounds = store == null ? bounds -> {} : store;
+    }
+
+    /**
+     * Where the window's maximized state is remembered. A maximized window keeps its last normal bounds as
+     * the size it restores to, and opens maximized again.
+     */
+    void setMaximizedMemory(java.util.function.BooleanSupplier load, Consumer<Boolean> store) {
+        loadMaximized = load == null ? () -> false : load;
+        storeMaximized = store == null ? maximized -> {} : store;
+    }
+
+    /** Told whenever the window starts or stops showing — what the Map's refreshes and polls follow. */
+    void setOnShowing(Consumer<Boolean> callback) {
+        onShowing = callback == null ? showing -> {} : callback;
     }
 
     /** Told when the user closes the window (its close button, or {@link #closeByUser()}), not the editor. */
@@ -130,6 +157,11 @@ final class ProjectMapWindow {
         rememberBounds(s); // where it opened, before any move: a window never moved is still remembered
     }
 
+    /** Whether the window is maximized (tests). */
+    boolean isMaximized() {
+        return stage != null && stage.isMaximized();
+    }
+
     /** The user closed the Map (its own command or toggle): remembered as closed. */
     void closeByUser() {
         if (isShowing()) {
@@ -162,13 +194,29 @@ final class ProjectMapWindow {
             closeByUser();
         });
         s.setOnHidden(e -> onHidden.run());
+        s.showingProperty().addListener((o, was, showing) -> onShowing.accept(showing));
         // Written into the session object as the window moves, never saved from here: a save per pixel of a
         // drag would be a blocking disk write on the FX thread. Closing the window saves (onUserClosed).
-        ChangeListener<Number> onMove = (o, was, now) -> rememberBounds(s);
+        // Deferred a pulse: maximizing (or, on Windows, minimizing to -32000) moves the window before its
+        // state says so, and those bounds are not where it should come back.
+        ChangeListener<Number> onMove = (o, was, now) -> {
+            if (!boundsPending) {
+                boundsPending = true;
+                Platform.runLater(() -> {
+                    boundsPending = false;
+                    rememberBounds(s);
+                });
+            }
+        };
         s.xProperty().addListener(onMove);
         s.yProperty().addListener(onMove);
         s.widthProperty().addListener(onMove);
         s.heightProperty().addListener(onMove);
+        s.maximizedProperty().addListener((o, was, maximized) -> {
+            if (s.isShowing()) {
+                storeMaximized.accept(maximized);
+            }
+        });
         return s;
     }
 
@@ -187,12 +235,33 @@ final class ProjectMapWindow {
             return;
         }
         // A fresh Scene carries no stylesheets, and the app's look is an author stylesheet rather than the
-        // user-agent one — without copying these the Map renders as unstyled default controls.
-        if (editorWindow.getScene() != null && s.getScene() != null) {
-            s.getScene().getStylesheets().setAll(editorWindow.getScene().getStylesheets());
+        // user-agent one — without them the Map renders as unstyled default controls. Mirrored, not copied: an
+        // editor-theme switch (or a plugin's sheet) swaps the editor scene's list while the Map is open.
+        ObservableList<String> sheets =
+                editorWindow.getScene() == null ? null : editorWindow.getScene().getStylesheets();
+        if (sheets != mirroredSheets) {
+            if (mirroredSheets != null) {
+                mirroredSheets.removeListener(sheetMirror);
+            }
+            mirroredSheets = sheets;
+            if (sheets != null) {
+                sheets.addListener(sheetMirror);
+            }
         }
+        mirrorSheets();
         if (editorWindow instanceof Stage editorStage && s.getIcons().isEmpty()) {
             s.getIcons().setAll(editorStage.getIcons());
+        }
+    }
+
+    private void mirrorSheets() {
+        Stage s = stage;
+        ObservableList<String> sheets = mirroredSheets;
+        if (s != null
+                && s.getScene() != null
+                && sheets != null
+                && !s.getScene().getStylesheets().equals(sheets)) {
+            s.getScene().getStylesheets().setAll(sheets);
         }
     }
 
@@ -208,6 +277,7 @@ final class ProjectMapWindow {
             s.setY(b.y());
             s.setWidth(b.width());
             s.setHeight(b.height());
+            s.setMaximized(loadMaximized.getAsBoolean()); // over the restore size it keeps
             return;
         }
         Rectangle2D visual =
@@ -226,11 +296,15 @@ final class ProjectMapWindow {
         s.setHeight(size.getHeight());
         s.setX(at.getX());
         s.setY(at.getY());
+        s.setMaximized(loadMaximized.getAsBoolean());
     }
 
     private void rememberBounds(Stage s) {
         if (!s.isShowing() || s.getWidth() < ToolWindowFloat.MIN_USABLE || s.getHeight() < ToolWindowFloat.MIN_USABLE) {
             return; // mid-construction, before the stage has been sized
+        }
+        if (s.isMaximized() || s.isIconified()) {
+            return; // the screen's size, or off-screen: the bounds kept are the ones it restores to
         }
         storeBounds.accept(ToolWindowFloat.toList(s.getX(), s.getY(), s.getWidth(), s.getHeight()));
     }

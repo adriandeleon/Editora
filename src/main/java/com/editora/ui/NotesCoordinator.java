@@ -237,6 +237,15 @@ final class NotesCoordinator {
 
     /** Prompts for a note whose precise code anchor came from the read-only Project Map preview. */
     void addPersonalNote(@Nullable Path file, @Nullable NoteDraft draft) {
+        addPersonalNote(file, draft, (OverlayHost) null);
+    }
+
+    /**
+     * As {@link #addPersonalNote(Path, NoteDraft)}, prompting in {@code over} — the Project Map window's
+     * overlay, when a Map card asks — with a title that names the file and lines, since the card it came from
+     * is not the editor the prompt would otherwise sit over. {@code null}: this window's overlay.
+     */
+    void addPersonalNote(@Nullable Path file, @Nullable NoteDraft draft, @Nullable OverlayHost over) {
         ifEnabled(() -> {
             if (file == null) {
                 return;
@@ -245,8 +254,27 @@ final class NotesCoordinator {
                 host.setStatus(tr("encryption.status.noNotes")); // a note keeps the text it is about, unencrypted
                 return;
             }
-            showNoteDialog("", body -> addPersonalNote(file, draft, body), null);
+            String title = over == null ? tr("dialog.note.title") : noteTitleFor(file, draft);
+            showNoteDialog(
+                    over == null ? host.overlayHost() : over,
+                    title,
+                    "",
+                    body -> addPersonalNote(file, draft, body),
+                    null);
         });
+    }
+
+    /** "Personal Note — App.java, lines 8–9": what a prompt away from the editor is about. Pure. */
+    static String noteTitleFor(Path file, @Nullable NoteDraft draft) {
+        String name = String.valueOf(file.getFileName());
+        if (draft == null || draft.scope() == NoteScope.FOLDER) {
+            return tr("dialog.note.titleFor", name);
+        }
+        int first = draft.anchor().line() + 1;
+        int last = Math.max(first, draft.anchor().endLine() + 1);
+        return first == last
+                ? tr("dialog.note.titleForLine", name, first)
+                : tr("dialog.note.titleForLines", name, first, last);
     }
 
     private void addPersonalNote(Path file, @Nullable NoteDraft requestedDraft, String body) {
@@ -581,6 +609,11 @@ final class NotesCoordinator {
      * Enter inserts a newline; Ctrl/Cmd+Enter saves.
      */
     private void showNoteDialog(String initial, Consumer<String> onAccept, @Nullable Runnable onDelete) {
+        showNoteDialog(host.overlayHost(), tr("dialog.note.title"), initial, onAccept, onDelete);
+    }
+
+    private void showNoteDialog(
+            OverlayHost over, String title, String initial, Consumer<String> onAccept, @Nullable Runnable onDelete) {
         TextArea editor = new TextArea(initial == null ? "" : initial);
         editor.setWrapText(true);
         editor.setPrefRowCount(6);
@@ -595,8 +628,8 @@ final class NotesCoordinator {
         OverlayInput.Extra extra =
                 onDelete == null ? null : new OverlayInput.Extra(tr("notes.delete"), () -> confirmDelete(onDelete));
         OverlayInput.show(
-                host.overlayHost(),
-                tr("dialog.note.title"),
+                over,
+                title,
                 body,
                 editor,
                 tr("dialog.save"),
