@@ -193,21 +193,28 @@ A file whose language the Structure tool window can outline has a **Structure ic
 of stepped lines — before its eye. `StructureOutline.supports` decides by the name alone (a language with a
 bundled grammar, or Markdown, Typst, `.http` or Clojure; never an encrypted file), so a row costs no read.
 The icon opens a **structure column**: the file's declarations, as the Structure window shows them, in the
-order they are written. A declaration that holds others (a class's members, a heading's subsections) ends in
+order they are written — one-line members included in every language (`StructureOutline.addFoldlessSymbols`,
+not a member call such as `x.run()`), a stylesheet's rules by selector or at-rule, a YAML file's keys read from
+its lines (`yamlKeyNodes`, so `on:` is a key, not a boolean). A callable is labelled with its parameter list:
+the outline's detail, else the parameter types read from its declaration line (`add(int, int)`; names where the
+language writes no types), else the bare name — never an invented `()`. A declaration that holds others (a class's members, a heading's subsections) ends in
 a chevron and opens a further column, as a folder does; a file whose outline is one top-level declaration
 with members (most Java files) opens that declaration's column too. The icon sits in a filled disc while its
 column is open. A structure column has the usual title (`App.java · Structure`, or the declaration's
 label), count, filter, lock and close button, but no Show hidden checkbox. While its file is being outlined,
 when it cannot be read and when it has no declarations it holds one explanatory row; past 1,000 rows it ends
-in one that says how many were left out.
+in one that says how many were left out, and for a file past the read cap in one that says only its start was
+outlined.
 
 **Clicking a declaration opens a declaration card**: the ordinary preview card showing only the declaration's
 lines — its block, from its declaration (or its fold region's first line, when that is above it) to the
 region's last line, extended upwards over the doc comment, annotations, decorators and Rust attributes
-directly above it (`ProjectMapStructure.range` / `leadingDocStart`). A heading runs to the line before the
-next heading at its level; a declaration with no block of its own is its own line. The card reads and
+directly above it (`ProjectMapStructure.range` / `leadingDocStart`) — and the language's own line comments
+(`#` in Python, shell, YAML; not `#!`). A heading, and a `.http` request (its headers and body), runs to the line
+before the next one at its level; a declaration with no block of its own is its own line, unless the read cap cut
+the block it opens off, when it runs to the next declaration or the end of what was read. The card reads and
 highlights the whole file and shows that slice, so a line inside a comment or a string is coloured as in the
-editor; its gutter keeps the file's numbers in the narrowed amber, its title reads `App.java › add()`, its
+editor; its gutter keeps the file's numbers in the narrowed amber, its title reads `App.java › add(int, int)`, its
 status line says `Lines 9–19 of 29`, and it opens no taller than its lines need (but no smaller than the card
 minimum). **Open** opens the file at the declaration; **Open Narrowed** (the card's and the row's menu) opens
 it narrowed to the declaration's fold block through `EditingCoordinator.narrowToFoldRegionAt`, as the Structure
@@ -216,10 +223,12 @@ file's own lines. Declaration cards are keyed by the declaration's row, so sever
 under the shared eight-card limit.
 
 A declaration row's path is made up: its file followed by one segment per declaration down to it
-(`App.java/…sApp~0/…sadd~0`), each the declaration's name up to its parameter list, made file-name safe, and
-its place among same-named siblings. No such path can exist on disk — a file has no children — and because
-the segment is a name rather than a line, an open column, the selection and an open card survive an edit that
-moves the declaration. `ProjectMapModel.Entry.symbol` rows are neither files nor folders (`isSymbol()`,
+(`App.java/…sApp~0/…sadd_int__int_~0`), each the declaration's label with its parameter types, made file-name
+safe (at most 60 characters), and its place among siblings of the same label. No such path can exist on disk — a
+file has no children — and because the segment is a label rather than a line, an open column, the selection and an
+open card survive an edit that moves the declaration, and inserting an overload leaves the others' paths alone.
+When an edit changes a declaration's parameter list, its open column and card follow it to the new path: the
+same-named declaration that is new among its siblings, nearest its old line (`ProjectMapStructure.successor`). `ProjectMapModel.Entry.symbol` rows are neither files nor folders (`isSymbol()`,
 `isFile()`): the Project context menu, F2, Delete, the type filter, the open/unsaved/Git/marker states and the
 hidden-files filter never apply to them; their emphasis under a filter is their file's. Closing a structure
 column, collapsing the folder above its file or deleting the file closes the columns below it and their cards.

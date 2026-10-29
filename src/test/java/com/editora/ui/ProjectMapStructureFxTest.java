@@ -79,7 +79,7 @@ class ProjectMapStructureFxTest {
             waitForRow(map, app);
             FxTestSupport.runOnFx(() -> clickStructureIcon(map.surface(), app));
             Path type = waitForSymbol(map, "App");
-            Path add = waitForSymbol(map, "add()");
+            Path add = waitForSymbol(map, "add(int, int)");
             Path reset = waitForSymbol(map, "reset()");
             FxTestSupport.runOnFx(() -> {
                 assertEquals(app, entry(map.surface(), type).parent(), "the class hangs from its file");
@@ -96,7 +96,7 @@ class ProjectMapStructureFxTest {
                         .filter(row -> type.equals(row.parent()))
                         .map(ProjectMapModel.Entry::name)
                         .toList();
-                assertEquals(List.of("add()", "reset()"), members);
+                assertEquals(List.of("add(int, int)", "reset()"), members);
             });
         } finally {
             map.close();
@@ -111,7 +111,7 @@ class ProjectMapStructureFxTest {
         try {
             waitForRow(map, app);
             FxTestSupport.runOnFx(() -> clickStructureIcon(map.surface(), app));
-            waitForSymbol(map, "add()");
+            waitForSymbol(map, "add(int, int)");
             FxTestSupport.runOnFx(() -> {
                 PixelReader pixels = map.surface().snapshot(null, null).getPixelReader();
                 Color folder = cardColor(map.surface(), pixels, root);
@@ -144,7 +144,7 @@ class ProjectMapStructureFxTest {
                             (file, block) -> narrowed.add(new Object[] {file, block})));
             waitForRow(map, app);
             FxTestSupport.runOnFx(() -> clickStructureIcon(map.surface(), app));
-            Path add = waitForSymbol(map, "add()");
+            Path add = waitForSymbol(map, "add(int, int)");
             Path reset = waitForSymbol(map, "reset()");
             FxTestSupport.runOnFx(() -> clickRow(map.surface(), add));
             ProjectMapPreview card = waitForCard(map, add);
@@ -165,9 +165,9 @@ class ProjectMapStructureFxTest {
                 assertTrue(editor.getStyleClass().contains("narrowed"), "the gutter takes the narrowed colour");
                 Node gutter = editor.getParagraphGraphicFactory().apply(0);
                 assertEquals("6", ((Label) gutter).getText().strip(), "the first line keeps the file's number");
-                assertEquals(new ProjectMapPreview.Range("add()", 8, 5, 10), card.range());
+                assertEquals(new ProjectMapPreview.Range("add(int, int)", 8, 5, 10), card.range());
                 Label title = FxTestSupport.field(card, "title");
-                assertEquals("App.java › add()", title.getText());
+                assertEquals("App.java › add(int, int)", title.getText());
                 Label status = FxTestSupport.field(card, "status");
                 assertEquals(tr("project.map.preview.lines", 6, 11, 17), status.getText());
 
@@ -294,7 +294,8 @@ class ProjectMapStructureFxTest {
             FxTestSupport.runOnFx(() -> {
                 key(map.surface(), KeyCode.RIGHT);
                 assertEquals(
-                        "add()", entry(map.surface(), selected(map.surface())).name());
+                        "add(int, int)",
+                        entry(map.surface(), selected(map.surface())).name());
                 key(map.surface(), KeyCode.DOWN);
                 assertEquals(
                         "reset()", entry(map.surface(), selected(map.surface())).name());
@@ -332,7 +333,7 @@ class ProjectMapStructureFxTest {
                         entry(map.surface(), app)));
                 clickStructureIcon(map.surface(), app);
             });
-            Path add = waitForSymbol(map, "add()");
+            Path add = waitForSymbol(map, "add(int, int)");
             FxTestSupport.runOnFx(() -> {
                 map.view().setContextMenuFactory(entry -> new ContextMenu(new MenuItem("file menu")));
                 Function<ProjectMapModel.Entry, ContextMenu> factory =

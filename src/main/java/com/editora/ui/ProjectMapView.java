@@ -1584,8 +1584,16 @@ final class ProjectMapView extends VBox {
             if (!ProjectMapStructure.isSymbolPath(entry.getKey())) {
                 continue;
             }
-            ProjectMapStructure.Node node = structure.node(entry.getKey());
+            Path key = entry.getKey();
+            ProjectMapStructure.Node node = structure.node(key);
             ProjectMapPreview card = entry.getValue();
+            Path next = node == null ? structure.successor(key) : null;
+            if (next != null && !previews.containsKey(next)) {
+                // Its parameter list was edited: the card follows the declaration to its new path.
+                previews.remove(key);
+                previews.put(next, card);
+                node = structure.node(next);
+            }
             Path file = structure.fileOf(entry.getKey());
             if (node == null) {
                 if (file != null && structure.hasOutline(file)) {
@@ -1601,6 +1609,16 @@ final class ProjectMapView extends VBox {
 
     private static ProjectMapPreview.Range rangeOf(ProjectMapModel.Symbol symbol) {
         return new ProjectMapPreview.Range(symbol.label(), symbol.line(), symbol.startLine(), symbol.endLine());
+    }
+
+    /** The path a card is open under now (a declaration card follows its declaration), else {@code fallback}. */
+    private Path cardKeyOf(ProjectMapPreview card, Path fallback) {
+        for (Map.Entry<Path, ProjectMapPreview> entry : previews.entrySet()) {
+            if (entry.getValue() == card) {
+                return entry.getKey();
+            }
+        }
+        return fallback;
     }
 
     /** The files a declaration card is open for: their outlines are kept to follow the cards' lines. */
@@ -1637,7 +1655,7 @@ final class ProjectMapView extends VBox {
         ProjectMapPreview preview = createPreview(key);
         preview.setOnOpenAt((path, line) -> onOpenAt.accept(path, line));
         preview.setOnOpenNarrowed(() -> {
-            ProjectMapStructure.Node node = structure.node(key);
+            ProjectMapStructure.Node node = structure.node(cardKeyOf(preview, key));
             ProjectMapModel.Symbol current = node == null ? symbol : node.symbol();
             com.editora.text.FoldRegions.Region block = current.block();
             onOpenNarrowed.accept(

@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -72,13 +73,21 @@ final class ProjectMapStructure {
     }
 
     /** One file's outline: its declarations by path, and how its source looked. */
-    private record Outline(@Nullable Stamp stamp, List<Node> roots, Map<Path, Node> byPath, Problem problem) {
-        static final Outline LOADING = new Outline(null, List.of(), Map.of(), Problem.LOADING);
+    /** @param partial the source was cut at the read cap: declarations past it are not in the outline */
+    private record Outline(
+            @Nullable Stamp stamp, List<Node> roots, Map<Path, Node> byPath, Problem problem, boolean partial) {
+        static final Outline LOADING = new Outline(null, List.of(), Map.of(), Problem.LOADING, false);
 
         Outline withStamp(Stamp newStamp) {
-            return new Outline(newStamp, roots, byPath, problem);
+            return new Outline(newStamp, roots, byPath, problem, partial);
         }
     }
+
+    /**
+     * The declarations of the last outline that replaced another under a new path — a method whose parameter list
+     * was edited — each mapped to the path it has now (see {@link #successor}). Kept until the next outline.
+     */
+    private Map<Path, Path> successors = Map.of();
 
     private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "project-map-outline");
@@ -244,6 +253,14 @@ final class ProjectMapStructure {
                 continue;
             }
             addRows(rows, outline.roots(), file, depth);
+            if (outline.partial()) {
+                // The file is longer than the read cap: say so instead of passing the first part off as all.
+                rows.add(ProjectMapModel.Entry.placeholder(
+                        file,
+                        depth,
+                        new ProjectMapModel.Placeholder(
+                                ProjectMapModel.PlaceholderKind.EMPTY, 0, tr("project.map.structure.partial"))));
+            }
         }
         return rows;
     }
@@ -398,8 +415,9 @@ final class ProjectMapStructure {
         }
         try {
             loader.submit(() -> {
+                boolean cut = current != null && current.truncated();
                 Outline outline = text != null
-                        ? outline(file, text, server, true, version)
+                        ? outline(file, text, server, true, version, cut)
                         : readAndOutline(file, charset, knownStamp);
                 Platform.runLater(() -> apply(file, id, outline));
             });
@@ -443,6 +461,15 @@ final class ProjectMapStructure {
         if (outline == null) {
             return; // unchanged on disk
         }
+        Outline before = outlines.get(file);
+        successors = before == null ? Map.of() : successorsOf(before, outline);
+        if (!successors.isEmpty()) {
+            List<Path> moved = new ArrayList<>(open);
+            open.clear();
+            for (Path path : moved) {
+                open.add(successors.getOrDefault(path, path)); // an open column follows its declaration
+            }
+        }
         outlines.put(file, outline);
         if (autoExpand.remove(file)
                 && outline.roots().size() == 1
@@ -454,6 +481,56 @@ final class ProjectMapStructure {
                 && outline.problem() == Problem.NONE
                 && !outline.byPath().containsKey(path));
         onChanged.run();
+    }
+
+    /**
+     * Where the declaration at {@code path} went in the last outline of its file when its path changed: the
+     * same-named declaration, among its old siblings' new ones, that is not an old one, nearest its old line —
+     * the method whose parameter list was edited. Null when none qualifies (it was deleted or renamed).
+     */
+    @Nullable
+    Path successor(@Nullable Path path) {
+        return path == null ? null : successors.get(path);
+    }
+
+    /** Old paths gone from {@code after}, each to its successor (see {@link #successor}). Parents first. */
+    private static Map<Path, Path> successorsOf(Outline before, Outline after) {
+        if (before.problem() != Problem.NONE || after.problem() != Problem.NONE) {
+            return Map.of();
+        }
+        List<Node> gone = before.byPath().values().stream()
+                .filter(node -> !after.byPath().containsKey(node.path()))
+                .sorted(java.util.Comparator.comparingInt(node -> node.path().getNameCount()))
+                .toList();
+        if (gone.isEmpty()) {
+            return Map.of();
+        }
+        Map<Path, Path> moved = new HashMap<>();
+        Set<Path> taken = new HashSet<>();
+        for (Node old : gone) {
+            Path oldParent = old.path().getParent();
+            Path parent = moved.getOrDefault(oldParent, oldParent);
+            String name = segmentStem(old.symbol().label());
+            Node best = null;
+            for (Node candidate : after.byPath().values()) {
+                if (before.byPath().containsKey(candidate.path())
+                        || taken.contains(candidate.path())
+                        || !java.util.Objects.equals(candidate.path().getParent(), parent)
+                        || !name.equals(segmentStem(candidate.symbol().label()))) {
+                    continue;
+                }
+                if (best == null
+                        || Math.abs(candidate.symbol().line() - old.symbol().line())
+                                < Math.abs(best.symbol().line() - old.symbol().line())) {
+                    best = candidate;
+                }
+            }
+            if (best != null) {
+                moved.put(old.path(), best.path());
+                taken.add(best.path());
+            }
+        }
+        return moved;
     }
 
     void dispose() {
@@ -468,12 +545,12 @@ final class ProjectMapStructure {
         if (stamp != null && stamp.equals(known)) {
             return null;
         }
-        String text = ProjectMapPreview.readText(file, charset);
-        if (text == null) {
-            return new Outline(stamp, List.of(), Map.of(), Problem.UNREADABLE);
+        ProjectMapPreview.ReadText read = ProjectMapPreview.readTextCut(file, charset);
+        if (read == null) {
+            return new Outline(stamp, List.of(), Map.of(), Problem.UNREADABLE, false);
         }
-        Outline outline = outline(file, text, null, false, -1);
-        return new Outline(stamp, outline.roots(), outline.byPath(), outline.problem());
+        Outline outline = outline(file, read.text(), null, false, -1, read.truncated());
+        return new Outline(stamp, outline.roots(), outline.byPath(), outline.problem(), outline.partial());
     }
 
     private static @Nullable Stamp stamp(Path file) {
@@ -487,11 +564,12 @@ final class ProjectMapStructure {
 
     /** Off the FX thread: the outline of {@code text}, the file's content. */
     private static Outline outline(
-            Path file, String text, @Nullable List<SymbolNode> server, boolean buffer, long version) {
+            Path file, String text, @Nullable List<SymbolNode> server, boolean buffer, long version, boolean cut) {
         List<StructureNode> roots;
         List<String> lines = List.of(text.split("\n", -1));
+        String language = "";
         try {
-            String language = com.editora.text.LanguageRegistry.forFileName(PathDisplay.fileName(file));
+            language = com.editora.text.LanguageRegistry.forFileName(PathDisplay.fileName(file));
             boolean pom = "xml".equals(language)
                     && PomFiles.isPom(
                             PathDisplay.fileName(file),
@@ -504,18 +582,33 @@ final class ProjectMapStructure {
             roots = List.of(); // a grammar that would not compile: no structure rather than no map
         }
         Map<Path, Node> byPath = new LinkedHashMap<>();
-        List<Node> nodes = nodes(file, file, roots, lines, lines.size() - 1, byPath);
+        Source source = new Source(lines, lineCommentOf(language), language == null ? "" : language, cut);
+        List<Node> nodes = nodes(file, file, roots, source, lines.size() - 1, byPath);
         Stamp stamp = buffer ? new Stamp(-1, -1, text.hashCode(), text.length(), true, version) : null;
-        return new Outline(stamp, nodes, Map.copyOf(byPath), Problem.NONE);
+        return new Outline(stamp, nodes, Collections.unmodifiableMap(byPath), Problem.NONE, cut);
+    }
+
+    /**
+     * What a declaration's lines and label are read from.
+     *
+     * @param lineComment the language's line-comment token ({@code //}, {@code #}, …), or "" for none
+     * @param cut the text stops at the read cap
+     */
+    record Source(List<String> lines, String lineComment, String language, boolean cut) {}
+
+    private static String lineCommentOf(@Nullable String language) {
+        try {
+            String token = com.editora.editops.Commenter.styleFor(language == null ? "" : language)
+                    .line();
+            return token == null ? "" : token.strip();
+        } catch (RuntimeException unknown) {
+            return "";
+        }
     }
 
     private static List<Node> nodes(
-            Path file,
-            Path parent,
-            List<StructureNode> source,
-            List<String> lines,
-            int parentEnd,
-            Map<Path, Node> out) {
+            Path file, Path parent, List<StructureNode> source, Source text, int parentEnd, Map<Path, Node> out) {
+        List<String> lines = text.lines();
         List<Node> result = new ArrayList<>(source.size());
         Map<String, Integer> seen = new HashMap<>();
         for (int i = 0; i < source.size(); i++) {
@@ -523,19 +616,22 @@ final class ProjectMapStructure {
             if (node.line() < 0 || node.line() >= lines.size()) {
                 continue;
             }
-            String stem = segmentStem(node.label());
+            String label = displayLabel(node, lines.get(node.line()), text.language());
+            // The segment is the label with its parameter types, so overloads have paths of their own: inserting
+            // an overload used to shift every later one's index and switch an open card to another method.
+            String stem = signatureStem(label);
             int occurrence = seen.merge(stem, 1, Integer::sum) - 1;
             Path path = parent.resolve(SEGMENT_PREFIX + stem + "~" + occurrence);
             int nextStart = i + 1 < source.size() ? source.get(i + 1).line() : -1;
-            int[] range = range(node, lines, nextStart, parentEnd);
-            List<Node> children = nodes(file, path, node.children(), lines, range[1], out);
+            int[] range = range(node, text, nextStart, parentEnd);
+            List<Node> children = nodes(file, path, node.children(), text, range[1], out);
             Region block = node.region() != null
                     ? new Region(
                             Math.min(node.line(), node.region().startLine()),
                             node.region().endLine())
                     : new Region(node.line(), range[1]);
             ProjectMapModel.Symbol symbol = new ProjectMapModel.Symbol(
-                    file, displayLabel(node), node.kind(), node.line(), range[0], range[1], block, !children.isEmpty());
+                    file, label, node.kind(), node.line(), range[0], range[1], block, !children.isEmpty());
             Node built = new Node(path.toAbsolutePath().normalize(), symbol, List.copyOf(children));
             out.put(built.path(), built);
             result.add(built);
@@ -543,8 +639,13 @@ final class ProjectMapStructure {
         return result;
     }
 
-    /** A row's label: the Structure window's, with {@code ()} after a callable that carries no parameters. */
-    private static String displayLabel(StructureNode node) {
+    /**
+     * A row's label: the Structure window's, and for a callable its parameter list — the detail the outline
+     * carries, else the parameter types read from its declaration line ({@code add(int, int, int)}), else the bare
+     * name. It used to append {@code ()} to every callable without a detail, so all of a class's overloads read
+     * {@code add()} and claimed no parameters.
+     */
+    static String displayLabel(StructureNode node, @Nullable String declarationLine, @Nullable String language) {
         String label = node.label() == null ? "" : node.label().strip().replaceAll("\\s+", " ");
         String kind = node.kind();
         boolean callable = "method".equals(kind) || "function".equals(kind) || "constructor".equals(kind);
@@ -555,7 +656,152 @@ final class ProjectMapStructure {
         if (detail.startsWith("[")) {
             return label + " " + detail; // a Clojure parameter vector
         }
-        return label + (detail.startsWith("(") ? detail : detail.isEmpty() ? "()" : "(" + detail + ")");
+        if (!detail.isEmpty()) {
+            return label + (detail.startsWith("(") ? detail : "(" + detail + ")");
+        }
+        String parameters = parameterTypes(declarationLine, label, language);
+        return parameters == null ? label : label + "(" + parameters + ")";
+    }
+
+    /**
+     * The parameter list of {@code name}'s declaration on {@code line}, shortened to what tells overloads apart:
+     * the types where the language writes them ({@code int a} → {@code int}, {@code a: Int} → {@code Int}), the
+     * names where it does not (Python's {@code a, b=1} → {@code a, b}), defaults, annotations and a leading
+     * {@code self} left out. Null when the list does not open and close on the line. Pure.
+     */
+    static @Nullable String parameterTypes(@Nullable String line, String name, @Nullable String language) {
+        if (line == null || name.isEmpty()) {
+            return null;
+        }
+        int open = -1;
+        for (int at = line.indexOf(name); at >= 0; at = line.indexOf(name, at + 1)) {
+            boolean wordStart = at == 0 || !Character.isJavaIdentifierPart(line.charAt(at - 1));
+            int i = at + name.length();
+            if (i < line.length() && line.charAt(i) == '<') { // a generic method name: foo<T>(…)
+                int depth = 0;
+                for (; i < line.length(); i++) {
+                    char c = line.charAt(i);
+                    depth += c == '<' ? 1 : c == '>' ? -1 : 0;
+                    if (depth == 0) {
+                        i++;
+                        break;
+                    }
+                }
+            }
+            while (i < line.length() && line.charAt(i) == ' ') {
+                i++;
+            }
+            if (wordStart && i < line.length() && line.charAt(i) == '(') {
+                open = i;
+                break;
+            }
+        }
+        if (open < 0) {
+            return null;
+        }
+        int depth = 0;
+        int close = -1;
+        for (int i = open; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '(') {
+                depth++;
+            } else if (c == ')' && --depth == 0) {
+                close = i;
+                break;
+            }
+        }
+        if (close < 0) {
+            return null; // the list goes on to the next line: the bare name
+        }
+        String inside = line.substring(open + 1, close).strip();
+        if (inside.isEmpty()) {
+            return "";
+        }
+        boolean go = "go".equals(language);
+        List<String> types = new ArrayList<>();
+        for (String parameter : splitTopLevel(inside)) {
+            String shown = go ? parameter.strip().replaceAll("\\s+", " ") : parameterType(parameter);
+            if (!shown.isEmpty()) {
+                types.add(shown);
+            }
+        }
+        if (!types.isEmpty() && types.getFirst().matches("&?(mut )?(self|cls)")) {
+            types.removeFirst(); // a Python or Rust method's receiver
+        }
+        return String.join(", ", types);
+    }
+
+    private static List<String> splitTopLevel(String list) {
+        List<String> parts = new ArrayList<>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < list.length(); i++) {
+            char c = list.charAt(i);
+            if (c == '(' || c == '<' || c == '[' || c == '{') {
+                depth++;
+            } else if ((c == ')' || c == '>' && (i == 0 || list.charAt(i - 1) != '=') || c == ']' || c == '}')
+                    && depth > 0) {
+                depth--;
+            } else if (c == ',' && depth == 0) {
+                parts.add(list.substring(start, i));
+                start = i + 1;
+            }
+        }
+        parts.add(list.substring(start));
+        return parts;
+    }
+
+    /** One parameter as a label shows it: its type, or its name when it has no type. */
+    private static String parameterType(String parameter) {
+        String text = parameter.strip().replaceAll("@[\\w.]+(\\([^)]*\\))?\\s*", ""); // annotations
+        int depth = 0;
+        for (int i = 0; i < text.length(); i++) { // a default value
+            char c = text.charAt(i);
+            depth += c == '(' || c == '<' || c == '[' ? 1 : c == ')' || c == '>' || c == ']' ? -1 : 0;
+            if (c == '=' && depth == 0 && (i + 1 >= text.length() || text.charAt(i + 1) != '>')) {
+                text = text.substring(0, i).strip();
+                break;
+            }
+        }
+        text = text.replaceFirst("^(final|var|val|const|readonly|mut|in|out|ref|params)\\s+", "");
+        int colon = -1;
+        depth = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            depth += c == '(' || c == '<' || c == '[' ? 1 : c == ')' || c == '>' || c == ']' ? -1 : 0;
+            if (c == ':'
+                    && depth == 0
+                    && (i + 1 >= text.length() || text.charAt(i + 1) != ':')
+                    && (i == 0 || text.charAt(i - 1) != ':')) {
+                colon = i;
+                break;
+            }
+        }
+        if (colon >= 0) { // name: Type (Kotlin, Scala, TypeScript, Python, Rust, Swift)
+            String type = text.substring(colon + 1).strip();
+            return type.isEmpty() ? text.substring(0, colon).strip() : type.replaceAll("\\s+", " ");
+        }
+        String[] words = text.split("\\s+");
+        if (words.length < 2) {
+            return text; // a name alone (Python, JavaScript) or a type alone
+        }
+        String last = words[words.length - 1];
+        StringBuilder type = new StringBuilder(String.join(" ", java.util.Arrays.copyOf(words, words.length - 1)));
+        for (int i = 0; i < last.length() && (last.charAt(i) == '*' || last.charAt(i) == '&'); i++) {
+            type.append(last.charAt(i)); // char *name → char*
+        }
+        return type.toString();
+    }
+
+    /** A declaration's path segment: its whole label (with parameter types), file-name safe, at most 60 chars. */
+    static String signatureStem(@Nullable String label) {
+        String value = label == null ? "" : label.strip();
+        StringBuilder stem = new StringBuilder(Math.min(value.length(), SEGMENT_STEM_LIMIT));
+        for (int i = 0; i < value.length() && stem.length() < SEGMENT_STEM_LIMIT; i++) {
+            char c = value.charAt(i);
+            stem.append(Character.isLetterOrDigit(c) || c == '_' || c == '-' || c == '$' ? c : '_');
+        }
+        return stem.isEmpty() ? "_" : stem.toString();
     }
 
     /** The name part of a declaration's path segment: its label up to the parameter list, file-name safe. */
@@ -580,23 +826,46 @@ final class ProjectMapStructure {
      * when it is a heading or holds declarations, and is its own line otherwise.
      */
     static int[] range(StructureNode node, List<String> lines, int nextSiblingLine, int parentEnd) {
+        return range(node, new Source(lines, "//", "", false), nextSiblingLine, parentEnd);
+    }
+
+    /**
+     * As above, for {@code source}'s language: its line comments count as a doc comment ({@code #} in Python, shell
+     * and YAML), a {@code .http} request runs to the line before the next one like a heading (its headers and body,
+     * not only its request line), and when the text was cut at the read cap a declaration whose block the cap cut
+     * off runs to the next declaration or the end of the text read, rather than being one line.
+     */
+    static int[] range(StructureNode node, Source source, int nextSiblingLine, int parentEnd) {
+        List<String> lines = source.lines();
         int last = Math.max(0, lines.size() - 1);
         int line = Math.max(0, Math.min(node.line(), last));
         Region region = node.region();
         int start = region == null ? line : Math.min(line, region.startLine());
         int end;
+        boolean request = StructureOutline.HTTP_REQUEST_KIND.equals(node.kind());
         if (region != null && region.endLine() >= start) {
             end = region.endLine();
-        } else if ("heading".equals(node.kind()) || !node.children().isEmpty()) {
+        } else if ("heading".equals(node.kind())
+                || request
+                || !node.children().isEmpty()
+                || source.cut() && opensBlock(lines.get(line))) {
             end = nextSiblingLine > line ? nextSiblingLine - 1 : parentEnd;
-            while (end > line && lines.get(Math.min(end, last)).isBlank()) {
-                end--; // the blank lines before the next section belong to neither
+            while (end > line
+                    && (lines.get(Math.min(end, last)).isBlank()
+                            || request && lines.get(Math.min(end, last)).strip().startsWith("###"))) {
+                end--; // the blank lines (and a request's ### separator) before the next section belong to neither
             }
         } else {
             end = line;
         }
         end = Math.max(start, Math.min(end, last));
-        return new int[] {leadingDocStart(lines, start), end};
+        return new int[] {leadingDocStart(lines, start, source.lineComment()), end};
+    }
+
+    /** Whether a declaration line opens a block that goes on below it ({@code void big() {}, {@code def f():}). */
+    private static boolean opensBlock(String line) {
+        String text = line.strip();
+        return text.endsWith("{") || text.endsWith(":") || text.endsWith("(");
     }
 
     /**
@@ -605,11 +874,23 @@ final class ProjectMapStructure {
      * — or {@code start} when there is none. A blank line ends the search.
      */
     static int leadingDocStart(List<String> lines, int start) {
+        return leadingDocStart(lines, start, "//");
+    }
+
+    /**
+     * As above, with the language's own line comments too ({@code lineComment}: {@code #} for Python, shell, YAML
+     * and the like — not a {@code #!} line).
+     */
+    static int leadingDocStart(List<String> lines, int start, @Nullable String lineComment) {
+        String comment = lineComment == null || lineComment.isBlank() || "//".equals(lineComment) ? null : lineComment;
         int first = start;
         int line = start - 1;
         while (line >= 0) {
             String text = lines.get(line).strip();
-            if (text.startsWith("@") || text.startsWith("#[") || text.startsWith("//")) {
+            if (text.startsWith("@")
+                    || text.startsWith("#[")
+                    || text.startsWith("//")
+                    || comment != null && text.startsWith(comment) && !text.startsWith("#!")) {
                 first = line--;
             } else if (text.endsWith("*/")) {
                 int open = line;

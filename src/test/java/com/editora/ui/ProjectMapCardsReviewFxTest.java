@@ -27,9 +27,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static com.editora.i18n.Messages.tr;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -298,7 +300,7 @@ class ProjectMapCardsReviewFxTest {
     @Test
     void aFileOverTheHighlightCapColoursItsFirstLinesAndSaysSo(@TempDir Path dir) throws Exception {
         StringBuilder text = new StringBuilder();
-        while (text.length() < 200_000) {
+        while (text.length() < 165_000) {
             text.append("int value").append(text.length()).append(" = 1; // a comment\n");
         }
         Path file = Files.writeString(dir.resolve("Big.java"), text);
@@ -647,5 +649,179 @@ class ProjectMapCardsReviewFxTest {
             assertEquals(List.of("App.java:7"), opened);
             card.dispose();
         });
+    }
+
+    // ---- C4: declarations are labelled with their parameter types and keep their path across overloads ----
+
+    @Test
+    void parameterTypesAreReadFromTheDeclarationLine() {
+        assertEquals(
+                "int, int, int",
+                ProjectMapStructure.parameterTypes("  public int add(int a, int b, int c) {", "add", "java"));
+        assertEquals("", ProjectMapStructure.parameterTypes("  void reset() {", "reset", "java"));
+        assertEquals(
+                "String, Map<String, Integer>, String...",
+                ProjectMapStructure.parameterTypes(
+                        "void f(@Nullable String s, final Map<String, Integer> m, String... rest) {", "f", "java"));
+        assertEquals(
+                "Int, Int", ProjectMapStructure.parameterTypes("fun add(a: Int, b: Int = 2): Int {", "add", "kotlin"));
+        assertEquals("x, y", ProjectMapStructure.parameterTypes("    def m(self, x, y=1):", "m", "python"));
+        assertEquals(
+                "T, () => void",
+                ProjectMapStructure.parameterTypes("function foo<T>(x: T, cb: () => void) {", "foo", "typescript"));
+        assertEquals("a, b int", ProjectMapStructure.parameterTypes("func add(a, b int) int {", "add", "go"));
+        assertEquals("char*", ProjectMapStructure.parameterTypes("int len(char *s) {", "len", "c"));
+        assertNull(ProjectMapStructure.parameterTypes("  void wrapped(int a,", "wrapped", "java"), "goes on below");
+        assertNull(ProjectMapStructure.parameterTypes("  readd(1);", "add", "java"), "not the name");
+
+        StructureNode method = new StructureNode(null, "add", "method", 0);
+        assertEquals("add(int, int)", ProjectMapStructure.displayLabel(method, "int add(int a, int b) {", "java"));
+        assertEquals("add", ProjectMapStructure.displayLabel(method, "int add(int a,", "java"), "no invented ()");
+    }
+
+    @Test
+    void anInsertedOverloadLeavesADeclarationsPathAloneAndAnEditedSignatureIsFollowed(@TempDir Path dir)
+            throws Exception {
+        String two = "class App {\n  int add(int a, int b) {\n    return a + b;\n  }\n"
+                + "  int add(int a, int b, int c) {\n    return a + b + c;\n  }\n}\n";
+        Path file = Files.writeString(dir.resolve("App.java"), two);
+        String[] text = {two};
+        ProjectMapStructure structure =
+                FxTestSupport.callOnFx(() -> new ProjectMapStructure(path -> new Content(text[0], false)));
+        ProjectMapModel.Entry entry = new ProjectMapModel.Entry(file, dir, 1, false);
+        try {
+            FxTestSupport.runOnFx(() -> structure.toggle(entry));
+            Path three = awaitSymbol(structure, entry, "add(int, int, int)");
+
+            text[0] = two.replace("class App {\n", "class App {\n  int add(String s) {\n    return 0;\n  }\n");
+            FxTestSupport.runOnFx(() -> structure.refresh(java.util.Set.of()));
+            awaitSymbol(structure, entry, "add(String)");
+            assertEquals(three, awaitSymbol(structure, entry, "add(int, int, int)"), "an overload above: same path");
+
+            text[0] = text[0].replace("add(int a, int b, int c)", "add(long a, int b, int c)");
+            FxTestSupport.runOnFx(() -> structure.refresh(java.util.Set.of()));
+            Path edited = awaitSymbol(structure, entry, "add(long, int, int)");
+            assertEquals(edited, FxTestSupport.callOnFx(() -> structure.successor(three)), "followed to its new path");
+        } finally {
+            FxTestSupport.runOnFx(structure::dispose);
+        }
+    }
+
+    private static Path awaitSymbol(ProjectMapStructure structure, ProjectMapModel.Entry file, String label)
+            throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            Path found = FxTestSupport.callOnFx(() -> structure.withStructure(List.of(file)).stream()
+                    .filter(row -> row.isSymbol()
+                            && row.symbol() != null
+                            && label.equals(row.symbol().label()))
+                    .map(ProjectMapModel.Entry::path)
+                    .findFirst()
+                    .orElse(null));
+            if (found != null) {
+                return found;
+            }
+            Thread.sleep(20);
+        }
+        throw new AssertionError("no declaration " + label);
+    }
+
+    // ---- C11: one-line members, CSS rules, YAML keys ----
+
+    private static List<StructureNode> outline(String name, String text) {
+        return StructureOutline.build(StructureOutline.Source.file(name, text).analyzed());
+    }
+
+    @Test
+    void oneLineMembersCssRulesAndYamlKeysAreInTheOutline() {
+        List<StructureNode> java =
+                outline("Many.java", "class Many {\n  void m0() {}\n  int m1() { return 1; }\n  void m2() {}\n}\n");
+        assertEquals(1, java.size());
+        assertEquals(
+                3,
+                java.getFirst().children().size(),
+                "one-line methods: " + java.getFirst().children());
+
+        List<StructureNode> kotlin = outline("top.kt", "fun top() = 1\n\nfun other() {\n  println()\n}\n");
+        assertTrue(kotlin.stream().anyMatch(n -> n.label().equals("top")), kotlin::toString);
+
+        List<StructureNode> css = outline(
+                "a.css",
+                "body {\n  margin: 0;\n}\n.card .title {\n  color: red;\n}\n@media (max-width: 600px) {\n  #id > p {\n    x: y;\n  }\n}\n");
+        assertEquals(
+                List.of("body", ".card .title", "@media (max-width: 600px)"),
+                css.stream().map(StructureNode::label).toList());
+        assertEquals("#id > p", css.getLast().children().getFirst().label());
+
+        List<StructureNode> yaml = outline(
+                "ci.yml",
+                "name: CI\non:\n  push:\n    branches: [main]\njobs:\n  build:\n    steps:\n      - run: |\n          echo: not a key\n      - name: x\n");
+        assertEquals(
+                List.of("name", "on", "jobs"),
+                yaml.stream().map(StructureNode::label).toList());
+        assertEquals("push", yaml.get(1).children().getFirst().label(), "under on, not under name");
+        StructureNode steps = yaml.get(2).children().getFirst().children().getFirst();
+        assertEquals(
+                List.of("run", "name"),
+                steps.children().stream().map(StructureNode::label).toList(),
+                "block scalar lines skipped");
+    }
+
+    // ---- C12, C13, C20: partial outlines, .http requests, # comments ----
+
+    @Test
+    void aRequestRunsToTheNextOneAndHashCommentsAndCutBlocksBelongToTheirDeclaration() {
+        List<String> http = List.of(
+                "### Get",
+                "GET https://x/users",
+                "",
+                "### Create",
+                "POST https://x/users",
+                "Content-Type: application/json",
+                "",
+                "{\"a\": 1}",
+                "",
+                "### Last",
+                "GET https://x/last");
+        StructureNode create = new StructureNode(null, "Create — POST", StructureOutline.HTTP_REQUEST_KIND, 4);
+        assertArrayEquals(new int[] {4, 7}, ProjectMapStructure.range(create, http, 10, 10), "headers and body");
+
+        List<String> python =
+                List.of("import x", "", "# Helper comment above f.", "@decorator", "def first():", "    pass");
+        StructureNode def = new StructureNode(null, "first", "function", 4);
+        assertArrayEquals(
+                new int[] {2, 4},
+                ProjectMapStructure.range(def, new ProjectMapStructure.Source(python, "#", "python", false), -1, 5));
+        assertEquals(2, ProjectMapStructure.leadingDocStart(List.of("#!/bin/sh", "", "# about f", "f() {"), 3, "#"));
+        assertEquals(1, ProjectMapStructure.leadingDocStart(List.of("#!/bin/sh", "f() {"), 1, "#"), "not a shebang");
+
+        List<String> cut = List.of("class Big {", "  void big() {", "    work();", "    more();");
+        StructureNode big = new StructureNode(null, "big", "method", 1);
+        assertArrayEquals(
+                new int[] {1, 3},
+                ProjectMapStructure.range(big, new ProjectMapStructure.Source(cut, "//", "java", true), -1, 3),
+                "its block was cut off by the read cap: it runs to the end of what was read");
+        assertArrayEquals(
+                new int[] {1, 1},
+                ProjectMapStructure.range(big, new ProjectMapStructure.Source(cut, "//", "java", false), -1, 3));
+    }
+
+    @Test
+    void anOutlineOfACutFileSaysItIsPartial(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("Big.java"), "class Big {\n  void a() {\n  }\n");
+        ProjectMapStructure structure = FxTestSupport.callOnFx(
+                () -> new ProjectMapStructure(path -> new Content("class Big {\n  void a() {\n  }\n", true)));
+        ProjectMapModel.Entry entry = new ProjectMapModel.Entry(file, dir, 1, false);
+        try {
+            FxTestSupport.runOnFx(() -> structure.toggle(entry));
+            awaitSymbol(structure, entry, "Big");
+            List<String> rows = FxTestSupport.callOnFx(() -> structure.withStructure(List.of(entry)).stream()
+                    .filter(ProjectMapModel.Entry::isPlaceholder)
+                    .map(ProjectMapModel.Entry::name)
+                    .toList());
+            assertTrue(rows.contains(tr("project.map.structure.partial")), rows::toString);
+        } finally {
+            FxTestSupport.runOnFx(structure::dispose);
+        }
     }
 }

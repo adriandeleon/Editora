@@ -1677,11 +1677,22 @@ final class ProjectMapPreview extends StackPane {
      * show — missing, unreadable, binary or an image. Off the FX thread.
      */
     static @Nullable String readText(Path file, @Nullable String editorConfigCharset) {
+        ReadText read = readTextCut(file, editorConfigCharset);
+        return read == null ? null : read.text();
+    }
+
+    /** A file's text as {@link #readText} reads it, and whether the read cap cut it short. */
+    record ReadText(String text, boolean truncated) {}
+
+    /** As {@link #readText}, saying whether the text stops at the read cap. Off the FX thread. */
+    static @Nullable ReadText readTextCut(Path file, @Nullable String editorConfigCharset) {
         if (isImage(file)) {
             return null;
         }
         Loaded loaded = load(file, editorConfigCharset);
-        return loaded.problem() == LoadProblem.NONE && loaded.image() == null ? loaded.text() : null;
+        return loaded.problem() == LoadProblem.NONE && loaded.image() == null
+                ? new ReadText(loaded.text(), loaded.truncated())
+                : null;
     }
 
     /** Off the FX thread: a file's media type as the platform knows it, else its extension; "" for neither. */
