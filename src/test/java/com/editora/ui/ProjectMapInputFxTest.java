@@ -727,6 +727,8 @@ class ProjectMapInputFxTest {
             if (panel.getScene() == null) {
                 registry.run("tool.project");
             }
+            // The fixture's is the No Project window, where an open Map keeps its folder: closed, it opens anew.
+            panel.mapWindow().closeQuietly();
             panel.setRoot(project);
             panel.openMapWindow(true);
         });

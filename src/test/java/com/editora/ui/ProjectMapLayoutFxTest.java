@@ -734,6 +734,7 @@ class ProjectMapLayoutFxTest {
                             tr("project.map.navigation.keepZoom"),
                             tr("project.map.navigation.focusNewColumn"),
                             tr("project.map.filter.hideOpenNotes"),
+                            tr("project.map.navigation.followActiveFile"),
                             tr("project.map.print"),
                             tr("project.map.exportPdf")),
                     items);

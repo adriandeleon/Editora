@@ -596,7 +596,8 @@ final class Chrome {
         if (TERMINAL_NEEDS_ONE.contains(id)) {
             return c.terminalOpen() ? null : new DisabledReason("palette.disabled.needsTerminal", null);
         }
-        if (id.startsWith("projectMap.")) {
+        // Print and PDF need a Map on screen; Reveal Active File is what opens one.
+        if (id.startsWith("projectMap.") && !id.equals("projectMap.revealActiveFile")) {
             return c.projectMap() ? null : new DisabledReason("palette.disabled.needsProjectMap", null);
         }
         // Whole-family buffer requirements: these do nothing on the Welcome page or an image/hex/PDF tab.

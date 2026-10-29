@@ -131,6 +131,9 @@ final class ProjectMapView extends VBox {
     private final CheckMenuItem hideOpenNotes = optionItem("project.map.filter.hideOpenNotes", false);
     private final CheckMenuItem keepZoomOnOpen = optionItem("project.map.navigation.keepZoom", true);
     private final CheckMenuItem focusNewColumn = optionItem("project.map.navigation.focusNewColumn", true);
+    /** "Always select opened file": the Map selects each file the editor makes active (off by default). */
+    private final CheckMenuItem followActiveFile = optionItem("project.map.navigation.followActiveFile", false);
+
     private final ComboBox<ProjectMapModel.TypeFilter> typeFilter = new ComboBox<>();
     /** "Hide unmatched": rows the filters would fade are taken off the map, and the badge says how many. */
     private final CheckBox hideUnmatched = new CheckBox(tr("project.map.filter.hideUnmatched"));
@@ -206,8 +209,18 @@ final class ProjectMapView extends VBox {
 
     private @Nullable Path root;
     private boolean disposed;
-    /** False while the Project panel shows the Tree: loads wait until the Map is on screen. */
+    /**
+     * Whether the Map's window is showing ({@link #setShowing}). While it is not, nothing is listed, no card is
+     * refreshed or polled and row states are not snapshotted: the window's scene outlives {@code hide()}, so
+     * being in a scene no longer means being on screen. True for a view used outside the Map window (tests).
+     */
     private boolean active = true;
+    /** Row states changed while the window was hidden: the next show snapshots them once. */
+    private boolean showingStatesStale;
+    /** Whether {@link #setOpenFiles} and {@link #setMarkerCandidates} were given, so rows are looked up from them. */
+    private boolean showingOpenFilesGiven;
+
+    private boolean showingMarkersGiven;
     /** The Project "show hidden files" setting: each column's default, and what the loader lists. */
     private boolean showHiddenDefault = true;
 
@@ -327,6 +340,7 @@ final class ProjectMapView extends VBox {
                         keepZoomOnOpen,
                         focusNewColumn,
                         hideOpenNotes,
+                        followActiveFile,
                         new SeparatorMenuItem(),
                         printButton,
                         exportPdfButton);
@@ -365,6 +379,21 @@ final class ProjectMapView extends VBox {
 
     void setFocusNewColumn(boolean focus) {
         focusNewColumn.setSelected(focus);
+    }
+
+    /** Whether the Map selects (revealing it) each file the editor makes active: "Always select opened file". */
+    boolean isFollowActiveFile() {
+        return followActiveFile.isSelected();
+    }
+
+    void setFollowActiveFile(boolean follow) {
+        followActiveFile.setSelected(follow);
+    }
+
+    /** The selected row's path, or null (the Map window asks whether anything but the root is chosen). */
+    @Nullable
+    Path windowSelectedPath() {
+        return surface.selectedPath();
     }
 
     private FlowPane buildFilters() {
@@ -810,17 +839,34 @@ final class ProjectMapView extends VBox {
     }
 
     /**
-     * Whether the Map is on screen. While it is not, nothing is listed: the first load waits until the Map is
-     * first shown, and every return to it reloads, so changes made while the Tree was showing are picked up.
+     * Whether the Map's window is showing; {@link ProjectMapWindow} drives it. While it is not, nothing is
+     * listed, no card is refreshed or polled and row states wait: the first load waits until the window is
+     * first shown, and every return to it reloads, snapshots the row states once and refreshes the cards
+     * (which re-arms the once-a-second poll of a card that mirrors an open buffer), so whatever changed while
+     * it was closed is picked up. Hiding stops that work; the cards stay where they are for the next show.
      */
-    void setActive(boolean active) {
-        if (this.active == active) {
+    void setShowing(boolean showing) {
+        if (this.active == showing) {
             return;
         }
-        this.active = active;
-        if (active) {
-            reload();
+        this.active = showing;
+        if (!showing) {
+            cardRefresh.stop();
+            cardPoll.stop();
+            cardDiskRefresh.stop();
+            return;
         }
+        reload();
+        if (showingStatesStale) {
+            showingStatesStale = false;
+            surface.stateChanged();
+        }
+        scheduleCardRefresh();
+    }
+
+    /** Whether the view is on screen: its window showing ({@link #setShowing}) and the view in a scene. */
+    private boolean showingOnScreen() {
+        return active && getScene() != null;
     }
 
     /** Follows the Project "show hidden files" setting: every column goes back to it and the map reloads. */
@@ -838,11 +884,31 @@ final class ProjectMapView extends VBox {
     /** Open editor files, for the Open / Modified chips to mark the collapsed folders that hold them. */
     void setOpenFiles(java.util.function.Supplier<java.util.Collection<Path>> supplier) {
         openFiles = supplier == null ? List::of : supplier;
+        showingOpenFilesGiven = supplier != null;
+        showingUpdateStateCandidates();
     }
 
     /** Paths that may carry a bookmark or Personal Note (the stores' keys); the predicates decide. */
     void setMarkerCandidates(java.util.function.Supplier<java.util.Collection<Path>> supplier) {
         markerCandidates = supplier == null ? List::of : supplier;
+        showingMarkersGiven = supplier != null;
+        showingUpdateStateCandidates();
+    }
+
+    /**
+     * Once both the open files and the marker candidates are known, a state snapshot looks those few paths up
+     * among the rows instead of asking four predicates of every row (each of which scans the editor's tabs).
+     */
+    private void showingUpdateStateCandidates() {
+        if (showingOpenFilesGiven && showingMarkersGiven) {
+            surface.setStateCandidates(() -> {
+                List<Path> candidates = new ArrayList<>(openFiles.get());
+                candidates.addAll(markerCandidates.get());
+                return candidates;
+            });
+        } else {
+            surface.setStateCandidates(null);
+        }
     }
 
     /** A column's own "Show hidden" checkbox was clicked: its folder has to be listed again. */
@@ -939,6 +1005,10 @@ final class ProjectMapView extends VBox {
     }
 
     void refreshStates() {
+        if (!active) {
+            showingStatesStale = true; // nobody sees the rows: snapshot them once when the window shows again
+            return;
+        }
         surface.stateChanged();
         scheduleCardRefresh();
     }
@@ -1158,16 +1228,6 @@ final class ProjectMapView extends VBox {
     }
 
     /**
-     * The Map is being swapped for the Tree. Cards stay open where they are for when it returns; only the
-     * work that keeps them current stops, and resumes with one refresh when the Map is shown again.
-     */
-    void suspendPreviews() {
-        cardRefresh.stop();
-        cardPoll.stop();
-        cardDiskRefresh.stop();
-    }
-
-    /**
      * A file under the root was rewritten on disk. That changes no listing, so no reload follows; it is
      * only of interest to a preview card showing the file. Checked at most once per
      * {@link #CARD_POLL_INTERVAL}, after the first change rather than after the last, so a file that never
@@ -1176,7 +1236,7 @@ final class ProjectMapView extends VBox {
     void filesChangedOnDisk() {
         if (disposed
                 || previews.isEmpty() && !structure.hasOpenColumns()
-                || getScene() == null
+                || !showingOnScreen() // the show that follows refreshes every card
                 || cardDiskRefresh.getStatus() == javafx.animation.Animation.Status.RUNNING) {
             return;
         }
@@ -1235,7 +1295,7 @@ final class ProjectMapView extends VBox {
 
     private java.util.function.Consumer<String> onStatus = message -> {};
 
-    /** Where a folder that could not be read is reported (the window's status bar). */
+    /** Where a folder that could not be read, or the limits, are reported (the window's status bar). */
     void setOnStatus(java.util.function.Consumer<String> onStatus) {
         this.onStatus = onStatus == null ? message -> {} : onStatus;
     }
@@ -1251,7 +1311,7 @@ final class ProjectMapView extends VBox {
             return; // a late callback after the window closed: the loader is gone
         }
         if (!active) {
-            return; // setActive(true) reloads when the Map is next shown
+            return; // setShowing(true) reloads when the Map window is next shown
         }
         long requested = generation.incrementAndGet();
         Path requestedRoot = root;
@@ -1371,6 +1431,7 @@ final class ProjectMapView extends VBox {
         }
         finishLoadMore(loaded, loadedPaths, selectedBefore);
         reportLimits(loaded, loadedPaths);
+        windowReportUnreadable(requestedRoot, loaded);
         updateNavigation();
         if (expansionChanged) {
             onExpandedChanged.run();
@@ -1405,6 +1466,32 @@ final class ProjectMapView extends VBox {
                 surface.select(last);
             }
         }
+    }
+
+    /** The folders the last load could not read, so each is reported once, when it becomes unreadable. */
+    private Set<Path> windowUnreadable = Set.of();
+
+    /**
+     * A folder that newly could not be read is said in the status bar, not only by the stub in its column,
+     * which may be scrolled away or zoomed out. A closed remote connection is reported above instead.
+     */
+    private void windowReportUnreadable(Path requestedRoot, ProjectMapModel.Snapshot loaded) {
+        Set<Path> now = new HashSet<>();
+        loaded.directories().forEach((directory, facts) -> {
+            if (facts.unreadable()) {
+                now.add(directory);
+            }
+        });
+        if (!RemoteReadFailure.connectionClosed(requestedRoot)) {
+            for (Path directory : now) {
+                if (!windowUnreadable.contains(directory)) {
+                    Path name = directory.getFileName();
+                    onStatus.accept(tr("project.map.status.unreadable", name == null ? directory : name));
+                    break; // one line: the stubs show the rest
+                }
+            }
+        }
+        windowUnreadable = Set.copyOf(now);
     }
 
     /** Nothing is dropped silently: say when matches or folders did not fit the overall limit. */
@@ -2028,9 +2115,9 @@ final class ProjectMapView extends VBox {
     /** Asks for {@link #refreshCards} once the notifications that prompted it have settled. */
     private void scheduleCardRefresh() {
         if (disposed
-                || getScene() == null
+                || !showingOnScreen()
                 || previews.isEmpty() && notePreviews.isEmpty() && !structure.hasOpenColumns()) {
-            return; // off screen (the Tree is showing): the next time the Map is shown refreshes them
+            return; // the Map window is closed: setShowing(true) refreshes them when it opens again
         }
         cardRefresh.playFromStart();
     }
@@ -2061,7 +2148,7 @@ final class ProjectMapView extends VBox {
         if (!polled) {
             refreshNoteCards();
         }
-        if (mirrors && getScene() != null) {
+        if (mirrors && showingOnScreen()) { // a closed window's cards are refreshed when it shows again
             cardPoll.playFromStart();
         } else {
             cardPoll.stop();
@@ -2660,6 +2747,7 @@ final class ProjectMapView extends VBox {
         private Predicate<Path> modifiedState = path -> false;
         private Predicate<Path> bookmarkState = path -> false;
         private Predicate<Path> noteState = path -> false;
+        private java.util.function.@Nullable Supplier<java.util.Collection<Path>> stateCandidates;
         private Map<Path, GitFileStatus> gitState = Map.of();
         private Set<Path> gitDirectories = Set.of();
         private Set<Path> openPaths = Set.of();
@@ -2890,6 +2978,11 @@ final class ProjectMapView extends VBox {
         void setMarkerSuppliers(Predicate<Path> bookmarked, Predicate<Path> noted) {
             bookmarkState = bookmarked == null ? path -> false : bookmarked;
             noteState = noted == null ? path -> false : noted;
+        }
+
+        /** The few paths that can be open or marked, looked up among the rows; null: every row is asked. */
+        void setStateCandidates(java.util.function.@Nullable Supplier<java.util.Collection<Path>> candidates) {
+            stateCandidates = candidates;
         }
 
         void setLoadPending(boolean pending) {
@@ -4998,7 +5091,34 @@ final class ProjectMapView extends VBox {
             Set<Path> modified = new HashSet<>();
             Set<Path> bookmarked = new HashSet<>();
             Set<Path> noted = new HashSet<>();
-            for (ProjectMapModel.Entry entry : entries) {
+            java.util.function.Supplier<java.util.Collection<Path>> candidates = stateCandidates;
+            Iterable<ProjectMapModel.Entry> rows = entries;
+            java.util.Collection<Path> candidatePaths = null;
+            if (candidates != null) {
+                try {
+                    candidatePaths = candidates.get();
+                } catch (RuntimeException unavailable) {
+                    candidatePaths = null; // ask every row, as without candidates
+                }
+            }
+            if (candidatePaths != null) {
+                // Open tabs and marked paths are few; the rows can be 1,200, each predicate a scan of the tabs.
+                List<ProjectMapModel.Entry> found = new ArrayList<>();
+                Set<Path> seen = new HashSet<>();
+                for (Path candidate : candidatePaths) {
+                    try {
+                        Path path = candidate == null ? null : ProjectMapModel.normalize(candidate);
+                        ProjectMapModel.Entry entry = path == null ? null : entryByPath.get(path);
+                        if (entry != null && seen.add(path)) {
+                            found.add(entry);
+                        }
+                    } catch (RuntimeException otherConnection) {
+                        // a path on another SFTP connection throws from equals(): it is not one of these rows
+                    }
+                }
+                rows = found;
+            }
+            for (ProjectMapModel.Entry entry : rows) {
                 if (entry.isPlaceholder() || entry.isSymbol()) {
                     continue; // a declaration is not a file: it is neither open nor marked
                 }

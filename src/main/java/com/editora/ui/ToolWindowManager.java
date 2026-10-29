@@ -1037,8 +1037,14 @@ public class ToolWindowManager {
         javafx.scene.Scene scene = new javafx.scene.Scene(new javafx.scene.layout.StackPane(panel));
         // A fresh Scene carries no stylesheets, and the app's look is an author stylesheet rather than the
         // user-agent one — without copying these the detached panel renders as unstyled default controls.
+        // Mirrored while the stage is up, not copied once: an editor-theme switch swaps the owner's list.
         if (owner.getScene() != null) {
-            scene.getStylesheets().setAll(owner.getScene().getStylesheets());
+            javafx.collections.ObservableList<String> sheets = owner.getScene().getStylesheets();
+            scene.getStylesheets().setAll(sheets);
+            javafx.collections.ListChangeListener<String> follow =
+                    change -> scene.getStylesheets().setAll(sheets);
+            sheets.addListener(follow);
+            stage.addEventHandler(javafx.stage.WindowEvent.WINDOW_HIDDEN, e -> sheets.removeListener(follow));
         }
         // The window's keys work in the stage too: a floating Terminal still gives M-x and its own toggle back.
         floatingSceneSetup.accept(scene);

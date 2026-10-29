@@ -180,6 +180,7 @@ class ProjectPanelTreeFxTest {
     void f2RenamesTheSelectedRowOnDiskAndTellsTheWindow(@TempDir Path dir) throws Exception {
         try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
             Path target = dir.resolve("renamed.txt");
+            r.answerDialogs(javafx.scene.control.ButtonBar.ButtonData.OK_DONE); // the taken name says so
             FxTestSupport.runOnFx(() -> {
                 r.select(r.alpha);
                 assertTrue(r.press(r.tree, KeyCode.F2, false).isConsumed());
@@ -189,6 +190,7 @@ class ProjectPanelTreeFxTest {
                 r.promptAccept.accept("alpha.txt");
                 r.promptAccept.accept("beta.txt");
                 assertTrue(r.renamed.isEmpty(), "a blank name, the same name and a taken name rename nothing");
+                assertEquals(List.of(tr("project.newFolderExists", "beta.txt")), List.copyOf(r.dialogs));
                 assertTrue(Files.exists(r.alpha));
                 assertEquals("beta\n", read(r.beta), "the file already called beta.txt is untouched");
 
