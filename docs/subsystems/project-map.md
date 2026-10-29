@@ -46,7 +46,9 @@ The default flow is left to right (`ProjectMapView.DEFAULT_FLOW`), the direction
 the Tree read in. The flow selector also supports right to left, top to bottom, and bottom to top. It
 changes column placement, connector direction, and the meaning of the arrow keys together. Changing
 flow clears manual column offsets and locks, then auto-fits the new layout. The last selected flow is
-stored in workspace state and restored when the editor is reopened.
+stored in workspace state and restored when the editor is reopened. Right-to-left was the default
+before workspace schema v13 and was written into every file, so the v26 step resets a stored
+right-to-left to left-to-right once (`ConfigMigrations.resetRightToLeftMapFlow`).
 
 ## Interaction reference
 

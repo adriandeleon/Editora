@@ -68,6 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Project Map: the Modified chip is now Unsaved.** It always matched files with unsaved changes; next to the Git "M"
   letter it read as Git-modified, which is what Git changed matches.
+- **Project Map: every workspace starts left to right.** A workspace that stored right to left, the default saved by
+  builds before 0.20.0, now opens left to right; picking right to left again is remembered.
+  Workspace schema 25 → 26.
 - **Terminal: a keystroke no longer clears the selection.** It goes when the text under it is redrawn, so a
   selection of the output above the prompt survives typing a command.
 - **Terminal: a selection highlights exactly what it copies.** The highlight was a cell wider than the copied text,
