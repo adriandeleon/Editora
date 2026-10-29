@@ -74,6 +74,9 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
      *  off the debounced edit pulse, not per scroll. */
     private BitSet codeLines = new BitSet();
 
+    /** What the last scan found beyond whole lines: code columns, and columns read as prose (HTML attributes). */
+    private SpellMode.Skips skips = SpellMode.Skips.NONE;
+
     // Both wordSpans(line) and isMisspelled(word) are otherwise recomputed for every visible word on
     // every scroll/resize pulse, even though the text hasn't changed — and isMisspelled is a Hunspell
     // FST lookup. Memoize both (bounded LRU, FX-thread-only). wordSpans is a pure function of the line
@@ -218,18 +221,18 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
      * as they already did for the 300 ms the settle waits.
      */
     private void recomputeCodeLines() {
-        if (!active && codeLines.isEmpty()) {
+        if (!active && skips.isEmpty()) {
             return; // nothing is drawn or asked while inactive; setActive(true) recomputes
         }
         long gen = ++codeLinesGen;
         if (!mode.marksCodeLines()) {
-            applyCodeLines(new BitSet()); // no scan to run: the answer is known without the text
+            applyCodeLines(SpellMode.Skips.NONE); // no scan to run: the answer is known without the text
             return;
         }
         String text = textSnapshot.get();
         SpellMode scanned = mode;
         Thread.ofVirtual().name("editora-spell-code-lines").start(() -> {
-            BitSet found = scanned.codeLines(text);
+            SpellMode.Skips found = scanned.skips(text);
             javafx.application.Platform.runLater(() -> {
                 if (gen == codeLinesGen) {
                     applyCodeLines(found);
@@ -238,9 +241,10 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         });
     }
 
-    private void applyCodeLines(BitSet found) {
-        BitSet before = codeLines;
-        codeLines = found;
+    private void applyCodeLines(SpellMode.Skips found) {
+        SpellMode.Skips before = skips;
+        skips = found;
+        codeLines = found.lines();
         if (!found.equals(before)) {
             geometry.clear(); // a line that became (or stopped being) code has squiggles to drop or draw
             scheduleRedraw();
@@ -615,7 +619,10 @@ public final class SpellCheckOverlay extends Region implements SecondaryPane.Fol
         int parBase = area.getAbsolutePosition(paragraph, 0);
         for (int[] span : flagged) {
             int abs = parBase + span[0];
-            if (!eligible(abs)) {
+            if (skips.skips(paragraph, span[0])) {
+                continue; // an inline <script> or <code> on this line (HTML review C13)
+            }
+            if (!skips.reads(paragraph, span[0]) && !eligible(abs)) {
                 continue; // eligibility is style-dependent (inline/fenced code) → evaluated fresh
             }
             hits.add(new int[] {abs, parBase + span[1]});

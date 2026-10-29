@@ -146,6 +146,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Web Browsers row is translated.
   - The open-in-browser button is a real globe, and it appears on an HTML file recognised by its modeline.
 
+- **HTML editing (HTML review: edit).**
+  - Templates open as HTML: `.html.erb`, `.erb`, `.ejs`, `.njk`, `.jinja`, `.jinja2`, `.j2`, `.twig`, `.liquid` and
+    `.mustache` files are "HTML Template", `.hbs`/`.handlebars` "Handlebars", with the HTML colours, tag auto-close and
+    rename, folding, Structure, spell checking, the HTML snippets and `<!-- -->` comments. They are not sent to the
+    HTML language server, except Handlebars, which it completes, hovers and formats. A template named after the file
+    it renders (`nginx.conf.j2`, `config.yml.erb`) is that file's language.
+  - Toggle Comment writes `/* */` in a `<style>` and `//` in a `<script>` instead of `<!-- -->`, and in PHP writes
+    `<!-- -->` in the HTML part instead of `//`; a selection that runs from the markup into a script is refused.
+  - Enter inside a `<script>` or `<style>` indents after `{`, and a typed `}` steps back to its opener.
+  - Folding without the server folds `<DIV>`…`</div>` and a `<script>` holding `a<b`.
+  - Spell checking reads `alt`, `title`, `placeholder`, `aria-label` and `aria-description` values, checks the rest of
+    a line that holds an inline `<script>`, skips `<code>`, `<kbd>`, `<samp>` and `<var>`, and a `<pre>` mentioned in a
+    comment no longer turns checking off for the rest of the file.
+  - Structure without the server labels elements as the server does (`header#hero.card`) and lists one-line headings
+    and elements with an `id`.
+  - Format Document formats HTML without the language server (Editora's own formatter, which keeps `<pre>`,
+    `<textarea>`, `<script>` and `<style>` content and your blank lines).
+  - Snippets: `!` selects `en`, `doctype` is `<!DOCTYPE html>`, `html5`'s body is indented, `link` is a stylesheet
+    link, the obsolete `big`, `command`, `keygen` and `menuitem` are gone; the New File HTML pages agree with them.
 - **XML editing (XML/pom review 3: xmlui).**
   - XML: Generate Grammar…'s two XSD choices work in untrusted folders. lemminx needed the W3C `xml.xsd`, which it
     could not download there; Editora now ships it.

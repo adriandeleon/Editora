@@ -266,7 +266,8 @@ public final class LspServerRegistry {
         RUBY("ruby", DEFAULT_RUBY_COMMAND, RUBY_ROOT_MARKERS, Set.of("ruby")),
         // clangd serves both C and C++ (one server, two language ids — like the TypeScript server).
         CLANGD("clangd", DEFAULT_CLANGD_COMMAND, C_ROOT_MARKERS, Set.of("c", "cpp")),
-        HTML("html", DEFAULT_HTML_COMMAND, WEB_ROOT_MARKERS, Set.of("html")),
+        // Handlebars too, as VS Code does: the server completes, hovers and formats it (no diagnostics).
+        HTML("html", DEFAULT_HTML_COMMAND, WEB_ROOT_MARKERS, Set.of("html", "handlebars")),
         CSS("css", DEFAULT_CSS_COMMAND, WEB_ROOT_MARKERS, Set.of("css")),
         KOTLIN("kotlin", DEFAULT_KOTLIN_COMMAND, KOTLIN_ROOT_MARKERS, Set.of("kotlin")),
         GROOVY("groovy", DEFAULT_GROOVY_COMMAND, GROOVY_ROOT_MARKERS, Set.of("groovy")),

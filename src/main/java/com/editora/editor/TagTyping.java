@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 import com.editora.editops.HtmlCaretRegion;
 import com.editora.editops.TagAutoClose;
 import com.editora.editops.TagJoin;
+import com.editora.text.HtmlElements;
 import org.fxmisc.richtext.CodeArea;
 import org.jspecify.annotations.Nullable;
 
@@ -75,7 +76,7 @@ final class TagTyping {
 
     /** Handles {@code c} typed at the caret of {@code a} in a {@code language} buffer; true when it did. */
     boolean typed(CodeArea a, char c, String language) {
-        boolean html = "html".equals(language);
+        boolean html = HtmlElements.isHtmlLanguage(language); // templates too (HTML review C7)
         if ((!html && !"xml".equals(language)) || a.getSelection().getLength() > 0) {
             clear();
             return false;
@@ -137,7 +138,7 @@ final class TagTyping {
         if (pending == null
                 || a != joinArea
                 || caret != at
-                || (!"html".equals(language) && !"xml".equals(language))
+                || (!HtmlElements.isHtmlLanguage(language) && !"xml".equals(language))
                 || a.getSelection().getLength() > 0) {
             return false;
         }

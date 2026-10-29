@@ -1,5 +1,10 @@
 package com.editora.editops;
 
+import java.util.List;
+import java.util.Objects;
+
+import com.editora.text.HtmlElements;
+import com.editora.text.HtmlRegions;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -90,7 +95,7 @@ public final class Commenter {
             case "ini" -> new CommentStyle(";", null, null);
             case "batchfile" -> new CommentStyle("REM", null, null);
             case "markwhen" -> new CommentStyle("//", null, null);
-            case "xml", "html", "markdown" -> new CommentStyle(null, "<!--", "-->");
+            case "xml", "html", "markdown", "html-template", "handlebars" -> new CommentStyle(null, "<!--", "-->");
             default -> new CommentStyle(null, null, null); // plaintext: no comment syntax
         };
     }
@@ -148,8 +153,103 @@ public final class Commenter {
         if (intoHereDoc(text, selStart, selEnd, language)) {
             return null;
         }
+        if ("php".equals(language) || HtmlElements.isHtmlLanguage(language)) {
+            return toggleEmbedded(text, selStart, selEnd, language);
+        }
         CommentStyle style = "ini".equals(language) ? iniStyle(text) : styleFor(language);
         return toggle(text, selStart, selEnd, style);
+    }
+
+    /**
+     * Toggle Comment in an HTML page or a PHP file, by what the selection is in (HTML review C3, C7): {@code /* *}{@code
+     * /} in a {@code <style>}, {@code //} (and {@code /* *}{@code /}) in a script or a PHP block, {@code <!-- -->} in
+     * the markup — where {@code <!--} in CSS is ignored, ends a classic script's line comment early and is a syntax
+     * error in a module. A selection that runs from one of these into another is left alone (null: see
+     * {@link #mixesLanguages}). On a line that also holds the element's tags ({@code <script>x = 1;</script>}) only
+     * the code is commented, with the block form.
+     */
+    private static @Nullable Edit toggleEmbedded(String text, int selStart, int selEnd, String language) {
+        int a = Math.min(selStart, selEnd);
+        int b = Math.max(selStart, selEnd);
+        int effEnd = b > a && lineStart(text, b) == b ? b - 1 : b;
+        List<HtmlRegions.Region> regions = HtmlRegions.scan(text, "php".equals(language), effEnd + 1);
+        HtmlRegions.Region first = code(HtmlRegions.at(regions, a));
+        HtmlRegions.Region last = code(HtmlRegions.at(regions, effEnd));
+        if (!Objects.equals(first, last)) {
+            return null; // from the markup into a script, or out of one
+        }
+        if (first == null) {
+            return toggle(text, selStart, selEnd, styleFor(HtmlElements.isHtmlLanguage(language) ? language : "html"));
+        }
+        CommentStyle style = styleFor(HtmlRegions.languageOf(first.kind()));
+        int from = lineStart(text, a);
+        int to = lineEnd(text, effEnd);
+        if (from >= first.start() && to <= first.end()) {
+            return toggle(text, selStart, selEnd, style); // whole lines of code
+        }
+        if (!style.hasBlock()) {
+            return null;
+        }
+        CommentStyle block = new CommentStyle(null, style.blockStart(), style.blockEnd());
+        if (a != b) {
+            return toggle(text, selStart, selEnd, block);
+        }
+        int codeFrom = Math.max(from, first.start());
+        int codeTo = Math.min(to, first.end());
+        while (codeFrom < codeTo && Character.isWhitespace(text.charAt(codeFrom))) {
+            codeFrom++;
+        }
+        while (codeTo > codeFrom && Character.isWhitespace(text.charAt(codeTo - 1))) {
+            codeTo--;
+        }
+        if (codeFrom == codeTo) {
+            return null; // nothing but the tags on this line
+        }
+        Edit edit = toggle(text, codeFrom, codeTo, block);
+        if (edit == null) {
+            return null;
+        }
+        // The bare caret stays on the character it was on: it may sit among the tags, before or after the code.
+        String before = text.substring(edit.from(), edit.to());
+        String after = edit.replacement();
+        int at;
+        if (a < edit.from()) {
+            at = a;
+        } else if (a >= edit.to()) {
+            at = a + after.length() - before.length();
+        } else if (after.contains(before)) {
+            at = a + after.indexOf(before); // commented: the code moved right past the opener
+        } else {
+            int shift = Math.max(0, before.indexOf(after));
+            at = Math.clamp(a - shift, edit.from(), edit.from() + after.length()); // uncommented
+        }
+        return new Edit(edit.from(), edit.to(), edit.replacement(), at, at);
+    }
+
+    /** {@code r} when its content takes a comment syntax of its own (script, style, PHP), else null (markup). */
+    private static HtmlRegions.@Nullable Region code(HtmlRegions.@Nullable Region r) {
+        if (r == null) {
+            return null;
+        }
+        return switch (r.kind()) {
+            case SCRIPT, DATA, STYLE, PHP -> r;
+            default -> null;
+        };
+    }
+
+    /**
+     * Whether a Toggle Comment over {@code [selStart, selEnd]} in a {@code language} buffer is refused because it runs
+     * from the HTML markup into an embedded script, style or PHP block (or out of one).
+     */
+    public static boolean mixesLanguages(String text, int selStart, int selEnd, String language) {
+        if (!"php".equals(language) && !HtmlElements.isHtmlLanguage(language)) {
+            return false;
+        }
+        int a = Math.min(selStart, selEnd);
+        int b = Math.max(selStart, selEnd);
+        int effEnd = b > a && lineStart(text, b) == b ? b - 1 : b;
+        List<HtmlRegions.Region> regions = HtmlRegions.scan(text, "php".equals(language), effEnd + 1);
+        return !Objects.equals(code(HtmlRegions.at(regions, a)), code(HtmlRegions.at(regions, effEnd)));
     }
 
     /**
