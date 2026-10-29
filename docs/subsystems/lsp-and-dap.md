@@ -797,6 +797,19 @@ server goes through `XmlServer.definition`: lemminx's own answer, unless that is
 `xi:include`) resolved by Editora itself (`XmlServer.includeHref`). Editora's own auto-close and auto-rename tag stay; lemminx's `xml/closeTag` and
 `linkedEditingRange` are not requested.
 
+**HTML links, markup checks and colours** (`HtmlLspAids`, owned by `LspCoordinator`). The HTML server's definition
+answers only for embedded JavaScript, so Go to Definition and Ctrl/Cmd-click fall back to `HtmlLinkFollow` on an
+`href`/`src` value (`editops.HtmlLinks`): the server's `documentLink` at the caret when it runs
+(`LspManager.documentLinkTarget`; it percent-encodes a fragment as `%23`, split off there), else the value resolved
+against the page, root-relative against the project; the file opens at the element whose `id` the fragment names,
+a missing one says "File not found", a web address goes to the browser after a confirm. The same fallback runs with
+LSP off. The server validates no markup, so `editops.HtmlMarkupCheck` (unclosed and stray tags, missing local link
+targets) is added to its pulled or pushed diagnostics off the FX thread (`LspManager.withMarkupChecks`, source
+`editora`); a page no server serves shows the same check on the `.http` variable marks' squiggle overlay
+(`HttpVariableMarks.MarkupCheck`, gated on `!isLspActive()`). `textDocument/documentColor` (any server with a
+`colorProvider`: html, css) rides `requestFoldingRanges`' pulses; `EditorBuffer.setColorSwatches` draws an inlay per
+colour, painted by a per-buffer `data:` stylesheet with one class per colour (`ColorSwatchInlays`).
+
 **A refused `initialize` is not a crash.** A server that answers `initialize` with an error (its message kept as
 `LanguageServerSession.initializeRefusal`; the exit is reported only after LSP4J has read the server's last
 output) is dropped without the crash path and reported through `onStartRefused` with its own words. Such roots,

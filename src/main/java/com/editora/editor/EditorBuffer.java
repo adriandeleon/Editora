@@ -45,6 +45,7 @@ import com.editora.editops.AutoClose;
 import com.editora.editops.BraceMatcher;
 import com.editora.editops.CommentContinuation;
 import com.editora.editops.Commenter;
+import com.editora.editops.HtmlLinks;
 import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineEndings;
@@ -1438,8 +1439,8 @@ public class EditorBuffer implements TabContent {
                     }
                     return;
                 }
-                if (isLspActive()) {
-                    // Move the caret to the clicked symbol + focus this area, then fire go-to-definition
+                if (isLspActive() || HtmlLinks.isHtml(language) && HtmlLinks.at(a.getText(), off) != null) {
+                    // Move the caret to the clicked symbol (an HTML link: B6) + focus this area, then go-to-definition
                     // (the controller reads getFocusedArea()'s caret). Deferred so focus/caret settle first.
                     a.moveTo(off);
                     a.requestFocus();
@@ -1890,16 +1891,6 @@ public class EditorBuffer implements TabContent {
         insertAtCaret(TypstMarkup.OUTLINE);
     }
 
-    /** Whether {@code a}'s caret line is on screen as last laid out ({@code false} before the first layout). */
-    private static boolean caretParagraphVisible(CodeArea a) {
-        try {
-            int par = a.getCurrentParagraph();
-            return par >= a.firstVisibleParToAllParIndex() && par <= a.lastVisibleParToAllParIndex();
-        } catch (RuntimeException notLaidOut) {
-            return false;
-        }
-    }
-
     /** The URL of the link under the caret, or {@code null} — for the "open link" command / Ctrl-click. */
     public @Nullable String linkUnderCaret() {
         CodeArea a = focusedArea != null ? focusedArea : area;
@@ -1911,7 +1902,7 @@ public class EditorBuffer implements TabContent {
         // A bottom tool window opening (Problems, Run) shrinks the editor from below and the caret line could
         // drop out of view; keep it in view when it was in view before (Java review A20).
         area.heightProperty().addListener((obs, old, now) -> {
-            if (now.doubleValue() < old.doubleValue() && caretParagraphVisible(area)) {
+            if (now.doubleValue() < old.doubleValue() && JumpReveal.caretParagraphVisible(area)) {
                 javafx.application.Platform.runLater(area::requestFollowCaret);
             }
         });
@@ -2670,6 +2661,7 @@ public class EditorBuffer implements TabContent {
     private java.util.Map<Integer, java.util.List<org.fxmisc.richtext.Inlay>> inlayHintsByLine = java.util.Map.of();
 
     private boolean inlayFactoryInstalled;
+    private final ColorSwatchInlays swatchInlays = new ColorSwatchInlays(); // colour literals' swatches (D9)
 
     /**
      * Sets the LSP inlay hints, rendered <b>inline at their own column</b> — each hint displaces the glyphs
@@ -2721,21 +2713,22 @@ public class EditorBuffer implements TabContent {
                 : httpResults.inlays(line, lsp, area.getParagraphLength(line));
     }
 
-    /** The LSP inlays of one line: its hints, then — after the last character — its code lens. */
+    /** The LSP inlays of one line: its colour swatches and hints, then — after the last character — its code lens. */
     private java.util.@Nullable List<org.fxmisc.richtext.Inlay> lspInlaysOn(int line) {
-        java.util.List<org.fxmisc.richtext.Inlay> hints = inlayHintsByLine.get(line);
+        java.util.List<org.fxmisc.richtext.Inlay> hints = swatchInlays.merged(line, inlayHintsByLine.get(line));
         java.util.List<CodeLens> lenses = codeLensByLine.get(line);
-        if (lenses == null || line < 0 || line >= area.getParagraphs().size()) {
-            return hints;
+        return lenses == null || line < 0 || line >= area.getParagraphs().size()
+                ? hints
+                : CodeLensShift.withLens(
+                        hints, lenses, CodeLens::label, area.getParagraphLength(line), CODE_LENS_STYLE);
+    }
+
+    /** Draws the server's colour swatches (HTML review D9) before their literals; null or empty clears them. */
+    public void setColorSwatches(java.util.@Nullable List<com.editora.text.ColorSwatch> swatches) {
+        if (swatchInlays.set(largeFile ? null : swatches, root)) {
+            ensureInlayFactory();
+            refreshInlayAreas();
         }
-        StringBuilder lens = new StringBuilder();
-        for (CodeLens l : lenses) {
-            lens.append(lens.isEmpty() ? "" : "  ·  ").append(l.label());
-        }
-        java.util.List<org.fxmisc.richtext.Inlay> out =
-                hints == null ? new java.util.ArrayList<>(1) : new java.util.ArrayList<>(hints);
-        out.add(new org.fxmisc.richtext.Inlay(area.getParagraphLength(line), lens.toString(), CODE_LENS_STYLE));
-        return out;
     }
 
     /** One code lens: its 0-based line, its text ({@code 3 references}) and the click handler's own token. */
@@ -3769,6 +3762,11 @@ public class EditorBuffer implements TabContent {
         httpVariableMarks.update();
     }
 
+    /** The HTML markup check on the same squiggle overlay, while no server serves the page (HTML review D5). */
+    public void setHtmlMarkupCheck(HttpVariableMarks.MarkupCheck check) {
+        httpVariableMarks.setMarkupCheck(check);
+    }
+
     /** The quick fixes for the unresolved-variable marks at {@code offset} of {@code view} ("Use environment dev"). */
     public java.util.List<CodeAction> httpVariableFixesAt(@Nullable CodeArea view, int offset) {
         return HttpVariableFixes.at(httpVariableMarks, httpGutter.hooks(), view, offset);
@@ -4143,6 +4141,8 @@ public class EditorBuffer implements TabContent {
         updateDiagnosticStripe();
         problemCounter.update(was != lspActive); // on or off a server: nothing checked yet (fifth review CV1)
         bulb.schedule();
+        httpVariableMarks.update(); // an HTML page's own markup marks yield to its server's diagnostics (D5)
+        if (!this.lspActive) setColorSwatches(null); // they came from the server
     }
 
     public boolean isLspActive() {

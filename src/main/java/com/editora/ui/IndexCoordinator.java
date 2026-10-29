@@ -866,6 +866,32 @@ final class IndexCoordinator {
         return List.copyOf(best);
     }
 
+    /**
+     * The indexed project files {@code keep} accepts, at most {@code limit}, in walk order — Related File's pages
+     * that may link a stylesheet (HTML review C16). Empty while the index is off or not built.
+     */
+    List<Path> filesMatching(java.util.function.Predicate<Path> keep, int limit) {
+        if (!isEnabled() || indexedRoot == null) {
+            return List.of();
+        }
+        List<Path> out = new ArrayList<>();
+        for (Path f : projectFiles) {
+            if (out.size() >= limit) {
+                break;
+            }
+            if (keep.test(f)) {
+                out.add(f);
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /** The project folder the index was built from, or null. */
+    @Nullable
+    Path indexedRoot() {
+        return indexedRoot;
+    }
+
     /** Display order for file hits: best score first, then path, which together are already total. */
     private static final java.util.Comparator<FileHit> FILE_RANK =
             java.util.Comparator.comparingInt(FileHit::score).reversed().thenComparing(FileHit::relativePath);

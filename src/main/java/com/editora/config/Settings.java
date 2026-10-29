@@ -675,6 +675,11 @@ public class Settings {
     private boolean autoFill = false; // Emacs auto-fill-mode: break prose lines at the fill column as you type
     /** Auto-close HTML/XML tags (typing an open tag's {@code >} inserts the closer): on by default. */
     private boolean autoCloseTags = true;
+    /**
+     * Editora's own HTML markup check — unclosed elements, stray end tags, links to missing files — on an HTML page,
+     * with or without its language server (HTML review D5): on by default.
+     */
+    private boolean htmlMarkupChecks = true;
     /** MCP server (expose live editor state + the command registry to an LLM agent over a loopback
      *  HTTP JSON-RPC endpoint, gated by a bearer token): off by default. */
     private boolean mcpSupport = false;
@@ -1379,6 +1384,14 @@ public class Settings {
 
     public void setAutoCloseTags(boolean autoCloseTags) {
         this.autoCloseTags = autoCloseTags;
+    }
+
+    public boolean isHtmlMarkupChecks() {
+        return htmlMarkupChecks;
+    }
+
+    public void setHtmlMarkupChecks(boolean htmlMarkupChecks) {
+        this.htmlMarkupChecks = htmlMarkupChecks;
     }
 
     public boolean isLogViewer() {

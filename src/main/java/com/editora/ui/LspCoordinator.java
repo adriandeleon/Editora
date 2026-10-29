@@ -304,6 +304,7 @@ final class LspCoordinator {
     /** Folder trust for the lemminx servers: which pom may reach lemminx-maven, and Trust Folder (E1, C6). */
     private final XmlFolderTrust xmlTrust;
 
+    final HtmlLspAids html; // HTML links, the markup check and colour swatches (HTML review B6, D5, D9)
     private final LibrarySources librarySourcesBar;
 
     private final WorkspaceFileOperations workspaceFiles;
@@ -368,6 +369,7 @@ final class LspCoordinator {
         this.lspManager = lspManager;
         this.ops = ops;
         this.xmlTrust = new XmlFolderTrust(this, host, lspManager, ops);
+        this.html = new HtmlLspAids(host, lspManager, ops);
         this.librarySourcesBar = new LibrarySources(lspManager, host::setStatus); // a decompiled tab's sources
         this.pythonInterpreters = new PythonInterpreterCoordinator(new PythonInterpreterCoordinator.Host() {
             @Override
@@ -2362,6 +2364,7 @@ final class LspCoordinator {
         applyOnTypeFormatting();
         applyBashIde();
         applyXmlSettings();
+        html.settingsChanged(); // the HTML markup check switched on or off (D5)
         xmlTrust.trustChanged(); // a pom moves to or off lemminx-maven with its folder's trust (E1)
         appliedProjectRoot = ops.lspProjectRoot();
         offerInterruptedEdits();
@@ -2392,36 +2395,7 @@ final class LspCoordinator {
 
     /** Sets a server's per-server enable toggle (mirrors {@link #serverEnabled}). */
     private void setServerEnabled(String serverId, boolean on) {
-        var s = host.settings();
-        switch (serverId) {
-            case "typescript" -> s.setTypescriptLspEnabled(on);
-            case "python" -> s.setPythonLspEnabled(on);
-            case "xml" -> s.setXmlLspEnabled(on);
-            case "json" -> s.setJsonLspEnabled(on);
-            case "bash" -> s.setBashLspEnabled(on);
-            case "yaml" -> s.setYamlLspEnabled(on);
-            case "go" -> s.setGoLspEnabled(on);
-            case "rust" -> s.setRustLspEnabled(on);
-            case "php" -> s.setPhpLspEnabled(on);
-            case "ruby" -> s.setRubyLspEnabled(on);
-            case "clangd" -> s.setClangdLspEnabled(on);
-            case "html" -> s.setHtmlLspEnabled(on);
-            case "css" -> s.setCssLspEnabled(on);
-            case "kotlin" -> s.setKotlinLspEnabled(on);
-            case "groovy" -> s.setGroovyLspEnabled(on);
-            case "scala" -> s.setScalaLspEnabled(on);
-            case "clojure" -> s.setClojureLspEnabled(on);
-            case "lua" -> s.setLuaLspEnabled(on);
-            case "dockerfile" -> s.setDockerfileLspEnabled(on);
-            case "sql" -> s.setSqlLspEnabled(on);
-            case "terraform" -> s.setTerraformLspEnabled(on);
-            case "toml" -> s.setTomlLspEnabled(on);
-            case "csharp" -> s.setCsharpLspEnabled(on);
-            case "typst" -> s.setTypstLspEnabled(on);
-            case "astro" -> s.setAstroLspEnabled(on);
-            case "maven-pom" -> s.setMavenPomLspEnabled(on);
-            default -> s.setJavaLspEnabled(on);
-        }
+        LspServerCommands.setServerEnabled(host.settings(), serverId, on);
     }
 
     /** Sets a server's configured command (blank ⇒ the server's default); mirrors {@link #serverCommand}. */
@@ -4019,6 +3993,7 @@ final class LspCoordinator {
     /** Wires every LSP hook onto a freshly-added buffer (didChange/diagnostics/completion/format/nav), then
      *  opens+activates it if eligible. Called from {@code MainController.addBuffer}. */
     void wireBuffer(EditorBuffer buffer) {
+        html.wire(buffer); // the HTML markup check for a page no server serves (D5)
         // Debounced didChange sink + keep the Structure outline live as the document changes.
         buffer.getNode().addEventFilter(KeyEvent.KEY_PRESSED, event -> {
             if (event.getCode() == KeyCode.ESCAPE && buffer == host.activeBuffer()) {
@@ -4262,6 +4237,7 @@ final class LspCoordinator {
      */
     void requestFoldingRanges(EditorBuffer buffer) {
         Path path = buffer == null ? null : lspPath(buffer);
+        html.requestColors(buffer, path); // colour swatches (D9) ride the same pulses
         if (path == null || !lspManager.isManaged(path) || !lspManager.supportsFoldingRanges(path)) {
             return;
         }
@@ -5480,7 +5456,7 @@ final class LspCoordinator {
      * the answer has come back. It runs only on a jump that actually happened.
      */
     void gotoDefinition(@Nullable Runnable afterJump) {
-        gotoDefinition(afterJump, null);
+        gotoDefinition(afterJump, html.links::followAtCaret); // an HTML href/src: its file (B6)
     }
 
     /**
