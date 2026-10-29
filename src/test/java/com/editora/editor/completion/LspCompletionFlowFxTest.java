@@ -261,6 +261,30 @@ class LspCompletionFlowFxTest {
         assertEquals("<body>\n<p>a</p>".length(), EditorFx.callFx(a::getCaretPosition));
     }
 
+    /**
+     * The CSS server's property item inserts {@code color: } and asks for the list again, for the values; the
+     * command was dropped and the second step never came (HTML review B7).
+     */
+    @Test
+    void anItemThatAsksForTheListAgainOpensItOnceAccepted() throws Exception {
+        List<String> prefixes = new CopyOnWriteArrayList<>();
+        Completion color = Completion.lsp("color", "color: ", null)
+                .withProtocol(
+                        new Completion.Protocol("color", null, List.of(), 0, Completion.Protocol.TRIGGER_SUGGEST));
+        EditorBuffer b = lspBuffer("a { colo", List.of(color));
+        EditorFx.onFx(() -> b.setLspCompletionProvider((position, answer) -> {
+            prefixes.add(b.getArea().getText());
+            answer.accept(prefixes.size() == 1 ? List.of(color) : List.of(Completion.lsp("red", "red", null)));
+        }));
+        open(b);
+        EditorFx.onFx(() -> b.getArea().fireEvent(EditorFx.pressed(KeyCode.ENTER, false, false)));
+        await("the list of values", () -> prefixes.size() == 2 && completion(b).completionPopupShowing());
+        assertEquals("a { color: ", EditorFx.callFx(() -> b.getArea().getText()));
+        assertEquals(
+                "red",
+                EditorFx.callFx(() -> completion(b).completionPopup().selected().label()));
+    }
+
     @Test
     void typingAPrefixNoItemMatchesClosesTheList() throws Exception {
         EditorBuffer b = lspBuffer("out.pr", List.of(Completion.lsp("println", "println", "void println()")));

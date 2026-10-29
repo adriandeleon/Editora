@@ -1997,10 +1997,20 @@ public final class BufferCompletion {
                 && ((plan.text().indexOf('(') < 0 && plan.caretOffset() < 0)
                         || (acceptedCaret > 0
                                 && a.getText(acceptedCaret - 1, acceptedCaret).equals(")")));
+        String command = c.protocol() == null ? null : c.protocol().command();
+        if (Completion.Protocol.TRIGGER_SUGGEST.equals(command)) {
+            // The server's two-step items (HTML review B7): `color: ` then its values, `css/` then its files. Manual,
+            // so the suppression of the accept's own auto-trigger does not hold it back.
+            long acceptedVersion = host.docVersion();
+            Platform.runLater(() -> {
+                if (acceptedVersion == host.docVersion() && a.getScene() != null) updateCompletion(a, true);
+            });
+        }
         if (host.signatureHelpRequester() != null
                 && host.lspActive()
                 && !finishedJavaCall
-                && (c.iconKind() == com.editora.completion.CompletionIconKind.METHOD
+                && (Completion.Protocol.TRIGGER_PARAMETER_HINTS.equals(command)
+                        || c.iconKind() == com.editora.completion.CompletionIconKind.METHOD
                         || c.iconKind() == com.editora.completion.CompletionIconKind.CONSTRUCTOR)) {
             long acceptedVersion = host.docVersion();
             Platform.runLater(() -> {

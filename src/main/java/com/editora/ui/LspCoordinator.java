@@ -3167,13 +3167,14 @@ final class LspCoordinator {
     /** The accept hook for a completion item: resolve it + apply any additional edits (a TypeScript
      *  auto-import's {@code import} line). Returns null when the item can't carry extra edits. */
     private @Nullable Runnable autoImportAccept(EditorBuffer buffer, org.eclipse.lsp4j.CompletionItem item) {
-        if (!com.editora.lsp.CompletionMapper.mayHaveAdditionalEdits(item) && item.getCommand() == null) return null;
+        var serverCommand = com.editora.lsp.CompletionMapper.serverCommandOf(item); // the editor's own run in it (B7)
+        if (!com.editora.lsp.CompletionMapper.mayHaveAdditionalEdits(item) && serverCommand == null) return null;
         return () -> {
             Path path = lspPath(buffer);
             if (path == null) return;
             Runnable command = () -> {
-                var c = item.getCommand();
-                if (c != null && c.getCommand() != null && path.equals(lspPath(buffer)) && !buffer.isDisposed()) {
+                var c = serverCommand;
+                if (c != null && path.equals(lspPath(buffer)) && !buffer.isDisposed()) {
                     buffer.sendLspChange();
                     // Tracked, so the workspace/applyEdit the command answers with has a basis to be
                     // validated against (an untracked one is refused unless it names current versions).

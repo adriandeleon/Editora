@@ -30,17 +30,42 @@ public record Completion(
         @Nullable ReplaceRange replaceRange,
         @Nullable Protocol protocol) {
 
-    /** Optional protocol semantics; kept independent of lsp4j wire objects. */
+    /**
+     * Optional protocol semantics; kept independent of lsp4j wire objects. {@code command} is the id of the
+     * item's LSP command when it is one the editor runs itself after the accept ({@link #TRIGGER_SUGGEST},
+     * {@link #TRIGGER_PARAMETER_HINTS}), else null.
+     */
     public record Protocol(
             String filterText,
             @Nullable ReplaceRange replaceRange,
             java.util.@Nullable List<String> commitCharacters,
-            int insertTextMode) {
+            int insertTextMode,
+            @Nullable String command) {
+
+        /** Opens the list again once the item is in: a CSS property's values, a directory's files (VS Code's id). */
+        public static final String TRIGGER_SUGGEST = "editor.action.triggerSuggest";
+
+        /** Shows signature help once the item is in. */
+        public static final String TRIGGER_PARAMETER_HINTS = "editor.action.triggerParameterHints";
+
+        public Protocol(
+                String filterText,
+                @Nullable ReplaceRange replaceRange,
+                java.util.@Nullable List<String> commitCharacters,
+                int insertTextMode) {
+            this(filterText, replaceRange, commitCharacters, insertTextMode, null);
+        }
+
         public Protocol(
                 String filterText,
                 @Nullable ReplaceRange replaceRange,
                 java.util.@Nullable List<String> commitCharacters) {
             this(filterText, replaceRange, commitCharacters, 0);
+        }
+
+        /** Whether {@code id} is a command the editor runs itself, never sent to the server. */
+        public static boolean editorCommand(@Nullable String id) {
+            return TRIGGER_SUGGEST.equals(id) || TRIGGER_PARAMETER_HINTS.equals(id);
         }
 
         public Protocol {
