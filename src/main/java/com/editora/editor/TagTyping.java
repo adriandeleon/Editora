@@ -6,6 +6,7 @@ import java.util.WeakHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.editora.editops.HtmlCaretRegion;
 import com.editora.editops.TagAutoClose;
 import com.editora.editops.TagJoin;
 import org.fxmisc.richtext.CodeArea;
@@ -29,6 +30,10 @@ import org.jspecify.annotations.Nullable;
  * element — re-inserts the {@code </} and the name typed so far as a tag of their own before the closer, which is
  * left as it was. Before, that character landed inside the closer's name and auto-rename mirrored it onto the
  * start tag: {@code <item>t|</item>} plus {@code </itme>} gave {@code <itmeem>t</itme>em>}.
+ *
+ * <p>In an HTML start tag, an {@code =} typed right after an attribute name brings its quotes: {@code <a class=}
+ * gives {@code <a class="|">} (VS Code's {@code html.autoCreateQuotes}; HTML review D10). A {@code "} typed straight
+ * after is taken as that opening quote, so a habitual {@code class="x"} still gives {@code class="x"}.
  *
  * <p>The join's edge keystrokes (XML/pom review 3, C22): Backspace while a join is pending takes back the last
  * character the user typed — {@code </} and the name so far, less one, go back as the user's own text before the
@@ -62,6 +67,12 @@ final class TagTyping {
 
     private final Set<CodeArea> watched = Collections.newSetFromMap(new WeakHashMap<>());
 
+    /** Where an {@code =""} just put the caret (inside the quotes), and in which area: a {@code "} typed next is
+     *  taken as the opening quote the user meant, not a second one. */
+    private @Nullable CodeArea quoteArea;
+
+    private int quoteAt = -1;
+
     /** Handles {@code c} typed at the caret of {@code a} in a {@code language} buffer; true when it did. */
     boolean typed(CodeArea a, char c, String language) {
         boolean html = "html".equals(language);
@@ -70,6 +81,11 @@ final class TagTyping {
             return false;
         }
         int caret = a.getCaretPosition();
+        boolean quoted = a == quoteArea && caret == quoteAt;
+        quoteArea = null;
+        if (quoted && c == '"') {
+            return true; // the habitual `class="`: that quote is the one already there, and the caret is inside it
+        }
         String pending = rest;
         if (pending != null && caret == at && a == joinArea) {
             if (same(pending.charAt(0), c, html)) {
@@ -98,6 +114,9 @@ final class TagTyping {
         }
         if (c == '/') {
             return joinCloser(a, caret, html);
+        }
+        if (c == '=') {
+            return html && autoQuote(a, caret);
         }
         return isNameChar(c) && rejoin(a, caret, c, html);
     }
@@ -171,6 +190,21 @@ final class TagTyping {
         }
         a.replaceText(caret, caret, ">" + closer);
         a.moveTo(caret + 1);
+        return true;
+    }
+
+    /** An {@code =} typed after an attribute name in an HTML start tag: {@code =""}, the caret inside (D10). */
+    private boolean autoQuote(CodeArea a, int caret) {
+        // The wider window: a page's script may be long, and `if (a <b) x =` there is code, not a tag.
+        String before = a.getText(Math.max(0, caret - HtmlCaretRegion.MAX_SCAN), caret);
+        String after = a.getText(caret, Math.min(a.getLength(), caret + 1));
+        if (!HtmlCaretRegion.quotesAfterEquals(before, after)) {
+            return false;
+        }
+        a.replaceText(caret, caret, "=\"\"");
+        a.moveTo(caret + 2);
+        quoteArea = a;
+        quoteAt = caret + 2;
         return true;
     }
 

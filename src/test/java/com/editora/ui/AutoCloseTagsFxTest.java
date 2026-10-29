@@ -277,4 +277,26 @@ class AutoCloseTagsFxTest {
         });
         assertEquals("<xitem>t</xitem>", after, "the closer is edited as text (and auto-rename mirrors it)");
     }
+
+    /** D10 (HTML review): an {@code =} after an attribute name brings its quotes, as VS Code's autoCreateQuotes does. */
+    @Test
+    void anEqualsAfterAnAttributeNameBringsItsQuotes() throws Exception {
+        assertEquals("<a class=\"|\">", typeAt(htmlBuffer("<a class>"), 8, "="));
+        assertEquals("<a class=\"big|\">", typeAt(htmlBuffer("<a class>"), 8, "=big"));
+        assertEquals("<a class=\"big\"|>", typeAt(htmlBuffer("<a class>"), 8, "=\"big\""), "typed quotes as usual");
+        assertEquals("<a class=\"\"|>", typeAt(htmlBuffer("<a class>"), 8, "=\"\""), "an empty value typed out");
+        assertEquals("<input data-x=\"|\"", typeAt(htmlBuffer("<input data-x"), 13, "="));
+        assertEquals("<a title=\"a=|\">", typeAt(htmlBuffer("<a title=\"a\">"), 11, "="), "inside a value");
+        assertEquals("<a=|>", typeAt(htmlBuffer("<a>"), 2, "="), "the element's own name");
+        assertEquals("<p>x=|</p>", typeAt(htmlBuffer("<p>x</p>"), 4, "="), "text, not a tag");
+        assertEquals("<a href=|'x'>", typeAt(htmlBuffer("<a href'x'>"), 7, "="), "the quote is there already");
+        assertEquals(
+                "<script>\nif (a <b) x =|\n</script>",
+                typeAt(htmlBuffer("<script>\nif (a <b) x \n</script>"), 21, "="),
+                "code in a script");
+        assertEquals("<item key=|", typeAt(renamingBuffer("xml", "<item key"), 9, "="), "HTML only");
+        EditorBuffer off = htmlBuffer("<a class>");
+        FxTestSupport.runOnFx(() -> off.setAutoCloseTags(false));
+        assertEquals("<a class=|>", typeAt(off, 8, "="), "the auto-close setting gates it");
+    }
 }

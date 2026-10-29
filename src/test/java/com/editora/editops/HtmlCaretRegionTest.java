@@ -53,4 +53,17 @@ class HtmlCaretRegionTest {
         assertFalse(HtmlCaretRegion.inWholeEndTag("<p>a", "</p>"), "before the closer, not in it");
         assertFalse(HtmlCaretRegion.inWholeEndTag("a / b", "c>"));
     }
+
+    @Test
+    void anEqualsWantsQuotesOnlyAfterAnAttributeNameInAStartTag() {
+        assertTrue(HtmlCaretRegion.quotesAfterEquals("<a class", ">"));
+        assertTrue(HtmlCaretRegion.quotesAfterEquals("<button @click", ""));
+        assertTrue(HtmlCaretRegion.quotesAfterEquals("<a href=\"x\" title", " >"));
+        assertFalse(HtmlCaretRegion.quotesAfterEquals("<a href=\"x title", "\">"), "inside a value");
+        assertFalse(HtmlCaretRegion.quotesAfterEquals("<a class", "\"x\">"), "the quote is there");
+        assertFalse(HtmlCaretRegion.quotesAfterEquals("</a x", ">"), "an end tag");
+        assertFalse(HtmlCaretRegion.quotesAfterEquals("<!DOCTYPE html", ">"));
+        assertFalse(HtmlCaretRegion.quotesAfterEquals("<a class ", ">"), "a space, not a name, before the caret");
+        assertFalse(HtmlCaretRegion.quotesAfterEquals("<style>a { b", ""), "CSS");
+    }
 }

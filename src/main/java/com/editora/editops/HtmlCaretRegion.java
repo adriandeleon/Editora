@@ -33,6 +33,13 @@ public final class HtmlCaretRegion {
 
     /** The region at the end of {@code before} (the text preceding the caret, at most {@link #MAX_SCAN} chars). */
     public static Region at(String before) {
+        return scan(before).region();
+    }
+
+    /** Where a scan ended: the region, the open tag's {@code <} (or -1) and the quote it is inside (or 0). */
+    private record Scan(Region region, int tagStart, char quote) {}
+
+    private static Scan scan(String before) {
         int n = before.length();
         boolean inTag = false;
         int tagStart = -1;
@@ -52,7 +59,7 @@ public final class HtmlCaretRegion {
                 if (c == '<' && before.startsWith("<!--", k)) {
                     int end = before.indexOf("-->", k + 4);
                     if (end < 0) {
-                        return Region.COMMENT;
+                        return new Scan(Region.COMMENT, -1, (char) 0);
                     }
                     k = end + 2;
                 } else if (c == '<' && k + 1 < n && startsTag(before.charAt(k + 1))) {
@@ -76,12 +83,36 @@ public final class HtmlCaretRegion {
             }
         }
         if (inTag) {
-            return Region.TAG;
+            return new Scan(Region.TAG, tagStart, quote);
         }
-        if ("style".equals(raw)) {
-            return Region.STYLE;
+        Region region = "style".equals(raw) ? Region.STYLE : "script".equals(raw) ? Region.SCRIPT : Region.CONTENT;
+        return new Scan(region, -1, (char) 0);
+    }
+
+    /**
+     * Whether an {@code =} typed at the caret ends an attribute name, so its value's quotes go in with it (VS Code's
+     * {@code html.autoCreateQuotes}; HTML review D10): the caret is in a start tag, outside any quoted value, right
+     * after a name that follows a space, and no quote or {@code =} is already next ({@code after}, the text after
+     * the caret). {@code before} is the text before the caret, at most {@link #MAX_SCAN} chars.
+     */
+    public static boolean quotesAfterEquals(String before, String after) {
+        Scan s = scan(before);
+        if (s.region() != Region.TAG || s.quote() != 0 || !Character.isLetter(before.charAt(s.tagStart() + 1))) {
+            return false; // not in a start tag (an end tag, a doctype), or inside a value already
         }
-        return "script".equals(raw) ? Region.SCRIPT : Region.CONTENT;
+        int i = before.length();
+        while (i > 0 && isAttributeNameChar(before.charAt(i - 1))) {
+            i--;
+        }
+        if (i == before.length() || !Character.isWhitespace(before.charAt(i - 1))) {
+            return false; // no name right before the caret, or it is the element's own name
+        }
+        char next = after.isEmpty() ? 0 : after.charAt(0);
+        return next != '"' && next != '\'' && next != '=';
+    }
+
+    private static boolean isAttributeNameChar(char c) {
+        return isNameChar(c) || c == '@';
     }
 
     /**
