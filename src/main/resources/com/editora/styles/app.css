@@ -1710,7 +1710,7 @@
     -fx-background-color: -color-neutral-muted;
     -fx-background-radius: 4;
     -fx-padding: 1 5 1 5;
-    -fx-font-size: 8px;
+    -fx-font-size: 10px; /* the status line's size: 8 px was barely legible */
     -fx-font-weight: bold;
     -fx-text-fill: -color-fg-muted;
 }

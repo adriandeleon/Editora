@@ -1219,8 +1219,10 @@ class ProjectMapViewFxTest {
                 assertEquals(18, grip.getWidth(), 0.001, "the resize handle must not cover the editable note body");
                 assertEquals(18, grip.getHeight(), 0.001, "the resize handle must only occupy the lower corner");
                 javafx.scene.layout.VBox notes = FxTestSupport.field(card, "notes");
-                javafx.scene.control.TextArea editor =
-                        (javafx.scene.control.TextArea) notes.getChildren().getFirst();
+                javafx.scene.control.TextArea editor = (javafx.scene.control.TextArea) notes.getChildren().stream()
+                        .filter(javafx.scene.control.TextArea.class::isInstance) // after its heading (review C14)
+                        .findFirst()
+                        .orElseThrow();
                 assertTrue(editor.isEditable());
                 editor.setText("edited note");
                 editor.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, true, false, true));
@@ -1386,10 +1388,11 @@ class ProjectMapViewFxTest {
                 ContextMenu menu = FxTestSupport.field(preview, "editorContextMenu");
                 assertEquals(
                         List.of(
-                                tr("editmenu.copy"),
+                                tr("project.map.preview.copyAll"), // nothing selected: Copy takes it all
                                 tr("editmenu.selectAll"),
                                 tr("editmenu.addBookmark"),
-                                tr("editmenu.addNote")),
+                                tr("editmenu.addNote"),
+                                tr("project.map.preview.moveToFreeSpace")),
                         menu.getItems().stream()
                                 .filter(item -> !(item instanceof javafx.scene.control.SeparatorMenuItem))
                                 .map(MenuItem::getText)

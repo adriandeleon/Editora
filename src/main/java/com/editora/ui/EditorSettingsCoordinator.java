@@ -1382,6 +1382,7 @@ final class EditorSettingsCoordinator {
         host.debugCoordinator().setConsoleFont(settings.getFontFamily(), consoleFont);
         host.buildOutputPanel().setOutputFont(settings.getFontFamily(), consoleFont);
         host.testRunCoordinator().setOutputFont(settings.getFontFamily(), consoleFont);
+        ProjectMapPreview.setEditorFont(settings.getFontFamily(), consoleFont); // the Project Map's cards
         for (Tab tab : host.editorArea().tabs()) {
             EditorBuffer buffer = host.bufferOf(tab);
             if (buffer != null && visibleOnly && !tab.isSelected()) {

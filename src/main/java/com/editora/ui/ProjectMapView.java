@@ -240,6 +240,9 @@ final class ProjectMapView extends VBox {
     private Consumer<ProjectMapOutput> onPrint = ignored -> {};
     private Consumer<ProjectMapOutput> onExportPdf = ignored -> {};
     private ProjectMapPreview.@Nullable MarkerActions previewMarkerActions;
+    /** The text zoom of the card last zoomed with −/+: new cards open at it. */
+    private double cardTextZoom = 1.0;
+
     private ProjectPanel.@Nullable MarkerActions notePreviewActions;
     private StackPane canvasHost;
     /** The open structure columns and the outlines behind them. */
@@ -1755,6 +1758,7 @@ final class ProjectMapView extends VBox {
             surface.requestFocus();
         });
         preview.setOnBlankRejected(() -> onStatus.accept(tr("status.projectMap.noteBlankRestored")));
+        preview.setOnOpenAt((file, line) -> onOpenAt.accept(file, line)); // a note's heading opens the file there
         preview.setMapScale(surface.cardZoom());
         installPreviewListeners(preview);
         notePreviews.put(selected, preview);
@@ -1777,6 +1781,8 @@ final class ProjectMapView extends VBox {
         makeRoomForCard();
         ProjectMapPreview preview = new ProjectMapPreview(onOpenFile);
         preview.setMapScale(surface.cardZoom());
+        preview.setInitialContentZoom(cardTextZoom); // the last −/+ zoom, so it need not be set on every card
+        preview.setOnContentZoomed(zoom -> cardTextZoom = zoom);
         preview.setMarkerActions(previewMarkerActions);
         preview.setOnClose(() -> closePreview(preview));
         preview.setOnActivate(() -> touchCard(preview, true));
@@ -1786,6 +1792,10 @@ final class ProjectMapView extends VBox {
             surface.requestFocus();
         });
         preview.setOnNotesToggled(shown -> showCardNotes(preview, shown));
+        preview.setNotesSuppressed(hideOpenNotes.isSelected());
+        preview.setOnShowSuppressedNotes(() -> hideOpenNotes.setSelected(false)); // the Notes button asks for them
+        preview.setOnMoveToFreeSpace(() -> cardMoveToFreeSpace(preview, path));
+        preview.setOnTextShown(() -> updateCardNotes(preview)); // stored notes are found again in the new text
         // A sticky note's connector meets its line in the text, which scrolls under it.
         preview.editor().estimatedScrollYProperty().addListener((obs, old, value) -> {
             if (stickyNotes.containsKey(preview)) {
@@ -1844,7 +1854,9 @@ final class ProjectMapView extends VBox {
             return List.of();
         }
         try {
-            return ProjectMapStickyNotes.notesFor(actions.personalNotes(file), card.range());
+            // Found again in the card's text first: a file changed outside Editora moved them (C5).
+            return ProjectMapStickyNotes.notesFor(
+                    ProjectMapStickyNotes.reanchored(actions.personalNotes(file), card.fullText()), card.range());
         } catch (RuntimeException ignored) {
             return List.of();
         }
@@ -1874,6 +1886,12 @@ final class ProjectMapView extends VBox {
                         this::repaintPreviewConnectors,
                         () -> onStatus.accept(tr("status.projectMap.noteBlankRestored")),
                         () -> touchCard(card, false)));
+        stuck.setOnMore(() -> {
+            Path file = card.path();
+            if (file != null) {
+                previewNotes(file); // the note card lists every note of the file
+            }
+        });
         stuck.setHidden(hideOpenNotes.isSelected());
         stuck.show(cardNotes(card));
         touchCard(card, true);
@@ -1932,6 +1950,7 @@ final class ProjectMapView extends VBox {
             entry.getValue().setVisible(file == null || !surface.narrowsAway(file));
         }
         boolean notes = !hideOpenNotes.isSelected();
+        previews.values().forEach(card -> card.setNotesSuppressed(!notes)); // their Notes buttons say why
         notePreviews.forEach((path, card) -> card.setVisible(notes && !surface.narrowsAway(path)));
         stickyNotes.values().forEach(stuck -> stuck.setHidden(!notes)); // a hidden card hides its own as well
         repaintPreviewConnectors();
@@ -2045,17 +2064,22 @@ final class ProjectMapView extends VBox {
             return;
         }
         boolean mirrors = false;
+        // One look at each file per pass, shared by its cards and its outline: a buffer's text is read once.
+        Map<Path, ProjectMapPreview.@Nullable Content> cardTick = new HashMap<>();
+        Function<Path, ProjectMapPreview.@Nullable Content> cardContent =
+                file -> cardTick.containsKey(file) ? cardTick.get(file) : cardTickPut(cardTick, file);
         for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
             ProjectMapPreview card = entry.getValue();
+            Path file = card.path();
             if (!polled || card.showsOpenBuffer()) {
-                Path file = card.path();
-                card.refresh(previewContentFor(file != null ? file : entry.getKey()));
+                card.refresh(cardContent.apply(file != null ? file : entry.getKey()));
             }
             mirrors |= card.showsOpenBuffer();
+            card.setUnsaved(card.showsOpenBuffer() && file != null && safeTest(isModified, file));
         }
         // Structure columns follow their file too: an open buffer's edits, or a closed file rewritten on disk.
         if (structure.hasOpenColumns() || !symbolCardFiles().isEmpty()) {
-            structure.refresh(symbolCardFiles());
+            structure.refresh(symbolCardFiles(), cardContent);
             mirrors |= structure.openFiles().stream().anyMatch(file -> safeTest(isOpen, file));
         }
         if (!polled) {
@@ -2066,6 +2090,13 @@ final class ProjectMapView extends VBox {
         } else {
             cardPoll.stop();
         }
+    }
+
+    private ProjectMapPreview.@Nullable Content cardTickPut(
+            Map<Path, ProjectMapPreview.@Nullable Content> tick, Path file) {
+        ProjectMapPreview.Content content = previewContentFor(file);
+        tick.put(file, content);
+        return content;
     }
 
     private void refreshNoteCards() {
@@ -2084,6 +2115,29 @@ final class ProjectMapView extends VBox {
                 closeNotePreview(entry.getValue()); // its notes were deleted elsewhere: nothing left to show
             }
         }
+    }
+
+    /**
+     * The card menu's Move to Free Space: the card is placed again, at its present size, where placement would
+     * put a new card for its row — the spot that covers the least of the map. The map is not panned.
+     */
+    private void cardMoveToFreeSpace(Region card, Path key) {
+        if (canvasHost == null || !cardTouches.containsKey(card)) {
+            return;
+        }
+        double scale = cardScale(card);
+        ProjectMapPreview.Placement placement = previewPlacement(
+                card,
+                key,
+                card.getWidth(),
+                card.getHeight(),
+                Math.min(card.getWidth(), ProjectMapPreview.MIN_WIDTH),
+                Math.min(card.getHeight(), ProjectMapPreview.MIN_HEIGHT),
+                canvasHost.getWidth(),
+                canvasHost.getHeight());
+        card.resize(placement.width(), placement.height());
+        card.relocate(placement.x(), placement.y());
+        ProjectMapPreview.announceGeometry(card, scale);
     }
 
     private void constrainPreviews(double width, double height) {

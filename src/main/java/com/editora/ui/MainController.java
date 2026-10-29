@@ -8996,7 +8996,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         var area = buffer.getArea();
         int length = area.getLength();
         int end = Math.min(length, ProjectMapPreview.MAX_PREVIEW_CHARS);
-        return new ProjectMapPreview.Content(area.getText(0, end), end < length);
+        return ProjectMapPreview.Content.buffer(() -> area.getText(0, end), end < length, buffer.docVersion());
     }
 
     /**

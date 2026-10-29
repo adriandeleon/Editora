@@ -1021,7 +1021,10 @@ class ProjectMapCardsFxTest {
 
     private static TextArea noteEditor(MapFixture map, Path path) {
         VBox notes = FxTestSupport.field(noteCards(map).get(path), "notes");
-        return (TextArea) notes.getChildren().getFirst();
+        return (TextArea) notes.getChildren().stream() // after its heading (review C14)
+                .filter(TextArea.class::isInstance)
+                .findFirst()
+                .orElseThrow();
     }
 
     private static String statusOf(ProjectMapPreview card) {

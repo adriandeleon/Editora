@@ -58,7 +58,11 @@ final class ProjectMapStructure {
     record Node(Path path, ProjectMapModel.Symbol symbol, List<Node> children) {}
 
     /** What a file looked like when it was outlined: its size and time on disk, or its open buffer's text. */
-    private record Stamp(long size, long modifiedMillis, int textHash, int textLength, boolean buffer) {}
+    private record Stamp(long size, long modifiedMillis, int textHash, int textLength, boolean buffer, long version) {
+        Stamp withVersion(long newVersion) {
+            return new Stamp(size, modifiedMillis, textHash, textLength, buffer, newVersion);
+        }
+    }
 
     /** Why a file has no outline to show. */
     enum Problem {
@@ -70,6 +74,10 @@ final class ProjectMapStructure {
     /** One file's outline: its declarations by path, and how its source looked. */
     private record Outline(@Nullable Stamp stamp, List<Node> roots, Map<Path, Node> byPath, Problem problem) {
         static final Outline LOADING = new Outline(null, List.of(), Map.of(), Problem.LOADING);
+
+        Outline withStamp(Stamp newStamp) {
+            return new Outline(newStamp, roots, byPath, problem);
+        }
     }
 
     private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
@@ -333,27 +341,52 @@ final class ProjectMapStructure {
      * size or time changed. Cheap when nothing did.
      */
     void refresh(Set<Path> alsoFiles) {
+        refresh(alsoFiles, this::contentFor);
+    }
+
+    /**
+     * As {@link #refresh(Set)}, with the editor's view of each file from {@code tick}: the cards' refresh hands
+     * over the same {@link ProjectMapPreview.Content} it gave the cards, so a buffer's text is read once a poll.
+     */
+    void refresh(Set<Path> alsoFiles, Function<Path, ProjectMapPreview.@Nullable Content> tick) {
         Set<Path> files = new LinkedHashSet<>(openFiles());
         files.addAll(alsoFiles);
         for (Path file : files) {
-            request(file, outlines.get(file));
+            request(file, outlines.get(file), tick);
         }
     }
 
-    /** Asks for a file's outline (again); {@code known} is what is held, so an unchanged source costs a stat. */
     private void request(Path file, @Nullable Outline known) {
+        request(file, known, this::contentFor);
+    }
+
+    /** Asks for a file's outline (again); {@code known} is what is held, so an unchanged source costs a stat. */
+    private void request(
+            Path file, @Nullable Outline known, Function<Path, ProjectMapPreview.@Nullable Content> contents) {
         if (disposed) {
             return;
         }
-        ProjectMapPreview.Content current = contentFor(file);
+        ProjectMapPreview.Content current = contentOf(contents, file);
+        Stamp knownStamp = known == null ? null : known.stamp();
+        if (current != null
+                && current.open()
+                && current.version() >= 0
+                && knownStamp != null
+                && knownStamp.buffer()
+                && knownStamp.version() == current.version()) {
+            return; // the buffer was not edited since it was outlined: its text is not even read
+        }
         String text = current != null && current.open() ? current.text() : null;
         boolean buffer = text != null;
-        Stamp knownStamp = known == null ? null : known.stamp();
+        long version = current == null ? -1 : current.version();
         if (text != null
                 && knownStamp != null
                 && knownStamp.buffer()
                 && knownStamp.textLength() == text.length()
                 && knownStamp.textHash() == text.hashCode()) {
+            if (known != null && version != knownStamp.version()) {
+                outlines.put(file, known.withStamp(knownStamp.withVersion(version))); // same text, newer counter
+            }
             return; // the buffer has not changed since it was outlined
         }
         List<SymbolNode> server = buffer ? serverSymbolsFor(file) : null;
@@ -365,8 +398,9 @@ final class ProjectMapStructure {
         }
         try {
             loader.submit(() -> {
-                Outline outline =
-                        text != null ? outline(file, text, server, true) : readAndOutline(file, charset, knownStamp);
+                Outline outline = text != null
+                        ? outline(file, text, server, true, version)
+                        : readAndOutline(file, charset, knownStamp);
                 Platform.runLater(() -> apply(file, id, outline));
             });
         } catch (RejectedExecutionException shutDown) {
@@ -382,8 +416,13 @@ final class ProjectMapStructure {
     }
 
     private ProjectMapPreview.@Nullable Content contentFor(Path file) {
+        return contentOf(content, file);
+    }
+
+    private static ProjectMapPreview.@Nullable Content contentOf(
+            Function<Path, ProjectMapPreview.@Nullable Content> contents, Path file) {
         try {
-            return content.apply(file);
+            return contents.apply(file);
         } catch (RuntimeException ignored) {
             return null;
         }
@@ -433,21 +472,22 @@ final class ProjectMapStructure {
         if (text == null) {
             return new Outline(stamp, List.of(), Map.of(), Problem.UNREADABLE);
         }
-        Outline outline = outline(file, text, null, false);
+        Outline outline = outline(file, text, null, false, -1);
         return new Outline(stamp, outline.roots(), outline.byPath(), outline.problem());
     }
 
     private static @Nullable Stamp stamp(Path file) {
         try {
             BasicFileAttributes attributes = Files.readAttributes(file, BasicFileAttributes.class);
-            return new Stamp(attributes.size(), attributes.lastModifiedTime().toMillis(), 0, 0, false);
+            return new Stamp(attributes.size(), attributes.lastModifiedTime().toMillis(), 0, 0, false, -1);
         } catch (IOException | RuntimeException unreadable) {
             return null;
         }
     }
 
     /** Off the FX thread: the outline of {@code text}, the file's content. */
-    private static Outline outline(Path file, String text, @Nullable List<SymbolNode> server, boolean buffer) {
+    private static Outline outline(
+            Path file, String text, @Nullable List<SymbolNode> server, boolean buffer, long version) {
         List<StructureNode> roots;
         List<String> lines = List.of(text.split("\n", -1));
         try {
@@ -465,7 +505,7 @@ final class ProjectMapStructure {
         }
         Map<Path, Node> byPath = new LinkedHashMap<>();
         List<Node> nodes = nodes(file, file, roots, lines, lines.size() - 1, byPath);
-        Stamp stamp = buffer ? new Stamp(-1, -1, text.hashCode(), text.length(), true) : null;
+        Stamp stamp = buffer ? new Stamp(-1, -1, text.hashCode(), text.length(), true, version) : null;
         return new Outline(stamp, nodes, Map.copyOf(byPath), Problem.NONE);
     }
 
