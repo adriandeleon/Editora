@@ -78,8 +78,13 @@ public class WorkspaceState {
      * <p>v25 → v26 resets a stored right-to-left {@code projectMapFlow} to left-to-right, once. Right-to-left was
      * the default written into every file from v11 to v12, and v13 kept it, so most of those stored values were
      * never chosen. Every workspace starts left-to-right after the step; another flow is still remembered.
+     *
+     * <p>v26 → v27 added {@code projectMapWindowMaximized} (the Map window was maximized; its bounds stay the
+     * restore size), {@code projectMapSingleClickOpens}, {@code projectMapCompactChains} and
+     * {@code projectMapFollowActiveFile} (three ⋯ options of the Map). Additive; absent means a normal window,
+     * a single click opening a file, compacted folder chains and no following of the active file.
      */
-    public static final int SCHEMA_VERSION = 26;
+    public static final int SCHEMA_VERSION = 27;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -191,6 +196,14 @@ public class WorkspaceState {
     private boolean projectMapFocusNewColumn = true;
     /** Project Map "Hide unmatched": filtered-out rows hidden instead of faded. Additive in v25; off by default. */
     private boolean projectMapHideUnmatched;
+    /** The Project Map's window was maximized; {@link #projectMapWindowBounds} is its restore size. v27. */
+    private boolean projectMapWindowMaximized;
+    /** Project Map "Single-click opens files". Additive in v27; on by default (what every Map did before). */
+    private boolean projectMapSingleClickOpens = true;
+    /** Project Map "Compact folder chains". Additive in v27; on by default. */
+    private boolean projectMapCompactChains = true;
+    /** Project Map "Always select opened file". Additive in v27; off by default. */
+    private boolean projectMapFollowActiveFile;
     /** Branch dropdown sections shown folded ("local", "remote", "remote:<name>", "actions"). Additive in v14. */
     private List<String> collapsedBranchSections = new ArrayList<>();
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
@@ -586,6 +599,38 @@ public class WorkspaceState {
 
     public void setProjectMapHideUnmatched(boolean projectMapHideUnmatched) {
         this.projectMapHideUnmatched = projectMapHideUnmatched;
+    }
+
+    public boolean isProjectMapWindowMaximized() {
+        return projectMapWindowMaximized;
+    }
+
+    public void setProjectMapWindowMaximized(boolean projectMapWindowMaximized) {
+        this.projectMapWindowMaximized = projectMapWindowMaximized;
+    }
+
+    public boolean isProjectMapSingleClickOpens() {
+        return projectMapSingleClickOpens;
+    }
+
+    public void setProjectMapSingleClickOpens(boolean projectMapSingleClickOpens) {
+        this.projectMapSingleClickOpens = projectMapSingleClickOpens;
+    }
+
+    public boolean isProjectMapCompactChains() {
+        return projectMapCompactChains;
+    }
+
+    public void setProjectMapCompactChains(boolean projectMapCompactChains) {
+        this.projectMapCompactChains = projectMapCompactChains;
+    }
+
+    public boolean isProjectMapFollowActiveFile() {
+        return projectMapFollowActiveFile;
+    }
+
+    public void setProjectMapFollowActiveFile(boolean projectMapFollowActiveFile) {
+        this.projectMapFollowActiveFile = projectMapFollowActiveFile;
     }
 
     public Map<String, String> getProgramArgs() {
