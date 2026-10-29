@@ -12,21 +12,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Workspace schema v13: the Map's open state and navigation options; v24: where the Map's window was; v25: the
- * Map's "Hide unmatched".
+ * Map's "Hide unmatched"; v26: a stored right-to-left flow becomes left-to-right.
  */
 class WorkspaceStateProjectViewTest {
 
     @Test
-    void aV12FileKeepsItsStoredFlowAndGainsTheOldBehaviourAsDefaults(@TempDir Path dir) throws Exception {
+    void aV12FileKeepsAVerticalFlowAndGainsTheOldBehaviourAsDefaults(@TempDir Path dir) throws Exception {
         Files.writeString(
                 dir.resolve("workspace-state.json"),
-                "{\"schemaVersion\":12,\"projectMapFlow\":\"RIGHT_TO_LEFT\",\"debugWatches\":[\"kept\"]}");
+                "{\"schemaVersion\":12,\"projectMapFlow\":\"TOP_TO_BOTTOM\",\"debugWatches\":[\"kept\"]}");
 
         ConfigManager config = new ConfigManager(dir);
         config.load();
         WorkspaceState state = config.getWorkspaceState();
 
-        assertEquals("RIGHT_TO_LEFT", state.getProjectMapFlow(), "a stored flow is the user's and is kept");
+        assertEquals("TOP_TO_BOTTOM", state.getProjectMapFlow(), "a vertical flow was chosen and is kept");
         assertEquals(WorkspaceState.PROJECT_VIEW_TREE, state.getProjectViewMode());
         assertTrue(state.isProjectMapKeepZoom());
         assertTrue(state.isProjectMapFocusNewColumn());
@@ -42,6 +42,26 @@ class WorkspaceStateProjectViewTest {
         config.load();
 
         assertEquals("LEFT_TO_RIGHT", config.getWorkspaceState().getProjectMapFlow());
+    }
+
+    @Test
+    void aStoredRightToLeftFlowBecomesLeftToRightOnce(@TempDir Path dir) throws Exception {
+        // Right-to-left was the default written into v11–v25 files, so it is reset; a later choice of it sticks.
+        Files.writeString(
+                dir.resolve("workspace-state.json"),
+                "{\"schemaVersion\":25,\"projectMapFlow\":\"RIGHT_TO_LEFT\",\"debugWatches\":[\"kept\"]}");
+        ConfigManager first = new ConfigManager(dir);
+        first.load();
+        assertEquals("LEFT_TO_RIGHT", first.getWorkspaceState().getProjectMapFlow());
+        assertEquals(java.util.List.of("kept"), first.getWorkspaceState().getDebugWatches());
+        first.getWorkspaceState().setProjectMapFlow("RIGHT_TO_LEFT");
+        first.save();
+
+        ConfigManager reopened = new ConfigManager(dir);
+        reopened.load();
+
+        assertEquals("RIGHT_TO_LEFT", reopened.getWorkspaceState().getProjectMapFlow());
+        assertEquals(WorkspaceState.SCHEMA_VERSION, reopened.getWorkspaceState().getSchemaVersion());
     }
 
     @Test
