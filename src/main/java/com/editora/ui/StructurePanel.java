@@ -760,6 +760,11 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             }
             refreshNarrowedOutline();
         }
+        if (modelShown) {
+            // Only rows in the area borrow its colours: recolour the shown rows now, so the outline computed
+            // for this narrowing matches them and is not rebuilt (a rebuild loses the selection for a frame).
+            attachSyntaxStyles(roots);
+        }
         syncNarrowToggle();
         tree.refresh(); // rows outside the region are muted
     }
@@ -1087,6 +1092,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     private static void attachSyntaxStyles(CodeArea area, int base, StructureNode node) {
         String label = node.label() == null ? "" : node.label();
         int line = node.line() - base;
+        node.setReturnRuns(List.of()); // a recolour (narrowChanged) must not keep runs a fresh node would not have
         if (line < 0 || line >= area.getParagraphs().size()) {
             node.setNameRuns(List.of(fallbackRun(label, node.kind())));
             return;
