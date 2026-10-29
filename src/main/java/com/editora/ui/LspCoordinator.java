@@ -1968,16 +1968,14 @@ final class LspCoordinator {
                 .commandFor(serverId, LspServerCommands.serverCommand(host.settings(), serverId), projectTrusted());
     }
 
-    /** The command a server is started with: {@link #serverCommand(String)}, a blank one filled in with
-     *  Editora's own copy where it keeps one outside PATH (lemminx, review A9; the pom server, review 2 A3). */
+    /** How a server is started: {@link #serverCommand(String)}, a blank one filled in ({@link #withOwnCopy}). */
     private String launchCommand(String serverId) {
         return withOwnCopy(
                 serverId, serverCommand(serverId), configDir(), host.settings().getMavenJdkHome());
     }
 
-    /** {@code command} for {@code serverId}, Editora's own copy standing in for a blank XML or pom command (the
-     *  Java lemminx after a fallback, the pom server's bundle) on the Maven JDK ({@code jdkHome}). Pure but for
-     *  file lookups. */
+    /** {@code command} for {@code serverId}: Editora's own copy, kept outside PATH, for a blank XML, pom, HTML, CSS or
+     *  JSON command (review A9, review 2 A3, HTML A2), on the Maven JDK ({@code jdkHome}). Pure but for file lookups. */
     static String withOwnCopy(
             String serverId, @Nullable String command, @Nullable Path configDir, @Nullable String jdkHome) {
         String raw = command == null ? "" : command;
@@ -1988,7 +1986,7 @@ final class LspCoordinator {
         }
         return "xml".equals(serverId)
                 ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir, jdk)
-                : raw;
+                : com.editora.install.WebServerInstall.effectiveCommand(serverId, raw, configDir); // HTML A2
     }
 
     /** {@link LspServerCommands#commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
@@ -2957,6 +2955,9 @@ final class LspCoordinator {
         }
         Path resolved = com.editora.lsp.RootResolver.resolveTiered(
                 ops.lspProjectRoot(), file, com.editora.lsp.LspServerRegistry.rootMarkerTiersForServer(serverId));
+        if (resolved != null && "html".equals(serverId)) {
+            return com.editora.lsp.RootResolver.siteRoot(resolved, file, ops.lspProjectRoot()); // `/` links (A6)
+        }
         if (resolved != null && com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
             // A module pom's root is its reactor's: one lemminx-maven JVM per reactor, not per module (C11).
             return com.editora.lsp.RootResolver.outermostContiguous(resolved, "pom.xml", ops.lspProjectRoot());
@@ -3370,17 +3371,16 @@ final class LspCoordinator {
 
     /** The program a server runs ("typescript-language-server"), as the status bar's LSP segment shows it. */
     private String serverProgram(String serverId) {
-        // Servers whose program name says the wrong thing — `java` for the Maven server, the platform-suffixed
-        // lemminx download for XML — have a display name of their own (Maven review C14).
-        String named = com.editora.lsp.LspServerRegistry.displayNameFor(serverId);
-        if (named != null) {
-            return named;
-        }
         String configured = serverCommand(serverId);
         String cmd = configured == null || configured.isBlank()
                 ? com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId)
                 : configured;
         List<String> toks = com.editora.run.ProgramArgs.commandLine(cmd);
+        // A program name that says the wrong thing (`java`, lemminx-linux-x86_64, `node`): its own name (C14, A15)
+        String named = com.editora.lsp.LspServerRegistry.displayNameFor(serverId, toks);
+        if (named != null) {
+            return named;
+        }
         String exe = toks.isEmpty() ? serverId : toks.get(0);
         try {
             return Path.of(exe).getFileName().toString();
@@ -6754,8 +6754,8 @@ final class LspCoordinator {
                 return;
             }
             if (edits.isEmpty() || com.editora.text.LspTextEdits.changesNothing(snapshot, edits)) {
-                // bash-language-server answers "no edits" when shfmt is missing or cannot parse the script, too
-                host.setStatus(BashLspUi.formatNoChange(
+                host.setStatus(FormatOutcomes.noChange( // a failed request, or shfmt's no-op (HTML A5, Bash B3)
+                        edits.isEmpty() ? lspManager.formatFailure(path) : null,
                         lspManager.managedServerId(path),
                         () -> !edits.isEmpty() || bashToolFound("shfmt"), // a no-op edit: shfmt ran
                         edits.isEmpty() ? lspManager.errorLoggedSince(path, errorsBefore) : null));

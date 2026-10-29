@@ -161,6 +161,21 @@ final class InstallPromptCoordinator {
                     id,
                     serverInstallMessage(id),
                     cb -> host.installCoordinator().installServer(id, cb));
+            if (com.editora.install.WebServerInstall.serves(id)) {
+                // Its Install runs npm: without it, say what to install first rather than after a click (HTML A9).
+                host.installCoordinator().whenPrereqsMissing(id, names -> {
+                    if (buffer.isInstallBarShown() && !dismissedKinds.contains(id)) {
+                        offerInstall(
+                                buffer,
+                                id,
+                                tr(
+                                        "install.banner.webServerNoNpm",
+                                        host.installCoordinator().serverName(id),
+                                        names),
+                                cb -> host.installCoordinator().installServer(id, cb));
+                    }
+                });
+            }
             return;
         }
         buffer.showInstallBar(false);
@@ -207,16 +222,20 @@ final class InstallPromptCoordinator {
         return true;
     }
 
+    /** The servers whose first file asks to turn language servers on (besides Python's, asked by its buffer). */
+    static final java.util.Set<String> TURN_ON_SERVERS = java.util.Set.of("xml", "bash", "html", "css");
+
     /**
-     * Which language's first file asks to turn language servers on: {@code python}, or {@code xml} or {@code bash} (a
-     * shell script, Bash review C8) unless that server is switched off; else null.
+     * Which language's first file asks to turn language servers on: {@code python}, or {@code xml}, {@code bash} (a
+     * shell script, Bash review C8), {@code html} or {@code css} (HTML review C15) unless that server is switched off;
+     * else null.
      */
     private @Nullable String turnOnKind(EditorBuffer buffer) {
         if (buffer.isPython()) {
             return "python";
         }
         String server = com.editora.lsp.LspServerRegistry.serverIdFor(buffer.getLanguage());
-        if (server == null || !("xml".equals(server) || "bash".equals(server))) {
+        if (server == null || !TURN_ON_SERVERS.contains(server)) {
             return null;
         }
         return host.lspCoordinator().serverEnabled(server) ? server : null;
@@ -227,6 +246,8 @@ final class InstallPromptCoordinator {
         return switch (kind) {
             case "python" -> "install.banner.enablePython";
             case "bash" -> "install.banner.enableShell";
+            case "html" -> "install.banner.enableHtml";
+            case "css" -> "install.banner.enableCss";
             default -> "install.banner.enableXml";
         };
     }
@@ -263,7 +284,8 @@ final class InstallPromptCoordinator {
 
     /**
      * The install banner's words for an LSP-only server: for XML, what the server adds and what Install downloads
-     * from where (XML review A17/C12); for the others, that it is not installed.
+     * from where (XML review A17/C12); for Bash and the HTML/CSS/JSON package, what Install brings and needs; for the
+     * others, that it is not installed.
      */
     private String serverInstallMessage(String serverId) {
         if ("xml".equals(serverId)) {
@@ -278,6 +300,13 @@ final class InstallPromptCoordinator {
                     "install.banner.bashServer",
                     com.editora.install.InstallCatalog.BASH_LS_VERSION,
                     com.editora.install.VersionFloor.NODE_BASH_LS.minimum());
+        }
+        if (com.editora.install.WebServerInstall.serves(serverId)) {
+            // what it adds, what Install runs and needs, and what else the one package brings (HTML review A9/C15)
+            return tr(
+                    "install.banner.webServer",
+                    host.installCoordinator().serverName(serverId),
+                    com.editora.install.InstallCatalog.WEB_LS_VERSION);
         }
         return tr("install.banner.serverMessage", host.installCoordinator().serverName(serverId));
     }

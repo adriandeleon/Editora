@@ -355,14 +355,63 @@ final class LanguageServerSession implements LanguageClient {
                         timer.get().cancel(false);
                     }
                 } else {
+                    if (owner != null) {
+                        owner.requestTimedOut(); // before the cancel: whoever sees it done sees it counted
+                    }
                     request.cancel(true);
                 }
             }
         };
         timer.set(REQUEST_TIMER.schedule(
                 expire, Math.max(1, timeout.toMillis()), java.util.concurrent.TimeUnit.MILLISECONDS));
-        request.whenComplete((result, error) -> timer.get().cancel(false));
+        request.whenComplete((result, error) -> {
+            timer.get().cancel(false);
+            if (owner != null
+                    && !(error instanceof java.util.concurrent.CancellationException)
+                    && !(error instanceof IllegalStateException)) {
+                owner.requestAnswered(); // an answer, an error answer included: the server is responding
+            }
+        });
         return request;
+    }
+
+    /** Requests in a row that ran out of time; an answer resets it. */
+    private final java.util.concurrent.atomic.AtomicInteger timeoutsInARow =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** Whether "not responding" has been said and not yet taken back. */
+    private final java.util.concurrent.atomic.AtomicBoolean saidNotResponding =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** How many requests in a row must time out before the server is called not responding. */
+    static final int NOT_RESPONDING_AFTER = 2;
+
+    /**
+     * A request ran out of time. The second in a row with no answer between says, once, that the server is not
+     * responding and that Restart Language Servers brings it back: a hung server used to leave every request waiting
+     * 30 s while the status still read "Loaded and ready" (HTML review A11).
+     */
+    void requestTimedOut() {
+        if (timeoutsInARow.incrementAndGet() >= NOT_RESPONDING_AFTER
+                && !disposed
+                && saidNotResponding.compareAndSet(false, true)) {
+            LOG.warning(
+                    () -> serverId + " is not responding: " + NOT_RESPONDING_AFTER + " requests in a row timed out");
+            onStatus.accept("Message", com.editora.i18n.Messages.tr("lsp.status.notResponding"));
+        }
+    }
+
+    /** The server answered a request: a "not responding" said before is taken back. */
+    void requestAnswered() {
+        timeoutsInARow.set(0);
+        if (saidNotResponding.compareAndSet(true, false) && !disposed) {
+            onStatus.accept("Message", com.editora.i18n.Messages.tr("lsp.status.respondingAgain"));
+        }
+    }
+
+    /** Whether this session has been reported as not responding (Doctor, tests). */
+    boolean notResponding() {
+        return saidNotResponding.get();
     }
 
     /**
@@ -2394,10 +2443,10 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         DocumentFormattingParams params = new DocumentFormattingParams(doc(uri), options);
-        return bounded(server().getTextDocumentService().formatting(params)).exceptionally(t -> List.of());
+        return bounded(server().getTextDocumentService().formatting(params)); // a failure is not "no edits" (A5)
     }
 
-    /** Range formatting ({@code textDocument/rangeFormatting}) over {@code range} → the edits, or empty. */
+    /** Range formatting ({@code textDocument/rangeFormatting}) over {@code range} → the edits; fails as the request does. */
     CompletableFuture<List<? extends TextEdit>> rangeFormatting(
             String uri, org.eclipse.lsp4j.Range range, FormattingOptions options) {
         if (!ready()) {
@@ -2405,8 +2454,7 @@ final class LanguageServerSession implements LanguageClient {
         }
         org.eclipse.lsp4j.DocumentRangeFormattingParams params =
                 new org.eclipse.lsp4j.DocumentRangeFormattingParams(doc(uri), options, range);
-        return bounded(server().getTextDocumentService().rangeFormatting(params))
-                .exceptionally(t -> List.of());
+        return bounded(server().getTextDocumentService().rangeFormatting(params));
     }
 
     /** Resolves a completion item ({@code completionItem/resolve}) to fill in its {@code additionalTextEdits}
@@ -3412,6 +3460,11 @@ final class LanguageServerSession implements LanguageClient {
             LOG.fine(() -> "[" + serverId + "] " + firstLine(message.getMessage()));
             return;
         }
+        if (com.editora.install.WebServerInstall.unableToLoadLibrary(message.getMessage()) && !saidNoTsLibs) {
+            // a Log-level line, which the Debug Log never showed: <script> gets no DOM or standard library (HTML A2)
+            saidNoTsLibs = true;
+            LOG.warning("[" + serverId + "] " + message.getMessage() + " (Doctor's HTML row says how to fix it)");
+        }
         if (type == org.eclipse.lsp4j.MessageType.Error && importError(message.getMessage())) {
             lastErrorLog = firstLine(message.getMessage());
         }
@@ -3428,6 +3481,9 @@ final class LanguageServerSession implements LanguageClient {
             LOG.fine(message.getMessage());
         }
     }
+
+    /** Whether the HTML server's "Unable to load library" has been put in the Debug Log (once per session). */
+    private volatile boolean saidNoTsLibs;
 
     /** The first line of the last error this server logged: a failed Gradle import's reason is only there. */
     private volatile @Nullable String lastErrorLog;

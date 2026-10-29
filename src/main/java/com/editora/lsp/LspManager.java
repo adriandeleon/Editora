@@ -2227,6 +2227,9 @@ public final class LspManager {
                     return;
                 }
                 tsserver = choice.tsserver();
+            }
+            if (!remote && (TypeScriptServer.SERVER_ID.equals(serverId) || nodeScriptServer(serverId))) {
+                // the Node.js chosen in Settings runs every npm server's "#!/usr/bin/env node", not only tsserver (A8)
                 session.setPathPrepend(nodeBinDir(root, nodeSetting));
             }
             Path tsserverPath = tsserver;
@@ -3942,6 +3945,7 @@ public final class LspManager {
         org.eclipse.lsp4j.Range range =
                 new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
         s.rangeFormatting(uri(file), range, indent.options()).whenComplete((result, error) -> {
+            noteFormatOutcome(file, error);
             List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
             if (error == null && result != null) {
                 for (org.eclipse.lsp4j.TextEdit e : result) {
@@ -3960,8 +3964,28 @@ public final class LspManager {
     }
 
     /**
+     * Why the last format request of each file failed — {@link FormatFailure} — while it is the last outcome: a
+     * failed, timed-out or abandoned request delivers no edits, which read as "Already formatted" (HTML review A5).
+     */
+    private final Map<Path, FormatFailure> formatFailures = new ConcurrentHashMap<>();
+
+    /** How the last format request of {@code file} failed, or null when it was answered (or none was sent). */
+    public @Nullable FormatFailure formatFailure(Path file) {
+        return formatFailures.get(file);
+    }
+
+    private void noteFormatOutcome(Path file, @Nullable Throwable error) {
+        if (error == null) {
+            formatFailures.remove(file);
+        } else {
+            formatFailures.put(file, FormatFailure.of(error));
+        }
+    }
+
+    /**
      * Requests whole-document formatting ({@code textDocument/formatting}) for {@code file} and delivers the
-     * resulting edits to {@code cb} on the FX thread (empty list if the server returns nothing or errors).
+     * resulting edits to {@code cb} on the FX thread (empty list if the server returns nothing or errors; {@link
+     * #formatFailure} then says which).
      * {@code tabSize}/{@code insertSpaces} are formatter hints (many formatters use their own config).
      */
     public void formatDocument(
@@ -3973,10 +3997,12 @@ public final class LspManager {
     public void formatDocument(Path file, FormattingIndent indent, Consumer<List<com.editora.text.LspTextEdit>> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null) {
+            noteFormatOutcome(file, new IllegalStateException("language server not available"));
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
         s.formatting(uri(file), indent.options()).whenComplete((result, error) -> {
+            noteFormatOutcome(file, error);
             List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
             if (error == null && result != null) {
                 for (org.eclipse.lsp4j.TextEdit e : result) {
@@ -5796,6 +5822,11 @@ public final class LspManager {
         } catch (java.io.IOException | java.nio.file.InvalidPathException e) {
             return null;
         }
+    }
+
+    /** Whether {@code serverId}'s install is an npm package — a Node.js script (HTML, CSS, JSON, YAML, Bash…). Pure. */
+    static boolean nodeScriptServer(String serverId) {
+        return com.editora.install.InstallCatalog.npmPackage(serverId) != null;
     }
 
     /** The bin folder of the Node.js a root's Node tools run with (Settings, .nvmrc, PATH), or null. */

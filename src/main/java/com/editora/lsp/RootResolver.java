@@ -79,6 +79,44 @@ public final class RootResolver {
     }
 
     /**
+     * The HTML server's root for {@code file} given {@code resolved}, the root its markers found: unchanged when a
+     * project or a marker chose it; for a loose page in a folder with neither, the highest ancestor holding an {@code
+     * index.html} below the home folder (else {@code resolved}). The server resolves root-relative links ({@code
+     * /css/site.css}) against its root, and a page in {@code site/pages/} of a static site with no {@code
+     * package.json} or {@code .git} sent them to {@code site/pages/css/} (HTML review A6). File reads only.
+     */
+    public static Path siteRoot(Path resolved, Path file, @Nullable Path projectRoot) {
+        String home = System.getProperty("user.home");
+        return siteRoot(resolved, file, projectRoot, home == null || home.isBlank() ? null : Path.of(home));
+    }
+
+    /** {@link #siteRoot(Path, Path, Path)} with the home directory supplied (tests). */
+    static Path siteRoot(Path resolved, Path file, @Nullable Path projectRoot, @Nullable Path home) {
+        Path abs = file.toAbsolutePath().normalize();
+        Path folder = abs.getParent();
+        if (folder == null
+                || !resolved.toAbsolutePath().normalize().equals(folder)
+                || projectRoot != null
+                        && abs.startsWith(projectRoot.toAbsolutePath().normalize())
+                || com.editora.vfs.Vfs.isRemote(abs)
+                || findMarkerRoot(abs, LspServerRegistry.WEB_ROOT_MARKERS) != null) {
+            return resolved;
+        }
+        String tmp = System.getProperty("java.io.tmpdir");
+        Path best = null;
+        Path dir = folder;
+        for (int hops = 0; dir != null && hops < 32; hops++, dir = dir.getParent()) {
+            if (tooBroad(dir, home) || sameFolder(dir, tmp)) {
+                break; // never the home folder, the temp folder or a filesystem root, nor anything above them
+            }
+            if (Files.isRegularFile(dir.resolve("index.html"))) {
+                best = dir;
+            }
+        }
+        return best != null ? best : resolved;
+    }
+
+    /**
      * The outermost directory of the contiguous chain of {@code marker}-bearing folders that {@code root}
      * belongs to: while the parent folder also holds {@code marker} (and is neither too broad nor outside
      * {@code projectRoot}, when given and {@code root} lies in it), step up. A Maven reactor's module pom thus resolves to the reactor

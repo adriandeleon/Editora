@@ -75,4 +75,27 @@ class ModelineTest {
         assertNull(ext("<?php\n// shell=bash is not a directive\n"), "a .inc that is PHP stays what it was");
         assertNull(ext("log() { echo hi; }\n"));
     }
+
+    /** HTML review A13: an extensionless page is sniffed as HTML, as VS Code does; a .txt keeps its name's word. */
+    @Test
+    void aDoctypeOrHtmlTagMakesTheFileHtml() {
+        assertEquals(
+                "html",
+                Modeline.detect("<!doctype html>\n<title>x</title>", "", "page").extension());
+        assertEquals(
+                "html",
+                Modeline.detect("\uFEFF  <!DOCTYPE HTML PUBLIC \"-//W3C\">", "", null)
+                        .extension());
+        assertEquals(
+                "html", Modeline.detect("<html lang=\"en\">\n", "", "cgi-out").extension());
+        assertEquals(
+                "html",
+                Modeline.detect("<!-- saved -->\n<!doctype html>", "", "saved").extension());
+        assertNull(Modeline.detect("<!doctype html>", "", "notes.txt"), "a .txt is plain text by name");
+        assertNull(Modeline.detect("<htmlish>", "", "x"), "not the html tag");
+        assertNull(Modeline.detect("<!doctype svg>", "", "x"));
+        assertNull(Modeline.detect("<!-- never closed <!doctype html>", "", "x"));
+        assertEquals(
+                "xml", Modeline.detect("<?xml version=\"1.0\"?><html>", "", "x").extension(), "XML first");
+    }
 }

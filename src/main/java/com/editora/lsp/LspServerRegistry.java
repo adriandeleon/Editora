@@ -404,6 +404,41 @@ public final class LspServerRegistry {
         };
     }
 
+    /**
+     * As {@link #displayNameFor(String)} for a server started with {@code argv}: the HTML, CSS and JSON servers are
+     * named by their program ({@code vscode-html-language-server}) when the command starts with a generic launcher —
+     * {@code node …/htmlServerNodeMain.js}, a wrapper script — whose name would say "node" in the status bar and
+     * could not tell the three apart (HTML review A15). A command running another program keeps that program's name.
+     * Pure.
+     */
+    public static @Nullable String displayNameFor(@Nullable String serverId, @Nullable List<String> argv) {
+        String named = displayNameFor(serverId);
+        if (named != null || serverId == null || !WEB_SERVER_IDS.contains(serverId)) {
+            return named;
+        }
+        String exe = argv == null || argv.isEmpty() ? "" : argv.get(0);
+        String base = exe.substring(Math.max(exe.lastIndexOf('/'), exe.lastIndexOf('\\')) + 1)
+                .toLowerCase(java.util.Locale.ROOT);
+        if (base.endsWith(".exe")) {
+            base = base.substring(0, base.length() - 4);
+        }
+        boolean generic = base.isEmpty()
+                || GENERIC_LAUNCHERS.contains(base)
+                || base.endsWith(".sh")
+                || base.endsWith(".cmd")
+                || base.endsWith(".bat")
+                || base.endsWith(".ps1")
+                || base.endsWith(".js");
+        return generic ? "vscode-" + serverId + "-language-server" : null;
+    }
+
+    /** The servers of the vscode-langservers-extracted package. */
+    private static final Set<String> WEB_SERVER_IDS = Set.of("html", "css", "json");
+
+    /** Programs that run another program: their name says nothing about which server a command starts. */
+    private static final Set<String> GENERIC_LAUNCHERS =
+            Set.of("node", "nodejs", "bun", "deno", "npx", "env", "sh", "bash", "zsh", "cmd", "pwsh", "powershell");
+
     /** Project-root markers for a <i>server id</i> (empty if unknown). Complements {@link #rootMarkersFor}. */
     public static List<String> rootMarkersForServer(String serverId) {
         for (ServerDef d : ServerDef.values()) {
@@ -422,13 +457,14 @@ public final class LspServerRegistry {
      * under a second, and large generated parsers, protobuf classes and legacy classes lost every diagnostic and
      * navigation, so Java keeps it to 50,000 lines too (Java review C16). lemminx validates and outlines a
      * 60,000-line document in under a second, so XML keeps it to {@link XmlServer#HEAVY_FILE_LINE_LIMIT} (XML review
-     * A10). 0 = the tier's default (no server).
+     * A10). vscode-html-language-server answers a 48,000-line page in under 0.3 s (symbols, folding, formatting), so
+     * HTML keeps it to 50,000 lines (HTML review A14). 0 = the tier's default (no server).
      */
     public static int heavyFileLspLineLimit(String languageId) {
         if ("xml".equals(languageId)) {
             return XmlServer.HEAVY_FILE_LINE_LIMIT;
         }
-        return "python".equals(languageId) || "java".equals(languageId) ? 50_000 : 0;
+        return "python".equals(languageId) || "java".equals(languageId) || "html".equals(languageId) ? 50_000 : 0;
     }
 
     /** Pure: whether a file of {@code lines} lines in {@code languageId} gets its language server. */
