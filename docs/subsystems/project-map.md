@@ -10,18 +10,36 @@ ordering, icons, and context menu actions; each has its own search field.
 The focus-traversable **Map** button beside the Project search field opens the window, or brings it
 forward when it is open already; the `project.toggleMapView` command (no default key) does the same from
 the palette — even with the Project tool window closed — and closes the window when it is the one in use.
+`projectMap.revealActiveFile` (Project Map: Reveal Active File, no default key) opens the window or brings it
+forward and selects the active editor file on it; a Map that opens with nothing but its root selected starts
+at the active file too, and the ⋯ menu's default-off **Always select opened file** selects every file the
+editor makes active while the window is open. With Project support off both commands say so in the status bar.
 The window is *not* owned by the editor window: an owned stage stays above its owner for good, so a file
 opened from a large Map would land behind it. Unowned, the two stack like any other windows, and the Map
-window closes itself when its editor window hides or the project closes. Whether it was open, and where,
-is remembered per workspace, and a workspace that last had it open reopens it (without taking focus from
-the editor). The Map lists nothing until its window is first opened, and reloads every time it opens, so a
-window that never opens the Map costs no listing and no loader thread.
+window closes itself when its editor window hides or the project closes; one closed with its project
+reopens when a project is set again in the same session, as at startup. Whether it was open, where, and
+whether it was maximized (its bounds then stay the size it restores to) is remembered per workspace, and a
+workspace that last had it open reopens it (without taking focus from the editor), with the Project tool
+window closed too: the window builds the Project panel at startup for it. The Map lists nothing until its
+window is first opened, and reloads every time it opens, so a window that never opens the Map costs no
+listing and no loader thread.
+
+In the No Project window the tree's root follows the active tab's folder, but an open Map keeps the folder
+it was opened on (`ProjectPanel.setMapRootPinned`): opening a file from it, a tab in another folder, or an
+untitled, Welcome or remote tab leaves it as it is. It takes the tree's root again only when it is opened
+anew (bringing it forward keeps its folder), or when Reveal Active File needs a file it does not hold. A
+remote folder mounted in that window re-roots it as a project would.
 
 Work started in the Map window that happens in the editor window brings the editor window forward:
 opening a file (a row, Enter, a preview card's Open), and every context-menu action except Rename, New
 Folder, Undo Move, Delete and Reveal, which stay over the Map — the name prompts in the Map window's own
-overlay host, the confirmations owned by its stage. Escape with nothing left to dismiss returns to the
-editor, in the editor window. The window copies the editor window's stylesheets and icons, and gets the
+overlay host, the confirmations owned by its stage. A card's Add Personal Note prompts there too, titled
+with the file and lines it is for, and the Print Preview and PDF Save dialogs are owned by the Map window.
+A folder made with New Folder, and a file made with New ▸ on a Map row (once it opens), are shown and
+selected on the Map; Rename to a name that is taken says so, and a case-only rename goes through a
+temporary name, for case-insensitive disks. Escape with nothing left to dismiss returns to the
+editor, in the editor window. The window mirrors the editor window's stylesheets (an editor-theme switch
+reaches an open Map, as it does a floating tool window) and copies its icons, and gets the
 editor window's key dispatcher, as a floating tool window does.
 
 The implementation is deliberately hybrid. Native JavaFX controls handle text entry, checkboxes,
@@ -376,7 +394,9 @@ so a cancelled PDF dialog costs nothing and print re-renders for the layout chos
 `ProjectMapOutputPlan` (pure) decides the pages: the map goes on one page while a row label stays at
 least 7 pt tall, on a landscape page when it is wider than tall; a larger map keeps that scale and is
 tiled across a grid of pages, cut between columns and rows where a gap is in reach, and pages nothing
-falls on are left out. The status bar says when the map was scaled down or tiled. A per-page dimension
+falls on are left out. Labels may go down to 6 pt (in quarter-point steps, the largest that works) when
+that saves a page, so a map just over one page wide is shrunk a little rather than split. The status bar
+says when the map was scaled down, or how many pages it was split across. A per-page dimension
 cap (8,192 px) and a total pixel budget (12 Mpx) remain as a safety net; a map that cannot keep 96 dpi
 inside them is still output, with a warning that small labels may be unreadable.
 
@@ -440,10 +460,11 @@ Responsibilities are split as follows:
 - `ProjectPanel` owns the Map (it builds the Map window's content: search row and map), the window's
   open state and its persistence, the filesystem watcher (watching the tree's and the map's open folders
   together), root, editor state, Git state, open-file action, and construction of the traditional context
-  menu. It tells the map when its window is open (`setActive`), forwards the hidden-files setting, and
-  reports in-app renames and moves (`pathRenamed`).
-- `ProjectMapWindow` owns only the stage: building it, copying the editor window's look, placement from
-  the remembered bounds (or large and centred on the editor window), closing with the editor window, and
+  menu. It keeps the Map's own root (`mapRoot`, pinned in the No Project window), forwards the hidden-files
+  setting, and reports in-app renames and moves (`pathRenamed`).
+- `ProjectMapWindow` owns only the stage: building it, mirroring the editor window's look, placement from
+  the remembered bounds and maximized state (or large and centred on the editor window), telling the view
+  when it starts and stops showing (`ProjectMapView.setShowing`), closing with the editor window, and
   telling a close by the user (remembered) from one by the editor window or the project (not).
 - `ProjectMapView` owns expansion (manual and per-search), row limits, selection history, breadcrumbs,
   global controls, async reloads, the deferred print/PDF job, and the bounded collection of floating
@@ -474,7 +495,8 @@ existing availability and behavior without a parallel command list.
 The two output buttons are also the commands `projectMap.print` and `projectMap.exportPdf`
 (`WindowCommandRegistrar`), which run the buttons' own handlers through `ProjectPanel.printMap()` /
 `exportMapPdf()`. `Chrome.contextReason` enables them only while `ProjectPanel.isMapOutputAvailable()`:
-Map mode, the tool window in the scene, and at least one column to draw.
+the Map window open and at least one column to draw. `projectMap.revealActiveFile` is not gated that way:
+it is what opens the window.
 
 ## Threading, bounds, and lifecycle
 
@@ -522,19 +544,27 @@ characters, and syntax highlighting at 160,000 characters; neither cap splits a 
 a surrogate pair. Images are decoded on the loader thread. Per-card generation checks guard both
 loaded text and highlighting results. Binary, failed and missing reads produce explicit preview states.
 Card refreshes are debounced (250 ms after a state or listing notification, at most once a second for
-content-only disk changes and for following an open buffer) and stop while the Map is off screen.
+content-only disk changes and for following an open buffer) and stop while the Map window is closed
+(`setShowing(false)`; the window's scene outlives `hide()`, so being in a scene is not being on screen).
+While it is closed, row-state changes (tabs, dirty flags, markers) are only noted: the next show snapshots
+them once, reloads, and refreshes every card, which re-arms the poll of a card that mirrors an open buffer.
+A state snapshot looks the open files and marker candidates up among the rows rather than asking each row.
+A folder that newly cannot be read is reported once in the status bar as well as by its column's stub.
 
 All scene-graph mutation, paint, and control synchronization stays on the JavaFX application thread.
 No paint, hover, or per-keystroke path accesses the filesystem. `dispose()` invalidates generations,
-stops both executors, hides popups and tooltips, and clears control and measurement caches.
+shuts down the loader, the Structure columns' executor and every card's own loader, hides popups and
+tooltips, and clears control and measurement caches.
 
 Changing roots clears expansion, selection history, per-column filters, positions, locks, zoom, and
 preview state. The view remembers the open branches, row limits and selection of the last eight local
-folders it showed, so in the window with no project — where the root follows the active tab's folder —
-switching back to a folder restores its map instead of starting from the root; zoom and column positions
+folders it showed, so in the window with no project — where a Map opened anew takes the active tab's
+folder — returning to a folder restores its map instead of starting from the root; zoom and column positions
 are not carried over. Workspace state persists whether the Map window is open (`projectViewMode`, schema
 v13 — "MAP" meant the Map was the panel's view before v24, and means its window is open since), the
-window's bounds (`projectMapWindowBounds`, v24), the flow, and the two navigation options; expansion, zoom
+window's bounds (`projectMapWindowBounds`, v24) and maximized state (`projectMapWindowMaximized`, v27), the
+flow, and the two navigation options; v27 also adds `projectMapSingleClickOpens`,
+`projectMapCompactChains` and `projectMapFollowActiveFile` for three ⋯ options. Expansion, zoom
 and the status/type filters are not persisted.
 
 ## Tests and change checklist
@@ -574,7 +604,13 @@ The focused coverage lives in:
 - `ProjectMapLayoutFxTest` for the first view, Fit and auto-fit anchoring, opening long folders, depth
   bands, header collapse, reserved areas, empty states, row painting (selection, focus ring, chevrons,
   status marks, contrast), the toolbar at tool-window widths in all six languages, breadcrumbs, the help
-  popover, and accessible names.
+  popover, and accessible names;
+- `ProjectMapNoteCardFxTest`, `ProjectMapPreviewCardFxTest`, `ProjectMapPreviewMenuEscapeFxTest` and
+  `ProjectMapStickyNotesTest` for note cards, code cards, a card menu's Escape, and sticky notes;
+- `ProjectMapWindowReviewFxTest` for the pinned root in the No Project window, the Map returning with its
+  project, cards and row states across a close and reopen, the theme mirror, a maximized window, New Folder
+  and Rename from the Map, an unreadable folder's status line, Reveal Active File and its option, a card's
+  note prompt over the Map, the output dialogs' owner and page note, and the Map at startup.
 
 When extending the map:
 
