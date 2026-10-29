@@ -376,7 +376,8 @@ class ProjectMapModelLoadingTest {
                 "app.service")) {
             assertEquals(TypeFilter.CONFIG, ProjectMapModel.classify(config), config);
         }
-        for (String other : List.of("notes.txt", "photo.png", "data.bin", "LICENSE")) {
+        // Plain-text documents (notes.txt, LICENSE) are Markup since the Map review (A14).
+        for (String other : List.of("photo.png", "data.bin", "server.log")) {
             assertEquals(TypeFilter.OTHER, ProjectMapModel.classify(other), other);
         }
         assertFalse(ProjectMapModel.matchesType(new Entry(root.resolve("src"), root, 1, true), TypeFilter.SOURCE));

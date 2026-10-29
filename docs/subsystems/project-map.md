@@ -326,25 +326,37 @@ The type selector asks `ProjectMapModel.classify`, which maps `LanguageRegistry.
 registry behind the file icons and the editor's language detection — to a bucket: program languages are
 Source, document and style languages Markup, every other recognized language (data formats, unit files,
 the name-determined configuration files) Config. A short extension table covers common types the registry
-has no language for, and a few build files (`pom.xml`, `*.gradle`, `CMakeLists.txt`) are pinned to Config.
+has no language for. Build and tool files (`pom.xml`, `*.gradle`, `CMakeLists.txt`, `go.mod`, `Gemfile`,
+`mvnw`, `CODEOWNERS`…) and configuration extensions (`.env`, `.plist`, `.lock`…) are pinned to Config before
+the registry is asked, and plain-text documents (`.txt`, extension-less `README`, `LICENSE`, `CHANGELOG`,
+`NOTICE`, `AUTHORS`) are Markup.
 
 A global filename query uses the Project tree's bounded, off-thread search and temporarily opens every
-ancestor column needed to reveal its matches. The matches are loaded before anything else, in rank order,
-so the first match is always present and is selected; when they do not all fit the row limit the status
-bar says "showing N of M matches". The search never writes to the manual expansion set. Folders opened or
+ancestor column needed to reveal its matches. The walk is bounded by the entries it visits (20,000), not by
+the matches it finds: every match is ranked as it is found and the best 300 are kept. The rank is how the
+file name answers the query (`ProjectSearchRank`: the exact name or name without extension, then a prefix of
+whole words, whole words elsewhere, a prefix, a word start, a substring, a fuzzy match), then the shorter
+name, then the fuzzy score of the relative path. The matches are loaded before anything else, in rank order,
+so the first (best) match is always present and is selected; when they do not all fit the row limit the
+status bar says "showing N of M matches", and when more names matched than were kept, or the walk stopped
+at its bound, it says so too. A one-character query does not walk the project: it only filters the rows
+already on the map, and the status bar says how many characters a project-wide search needs. The search never writes to the manual expansion set. Folders opened or
 closed by hand while a query is active (chevron, column ×, a reveal) are kept in the search's own view, so
 closing a search-opened column really closes it, and clearing the query restores exactly the manually
 expanded branches. Re-running the same query after an in-app file change reloads the map and leaves the
 selection alone. A column filter removes unmatched rows and their now-unreachable descendants so the
-remaining geometry is still a valid hierarchy.
+remaining geometry is still a valid hierarchy. In a folder with more children than its row limit loads, a
+column filter lists the folder again with the filter (`Request.columnQueries`), and the children it matches
+are loaded beyond the limit, so the filter searches the whole folder and its "shown/total" count is true.
 
 When a query or chip is active and no loaded row matches, a "No files match" message (with the query)
 appears over the canvas once that state has lasted 300 ms — a global query first fades what is loaded and
 only then opens the folders that hold its matches. The viewport is not moved. A column whose own filter
 matches nothing keeps one row of space for a "No matches" line.
 
-Rows use `ProjectPathOrder`: directories first, then case-insensitive names with a deterministic
-case-sensitive tie-break. This is the same ordering contract as the traditional Project explorer.
+Rows use `ProjectPathOrder`: directories first, then names in natural order (runs of digits compared by
+value, so `note-2` sorts before `note-10`) without case bias, with a deterministic exact tie-break. This is
+the same ordering contract as the traditional Project explorer.
 
 Canvas nodes reuse `FileIcons.forProjectItem`, rasterized and cached per file kind and status (plus an
 on-accent variant, style class `project-map-icon-on-accent`, for the focused selection). A file already

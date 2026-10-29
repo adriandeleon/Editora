@@ -861,9 +861,13 @@ final class ProjectMapModel {
     private static final Set<String> EXTRA_MARKUP =
             Set.of("scss", "sass", "less", "adoc", "asciidoc", "rst", "tex", "latex", "org", "mdx", "textile");
 
+    /**
+     * Configuration extensions, checked before the registry: it may know the format ({@code .plist} is XML) and
+     * would file it under the format's bucket instead.
+     */
     private static final Set<String> EXTRA_CONFIG = Set.of("env", "editorconfig", "cmake", "plist", "lock");
 
-    /** Build and tool files whose language would otherwise file them as source or markup. */
+    /** Build and tool files whose language would otherwise file them as source, markup or other. */
     private static final Set<String> CONFIG_NAMES = Set.of(
             "pom.xml",
             "cmakelists.txt",
@@ -877,7 +881,27 @@ final class ProjectMapModel {
             "build.mill",
             "deps.edn",
             "bb.edn",
-            "project.clj");
+            "project.clj",
+            "go.mod",
+            "go.sum",
+            "go.work",
+            "gemfile",
+            "rakefile",
+            "vagrantfile",
+            "procfile",
+            "codeowners",
+            "requirements.txt",
+            "mvnw",
+            "mvnw.cmd",
+            "gradlew",
+            "gradlew.bat");
+
+    /**
+     * Extension-less project documents. Plain text the registry knows only as {@code plaintext}, which would
+     * otherwise land in Other; {@code .txt} files are documents too.
+     */
+    private static final Set<String> DOCUMENT_NAMES =
+            Set.of("readme", "license", "licence", "changelog", "notice", "authors", "copying");
 
     /**
      * The Type filter's bucket for a file name. It asks {@link LanguageRegistry} — the registry behind the
@@ -885,11 +909,21 @@ final class ProjectMapModel {
      * program languages are {@link TypeFilter#SOURCE}, document and style languages {@link TypeFilter#MARKUP},
      * and every other recognized language (data formats, unit files, the name-determined config files) is
      * {@link TypeFilter#CONFIG}. A short extension table covers common types the registry does not know.
+     * Build and tool files ({@code CONFIG_NAMES}, {@code *.gradle}) and configuration extensions are pinned to
+     * Config before the registry is asked, and plain-text documents ({@code .txt}, README, LICENSE…) are Markup.
      */
     static TypeFilter classify(String fileName) {
         String name = fileName == null ? "" : fileName.toLowerCase(Locale.ROOT);
-        if (CONFIG_NAMES.contains(name)) {
+        int dot = name.lastIndexOf('.');
+        String extension = dot < 0 ? "" : name.substring(dot + 1);
+        if (CONFIG_NAMES.contains(name)
+                || name.endsWith(".gradle")
+                || name.endsWith(".gradle.kts")
+                || EXTRA_CONFIG.contains(extension)) {
             return TypeFilter.CONFIG;
+        }
+        if (DOCUMENT_NAMES.contains(name) || extension.equals("txt")) {
+            return TypeFilter.MARKUP; // plain-text documents: README, LICENSE, notes.txt
         }
         String language = LanguageRegistry.forFileName(name);
         if (SOURCE_LANGUAGES.contains(language)) {
@@ -901,16 +935,11 @@ final class ProjectMapModel {
         if (!OTHER_LANGUAGES.contains(language)) {
             return TypeFilter.CONFIG;
         }
-        int dot = name.lastIndexOf('.');
-        String extension = dot < 0 ? "" : name.substring(dot + 1);
         if (EXTRA_SOURCE.contains(extension)) {
             return TypeFilter.SOURCE;
         }
         if (EXTRA_MARKUP.contains(extension)) {
             return TypeFilter.MARKUP;
-        }
-        if (EXTRA_CONFIG.contains(extension)) {
-            return TypeFilter.CONFIG;
         }
         return TypeFilter.OTHER;
     }
