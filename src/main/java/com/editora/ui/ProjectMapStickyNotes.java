@@ -331,6 +331,7 @@ final class ProjectMapStickyNotes {
                 sticky.editor.setText(note.body());
             }
         }
+        mark();
         onMoved.run(); // a note may have moved to another line
     }
 
@@ -347,6 +348,7 @@ final class ProjectMapStickyNotes {
         card.mapScaleProperty().removeListener(follow);
         card.visibleProperty().removeListener(follow);
         clear();
+        mark();
         onMoved.run();
     }
 
@@ -354,6 +356,7 @@ final class ProjectMapStickyNotes {
     void setHidden(boolean value) {
         hidden = value;
         stickies.forEach(sticky -> sticky.setVisible(visible()));
+        mark();
         onMoved.run();
     }
 
@@ -413,6 +416,12 @@ final class ProjectMapStickyNotes {
         }
         place();
         layout();
+        mark();
+    }
+
+    /** Marks the notes' text on the card in the sheets' amber while the sheets are in sight. */
+    private void mark() {
+        card.markNotes(visible() ? stickies.stream().map(sticky -> sticky.note).toList() : List.of());
     }
 
     private void clear() {

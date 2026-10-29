@@ -664,12 +664,20 @@ class ProjectMapCardsFxTest {
                 ProjectMapPreview card = codeCards(map).get(file);
                 assertEquals(2, card.noteCount(), "the button counts the file's notes");
                 assertTrue(stickies(map).isEmpty(), "they are not shown until asked for");
+                assertTrue(card.noteSpans().isEmpty(), "nor are their lines marked");
 
                 card.setNotesShown(true);
                 map.view.applyCss();
                 map.view.layout();
                 List<Region> sheets = stickies(map);
                 assertEquals(2, sheets.size(), "one sheet per note");
+                // Each note's line is marked in the sheets' amber: "line 0" and "line 6", seven characters a line.
+                assertEquals(
+                        List.of(List.of(0, 6), List.of(42, 48)),
+                        card.noteSpans().stream()
+                                .map(span -> List.of(span[0], span[1]))
+                                .toList(),
+                        "a line note marks its whole line, as an editor tab does");
                 assertTrue(noteCards(map).isEmpty(), "they are not note cards, and take none of the card limit");
                 double scale = card.mapScale();
                 double cardRight = card.getLayoutX() + card.getWidth() * scale;
@@ -707,9 +715,11 @@ class ProjectMapCardsFxTest {
                 FxTestSupport.<javafx.scene.control.CheckMenuItem>field(map.view, "hideOpenNotes")
                         .setSelected(true);
                 assertTrue(sheets.stream().noneMatch(Region::isVisible), "Hide all open Personal Notes hides them too");
+                assertTrue(card.noteSpans().isEmpty(), "and their marks");
                 FxTestSupport.<javafx.scene.control.CheckMenuItem>field(map.view, "hideOpenNotes")
                         .setSelected(false);
                 assertTrue(sheets.stream().allMatch(Region::isVisible));
+                assertEquals(2, card.noteSpans().size());
 
                 notes.add(file, "a third, from elsewhere");
                 map.view.refreshStates();
@@ -720,6 +730,7 @@ class ProjectMapCardsFxTest {
                 assertEquals(3, card.noteCount());
                 card.setNotesShown(false);
                 assertTrue(stickies(map).isEmpty(), "the Notes button takes them off");
+                assertTrue(card.noteSpans().isEmpty(), "marks and all");
                 card.setNotesShown(true);
                 assertEquals(3, stickies(map).size());
 

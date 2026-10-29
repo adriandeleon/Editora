@@ -1033,7 +1033,13 @@ class ProjectMapViewFxTest {
                                 + editorScroll.getWidth());
                 assertEquals(420, preview.getHeight(), 0.001);
                 javafx.scene.layout.BorderPane frame = FxTestSupport.field(preview, "frame");
-                assertTrue(frame.getCenter() instanceof org.fxmisc.flowless.VirtualizedScrollPane<?>);
+                assertSame(
+                        FxTestSupport.field(preview, "textPane"),
+                        frame.getCenter(),
+                        "the text (with its note marks over it) rather than an image");
+                assertTrue(FxTestSupport.<javafx.scene.layout.StackPane>field(preview, "textPane")
+                        .getChildren()
+                        .contains(editorScroll));
                 javafx.scene.control.Label readOnly = FxTestSupport.field(preview, "readOnly");
                 assertEquals(tr("project.map.preview.readOnly"), readOnly.getText());
                 Button zoomIn = FxTestSupport.field(preview, "zoomIn");

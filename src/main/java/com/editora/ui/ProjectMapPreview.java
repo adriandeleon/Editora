@@ -49,12 +49,14 @@ import javafx.scene.transform.Scale;
 
 import com.editora.config.NoteScope;
 import com.editora.config.PathDisplay;
+import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
 import com.editora.editops.LineEndings;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.editor.markdown.MarkdownFormatBar;
 import com.editora.editor.notes.NoteDraft;
+import com.editora.editor.notes.NoteHighlightOverlay;
 import com.editora.editorconfig.EditorConfigCharset;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
@@ -188,6 +190,13 @@ final class ProjectMapPreview extends StackPane {
     private final Button selectionNote = new Button();
     private final CodeArea editor = AreaUndo.none(new CodeArea());
     private final VirtualizedScrollPane<CodeArea> editorScroll = new VirtualizedScrollPane<>(editor);
+    /** The amber wash and corner marker an editor tab paints on a Personal Note's text, here for the notes shown. */
+    private final NoteHighlightOverlay noteMarks = new NoteHighlightOverlay(editor);
+    /** The text with its note marks over it: what the card shows for anything but an image. */
+    private final StackPane textPane = new StackPane(editorScroll, noteMarks);
+    /** The notes stuck on the card, whose text {@link #noteMarks} paints (see {@link #markNotes}). */
+    private java.util.List<PersonalNote> marked = java.util.List.of();
+
     private final ContextMenu editorContextMenu = new ContextMenu();
     private final ImageView imageView = new ImageView();
     private final ScrollPane imageScroll = new ScrollPane(imageView);
@@ -336,7 +345,9 @@ final class ProjectMapPreview extends StackPane {
         imageScroll.setPannable(true);
         imageScroll.setFitToWidth(false);
         imageScroll.setFitToHeight(false);
-        frame.setCenter(editorScroll);
+        frame.setCenter(textPane);
+        noteMarks.setSpans(this::noteSpans, () -> !marked.isEmpty()); // inert until notes are stuck on the card
+        noteMarks.setActive(true);
 
         resizeGrip.getStyleClass().add("project-map-preview-resize");
         resizeGrip.setCursor(Cursor.SE_RESIZE);
@@ -606,7 +617,7 @@ final class ProjectMapPreview extends StackPane {
             String text = capText(content.text(), content.truncated());
             boolean truncated =
                     content.truncated() || text.length() < content.text().length();
-            if (fromBuffer && !missing && text.equals(fullText) && frame.getCenter() == editorScroll) {
+            if (fromBuffer && !missing && text.equals(fullText) && frame.getCenter() == textPane) {
                 return;
             }
             long requested = generation.incrementAndGet();
@@ -776,6 +787,49 @@ final class ProjectMapPreview extends StackPane {
         notes.setAccessibleText(help);
     }
 
+    /**
+     * Marks the text of {@code notes} — the ones stuck on the card — as an editor tab marks a note's: an amber wash
+     * over it and a marker at its start, the sheet's colour. Empty clears the marks.
+     */
+    void markNotes(java.util.List<PersonalNote> notes) {
+        marked = notes == null ? java.util.List.of() : java.util.List.copyOf(notes);
+        noteMarks.refresh();
+    }
+
+    /**
+     * Where, in the card's text, each marked note is: its selection for a word or range note, the whole line for
+     * a line note (a first-line note from the Project tree has no columns). A declaration card's lines are the
+     * file's from its first; a note past what is shown is left out, and one partly shown is cut to it.
+     */
+    java.util.List<int[]> noteSpans() {
+        int lines = editor.getParagraphs().size();
+        if (marked.isEmpty() || lines == 0 || frame.getCenter() != textPane) {
+            return java.util.List.of();
+        }
+        int base = range == null ? 0 : range.startLine();
+        java.util.List<int[]> spans = new java.util.ArrayList<>(marked.size());
+        for (PersonalNote note : marked) {
+            TextAnchor anchor = note.anchor();
+            int first = anchor.line() - base;
+            int last = Math.max(anchor.line(), anchor.endLine()) - base;
+            if (last < 0 || first >= lines) {
+                continue;
+            }
+            boolean wholeLines =
+                    note.scope() == NoteScope.LINE || anchor.endColumn() <= anchor.column() && first == last;
+            int startLine = Math.max(0, first);
+            int endLine = Math.min(lines - 1, last);
+            int startLength = editor.getParagraph(startLine).length();
+            int endLength = editor.getParagraph(endLine).length();
+            int startColumn = wholeLines || first < 0 ? 0 : Math.min(anchor.column(), startLength);
+            int endColumn = wholeLines || last >= lines ? endLength : Math.min(anchor.endColumn(), endLength);
+            int start = editor.getAbsolutePosition(startLine, startColumn);
+            int end = editor.getAbsolutePosition(endLine, endColumn);
+            spans.add(new int[] {start, Math.max(start, end)});
+        }
+        return spans;
+    }
+
     /** The map's zoom the card is drawn at, to follow: its sticky notes are drawn at it too. */
     javafx.beans.property.DoubleProperty mapScaleProperty() {
         return mapZoom.xProperty();
@@ -787,10 +841,10 @@ final class ProjectMapPreview extends StackPane {
      * {@code NaN} when the card shows no text.
      */
     double noteAnchorY(int fileLine) {
-        if (frame.getCenter() != editorScroll || editor.getParagraphs().isEmpty()) {
+        if (frame.getCenter() != textPane || editor.getParagraphs().isEmpty()) {
             return Double.NaN;
         }
-        javafx.geometry.Bounds view = localToParent(frame.localToParent(editorScroll.getBoundsInParent()));
+        javafx.geometry.Bounds view = localToParent(frame.localToParent(textPane.getBoundsInParent()));
         double top = view.getMinY() + 4;
         double bottom = Math.max(top, view.getMaxY() - 4);
         Range shown = range;
@@ -924,7 +978,7 @@ final class ProjectMapPreview extends StackPane {
                 && actions != null
                 && actions.personalNotesEnabled()
                 && editor.isFocused()
-                && frame.getCenter() == editorScroll
+                && frame.getCenter() == textPane
                 && MarkdownFormatBar.wanted(editor);
         javafx.geometry.Bounds caret = wanted ? editor.getCaretBounds().orElse(null) : null;
         javafx.geometry.Bounds local = caret == null ? null : screenToLocal(caret);
@@ -934,7 +988,7 @@ final class ProjectMapPreview extends StackPane {
         }
         // The bar sits inside the text, next to the caret on the side the selection is not on (as a Markdown
         // buffer's does), in the card's own unzoomed units: it is drawn at the map's zoom with the card.
-        javafx.geometry.Bounds text = frame.localToParent(editorScroll.getBoundsInParent());
+        javafx.geometry.Bounds text = frame.localToParent(textPane.getBoundsInParent());
         selectionBar.setVisible(true);
         selectionBar.applyCss();
         double width = Math.min(selectionBar.prefWidth(-1), Math.max(60, text.getWidth()));
@@ -1314,7 +1368,7 @@ final class ProjectMapPreview extends StackPane {
         if (loaded.problem() == LoadProblem.MISSING) {
             status.setText("");
             if (shownText.isEmpty() && imageView.getImage() == null) {
-                frame.setCenter(editorScroll);
+                frame.setCenter(textPane);
                 editor.setPlaceholder(new Label(tr("project.map.preview.missing")));
             }
             setMissing(true);
@@ -1322,7 +1376,7 @@ final class ProjectMapPreview extends StackPane {
         }
         setMissing(false);
         if (loaded.problem() != LoadProblem.NONE) {
-            frame.setCenter(editorScroll);
+            frame.setCenter(textPane);
             imageView.setImage(null);
             shownText = "";
             editor.replaceText("");
@@ -1342,7 +1396,7 @@ final class ProjectMapPreview extends StackPane {
             setContentZoom(contentZoom);
             return false;
         }
-        boolean first = shownText.isEmpty() && frame.getCenter() == editorScroll && editor.getLength() == 0;
+        boolean first = shownText.isEmpty() && frame.getCenter() == textPane && editor.getLength() == 0;
         showText(loaded.text(), loaded.truncated());
         if (first) {
             editor.moveTo(0);
@@ -1358,7 +1412,7 @@ final class ProjectMapPreview extends StackPane {
      * the styles of unchanged lines.
      */
     private void showText(String full, boolean truncated) {
-        frame.setCenter(editorScroll);
+        frame.setCenter(textPane);
         imageView.setImage(null);
         editor.setPlaceholder(null);
         String text = visible(full);

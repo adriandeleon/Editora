@@ -21,7 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Project Map: Personal Notes on preview cards.** Selecting text in a Map preview (a file's or a declaration's)
   brings up a floating bar, as in a Markdown buffer, whose **Add Personal Note** button notes the selection. A Notes
   button before **Open** in the card's title bar counts the notes on what the card shows and sticks them beside it as
-  sticky notes, one editable sheet per note, each tied by a connector to its line; they move, resize and zoom with the
+  sticky notes, one editable sheet per note, each tied by a connector to its line, which is marked in the same amber an
+  editor tab marks a note's text with; they move, resize and zoom with the
   card, can be dragged to another spot beside it, save as a note card does, follow "Hide all open Personal Notes", and
   close with it. A note added from a card brings its notes up. The Personal Notes card no longer lets the map show
   through it on themes whose amber tint is translucent.

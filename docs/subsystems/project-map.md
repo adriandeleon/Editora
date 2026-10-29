@@ -152,7 +152,9 @@ its file's, without folder notes, or those starting on a declaration's lines (`P
 at most 24) — is disabled at none and absent with Personal Notes off. It sticks them on the card as **sticky
 notes** (`ProjectMapStickyNotes`): one small editable amber sheet per note, headed by its line, each tied by a
 note-coloured connector from a dot on the card's edge at its line (the text's top or bottom when scrolled past)
-to the sheet. The sheets stand outside the card's right edge, else its left, else on the card against its right
+to the sheet. While the sheets are in sight, each note's text in the card is marked as an editor tab marks it —
+the editor's `NoteHighlightOverlay` over the card's text, an amber wash with a marker at the note's start, the whole
+line for a line note (`ProjectMapPreview.noteSpans`). The sheets stand outside the card's right edge, else its left, else on the card against its right
 edge (`side`), each as near its line as the sheets above allow, a further column when they run past the card's
 foot (`stack`). They hold their place relative to the card's edge as it moves, resizes and zooms; one the user
 drags keeps its new spot until the card closes. They save like a note card (focus loss, Shortcut+Enter, a blanked
