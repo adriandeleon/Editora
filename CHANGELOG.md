@@ -90,6 +90,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HTML completion and popups (HTML review: comp).**
+  - Enter and Tab accept an HTML tag, attribute or CSS property again while its documentation is showing. The docs'
+    "MDN Reference" link took those keys (Enter opened the browser, Tab moved between links). Links in the
+    completion docs, hovers, signature help and note hovers are now followed by a click only, for every language.
+  - A hover opens at its first line instead of scrolled to the link at its end.
+  - Completion docs from the HTML, CSS, Python and Java servers arrive as Markdown: links, code and the Baseline
+    badge instead of a bare "MDN Reference: https://…" line.
+  - Structure, Go to Symbol and breadcrumbs keep repeated sibling elements in an HTML page (every link of a nav, a
+    second `<script>` and its functions).
+  - In a page's `<style>` the snippets offered are CSS's, in a `<script>` JavaScript's, and inside a tag none: `col`
+    no longer preselects `<col>` above `color`, nor `<a hr` the `<hr>` snippet.
+  - Typing a closer by hand where Editora already inserted one (`<p>a</`) no longer opens a list whose Enter renamed
+    `</p>` to `</body>`.
+  - Accepting a CSS property opens the list of its values, and accepting a folder in a path the list of its files,
+    as the server asks.
+  - In an HTML start tag, typing `=` after an attribute name inserts `""` with the caret inside (with Auto-close
+    tags on); a `"` typed straight after is taken as the opening quote.
 - **XML editing (XML/pom review 3: xmlui).**
   - XML: Generate Grammar…'s two XSD choices work in untrusted folders. lemminx needed the W3C `xml.xsd`, which it
     could not download there; Editora now ships it.

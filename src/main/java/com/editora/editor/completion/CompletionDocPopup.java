@@ -19,8 +19,9 @@ import org.jspecify.annotations.Nullable;
  * completion list (to its right, flipping left at the screen edge). It renders the selected item's
  * declaration (a wrapping monospace header) plus its documentation (markdown via {@link MarkdownRenderer})
  * when the server provides any. Its lifecycle is tied to the completion popup — the editor shows/hides it as
- * the selection changes and tears it down with the list. Lives in {@code editor/} (like
- * {@link CompletionPopup}) so the package stays independent of {@code ui}.
+ * the selection changes and tears it down with the list. Focus-less matters: a popup gets its owner window's
+ * keys first, so the content comes from {@link MarkdownRenderer#renderPopup}, where nothing is a Tab stop.
+ * Lives in {@code editor/} (like {@link CompletionPopup}) so the package stays independent of {@code ui}.
  */
 final class CompletionDocPopup {
 
@@ -90,6 +91,7 @@ final class CompletionDocPopup {
             content.getChildren().add(docNode);
         }
         scroll.setContent(content);
+        scroll.setVvalue(0); // each item's docs from their first line, not where the last item's were scrolled
         Rectangle2D vis = screenFor(listBounds);
         double x = listBounds.getMaxX() + GAP;
         if (x + WIDTH > vis.getMaxX()) {

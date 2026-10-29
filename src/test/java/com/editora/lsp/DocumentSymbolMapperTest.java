@@ -144,6 +144,33 @@ class DocumentSymbolMapperTest {
         assertEquals(12, out.get(3).children().get(1).line(), "the first assignment is the one listed");
     }
 
+    /**
+     * vscode-html-language-server answers flat too, and sibling elements share a name and a kind: every link of a
+     * nav, both {@code meta}s and the second {@code script} with its function stay (HTML review B4/C5).
+     */
+    @Test
+    void aFlatHtmlOutlineKeepsRepeatedSiblingElementsAndWhatTheyHold() {
+        List<SymbolNode> out = DocumentSymbolMapper.map(List.of(
+                sym("html", SymbolKind.Field, 0, 0, 42, 7),
+                sym("head", SymbolKind.Field, 1, 0, 6, 7),
+                sym("meta", SymbolKind.Field, 3, 2, 3, 24),
+                sym("meta", SymbolKind.Field, 4, 2, 4, 60),
+                sym("body", SymbolKind.Field, 7, 0, 41, 7),
+                sym("nav", SymbolKind.Field, 8, 2, 13, 8),
+                sym("a", SymbolKind.Field, 9, 4, 9, 30),
+                sym("a", SymbolKind.Field, 10, 4, 10, 30),
+                sym("a", SymbolKind.Field, 11, 4, 11, 30),
+                sym("a", SymbolKind.Field, 12, 4, 12, 30),
+                sym("script", SymbolKind.Field, 36, 2, 36, 40),
+                sym("script", SymbolKind.Field, 37, 2, 40, 11),
+                sym("greet", SymbolKind.Function, 38, 4, 38, 40),
+                sym("msg", SymbolKind.Variable, 39, 4, 39, 30)));
+
+        assertEquals("html[head[meta meta] body[nav[a a a a] script script[greet msg]]]", outline(out));
+        SymbolNode body = out.get(0).children().get(1);
+        assertEquals(37, body.children().get(2).line(), "the second script, where it is");
+    }
+
     @Test
     void nullAndEmptyAreSafe() {
         assertTrue(DocumentSymbolMapper.map(null).isEmpty());

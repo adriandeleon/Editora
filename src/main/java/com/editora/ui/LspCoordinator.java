@@ -3167,13 +3167,14 @@ final class LspCoordinator {
     /** The accept hook for a completion item: resolve it + apply any additional edits (a TypeScript
      *  auto-import's {@code import} line). Returns null when the item can't carry extra edits. */
     private @Nullable Runnable autoImportAccept(EditorBuffer buffer, org.eclipse.lsp4j.CompletionItem item) {
-        if (!com.editora.lsp.CompletionMapper.mayHaveAdditionalEdits(item) && item.getCommand() == null) return null;
+        var serverCommand = com.editora.lsp.CompletionMapper.serverCommandOf(item); // the editor's own run in it (B7)
+        if (!com.editora.lsp.CompletionMapper.mayHaveAdditionalEdits(item) && serverCommand == null) return null;
         return () -> {
             Path path = lspPath(buffer);
             if (path == null) return;
             Runnable command = () -> {
-                var c = item.getCommand();
-                if (c != null && c.getCommand() != null && path.equals(lspPath(buffer)) && !buffer.isDisposed()) {
+                var c = serverCommand;
+                if (c != null && path.equals(lspPath(buffer)) && !buffer.isDisposed()) {
                     buffer.sendLspChange();
                     // Tracked, so the workspace/applyEdit the command answers with has a basis to be
                     // validated against (an untracked one is refused unless it names current versions).
@@ -9445,11 +9446,8 @@ final class LspCoordinator {
         } else
             try {
                 // Links in a hover (documentation URLs) open through the window's link choke point.
-                content = MarkdownRenderer.renderDocument(
-                        MarkdownRenderer.parseForRender(markdown),
-                        null,
-                        host::openExternalUrl,
-                        MarkdownRenderer.ImagePolicy.DATA_ONLY);
+                content =
+                        MarkdownRenderer.renderPopup(MarkdownRenderer.parseForRender(markdown), host::openExternalUrl);
             } catch (RuntimeException e) {
                 Label label = new Label(markdown);
                 label.setWrapText(true);
@@ -9509,6 +9507,7 @@ final class LspCoordinator {
         });
 
         showAtCaret(popup, area);
+        scroll.setVvalue(0); // from its first line, whatever layout scrolled to (HTML review B8)
     }
 
     /**
@@ -9847,11 +9846,8 @@ final class LspCoordinator {
         }
         if (!active.documentation().isBlank()) {
             try {
-                Node doc = MarkdownRenderer.renderDocument(
-                        MarkdownRenderer.parseForRender(active.documentation()),
-                        null,
-                        host::openExternalUrl,
-                        MarkdownRenderer.ImagePolicy.DATA_ONLY);
+                Node doc = MarkdownRenderer.renderPopup(
+                        MarkdownRenderer.parseForRender(active.documentation()), host::openExternalUrl);
                 box.getChildren().add(doc);
             } catch (RuntimeException e) {
                 Label docLabel = new Label(active.documentation());

@@ -924,6 +924,9 @@ final class LanguageServerSession implements LanguageClient {
         completionItem.setResolveSupport(new org.eclipse.lsp4j.CompletionItemResolveSupportCapabilities(
                 java.util.List.of("additionalTextEdits", "documentation")));
         completionItem.setPreselectSupport(true);
+        // The doc popup renders Markdown. Without this the HTML and CSS servers (and jdtls, Pyright) send their
+        // docs as plain text: a bare "MDN Reference: https://…" line instead of a link (HTML review D7).
+        completionItem.setDocumentationFormat(List.of("markdown", "plaintext"));
         completionItem.setDeprecatedSupport(true);
         completionItem.setInsertReplaceSupport(true);
         completionItem.setCommitCharactersSupport(true);
