@@ -1035,6 +1035,8 @@ final class LanguageServerSession implements LanguageClient {
         // Document links (XML review B5): lemminx names the schema a schemaLocation, DOCTYPE or xml-model refers
         // to; Go to Definition falls back to them for XML. Requested only where that fallback asks.
         td.setDocumentLink(new org.eclipse.lsp4j.DocumentLinkCapabilities(false, false));
+        // Colours (HTML review D9): the HTML and CSS servers name each colour literal; the editor draws a swatch.
+        td.setColorProvider(new org.eclipse.lsp4j.ColorProviderCapabilities(false));
         td.setFormatting(new org.eclipse.lsp4j.FormattingCapabilities(true));
         td.setRangeFormatting(new org.eclipse.lsp4j.RangeFormattingCapabilities(true));
         td.setOnTypeFormatting(new org.eclipse.lsp4j.OnTypeFormattingCapabilities(true));
@@ -2556,6 +2558,20 @@ final class LanguageServerSession implements LanguageClient {
         return cancelling(
                 request,
                 request.<List<org.eclipse.lsp4j.FoldingRange>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                        .exceptionally(t -> List.of()));
+    }
+
+    /** The document's colour literals ({@code textDocument/documentColor}, HTML review D9); empty when unsupported. */
+    CompletableFuture<List<org.eclipse.lsp4j.ColorInformation>> documentColor(String uri) {
+        ServerCapabilities c = capabilities;
+        if (!ready() || c == null || c.getColorProvider() == null) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        var request = bounded(
+                server().getTextDocumentService().documentColor(new org.eclipse.lsp4j.DocumentColorParams(doc(uri))));
+        return cancelling(
+                request,
+                request.<List<org.eclipse.lsp4j.ColorInformation>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                         .exceptionally(t -> List.of()));
     }
 

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **HTML: links, markup checks and colour swatches** (HTML review: links).
+  - Go to Definition and Ctrl-click on an `href` or `src` open the file it names, at the element whose `id` its
+    `#fragment` names; a `#fragment` alone moves in the page, a web address goes to the browser after asking, and a
+    missing file says "File not found: missing.html" instead of "No definition found". Works with the HTML language
+    server (its document links) and without one or with LSP off (the value resolved against the page).
+  - Editora checks an HTML page's markup itself: an element that is never closed, an end tag that closes nothing,
+    and a local link whose file does not exist are marked as warnings (source "editora"). With the HTML server they
+    join its diagnostics in the Problems window; without it they show as squiggles in the page. Void elements,
+    optional end tags (`<li>`, `<p>`, `<td>` …), `<script>`/`<style>` content, comments and web addresses never
+    count. Settings → Editor → "HTML markup checks" (on) turns it off.
+  - Related File from a page offers the stylesheets and scripts it loads (`<link href>`, `<script src>`) first, and
+    from a stylesheet or script the project's pages that load it.
+  - A CSS colour in a stylesheet, a `<style>` block or a `style=""` gets a small swatch in its colour before it, from
+    the HTML and CSS servers' colour provider.
 - **Java: library sources.** A Maven library's sources are fetched as its class opens, when a repository has them.
   A library class that has none, shown decompiled (a `lib/` or system jar, an artifact only installed locally, a JDK
   without `src.zip`), says so in its tab, with **Download Sources** for one a repository may have and **Choose

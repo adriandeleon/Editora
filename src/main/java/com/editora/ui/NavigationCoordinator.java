@@ -545,6 +545,10 @@ final class NavigationCoordinator {
      *
      * <p>One match opens; several offer a picker, since {@code Foo.css} and {@code Foo.scss} can both
      * exist and only the user knows which was meant.
+     *
+     * <p>An HTML page also offers the stylesheets and scripts it loads, first, and a stylesheet or script the
+     * project's pages that load it ({@link HtmlRelated}, HTML review C16): names alone never reach the usual
+     * {@code css/} and {@code js/} folders.
      */
     void gotoRelatedFile() {
         EditorBuffer b = host.activeBuffer();
@@ -555,15 +559,26 @@ final class NavigationCoordinator {
         }
         List<String> names =
                 com.editora.search.RelatedFiles.candidates(current.getFileName().toString());
-        if (names.isEmpty()) {
+        if (names.isEmpty() && !HtmlRelated.isPage(current) && !HtmlRelated.isAsset(current)) {
             host.setStatus(tr("status.related.none", current.getFileName()));
             return;
         }
-        host.indexCoordinator().ensureBuilt(() -> openRelated(current, names));
+        String text = b == null ? "" : b.text();
+        host.indexCoordinator()
+                .ensureBuilt(() -> openRelated(
+                        current,
+                        names,
+                        HtmlRelated.assetsOf(
+                                text, current, host.indexCoordinator().indexedRoot())));
     }
 
     void openRelated(Path current, List<String> names) {
-        List<Path> found = new ArrayList<>();
+        openRelated(current, names, List.of());
+    }
+
+    /** As {@link #openRelated(Path, List)}, with {@code linked} — a page's own stylesheets and scripts — first. */
+    void openRelated(Path current, List<String> names, List<Path> linked) {
+        List<Path> found = new ArrayList<>(linked);
         Path dir = current.getParent();
         for (String name : names) {
             // Beside the file first: when a counterpart IS a sibling that is nearly always the right one,
@@ -582,6 +597,26 @@ final class NavigationCoordinator {
                 }
             }
         }
+        List<Path> pages = HtmlRelated.isAsset(current)
+                ? host.indexCoordinator().filesMatching(HtmlRelated::isPage, HtmlRelated.MAX_PAGES)
+                : List.of();
+        if (pages.isEmpty()) {
+            showRelated(current, found);
+            return;
+        }
+        HtmlRelated.pagesLinking(current, pages, host.indexCoordinator().indexedRoot(), linking -> {
+            List<Path> all = new ArrayList<>(linking); // the pages that load this stylesheet or script lead
+            for (Path p : found) {
+                if (!all.contains(p)) {
+                    all.add(p);
+                }
+            }
+            showRelated(current, all);
+        });
+    }
+
+    /** Opens the one counterpart found, offers a picker over several, or says there is none. */
+    private void showRelated(Path current, List<Path> found) {
         if (found.isEmpty()) {
             Path test = com.editora.search.RelatedFiles.testFor(current);
             if (test != null && !java.nio.file.Files.exists(test) && createTestConfirmer.test(test)) {

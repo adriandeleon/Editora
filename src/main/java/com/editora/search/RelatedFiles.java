@@ -37,6 +37,7 @@ public final class RelatedFiles {
             List.of("tsx", "css", "scss"),
             List.of("jsx", "css", "scss"),
             List.of("js", "css", "scss", "html"),
+            List.of("htm", "css", "js"),
             List.of("vue", "css", "scss"));
 
     /**

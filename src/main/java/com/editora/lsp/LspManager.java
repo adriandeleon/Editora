@@ -570,6 +570,24 @@ public final class LspManager {
         }
     }
 
+    /** Whether Editora's own markup check joins the HTML server's diagnostics (HTML review D5); read off the FX thread. */
+    private volatile java.util.function.BooleanSupplier htmlMarkupChecks = () -> true;
+
+    /** Sets what says whether the markup check runs (Settings → Editor → HTML markup checks). */
+    public void setHtmlMarkupChecks(java.util.function.BooleanSupplier on) {
+        htmlMarkupChecks = on == null ? () -> true : on;
+    }
+
+    /** {@code mapped} with the markup check's diagnostics added for an HTML page (D5); null stays null. */
+    private @Nullable List<LspDiagnostic> withMarkupChecks(
+            LanguageServerSession s, @Nullable String documentUri, Path file, @Nullable List<LspDiagnostic> mapped) {
+        String text = documentUri == null || mapped == null
+                ? null
+                : s.documentSnapshots().get(documentUri);
+        return HtmlMarkupLint.merged(
+                s.serverId(), file, text, s.root(), mapped, text != null && htmlMarkupChecks.getAsBoolean());
+    }
+
     /** The XML servers' settings (Settings → LSP → XML); each session gets them for its own root. */
     private volatile XmlServerSettings xmlServerSettings = XmlServerSettings.defaults();
 
@@ -4141,6 +4159,55 @@ public final class LspManager {
         });
     }
 
+    /** True if {@code file}'s server is ready and advertises {@code colorProvider} (HTML review D9). */
+    public boolean supportsDocumentColor(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        var caps = s == null ? null : s.capabilities();
+        return caps != null && eitherTrue(caps.getColorProvider());
+    }
+
+    /**
+     * Requests the document's colour literals and delivers them on the FX thread, in document order (D9). Empty
+     * when the server has none or no colour provider.
+     */
+    public void documentColors(Path file, Consumer<List<com.editora.text.ColorSwatch>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null || !supportsDocumentColor(file)) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        String uri = uri(file);
+        latest.issue(uri, "documentColor", stamp(s, uri, null), true, () -> s.documentColor(uri), (colors, error) -> {
+            List<com.editora.text.ColorSwatch> out = error == null ? swatches(colors) : List.of();
+            Platform.runLater(() -> cb.accept(out));
+        });
+    }
+
+    /** Pure: the server's colour informations as swatches, in document order (null-safe). */
+    static List<com.editora.text.ColorSwatch> swatches(@Nullable List<org.eclipse.lsp4j.ColorInformation> colors) {
+        if (colors == null || colors.isEmpty()) {
+            return List.of();
+        }
+        List<com.editora.text.ColorSwatch> out = new ArrayList<>(colors.size());
+        for (org.eclipse.lsp4j.ColorInformation c : colors) {
+            if (c == null || c.getRange() == null || c.getRange().getStart() == null || c.getColor() == null) {
+                continue;
+            }
+            Position at = c.getRange().getStart();
+            var color = c.getColor();
+            out.add(new com.editora.text.ColorSwatch(
+                    at.getLine(),
+                    at.getCharacter(),
+                    color.getRed(),
+                    color.getGreen(),
+                    color.getBlue(),
+                    color.getAlpha()));
+        }
+        out.sort(java.util.Comparator.comparingInt(com.editora.text.ColorSwatch::line)
+                .thenComparingInt(com.editora.text.ColorSwatch::column));
+        return List.copyOf(out);
+    }
+
     /**
      * Requests the nested selection-range chain at one position and delivers it on the FX thread as
      * {@code [start, end]} offset pairs, innermost first (see {@link LspSelection#toOffsetChain}). Empty when
@@ -4791,6 +4858,47 @@ public final class LspManager {
                 ? notingMissingInclude(s, documentUri, new Position(line, character), cb)
                 : cb;
         requestLocations(s, documentUri, line, character, request, answer, null);
+    }
+
+    /**
+     * Where the server's document link at {@code line}/{@code character} of {@code file} points (HTML review B6),
+     * delivered on the FX thread; null when the server has no link there (or is not running). The HTML server
+     * percent-encodes a fragment ({@code about.html%23team}); the target comes back split into file and fragment.
+     */
+    public void documentLinkTarget(
+            Path file, int line, int character, Consumer<com.editora.editops.HtmlLinks.@Nullable Target> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        Position pos = new Position(line, character);
+        s.documentLinks(uri(file))
+                .thenCompose(links -> {
+                    org.eclipse.lsp4j.DocumentLink link = XmlServer.linkAt(links, pos);
+                    return link == null || link.getTarget() != null
+                            ? CompletableFuture.completedFuture(link)
+                            : s.resolveDocumentLink(link);
+                })
+                .<com.editora.editops.HtmlLinks.@Nullable Target>thenApply(link -> {
+                    String target = link == null ? null : link.getTarget();
+                    if (target == null) {
+                        return null;
+                    }
+                    if (target.startsWith("http://") || target.startsWith("https://")) {
+                        return com.editora.editops.HtmlLinks.fromUri(target);
+                    }
+                    Path to = s.uris().toPath(com.editora.editops.HtmlLinks.withoutFragment(target));
+                    return to == null
+                            ? null
+                            : new com.editora.editops.HtmlLinks.Target(
+                                    com.editora.editops.HtmlLinks.Kind.FILE,
+                                    to,
+                                    com.editora.editops.HtmlLinks.fragmentOf(target),
+                                    "");
+                })
+                .exceptionally(t -> null)
+                .thenAccept(target -> Platform.runLater(() -> cb.accept(target)));
     }
 
     /** {@code cb}, after noting when nothing was found on an include href that names no file (C26). */
@@ -5921,7 +6029,7 @@ public final class LspManager {
             if (error != null) {
                 return;
             }
-            List<LspDiagnostic> mapped = DiagnosticMapper.mapReport(report);
+            List<LspDiagnostic> mapped = withMarkupChecks(s, documentUri, file, DiagnosticMapper.mapReport(report));
             if (mapped == null) {
                 // An "unchanged" report: what was shown before the edit is still right. The editor cleared
                 // its marks on the edit, so say so rather than leave it showing a clean file.
@@ -6150,8 +6258,12 @@ public final class LspManager {
         Integer acceptedVersion = params.getVersion();
         List<org.eclipse.lsp4j.Diagnostic> raw =
                 params.getDiagnostics() == null ? List.of() : List.copyOf(params.getDiagnostics());
-        List<LspDiagnostic> mapped = MavenPomServer.adjustDiagnostics(
-                serverDisplayName(source.serverId()), DiagnosticMapper.map(params.getDiagnostics()));
+        List<LspDiagnostic> mapped = withMarkupChecks(
+                source,
+                sourceUri,
+                file,
+                MavenPomServer.adjustDiagnostics(
+                        serverDisplayName(source.serverId()), DiagnosticMapper.map(params.getDiagnostics())));
         Platform.runLater(() -> {
             if (source.isDisposed()
                     || !sessionsByRoot.containsValue(source)

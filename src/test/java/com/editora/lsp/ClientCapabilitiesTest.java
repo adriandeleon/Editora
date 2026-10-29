@@ -98,6 +98,8 @@ class ClientCapabilitiesTest {
     void theOptInFeatureCapabilitiesAreAllDeclared() {
         var td = CAPS.getTextDocument();
         assertNotNull(td.getInlayHint(), "inlay hints (#681)");
+        assertNotNull(td.getColorProvider(), "colour swatches (HTML review D9)");
+        assertNotNull(td.getDocumentLink(), "document links: XML, and HTML href/src (HTML review B6)");
         assertNotNull(td.getDocumentHighlight(), "occurrences (#675)");
         assertNotNull(td.getCallHierarchy(), "call hierarchy (#682)");
         assertNotNull(td.getTypeHierarchy(), "type hierarchy (#682)");

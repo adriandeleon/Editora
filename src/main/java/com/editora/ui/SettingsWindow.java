@@ -331,6 +331,7 @@ public class SettingsWindow {
     private CheckBox autoRenameTagCheck;
     private CheckBox autoFillCheck;
     private CheckBox autoCloseTagsCheck;
+    private CheckBox htmlMarkupChecksCheck;
     private CheckBox todoHighlightCheck;
     private @Nullable TodoSettingsPane todoSettings;
     private @Nullable VBox markdownLintRulesBox;
@@ -1517,6 +1518,7 @@ public class SettingsWindow {
         autoRenameTagCheck = viewCheck(tr("settings.autoRenameTag"), Settings::setAutoRenameTag);
         autoFillCheck = viewCheck(tr("settings.autoFill"), Settings::setAutoFill);
         autoCloseTagsCheck = viewCheck(tr("settings.autoCloseTags"), Settings::setAutoCloseTags);
+        htmlMarkupChecksCheck = viewCheck(tr("settings.htmlMarkupChecks"), Settings::setHtmlMarkupChecks);
         todoHighlightCheck = viewCheck(tr("settings.todoHighlight"), Settings::setTodoHighlight);
         multiCaretCheck = viewCheck(tr("settings.multiCaret"), Settings::setMultiCaret);
         copyLineNoSelectionCheck =
@@ -2986,6 +2988,12 @@ public class SettingsWindow {
                 autoCloseTagsCheck,
                 null,
                 "auto close tags html xml closing tag insert body vs code");
+        checkRow(
+                editing,
+                Category.EDITOR,
+                htmlMarkupChecksCheck,
+                tr("settings.htmlMarkupChecks.note"),
+                "html markup check validation unclosed element stray end tag broken link missing file lint");
         checkRow(
                 editing,
                 Category.EDITOR,
@@ -8948,6 +8956,7 @@ public class SettingsWindow {
                 abbrevModeCheck.setSelected(settings.isAbbrevMode());
             }
             autoCloseTagsCheck.setSelected(settings.isAutoCloseTags());
+            htmlMarkupChecksCheck.setSelected(settings.isHtmlMarkupChecks());
             todoHighlightCheck.setSelected(settings.isTodoHighlight());
             if (todoSettings != null) {
                 todoSettings.load();
@@ -9630,6 +9639,7 @@ public class SettingsWindow {
                 abbrevModeCheck.setSelected(s.isAbbrevMode());
             }
             autoCloseTagsCheck.setSelected(s.isAutoCloseTags());
+            htmlMarkupChecksCheck.setSelected(s.isHtmlMarkupChecks());
             todoHighlightCheck.setSelected(s.isTodoHighlight());
             if (todoSettings != null) {
                 todoSettings.rebuildRows();
