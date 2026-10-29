@@ -402,11 +402,6 @@ final class ProjectMapStickyNotes {
     }
 
     /**
-     * Stacks sheets {@link #HEIGHT} tall down a card {@code cardHeight} tall, each as near its line's height as the
-     * sheets above it allow ({@code wanted}, from the card's top, in order). A sheet that would run past the card's
-     * foot starts a further column. Returns {@code {column, top}} per sheet. Pure.
-     */
-    /**
      * How many of {@code total} notes, wanting the tops {@code wanted} (in order), are stuck on as sheets: all that
      * fit {@link #MAX_STACKS} stacks beside a card {@code cardHeight} tall (at most {@link #MAX_NOTES}), else one
      * fewer than fit, the last place going to the "+K more notes" sheet. Pure.
@@ -431,6 +426,11 @@ final class ProjectMapStickyNotes {
         return 0;
     }
 
+    /**
+     * Stacks sheets {@link #HEIGHT} tall down a card {@code cardHeight} tall, each as near its line's height as the
+     * sheets above it allow ({@code wanted}, from the card's top, in order). A sheet that would run past the card's
+     * foot starts a further column. Returns {@code {column, top}} per sheet. Pure.
+     */
     static List<double[]> stack(List<Double> wanted, double cardHeight) {
         double room = Math.max(HEIGHT, cardHeight);
         List<double[]> placed = new ArrayList<>();

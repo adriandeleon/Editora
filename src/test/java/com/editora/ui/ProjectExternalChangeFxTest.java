@@ -36,6 +36,15 @@ class ProjectExternalChangeFxTest {
         pt.getOnFinished().handle(new ActionEvent());
     }
 
+    /** What the watcher records for a file created in {@code file}'s folder. */
+    private static void queue(ProjectPanel panel, Path file) {
+        ProjectWatchChanges changes = FxTestSupport.field(panel, "watchChanges");
+        changes.add(
+                file.getParent(),
+                java.util.List.of(new ProjectPanel.FsChange(file, ProjectPanel.FsKind.CREATED)),
+                false);
+    }
+
     @Test
     void anExternalChangeFiresTheHookButASelfChangeDoesNot(@TempDir Path root) throws Exception {
         AtomicInteger fired = new AtomicInteger();
@@ -50,12 +59,23 @@ class ProjectExternalChangeFxTest {
         FxTestSupport.runOnFx(() -> fireWatchDebounce(panel));
         assertEquals(1, fired.get(), "an external change fires the hook");
 
-        // A change the app just made itself (within the self-change window) must NOT fire the hook.
+        // A change the app just made itself (within the self-change window) must NOT fire the hook: the watcher's
+        // event for that path is the app's own echo.
+        Path made = root.resolve("made-by-editora.txt");
         FxTestSupport.runOnFx(() -> {
-            FxTestSupport.invoke(panel, "markLocalChange");
+            FxTestSupport.call(
+                    panel, "markLocalChange", new Class<?>[] {java.util.Collection.class}, java.util.List.of(made));
+            queue(panel, made);
             fireWatchDebounce(panel);
         });
         assertEquals(1, fired.get(), "a self-change does not fire the hook");
+
+        // ...but an outside change landing in that same window still does (Map review A2).
+        FxTestSupport.runOnFx(() -> {
+            queue(panel, root.resolve("made-by-a-build.txt"));
+            fireWatchDebounce(panel);
+        });
+        assertEquals(2, fired.get(), "an outside change right after a self-change fires the hook");
 
         FxTestSupport.runOnFx(panel::dispose);
     }

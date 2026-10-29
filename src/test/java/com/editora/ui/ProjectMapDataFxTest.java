@@ -633,6 +633,9 @@ class ProjectMapDataFxTest {
             waitForFx(() -> contains(surface, sub));
             FxTestSupport.runOnFx(() -> activate(mapView, entry(surface, sub)));
             waitForFx(() -> contains(surface, leaf));
+            // With folder chains compacted, sub (a's only child) was listed with a, so leaf was on the map already:
+            // let the load that opening sub started finish, or Windows refuses to rename a folder being listed.
+            waitForFx(() -> !FxTestSupport.<Boolean>field(mapView, "loadInFlight"));
 
             Files.move(a, renamed);
             FxTestSupport.runOnFx(() -> {

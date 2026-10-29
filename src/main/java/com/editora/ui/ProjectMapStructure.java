@@ -72,8 +72,11 @@ final class ProjectMapStructure {
         UNREADABLE
     }
 
-    /** One file's outline: its declarations by path, and how its source looked. */
-    /** @param partial the source was cut at the read cap: declarations past it are not in the outline */
+    /**
+     * One file's outline: its declarations by path, and how its source looked.
+     *
+     * @param partial the source was cut at the read cap: declarations past it are not in the outline
+     */
     private record Outline(
             @Nullable Stamp stamp, List<Node> roots, Map<Path, Node> byPath, Problem problem, boolean partial) {
         static final Outline LOADING = new Outline(null, List.of(), Map.of(), Problem.LOADING, false);
