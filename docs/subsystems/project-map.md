@@ -33,13 +33,28 @@ the floating code preview.
 
 The map presents branch-aware Miller columns through the project:
 
-1. The first column contains the project root.
+1. The first column contains the root's children and is titled with the root's name. The root has no row
+   of its own: that title stands for it. It is selected there (the breadcrumb's first crumb, or the arrow
+   against the flow from a first-column row), right-clicking the title opens the root's context menu, and
+   the first column has no close button.
 2. Expanding a directory shows its children in a new column at the next depth.
 3. Expanding a sibling retains the existing branch and opens another independent column.
 4. Closing a column or collapsing its parent removes only that branch and its descendant columns.
+5. With **Compact folder chains** (options ⋯ menu, on by default; `isCompactChains()` /
+   `setCompactChains(boolean)` on the view) a run of single-child folders is one column. Opening a folder
+   whose only child is a folder opens that one too (`ProjectMapModel.Request.compactChains`: not through a
+   symbolic link, at most `MAX_CHAIN` (32) deep, not for the root's own only child, and never while a
+   search decides what is open), and `ProjectMapModel.columnsById` folds the one-row columns into the
+   column they lead to: `src` › `main` › `java` › `com` › `acme` is one column of `acme`'s children, titled
+   `src / main / java / com / acme` and hanging from the `src` row (`Column.chain()`). A column with a
+   filter of its own, or rows a filter or limit took out, is not folded, and neither is the first column.
+   Paths and depths stay those of the real folders. The folders of a chain keep their crumbs in the
+   breadcrumb; selecting one selects the column's title (which underlines it), the arrows step past the
+   chain to the column's rows or back to its first folder's row, and the column's × closes the chain at
+   that row. Turning the option off keeps the folders a chain opened open, one column each.
 
-Every non-root column has one meaningful parent, but several parents may own independent columns at
-the same depth. This keeps parallel work visible without merging unrelated subtrees into one dense
+Every column but the first has one meaningful parent row, but several parents may own independent columns
+at the same depth. This keeps parallel work visible without merging unrelated subtrees into one dense
 column.
 
 The default flow is left to right (`ProjectMapView.DEFAULT_FLOW`), the direction the breadcrumb and
@@ -226,9 +241,9 @@ nothing about the columns is remembered across restarts.
 | `Enter` or `Space` | Open the selected file or declaration card, or expand or collapse the selected folder |
 | `F2` | Rename the selected file or folder (not the project root), as in the Project tree |
 | `Delete` | Delete the selected file through the Project tree's confirmed delete |
-| Menu key / `Shift-F10` | Open the selected node's context menu at its row |
-| `Backspace` | Select the parent |
-| `Home` | Select the project root |
+| Menu key / `Shift-F10` | Open the selected node's context menu at its row (the root's, or a chain folder's, under its column's title) |
+| `Backspace` | Select the parent (the row a compacted column hangs from; the root from the first column) |
+| `Home` | Select the first row of the first column |
 | `Alt-Left` / `Alt-Right` | Move backward or forward through map selection history |
 | `/` | Focus and select the selected column's filter text |
 | Shortcut + `0` | Fit all visible columns |
@@ -237,8 +252,8 @@ nothing about the columns is remembered across restarts.
 Single sibling steps (perpendicular arrows, `Ctrl-N` / `Ctrl-P`) wrap around the column; page moves do
 not. `/` is matched by the character typed rather than the key, so it works where the slash is a
 shifted key and on the numeric keypad. When the selected column's filter is hidden by a low zoom the map
-zooms in just far enough and scrolls it into view first; the project column has no filter and reports
-that in the status bar.
+zooms in just far enough and scrolls it into view first. With the root (or a chain's folder) selected it
+is the filter of the column whose title stands for it.
 
 Text fields own their keystrokes. In particular, `Backspace`, arrows, `Home`, `F2`, and `Delete` edit a
 focused column filter rather than triggering map navigation. Pressing Enter in a column filter returns
@@ -261,9 +276,9 @@ column's folder only when the selection was inside the closed branch.
 The bottom-left zoom bar is icon buttons (each with a tooltip and accessible name) around the current
 percentage: zoom out, zoom in, Fit, Center selection, and Reset. Manual zoom runs from 40% to 225%.
 
-- The **first view** of a project opens at 100% with the root column and the start of the first column in
-  view (a small project that fits is centred instead). It steps down, never below 85%, only when that is
-  what shows both columns.
+- The **first view** of a project opens at 100% with the start of the first column in view (a small
+  project that fits is centred instead). It steps down, never below 85%, only when that is what shows the
+  column's width.
 - **Fit** (the button or Shortcut + `0`) scales and centres the whole map when that is possible at 40% or
   more. When the floor is hit it anchors on the selected path instead: the selected row, its column
   header, and as many of the columns leading to it as the view holds.
@@ -274,8 +289,8 @@ percentage: zoom out, zoom in, Fit, Center selection, and Reset. Manual zoom run
 Reveal, Fit and the first view reserve the strip the zoom bar covers, and a revealed row is also lifted
 clear of the overview.
 
-The options (⋯) menu in the navigation row holds the default-on **Keep current zoom** and **Focus new
-column** options, remembered per workspace (`isKeepZoom()` / `isFocusNewColumn()` and their setters on the view). Opening a
+The options (⋯) menu in the navigation row holds **Compact folder chains** (see the user model) and the
+default-on **Keep current zoom** and **Focus new column** options, remembered per workspace (`isKeepZoom()` / `isFocusNewColumn()` and their setters on the view). Opening a
 folder therefore preserves the user's scale and brings the new column in from its start: the whole card
 when it fits beside the row that opened it, otherwise its header and first rows together with that row.
 Either effect can be disabled independently; disabling zoom preservation restores auto-fit on expansion.
@@ -283,7 +298,10 @@ Either effect can be disabled independently; disabling zoom preservation restore
 The filter row holds only filters and wraps instead of truncating; the selectors show their value alone
 ("Source", "Left → Right") and carry the "Type:" / "Flow:" form as tooltip and accessible name. Breadcrumbs
 that do not fit collapse their middle into one "…" (whose tooltip lists the hidden folders) and keep the
-root and the last two crumbs.
+root and the last two crumbs. A new selection replaces only the crumbs after the part its trail shares with
+the previous one, and a crumb's tooltip (its full path) is made when the pointer first rests on it. The
+toolbar's small text (chips, selectors, Clear, Hide unmatched, the breadcrumb, the column filter and Show
+hidden) is 0.85em of the UI size, and the back, forward and help buttons and the crumbs are at least 24 px.
 
 ## Filters, ordering, and state
 
@@ -292,7 +310,7 @@ window's own field filters the tree only). It combines with:
 
 - status chips for files that are open, modified, Git-changed, bookmarked, or have Personal Notes;
 - a type selector for source, markup, configuration, other files, or all files;
-- a fuzzy free-text filter in every non-root column;
+- a fuzzy free-text filter in every column;
 - a per-column **Show hidden** checkbox.
 
 Hidden (dot) entries follow the Project "show hidden files" setting: it is each column's default, it is
@@ -363,12 +381,22 @@ filesystem work.
 ## Layout and rendering
 
 `ProjectMapView.MapSurface` owns the canvas coordinate system. Node and column geometry is computed
-in world coordinates, transformed by zoom and pan, stored as immutable hit boxes, and then painted.
-Connectors are drawn before nodes. The live map submits connectors only for destination rows that intersect
-the viewport plus a small overscan, so one visible parent cannot make a tall offscreen column rasterize every
-Bezier curve. Nodes use the viewport itself, while the overview summarizes the complete laid-out content.
-Continuous pan, zoom, and column-drag events update their state immediately but coalesce Canvas rendering to
-one repaint per JavaFX pulse.
+in world coordinates (`computeWorldLayout`) and cached on everything it depends on (`LayoutKey`: the rows,
+column filters and Show hidden choices, what Hide unmatched keeps, flow, zoom, manual offsets, marker sets,
+font and the chain option), so a pan, a hover or a new selection only projects it through zoom and pan into
+immutable hit boxes. `repaint()` does that projection at once — the hit boxes, the overview frame and the
+native column controls are current for whatever reads them next — and draws the Canvas once at the next
+pulse, or at the next layout pass if that comes first (a snapshot runs one), however many changes asked for
+it; `paintNow()` draws at once. Continuous pan, zoom, and column-drag events defer the projection too until
+an input handler needs the boxes (`flushPendingRepaint`). Connectors are drawn before nodes. The live map
+submits connectors only for destination rows that intersect the viewport plus a small overscan, so one
+visible parent cannot make a tall offscreen column rasterize every Bezier curve. Nodes use the viewport
+itself, while the overview summarizes the complete laid-out content.
+
+Canvas text is drawn in the UI font family (Inter), read from CSS through a `Text` probe as the colours are
+through the shape probes, with fonts created once per size. A row that a filter fades keeps 38% of its fill
+and border, 70% of its icons and marks, and fades its label only as far as 3.5:1 against the row
+(`ProjectMapView.fadedInk`).
 
 Print and PDF output render every laid-out column and connector independent of the live viewport. The
 buttons hand the window a deferred `ProjectMapOutput`; nothing is rendered until the page size is known,
@@ -386,23 +414,25 @@ touched. A Canvas is backed by one texture of its size times the highest screen 
 texture at 4,096 px by default, so a page is assembled from renders of at most 2,048 px (less on a
 denser screen). Output always uses a light palette (`outputPalette`, plus looked-up colour overrides
 for the rasterized row icons), whatever the live theme; it preserves the active flow, filters, open
-branches and manual column positions, and omits the interactive column controls, the overview, focus and hover;
+branches, compacted chains, the root as the first column's title and manual column positions, and omits the interactive column controls, the overview, focus and hover;
 `outputPaint` is set while it paints, which also collapses every header to its title line. Labels
 are bitmap, so the PDF is not searchable.
 
 Column cards are content-sized rather than uniform. For each branch column, the map measures every
 loaded entry name at the drawing font and reserves enough width for the full label, icon, status
-marks, directory arrow, and padding. The minimum node width is 164 pixels. Measuring the underlying
+marks, directory arrow, and padding. The node width is at least 164 and at most 360 pixels; a longer name
+is elided in the middle (its start and extension stay) and the tooltip has it whole. Measuring the underlying
 loaded entries—not only the currently filtered rows—keeps widths stable when a filter or Hidden
 checkbox is toggled. In a language whose checkbox label is long, branch columns are widened so the header
 row still holds the filter, the labelled checkbox and the lock at 100%.
 
-Along the flow, every depth has a band of its own: a column starts beyond its parent card and beyond the
-widest card of the parent's depth, so columns at different depths cannot overlap (manual offsets are kept
+Along the flow, every level (a column's distance from the first column; a compacted chain is one step) has
+a band of its own: a column starts beyond its parent card and beyond the widest card of the parent's level,
+so columns at different levels cannot overlap (manual offsets are kept
 out of the band, so dragging one column does not move other branches). Across the flow, a column is
 centred on the row that opened it while it is short and hangs from that row once it is long
 (`MAX_COLUMN_LEAD`), so its header, its first rows and its parent row can be on screen together. Columns
-of one depth are then packed along the perpendicular axis so parallel branches never overlap. In the two
+of one level are then packed along the perpendicular axis so parallel branches never overlap. In the two
 vertical flows a connector stops at the card's edge above (or leaves from the card's edge below) the row
 instead of crossing the header.
 
