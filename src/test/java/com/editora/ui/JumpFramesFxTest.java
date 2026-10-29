@@ -141,11 +141,7 @@ class JumpFramesFxTest {
         CodeArea area = buffer.getArea();
         int target = 5 + 12 * 30; // inside m30, so the class and the method are pinned
         FxTestSupport.runOnFx(() -> area.showParagraphAtTop(0));
-        jump(
-                "scrollbar mark",
-                target,
-                () -> FxTestSupport.call(
-                        buffer, "revealLine", new Class<?>[] {CodeArea.class, int.class}, area, target));
+        jump("scrollbar mark", target, () -> buffer.jumps().revealLine(area, target));
         int[] view = FxTestSupport.callOnFx(() -> new int[] {
             area.firstVisibleParToAllParIndex(), ((List<?>) FxTestSupport.field(buffer, "stickyLines")).size()
         });

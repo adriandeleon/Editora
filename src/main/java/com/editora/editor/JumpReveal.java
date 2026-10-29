@@ -140,6 +140,22 @@ public final class JumpReveal {
     }
 
     /**
+     * Moves {@code view}'s caret to the start of {@code line} (0-based) and shows it the way a Structure click
+     * does, then focuses the view. For the scrollbar's marks, where following the caret left a warning on the
+     * bottom row or under the pinned rows.
+     */
+    public void revealLine(CodeArea view, int line) {
+        int total = view.getParagraphs().size();
+        if (total == 0) {
+            return;
+        }
+        int p = Math.max(0, Math.min(line, total - 1));
+        view.moveTo(p, 0);
+        reveal(view, p, false);
+        view.requestFocus();
+    }
+
+    /**
      * As {@link #reveal} for a line that is not in view yet; a line already on screen, clear of the pinned rows,
      * is only followed (a partly shown last line slides in). The row right under the pinned ones counts as hidden:
      * the pinned rows' shadow falls across it. For Go to Line and the fold motions, which used to
