@@ -284,8 +284,10 @@ lists the folder again.
 
 The status chips are alternatives to one another: selecting Open and Bookmarks matches either state.
 The type and text criteria constrain that working set. Matches and their ancestors remain prominent while
-unrelated nodes fade, preserving spatial context. A match does not have to be a loaded row: the Open,
-Modified, Bookmarks and Personal Notes chips also light the collapsed folders that hold a matching file,
+unrelated nodes fade, preserving spatial context. The Unsaved chip (`modifiedFilter`, key
+`project.map.filter.modified`) matches files with unsaved changes; it was labelled "Modified" until it was
+read as the Git "M" letter, which is the Git changed chip's. A match does not have to be a loaded row: the Open,
+Unsaved, Bookmarks and Personal Notes chips also light the collapsed folders that hold a matching file,
 as the Git chip does. Those ancestor sets come from the open tabs and the marker stores' keys
 (`ProjectPanel.setOpenFiles`, `MarkerActions.markedPaths`) by path arithmetic; nothing is read from disk
 on the FX thread. Folders match the Bookmarks and Personal Notes chips in their own right.
@@ -298,6 +300,9 @@ keep set, so a folder taken out takes its open columns with it, as a column filt
 "shown/total", an italic "N hidden" footer sits under its rows (or on its empty row when none are left), and
 an amber "N rows hidden" badge beside the checkbox totals them. With no filter active it changes nothing.
 Column widths are still measured from every loaded row, so switching it does not resize the cards.
+An open preview or note card whose file it takes off the map is hidden with the row, not closed
+(`MapSurface.narrowsAway`, checked by `updateCardVisibility` after every paint; a declaration card follows its
+file), and Escape leaves hidden cards alone.
 
 The type selector asks `ProjectMapModel.classify`, which maps `LanguageRegistry.forFileName` — the
 registry behind the file icons and the editor's language detection — to a bucket: program languages are
