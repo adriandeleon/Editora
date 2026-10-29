@@ -181,7 +181,9 @@ public enum SpellMode {
     }
 
     /** The elements whose content an HTML page's spell check skips: code, not prose (HTML review C13). */
-    static final java.util.Set<String> HTML_CODE_ELEMENTS = java.util.Set.of("pre", "code", "kbd", "samp", "var");
+    static final java.util.Set<String> HTML_CODE_ELEMENTS = java.util.Set.copyOf(
+            java.util.stream.Stream.concat(HtmlElements.CODE_PHRASING.stream(), java.util.stream.Stream.of("pre"))
+                    .toList());
 
     /** The attributes whose values a visitor reads, so spell check reads them too (HTML review C13). */
     static final java.util.Set<String> HTML_PROSE_ATTRIBUTES =
