@@ -16,6 +16,26 @@ public final class CodeLensShift {
 
     private CodeLensShift() {}
 
+    /**
+     * {@code inlays} (a line's hints, null for none) with the line's {@code lenses} after its last character
+     * ({@code column}), joined into one label in {@code style}.
+     */
+    static <L> java.util.List<org.fxmisc.richtext.Inlay> withLens(
+            java.util.@Nullable List<org.fxmisc.richtext.Inlay> inlays,
+            java.util.List<L> lenses,
+            java.util.function.Function<L, String> label,
+            int column,
+            String style) {
+        StringBuilder lens = new StringBuilder();
+        for (L l : lenses) {
+            lens.append(lens.isEmpty() ? "" : "  ·  ").append(label.apply(l));
+        }
+        java.util.List<org.fxmisc.richtext.Inlay> out =
+                inlays == null ? new java.util.ArrayList<>(1) : new java.util.ArrayList<>(inlays);
+        out.add(new org.fxmisc.richtext.Inlay(column, lens.toString(), style));
+        return out;
+    }
+
     /** Groups {@code lenses} (null = none) by the line each annotates, in their given order. */
     static <L> Map<Integer, java.util.List<L>> byLine(
             java.util.@Nullable List<L> lenses, java.util.function.ToIntFunction<L> lineOf) {

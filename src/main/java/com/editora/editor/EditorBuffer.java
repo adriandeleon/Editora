@@ -1890,16 +1890,6 @@ public class EditorBuffer implements TabContent {
         insertAtCaret(TypstMarkup.OUTLINE);
     }
 
-    /** Whether {@code a}'s caret line is on screen as last laid out ({@code false} before the first layout). */
-    private static boolean caretParagraphVisible(CodeArea a) {
-        try {
-            int par = a.getCurrentParagraph();
-            return par >= a.firstVisibleParToAllParIndex() && par <= a.lastVisibleParToAllParIndex();
-        } catch (RuntimeException notLaidOut) {
-            return false;
-        }
-    }
-
     /** The URL of the link under the caret, or {@code null} — for the "open link" command / Ctrl-click. */
     public @Nullable String linkUnderCaret() {
         CodeArea a = focusedArea != null ? focusedArea : area;
@@ -1911,7 +1901,7 @@ public class EditorBuffer implements TabContent {
         // A bottom tool window opening (Problems, Run) shrinks the editor from below and the caret line could
         // drop out of view; keep it in view when it was in view before (Java review A20).
         area.heightProperty().addListener((obs, old, now) -> {
-            if (now.doubleValue() < old.doubleValue() && caretParagraphVisible(area)) {
+            if (now.doubleValue() < old.doubleValue() && JumpReveal.caretParagraphVisible(area)) {
                 javafx.application.Platform.runLater(area::requestFollowCaret);
             }
         });
@@ -2725,17 +2715,10 @@ public class EditorBuffer implements TabContent {
     private java.util.@Nullable List<org.fxmisc.richtext.Inlay> lspInlaysOn(int line) {
         java.util.List<org.fxmisc.richtext.Inlay> hints = inlayHintsByLine.get(line);
         java.util.List<CodeLens> lenses = codeLensByLine.get(line);
-        if (lenses == null || line < 0 || line >= area.getParagraphs().size()) {
-            return hints;
-        }
-        StringBuilder lens = new StringBuilder();
-        for (CodeLens l : lenses) {
-            lens.append(lens.isEmpty() ? "" : "  ·  ").append(l.label());
-        }
-        java.util.List<org.fxmisc.richtext.Inlay> out =
-                hints == null ? new java.util.ArrayList<>(1) : new java.util.ArrayList<>(hints);
-        out.add(new org.fxmisc.richtext.Inlay(area.getParagraphLength(line), lens.toString(), CODE_LENS_STYLE));
-        return out;
+        return lenses == null || line < 0 || line >= area.getParagraphs().size()
+                ? hints
+                : CodeLensShift.withLens(
+                        hints, lenses, CodeLens::label, area.getParagraphLength(line), CODE_LENS_STYLE);
     }
 
     /** One code lens: its 0-based line, its text ({@code 3 references}) and the click handler's own token. */

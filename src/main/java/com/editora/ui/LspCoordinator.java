@@ -2391,36 +2391,7 @@ final class LspCoordinator {
 
     /** Sets a server's per-server enable toggle (mirrors {@link #serverEnabled}). */
     private void setServerEnabled(String serverId, boolean on) {
-        var s = host.settings();
-        switch (serverId) {
-            case "typescript" -> s.setTypescriptLspEnabled(on);
-            case "python" -> s.setPythonLspEnabled(on);
-            case "xml" -> s.setXmlLspEnabled(on);
-            case "json" -> s.setJsonLspEnabled(on);
-            case "bash" -> s.setBashLspEnabled(on);
-            case "yaml" -> s.setYamlLspEnabled(on);
-            case "go" -> s.setGoLspEnabled(on);
-            case "rust" -> s.setRustLspEnabled(on);
-            case "php" -> s.setPhpLspEnabled(on);
-            case "ruby" -> s.setRubyLspEnabled(on);
-            case "clangd" -> s.setClangdLspEnabled(on);
-            case "html" -> s.setHtmlLspEnabled(on);
-            case "css" -> s.setCssLspEnabled(on);
-            case "kotlin" -> s.setKotlinLspEnabled(on);
-            case "groovy" -> s.setGroovyLspEnabled(on);
-            case "scala" -> s.setScalaLspEnabled(on);
-            case "clojure" -> s.setClojureLspEnabled(on);
-            case "lua" -> s.setLuaLspEnabled(on);
-            case "dockerfile" -> s.setDockerfileLspEnabled(on);
-            case "sql" -> s.setSqlLspEnabled(on);
-            case "terraform" -> s.setTerraformLspEnabled(on);
-            case "toml" -> s.setTomlLspEnabled(on);
-            case "csharp" -> s.setCsharpLspEnabled(on);
-            case "typst" -> s.setTypstLspEnabled(on);
-            case "astro" -> s.setAstroLspEnabled(on);
-            case "maven-pom" -> s.setMavenPomLspEnabled(on);
-            default -> s.setJavaLspEnabled(on);
-        }
+        LspServerCommands.setServerEnabled(host.settings(), serverId, on);
     }
 
     /** Sets a server's configured command (blank ⇒ the server's default); mirrors {@link #serverCommand}. */
