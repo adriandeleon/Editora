@@ -35,8 +35,14 @@
     -state-accent: -color-accent-fg;
     -state-accent-bg: -color-accent-subtle;
     -state-accent-hover: -color-accent-muted;
-    -state-olive: #6e7b25;
-    -state-violet: #8250df;
+    /* The Git "untracked" olive and "renamed" violet (the violet also tints the Project Map's Structure
+       columns) are ladders of the app theme's ground like -state-key below: the fixed light-theme hexes read
+       at 3.2:1 on Editora Dark. Every bundled app theme reads them at 4.5:1 or more on its default and subtle
+       surfaces (StyleContrastTest). */
+    -state-olive: ladder(-color-bg-default, #a9b84a 0%, #b3c157 10%, #c3cf73 20%, #d3dc92 30%, #dde4a8 49%,
+            #4f5c10 50%);
+    -state-violet: ladder(-color-bg-default, #b392f0 0%, #bc9ff3 10%, #cab5f6 20%, #dacbf9 30%, #e4d9fb 49%,
+            #6538c2 50%);
     /* The keyboard's periwinkle follows the app theme's ground, not the editor theme: chord chips sit on the
        window's cards, panels and popups, and an editor theme's pair (light ink under a dark app) read at
        2.8:1 there. ladder() picks by the brightness of -color-bg-default: a darker ground gets a lighter

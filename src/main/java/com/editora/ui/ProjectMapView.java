@@ -2591,7 +2591,7 @@ final class ProjectMapView extends VBox {
         private static final double[] FILTER_ZOOM_STEPS = {0.8, 1.0};
         /** The same light palette for the row icons, which are styled nodes rasterized through CSS. */
         private static final String OUTPUT_ICON_STYLE = "-project-folder-color: #0969da; -project-file-color: #59636e;"
-                + " -state-amber: #9a6700; -state-olive: #6e7b25; -state-violet: #8250df;"
+                + " -state-amber: #9a6700; -state-olive: #4f5c10; -state-violet: #6538c2;"
                 + " -color-accent-fg: #0969da; -color-success-fg: #1a7f37; -color-danger-fg: #d1242f;"
                 + " -color-fg-muted: #59636e;";
 
