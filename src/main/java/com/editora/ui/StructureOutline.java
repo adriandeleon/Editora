@@ -200,6 +200,9 @@ final class StructureOutline {
         if ("clojure".equals(src.language())) {
             return clojureFormNodes(src.text(), regions);
         }
+        if ("yaml".equals(src.language())) {
+            return yamlKeyNodes(src.lineAt(), paras);
+        }
         if ("xml".equals(src.language()) && !src.pom()) {
             List<StructureNode> elements = XmlOutline.build(src.text()); // by qualified name and naming attribute
             return elements.isEmpty() ? DtdOutline.build(src.text()) : elements; // a DTD has declarations instead
@@ -216,6 +219,9 @@ final class StructureOutline {
         }
         boolean haveSymbols = !symbolByLine.isEmpty();
         boolean brace = isBraceLanguage(src.language());
+        if ("css".equals(src.language())) {
+            return cssRuleNodes(src.lineAt(), regions, paras);
+        }
         if (haveSymbols && "python".equals(src.language())) {
             // Python nests by indentation, as Python does: a one-line `def f(): ...` folds nothing but is still
             // structure. Each node takes the block its header opens (sorted outermost-first per start line).
@@ -257,13 +263,103 @@ final class StructureOutline {
             return symbolNodes(src.lineAt(), symbolByLine, paras, Map.of());
         }
         String language = src.language();
-        if (language != null && (language.startsWith("javascript") || language.startsWith("typescript"))) {
-            addFoldlessSymbols(rootNodes, symbolByLine, paras);
+        if (language != null) {
+            // Every language, not only JS/TS: a one-line member (`int get() { return x; }`, Kotlin's
+            // `fun top() = 1`) has no fold region to hang on, and a class of them came out empty.
+            boolean script = language.startsWith("javascript") || language.startsWith("typescript");
+            addFoldlessSymbols(rootNodes, symbolByLine, paras, script ? null : src.lineAt());
         }
         if (src.pom()) {
             rootNodes = pomLabelled(src.lineAt(), paras, rootNodes);
         }
         return rootNodes;
+    }
+
+    /**
+     * A stylesheet's rules by their selector or at-rule, as written before the {@code &#123;} — {@code .card .title},
+     * {@code #id > p}, {@code @media (…)} — nested as their blocks are. The grammar names only type selectors
+     * ({@code body}), so compound selectors and at-rules were left out of the outline.
+     */
+    private static List<StructureNode> cssRuleNodes(
+            java.util.function.IntFunction<String> lineAt, List<Region> regions, int paras) {
+        regions.sort(Comparator.comparingInt(Region::startLine)
+                .thenComparing(Comparator.comparingInt(Region::endLine).reversed()));
+        List<StructureNode> roots = new ArrayList<>();
+        Deque<StructureNode> stack = new ArrayDeque<>();
+        for (Region r : regions) {
+            if (r.startLine() < 0 || r.startLine() >= paras) {
+                continue;
+            }
+            String header = lineAt.apply(r.startLine());
+            int brace = header.indexOf('{');
+            String label =
+                    (brace >= 0 ? header.substring(0, brace) : header).strip().replaceAll("\\s+", " ");
+            if (label.isEmpty() || label.startsWith("/*")) {
+                continue; // a comment block, or a brace on a line of its own
+            }
+            StructureNode node = new StructureNode(r, label, label.startsWith("@") ? "module" : "class", r.startLine());
+            while (!stack.isEmpty() && !contains(stack.peek().region(), r)) {
+                stack.pop();
+            }
+            if (stack.isEmpty()) {
+                roots.add(node);
+            } else {
+                stack.peek().children().add(node);
+            }
+            stack.push(node);
+        }
+        return roots;
+    }
+
+    /**
+     * A YAML file's keys, nested by indentation, read from the lines: {@code key:} and {@code - key:}, quoted or
+     * not, but not the lines of a block scalar ({@code |}, {@code >}) or a comment. The grammar marks keys such as
+     * {@code on} or {@code yes} as booleans, so GitHub's {@code on:} went missing and the keys under it hung under
+     * the key before.
+     */
+    static List<StructureNode> yamlKeyNodes(java.util.function.IntFunction<String> lineAt, int paras) {
+        java.util.regex.Pattern key = java.util.regex.Pattern.compile(
+                "^(\\s*)(- +)?(\"[^\"]*\"|'[^']*'|[^\\s#'\"\\-?:,\\[\\]{}&*!|>%@`][^:#]*?)\\s*:(\\s|$)");
+        List<StructureNode> roots = new ArrayList<>();
+        Deque<StructureNode> stack = new ArrayDeque<>();
+        Deque<Integer> indents = new ArrayDeque<>();
+        int scalarIndent = -1; // inside a block scalar opened at this indent
+        for (int line = 0; line < paras; line++) {
+            String text = lineAt.apply(line);
+            int indent = text.length() - text.stripLeading().length();
+            if (scalarIndent >= 0) {
+                if (text.isBlank() || indent > scalarIndent) {
+                    continue;
+                }
+                scalarIndent = -1;
+            }
+            java.util.regex.Matcher m = key.matcher(text);
+            if (!m.find()) {
+                continue;
+            }
+            int at = m.group(2) == null ? indent : indent + m.group(2).length();
+            String name = m.group(3).strip();
+            if (name.length() > 1 && (name.startsWith("\"") || name.startsWith("'"))) {
+                name = name.substring(1, name.length() - 1);
+            }
+            String rest = text.substring(m.end()).strip();
+            if (rest.startsWith("|") || rest.startsWith(">")) {
+                scalarIndent = indent;
+            }
+            while (!indents.isEmpty() && indents.peek() >= at) {
+                indents.pop();
+                stack.pop();
+            }
+            StructureNode node = new StructureNode(null, name, "key", line);
+            if (stack.isEmpty()) {
+                roots.add(node);
+            } else {
+                stack.peek().children().add(node);
+            }
+            stack.push(node);
+            indents.push(at);
+        }
+        return roots;
     }
 
     /** A pom's outline names dependencies/plugins by {@code groupId:artifactId} and profiles by id (C16). */
@@ -287,7 +383,10 @@ final class StructureOutline {
      * their line. In JavaScript those are most declarations, and the outline used to leave every one of them out.
      */
     private static void addFoldlessSymbols(
-            List<StructureNode> rootNodes, Map<Integer, Symbol> symbolByLine, int paras) {
+            List<StructureNode> rootNodes,
+            Map<Integer, Symbol> symbolByLine,
+            int paras,
+            java.util.function.@Nullable IntFunction<String> callCheck) {
         java.util.Set<Integer> used = new java.util.HashSet<>();
         collectLines(rootNodes, used);
         boolean added = false;
@@ -296,8 +395,10 @@ final class StructureOutline {
             if (used.contains(line)
                     || line < 0
                     || line >= paras
-                    || "tag".equals(e.getValue().kind())) {
-                continue; // a JSX element (`<p>`) is markup, not a declaration
+                    || "tag".equals(e.getValue().kind())
+                    || callCheck != null
+                            && memberCall(callCheck.apply(line), e.getValue().name())) {
+                continue; // a JSX element (`<p>`) is markup, not a declaration; `x.run()` is a call
             }
             List<StructureNode> siblings = rootNodes;
             for (boolean deeper = true; deeper; ) {
@@ -319,6 +420,18 @@ final class StructureOutline {
         if (added) {
             sortByLine(rootNodes);
         }
+    }
+
+    /**
+     * Whether {@code name} stands on {@code line} only as a member call ({@code action.run();}): a declaration never
+     * has a dot right before its name, except a Kotlin extension function ({@code fun Int.twice() = …}).
+     */
+    private static boolean memberCall(@Nullable String line, String name) {
+        if (line == null || name == null || name.isEmpty() || line.contains("fun ")) {
+            return false;
+        }
+        int at = line.indexOf(name);
+        return at > 0 && line.charAt(at - 1) == '.';
     }
 
     private static void collectLines(List<StructureNode> nodes, java.util.Set<Integer> out) {

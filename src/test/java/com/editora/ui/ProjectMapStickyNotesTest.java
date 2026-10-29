@@ -62,8 +62,9 @@ class ProjectMapStickyNotesTest {
             many.add(note(NoteScope.LINE, i, i, i, "n" + i));
         }
         assertEquals(
-                ProjectMapStickyNotes.MAX_NOTES,
-                ProjectMapStickyNotes.notesFor(many, null).size());
+                ProjectMapStickyNotes.MAX_NOTES + 5,
+                ProjectMapStickyNotes.notesFor(many, null).size(),
+                "all are counted; only the sheets are capped (review C10)");
     }
 
     @Test

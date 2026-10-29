@@ -129,10 +129,14 @@ close button removes only that card. An accent connector runs from every preview
 and follows map pan/zoom plus card movement and resizing.
 
 Code previews and note cards are placed by one path (`ProjectMapView.previewPlacement` over
-`MapSurface.previewPlacement`). A card opens beside its row's column — on the side the flow leaves free,
-else on the other — when at least the card's minimum size fits there; otherwise it lies over the map
-against the panel edge, which is the normal case in a tool-window-wide panel. It is then shifted or
-cascaded clear of the cards already open. **Placement never pans the map**, and a card is never smaller
+`MapSurface.cardSite`): the spot that covers least. The candidates are after and before the row's column,
+above and below the columns' band, and every corner of free panel the card fits against (at full size, or as
+large as fits down to its minimum); each is scored by what it would cover on screen
+(`ProjectMapView.cardOverlapCost`) — the row's own column weighs 6, the columns that lead to it 4, the band where
+the row's next column (a folder's, or a file's Structure column) would open 3, the zoom bar and the overview 4,
+other columns 1, other open cards 5 — then by nearness to the row and by size (narrower than its lines weighs
+more than shorter). A card used to take the side after its column, else the side before, which is where the
+columns leading to it are. **Placement never pans the map**, and a card is never smaller
 than its minimum (340 × 220 for code, 300 × 180 for notes) unless the panel itself is. Text that arrives
 after a card was placed only widens it where it stands, by at most 120 columns and never past the panel
 (a card already partly out of view is never narrowed);
@@ -147,12 +151,23 @@ A preview uses current unsaved text when the file is already open; otherwise it 
 the JavaFX application thread, decoded as the editor would open it (BOM, then the `.editorconfig`
 charset, then UTF-8 with a single-byte fallback instead of U+FFFD) and with `\n` line endings. It is
 visibly marked read-only, has independent text/image zoom controls, and renders common bitmap image
-formats as well as syntax-highlighted text. Its context menu can copy selected code, select all, add a
-bookmark at the clicked line, or add a Personal Note for the selected or clicked lines. The **Open**
+formats as well as syntax-highlighted text. Card text is set in the editor's font family and size
+(published on the editor window with the console and Diff fonts, `ProjectMapPreview.EDITOR_FONT_KEY`, and
+followed by that window's Map), and a new card opens at the −/+ text
+zoom last used on a card of the same Map. A file over the 160,000-character highlighting cap has its first
+lines coloured, and the status says how many. A binary file (a NUL in its first 8 KiB) or an image over the
+20 MB decode cap gets a compact card of facts instead — size, type, modification time, an "Image too large to
+preview (N MB)" heading for the image, **Reveal in File Manager** — with **Open** disabled. Its context menu can
+copy the selection (**Copy All** with nothing selected), select all, add a
+bookmark at the clicked line, add a Personal Note for the selected or clicked lines, or **Move to Free Space**
+(the card is placed again, at its size, as a new card would be); opened from the
+keyboard (Menu key, `Shift-F10`) it opens at the caret and acts on the caret's line. The **Open**
 action promotes the previewed file to a normal editor tab.
 
 An open preview is kept current without being moved or re-scrolled: a card that mirrors an open buffer
-looks for edits once a second while the Map is on screen and replaces only the range that changed; any
+looks for edits once a second while the Map is on screen and replaces only the range that changed (a buffer
+whose edit counter, `Content.version`, did not move is not even read, and one read serves the file's cards and
+outline), and its status says "Unsaved changes" while the buffer has them; any
 other card re-reads its file when the Project watcher reports a change and the file's size or
 modification time differs. A card follows an in-app rename or move of its file (or of a folder above it):
 `pathRenamed` re-keys preview and note cards to the new path and the card reads the file there. A card
@@ -162,9 +177,15 @@ and disables **Open**.
 `Escape` in a focused card closes it and returns focus to the map; `Tab` leaves the preview's text, and a `Tab`
 past the card's last control comes back to the map instead of wrapping to the search field. Closing a card that
 holds the keyboard — its ×, Shift+Enter, or a sticky note's card — also hands the keyboard back to the map.
-Global chords still act on the active editor tab while a card has focus (the app-wide key policy), so a
-focused card has an accent border and its text area's accessible name states the file and that it is
-read-only. Cards cannot be moved or resized from the keyboard.
+Global chords still act on the active editor tab while a card has focus (the app-wide key policy), except
+the note and bookmark commands (`notes.add`, `notes.editNote`, `bookmarks.toggle`: `C-c n`, `C-c m` in Emacs),
+which a focused card runs on its own file (`KeyDispatcher.HANDLED_COMMANDS`, keyed by command so it follows the
+keymap): a note on the selection or the caret's line, a bookmark on the caret's line, and Edit Note brings the
+card's notes up. So a focused card has an accent border and its text area's accessible name states the file and
+that it is read-only. Alt+arrows move a focused card, note card or sticky sheet by 16 px and Alt+Shift+arrows
+resize a card (`ProjectMapPreview.GEOMETRY_KEYS`, claimed through `KeyDispatcher.CLAIMED_KEYS`); the new place and
+size go in its accessible help. Cards share two `project-map-preview-loader` threads that time out when idle, each
+card's reads still in order; a card created before its host has a size waits for the size, not on `runLater`.
 
 Context menus use JavaFX auto-hide plus a next-pulse owner-scene press filter. This mirrors the
 other Project menus and ensures a click elsewhere closes the menu even on platforms where the
@@ -178,7 +199,8 @@ menu's default-off “Hide all open Personal Notes” item temporarily hides tho
 A note card saves an edit on focus loss, Shortcut+Enter or close, comparing against the body the store
 last held. It follows the store: when notes change elsewhere it adopts the new bodies (an edit in
 progress is kept), and it closes when its notes are deleted. A blanked note is not a deletion — its text
-is restored and the status bar says so.
+is restored and the status bar says so. Each note in it is headed, as its sticky sheet is, by its line or lines
+(the noted text as the tooltip); pressing the heading opens the file at the note. A folder's note has none.
 A note card is styled from the theme's warning (amber) tokens, so it is a pale sheet on light themes and a
 dark amber one on dark themes.
 
@@ -187,14 +209,19 @@ the selection — the Markdown buffer's (`MarkdownFormatBar.placeY`/`trackMouse`
 button — that is gone mid-drag, for a blank selection, with Personal Notes off, on focus loss and on a first
 Escape (a second closes the card). A **Notes** button before **Open** counts the notes on what the card shows —
 its file's, without folder notes, or those starting on a declaration's lines (`ProjectMapStickyNotes.notesFor`,
-at most 24) — is disabled at none and absent with Personal Notes off. It sticks them on the card as **sticky
+all of them) — is disabled at none and absent with Personal Notes off; while "Hide all open Personal Notes" is on it
+does not look pressed, says why, and a press turns that option off. A stored note is first found again in the
+card's text as an editor tab finds it (`ProjectMapStickyNotes.reanchored`, `NoteAnchors.relocate`), so a file
+changed outside Editora does not mark the wrong line; one whose text is gone is headed "Text not found in the file"
+and not marked. It sticks them on the card as **sticky
 notes** (`ProjectMapStickyNotes`): one small editable amber sheet per note, headed by its line, each tied by a
 note-coloured connector from a dot on the card's edge at its line (the text's top or bottom when scrolled past)
 to the sheet. While the sheets are in sight, each note's text in the card is marked as an editor tab marks it —
 the editor's `NoteHighlightOverlay` over the card's text, an amber wash with a marker at the note's start, the whole
 line for a line note (`ProjectMapPreview.noteSpans`). The sheets stand outside the card's right edge, else its left, else on the card against its right
-edge (`side`), each as near its line as the sheets above allow, a further column when they run past the card's
-foot (`stack`). They hold their place relative to the card's edge as it moves, resizes and zooms; one the user
+edge (`side`, by the room the whole stack needs), each as near its line as the sheets above allow, a further
+column when they run past the card's foot (`stack`). Notes past what two such stacks hold (`sheetsShown`, at
+most 24 sheets) go into one "+K more notes" sheet that opens the file's note card. They hold their place relative to the card's edge as it moves, resizes and zooms; one the user
 drags keeps its new spot until the card closes. They save like a note card (focus loss, Shortcut+Enter, a blanked
 note restored), follow the store, follow "Hide all open Personal Notes", rise with their card, and close with it;
 they are not cards and take nothing from the eight-card limit. A note added from a card — its bar or its menu —
@@ -209,21 +236,28 @@ A file whose language the Structure tool window can outline has a **Structure ic
 of stepped lines — before its eye. `StructureOutline.supports` decides by the name alone (a language with a
 bundled grammar, or Markdown, Typst, `.http` or Clojure; never an encrypted file), so a row costs no read.
 The icon opens a **structure column**: the file's declarations, as the Structure window shows them, in the
-order they are written. A declaration that holds others (a class's members, a heading's subsections) ends in
+order they are written — one-line members included in every language (`StructureOutline.addFoldlessSymbols`,
+not a member call such as `x.run()`), a stylesheet's rules by selector or at-rule, a YAML file's keys read from
+its lines (`yamlKeyNodes`, so `on:` is a key, not a boolean). A callable is labelled with its parameter list:
+the outline's detail, else the parameter types read from its declaration line (`add(int, int)`; names where the
+language writes no types), else the bare name — never an invented `()`. A declaration that holds others (a class's members, a heading's subsections) ends in
 a chevron and opens a further column, as a folder does; a file whose outline is one top-level declaration
 with members (most Java files) opens that declaration's column too. The icon sits in a filled disc while its
 column is open. A structure column has the usual title (`App.java · Structure`, or the declaration's
 label), count, filter, lock and close button, but no Show hidden checkbox. While its file is being outlined,
 when it cannot be read and when it has no declarations it holds one explanatory row; past 1,000 rows it ends
-in one that says how many were left out.
+in one that says how many were left out, and for a file past the read cap in one that says only its start was
+outlined.
 
 **Clicking a declaration opens a declaration card**: the ordinary preview card showing only the declaration's
 lines — its block, from its declaration (or its fold region's first line, when that is above it) to the
 region's last line, extended upwards over the doc comment, annotations, decorators and Rust attributes
-directly above it (`ProjectMapStructure.range` / `leadingDocStart`). A heading runs to the line before the
-next heading at its level; a declaration with no block of its own is its own line. The card reads and
+directly above it (`ProjectMapStructure.range` / `leadingDocStart`) — and the language's own line comments
+(`#` in Python, shell, YAML; not `#!`). A heading, and a `.http` request (its headers and body), runs to the line
+before the next one at its level; a declaration with no block of its own is its own line, unless the read cap cut
+the block it opens off, when it runs to the next declaration or the end of what was read. The card reads and
 highlights the whole file and shows that slice, so a line inside a comment or a string is coloured as in the
-editor; its gutter keeps the file's numbers in the narrowed amber, its title reads `App.java › add()`, its
+editor; its gutter keeps the file's numbers in the narrowed amber, its title reads `App.java › add(int, int)`, its
 status line says `Lines 9–19 of 29`, and it opens no taller than its lines need (but no smaller than the card
 minimum). **Open** opens the file at the declaration; **Open Narrowed** (the card's and the row's menu) opens
 it narrowed to the declaration's fold block through `EditingCoordinator.narrowToFoldRegionAt`, as the Structure
@@ -232,10 +266,12 @@ file's own lines. Declaration cards are keyed by the declaration's row, so sever
 under the shared eight-card limit.
 
 A declaration row's path is made up: its file followed by one segment per declaration down to it
-(`App.java/…sApp~0/…sadd~0`), each the declaration's name up to its parameter list, made file-name safe, and
-its place among same-named siblings. No such path can exist on disk — a file has no children — and because
-the segment is a name rather than a line, an open column, the selection and an open card survive an edit that
-moves the declaration. `ProjectMapModel.Entry.symbol` rows are neither files nor folders (`isSymbol()`,
+(`App.java/…sApp~0/…sadd_int__int_~0`), each the declaration's label with its parameter types, made file-name
+safe (at most 60 characters), and its place among siblings of the same label. No such path can exist on disk — a
+file has no children — and because the segment is a label rather than a line, an open column, the selection and an
+open card survive an edit that moves the declaration, and inserting an overload leaves the others' paths alone.
+When an edit changes a declaration's parameter list, its open column and card follow it to the new path: the
+same-named declaration that is new among its siblings, nearest its old line (`ProjectMapStructure.successor`). `ProjectMapModel.Entry.symbol` rows are neither files nor folders (`isSymbol()`,
 `isFile()`): the Project context menu, F2, Delete, the type filter, the open/unsaved/Git/marker states and the
 hidden-files filter never apply to them; their emphasis under a filter is their file's. Closing a structure
 column, collapsing the folder above its file or deleting the file closes the columns below it and their cards.
@@ -248,8 +284,11 @@ it (`ProjectMapPreview.readText`, under the same 1,000,000-byte cap). Each resul
 request for its file. They are brought up to date with the cards: an open buffer is compared by its text
 (once a second while one is on show), a closed file by its size and time on disk after every listing and
 watcher notification. When an outline changes, every declaration card is moved to its declaration's new lines
-(`setRange`); a card whose declaration is gone keeps its last lines and says "No longer in this file". No
-language server is started for a closed file and nothing about the columns is remembered across restarts.
+(`setRange`); a card whose declaration is gone keeps its last lines and says "No longer in this file", with
+its bookmark and note actions off. Text that arrives before the outline is not cut by the old lines: the card
+follows its declaration line when lines were added or removed above it, and otherwise holds the new text,
+still showing the old lines, until the outline says where the declaration went. No language server is started
+for a closed file and nothing about the columns is remembered across restarts.
 The Map's global search walks file names only, but the query is also matched against the declaration rows of
 the open structure columns (no disk or server work): a matching declaration stays prominent with the rows
 that lead to it, its siblings fade, and a query that names only a declaration on screen does not read "No

@@ -25,7 +25,10 @@ import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
 
 import com.editora.config.NoteScope;
+import com.editora.config.NoteStatus;
 import com.editora.config.PersonalNote;
+import com.editora.config.TextAnchor;
+import com.editora.editor.notes.NoteAnchors;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -45,6 +48,13 @@ final class ProjectMapStickyNotes {
     static final double OFFSET = 36;
     /** Notes beyond this many are not stuck on: a card is not a Notes panel. */
     static final int MAX_NOTES = 24;
+    /**
+     * Stacks of sheets beside a card: notes past what two stacks hold go into one "+K more notes" sheet that opens
+     * the file's note card. Thirty notes used to spread 24 sheets across the map and off its edge.
+     */
+    static final int MAX_STACKS = 2;
+    /** The key the "+K more notes" sheet's dragged place is kept under. */
+    private static final UUID MORE_KEY = new UUID(0, 0);
     /** Where on a sheet its connector lands: the middle of its header. */
     private static final double HEADER_MIDDLE = 12;
 
@@ -58,31 +68,115 @@ final class ProjectMapStickyNotes {
         OVER
     }
 
-    /** One sheet: a note's editor and where it sits, in unzoomed units from the card's left or right edge. */
-    private final class Sticky extends VBox {
-        private PersonalNote note;
-        private String saved;
-        private final Label where = new Label();
-        private final TextArea editor;
-        private final Scale zoom = new Scale(1, 1, 0, 0);
-        private double dx;
-        private double dy;
-        private boolean fromRight;
+    /** A sheet beside the card, and where it sits, in unzoomed units from the card's left or right edge. */
+    private abstract class Sheet extends VBox {
+        final Scale zoom = new Scale(1, 1, 0, 0);
+        double dx;
+        double dy;
+        boolean fromRight;
         private double dragScreenX;
         private double dragScreenY;
         private double dragLayoutX;
         private double dragLayoutY;
 
-        private Sticky(PersonalNote note) {
-            this.note = note;
-            this.saved = note.body().strip();
-            editor = new TextArea(note.body());
+        Sheet() {
             getStyleClass().add("project-map-sticky-note");
             getProperties().put("editora.ownsKeys", Boolean.TRUE);
+            // Alt+arrows move a sheet, as they move its card (see ProjectMapPreview.geometryStep).
+            getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, ProjectMapPreview.GEOMETRY_KEYS);
             setManaged(false);
             zoom.xProperty().bind(card.mapScaleProperty());
             zoom.yProperty().bind(card.mapScaleProperty());
             getTransforms().add(zoom);
+            addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+                double[] step = ProjectMapPreview.geometryStep(event);
+                if (step != null && (step[0] != 0 || step[1] != 0)) {
+                    moveTo(getLayoutX() + step[0], getLayoutY() + step[1]);
+                    ProjectMapPreview.announceGeometry(this, card.mapScale());
+                    event.consume();
+                }
+            });
+        }
+
+        /** The key its dragged place is kept under in {@link #moved}. */
+        abstract UUID key();
+
+        void dragPressed(MouseEvent event) {
+            if (event.getButton() != MouseButton.PRIMARY) {
+                return;
+            }
+            dragScreenX = event.getScreenX();
+            dragScreenY = event.getScreenY();
+            dragLayoutX = getLayoutX();
+            dragLayoutY = getLayoutY();
+            raise(); // consumed here, so the sheet's own press handler does not see it
+            onActivate.run();
+            event.consume();
+        }
+
+        /** Moves the sheet to another spot beside its card; the card carries it there from now on. */
+        void dragged(MouseEvent event) {
+            if (!event.isPrimaryButtonDown()) {
+                return;
+            }
+            moveTo(dragLayoutX + event.getScreenX() - dragScreenX, dragLayoutY + event.getScreenY() - dragScreenY);
+            event.consume();
+        }
+
+        void moveTo(double x, double y) {
+            double scale = card.mapScale();
+            dx = (x - card.getLayoutX()) / scale - (fromRight ? card.getWidth() : 0);
+            dy = (y - card.getLayoutY()) / scale;
+            moved.put(key(), new double[] {dx, dy, fromRight ? 1 : 0});
+            relocate(x, y);
+            onMoved.run();
+        }
+    }
+
+    /** The sheet for the notes two stacks cannot hold: it says how many and opens the file's note card. */
+    private final class More extends Sheet {
+        private final javafx.scene.control.Button open = new javafx.scene.control.Button();
+
+        private More(int count, int total) {
+            getStyleClass().add("project-map-sticky-more");
+            open.setText(tr("project.map.sticky.more", count));
+            open.setTooltip(new Tooltip(tr("project.map.sticky.moreHelp", total - count, total)));
+            open.setAccessibleText(tr("project.map.sticky.moreHelp", total - count, total));
+            open.getStyleClass().addAll("flat", "project-map-sticky-more-button");
+            open.setMaxWidth(Double.MAX_VALUE);
+            open.setOnAction(event -> onMore.run());
+            HBox header = new HBox(new Label(tr("project.map.sticky.moreTitle"), Icons.notes()));
+            header.getStyleClass().add("project-map-sticky-note-header");
+            header.setAlignment(Pos.CENTER_LEFT);
+            header.addEventHandler(MouseEvent.MOUSE_PRESSED, this::dragPressed);
+            header.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::dragged);
+            VBox.setVgrow(open, Priority.ALWAYS);
+            open.setMaxHeight(Double.MAX_VALUE);
+            getChildren().setAll(header, open);
+            addEventHandler(MouseEvent.MOUSE_PRESSED, event -> {
+                raise();
+                onActivate.run();
+            });
+            resize(WIDTH, HEIGHT);
+        }
+
+        @Override
+        UUID key() {
+            return MORE_KEY;
+        }
+    }
+
+    /** One sheet: a note's editor. */
+    private final class Sticky extends Sheet {
+        private PersonalNote note;
+        private String saved;
+        private final Label where = new Label();
+        private final TextArea editor;
+
+        private Sticky(PersonalNote note) {
+            this.note = note;
+            this.saved = note.body().strip();
+            editor = new TextArea(note.body());
 
             where.getStyleClass().add("project-map-sticky-note-where");
             where.setGraphic(Icons.notes());
@@ -134,6 +228,11 @@ final class ProjectMapStickyNotes {
             editor.setAccessibleText(tr("project.map.sticky.accessible", label));
         }
 
+        @Override
+        UUID key() {
+            return note.id();
+        }
+
         private boolean edited() {
             return !editor.getText().strip().equals(saved);
         }
@@ -153,35 +252,6 @@ final class ProjectMapStickyNotes {
                 onSave.accept(note, value);
             }
         }
-
-        private void dragPressed(MouseEvent event) {
-            if (event.getButton() != MouseButton.PRIMARY) {
-                return;
-            }
-            dragScreenX = event.getScreenX();
-            dragScreenY = event.getScreenY();
-            dragLayoutX = getLayoutX();
-            dragLayoutY = getLayoutY();
-            raise(); // consumed here, so the sheet's own press handler does not see it
-            onActivate.run();
-            event.consume();
-        }
-
-        /** Moves the sheet to another spot beside its card; the card carries it there from now on. */
-        private void dragged(MouseEvent event) {
-            if (!event.isPrimaryButtonDown()) {
-                return;
-            }
-            double scale = card.mapScale();
-            double x = dragLayoutX + event.getScreenX() - dragScreenX;
-            double y = dragLayoutY + event.getScreenY() - dragScreenY;
-            dx = (x - card.getLayoutX()) / scale - (fromRight ? card.getWidth() : 0);
-            dy = (y - card.getLayoutY()) / scale;
-            moved.put(note.id(), new double[] {dx, dy, fromRight ? 1 : 0});
-            relocate(x, y);
-            onMoved.run();
-            event.consume();
-        }
     }
 
     private final ProjectMapPreview card;
@@ -190,13 +260,18 @@ final class ProjectMapStickyNotes {
     private final Runnable onMoved;
     private final Runnable onBlankRejected;
     private final Runnable onActivate;
+    private Runnable onMore = () -> {};
     private final List<Sticky> stickies = new ArrayList<>();
+    /** The "+K more notes" sheet, when the notes outnumber what two stacks hold. */
+    private @Nullable More more;
     /** Where the user dragged each note's sheet: kept across hiding and showing the notes. */
     private final Map<UUID, double[]> moved = new HashMap<>();
 
     private final ChangeListener<Object> follow = (obs, old, now) -> layout();
     private boolean shown;
     private boolean hidden;
+    /** How many notes the card has, sheets and "+K more" together. */
+    private int total;
 
     /**
      * @param onSave saves a sheet's edited body to the store
@@ -219,7 +294,15 @@ final class ProjectMapStickyNotes {
         this.onActivate = onActivate;
     }
 
-    /** The notes a card shows: its file's, or those on a declaration card's lines, in line order. Pure. */
+    /** Called by the "+K more notes" sheet: the owner opens the file's note card, which lists them all. */
+    void setOnMore(Runnable callback) {
+        onMore = callback == null ? () -> {} : callback;
+    }
+
+    /**
+     * The notes a card shows: its file's, or those on a declaration card's lines, in line order — all of them,
+     * for the Notes button's count; {@link #show} sticks on what fits. Pure.
+     */
     static List<PersonalNote> notesFor(List<PersonalNote> notes, ProjectMapPreview.@Nullable Range range) {
         if (notes == null) {
             return List.of();
@@ -232,12 +315,71 @@ final class ProjectMapStickyNotes {
                 .sorted(Comparator.comparingInt(
                                 (PersonalNote note) -> note.anchor().line())
                         .thenComparingLong(PersonalNote::createdAt))
-                .limit(MAX_NOTES)
                 .toList();
     }
 
-    /** A sheet's header: the line or lines its note is on, 1-based. Pure. */
+    /**
+     * {@code notes} found again in {@code text}, the file as the card shows it — as an editor tab finds them when it
+     * opens the file ({@code NoteManager}, {@link NoteAnchors#relocate}): a file edited outside Editora moves its
+     * notes' lines, and the store still has the old ones. A note whose text is gone is marked orphaned, as the
+     * Notes panel shows it. The store is not changed. Empty text leaves the notes as stored. Pure.
+     */
+    static List<PersonalNote> reanchored(List<PersonalNote> notes, String text) {
+        if (notes == null || notes.isEmpty() || text == null || text.isEmpty()) {
+            return notes == null ? List.of() : notes;
+        }
+        List<Integer> starts = new ArrayList<>();
+        starts.add(0);
+        for (int i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) {
+            starts.add(i + 1);
+        }
+        List<PersonalNote> out = new ArrayList<>(notes.size());
+        for (PersonalNote note : notes) {
+            if (note.scope() == NoteScope.FOLDER) {
+                out.add(note);
+                continue;
+            }
+            TextAnchor anchor = note.anchor();
+            int start = offsetOf(starts, text.length(), anchor.line(), anchor.column());
+            int end = offsetOf(starts, text.length(), anchor.endLine(), anchor.endColumn());
+            int[] found = NoteAnchors.relocate(
+                    text, start, end, anchor.selectedText(), anchor.prefix(), anchor.suffix(), anchor.length());
+            if (found == null) {
+                out.add(note.status() == NoteStatus.ACTIVE ? note.withStatus(NoteStatus.ORPHANED) : note);
+                continue;
+            }
+            int[] from = positionOf(starts, found[0]);
+            int[] to = positionOf(starts, found[1]);
+            PersonalNote moved = from[0] == anchor.line()
+                            && from[1] == anchor.column()
+                            && to[0] == anchor.endLine()
+                            && to[1] == anchor.endColumn()
+                    ? note
+                    : note.withAnchor(anchor.at(from[0], from[1], to[0], to[1]));
+            out.add(moved.status() == NoteStatus.ORPHANED ? moved.withStatus(NoteStatus.ACTIVE) : moved);
+        }
+        return out;
+    }
+
+    private static int offsetOf(List<Integer> starts, int length, int line, int column) {
+        int clamped = Math.max(0, Math.min(line, starts.size() - 1));
+        int lineEnd = clamped + 1 < starts.size() ? starts.get(clamped + 1) - 1 : length;
+        return Math.min(lineEnd, starts.get(clamped) + Math.max(0, column));
+    }
+
+    /** {@code {line, column}} of a text offset. */
+    private static int[] positionOf(List<Integer> starts, int offset) {
+        int index = java.util.Collections.binarySearch(starts, offset);
+        int line = index >= 0 ? index : -index - 2;
+        line = Math.max(0, line);
+        return new int[] {line, offset - starts.get(line)};
+    }
+
+    /** A sheet's header: the line or lines its note is on, 1-based; an orphaned note's says its text is gone. Pure. */
     static String where(PersonalNote note) {
+        if (note.status() == NoteStatus.ORPHANED) {
+            return tr("project.map.sticky.orphaned");
+        }
         int line = note.anchor().line() + 1;
         int end = note.anchor().endLine() + 1;
         return note.scope() == NoteScope.RANGE && end > line
@@ -264,6 +406,31 @@ final class ProjectMapStickyNotes {
      * sheets above it allow ({@code wanted}, from the card's top, in order). A sheet that would run past the card's
      * foot starts a further column. Returns {@code {column, top}} per sheet. Pure.
      */
+    /**
+     * How many of {@code total} notes, wanting the tops {@code wanted} (in order), are stuck on as sheets: all that
+     * fit {@link #MAX_STACKS} stacks beside a card {@code cardHeight} tall (at most {@link #MAX_NOTES}), else one
+     * fewer than fit, the last place going to the "+K more notes" sheet. Pure.
+     */
+    static int sheetsShown(List<Double> wanted, double cardHeight) {
+        int total = wanted.size();
+        List<double[]> stacked = stack(wanted, cardHeight);
+        int fit = 0;
+        while (fit < total && fit < MAX_NOTES && stacked.get(fit)[0] < MAX_STACKS) {
+            fit++;
+        }
+        if (fit == total) {
+            return total;
+        }
+        for (int shown = Math.max(0, fit - 1); shown > 0; shown--) {
+            List<Double> withMore = new ArrayList<>(wanted.subList(0, shown));
+            withMore.add(Double.MAX_VALUE); // the "+K more" sheet goes after the last one shown
+            if (stack(withMore, cardHeight).getLast()[0] < MAX_STACKS) {
+                return shown;
+            }
+        }
+        return 0;
+    }
+
     static List<double[]> stack(List<Double> wanted, double cardHeight) {
         double room = Math.max(HEIGHT, cardHeight);
         List<double[]> placed = new ArrayList<>();
@@ -307,7 +474,7 @@ final class ProjectMapStickyNotes {
         if (!shown) {
             return;
         }
-        boolean same = notes.size() == stickies.size();
+        boolean same = notes.size() == total && stickies.size() <= notes.size();
         for (int i = 0; same && i < stickies.size(); i++) {
             same = stickies.get(i).note.id().equals(notes.get(i).id());
         }
@@ -355,7 +522,7 @@ final class ProjectMapStickyNotes {
     /** The options menu's "Hide all open Personal Notes": the sheets go out of sight but stay stuck on. */
     void setHidden(boolean value) {
         hidden = value;
-        stickies.forEach(sticky -> sticky.setVisible(visible()));
+        sheets().forEach(sticky -> sticky.setVisible(visible()));
         mark();
         onMoved.run();
     }
@@ -363,6 +530,18 @@ final class ProjectMapStickyNotes {
     /** Puts the sheets above their card, which was just raised above the others. */
     void raise() {
         stickies.forEach(javafx.scene.Node::toFront);
+        if (more != null) {
+            more.toFront();
+        }
+    }
+
+    /** The notes stuck on as sheets now, and how many went into the "+K more notes" sheet. For tests. */
+    int sheetCount() {
+        return stickies.size();
+    }
+
+    int moreCount() {
+        return more == null ? 0 : total - stickies.size();
     }
 
     void dispose() {
@@ -404,7 +583,9 @@ final class ProjectMapStickyNotes {
 
     private void rebuild(List<PersonalNote> notes, Map<UUID, String> edits) {
         clear();
-        for (PersonalNote note : notes) {
+        total = notes.size();
+        int shownCount = sheetsShown(wantedTops(notes), card.getHeight());
+        for (PersonalNote note : notes.subList(0, shownCount)) {
             Sticky sticky = new Sticky(note);
             String edit = edits.get(note.id());
             if (edit != null) {
@@ -413,6 +594,11 @@ final class ProjectMapStickyNotes {
             sticky.setVisible(visible());
             stickies.add(sticky);
             host.getChildren().add(sticky);
+        }
+        if (shownCount < notes.size()) {
+            more = new More(notes.size() - shownCount, notes.size());
+            more.setVisible(visible());
+            host.getChildren().add(more);
         }
         place();
         layout();
@@ -427,11 +613,39 @@ final class ProjectMapStickyNotes {
     private void clear() {
         for (Sticky sticky : stickies) {
             sticky.saveIfChanged();
-            sticky.zoom.xProperty().unbind();
-            sticky.zoom.yProperty().unbind();
-            host.getChildren().remove(sticky);
+            unbind(sticky);
         }
         stickies.clear();
+        if (more != null) {
+            unbind(more);
+            more = null;
+        }
+    }
+
+    private void unbind(Sheet sheet) {
+        sheet.zoom.xProperty().unbind();
+        sheet.zoom.yProperty().unbind();
+        host.getChildren().remove(sheet);
+    }
+
+    /** The sheets in place order: the notes', then the "+K more" one. */
+    private List<Sheet> sheets() {
+        List<Sheet> all = new ArrayList<>(stickies);
+        if (more != null) {
+            all.add(more);
+        }
+        return all;
+    }
+
+    /** Where each note's sheet would like its top, from the card's top, in unzoomed units. */
+    private List<Double> wantedTops(List<PersonalNote> notes) {
+        double scale = card.mapScale();
+        List<Double> wanted = new ArrayList<>(notes.size());
+        for (PersonalNote note : notes) {
+            double lineY = card.noteAnchorY(note.anchor().line());
+            wanted.add(Double.isNaN(lineY) ? 0 : (lineY - card.getLayoutY()) / scale - HEADER_MIDDLE);
+        }
+        return wanted;
     }
 
     /**
@@ -441,16 +655,27 @@ final class ProjectMapStickyNotes {
     private void place() {
         double scale = card.mapScale();
         double left = card.getLayoutX();
-        Side side = side(left, left + card.getWidth() * scale, WIDTH * scale, host.getWidth());
-        List<Double> wanted = new ArrayList<>();
-        for (Sticky sticky : stickies) {
-            double lineY = card.noteAnchorY(sticky.note.anchor().line());
-            wanted.add(Double.isNaN(lineY) ? 0 : (lineY - card.getLayoutY()) / scale - HEADER_MIDDLE);
+        List<Double> wanted = new ArrayList<>(
+                wantedTops(stickies.stream().map(sticky -> sticky.note).toList()));
+        if (more != null) {
+            wanted.add(Double.MAX_VALUE); // below the last note's sheet
         }
         List<double[]> stacked = stack(wanted, card.getHeight());
-        for (int i = 0; i < stickies.size(); i++) {
-            Sticky sticky = stickies.get(i);
-            double[] kept = moved.get(sticky.note.id());
+        // The side is chosen by the room the whole stack needs, not one sheet's.
+        int columns = 1;
+        for (double[] at : stacked) {
+            columns = Math.max(columns, (int) at[0] + 1);
+        }
+        double stackWidth = (columns * WIDTH + (columns - 1) * GAP) * scale;
+        double right = left + card.getWidth() * scale;
+        Side side = side(left, right, stackWidth, host.getWidth());
+        if (side == Side.OVER && columns > 1) {
+            side = side(left, right, WIDTH * scale, host.getWidth());
+        }
+        List<Sheet> sheets = sheets();
+        for (int i = 0; i < sheets.size(); i++) {
+            Sheet sticky = sheets.get(i);
+            double[] kept = moved.get(sticky.key());
             if (kept != null) {
                 sticky.dx = kept[0];
                 sticky.dy = kept[1];
@@ -472,7 +697,7 @@ final class ProjectMapStickyNotes {
     private void layout() {
         double scale = card.mapScale();
         boolean visible = visible();
-        for (Sticky sticky : stickies) {
+        for (Sheet sticky : sheets()) {
             sticky.relocate(
                     card.getLayoutX() + ((sticky.fromRight ? card.getWidth() : 0) + sticky.dx) * scale,
                     card.getLayoutY() + sticky.dy * scale);

@@ -796,6 +796,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      */
     void setEditorWindow(java.util.function.Supplier<javafx.stage.@Nullable Window> window) {
         editorWindow = window == null ? () -> null : window;
+        mapView.setEditorFontSource(this::editorWindow); // the Map's cards use that window's editor font
     }
 
     /** What the Map window's scene gets, as the editor window's did: its key dispatcher. */

@@ -278,6 +278,23 @@ final class ProjectMapView extends VBox {
     private Consumer<ProjectMapOutput> onPrint = ignored -> {};
     private Consumer<ProjectMapOutput> onExportPdf = ignored -> {};
     private ProjectMapPreview.@Nullable MarkerActions previewMarkerActions;
+    /** The text zoom of the card last zoomed with −/+: new cards open at it. */
+    private double cardTextZoom = 1.0;
+    /** The editor window whose editor font the cards use (see {@link ProjectMapPreview#EDITOR_FONT_KEY}). */
+    private java.util.function.Supplier<javafx.stage.@Nullable Window> cardFontSource = () -> null;
+
+    private javafx.stage.@Nullable Window cardFontWindow;
+    /** Follows the editor window's font; weakly held by the window, so a closed view is not kept. */
+    private final javafx.collections.MapChangeListener<Object, Object> cardFontListener = change -> {
+        if (ProjectMapPreview.EDITOR_FONT_KEY.equals(change.getKey())
+                && change.getValueAdded() instanceof javafx.scene.text.Font font) {
+            previews.values().forEach(card -> card.setEditorFont(font));
+        }
+    };
+
+    private final javafx.collections.WeakMapChangeListener<Object, Object> weakCardFontListener =
+            new javafx.collections.WeakMapChangeListener<>(cardFontListener);
+
     private ProjectPanel.@Nullable MarkerActions notePreviewActions;
     private StackPane canvasHost;
     /** The open structure columns and the outlines behind them. */
@@ -2076,8 +2093,16 @@ final class ProjectMapView extends VBox {
             if (!ProjectMapStructure.isSymbolPath(entry.getKey())) {
                 continue;
             }
-            ProjectMapStructure.Node node = structure.node(entry.getKey());
+            Path key = entry.getKey();
+            ProjectMapStructure.Node node = structure.node(key);
             ProjectMapPreview card = entry.getValue();
+            Path next = node == null ? structure.successor(key) : null;
+            if (next != null && !previews.containsKey(next)) {
+                // Its parameter list was edited: the card follows the declaration to its new path.
+                previews.remove(key);
+                previews.put(next, card);
+                node = structure.node(next);
+            }
             Path file = structure.fileOf(entry.getKey());
             if (node == null) {
                 if (file != null && structure.hasOutline(file)) {
@@ -2093,6 +2118,45 @@ final class ProjectMapView extends VBox {
 
     private static ProjectMapPreview.Range rangeOf(ProjectMapModel.Symbol symbol) {
         return new ProjectMapPreview.Range(symbol.label(), symbol.line(), symbol.startLine(), symbol.endLine());
+    }
+
+    /** Where the cards' editor font comes from: the editor window this Map belongs to. */
+    void setEditorFontSource(java.util.function.Supplier<javafx.stage.@Nullable Window> source) {
+        cardFontSource = source == null ? () -> null : source;
+    }
+
+    /** The editor window's editor font for cards, following the window from now on; null when not known. */
+    private javafx.scene.text.@Nullable Font cardEditorFont() {
+        javafx.stage.Window window;
+        try {
+            window = cardFontSource.get();
+        } catch (RuntimeException unknown) {
+            window = null;
+        }
+        if (window != cardFontWindow) {
+            if (cardFontWindow != null) {
+                cardFontWindow.getProperties().removeListener(weakCardFontListener);
+            }
+            cardFontWindow = window;
+            if (window != null) {
+                window.getProperties().addListener(weakCardFontListener);
+            }
+        }
+        return window != null
+                        && window.getProperties().get(ProjectMapPreview.EDITOR_FONT_KEY)
+                                instanceof javafx.scene.text.Font font
+                ? font
+                : null;
+    }
+
+    /** The path a card is open under now (a declaration card follows its declaration), else {@code fallback}. */
+    private Path cardKeyOf(ProjectMapPreview card, Path fallback) {
+        for (Map.Entry<Path, ProjectMapPreview> entry : previews.entrySet()) {
+            if (entry.getValue() == card) {
+                return entry.getKey();
+            }
+        }
+        return fallback;
     }
 
     /** The files a declaration card is open for: their outlines are kept to follow the cards' lines. */
@@ -2129,7 +2193,7 @@ final class ProjectMapView extends VBox {
         ProjectMapPreview preview = createPreview(key);
         preview.setOnOpenAt((path, line) -> onOpenAt.accept(path, line));
         preview.setOnOpenNarrowed(() -> {
-            ProjectMapStructure.Node node = structure.node(key);
+            ProjectMapStructure.Node node = structure.node(cardKeyOf(preview, key));
             ProjectMapModel.Symbol current = node == null ? symbol : node.symbol();
             com.editora.text.FoldRegions.Region block = current.block();
             onOpenNarrowed.accept(
@@ -2250,6 +2314,7 @@ final class ProjectMapView extends VBox {
             surface.requestFocus();
         });
         preview.setOnBlankRejected(() -> onStatus.accept(tr("status.projectMap.noteBlankRestored")));
+        preview.setOnOpenAt((file, line) -> onOpenAt.accept(file, line)); // a note's heading opens the file there
         preview.setMapScale(surface.cardZoom());
         installPreviewListeners(preview);
         notePreviews.put(selected, preview);
@@ -2272,6 +2337,9 @@ final class ProjectMapView extends VBox {
         makeRoomForCard();
         ProjectMapPreview preview = new ProjectMapPreview(onOpenFile);
         preview.setMapScale(surface.cardZoom());
+        preview.setEditorFont(cardEditorFont());
+        preview.setInitialContentZoom(cardTextZoom); // the last −/+ zoom, so it need not be set on every card
+        preview.setOnContentZoomed(zoom -> cardTextZoom = zoom);
         preview.setMarkerActions(previewMarkerActions);
         preview.setOnClose(() -> closePreview(preview));
         preview.setOnActivate(() -> touchCard(preview, true));
@@ -2281,6 +2349,10 @@ final class ProjectMapView extends VBox {
             surface.requestFocus();
         });
         preview.setOnNotesToggled(shown -> showCardNotes(preview, shown));
+        preview.setNotesSuppressed(hideOpenNotes.isSelected());
+        preview.setOnShowSuppressedNotes(() -> hideOpenNotes.setSelected(false)); // the Notes button asks for them
+        preview.setOnMoveToFreeSpace(() -> cardMoveToFreeSpace(preview, path));
+        preview.setOnTextShown(() -> updateCardNotes(preview)); // stored notes are found again in the new text
         // A sticky note's connector meets its line in the text, which scrolls under it.
         preview.editor().estimatedScrollYProperty().addListener((obs, old, value) -> {
             if (stickyNotes.containsKey(preview)) {
@@ -2339,7 +2411,9 @@ final class ProjectMapView extends VBox {
             return List.of();
         }
         try {
-            return ProjectMapStickyNotes.notesFor(actions.personalNotes(file), card.range());
+            // Found again in the card's text first: a file changed outside Editora moved them (C5).
+            return ProjectMapStickyNotes.notesFor(
+                    ProjectMapStickyNotes.reanchored(actions.personalNotes(file), card.fullText()), card.range());
         } catch (RuntimeException ignored) {
             return List.of();
         }
@@ -2369,6 +2443,12 @@ final class ProjectMapView extends VBox {
                         this::repaintPreviewConnectors,
                         () -> onStatus.accept(tr("status.projectMap.noteBlankRestored")),
                         () -> touchCard(card, false)));
+        stuck.setOnMore(() -> {
+            Path file = card.path();
+            if (file != null) {
+                previewNotes(file); // the note card lists every note of the file
+            }
+        });
         stuck.setHidden(hideOpenNotes.isSelected());
         stuck.show(cardNotes(card));
         touchCard(card, true);
@@ -2481,6 +2561,7 @@ final class ProjectMapView extends VBox {
             entry.getValue().setVisible(file == null || !surface.narrowsAway(file));
         }
         boolean notes = !hideOpenNotes.isSelected();
+        previews.values().forEach(card -> card.setNotesSuppressed(!notes)); // their Notes buttons say why
         notePreviews.forEach((path, card) -> card.setVisible(notes && !surface.narrowsAway(path)));
         stickyNotes.values().forEach(stuck -> stuck.setHidden(!notes)); // a hidden card hides its own as well
         repaintPreviewConnectors();
@@ -2596,17 +2677,22 @@ final class ProjectMapView extends VBox {
             return;
         }
         boolean mirrors = false;
+        // One look at each file per pass, shared by its cards and its outline: a buffer's text is read once.
+        Map<Path, ProjectMapPreview.@Nullable Content> cardTick = new HashMap<>();
+        Function<Path, ProjectMapPreview.@Nullable Content> cardContent =
+                file -> cardTick.containsKey(file) ? cardTick.get(file) : cardTickPut(cardTick, file);
         for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
             ProjectMapPreview card = entry.getValue();
+            Path file = card.path();
             if (!polled || card.showsOpenBuffer()) {
-                Path file = card.path();
-                card.refresh(previewContentFor(file != null ? file : entry.getKey()));
+                card.refresh(cardContent.apply(file != null ? file : entry.getKey()));
             }
             mirrors |= card.showsOpenBuffer();
+            card.setUnsaved(card.showsOpenBuffer() && file != null && safeTest(isModified, file));
         }
         // Structure columns follow their file too: an open buffer's edits, or a closed file rewritten on disk.
         if (structure.hasOpenColumns() || !symbolCardFiles().isEmpty()) {
-            structure.refresh(symbolCardFiles());
+            structure.refresh(symbolCardFiles(), cardContent);
             mirrors |= structure.openFiles().stream().anyMatch(file -> safeTest(isOpen, file));
         }
         if (!polled) {
@@ -2617,6 +2703,13 @@ final class ProjectMapView extends VBox {
         } else {
             cardPoll.stop();
         }
+    }
+
+    private ProjectMapPreview.@Nullable Content cardTickPut(
+            Map<Path, ProjectMapPreview.@Nullable Content> tick, Path file) {
+        ProjectMapPreview.Content content = previewContentFor(file);
+        tick.put(file, content);
+        return content;
     }
 
     private void refreshNoteCards() {
@@ -2635,6 +2728,29 @@ final class ProjectMapView extends VBox {
                 closeNotePreview(entry.getValue()); // its notes were deleted elsewhere: nothing left to show
             }
         }
+    }
+
+    /**
+     * The card menu's Move to Free Space: the card is placed again, at its present size, where placement would
+     * put a new card for its row — the spot that covers the least of the map. The map is not panned.
+     */
+    private void cardMoveToFreeSpace(Region card, Path key) {
+        if (canvasHost == null || !cardTouches.containsKey(card)) {
+            return;
+        }
+        double scale = cardScale(card);
+        ProjectMapPreview.Placement placement = previewPlacement(
+                card,
+                key,
+                card.getWidth(),
+                card.getHeight(),
+                Math.min(card.getWidth(), ProjectMapPreview.MIN_WIDTH),
+                Math.min(card.getHeight(), ProjectMapPreview.MIN_HEIGHT),
+                canvasHost.getWidth(),
+                canvasHost.getHeight());
+        card.resize(placement.width(), placement.height());
+        card.relocate(placement.x(), placement.y());
+        ProjectMapPreview.announceGeometry(card, scale);
     }
 
     private void constrainPreviews(double width, double height) {
@@ -2672,7 +2788,15 @@ final class ProjectMapView extends VBox {
                 drawn.x(), drawn.y(), drawn.width() / scale, drawn.height() / scale, drawn.growLeft());
     }
 
-    /** {@link #previewPlacement} in panel pixels: every size here is a card as drawn. */
+    /**
+     * {@link #previewPlacement} in panel pixels: every size here is a card as drawn. The spot that covers the least:
+     * beside the row's column after it, before it, above or below the columns' band, or any free part of the
+     * panel, scored by how much of the columns, the zoom bar, the overview and the other cards it would cover (see
+     * {@link #cardOverlapCost}). The columns that lead to the row weigh most, and so does the band where the row's
+     * next column — its folder's, or its file's Structure column — would open. The map is never panned. A card
+     * used to take the side after its column, else the side before it, which is where the columns leading to it
+     * are, and so often covered the very path to its row.
+     */
     private ProjectMapPreview.Placement drawnPlacement(
             Region preview,
             Path path,
@@ -2682,71 +2806,167 @@ final class ProjectMapView extends VBox {
             double minimumHeight,
             double parentWidth,
             double parentHeight) {
-        ProjectMapPreview.Placement preferred =
-                surface.previewPlacement(path, width, height, minimumWidth, minimumHeight, parentWidth, parentHeight);
-        if (!overlapsPreview(preview, preferred.x(), preferred.y(), preferred.width(), preferred.height())) {
-            return preferred;
+        MapSurface.CardSite site = surface.cardSite(path);
+        double margin = ProjectMapPreview.EDGE_MARGIN;
+        double roomWidth = parentWidth - margin * 2;
+        double roomHeight = parentHeight - margin * 2;
+        double fullWidth = cardBounded(width, minimumWidth, roomWidth);
+        double fullHeight = cardBounded(height, minimumHeight, roomHeight);
+        if (site.row() == null) {
+            // The row is not on the map (filtered, scrolled off): against the panel's far edge, as before.
+            return new ProjectMapPreview.Placement(
+                    Math.max(margin, parentWidth - fullWidth - margin), margin, fullWidth, fullHeight);
         }
-
+        List<double[]> obstacles = new ArrayList<>(site.obstacles());
+        List<Region> cards = new ArrayList<>(previews.values());
+        cards.addAll(notePreviews.values());
+        for (Region other : cards) {
+            if (other != preview && other.isVisible() && other.getWidth() > 0) {
+                double scale = cardScale(other);
+                obstacles.add(new double[] {
+                    other.getLayoutX() - PREVIEW_CASCADE / 2,
+                    other.getLayoutY() - PREVIEW_CASCADE / 2,
+                    other.getWidth() * scale + PREVIEW_CASCADE,
+                    other.getHeight() * scale + PREVIEW_CASCADE,
+                    CARD_WEIGHT_CARD
+                });
+            }
+        }
+        double[] row = site.row();
+        double[] column = site.column();
+        double[] band = site.band();
         boolean horizontal = flowFilter.getValue() == FlowDirection.LEFT_TO_RIGHT
                 || flowFilter.getValue() == FlowDirection.RIGHT_TO_LEFT;
-        double maximum = horizontal
-                ? Math.max(
-                        ProjectMapPreview.EDGE_MARGIN,
-                        parentHeight - preferred.height() - ProjectMapPreview.EDGE_MARGIN)
-                : Math.max(
-                        ProjectMapPreview.EDGE_MARGIN, parentWidth - preferred.width() - ProjectMapPreview.EDGE_MARGIN);
-        double origin = horizontal ? preferred.y() : preferred.x();
-        double step = (horizontal ? preferred.height() : preferred.width()) + PREVIEW_CASCADE;
-        int others = previews.size() + notePreviews.size();
-        for (int ring = 1; ring <= others; ring++) {
-            for (int sign : new int[] {1, -1}) {
-                double shifted = clampPreview(origin + sign * ring * step, ProjectMapPreview.EDGE_MARGIN, maximum);
-                double x = horizontal ? preferred.x() : shifted;
-                double y = horizontal ? shifted : preferred.y();
-                if (!overlapsPreview(preview, x, y, preferred.width(), preferred.height())) {
-                    return new ProjectMapPreview.Placement(
-                            x, y, preferred.width(), preferred.height(), preferred.growLeft());
+        double gap = MapSurface.PREVIEW_COLUMN_GAP;
+        double rowX = row[0] + row[2] / 2;
+        double rowY = row[1] + row[3] / 2;
+        List<double[]> spots = new ArrayList<>();
+        if (horizontal) {
+            double y = rowY - fullHeight / 2;
+            double afterX = column[0] + column[2] + gap;
+            cardSpot(spots, afterX, y, Math.min(fullWidth, parentWidth - margin - afterX), fullHeight, minimumWidth, 1);
+            double beforeEnd = column[0] - gap;
+            double beforeWidth = Math.min(fullWidth, beforeEnd - margin);
+            cardSpot(spots, beforeEnd - beforeWidth, y, beforeWidth, fullHeight, minimumWidth, 1);
+            double aboveHeight = Math.min(fullHeight, band[1] - gap - margin);
+            cardSpot(
+                    spots, rowX - fullWidth / 2, band[1] - gap - aboveHeight, fullWidth, aboveHeight, minimumHeight, 0);
+            double belowY = band[1] + band[3] + gap;
+            cardSpot(
+                    spots,
+                    rowX - fullWidth / 2,
+                    belowY,
+                    fullWidth,
+                    Math.min(fullHeight, parentHeight - margin - belowY),
+                    minimumHeight,
+                    0);
+        } else {
+            double x = rowX - fullWidth / 2;
+            double afterY = column[1] + column[3] + gap;
+            cardSpot(
+                    spots,
+                    x,
+                    afterY,
+                    fullWidth,
+                    Math.min(fullHeight, parentHeight - margin - afterY),
+                    minimumHeight,
+                    0);
+            double beforeEnd = column[1] - gap;
+            double beforeHeight = Math.min(fullHeight, beforeEnd - margin);
+            cardSpot(spots, x, beforeEnd - beforeHeight, fullWidth, beforeHeight, minimumHeight, 0);
+            double leftWidth = Math.min(fullWidth, band[0] - gap - margin);
+            cardSpot(spots, band[0] - gap - leftWidth, rowY - fullHeight / 2, leftWidth, fullHeight, minimumWidth, 1);
+            double rightX = band[0] + band[2] + gap;
+            cardSpot(
+                    spots,
+                    rightX,
+                    rowY - fullHeight / 2,
+                    Math.min(fullWidth, parentWidth - margin - rightX),
+                    fullHeight,
+                    minimumWidth,
+                    1);
+        }
+        // Any free part of the panel: the card against each obstacle's edges, and against the panel's.
+        java.util.TreeSet<Double> xs = new java.util.TreeSet<>(List.of(margin, parentWidth - fullWidth - margin));
+        java.util.TreeSet<Double> ys = new java.util.TreeSet<>(List.of(margin, parentHeight - fullHeight - margin));
+        for (double[] o : obstacles) {
+            xs.add(o[0] + o[2] + gap);
+            xs.add(o[0] - fullWidth - gap);
+            ys.add(o[1] + o[3] + gap);
+            ys.add(o[1] - fullHeight - gap);
+        }
+        for (double x : xs) {
+            for (double y : ys) {
+                spots.add(new double[] {x, y, fullWidth, fullHeight});
+                // The largest card from that corner that stays inside the panel, down to the card's minimum:
+                // a free spot a little smaller beats covering the path to the row.
+                double fitWidth = Math.min(fullWidth, parentWidth - margin - x);
+                double fitHeight = Math.min(fullHeight, parentHeight - margin - y);
+                if (x >= margin
+                        && y >= margin
+                        && (fitWidth < fullWidth || fitHeight < fullHeight)
+                        && fitWidth >= Math.min(minimumWidth, fullWidth)
+                        && fitHeight >= Math.min(minimumHeight, fullHeight)) {
+                    spots.add(new double[] {x, y, fitWidth, fitHeight});
                 }
             }
         }
-
-        int index = Math.max(1, others - 1);
-        double x = horizontal
-                ? preferred.x()
-                : clampPreview(
-                        preferred.x() + index * PREVIEW_CASCADE,
-                        ProjectMapPreview.EDGE_MARGIN,
-                        Math.max(
-                                ProjectMapPreview.EDGE_MARGIN,
-                                parentWidth - preferred.width() - ProjectMapPreview.EDGE_MARGIN));
-        double y = horizontal
-                ? clampPreview(
-                        preferred.y() + index * PREVIEW_CASCADE,
-                        ProjectMapPreview.EDGE_MARGIN,
-                        Math.max(
-                                ProjectMapPreview.EDGE_MARGIN,
-                                parentHeight - preferred.height() - ProjectMapPreview.EDGE_MARGIN))
-                : preferred.y();
-        return new ProjectMapPreview.Placement(x, y, preferred.width(), preferred.height(), preferred.growLeft());
-    }
-
-    private boolean overlapsPreview(Region candidate, double x, double y, double width, double height) {
-        List<Region> all = new ArrayList<>(previews.values());
-        all.addAll(notePreviews.values());
-        for (Region other : all) {
-            if (other == candidate || !other.isVisible()) {
-                continue;
-            }
-            double scale = cardScale(other);
-            if (x < other.getLayoutX() + other.getWidth() * scale + PREVIEW_CASCADE
-                    && x + width + PREVIEW_CASCADE > other.getLayoutX()
-                    && y < other.getLayoutY() + other.getHeight() * scale + PREVIEW_CASCADE
-                    && y + height + PREVIEW_CASCADE > other.getLayoutY()) {
-                return true;
+        double[] best = null;
+        double bestCost = Double.MAX_VALUE;
+        for (double[] spot : spots) {
+            double w = spot[2];
+            double h = spot[3];
+            double x = clampPreview(spot[0], margin, Math.max(margin, parentWidth - w - margin));
+            double y = clampPreview(spot[1], margin, Math.max(margin, parentHeight - h - margin));
+            // Least covered first; between spots that cover alike, the one nearer its row, then the larger.
+            double distance = Math.hypot(x + w / 2 - rowX, y + h / 2 - rowY);
+            // A card cut narrower than its lines needs makes them scroll sideways: that weighs more than height.
+            double cost = cardOverlapCost(x, y, w, h, obstacles)
+                    + distance * 0.5
+                    - w * h * 0.05
+                    + Math.max(0, fullWidth - w) * h * 0.1;
+            if (cost < bestCost) {
+                bestCost = cost;
+                best = new double[] {x, y, w, h};
             }
         }
-        return false;
+        if (best == null) {
+            return new ProjectMapPreview.Placement(margin, margin, fullWidth, fullHeight);
+        }
+        boolean growLeft = horizontal && best[0] + best[2] <= row[0];
+        return new ProjectMapPreview.Placement(best[0], best[1], best[2], best[3], growLeft);
+    }
+
+    /** How much a card of the other cards weighs against a spot, per pixel it would cover (columns: 1–6). */
+    private static final double CARD_WEIGHT_CARD = 5;
+
+    /** Adds a spot whose extent along {@code axis} (0 height, 1 width) is at least the card's minimum there. */
+    private static void cardSpot(
+            List<double[]> spots, double x, double y, double w, double h, double minimum, int axis) {
+        if ((axis == 1 ? w : h) >= minimum && w > 0 && h > 0) {
+            spots.add(new double[] {x, y, w, h});
+        }
+    }
+
+    private static double cardBounded(double requested, double minimum, double available) {
+        double maximum = Math.max(1, available);
+        return Math.min(Math.max(Math.min(minimum, maximum), requested), maximum);
+    }
+
+    /**
+     * What a card at {@code x, y} sized {@code w × h} covers: the area of each obstacle {@code {x, y, w, h, weight}}
+     * under it, times the obstacle's weight. Pure.
+     */
+    static double cardOverlapCost(double x, double y, double w, double h, List<double[]> obstacles) {
+        double cost = 0;
+        for (double[] o : obstacles) {
+            double across = Math.min(x + w, o[0] + o[2]) - Math.max(x, o[0]);
+            double down = Math.min(y + h, o[1] + o[3]) - Math.max(y, o[1]);
+            if (across > 0 && down > 0) {
+                cost += across * down * o[4];
+            }
+        }
+        return cost;
     }
 
     private static double clampPreview(double value, double minimum, double maximum) {
@@ -3154,7 +3374,6 @@ final class ProjectMapView extends VBox {
         private static final double MIN_COLUMN_FILTER_WIDTH = 46;
         private static final double MIN_COLUMN_HIDDEN_WIDTH = 50;
         private static final double MIN_COLUMN_PIN_WIDTH = 22;
-        private static final double PREVIEW_EDGE_MARGIN = 14;
         private static final double PREVIEW_COLUMN_GAP = 18;
         private static final DateTimeFormatter TOOLTIP_TIME = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM)
                 .withLocale(Locale.getDefault())
@@ -7330,81 +7549,86 @@ final class ProjectMapView extends VBox {
         }
 
         /**
-         * Where a card for {@code path} opens: beside its column on the side the flow leaves free (else the
-         * other side) when at least the card's minimum fits there, otherwise over the map against the
-         * panel edge. Reads the layout only — the viewport is never moved to make room.
+         * What card placement needs to know about the row at {@code path}, in panel pixels (see {@code
+         * drawnPlacement}): the row and its column as {@code {x, y, w, h}}, the extent of the columns on screen, and
+         * what a card should not cover, as {@code {x, y, w, h, weight}} — every column on screen (the row's own
+         * weighs 6, those that lead to it 4, others 1), the band where the row's next column would open (3), and the
+         * zoom bar and the overview (4). Reads the layout only.
          */
-        private ProjectMapPreview.Placement previewPlacement(
-                Path path,
-                double requestedWidth,
-                double requestedHeight,
-                double minimumWidth,
-                double minimumHeight,
-                double parentWidth,
-                double parentHeight) {
+        private CardSite cardSite(Path path) {
             NodeBox node = boxes.stream()
                     .filter(box -> box.entry().path().equals(path))
                     .findFirst()
                     .orElse(null);
-            ColumnBox column = node == null
+            ColumnBox own = node == null
                     ? null
                     : columnBoxes.stream()
                             .filter(box -> box.column().id().equals(columnId(node.entry())))
                             .findFirst()
                             .orElse(null);
-            double fullWidth = boundedPreviewSize(requestedWidth, minimumWidth, parentWidth - PREVIEW_EDGE_MARGIN * 2);
-            double fullHeight =
-                    boundedPreviewSize(requestedHeight, minimumHeight, parentHeight - PREVIEW_EDGE_MARGIN * 2);
-            double farX = Math.max(PREVIEW_EDGE_MARGIN, parentWidth - fullWidth - PREVIEW_EDGE_MARGIN);
-            double farY = Math.max(PREVIEW_EDGE_MARGIN, parentHeight - fullHeight - PREVIEW_EDGE_MARGIN);
-            if (node == null || column == null) {
-                return new ProjectMapPreview.Placement(farX, PREVIEW_EDGE_MARGIN, fullWidth, fullHeight);
+            if (node == null || own == null) {
+                return new CardSite(null, new double[4], new double[4], List.of());
             }
-
+            List<double[]> obstacles = new ArrayList<>();
+            double top = Double.MAX_VALUE;
+            double bottom = -Double.MAX_VALUE;
+            double left = Double.MAX_VALUE;
+            double right = -Double.MAX_VALUE;
+            for (ColumnBox column : columnBoxes) {
+                if (column.x() > getWidth()
+                        || column.x() + column.width() < 0
+                        || column.y() > getHeight()
+                        || column.y() + column.height() < 0) {
+                    continue; // off screen: a card there covers nothing of it
+                }
+                Path listed = column.column().parent();
+                double weight = column == own
+                        ? 6
+                        : listed != null && path.startsWith(listed) ? 4 : 1; // a column that leads to the row
+                obstacles.add(new double[] {column.x(), column.y(), column.width(), column.height(), weight});
+                top = Math.min(top, column.y());
+                bottom = Math.max(bottom, column.y() + column.height());
+                left = Math.min(left, column.x());
+                right = Math.max(right, column.x() + column.width());
+            }
+            boolean horizontal =
+                    flowDirection == FlowDirection.LEFT_TO_RIGHT || flowDirection == FlowDirection.RIGHT_TO_LEFT;
             boolean forward =
                     flowDirection == FlowDirection.LEFT_TO_RIGHT || flowDirection == FlowDirection.TOP_TO_BOTTOM;
-            if (flowDirection == FlowDirection.LEFT_TO_RIGHT || flowDirection == FlowDirection.RIGHT_TO_LEFT) {
-                double y = clampPreview(node.y() + node.height() / 2 - fullHeight / 2, PREVIEW_EDGE_MARGIN, farY);
-                double afterX = Math.max(PREVIEW_EDGE_MARGIN, column.x() + column.width() + PREVIEW_COLUMN_GAP);
-                double afterRoom = parentWidth - PREVIEW_EDGE_MARGIN - afterX;
-                double beforeEnd = Math.min(parentWidth - PREVIEW_EDGE_MARGIN, column.x() - PREVIEW_COLUMN_GAP);
-                double beforeRoom = beforeEnd - PREVIEW_EDGE_MARGIN;
-                boolean after =
-                        forward ? afterRoom >= minimumWidth || beforeRoom < minimumWidth : beforeRoom < minimumWidth;
-                double room = after ? afterRoom : beforeRoom;
-                if (room < minimumWidth) {
-                    // No side has room (a tool-window-wide panel): lie over the map rather than shrink to a sliver.
-                    return new ProjectMapPreview.Placement(
-                            forward ? farX : PREVIEW_EDGE_MARGIN, y, fullWidth, fullHeight, !forward);
-                }
-                double width = Math.min(fullWidth, room);
-                return new ProjectMapPreview.Placement(
-                        after ? afterX : beforeEnd - width, y, width, fullHeight, !after);
+            ProjectMapModel.Entry entry = node.entry();
+            ProjectMapModel.Symbol symbol = entry.symbol();
+            boolean opensColumn = entry.directory() && !entry.isPlaceholder()
+                    || hasStructure(entry)
+                    || entry.isSymbol() && symbol != null && symbol.branches();
+            if (opensColumn) { // where its next column — a folder's, or a file's Structure column — opens
+                double step = PREVIEW_COLUMN_GAP + (horizontal ? own.width() : own.height());
+                double nextX = horizontal ? own.x() + (forward ? step : -step) : own.x();
+                double nextY = horizontal ? own.y() : own.y() + (forward ? step : -step);
+                obstacles.add(new double[] {nextX, nextY, own.width(), own.height(), 3});
             }
-
-            double x = clampPreview(node.x() + node.width() / 2 - fullWidth / 2, PREVIEW_EDGE_MARGIN, farX);
-            double afterY = Math.max(PREVIEW_EDGE_MARGIN, column.y() + column.height() + PREVIEW_COLUMN_GAP);
-            double afterRoom = parentHeight - PREVIEW_EDGE_MARGIN - afterY;
-            double beforeEnd = Math.min(parentHeight - PREVIEW_EDGE_MARGIN, column.y() - PREVIEW_COLUMN_GAP);
-            double beforeRoom = beforeEnd - PREVIEW_EDGE_MARGIN;
-            boolean after =
-                    forward ? afterRoom >= minimumHeight || beforeRoom < minimumHeight : beforeRoom < minimumHeight;
-            double room = after ? afterRoom : beforeRoom;
-            if (room < minimumHeight) {
-                return new ProjectMapPreview.Placement(x, forward ? farY : PREVIEW_EDGE_MARGIN, fullWidth, fullHeight);
+            if (reservedBarWidth > 0 && reservedBottom > 0) {
+                obstacles.add(new double[] {0, getHeight() - reservedBottom, reservedBarWidth, reservedBottom, 4});
             }
-            double height = Math.min(fullHeight, room);
-            return new ProjectMapPreview.Placement(x, after ? afterY : beforeEnd - height, fullWidth, height);
+            OverviewBox overview = overviewBox;
+            if (overview != null) {
+                obstacles.add(new double[] {overview.x(), overview.y(), overview.width(), overview.height(), 4});
+            }
+            if (top > bottom) {
+                top = own.y();
+                bottom = own.y() + own.height();
+                left = own.x();
+                right = own.x() + own.width();
+            }
+            return new CardSite(
+                    new double[] {node.x(), node.y(), node.width(), node.height()},
+                    new double[] {own.x(), own.y(), own.width(), own.height()},
+                    new double[] {left, Math.max(0, top), right - left, Math.min(getHeight(), bottom) - Math.max(0, top)
+                    },
+                    obstacles);
         }
 
-        private double boundedPreviewSize(double requested, double minimum, double available) {
-            double maximum = Math.max(1, available);
-            return Math.min(Math.max(Math.min(minimum, maximum), requested), maximum);
-        }
-
-        private double clampPreview(double value, double minimum, double maximum) {
-            return Math.max(minimum, Math.min(maximum, value));
-        }
+        /** See {@link #cardSite}; {@code row} is null when the row is not on the map. */
+        private record CardSite(double @Nullable [] row, double[] column, double[] band, List<double[]> obstacles) {}
 
         private double screenX(double worldX) {
             return offsetX + worldX * zoom;

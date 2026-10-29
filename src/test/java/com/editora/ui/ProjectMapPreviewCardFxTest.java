@@ -214,7 +214,7 @@ class ProjectMapPreviewCardFxTest {
         Path broken = Files.writeString(dir.resolve("broken.png"), "this is not a PNG");
         try (Rig r = new Rig()) {
             FxTestSupport.runOnFx(() -> r.card.showFile(binary, Content.closed(null), null));
-            r.await("the binary notice", () -> tr("project.map.preview.binary").equals(r.placeholder()));
+            r.await("the binary file's facts", r.card::showsFileInfo); // no longer a text card (review C17)
             assertEquals("", FxTestSupport.callOnFx(() -> r.card.editor().getText()));
             assertEquals("", FxTestSupport.callOnFx(r::status));
 
@@ -387,13 +387,13 @@ class ProjectMapPreviewCardFxTest {
                 });
                 r.card.showFile(file, new Content("", false), null);
                 r.rebuildMenu(0);
-                assertTrue(r.item("editmenu.copy").isDisable(), "nothing to copy from an empty card");
+                assertTrue(r.item("project.map.preview.copyAll").isDisable(), "nothing to copy from an empty card");
                 assertTrue(r.item("editmenu.selectAll").isDisable());
                 assertNull(r.item("editmenu.addBookmark"), "and no line to mark");
 
                 r.card.refresh(new Content("first line\nsecond line\nthird\n", false));
                 r.rebuildMenu(1);
-                assertFalse(r.item("editmenu.copy").isDisable());
+                assertFalse(r.item("project.map.preview.copyAll").isDisable());
                 assertTrue(r.item("editmenu.addNote").isDisable(), "Personal Notes are switched off");
                 r.item("editmenu.addBookmark").fire();
                 assertEquals(List.of("a.txt:1"), marks);
@@ -449,7 +449,7 @@ class ProjectMapPreviewCardFxTest {
                         new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 300, 300, false, null);
                 javafx.event.Event.fireEvent(r.card.editor(), request); // through the window, as a real one is
                 assertTrue(r.menu().isShowing());
-                assertNotNull(r.item("editmenu.copy"));
+                assertNotNull(r.item("project.map.preview.copyAll"));
 
                 javafx.event.Event.fireEvent(
                         r.card.editor(), mouse(MouseEvent.MOUSE_PRESSED, MouseButton.PRIMARY, 10, 10, true));
