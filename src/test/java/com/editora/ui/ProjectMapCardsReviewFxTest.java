@@ -389,8 +389,8 @@ class ProjectMapCardsReviewFxTest {
         try (Rig r = new Rig()) {
             FxTestSupport.runOnFx(() -> {
                 r.card.showFile(file, new Content("one\n", false), null);
-                ProjectMapPreview.setEditorFont("Serif", 15);
-                try {
+                r.card.setEditorFont(javafx.scene.text.Font.font("Serif", 15));
+                {
                     assertTrue(
                             r.card.editor().getStyle().contains("'Serif'"),
                             r.card.editor().getStyle());
@@ -406,14 +406,43 @@ class ProjectMapCardsReviewFxTest {
                             r.card.editor().getStyle());
                     assertEquals(1, zooms.size(), "the owner is told, to open its next card at it");
                     ProjectMapPreview next = new ProjectMapPreview(ignored -> {});
+                    next.setEditorFont(javafx.scene.text.Font.font("Serif", 15));
                     next.setInitialContentZoom(zooms.getFirst());
                     assertTrue(next.editor().getStyle().contains("16.5"));
                     next.dispose();
-                } finally {
-                    ProjectMapPreview.setEditorFont("Monospaced", 12);
                 }
             });
         }
+    }
+
+    @Test
+    void aMapsCardsUseItsEditorWindowsFontAndFollowAChange(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("a.txt"), "one\n");
+        FxTestSupport.runOnFx(() -> {
+            Stage editorWindow = new Stage();
+            ProjectMapPreview.publishEditorFont(editorWindow, "Serif", 14);
+            ProjectMapView view = new ProjectMapView(path -> {}, path -> false, path -> false, path -> null);
+            try {
+                new Scene(view, 900, 600);
+                view.resize(900, 600);
+                view.layout();
+                view.setEditorFontSource(() -> editorWindow);
+                ProjectMapPreview card = (ProjectMapPreview)
+                        FxTestSupport.call(view, "createPreview", new Class<?>[] {Path.class}, file);
+                assertTrue(
+                        card.editor().getStyle().contains("'Serif'"),
+                        card.editor().getStyle());
+                assertTrue(
+                        card.editor().getStyle().contains("14.0px"),
+                        card.editor().getStyle());
+                ProjectMapPreview.publishEditorFont(editorWindow, "Serif", 17); // the user picked a new size
+                assertTrue(
+                        card.editor().getStyle().contains("17.0px"),
+                        card.editor().getStyle());
+            } finally {
+                view.dispose();
+            }
+        });
     }
 
     // ---- C22: the Notes button while "Hide all open Personal Notes" is on ----

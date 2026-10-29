@@ -118,7 +118,8 @@ the JavaFX application thread, decoded as the editor would open it (BOM, then th
 charset, then UTF-8 with a single-byte fallback instead of U+FFFD) and with `\n` line endings. It is
 visibly marked read-only, has independent text/image zoom controls, and renders common bitmap image
 formats as well as syntax-highlighted text. Card text is set in the editor's font family and size
-(`ProjectMapPreview.setEditorFont`, pushed with the console and Diff fonts), and a new card opens at the −/+ text
+(published on the editor window with the console and Diff fonts, `ProjectMapPreview.EDITOR_FONT_KEY`, and
+followed by that window's Map), and a new card opens at the −/+ text
 zoom last used on a card of the same Map. A file over the 160,000-character highlighting cap has its first
 lines coloured, and the status says how many. A binary file (a NUL in its first 8 KiB) or an image over the
 20 MB decode cap gets a compact card of facts instead — size, type, modification time, an "Image too large to

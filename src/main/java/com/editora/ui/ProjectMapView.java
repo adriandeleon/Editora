@@ -242,6 +242,20 @@ final class ProjectMapView extends VBox {
     private ProjectMapPreview.@Nullable MarkerActions previewMarkerActions;
     /** The text zoom of the card last zoomed with −/+: new cards open at it. */
     private double cardTextZoom = 1.0;
+    /** The editor window whose editor font the cards use (see {@link ProjectMapPreview#EDITOR_FONT_KEY}). */
+    private java.util.function.Supplier<javafx.stage.@Nullable Window> cardFontSource = () -> null;
+
+    private javafx.stage.@Nullable Window cardFontWindow;
+    /** Follows the editor window's font; weakly held by the window, so a closed view is not kept. */
+    private final javafx.collections.MapChangeListener<Object, Object> cardFontListener = change -> {
+        if (ProjectMapPreview.EDITOR_FONT_KEY.equals(change.getKey())
+                && change.getValueAdded() instanceof javafx.scene.text.Font font) {
+            previews.values().forEach(card -> card.setEditorFont(font));
+        }
+    };
+
+    private final javafx.collections.WeakMapChangeListener<Object, Object> weakCardFontListener =
+            new javafx.collections.WeakMapChangeListener<>(cardFontListener);
 
     private ProjectPanel.@Nullable MarkerActions notePreviewActions;
     private StackPane canvasHost;
@@ -1611,6 +1625,35 @@ final class ProjectMapView extends VBox {
         return new ProjectMapPreview.Range(symbol.label(), symbol.line(), symbol.startLine(), symbol.endLine());
     }
 
+    /** Where the cards' editor font comes from: the editor window this Map belongs to. */
+    void setEditorFontSource(java.util.function.Supplier<javafx.stage.@Nullable Window> source) {
+        cardFontSource = source == null ? () -> null : source;
+    }
+
+    /** The editor window's editor font for cards, following the window from now on; null when not known. */
+    private javafx.scene.text.@Nullable Font cardEditorFont() {
+        javafx.stage.Window window;
+        try {
+            window = cardFontSource.get();
+        } catch (RuntimeException unknown) {
+            window = null;
+        }
+        if (window != cardFontWindow) {
+            if (cardFontWindow != null) {
+                cardFontWindow.getProperties().removeListener(weakCardFontListener);
+            }
+            cardFontWindow = window;
+            if (window != null) {
+                window.getProperties().addListener(weakCardFontListener);
+            }
+        }
+        return window != null
+                        && window.getProperties().get(ProjectMapPreview.EDITOR_FONT_KEY)
+                                instanceof javafx.scene.text.Font font
+                ? font
+                : null;
+    }
+
     /** The path a card is open under now (a declaration card follows its declaration), else {@code fallback}. */
     private Path cardKeyOf(ProjectMapPreview card, Path fallback) {
         for (Map.Entry<Path, ProjectMapPreview> entry : previews.entrySet()) {
@@ -1799,6 +1842,7 @@ final class ProjectMapView extends VBox {
         makeRoomForCard();
         ProjectMapPreview preview = new ProjectMapPreview(onOpenFile);
         preview.setMapScale(surface.cardZoom());
+        preview.setEditorFont(cardEditorFont());
         preview.setInitialContentZoom(cardTextZoom); // the last −/+ zoom, so it need not be set on every card
         preview.setOnContentZoomed(zoom -> cardTextZoom = zoom);
         preview.setMarkerActions(previewMarkerActions);

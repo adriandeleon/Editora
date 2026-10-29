@@ -499,7 +499,6 @@ final class ProjectMapPreview extends StackPane {
         });
         addEventFilter(ScrollEvent.SCROLL, event -> onTouch.run());
         addEventFilter(KeyEvent.KEY_PRESSED, this::keyPressed);
-        EDITOR_FONT.addListener(new javafx.beans.WeakInvalidationListener(fontListener));
         setContentZoom(1.0);
     }
 
@@ -2208,33 +2207,38 @@ final class ProjectMapPreview extends StackPane {
     }
 
     /**
-     * The editor's font, for every card's text: its family and its size at the text zoom, as a Diff tab or a
-     * console gets them ({@code EditorSettingsCoordinator.applyFontsAndPerBufferView}). Settings are app-wide, so
-     * one value serves every window. FX thread.
+     * The editor window's property that holds its editor font for the Project Map's cards: its family and size at
+     * the text zoom, put there as a Diff tab or a console gets them ({@code
+     * EditorSettingsCoordinator.applyFontsAndPerBufferView}) and read by the window's Map ({@code
+     * ProjectMapView.setEditorFontSource}).
      */
-    private static final javafx.beans.property.ObjectProperty<Font> EDITOR_FONT =
-            new javafx.beans.property.SimpleObjectProperty<>(Font.font("Monospaced", 12));
+    static final String EDITOR_FONT_KEY = "editora.projectMapCardFont";
 
-    /** The editor's font family and size changed (or were first known): every card follows. FX thread. */
-    static void setEditorFont(@Nullable String family, double size) {
-        String name = family == null || family.isBlank() ? "Monospaced" : family;
-        Font font = Font.font(name, size > 0 ? size : 12);
-        if (!font.equals(EDITOR_FONT.get())) {
-            EDITOR_FONT.set(font);
+    /** Publishes {@code window}'s editor font for its Map's cards (see {@link #EDITOR_FONT_KEY}). FX thread. */
+    static void publishEditorFont(javafx.stage.@Nullable Window window, @Nullable String family, double size) {
+        if (window == null) {
+            return;
+        }
+        Font font = Font.font(family == null || family.isBlank() ? "Monospaced" : family, size > 0 ? size : 12);
+        if (!font.equals(window.getProperties().get(EDITOR_FONT_KEY))) {
+            window.getProperties().put(EDITOR_FONT_KEY, font);
         }
     }
 
-    static Font editorFont() {
-        return EDITOR_FONT.get();
-    }
+    /** The editor's font, at text zoom 1. */
+    private Font editorFont = Font.font("Monospaced", 12);
 
-    /** Follows {@link #EDITOR_FONT}; held strongly here, weakly by the property, so a closed card is collected. */
-    private final javafx.beans.InvalidationListener fontListener = observable -> setContentZoom(contentZoom);
+    /** The editor's font family and size changed (or were first known); null keeps the default. */
+    void setEditorFont(@Nullable Font font) {
+        if (font != null && !font.equals(editorFont)) {
+            editorFont = font;
+            setContentZoom(contentZoom);
+        }
+    }
 
     /** The card's text font: the editor's family at its size times the card's text zoom. */
     private Font textFont() {
-        Font base = EDITOR_FONT.get();
-        return Font.font(base.getFamily(), base.getSize() * contentZoom);
+        return Font.font(editorFont.getFamily(), editorFont.getSize() * contentZoom);
     }
 
     private void setContentZoom(double requested) {
