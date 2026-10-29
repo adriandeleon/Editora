@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Predicate;
 
+import com.editora.text.HtmlElements;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -67,7 +68,7 @@ public final class HtmlMarkupCheck {
             @Override
             public void start(String name, int start, int nameEnd, int end, boolean selfClosing, boolean closed) {
                 String lower = name.toLowerCase(Locale.ROOT);
-                if (!closed || selfClosing || TagRename.VOID_ELEMENTS.contains(lower)) {
+                if (!closed || selfClosing || HtmlElements.isVoid(lower)) {
                     return;
                 }
                 stack.add(new Open(lower, start + 1, nameEnd));
@@ -98,7 +99,7 @@ public final class HtmlMarkupCheck {
     }
 
     private static void unclosed(Open open, List<Problem> out) {
-        if (!TagJoin.OPTIONAL_END_TAG.contains(open.name()) && out.size() < MAX_PROBLEMS) {
+        if (!HtmlElements.hasOptionalEnd(open.name()) && out.size() < MAX_PROBLEMS) {
             out.add(new Problem(open.nameStart(), open.nameEnd(), Kind.UNCLOSED, open.name()));
         }
     }

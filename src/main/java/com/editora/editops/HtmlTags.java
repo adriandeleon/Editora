@@ -2,7 +2,8 @@ package com.editora.editops;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
+
+import com.editora.text.HtmlElements;
 
 /**
  * Pure: one forward walk over an HTML document's tags, for the checks and the link features that need every
@@ -57,7 +58,7 @@ final class HtmlTags {
                 boolean closed = end[0] > nameEnd && text.charAt(end[0] - 1) == '>';
                 visitor.start(name, i, nameEnd, end[0], end[1] == 1, closed);
                 i = end[0];
-                if (closed && end[1] == 0 && TagRename.RAW_TEXT_ELEMENTS.contains(name.toLowerCase(Locale.ROOT))) {
+                if (closed && end[1] == 0 && HtmlElements.isRawText(name)) {
                     i = TagRename.skipToCloseTag(text, i, name); // script/style content is not markup
                 }
             } else {
