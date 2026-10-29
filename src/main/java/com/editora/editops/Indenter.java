@@ -285,7 +285,7 @@ public final class Indenter {
                     "typescript",
                     "javascriptreact",
                     "typescriptreact" -> Style.BRACES;
-            case "xml", "html", "astro" -> Style.XML;
+            case "xml", "html", "astro", "html-template", "handlebars" -> Style.XML;
             case "python", "yaml" -> Style.PY;
             case "shell" -> Style.SHELL;
             case "ruby" -> Style.RUBY;
@@ -727,7 +727,7 @@ public final class Indenter {
     }
 
     private static boolean isHtml(String language) {
-        return "html".equals(language) || "astro".equals(language);
+        return com.editora.text.HtmlElements.isHtmlLanguage(language) || "astro".equals(language);
     }
 
     private static boolean opensBlock(Style style, String before) {
@@ -847,7 +847,8 @@ public final class Indenter {
             while (end < tag.length() && (Character.isLetterOrDigit(tag.charAt(end)) || tag.charAt(end) == '-')) {
                 end++;
             }
-            if (TagRename.VOID_ELEMENTS.contains(tag.substring(1, end).toLowerCase(java.util.Locale.ROOT))) {
+            if (com.editora.text.HtmlElements.VOID.contains(
+                    tag.substring(1, end).toLowerCase(java.util.Locale.ROOT))) {
                 return false;
             }
         }

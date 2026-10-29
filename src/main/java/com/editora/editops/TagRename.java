@@ -1,8 +1,8 @@
 package com.editora.editops;
 
 import java.util.Locale;
-import java.util.Set;
 
+import com.editora.text.HtmlElements;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -29,14 +29,6 @@ public final class TagRename {
 
     /** Longest tag name considered (bounds the backward region walk). */
     public static final int MAX_NAME = 256;
-
-    /** HTML void elements — no close tag, treated as self-closing (shared with {@link TagAutoClose}). */
-    static final Set<String> VOID_ELEMENTS = Set.of(
-            "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track",
-            "wbr");
-
-    /** HTML raw-text elements — their content is skipped to the matching close tag. */
-    static final Set<String> RAW_TEXT_ELEMENTS = Set.of("script", "style", "textarea", "title");
 
     private TagRename() {}
 
@@ -184,7 +176,7 @@ public final class TagRename {
                 // The edited open tag already bears the new name; its void/raw-text classification
                 // and its close tag still go by the old one.
                 String effName = isTarget ? oldName : name;
-                boolean selfClosing = end[1] == 1 || (html && VOID_ELEMENTS.contains(lower(effName)));
+                boolean selfClosing = end[1] == 1 || (html && HtmlElements.VOID.contains(lower(effName)));
                 if (isTarget && (targetIsClose || selfClosing || underConstruction(text, nameEnd))) {
                     return null; // region said close but lexer sees an opener (or a self-closer) — bail
                 }
@@ -195,7 +187,7 @@ public final class TagRename {
                         }
                         events.add(new Ev(true, nameStart, nameEnd));
                     }
-                    if (html && RAW_TEXT_ELEMENTS.contains(lower(effName))) {
+                    if (html && HtmlElements.RAW_TEXT.contains(lower(effName))) {
                         // Raw-text content: no tags inside; jump to this element's own close tag.
                         i = skipToCloseTag(text, end[0], effName);
                         continue;

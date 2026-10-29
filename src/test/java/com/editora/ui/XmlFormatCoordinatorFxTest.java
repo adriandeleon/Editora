@@ -101,6 +101,38 @@ class XmlFormatCoordinatorFxTest {
         waitForStatus(tr("status.lsp.formatNoChange"));
     }
 
+    /** HTML with no server formatting it gets the built-in formatter, which keeps a {@code <pre>} (HTML review C17). */
+    @Test
+    void htmlWithoutAServerGetsTheBuiltInFormatter() throws Exception {
+        status.clear();
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            EditorBuffer h = new EditorBuffer();
+            h.setLanguageOverride("html");
+            h.setContent("<body><div><p>x</p></div><pre>\n  a   b\n</pre></body>\n");
+            h.getNode();
+            return h;
+        });
+        XmlFormatCoordinator f = coordinator(b);
+        FxTestSupport.runOnFx(() -> f.formatActive());
+        waitForStatus(tr("status.html.formatted"));
+        String indent = FxTestSupport.callOnFx(b::indentUnit);
+        assertEquals(
+                "<body>\n" + indent + "<div>\n" + indent + indent + "<p>x</p>\n" + indent + "</div>\n" + indent
+                        + "<pre>\n  a   b\n</pre>\n</body>\n",
+                FxTestSupport.callOnFx(b::getContent));
+
+        status.clear();
+        EditorBuffer open = FxTestSupport.callOnFx(() -> {
+            EditorBuffer h = new EditorBuffer();
+            h.setLanguageOverride("html");
+            h.setContent("<div><script>var a;");
+            h.getNode();
+            return h;
+        });
+        FxTestSupport.runOnFx(() -> coordinator(open).formatActive());
+        waitForStatus("error:" + tr("status.html.formatOpenConstruct"));
+    }
+
     /** In large-file mode a format that multiplies the line count asks first; Cancel leaves the file as it was. */
     @Test
     void aLargeFileFormatThatMultipliesTheLinesAsksFirst() throws Exception {
