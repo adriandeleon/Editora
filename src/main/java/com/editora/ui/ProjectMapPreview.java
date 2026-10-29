@@ -153,6 +153,7 @@ final class ProjectMapPreview extends StackPane {
                 try {
                     read = source == null ? "" : source.get();
                 } catch (RuntimeException unreadable) {
+                    ProjectMapLog.unexpected("reading a card's buffer text", unreadable);
                     read = "";
                 }
                 text = read == null ? "" : read;
@@ -1848,6 +1849,7 @@ final class ProjectMapPreview extends StackPane {
                 next.run();
             } catch (RuntimeException | LinkageError failed) {
                 // one card's bad read must not stop the next task (each reports its own result)
+                ProjectMapLog.unexpected("a card's background read", failed);
             }
         }
     }
@@ -1859,7 +1861,8 @@ final class ProjectMapPreview extends StackPane {
         try {
             IGrammar grammar = GrammarRegistry.shared().forFileName(requestedPath.toString());
             return grammar == null ? null : TextMateHighlighter.compute(text, grammar); // no grammar: no colours
-        } catch (RuntimeException | LinkageError ignored) {
+        } catch (RuntimeException | LinkageError failed) {
+            ProjectMapLog.unexpected("highlighting a card", failed);
             return null;
         }
     }

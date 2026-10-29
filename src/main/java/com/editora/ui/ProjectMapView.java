@@ -1734,6 +1734,7 @@ final class ProjectMapView extends VBox {
                 try {
                     loaded = ProjectMapModel.load(request, listings);
                 } catch (RuntimeException unreadable) {
+                    ProjectMapLog.unexpected("loading the map", unreadable);
                     // a closed SFTP file system throws unchecked; the map must still hear back
                     loaded = ProjectMapModel.Snapshot.EMPTY;
                 }
@@ -2278,7 +2279,8 @@ final class ProjectMapView extends VBox {
     private ProjectMapPreview.@Nullable Content previewContentFor(Path path) {
         try {
             return previewContent.apply(path);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException failed) {
+            ProjectMapLog.unexpected("reading a card's open buffer", failed);
             return null;
         }
     }
@@ -2414,7 +2416,8 @@ final class ProjectMapView extends VBox {
             // Found again in the card's text first: a file changed outside Editora moved them (C5).
             return ProjectMapStickyNotes.notesFor(
                     ProjectMapStickyNotes.reanchored(actions.personalNotes(file), card.fullText()), card.range());
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException failed) {
+            ProjectMapLog.unexpected("reading a card's Personal Notes", failed);
             return List.of();
         }
     }
@@ -2720,7 +2723,8 @@ final class ProjectMapView extends VBox {
             List<PersonalNote> values;
             try {
                 values = enabled && actions != null ? actions.personalNotes(entry.getKey()) : List.of();
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException failed) {
+                ProjectMapLog.unexpected("reading a note card's notes", failed);
                 continue;
             }
             entry.getValue().refreshNotes(values);
@@ -4860,7 +4864,8 @@ final class ProjectMapView extends VBox {
                 if (markers) {
                     candidates.addAll(markerCandidates.get());
                 }
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException failed) {
+                ProjectMapLog.unexpected("listing open and marked files", failed);
                 return;
             }
             for (Path candidate : candidates) {
@@ -7937,7 +7942,8 @@ final class ProjectMapView extends VBox {
     private static boolean safeTest(Predicate<Path> predicate, Path path) {
         try {
             return predicate != null && predicate.test(path);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException failed) {
+            ProjectMapLog.unexpected("checking a row's state", failed);
             return false;
         }
     }

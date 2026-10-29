@@ -639,6 +639,7 @@ final class ProjectMapModel {
                 try {
                     future.complete(listSorted(key.directory(), key.showHidden()));
                 } catch (RuntimeException failed) {
+                    ProjectMapLog.unexpected("listing a folder", failed);
                     future.complete(null);
                 } finally {
                     inFlight.remove(key, running);

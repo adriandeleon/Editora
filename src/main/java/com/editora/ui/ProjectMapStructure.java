@@ -441,7 +441,8 @@ final class ProjectMapStructure {
             Function<Path, ProjectMapPreview.@Nullable Content> contents, Path file) {
         try {
             return contents.apply(file);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException failed) {
+            ProjectMapLog.unexpected("reading a file to outline", failed);
             return null;
         }
     }
@@ -449,7 +450,8 @@ final class ProjectMapStructure {
     private @Nullable List<SymbolNode> serverSymbolsFor(Path file) {
         try {
             return serverSymbols.apply(file);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException failed) {
+            ProjectMapLog.unexpected("asking for a file's server symbols", failed);
             return null;
         }
     }
@@ -579,6 +581,7 @@ final class ProjectMapStructure {
                     : StructureOutline.build(StructureOutline.Source.file(PathDisplay.fileName(file), text)
                             .analyzed());
         } catch (RuntimeException | LinkageError failed) {
+            ProjectMapLog.unexpected("outlining " + PathDisplay.fileName(file), failed);
             roots = List.of(); // a grammar that would not compile: no structure rather than no map
         }
         Map<Path, Node> byPath = new LinkedHashMap<>();
