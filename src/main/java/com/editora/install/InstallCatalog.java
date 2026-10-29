@@ -37,6 +37,12 @@ public final class InstallCatalog {
     public enum Kind {
         /** {@code npm install -g <pkgs>} (global). */
         NPM_GLOBAL,
+        /**
+         * {@code npm install --prefix <config>/<destSubpath> <pkgs>}: a private copy under the config dir, not the
+         * user's global npm folder. The HTML, CSS and JSON servers ({@link WebServerInstall}): their bundle needs a
+         * link inside its own install that a global one cannot be given (HTML review A2).
+         */
+        NPM_PREFIX,
         /** {@code python -m pip install --upgrade --target <dest> <pkg>}. */
         PIP_TARGET,
         /** Download a {@code .vsix} (a ZIP) and extract it (optionally just the java-debug jar). */
@@ -144,6 +150,15 @@ public final class InstallCatalog {
 
     /** The npm package of the Bash server. */
     public static final String BASH_LS_PACKAGE = "bash-language-server";
+
+    /**
+     * The vscode-langservers-extracted release Editora installs for HTML, CSS and JSON: pinned, not npm's {@code latest}
+     * (HTML review A12). 4.10.0 (May 2024) is the last release; the pin keeps a later one from arriving untested.
+     */
+    public static final String WEB_LS_VERSION = "4.10.0";
+
+    /** The npm package of the HTML, CSS and JSON servers (one package, one install). */
+    public static final String WEB_LS_PACKAGE = "vscode-langservers-extracted";
 
     /** The build stamp of the {@link #JDTLS_VERSION} tarball. */
     public static final String JDTLS_BUILD = "202610191322";
@@ -368,7 +383,7 @@ public final class InstallCatalog {
                         ? List.of(typescriptLs())
                         : serverInstall(serverId).orElse(List.of());
         for (Step s : steps) {
-            if (s.kind() == Kind.NPM_GLOBAL
+            if ((s.kind() == Kind.NPM_GLOBAL || s.kind() == Kind.NPM_PREFIX)
                     && s.npmPackages() != null
                     && !s.npmPackages().isEmpty()) {
                 return packageName(s.npmPackages().get(0));
@@ -395,6 +410,16 @@ public final class InstallCatalog {
     public static List<String> npmInstallGlobalArgv(@Nullable List<String> pkgs) {
         List<String> argv = new ArrayList<>(List.of("npm", "install", "-g"));
         argv.addAll(pkgs);
+        return List.copyOf(argv);
+    }
+
+    /** {@code [npm, install, --prefix, <dest>, --no-audit, --no-fund, <pkgs…>]}: a private install. Pure. */
+    public static List<String> npmInstallPrefixArgv(Path dest, @Nullable List<String> pkgs) {
+        List<String> argv = new ArrayList<>(List.of("npm", "install", "--prefix", dest.toString(), "--no-audit"));
+        argv.add("--no-fund");
+        if (pkgs != null) {
+            argv.addAll(pkgs);
+        }
         return List.copyOf(argv);
     }
 
@@ -537,7 +562,8 @@ public final class InstallCatalog {
         return switch (serverId) {
             // --- npm (Node) ---
             // vscode-langservers-extracted ships the JSON, HTML, and CSS servers in one npm package.
-            case "json", "html", "css" -> java.util.Optional.of(List.of(npmStep("vscode-langservers-extracted")));
+            // Pinned, into Editora's own prefix, where the link its embedded JavaScript needs can be made (A2/A12).
+            case "json", "html", "css" -> java.util.Optional.of(List.of(webServersStep()));
             case "bash" ->
                 java.util.Optional.of(List.of(npmStepWithId(BASH_LS_PACKAGE, BASH_LS_PACKAGE + "@" + BASH_LS_VERSION)));
             case "yaml" -> java.util.Optional.of(List.of(npmStep("yaml-language-server")));
@@ -1325,6 +1351,22 @@ public final class InstallCatalog {
     private static Step npmStepWithId(String id, String... packages) {
         return new Step(
                 id, Kind.NPM_GLOBAL, Set.of(Prereq.NPM), List.of(packages), null, null, null, null, false, "", null);
+    }
+
+    /** The HTML, CSS and JSON servers' one install: the pinned package into {@link WebServerInstall#DEST}. Pure. */
+    private static Step webServersStep() {
+        return new Step(
+                WEB_LS_PACKAGE,
+                Kind.NPM_PREFIX,
+                Set.of(Prereq.NPM),
+                List.of(WEB_LS_PACKAGE + "@" + WEB_LS_VERSION),
+                null,
+                null,
+                null,
+                null,
+                false,
+                WebServerInstall.DEST,
+                null);
     }
 
     /** A step that runs {@code argv} via a language toolchain (argv carried in {@code npmPackages}). Pure. */

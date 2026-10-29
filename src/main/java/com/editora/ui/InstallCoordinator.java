@@ -208,8 +208,12 @@ final class InstallCoordinator {
             return;
         }
         boolean outdated = PinnedVersions.forServer(serverId)
-                .map(pin -> editoraCopyOutdated(pin.stepId()))
-                .orElse(false);
+                        .map(pin -> editoraCopyOutdated(pin.stepId()))
+                        .orElse(false)
+                // a global vscode-langservers-extracted has no TypeScript libraries for <script>: Install brings
+                // Editora's own copy, which the default command prefers (HTML review A2)
+                || com.editora.install.WebServerInstall.serves(serverId)
+                        && com.editora.install.WebServerInstall.ownLauncher(ops.configDir(), serverId) == null;
         if (ops.lspAvailable(serverId) && !update && !outdated) {
             host.setStatus(tr("status.install.already", serverName(serverId)));
             onResult.accept(true);
@@ -254,6 +258,29 @@ final class InstallCoordinator {
                 }
                 runServerInstall(serverId, steps, onResult);
             });
+        });
+    }
+
+    /**
+     * Calls {@code onMissing} (on the FX thread) with the names of the prerequisites {@code serverId}'s install lacks
+     * on this machine ("Node.js (npm)"), if any; nothing when they are all there. The banner says so before Install
+     * is clicked (HTML review A9).
+     */
+    void whenPrereqsMissing(String serverId, java.util.function.Consumer<String> onMissing) {
+        List<Step> steps = InstallCatalog.serverInstall(serverId).orElse(List.of());
+        if (steps.isEmpty()) {
+            return;
+        }
+        service.detectPrereqs(present -> {
+            String names = steps.stream()
+                    .flatMap(s -> s.prereqs().stream())
+                    .filter(p -> !present.contains(p))
+                    .distinct()
+                    .map(this::prereqName)
+                    .collect(Collectors.joining(", "));
+            if (!names.isEmpty()) {
+                onMissing.accept(names);
+            }
         });
     }
 

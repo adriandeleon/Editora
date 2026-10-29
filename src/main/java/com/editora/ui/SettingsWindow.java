@@ -8049,7 +8049,7 @@ public class SettingsWindow {
     /** The program a server runs, as its pill names it: the display-name table first (the pom.xml server runs
      *  through java; the native XML download is platform-suffixed — Maven review C14), else the command's name. */
     private static String lspToolName(String serverId, List<String> argv) {
-        String named = com.editora.lsp.LspServerRegistry.displayNameFor(serverId);
+        String named = com.editora.lsp.LspServerRegistry.displayNameFor(serverId, argv); // `node …` names HTML (A15)
         return named != null ? named : ToolStatusRow.toolName(argv, serverId);
     }
 

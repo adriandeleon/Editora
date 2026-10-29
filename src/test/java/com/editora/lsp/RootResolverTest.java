@@ -302,4 +302,29 @@ class RootResolverTest {
         java.nio.file.Files.writeString(single.resolve("pom.xml"), "<project/>");
         org.junit.jupiter.api.Assertions.assertEquals(single, RootResolver.javaBuildRoot(single, null, home));
     }
+
+    /**
+     * HTML review A6: a loose page of a static site with neither {@code package.json} nor {@code .git} is rooted at
+     * the highest folder above it holding an {@code index.html} (below home), so {@code /css/…} resolves against the
+     * site, not the page's own folder; a marker or a project still decides.
+     */
+    @Test
+    void aLooseSitesPageIsRootedAtItsHighestIndexHtml(@TempDir Path tmp) throws IOException {
+        Path home = Files.createDirectories(tmp.resolve("home"));
+        Files.writeString(home.resolve("index.html"), "home's own page: never a root");
+        Path site = Files.createDirectories(home.resolve("www/site"));
+        Files.writeString(site.resolve("index.html"), "");
+        Path docs = Files.createDirectories(site.resolve("docs/pages"));
+        Files.writeString(site.resolve("docs/index.html"), "");
+        Path page = Files.writeString(docs.resolve("about.html"), "");
+
+        assertEquals(site, RootResolver.siteRoot(docs, page, null, home), "the highest, not the nearest");
+        Path lone = Files.writeString(
+                Files.createDirectories(home.resolve("Downloads/x")).resolve("a.html"), "");
+        assertEquals(lone.getParent(), RootResolver.siteRoot(lone.getParent(), lone, null, home), "no index.html");
+        assertEquals(tmp, RootResolver.siteRoot(tmp, page, null, home), "a marker's root is kept");
+        assertEquals(docs, RootResolver.siteRoot(docs, page, docs.getParent(), home), "inside the project: kept");
+        Files.writeString(docs.resolve("package.json"), "{}");
+        assertEquals(docs, RootResolver.siteRoot(docs, page, null, home), "a marker in its own folder decides");
+    }
 }

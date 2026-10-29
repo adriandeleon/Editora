@@ -179,6 +179,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `<textarea>`, `<script>` and `<style>` content and your blank lines).
   - Snippets: `!` selects `en`, `doctype` is `<!DOCTYPE html>`, `html5`'s body is indented, `link` is a stylesheet
     link, the obsolete `big`, `command`, `keygen` and `menuitem` are gone; the New File HTML pages agree with them.
+- **HTML: install, start-up and status (HTML review, install).** Install for HTML, CSS and JSON now puts
+  vscode-langservers-extracted **4.10.0** (pinned, not npm's latest) into Editora's own folder
+  (`plugins/lsp/web` under the config folder) instead of `npm install -g`, with the link its HTML server needs to find
+  TypeScript's libraries: JavaScript in `<script>` and `on…=""` gets the DOM and standard library again (completion
+  after `document.`, parameter help, real hovers), which no npm install of the package had. A blank HTML, CSS or JSON
+  command runs that copy first, then PATH. Doctor's HTML row warns when the server in use cannot load those libraries,
+  with Update; its version is checked against the pin. Format Document no longer says "Already formatted" when the
+  request failed, timed out or was cut off by a restart: it says which. A server whose requests time out twice in a
+  row is reported as not responding (with Restart Language Servers), and as responding again once it answers. The
+  Node.js chosen in Settings now runs every npm-installed server (HTML, CSS, JSON, YAML, Bash, Pyright…), not only
+  TypeScript's, and Doctor's Node.js row counts those servers as needing it. The first HTML or CSS file asks to turn
+  on code intelligence, and the install banner says what Install runs and that it needs Node.js (before the click,
+  when npm is missing). Doctor's crash tip no longer talks about lemminx outside XML, and a server run by the user's
+  own command offers Settings…, not an Install that would change nothing. A `node …/htmlServerNodeMain.js` command is
+  shown as vscode-html-language-server, not "node". An extensionless file starting `<!doctype html` or `<html` opens
+  as HTML. A loose page of a static site without `package.json` or `.git` is served from the highest folder above it
+  holding an `index.html` (below home), so `/css/…` links resolve. HTML files keep their server up to 50,000 lines.
+
 - **XML editing (XML/pom review 3: xmlui).**
   - XML: Generate Grammar…'s two XSD choices work in untrusted folders. lemminx needed the W3C `xml.xsd`, which it
     could not download there; Editora now ships it.
