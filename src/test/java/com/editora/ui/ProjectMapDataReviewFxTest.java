@@ -191,7 +191,7 @@ class ProjectMapDataReviewFxTest {
                     entry(map.surface(), app)));
             waitFor(() -> symbol(map, "reset()") != null, "the members of App among " + names(map));
             Path type = FxTestSupport.callOnFx(() -> symbol(map, "App"));
-            Path add = FxTestSupport.callOnFx(() -> symbol(map, "add()"));
+            Path add = FxTestSupport.callOnFx(() -> symbol(map, "add(int, int)")); // labels carry parameter types
             Path reset = FxTestSupport.callOnFx(() -> symbol(map, "reset()"));
             assertNotNull(add, names(map));
             FxTestSupport.runOnFx(() -> {
