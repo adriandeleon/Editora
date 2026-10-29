@@ -151,8 +151,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private static final java.util.logging.Logger LOG =
             java.util.logging.Logger.getLogger(ProjectPanel.class.getName());
 
-    private static final int MAX_VISIT = 20_000;
+    static final int MAX_VISIT = 20_000;
     private static final int MAX_MATCHES = 300;
+    /** The shortest query the Map searches the whole project for; a shorter one filters what is loaded. */
+    static final int MIN_MAP_SEARCH_LENGTH = 2;
+
     private static final int MAX_DEPTH = 25;
 
     private final Consumer<Path> onOpenFile;
@@ -740,16 +743,24 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         boolean includeHidden = showHidden;
         boolean useGitignore = respectGitignore && com.editora.vfs.Vfs.isLocal(searchRoot);
+        if (q.codePointCount(0, q.length()) < MIN_MAP_SEARCH_LENGTH) {
+            // One character matches most of a project: walking it, opening the folders of 300 matches and
+            // drawing them stalled every window for a third of a second on a mid-size repository. It filters
+            // the rows already on the map instead, and the status says how to search the whole project.
+            mapView.setSearchMatches(q, List.of(), 0, false);
+            onStatus.accept(tr("project.map.status.searchTooShort", MIN_MAP_SEARCH_LENGTH));
+            return;
+        }
         submitUnlessDisposed(searchExecutor, () -> {
             com.editora.search.GitignoreFilter gitignore = useGitignore
                     ? com.editora.search.GitignoreFilter.load(searchRoot)
                     : com.editora.search.GitignoreFilter.NONE;
-            List<Path> matches = search(searchRoot, q, includeHidden, gitignore, () -> gen != mapSearchGen.get());
+            SearchResult found = searchRanked(searchRoot, q, includeHidden, gitignore, () -> gen != mapSearchGen.get());
             Platform.runLater(() -> {
                 if (gen != mapSearchGen.get() || !isMapShowing()) {
                     return;
                 }
-                mapView.setSearchMatches(q, matches);
+                mapView.setSearchMatches(q, found.matches(), found.total(), found.partial());
             });
         });
     }
@@ -1621,33 +1632,69 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             boolean includeHidden,
             com.editora.search.GitignoreFilter gitignore,
             java.util.function.BooleanSupplier cancelled) {
+        return searchRanked(root, query, includeHidden, gitignore, cancelled).matches();
+    }
+
+    /**
+     * What a filename search found: the best {@link #MAX_MATCHES} matches, best first; how many names matched
+     * in all; and whether the walk stopped at {@link #MAX_VISIT} entries before it saw the whole project.
+     */
+    record SearchResult(List<Path> matches, int total, boolean partial) {
+        static final SearchResult NONE = new SearchResult(List.of(), 0, false);
+
+        /** Whether more matched (or may have) than {@link #matches()} holds. */
+        boolean truncated() {
+            return partial || total > matches.size();
+        }
+    }
+
+    /**
+     * As {@link #search}, with the counts. The walk is bounded by the entries it visits, not by the matches it
+     * has found: stopping at the first {@link #MAX_MATCHES} hits of a breadth-first walk kept shallow files and
+     * never reached the deep one a short query named. Every match is ranked as it is found and only the best
+     * {@link #MAX_MATCHES} are kept (a bounded heap), so the result is the best of everything visited.
+     */
+    static SearchResult searchRanked(
+            Path root,
+            String query,
+            boolean includeHidden,
+            com.editora.search.GitignoreFilter gitignore,
+            java.util.function.BooleanSupplier cancelled) {
         if (cancelled.getAsBoolean()) {
-            return List.of(); // superseded while it sat in the queue
+            return SearchResult.NONE; // superseded while it sat in the queue
         }
         String q = query.toLowerCase(Locale.ROOT);
         com.editora.search.GitignoreFilter rootIgnore =
                 gitignore == null ? com.editora.search.GitignoreFilter.NONE : gitignore;
-        List<Path> matches = new ArrayList<>();
+        // Worst first, so the heap's head is what a better match pushes out.
+        java.util.PriorityQueue<SearchHit> best = new java.util.PriorityQueue<>(SearchHit.ORDER.reversed());
+        int total = 0;
+        boolean partial = false;
         // Each queued directory carries the ignore rules in force inside it: the root's, plus those of any
         // .gitignore met on the way down (packages/<name>/.gitignore naming node_modules).
         record Dir(Path path, int depth, com.editora.search.GitignoreFilter ignore) {}
         java.util.Deque<Dir> queue = new java.util.ArrayDeque<>();
         queue.add(new Dir(root, 0, rootIgnore));
         int visited = 0;
-        while (!queue.isEmpty() && visited <= MAX_VISIT && matches.size() < MAX_MATCHES) {
+        while (!queue.isEmpty()) {
             if (cancelled.getAsBoolean()) {
-                return List.of();
+                return SearchResult.NONE;
+            }
+            if (visited > MAX_VISIT) {
+                partial = true;
+                break;
             }
             Dir current = queue.poll();
             com.editora.search.GitignoreFilter ignore = current.ignore();
             boolean useGitignore = !ignore.isEmpty();
             try (java.nio.file.DirectoryStream<Path> entries = Files.newDirectoryStream(current.path())) {
                 for (Path p : entries) {
-                    if (++visited > MAX_VISIT || matches.size() >= MAX_MATCHES) {
+                    if (++visited > MAX_VISIT) {
+                        partial = true;
                         break;
                     }
                     if ((visited & 0xFF) == 0 && cancelled.getAsBoolean()) {
-                        return List.of(); // one huge directory must not pin the thread either
+                        return SearchResult.NONE; // one huge directory must not pin the thread either
                     }
                     String name = p.getFileName().toString();
                     boolean hidden = name.startsWith(".");
@@ -1664,34 +1711,54 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                             queue.add(new Dir(p, current.depth() + 1, ignore.nested(p, rel)));
                         }
                     } else if ((includeHidden || !hidden) && FuzzyMatch.of(name, q) != null) {
-                        matches.add(p);
+                        total++;
+                        SearchHit hit = SearchHit.of(root, p, name, q);
+                        if (best.size() < MAX_MATCHES) {
+                            best.add(hit);
+                        } else if (SearchHit.ORDER.compare(hit, best.peek()) < 0) {
+                            best.poll();
+                            best.add(hit);
+                        }
                     }
                 }
             } catch (IOException | RuntimeException ex) {
                 // Unreadable directory — skip it, keep searching the rest (best effort).
             }
         }
-        // Relevance, not the alphabet. Alphabetical order is arbitrary with respect to what was typed, so
-        // the file actually being looked for sat wherever its initial happened to fall. Scoring the whole
-        // relative path (rather than just the name) is what lets a query name a directory as well as a
-        // file, and ofPath keeps a basename hit above a file that merely lives in a folder of that name.
-        record Scored(Path path, int score, String name) {}
-        List<Scored> scored = new ArrayList<>(matches.size());
-        for (Path p : matches) {
-            Path rel = root.relativize(p);
-            FuzzyMatch.Match m = FuzzyMatch.ofPath(rel.toString().replace(java.io.File.separatorChar, '/'), q);
+        List<SearchHit> ranked = new ArrayList<>(best);
+        ranked.sort(SearchHit.ORDER);
+        return new SearchResult(ranked.stream().map(SearchHit::path).toList(), total, partial);
+    }
+
+    /**
+     * One filename match and how it ranks. Relevance, not the alphabet: first how the name answers the query
+     * ({@link ProjectSearchRank#tier} — the exact name, then a prefix, then whole words…), then, among names
+     * that answer it as well, the shorter name (fewer characters the user did not type), then the fuzzy score
+     * of the whole relative path, which lets a query name a directory as well as a file, then the shallower
+     * path and the name.
+     */
+    private record SearchHit(Path path, int tier, int nameLength, int score, int depth, String name) {
+        static final java.util.Comparator<SearchHit> ORDER = java.util.Comparator.comparingInt(SearchHit::tier)
+                .thenComparingInt(hit -> hit.tier() == ProjectSearchRank.FUZZY ? 0 : hit.nameLength())
+                .thenComparing(
+                        java.util.Comparator.comparingInt(SearchHit::score).reversed())
+                .thenComparingInt(SearchHit::depth)
+                .thenComparing(SearchHit::name, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(hit -> hit.path().toString());
+
+        static SearchHit of(Path root, Path path, String name, String query) {
+            Path rel = root.relativize(path);
+            FuzzyMatch.Match m = FuzzyMatch.ofPath(rel.toString().replace(java.io.File.separatorChar, '/'), query);
             // The walk matched on the file name, so a path-level score can be absent (a name-only match
-            // whose characters don't line up across the whole path); such a row keeps a floor score and
-            // sorts alphabetically among its peers rather than dropping out of a list it belongs in.
-            scored.add(new Scored(
-                    p,
+            // whose characters don't line up across the whole path); such a row keeps a floor score.
+            return new SearchHit(
+                    path,
+                    ProjectSearchRank.tier(name, query),
+                    name.length(),
                     m == null ? Integer.MIN_VALUE : m.score(),
-                    p.getFileName().toString()));
+                    rel.getNameCount(),
+                    name);
         }
-        scored.sort(java.util.Comparator.comparingInt((Scored s) -> s.score())
-                .reversed()
-                .thenComparing(s -> s.name(), String.CASE_INSENSITIVE_ORDER));
-        return scored.stream().map(Scored::path).toList();
     }
 
     // --- keyboard navigation (mirrors StructurePanel) ---

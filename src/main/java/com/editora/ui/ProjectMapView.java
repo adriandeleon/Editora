@@ -190,6 +190,10 @@ final class ProjectMapView extends VBox {
     private final Set<Path> searchOpened = new HashSet<>();
 
     private final Set<Path> searchClosed = new HashSet<>();
+    /** How many names the current query matched in all, and whether its walk stopped short of the project. */
+    private int searchMatchesTotal;
+
+    private boolean searchMatchesPartial;
     /** The query whose first match was last selected, so re-running it does not steal the selection again. */
     private String searchSelectionQuery = "";
     /** Row limits raised by "+N more", by directory. */
@@ -859,6 +863,8 @@ final class ProjectMapView extends VBox {
     private void clearSearchState() {
         searchExpanded = Set.of();
         searchMatches = List.of();
+        searchMatchesTotal = 0;
+        searchMatchesPartial = false;
         searchOpened.clear();
         searchClosed.clear();
         searchSelectionQuery = "";
@@ -884,10 +890,21 @@ final class ProjectMapView extends VBox {
     }
 
     void setSearchMatches(String query, List<Path> matches) {
+        setSearchMatches(query, matches, matches == null ? 0 : matches.size(), false);
+    }
+
+    /**
+     * The global search's answer: {@code matches}, best first, out of {@code total} names that matched;
+     * {@code partial} when the walk stopped before it saw the whole project. When fewer are shown than
+     * matched, the status line says so (A5): a search that kept only the best few never says it found all.
+     */
+    void setSearchMatches(String query, List<Path> matches, int total, boolean partial) {
         String value = query == null ? "" : query;
         if (disposed || value.isBlank() || !this.query.equals(value)) {
             return;
         }
+        searchMatchesTotal = Math.max(total, matches == null ? 0 : matches.size());
+        searchMatchesPartial = partial;
         List<Path> nextMatches = matches == null
                 ? List.of()
                 : matches.stream()
@@ -1419,6 +1436,11 @@ final class ProjectMapView extends VBox {
                 }
                 if (shown < searchMatches.size()) {
                     onStatus.accept(tr("project.map.status.matchesShown", shown, searchMatches.size()));
+                } else if (searchMatchesTotal > searchMatches.size()) {
+                    onStatus.accept(tr("project.map.status.searchTruncated", searchMatches.size(), searchMatchesTotal));
+                } else if (searchMatchesPartial) {
+                    onStatus.accept(
+                            tr("project.map.status.searchPartial", searchMatches.size(), ProjectPanel.MAX_VISIT));
                 }
             }
         } else if (loaded.capped() && (announceLimit || !wasCapped)) {
