@@ -176,6 +176,9 @@ final class ProjectMapView extends VBox {
         return thread;
     });
     private final AtomicLong generation = new AtomicLong();
+    /** Directory listings: cached for the folders the Project watcher follows, each one with a timeout. */
+    final ProjectMapModel.Listings listings =
+            new ProjectMapModel.Listings(ProjectMapModel.LISTING_TIMEOUT_MILLIS, null);
     /** How many queued loads actually began listing (the rest were superseded first). */
     final java.util.concurrent.atomic.AtomicInteger loadsStartedForTest =
             new java.util.concurrent.atomic.AtomicInteger();
@@ -190,6 +193,10 @@ final class ProjectMapView extends VBox {
     private final Set<Path> searchOpened = new HashSet<>();
 
     private final Set<Path> searchClosed = new HashSet<>();
+    /** How many names the current query matched in all, and whether its walk stopped short of the project. */
+    private int searchMatchesTotal;
+
+    private boolean searchMatchesPartial;
     /** The query whose first match was last selected, so re-running it does not steal the selection again. */
     private String searchSelectionQuery = "";
     /** Row limits raised by "+N more", by directory. */
@@ -263,6 +270,8 @@ final class ProjectMapView extends VBox {
         this.isModified = isModified == null ? path -> false : isModified;
         this.previewContent = previewContent == null ? path -> null : previewContent;
         this.structure = new ProjectMapStructure(this::previewContentFor);
+        // A folder that stopped answering and then answers is listed again by the next load.
+        listings.setOnRecovered(() -> Platform.runLater(this::reload));
         structure.setOnChanged(this::structureChanged);
         getStyleClass().add("project-map-view");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
@@ -859,6 +868,8 @@ final class ProjectMapView extends VBox {
     private void clearSearchState() {
         searchExpanded = Set.of();
         searchMatches = List.of();
+        searchMatchesTotal = 0;
+        searchMatchesPartial = false;
         searchOpened.clear();
         searchClosed.clear();
         searchSelectionQuery = "";
@@ -884,10 +895,21 @@ final class ProjectMapView extends VBox {
     }
 
     void setSearchMatches(String query, List<Path> matches) {
+        setSearchMatches(query, matches, matches == null ? 0 : matches.size(), false);
+    }
+
+    /**
+     * The global search's answer: {@code matches}, best first, out of {@code total} names that matched;
+     * {@code partial} when the walk stopped before it saw the whole project. When fewer are shown than
+     * matched, the status line says so (A5): a search that kept only the best few never says it found all.
+     */
+    void setSearchMatches(String query, List<Path> matches, int total, boolean partial) {
         String value = query == null ? "" : query;
         if (disposed || value.isBlank() || !this.query.equals(value)) {
             return;
         }
+        searchMatchesTotal = Math.max(total, matches == null ? 0 : matches.size());
+        searchMatchesPartial = partial;
         List<Path> nextMatches = matches == null
                 ? List.of()
                 : matches.stream()
@@ -958,9 +980,31 @@ final class ProjectMapView extends VBox {
         previews.values().forEach(this::updateCardNotes);
     }
 
+    /** Anything on disk may have changed (a focus regain, an in-app file operation): every folder is listed again. */
     void refresh() {
+        listings.invalidateAll();
         reload();
         scheduleCardRefresh();
+    }
+
+    /** The Project watcher saw entries come or go in {@code directories}: those are listed again, the rest kept. */
+    void refresh(java.util.Collection<Path> directories) {
+        listings.invalidate(directories);
+        reload();
+        scheduleCardRefresh();
+    }
+
+    /**
+     * Files in {@code directories} were rewritten (sizes and times changed, no entry came or went): their next
+     * listing reads them again, but nothing is reloaded for it now.
+     */
+    void listingsChanged(java.util.Collection<Path> directories) {
+        listings.invalidate(directories);
+    }
+
+    /** The folders the Project watcher follows now: only their listings may be reused between loads. */
+    void setWatchedDirectories(Set<Path> directories) {
+        listings.setWatched(directories);
     }
 
     /**
@@ -999,6 +1043,62 @@ final class ProjectMapView extends VBox {
         Path renamed = ProjectMapModel.normalize(from);
         if (selected != null && renamed != null && selected.startsWith(renamed)) {
             pendingSelection = ProjectMapModel.remap(selected, from, to);
+        }
+        renamedCarryCards(from, to);
+        listings.invalidateAll(); // the folders on both sides of the move are listed afresh
+        // A load that is listing the old tree may be in flight. Its snapshot would prune the folders just
+        // remapped (they are not in it) and close them: it must not land, and the new tree is listed instead.
+        if (active) {
+            reload();
+        } else {
+            generation.incrementAndGet();
+            loadFinished();
+        }
+    }
+
+    /** Preview and note cards of a renamed file, or of files under a renamed folder, follow it (C21). */
+    private void renamedCarryCards(Path from, Path to) {
+        Path source = ProjectMapModel.normalize(from);
+        if (source == null) {
+            return;
+        }
+        boolean moved = false;
+        for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
+            if (!entry.getKey().startsWith(source)) {
+                continue;
+            }
+            ProjectMapPreview card = entry.getValue();
+            previews.remove(entry.getKey());
+            Path key = ProjectMapModel.remap(entry.getKey(), from, to);
+            Path file = card.path();
+            if (key == null || file == null) {
+                closePreview(card);
+                continue;
+            }
+            Path movedFile = ProjectMapModel.remap(file, from, to);
+            if (movedFile != null) {
+                card.pathRenamed(movedFile);
+            }
+            previews.put(key, card);
+            moved = true;
+        }
+        for (Map.Entry<Path, ProjectMapNotePreview> entry : List.copyOf(notePreviews.entrySet())) {
+            if (!entry.getKey().startsWith(source)) {
+                continue;
+            }
+            notePreviews.remove(entry.getKey());
+            Path key = ProjectMapModel.remap(entry.getKey(), from, to);
+            if (key == null) {
+                closeNotePreview(entry.getValue());
+                continue;
+            }
+            entry.getValue().pathRenamed(key);
+            notePreviews.put(key, entry.getValue());
+            moved = true;
+        }
+        if (moved) {
+            repaintPreviewConnectors();
+            scheduleCardRefresh(); // note cards re-read the store once the notes have moved with the file
         }
     }
 
@@ -1190,6 +1290,7 @@ final class ProjectMapView extends VBox {
         cardDiskRefresh.stop();
         generation.incrementAndGet();
         loader.shutdownNow();
+        listings.close();
         structure.dispose();
         loadInFlight = false;
         loadingDelay.stop();
@@ -1271,7 +1372,8 @@ final class ProjectMapView extends VBox {
                 directoryLimits,
                 pinned,
                 ProjectMapView::placeholderLabel,
-                () -> requested != generation.get());
+                () -> requested != generation.get(),
+                surface.columnFilterQueries());
         loadStarted();
         try {
             loader.submit(() -> {
@@ -1281,7 +1383,7 @@ final class ProjectMapView extends VBox {
                 loadsStartedForTest.incrementAndGet();
                 ProjectMapModel.Snapshot loaded;
                 try {
-                    loaded = ProjectMapModel.load(request);
+                    loaded = ProjectMapModel.load(request, listings);
                 } catch (RuntimeException unreadable) {
                     // a closed SFTP file system throws unchecked; the map must still hear back
                     loaded = ProjectMapModel.Snapshot.EMPTY;
@@ -1302,6 +1404,8 @@ final class ProjectMapView extends VBox {
             case MORE -> tr("project.map.row.more", remaining);
             case EMPTY -> tr("project.map.row.emptyFolder");
             case UNREADABLE -> tr("project.map.row.unreadableFolder");
+            case OVER_LIMIT -> tr("project.map.row.overLimit", ProjectMapModel.MAX_VISIBLE_ITEMS);
+            case NOT_RESPONDING -> tr("project.map.row.notResponding");
         };
     }
 
@@ -1337,10 +1441,10 @@ final class ProjectMapView extends VBox {
         boolean expansionChanged = false;
         if (!loaded.entries().isEmpty()) {
             if (!searching()) {
-                // Folders that did not load (renamed, deleted, replaced by a file) leave the manual set, and
-                // so do those the overall limit left without a single row: neither is drawn as open.
+                // Folders that did not load (renamed, deleted, replaced by a file) leave the manual set. One the
+                // overall limit left without a single row stays: it is drawn open with an "over the limit" stub
+                // and loads again when a column closes.
                 Set<Path> kept = ProjectMapModel.pruneExpansion(root, expanded, loaded);
-                kept.removeAll(loaded.skipped());
                 if (!kept.equals(expanded)) {
                     expanded.clear();
                     expanded.addAll(kept);
@@ -1419,6 +1523,11 @@ final class ProjectMapView extends VBox {
                 }
                 if (shown < searchMatches.size()) {
                     onStatus.accept(tr("project.map.status.matchesShown", shown, searchMatches.size()));
+                } else if (searchMatchesTotal > searchMatches.size()) {
+                    onStatus.accept(tr("project.map.status.searchTruncated", searchMatches.size(), searchMatchesTotal));
+                } else if (searchMatchesPartial) {
+                    onStatus.accept(
+                            tr("project.map.status.searchPartial", searchMatches.size(), ProjectPanel.MAX_VISIT));
                 }
             }
         } else if (loaded.capped() && (announceLimit || !wasCapped)) {
@@ -1496,6 +1605,25 @@ final class ProjectMapView extends VBox {
         searchOpened.removeIf(path -> path.startsWith(directory));
         searchClosed.removeIf(path -> path.startsWith(directory));
         searchClosed.add(directory);
+    }
+
+    /**
+     * A column's own filter changed. In a folder with more rows than its limit loads, the filter has to see
+     * the rows that did not load as well, so the folder is listed again with the filter (B8); the listing
+     * cache makes that cheap. A folder that loaded whole is filtered where it is.
+     */
+    private void truncatedColumnFilterChanged(@Nullable Path directory) {
+        Path path = ProjectMapModel.normalize(directory);
+        ProjectMapModel.DirectoryFacts facts =
+                path == null ? null : snapshot.directories().get(path);
+        if (facts == null) {
+            return;
+        }
+        int limit = Math.max(
+                ProjectMapModel.DIRECTORY_CHUNK, directoryLimits.getOrDefault(path, ProjectMapModel.DIRECTORY_CHUNK));
+        if (facts.truncated() || facts.loaded() > limit) {
+            reload();
+        }
     }
 
     /** Raises one truncated directory's row limit by a chunk; the overall limit still applies. */
@@ -2662,6 +2790,9 @@ final class ProjectMapView extends VBox {
         private Predicate<Path> noteState = path -> false;
         private Map<Path, GitFileStatus> gitState = Map.of();
         private Set<Path> gitDirectories = Set.of();
+        /** Paths Git reports as untracked; a folder among them makes everything under it untracked too. */
+        private Set<Path> gitUntrackedRoots = Set.of();
+
         private Set<Path> openPaths = Set.of();
         private Set<Path> modifiedPaths = Set.of();
         private Set<Path> bookmarkedPaths = Set.of();
@@ -2904,6 +3035,17 @@ final class ProjectMapView extends VBox {
         @Nullable
         Path selectedPath() {
             return selected;
+        }
+
+        /** Each column's own filter text, by the directory it lists (the loader matches a long folder's rest). */
+        Map<Path, String> columnFilterQueries() {
+            Map<Path, String> result = new HashMap<>();
+            columnQueries.forEach((id, value) -> {
+                if (id.parent() != null && value != null && !value.isBlank()) {
+                    result.put(id.parent(), value);
+                }
+            });
+            return result;
         }
 
         /** Each column's own "Show hidden" choice, by the directory it lists; absent means the setting. */
@@ -3180,6 +3322,13 @@ final class ProjectMapView extends VBox {
         void setGitState(Map<Path, GitFileStatus> status, Set<Path> directories) {
             gitState = status == null ? Map.of() : status;
             gitDirectories = directories == null ? Set.of() : directories;
+            Set<Path> untracked = new HashSet<>();
+            gitState.forEach((path, value) -> {
+                if (value == GitFileStatus.UNTRACKED) {
+                    untracked.add(path);
+                }
+            });
+            gitUntrackedRoots = Set.copyOf(untracked);
             recomputeEmphasis();
             repaint();
         }
@@ -3701,6 +3850,7 @@ final class ProjectMapView extends VBox {
                     } else {
                         columnQueries.put(id, value);
                     }
+                    truncatedColumnFilterChanged(id.parent());
                     repaint();
                     if (selected != null
                             && boxes.stream()
@@ -3756,6 +3906,31 @@ final class ProjectMapView extends VBox {
             }
         }
 
+        /**
+         * A row's Git status: its own, or untracked when it lies under a folder Git reports as untracked. In
+         * its default mode {@code git status} names a new folder ({@code ? deep/}), not the files in it.
+         */
+        private @Nullable GitFileStatus gitStatusOf(Path path) {
+            GitFileStatus own = gitState.get(path);
+            if (own != null || gitUntrackedRoots.isEmpty()) {
+                return own;
+            }
+            for (Path parent = path.getParent(); parent != null; parent = parent.getParent()) {
+                if (gitUntrackedRoots.contains(parent)) {
+                    return GitFileStatus.UNTRACKED;
+                }
+                if (parent.equals(root)) {
+                    break;
+                }
+            }
+            return null;
+        }
+
+        /** Whether the Git chip counts a row: it has a status, or is a folder holding a change. */
+        private boolean gitChanged(Path path) {
+            return gitDirectories.contains(path) || gitStatusOf(path) != null;
+        }
+
         private void recomputeEmphasis() {
             if (filters == null || !filters.active()) {
                 emphasized = Set.of();
@@ -3763,9 +3938,13 @@ final class ProjectMapView extends VBox {
             }
             Set<Path> direct = new HashSet<>();
             Set<Path> loadedPaths = new HashSet<>();
+            List<ProjectMapModel.Entry> symbolRows = new ArrayList<>();
             for (ProjectMapModel.Entry entry : entries) {
                 Path path = entry.path();
                 loadedPaths.add(path);
+                if (entry.isSymbol()) {
+                    symbolRows.add(entry);
+                }
                 if (entry.isPlaceholder() || entry.isSymbol()) {
                     continue;
                 }
@@ -3774,7 +3953,7 @@ final class ProjectMapView extends VBox {
                         filters,
                         openPaths.contains(path),
                         modifiedPaths.contains(path),
-                        gitState.containsKey(path) || gitDirectories.contains(path),
+                        gitChanged(path),
                         bookmarkedPaths.contains(path),
                         notedPaths.contains(path))) {
                     direct.add(path);
@@ -3789,7 +3968,50 @@ final class ProjectMapView extends VBox {
                     result.add(entry.path());
                 }
             }
+            result.addAll(ProjectMapModel.emphasized(entries, searchMatchingSymbols(symbolRows), root));
             emphasized = result;
+        }
+
+        /**
+         * The declarations on screen whose name the query matches (E6): an open Structure column is searched
+         * as its file's rows are, without reading anything. A match lights itself and the rows that lead to
+         * it, not its siblings. The other filters still have to accept the declaration's file.
+         */
+        private Set<Path> searchMatchingSymbols(List<ProjectMapModel.Entry> symbolRows) {
+            if (filters.query().isEmpty() || symbolRows.isEmpty()) {
+                return Set.of();
+            }
+            ProjectMapModel.Filters fileFilters = new ProjectMapModel.Filters(
+                    "",
+                    filters.open(),
+                    filters.modified(),
+                    filters.gitChanged(),
+                    filters.bookmarked(),
+                    filters.personalNotes(),
+                    filters.type());
+            Set<Path> result = new HashSet<>();
+            Map<Path, Boolean> fileAccepted = new HashMap<>();
+            for (ProjectMapModel.Entry entry : symbolRows) {
+                ProjectMapModel.Symbol symbol = entry.symbol();
+                if (symbol == null || com.editora.search.FuzzyMatch.of(entry.name(), filters.query()) == null) {
+                    continue;
+                }
+                Path file = symbol.file();
+                boolean accepted = fileAccepted.computeIfAbsent(
+                        file,
+                        ignored -> ProjectMapModel.matches(
+                                new ProjectMapModel.Entry(file, file.getParent(), 0, false),
+                                fileFilters,
+                                openPaths.contains(file),
+                                modifiedPaths.contains(file),
+                                gitChanged(file),
+                                bookmarkedPaths.contains(file),
+                                notedPaths.contains(file)));
+                if (accepted) {
+                    result.add(entry.path());
+                }
+            }
+            return result;
         }
 
         /**
@@ -4810,12 +5032,12 @@ final class ProjectMapView extends VBox {
 
         private String iconStatusClass(ProjectMapModel.Entry entry) {
             if (entry.directory()) {
-                return gitDirectories.contains(entry.path()) ? "git-status-dir-changed" : "";
+                return gitChanged(entry.path()) ? "git-status-dir-changed" : "";
             }
             if (modifiedPaths.contains(entry.path())) {
                 return "modified-file";
             }
-            GitFileStatus status = gitState.get(entry.path());
+            GitFileStatus status = gitStatusOf(entry.path());
             return status == null ? "" : status.cssClass();
         }
 
@@ -4865,7 +5087,7 @@ final class ProjectMapView extends VBox {
                     + (notedPaths.contains(entry.path()) ? MARKER_WIDTH : 0);
             // Keep Structure and Preview in the final strip and the semantic markers immediately to its left.
             double x = box.x() + box.width() - (trailingZone(entry) + 3 + markerWidth) * zoom;
-            GitFileStatus status = gitState.get(entry.path());
+            GitFileStatus status = gitStatusOf(entry.path());
             if (status != null) {
                 g.setFill(onAccentFill ? onAccent() : gitColor(status));
                 g.setFont(Font.font("System", FontWeight.BOLD, 10 * zoom));
@@ -5193,7 +5415,7 @@ final class ProjectMapView extends VBox {
             if (modifiedPaths.contains(entry.path())) {
                 statuses.add(tr("project.map.tooltip.unsaved"));
             }
-            if (gitState.containsKey(entry.path()) || gitDirectories.contains(entry.path())) {
+            if (gitChanged(entry.path())) {
                 statuses.add(tr("project.map.tooltip.gitChanged"));
             }
             if (bookmarkedPaths.contains(entry.path())) {

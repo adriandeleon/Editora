@@ -706,6 +706,25 @@ final class ProjectMapPreview extends StackPane {
         return path;
     }
 
+    /**
+     * The file this card shows was renamed or moved inside Editora: the card follows it to {@code to} where
+     * it is, keeping its place, size and declaration range, and reads it again there (a card that mirrors a
+     * buffer gets the buffer's text with the next refresh instead).
+     */
+    void pathRenamed(Path to) {
+        if (disposed || path == null || to == null) {
+            return;
+        }
+        path = to.toAbsolutePath().normalize();
+        title.setGraphic(FileIcons.forProjectItem(PathDisplay.fileName(path), false));
+        updateRangeChrome();
+        setMissing(false);
+        if (!fromBuffer) {
+            loadedStamp = null;
+            loadFromDisk(generation.incrementAndGet(), path); // a load of the old path would be dropped
+        }
+    }
+
     CodeArea editor() {
         return editor;
     }

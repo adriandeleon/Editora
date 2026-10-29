@@ -138,7 +138,8 @@ class ProjectMapDataFxTest {
 
             Files.delete(other); // what the context menu's Delete does, before it refreshes the panel
             FxTestSupport.runOnFx(() -> {
-                FxTestSupport.invoke(panel, "markLocalChange");
+                FxTestSupport.call(
+                        panel, "markLocalChange", new Class<?>[] {java.util.Collection.class}, List.of(other));
                 long before = generation.get();
                 FxTestSupport.invoke(panel, "refreshAfterChange");
                 assertTrue(generation.get() > before, "the Map must be reloaded, not only searched again");
@@ -354,7 +355,7 @@ class ProjectMapDataFxTest {
     }
 
     @Test
-    void aFolderTheOverallLimitLeavesEmptyIsNotShownExpandedAndTheUserIsTold() throws Exception {
+    void aFolderTheOverallLimitLeavesEmptyStaysOpenWithAStubAndTheUserIsTold() throws Exception {
         List<Path> folders = new ArrayList<>();
         for (String name : List.of("a", "b", "c", "d")) {
             folders.add(folderWithFiles(name, 300));
@@ -379,11 +380,14 @@ class ProjectMapDataFxTest {
             assertEquals(limit, statuses.getLast());
             FxTestSupport.runOnFx(() -> {
                 assertFalse(contains(surface, last.resolve(fileName(0))));
-                assertFalse(
+                // Since the Map review (A3) it stays open, with a stub row saying why it is empty, and
+                // fills again when a column is closed (ProjectMapDataReviewFxTest).
+                assertTrue(
                         FxTestSupport.<Set<Path>>field(surface, "expandedSnapshot")
                                 .contains(last),
-                        "no rows loaded, so the folder must not look open");
-                assertFalse(mapView.expandedDirectories().contains(last));
+                        "the folder the user opened stays open");
+                assertTrue(mapView.expandedDirectories().contains(last));
+                assertTrue(contains(surface, last.resolve(ProjectMapModel.PLACEHOLDER_NAME)));
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);

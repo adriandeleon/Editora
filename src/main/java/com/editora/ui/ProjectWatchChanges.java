@@ -103,6 +103,15 @@ final class ProjectWatchChanges {
      * the target being created, and that must not read as somebody else touching the project.
      */
     Plan drain(Predicate<Path> locallyWritten) {
+        return drain(locallyWritten, path -> false);
+    }
+
+    /**
+     * As {@link #drain(Predicate)}, dropping every event {@code ownOperation} claims: the echo of an in-app
+     * rename, move, delete or create, which already refreshed what it changed. Unlike a cleared batch this
+     * keeps the events for every other path, so an outside change landing in the same moment still shows.
+     */
+    Plan drain(Predicate<Path> locallyWritten, Predicate<Path> ownOperation) {
         if (!recorded) {
             return new Plan(true, Set.of(), List.of(), List.of(), true); // fired with no batch: assume anything
         }
@@ -118,6 +127,9 @@ final class ProjectWatchChanges {
             }
         }
         for (FsChange change : changes) {
+            if (ownOperation.test(change.path())) {
+                continue;
+            }
             if (change.kind() == FsKind.DELETED
                     ? replacedLocally.contains(change.path())
                     : locallyWritten.test(change.path())) {

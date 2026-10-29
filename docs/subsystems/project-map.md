@@ -120,8 +120,10 @@ action promotes the previewed file to a normal editor tab.
 An open preview is kept current without being moved or re-scrolled: a card that mirrors an open buffer
 looks for edits once a second while the Map is on screen and replaces only the range that changed; any
 other card re-reads its file when the Project watcher reports a change and the file's size or
-modification time differs. A card whose file was deleted or renamed keeps its last text, says the file
-no longer exists, and disables **Open**.
+modification time differs. A card follows an in-app rename or move of its file (or of a folder above it):
+`pathRenamed` re-keys preview and note cards to the new path and the card reads the file there. A card
+whose file was deleted, or renamed outside Editora, keeps its last text, says the file no longer exists,
+and disables **Open**.
 
 `Escape` in a focused card closes it and returns focus to the map; `Tab` leaves the preview's text.
 Global chords still act on the active editor tab while a card has focus (the app-wide key policy), so a
@@ -211,8 +213,11 @@ request for its file. They are brought up to date with the cards: an open buffer
 (once a second while one is on show), a closed file by its size and time on disk after every listing and
 watcher notification. When an outline changes, every declaration card is moved to its declaration's new lines
 (`setRange`); a card whose declaration is gone keeps its last lines and says "No longer in this file". No
-language server is started for a closed file, the Map's global search still matches file names only, and
-nothing about the columns is remembered across restarts.
+language server is started for a closed file and nothing about the columns is remembered across restarts.
+The Map's global search walks file names only, but the query is also matched against the declaration rows of
+the open structure columns (no disk or server work): a matching declaration stays prominent with the rows
+that lead to it, its siblings fade, and a query that names only a declaration on screen does not read "No
+files match".
 
 ### Keyboard
 
@@ -308,7 +313,9 @@ read as the Git "M" letter, which is the Git changed chip's. A match does not ha
 Unsaved, Bookmarks and Personal Notes chips also light the collapsed folders that hold a matching file,
 as the Git chip does. Those ancestor sets come from the open tabs and the marker stores' keys
 (`ProjectPanel.setOpenFiles`, `MarkerActions.markedPaths`) by path arithmetic; nothing is read from disk
-on the FX thread. Folders match the Bookmarks and Personal Notes chips in their own right.
+on the FX thread. Folders match the Bookmarks and Personal Notes chips in their own right. In its default
+mode `git status` names a new folder (`? deep/`), not the files in it, so every row below a path reported as
+untracked counts as untracked (`MapSurface.gitStatusOf`): it matches the Git chip and carries the "U" letter.
 
 **Hide unmatched** (a checkbox in the filter row, remembered per workspace as `projectMapHideUnmatched`,
 workspace schema v25) takes the rows that would fade off the map instead. It keeps exactly the emphasized
@@ -326,25 +333,37 @@ The type selector asks `ProjectMapModel.classify`, which maps `LanguageRegistry.
 registry behind the file icons and the editor's language detection — to a bucket: program languages are
 Source, document and style languages Markup, every other recognized language (data formats, unit files,
 the name-determined configuration files) Config. A short extension table covers common types the registry
-has no language for, and a few build files (`pom.xml`, `*.gradle`, `CMakeLists.txt`) are pinned to Config.
+has no language for. Build and tool files (`pom.xml`, `*.gradle`, `CMakeLists.txt`, `go.mod`, `Gemfile`,
+`mvnw`, `CODEOWNERS`…) and configuration extensions (`.env`, `.plist`, `.lock`…) are pinned to Config before
+the registry is asked, and plain-text documents (`.txt`, extension-less `README`, `LICENSE`, `CHANGELOG`,
+`NOTICE`, `AUTHORS`) are Markup.
 
 A global filename query uses the Project tree's bounded, off-thread search and temporarily opens every
-ancestor column needed to reveal its matches. The matches are loaded before anything else, in rank order,
-so the first match is always present and is selected; when they do not all fit the row limit the status
-bar says "showing N of M matches". The search never writes to the manual expansion set. Folders opened or
+ancestor column needed to reveal its matches. The walk is bounded by the entries it visits (20,000), not by
+the matches it finds: every match is ranked as it is found and the best 300 are kept. The rank is how the
+file name answers the query (`ProjectSearchRank`: the exact name or name without extension, then a prefix of
+whole words, whole words elsewhere, a prefix, a word start, a substring, a fuzzy match), then the shorter
+name, then the fuzzy score of the relative path. The matches are loaded before anything else, in rank order,
+so the first (best) match is always present and is selected; when they do not all fit the row limit the
+status bar says "showing N of M matches", and when more names matched than were kept, or the walk stopped
+at its bound, it says so too. A one-character query does not walk the project: it only filters the rows
+already on the map, and the status bar says how many characters a project-wide search needs. The search never writes to the manual expansion set. Folders opened or
 closed by hand while a query is active (chevron, column ×, a reveal) are kept in the search's own view, so
 closing a search-opened column really closes it, and clearing the query restores exactly the manually
 expanded branches. Re-running the same query after an in-app file change reloads the map and leaves the
 selection alone. A column filter removes unmatched rows and their now-unreachable descendants so the
-remaining geometry is still a valid hierarchy.
+remaining geometry is still a valid hierarchy. In a folder with more children than its row limit loads, a
+column filter lists the folder again with the filter (`Request.columnQueries`), and the children it matches
+are loaded beyond the limit, so the filter searches the whole folder and its "shown/total" count is true.
 
 When a query or chip is active and no loaded row matches, a "No files match" message (with the query)
 appears over the canvas once that state has lasted 300 ms — a global query first fades what is loaded and
 only then opens the folders that hold its matches. The viewport is not moved. A column whose own filter
 matches nothing keeps one row of space for a "No matches" line.
 
-Rows use `ProjectPathOrder`: directories first, then case-insensitive names with a deterministic
-case-sensitive tie-break. This is the same ordering contract as the traditional Project explorer.
+Rows use `ProjectPathOrder`: directories first, then names in natural order (runs of digits compared by
+value, so `note-2` sorts before `note-10`) without case bias, with a deterministic exact tie-break. This is
+the same ordering contract as the traditional Project explorer.
 
 Canvas nodes reuse `FileIcons.forProjectItem`, rasterized and cached per file kind and status (plus an
 on-accent variant, style class `project-map-icon-on-accent`, for the focused selection). A file already
@@ -482,11 +501,20 @@ Filesystem listing runs on the single daemon `project-map-loader` executor, crea
 Each request captures the root, the expanded set, the hidden-files rules, the row limits and the pinned
 paths. An atomic generation is checked when a queued request starts and between directories, so a burst of
 requests lists the folders once, and obsolete results never reach the FX thread. A request made after
-`dispose()` is ignored. Each child costs one attribute read (two for a symbolic link), which serves both
-the ordering and the row. A load that outlasts 200 ms shows a "Loading…" label over the canvas, and an
-empty map reads "Loading…" rather than "No project items" while its first load is in flight. Every action
-still re-lists every expanded directory, and one hung listing still blocks later reloads for that window;
-there is no per-directory cache or timeout.
+`dispose()` is ignored; so is a result that was listing when an in-app rename or move landed
+(`pathRenamed` supersedes it, so its old-tree snapshot cannot prune the renamed folder's expansion). Each
+child costs one attribute read (two for a symbolic link), which serves both the ordering and the row. A load
+that outlasts 200 ms shows a "Loading…" label over the canvas, and an empty map reads "Loading…" rather than
+"No project items" while its first load is in flight.
+
+Listings go through `ProjectMapModel.Listings`. A folder the Project watcher follows (`ProjectPanel` hands
+the watched set to `setWatchedDirectories` after every watch sync) keeps its sorted listing between loads,
+so opening a folder lists only that folder. A watcher event for a folder (`refresh(directories)`), a file
+rewritten there or saved by Editora (`listingsChanged`), and a focus regain or in-app file operation
+(`refresh()`, everything) drop the listing; a folder that stops being watched is dropped too. A remote root
+has no local watcher and lists afresh every time. Each listing runs on a worker with a 10 s timeout: a folder
+that does not answer holds a "Not responding" stub (nothing below it is forgotten), its next loads do not wait
+for it again, and the Map reloads when it finally answers.
 
 `ProjectMapModel.load` reads only the root and the expanded directories, under two limits:
 
@@ -498,9 +526,10 @@ there is no per-directory cache or timeout.
 
 Nothing is dropped silently. The snapshot carries `DirectoryFacts` (real child count, rows loaded,
 unreadable) for every listed directory, and a column header shows "shown/total" whenever a filter or a
-limit hides rows. A directory that got no rows at all is reported as skipped, is not drawn as expanded,
-leaves the manual expansion set, and the status bar says the overall limit was reached; the same message
-appears when "+N more…" cannot load anything. An expanded folder with nothing to list gets a column holding
+limit hides rows. A directory that got no rows at all is reported as skipped but stays open: its column holds
+one "Not loaded — over the 1,200-row limit" stub, it and the folders opened below it stay in the manual
+expansion set, and it fills again once a column is closed. The status bar says the overall limit was
+reached; the same message appears when "+N more…" cannot load anything. An expanded folder with nothing to list gets a column holding
 one stub row, "Empty folder" or "Cannot read this folder". A failure to read one directory does not
 discard the rest of the snapshot.
 
@@ -511,7 +540,8 @@ filters. Code that acts on a folder entry must check `isPlaceholder()` first.
 
 After a load the manual expansion set is pruned to folders that actually loaded, so a renamed, deleted or
 replaced folder does not leave stale expansion (or watch keys) behind; folders beneath one that could not
-be read are kept. An in-app rename or move remaps expansion, limits and the selection to the new path.
+be read, did not answer, or got no rows under the overall limit are kept. An in-app rename or move remaps
+expansion, limits, the selection and open cards to the new path.
 `revealPath` adds the target's ancestors to the expansion instead of replacing it, and a pending selection
 that a reload does not contain is dropped, together with its selection-history entries.
 
