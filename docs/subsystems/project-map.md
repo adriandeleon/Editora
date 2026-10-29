@@ -114,7 +114,8 @@ the JavaFX application thread, decoded as the editor would open it (BOM, then th
 charset, then UTF-8 with a single-byte fallback instead of U+FFFD) and with `\n` line endings. It is
 visibly marked read-only, has independent text/image zoom controls, and renders common bitmap image
 formats as well as syntax-highlighted text. Its context menu can copy selected code, select all, add a
-bookmark at the clicked line, or add a Personal Note for the selected or clicked lines. The **Open**
+bookmark at the clicked line, or add a Personal Note for the selected or clicked lines; opened from the
+keyboard (Menu key, `Shift-F10`) it opens at the caret and acts on the caret's line. The **Open**
 action promotes the previewed file to a normal editor tab.
 
 An open preview is kept current without being moved or re-scrolled: a card that mirrors an open buffer
@@ -124,8 +125,11 @@ modification time differs. A card whose file was deleted or renamed keeps its la
 no longer exists, and disables **Open**.
 
 `Escape` in a focused card closes it and returns focus to the map; `Tab` leaves the preview's text.
-Global chords still act on the active editor tab while a card has focus (the app-wide key policy), so a
-focused card has an accent border and its text area's accessible name states the file and that it is
+Global chords still act on the active editor tab while a card has focus (the app-wide key policy), except
+the note and bookmark commands (`notes.add`, `notes.editNote`, `bookmarks.toggle`: `C-c n`, `C-c m` in Emacs),
+which a focused card runs on its own file (`KeyDispatcher.HANDLED_COMMANDS`, keyed by command so it follows the
+keymap): a note on the selection or the caret's line, a bookmark on the caret's line, and Edit Note brings the
+card's notes up. So a focused card has an accent border and its text area's accessible name states the file and that it is
 read-only. Cards cannot be moved or resized from the keyboard.
 
 Context menus use JavaFX auto-hide plus a next-pulse owner-scene press filter. This mirrors the

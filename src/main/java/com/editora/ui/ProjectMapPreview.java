@@ -276,6 +276,9 @@ final class ProjectMapPreview extends StackPane {
         this.onOpenFile = onOpenFile == null ? ignored -> {} : onOpenFile;
         getStyleClass().add("project-map-preview");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
+        // The note and bookmark chords (C-c n, C-c m in Emacs) mark this card's file, not the active tab's.
+        getProperties().put(com.editora.command.KeyDispatcher.HANDLED_COMMANDS, (java.util.function.Predicate<String>)
+                this::runMarkerCommand);
         setManaged(false);
         setVisible(false);
 
@@ -396,6 +399,44 @@ final class ProjectMapPreview extends StackPane {
             editor.requestFocusTraversal(event.isShiftDown() ? TraversalDirection.PREVIOUS : TraversalDirection.NEXT);
             event.consume();
         }
+    }
+
+    /** The marker commands a focused card runs on its own file and caret (see {@code KeyDispatcher}). */
+    static final java.util.Set<String> MARKER_COMMANDS =
+            java.util.Set.of("notes.add", "notes.editNote", "bookmarks.toggle");
+
+    /**
+     * Runs a note or bookmark command typed in the card on the card's file: a note on the selection or the caret
+     * line, a bookmark on the caret line, and Edit Note brings up the notes stuck on the card. Every other command
+     * is left to the keymap. A marker command is taken even when there is nothing to mark here, so it can never
+     * fall through to the active editor tab's file.
+     */
+    boolean runMarkerCommand(String commandId) {
+        if (!MARKER_COMMANDS.contains(commandId)) {
+            return false;
+        }
+        Path file = path;
+        MarkerActions actions = markerActions;
+        if (disposed || file == null || actions == null || frame.getCenter() != textPane || editor.getLength() == 0) {
+            return true;
+        }
+        int line = editor.getCurrentParagraph();
+        switch (commandId) {
+            case "bookmarks.toggle" -> actions.addBookmark(file, fileLine(line));
+            case "notes.add" -> {
+                if (actions.personalNotesEnabled()) {
+                    requestNote(actions, file, noteDraftAt(line));
+                }
+            }
+            default -> setNotesShown(true); // notes.editNote: the notes stuck on the card are where they are edited
+        }
+        return true;
+    }
+
+    /** The file's 0-based line for a line of the card's text (a declaration card starts at its first line). */
+    private int fileLine(int cardLine) {
+        Range shown = range;
+        return cardLine + (shown == null ? 0 : shown.startLine());
     }
 
     void showFile(Path file, @Nullable Content content, PlacementResolver placementResolver) {
@@ -1022,9 +1063,24 @@ final class ProjectMapPreview extends StackPane {
         editor.setOnContextMenuRequested(this::showEditorContextMenu);
     }
 
+    /**
+     * The card's menu. Opened from the keyboard (the Menu key, Shift+F10) it acts on the caret's line and opens at
+     * the caret: JavaFX reports the middle of the focused text as the point of such a request, which used to put a
+     * bookmark or a line note on whatever line happened to be in the middle of the card.
+     */
     private void showEditorContextMenu(ContextMenuEvent event) {
-        rebuildEditorContextMenu(clickLineAt(event.getX(), event.getY()));
-        editorContextMenu.show(editor, event.getScreenX(), event.getScreenY());
+        if (event.isKeyboardTrigger()) {
+            rebuildEditorContextMenu(editor.getCurrentParagraph());
+            javafx.geometry.Bounds caret = editor.getCaretBounds().orElse(null);
+            if (caret != null) {
+                editorContextMenu.show(editor, caret.getMinX(), caret.getMaxY());
+            } else {
+                editorContextMenu.show(editor, event.getScreenX(), event.getScreenY());
+            }
+        } else {
+            rebuildEditorContextMenu(clickLineAt(event.getX(), event.getY()));
+            editorContextMenu.show(editor, event.getScreenX(), event.getScreenY());
+        }
         event.consume();
     }
 
