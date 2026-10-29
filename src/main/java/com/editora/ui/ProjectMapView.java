@@ -1970,6 +1970,9 @@ final class ProjectMapView extends VBox {
      */
     private void toggleDirectory(Path directory) {
         Path path = ProjectMapModel.normalize(directory);
+        if (path == null) {
+            return;
+        }
         if (searching()) {
             if (expandedDirectories().contains(path)) {
                 closeDuringSearch(path);
@@ -1986,7 +1989,7 @@ final class ProjectMapView extends VBox {
         onExpandedChanged.run();
     }
 
-    private void closeDuringSearch(@Nullable Path directory) {
+    private void closeDuringSearch(Path directory) {
         searchOpened.removeIf(path -> path.startsWith(directory));
         searchClosed.removeIf(path -> path.startsWith(directory));
         searchClosed.add(directory);
@@ -2839,8 +2842,8 @@ final class ProjectMapView extends VBox {
         double[] row = site.row();
         double[] column = site.column();
         double[] band = site.band();
-        boolean horizontal = flowFilter.getValue() == FlowDirection.LEFT_TO_RIGHT
-                || flowFilter.getValue() == FlowDirection.RIGHT_TO_LEFT;
+        boolean horizontal = surface.flowDirection == FlowDirection.LEFT_TO_RIGHT
+                || surface.flowDirection == FlowDirection.RIGHT_TO_LEFT;
         double gap = MapSurface.PREVIEW_COLUMN_GAP;
         double rowX = row[0] + row[2] / 2;
         double rowY = row[1] + row[3] / 2;
@@ -2920,8 +2923,8 @@ final class ProjectMapView extends VBox {
         for (double[] spot : spots) {
             double w = spot[2];
             double h = spot[3];
-            double x = clampPreview(spot[0], margin, Math.max(margin, parentWidth - w - margin));
-            double y = clampPreview(spot[1], margin, Math.max(margin, parentHeight - h - margin));
+            double x = clampInto(spot[0], margin, Math.max(margin, parentWidth - w - margin));
+            double y = clampInto(spot[1], margin, Math.max(margin, parentHeight - h - margin));
             // Least covered first; between spots that cover alike, the one nearer its row, then the larger.
             double distance = Math.hypot(x + w / 2 - rowX, y + h / 2 - rowY);
             // A card cut narrower than its lines needs makes them scroll sideways: that weighs more than height.
@@ -2973,7 +2976,8 @@ final class ProjectMapView extends VBox {
         return cost;
     }
 
-    private static double clampPreview(double value, double minimum, double maximum) {
+    /** {@code value} within [{@code minimum}, {@code maximum}]; unlike {@link Math#clamp} it tolerates an empty range. */
+    private static double clampInto(double value, double minimum, double maximum) {
         return Math.max(minimum, Math.min(maximum, value));
     }
 
@@ -3033,14 +3037,14 @@ final class ProjectMapView extends VBox {
         double top = preview.getLayoutY();
         double width = preview.getWidth() * cardScale(preview);
         double height = preview.getHeight() * cardScale(preview);
-        boolean horizontal = flowFilter.getValue() == FlowDirection.LEFT_TO_RIGHT
-                || flowFilter.getValue() == FlowDirection.RIGHT_TO_LEFT;
+        boolean horizontal = surface.flowDirection == FlowDirection.LEFT_TO_RIGHT
+                || surface.flowDirection == FlowDirection.RIGHT_TO_LEFT;
         if (horizontal) {
             boolean previewAfter = left + width / 2 >= anchor.x() + anchor.width() / 2;
             x1 = previewAfter ? anchor.x() + anchor.width() : anchor.x();
             y1 = anchor.y() + anchor.height() / 2;
             x2 = previewAfter ? left : left + width;
-            y2 = clampPreview(y1, top, top + height);
+            y2 = clampInto(y1, top, top + height);
             double control = Math.max(18, Math.abs(x2 - x1) * 0.45);
             g.beginPath();
             g.moveTo(x1, y1);
@@ -3050,7 +3054,7 @@ final class ProjectMapView extends VBox {
             boolean previewAfter = top + height / 2 >= anchor.y() + anchor.height() / 2;
             x1 = anchor.x() + anchor.width() / 2;
             y1 = previewAfter ? anchor.y() + anchor.height() : anchor.y();
-            x2 = clampPreview(x1, left, left + width);
+            x2 = clampInto(x1, left, left + width);
             y2 = previewAfter ? top : top + height;
             double control = Math.max(18, Math.abs(y2 - y1) * 0.45);
             g.beginPath();
@@ -3999,10 +4003,6 @@ final class ProjectMapView extends VBox {
                 keepSelectionDrawn();
                 updateAccessibleText();
             }
-        }
-
-        boolean isHideUnmatched() {
-            return hideUnmatched;
         }
 
         /** Whether "Hide unmatched" takes {@code path}'s row off the map: the filters are on and would fade it. */
@@ -5623,10 +5623,10 @@ final class ProjectMapView extends VBox {
             // drawn outside the overview altogether.
             double frameRight = overviewWidth - 3;
             double frameBottom = overviewHeight - 3;
-            double left = clampTo(insetX - minX * scale, 3, frameRight);
-            double top = clampTo(insetY - minY * scale, 3, frameBottom);
-            double right = clampTo(insetX + (viewportWidth - minX) * scale, 3, frameRight);
-            double bottom = clampTo(insetY + (viewportHeight - minY) * scale, 3, frameBottom);
+            double left = clampInto(insetX - minX * scale, 3, frameRight);
+            double top = clampInto(insetY - minY * scale, 3, frameBottom);
+            double right = clampInto(insetX + (viewportWidth - minX) * scale, 3, frameRight);
+            double bottom = clampInto(insetY + (viewportHeight - minY) * scale, 3, frameBottom);
             g.setStroke(color(accentProbe, Color.web("#58a6ff")));
             g.setLineWidth(1.5);
             g.strokeRect(left, top, Math.max(2, right - left), Math.max(2, bottom - top));
@@ -5664,10 +5664,6 @@ final class ProjectMapView extends VBox {
                 javafx.event.Event.fireEvent(this, event.copyFor(this, this));
                 event.consume();
             });
-        }
-
-        private static double clampTo(double value, double minimum, double maximum) {
-            return Math.max(minimum, Math.min(maximum, value));
         }
 
         private void drawColumns(GraphicsContext g) {
@@ -7539,9 +7535,9 @@ final class ProjectMapView extends VBox {
                 return false;
             }
             double mapX =
-                    clampTo((x - overview.x() - overview.insetX()) / overview.scale(), 0, overview.contentWidth());
+                    clampInto((x - overview.x() - overview.insetX()) / overview.scale(), 0, overview.contentWidth());
             double mapY =
-                    clampTo((y - overview.y() - overview.insetY()) / overview.scale(), 0, overview.contentHeight());
+                    clampInto((y - overview.y() - overview.insetY()) / overview.scale(), 0, overview.contentHeight());
             offsetX += getWidth() / 2 - (overview.minX() + mapX);
             offsetY += getHeight() / 2 - (overview.minY() + mapY);
             repaint();
