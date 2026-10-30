@@ -48,7 +48,9 @@ public final class TerminalImageCheck {
     static final int COLUMNS = 80;
     static final int ROWS = 24;
     static final String MARK = "editora-pty";
-    private static final Duration TIMEOUT = Duration.ofSeconds(20);
+    // A first powershell.exe on a fresh Windows runner has taken over 20 s to start (#1321, #1391); a working
+    // shell answers in well under a second, so the limit only decides how long a broken image takes to fail.
+    private static final Duration TIMEOUT = Duration.ofSeconds(60);
 
     /** What the check found; {@code detail} is the line to print either way. */
     public record Result(boolean ok, String detail) {}
