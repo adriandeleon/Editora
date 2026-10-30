@@ -19,6 +19,7 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** Two config directories ("machines") syncing through one bare repository, with the real git. */
@@ -499,8 +500,16 @@ class SyncEngineTest {
                 new SyncEngine(git, "ssh://example.invalid/sync.git", "main", new FileSyncTarget(b.config), "b");
         java.util.concurrent.CompletableFuture<SyncReport> run =
                 java.util.concurrent.CompletableFuture.supplyAsync(() -> engine.run(ALL, false));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
         while (!Files.exists(started)) { // waits for the fetch to be under way
-            java.util.concurrent.locks.LockSupport.parkNanos(10_000_000L);
+            if (run.isDone()) {
+                fail("the run ended before its fetch began: " + run.get().detail());
+            }
+            if (System.nanoTime() > deadline) {
+                engine.cancel();
+                fail("the fetch never began");
+            }
+            Thread.sleep(10); // unlike parkNanos, ends the loop when the @Timeout interrupts this thread
         }
         assertTrue(engine.cancel());
         SyncReport report = run.get(25, TimeUnit.SECONDS);
