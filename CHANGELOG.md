@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-10-29
+
 ### Added
 
 - **Project Map: compact folder chains, Reveal Active File, and keyboard reach (Map review).**
@@ -25,7 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The ⋯ options are remembered per workspace, as is a maximized Map window (workspace schema 26 → 27).
   - The **?** popover lists every gesture and key, including cards, notes and filters, with key names in your
     language.
-
 - **HTML: links, markup checks and colour swatches** (HTML review: links).
   - Go to Definition and Ctrl-click on an `href` or `src` open the file it names, at the element whose `id` its
     `#fragment` names; a `#fragment` alone moves in the page, a web address goes to the browser after asking, and a
@@ -61,12 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   map, leaving only the matches and the folders that lead to them. It never hides silently: an amber "N rows hidden"
   badge sits beside it, and each column shows "shown/total" with an "N hidden" line under its rows. An open preview or
   note card goes with its row and comes back with it. Remembered per workspace (workspace schema 24 → 25).
-
 - **Terminal: Nerd Font icons without installing a Nerd Font.** Editora bundles Symbols Nerd Font Mono (Nerd Fonts
   3.5.1), so the icons eza, lsd and powerline prompts print show on any machine. An installed Nerd Font build of the
   terminal's font still wins. Bundled icons are drawn a cell and a half wide, the size Nerd Font builds give them;
   Powerline separators stay at text size. Licences in NOTICE.
-
 - **Terminal: the kitty keyboard protocol.** A program that asks for it (Neovim, Helix, fish, nushell) gets
   unambiguous keys: Escape on its own, Ctrl+I apart from Tab, Shift+Enter as a key, and with its further flags
   repeats, releases and the text each key types. Everything else keeps the legacy bytes.
@@ -84,17 +83,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (additive).
 - **Terminal tabs name the program running in them** (vim, npm, ssh) when the shell set no title, before the
   folder's name.
-
 - **Terminal theme** (Settings ▸ Terminal ▸ Theme, `terminalTheme`): the integrated terminal's colours, chosen
   apart from the editor theme. **Editor theme**, the default, keeps today's palette derived from the editor's
   syntax colours; Solarized Dark/Light, Dracula, Nord, Gruvbox Dark/Light, One Half Dark/Light, Tango Dark/Light,
   Campbell and the Editora pair are fixed schemes that stay the same whichever editor theme is active. Open
   terminals recolour at once. Settings schema 147 → 148 (additive).
-
 - **XML: Generate Grammar….** Generates an XSD, DTD or RELAX NG grammar from the current XML file and binds the
   file to it, with "Files without a grammar" left at Nothing (lemminx offered these fixes only on its no-grammar
   hint). In Structure, a DTD now lists its elements with their attributes, its entities and notations.
-
 - **Bash server settings (Bash review, config).** Settings ▸ LSP ▸ Bash has **Lint with ShellCheck** and
   **Format with shfmt** switches (on; off sends the server an empty path and silences the missing-tool notices) and
   **Explain source lines the server cannot follow** (on: a hint on `source "$(dirname "$0")/lib.sh"` lines saying to
@@ -120,7 +116,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Map search filters the rows on the map instead of opening hundreds of folders.
 - **Project Map: Clear** also clears the search and no longer turns off "Hide all open Personal Notes"; in German
   and Italian it reads "Zurücksetzen" / "Azzera".
-
 - **Project Map: the Modified chip is now Unsaved.** It always matched files with unsaved changes; next to the Git "M"
   letter it read as Git-modified, which is what Git changed matches.
 - **Project Map: every workspace starts left to right.** A workspace that stored right to left, the default saved by
@@ -130,10 +125,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selection of the output above the prompt survives typing a command.
 - **Terminal: a selection highlights exactly what it copies.** The highlight was a cell wider than the copied text,
   and a drag now ends at the cell boundary nearest the pointer.
-
 - **Project Map: Structure columns have their own colour.** A file's Structure column, and the columns of
   declarations opened from it, sit on a faint violet card with violet-tinted rows, so they no longer look like
   folder columns (the overview tints them too). Themes can retune it with `.project-map-probe-structure`.
+- **Simple mode: the toggle sits beside Settings.** The Simple-mode toolbar button moved to the right end of the
+  toolbar, just left of Settings, and is no longer part of the customizable icon group, so a narrow window cannot
+  push it into the overflow menu. A saved toolbar layout that lists it drops it on load.
 
 ### Fixed
 
@@ -190,7 +187,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     names; a card mirroring unsaved edits says so; Copy reads "Copy All" with nothing selected.
   - Cards share two loader threads and no longer re-read unchanged buffers every second.
   - Failures the Map recovers from but did not expect now reach the debug log.
-
 - **HTML completion and popups (HTML review: comp).**
   - Enter and Tab accept an HTML tag, attribute or CSS property again while its documentation is showing. The docs'
     "MDN Reference" link took those keys (Enter opened the browser, Tab moved between links). Links in the
@@ -246,7 +242,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Settings → Web names a remembered browser that is no longer installed ("Brave (not found)"), and Doctor's
     Web Browsers row is translated.
   - The open-in-browser button is a real globe, and it appears on an HTML file recognised by its modeline.
-
 - **HTML editing (HTML review: edit).**
   - Templates open as HTML: `.html.erb`, `.erb`, `.ejs`, `.njk`, `.jinja`, `.jinja2`, `.j2`, `.twig`, `.liquid` and
     `.mustache` files are "HTML Template", `.hbs`/`.handlebars` "Handlebars", with the HTML colours, tag auto-close and
@@ -283,7 +278,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shown as vscode-html-language-server, not "node". An extensionless file starting `<!doctype html` or `<html` opens
   as HTML. A loose page of a static site without `package.json` or `.git` is served from the highest folder above it
   holding an `index.html` (below home), so `/css/…` links resolve. HTML files keep their server up to 50,000 lines.
-
 - **XML editing (XML/pom review 3: xmlui).**
   - XML: Generate Grammar…'s two XSD choices work in untrusted folders. lemminx needed the W3C `xml.xsd`, which it
     could not download there; Editora now ships it.
@@ -299,7 +293,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     and in large-file mode asks before a format that more than doubles the line count.
   - Settings ▸ LSP ▸ XML: "Keep text as written in" and "XML catalogs" are wider and show their whole value on hover;
     the formatting rows no longer repeat "(XML server only)" under their heading.
-
 - **Shell scripts: setting up the Bash server is one step, and Doctor tells the truth about it** (Bash review,
   install). The first shell script asks once whether to turn code intelligence on. The install banner says what
   Install brings, and Install adds ShellCheck and shfmt with the server; when only those two are missing, the
@@ -310,7 +303,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Language Servers on those rows. A crash loop is now an error in the status bar (it raises the unread marker). One
   name, "Bash / Shell", in the banner, status and Doctor; the Settings tool row says ShellCheck; separate Doctor tips
   for ShellCheck (no problems) and shfmt (no formatting).
-
 - **Shell scripts: problems for every open script, and libraries changed on disk are read again** (Bash review,
   sync):
   - Scripts opened while the Bash server starts (a restored session, several files opened at once) all show their
@@ -323,11 +315,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Find References from a call lists that call and leaves out the definition; a function used once no longer jumps
     to its definition.
   - On a line with emoji, ShellCheck squiggles sit under the right characters and "Apply fix" quotes the right word.
-
 - **Language servers hear of file changes in collapsed folders.** Each server's project folder is watched as a whole
   (skipping hidden, dependency and `.gitignore`d folders), not only the folders the Project panel shows expanded, so a
   `git checkout` no longer leaves jdtls, Pyright or lemminx with a stale model.
-
 - **Bash server (Bash review, config):** a project's `bashIde` overrides reach only the servers for that project's
   folders, not scripts opened from another repository, `~/bin` or `/etc`. Container and WSL folders look ShellCheck
   and shfmt up on their own PATH instead of being sent this machine's copies. Scripts outside any repository share
@@ -339,7 +329,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after 5 seconds with "explainshell did not answer". The Bash card names the rows a project overrides and checks
   the tools the window actually runs; the ShellCheck-arguments and `.editorconfig` texts say what the server really
   does (it already follows sourced files; any shfmt key in `.editorconfig` replaces all the shfmt options).
-
 - **Shell scripts with the Bash language server (Bash review: editing UI).**
   - Rename on a command (`echo`, `cd`) is refused: "echo is a command, not a function or variable defined in your
     scripts". It used to rewrite every call in the file with no preview. A new name must be a shell name (a function
@@ -370,7 +359,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Keymaps: CUA gets F2 (Rename), F12 / Shift+F12 (Go to Definition / Find References), Ctrl+. (Code Actions)
     and Shift+Alt+F (Format Document); Sublime gets Ctrl+Shift+R (Go to Symbol) and Shift+Alt+F; Emacs gets
     `M-g s` (Go to Symbol in Workspace).
-
 - **Narrowing and widening are finished in the frame they happen in.** The Structure window's Narrow to Fold
   Region toggle (and C-x n n / n f / n w) swapped the text in unstyled: the code showed plain until the next
   highlight pass, the fold gutter kept the old lines, and on widening the outline showed raw fold blocks for a
@@ -398,7 +386,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Maven server gets one offer to install it, saying it runs only in trusted folders. The blocked-schema status names
   only what would help. Doctor's lemminx-maven store row follows a `<localRepository>` set in settings.xml. A pre-pin
   lemminx path with arguments keeps them, and Settings shows a pre-pin copy as an amber warning.
-
 - **Language servers get the whole file when it opens.** Python, Java and XML files reached their server empty and
   were then filled in, so an XML file flashed a false "Premature end of file" error, the file was analysed twice,
   and quick fixes and generated schemas used a four-space indent in a two-space file. The indent a server is told
@@ -436,7 +423,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A DTD no longer offers an XML tree preview** that called the file not well-formed.
 - **Banner buttons no longer shrink to "…".** Install and Not now on the XML install banner (and every other
   banner) keep their labels; the message wraps instead, and the XML banner is shorter.
-
 - **pom.xml and the Maven server (XML/pom review 2).** A pom.xml served by the plain XML server now offers the
   Maven server (what it adds, about 16 MB), or Settings… when your own command for it is missing; a pom in a folder
   you have not trusted is left to the trust offer. "Reset to default" on the Maven server command keeps Editora's
@@ -469,12 +455,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     old per-platform lemminx copy is cleared (Settings schema 150 → 151), since a blank command runs that copy.
   - After the XML install falls back to the Java lemminx, the native copy that cannot run is removed and a blank
     XML command keeps the Java one.
-
 - **Terminal: a selection keeps its text when the terminal is resized.** JediTerm moves a selection itself when a
   shorter window pushes rows into history, and the terminal moved it again: after a splitter drag the highlight sat
   rows above the selected text, and Copy copied those rows. A block selection is dropped on a resize, whose reflow
   moves its columns.
-
 - **Terminal (from Termina):** closing a terminal no longer holds the window for up to half a second each; the
   cursor no longer vanishes at the end of a line typed to its full width; Nerd Font icons (eza, lsd, powerline) are
   drawn in an installed Nerd Font rather than the first fallback face that maps them, which put a stray `¯` beside
@@ -668,6 +652,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer reach the Debug Log, and a Gradle build file no longer logs two missing-grammar warnings: its Javadoc
   comments are highlighted. Go to Super Method into a file open only in another window, with unsaved edits, lands on
   the method's line in the copy it opens, and it no longer re-reads a JDK class's source for every supertype.
+- **Structure narrowing and jumps.** With Narrow to fold region on, clicking another symbol in the Structure window
+  keeps that row selected instead of flickering back to the first row. Jumps (Structure, Go to Line, definitions,
+  search hits and the scrollbar stripe marks) leave two lines of context below the sticky-scroll rows, so the
+  target line is no longer half hidden under them, and each sticky row is now exactly one code line tall.
+- **Snippet pickers no longer flicker.** Surround With and Insert Snippet stopped toggling a horizontal scroll bar
+  while the selection moved over a snippet with a long description.
 
 ## [0.25.0] - 2026-10-26
 
