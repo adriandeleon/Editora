@@ -5,6 +5,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.function.IntConsumer;
 
+import javafx.geometry.Bounds;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.AnchorPane;
@@ -55,6 +57,8 @@ public final class StickyScrollBar {
     private @Nullable IntConsumer onClick;
     /** Rows built since construction — the test seam that proves a scroll inside one scope builds none. */
     private int rowsBuilt;
+    /** The height every row is held to: one visual line of the editor, or 0 before one has been measured. */
+    private double rowHeight;
 
     private StickyScroll.Index index = StickyScroll.Index.EMPTY;
 
@@ -146,6 +150,13 @@ public final class StickyScrollBar {
         boolean reusable = area == shownArea && tabSize == shownTabSize;
         shownArea = area;
         shownTabSize = tabSize;
+        double lineHeight = lineHeight(area);
+        if (lineHeight > 0 && lineHeight != rowHeight) {
+            rowHeight = lineHeight;
+            for (Row row : rows) {
+                fixHeight(row.node());
+            }
+        }
         int paragraphs = area.getParagraphs().size();
         List<Row> next = new ArrayList<>(lines.size());
         boolean same = reusable;
@@ -173,6 +184,31 @@ public final class StickyScrollBar {
         box.setVisible(!rows.isEmpty());
     }
 
+    /**
+     * One visual line of {@code area}, measured from its first visible paragraph (a wrapped one is divided by its
+     * rows), or 0 while nothing is laid out. Rows were their text's height plus padding, a little taller than a
+     * code line each: three pinned rows covered half the line below them, which is where a jump's context starts.
+     */
+    private static double lineHeight(CodeArea area) {
+        try {
+            int par = area.firstVisibleParToAllParIndex();
+            Bounds bounds = area.getParagraphBoundsOnScreen(par).orElse(null);
+            int lines = area.getParagraphLinesCount(par);
+            return bounds == null || lines <= 0 ? 0 : bounds.getHeight() / lines;
+        } catch (RuntimeException notLaidOut) {
+            return 0;
+        }
+    }
+
+    /** Holds {@code row} to {@link #rowHeight} once one is known, so N pinned rows cover exactly N lines. */
+    private void fixHeight(HBox row) {
+        if (rowHeight > 0) {
+            row.setMinHeight(rowHeight);
+            row.setPrefHeight(rowHeight);
+            row.setMaxHeight(rowHeight);
+        }
+    }
+
     private @Nullable Row shown(int line, Paragraph<?, ?, ?> paragraph) {
         for (Row row : rows) {
             if (row.line() == line && row.paragraph() == paragraph) {
@@ -186,6 +222,8 @@ public final class StickyScrollBar {
         HBox flow = new HBox();
         flow.setMinWidth(0);
         flow.getStyleClass().add("sticky-scroll-row");
+        flow.setAlignment(Pos.CENTER_LEFT);
+        fixHeight(flow);
         flow.setPickOnBounds(true); // the container opts out of picking; a row opts back in
         flow.getChildren().setAll(runs(area, line, tabSize));
         // TextFlow wraps a long logical line to the available editor width. For minified files that turns
