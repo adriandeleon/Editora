@@ -123,7 +123,7 @@ jobs:
         run: |
           scripts/dump-stuck-jvms.sh 840 target/jvm-dumps-shard-${{ matrix.shard }}.txt </dev/null >/dev/null 2>&1 &
           dumper=$!
-          trap 'kill "$dumper" 2>/dev/null' EXIT
+          trap 'kill "$dumper" 2>/dev/null || true' EXIT
           ./mvnw -B --no-transfer-progress -Dspotless.check.skip=true -Dsurefire.rerunFailingTestsCount=2 -Dsurefire.includesFile=target/shard-includes.txt test
 
       - name: Thread dumps of a hung test run

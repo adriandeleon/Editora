@@ -91,7 +91,7 @@ jobs:
         run: |
           scripts/dump-stuck-jvms.sh 1380 target-jvm-dumps.txt </dev/null >/dev/null 2>&1 &
           dumper=$!
-          trap 'kill "$dumper" 2>/dev/null' EXIT
+          trap 'kill "$dumper" 2>/dev/null || true' EXIT
           ./mvnw -B --no-transfer-progress -DexcludedGroups=fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 test
 
       - name: Thread dumps of a hung test run
@@ -175,7 +175,7 @@ jobs:
         run: |
           scripts/dump-stuck-jvms.sh 1380 target-jvm-dumps.txt </dev/null >/dev/null 2>&1 &
           dumper=$!
-          trap 'kill "$dumper" 2>/dev/null' EXIT
+          trap 'kill "$dumper" 2>/dev/null || true' EXIT
           ./mvnw -B --no-transfer-progress -Dgroups=fx -Djacoco.skip=true -Dsurefire.rerunFailingTestsCount=2 -DforkCount=2 -Dsurefire.includesFile=target/shard-includes.txt test
 
       - name: Thread dumps of a hung test run
