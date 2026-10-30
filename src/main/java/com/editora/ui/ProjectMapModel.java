@@ -482,14 +482,21 @@ final class ProjectMapModel {
 
         private record Key(Path directory, boolean showHidden) {}
 
-        /** A listing on a worker, and when it began; {@code late} once some load gave up waiting for it. */
+        /**
+         * A listing on a worker, when it began, and the folder's epoch and version then; {@code late} once some
+         * load gave up waiting for it.
+         */
         private static final class InFlight {
-            final java.util.concurrent.CompletableFuture<@Nullable List<Item>> future;
+            final java.util.concurrent.CompletableFuture<@Nullable List<Item>> future =
+                    new java.util.concurrent.CompletableFuture<>();
             final long startedNanos = System.nanoTime();
+            final long epoch;
+            final long version;
             volatile boolean late;
 
-            InFlight(java.util.concurrent.CompletableFuture<@Nullable List<Item>> future) {
-                this.future = future;
+            InFlight(long epoch, long version) {
+                this.epoch = epoch;
+                this.version = version;
             }
         }
 
@@ -593,18 +600,23 @@ final class ProjectMapModel {
         }
 
         private Listed await(Key key, BooleanSupplier cancelled) {
-            InFlight running = inFlight.get(key);
-            if (running == null) {
-                InFlight fresh = new InFlight(new java.util.concurrent.CompletableFuture<>());
-                InFlight prior = inFlight.putIfAbsent(key, fresh);
-                running = prior != null ? prior : fresh;
-                if (prior == null) {
-                    try {
-                        start(key, fresh); // registered first, so finishing always removes it again
-                    } catch (java.util.concurrent.RejectedExecutionException shutDown) {
-                        inFlight.remove(key, fresh);
-                        return Listed.CANCELLED;
-                    }
+            long epochNow = epoch.get();
+            long versionNow = versions.getOrDefault(key.directory(), 0L);
+            InFlight[] started = new InFlight[1];
+            // A listing that began before the folder was invalidated may have missed the change: it is not joined.
+            InFlight running = inFlight.compute(key, (unused, prior) -> {
+                if (prior != null && prior.epoch == epochNow && prior.version == versionNow) {
+                    return prior;
+                }
+                started[0] = new InFlight(epochNow, versionNow);
+                return started[0];
+            });
+            if (started[0] != null) {
+                try {
+                    start(key, started[0]); // registered first, so finishing always removes it again
+                } catch (java.util.concurrent.RejectedExecutionException shutDown) {
+                    inFlight.remove(key, started[0]);
+                    return Listed.CANCELLED;
                 }
             }
             long deadline = running.startedNanos + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
@@ -636,13 +648,15 @@ final class ProjectMapModel {
         private void start(Key key, InFlight running) {
             java.util.concurrent.CompletableFuture<@Nullable List<Item>> future = running.future;
             workers().execute(() -> {
+                @Nullable List<Item> items = null;
                 try {
-                    future.complete(listSorted(key.directory(), key.showHidden()));
+                    items = listSorted(key.directory(), key.showHidden());
                 } catch (RuntimeException failed) {
                     ProjectMapLog.unexpected("listing a folder", failed);
-                    future.complete(null);
                 } finally {
+                    // Dropped before the waiters wake, so a load right after this one never joins a finished listing.
                     inFlight.remove(key, running);
+                    future.complete(items);
                     if (running.late && !closed) {
                         onRecovered.run();
                     }
