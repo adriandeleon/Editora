@@ -291,14 +291,18 @@ still showing the old lines, until the outline says where the declaration went. 
 for a closed file and nothing about the columns is remembered across restarts.
 A file card whose file can be outlined has a **Structure** button in its title bar, before Notes. It sticks a
 **Structure column** beside the card (`ProjectMapCardStructure`): the same outline as the Map's Structure column,
-as an indented list in the same violet tint, with a lone top-level type opened. It works wherever the file's row
+as an indented list in the same violet tint, with a lone top-level type opened. Each label is coloured as the
+card colours its declaration line (`StructurePanel.labelRuns` over the card's own `CodeArea`, again whenever the
+card's text or colours change), and the column is as wide as its longest row needs, between 240 and 560 px
+(`ProjectMapCardStructure.fit`, measured in the rows' font). It works wherever the file's row
 is — filtered, scrolled off or in a closed column — because it belongs to the card: it moves, resizes, zooms,
 hides, rises and closes with it, and does not count against the open-card limit. It goes on the side away from
 the card's row (the connector's side is left clear), else the other side, else over the card's right edge, and
 the card's sticky notes stand past it (`ProjectMapStickyNotes.setReserved`). A click or Enter on a declaration
 opens its card, as a Map row does; the right-click / Menu-key menu is the row's (Preview, Open at Declaration,
 Open Narrowed); Escape or its × takes it off. A declaration card opened from it whose row is not on the map is
-placed beside the column, by the declaration's row in it, and is kept by the orphan check while the column is
+placed beside the column, by the declaration's row in it, with a connector from that row (while it is scrolled
+into sight) as a Map row has to its card, and is kept by the orphan check while the column is
 out; taking the column off closes those cards, as closing the Map's column closes its rows' cards. The outline
 is held for as long as the column is out (`cardOutlineFiles`, kept by `ProjectMapStructure.prune`), follows the
 buffer or the file on disk, and an edit keeps what was expanded and selected. Nothing about it is remembered.

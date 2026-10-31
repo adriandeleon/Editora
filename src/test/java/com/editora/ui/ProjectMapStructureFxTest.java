@@ -258,6 +258,29 @@ class ProjectMapStructureFxTest {
                 FxTestSupport.call(map.view(), "repaintPreviewConnectors", new Class<?>[0]);
             });
             FxTestSupport.drainFx(); // an orphan check would run now
+            // The declaration's row in the column is tied to its card, as a Map row is to its card.
+            FxTestSupport.runOnFx(() -> {
+                FxTestSupport.call(map.view(), "repaintPreviewConnectors", new Class<?>[0]);
+                Map<Path, ?> connectors = FxTestSupport.field(map.view(), "previewConnectors");
+                Object connector = connectors.get(add);
+                assertNotNull(connector, "a connector from the declaration's row to its card");
+                double[] row = column.rowBounds(add);
+                assertNotNull(row);
+                double startX = (double) FxTestSupport.call(connector, "startX", new Class<?>[0]);
+                double startY = (double) FxTestSupport.call(connector, "startY", new Class<?>[0]);
+                assertTrue(
+                        Math.abs(startX - (row[0] + row[2])) < 0.5 || Math.abs(startX - row[0]) < 0.5,
+                        "it leaves the row's edge");
+                assertEquals(row[1] + row[3] / 2, startY, 0.5, "at the row's middle");
+            });
+            // The labels take the card's colours: the method name is coloured as the card colours it.
+            waitFor(
+                    () -> column.tree().lookupAll(".project-map-card-structure-run").stream()
+                            .anyMatch(node -> node instanceof javafx.scene.text.Text run
+                                    && run.getText().equals("add")
+                                    && run.getStyleClass().contains("text")
+                                    && run.getStyleClass().size() > 2),
+                    "add's name carries its token classes");
             FxTestSupport.runOnFx(() -> {
                 assertTrue(previews(map.view()).containsKey(add), "kept while the column it came from is out");
                 double[] drawn = column.bounds();

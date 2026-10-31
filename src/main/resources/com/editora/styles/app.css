@@ -1848,6 +1848,15 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-style: italic;
 }
+/* A label's runs: a token takes its editor colour (`.text.keyword`, …); the rest the list's own text colour. */
+.project-map-card-structure-plain {
+    -fx-fill: -color-fg-default;
+}
+.project-map-card-structure-measure,
+.project-map-card-structure-plain,
+.project-map-card-structure-run {
+    -fx-font-size: 12px;
+}
 .project-map-card-structure-line {
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 10px;
