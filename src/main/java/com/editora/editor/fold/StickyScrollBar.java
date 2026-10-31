@@ -184,20 +184,48 @@ public final class StickyScrollBar {
         box.setVisible(!rows.isEmpty());
     }
 
+    /** Visible paragraphs {@link #lineHeight} looks at; a scroll step pays for this many bounds lookups. */
+    private static final int LINE_HEIGHT_SAMPLES = 8;
+
     /**
-     * One visual line of {@code area}, measured from its first visible paragraph (a wrapped one is divided by its
-     * rows), or 0 while nothing is laid out. Rows were their text's height plus padding, a little taller than a
-     * code line each: three pinned rows covered half the line below them, which is where a jump's context starts.
+     * One visual line of {@code area}, or 0 while nothing is laid out. Rows were their text's height plus
+     * padding, a little taller than a code line each: three pinned rows covered half the line below them, which
+     * is where a jump's context starts.
+     *
+     * <p>{@code getParagraphBoundsOnScreen} clips a paragraph to the area, so the first visible one — usually
+     * half scrolled off the top — measures as a sliver, and every pinned row shrank to it and drew over its
+     * neighbours. Only paragraphs wholly inside the area are measured. Of those, the smallest height per visual
+     * row wins: a paragraph carrying a code lens or a block inlay is taller than one line of code.
      */
     private static double lineHeight(CodeArea area) {
         try {
-            int par = area.firstVisibleParToAllParIndex();
-            Bounds bounds = area.getParagraphBoundsOnScreen(par).orElse(null);
-            int lines = area.getParagraphLinesCount(par);
-            return bounds == null || lines <= 0 ? 0 : bounds.getHeight() / lines;
+            Bounds areaBounds = area.localToScreen(area.getBoundsInLocal());
+            if (areaBounds == null) {
+                return 0;
+            }
+            int first = area.firstVisibleParToAllParIndex();
+            int last = Math.min(area.lastVisibleParToAllParIndex(), first + LINE_HEIGHT_SAMPLES - 1);
+            double best = 0;
+            for (int par = first; par <= last; par++) {
+                Bounds bounds = area.getParagraphBoundsOnScreen(par).orElse(null);
+                int lines = area.getParagraphLinesCount(par);
+                if (bounds == null || lines <= 0 || clipped(bounds, areaBounds)) {
+                    continue;
+                }
+                double height = bounds.getHeight() / lines;
+                if (height > 0 && (best == 0 || height < best)) {
+                    best = height;
+                }
+            }
+            return best;
         } catch (RuntimeException notLaidOut) {
             return 0;
         }
+    }
+
+    /** True when {@code paragraph} touches the area's top or bottom edge, where its bounds were cut to fit. */
+    private static boolean clipped(Bounds paragraph, Bounds area) {
+        return paragraph.getMinY() <= area.getMinY() + 0.5 || paragraph.getMaxY() >= area.getMaxY() - 0.5;
     }
 
     /** Holds {@code row} to {@link #rowHeight} once one is known, so N pinned rows cover exactly N lines. */
