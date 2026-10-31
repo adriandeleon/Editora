@@ -2385,7 +2385,11 @@ final class ProjectMapView extends VBox {
         preview.setNotesSuppressed(hideOpenNotes.isSelected());
         preview.setOnShowSuppressedNotes(() -> hideOpenNotes.setSelected(false)); // the Notes button asks for them
         preview.setOnMoveToFreeSpace(() -> cardMoveToFreeSpace(preview, path));
-        preview.setOnTextShown(() -> updateCardNotes(preview)); // stored notes are found again in the new text
+        preview.setOnTextShown(() -> {
+            updateCardNotes(preview); // stored notes are found again in the new text
+            restyleCardStructure(preview);
+        });
+        preview.setOnStylesShown(() -> restyleCardStructure(preview)); // its Structure column borrows the colours
         // A sticky note's connector meets its line in the text, which scrolls under it.
         preview.editor().estimatedScrollYProperty().addListener((obs, old, value) -> {
             if (stickyNotes.containsKey(preview)) {
@@ -2526,16 +2530,29 @@ final class ProjectMapView extends VBox {
                         node -> previewSymbol(symbolEntry(node)),
                         node -> symbolMenu(symbolEntry(node)),
                         () -> touchCard(card, false),
-                        this::repaintPreviewConnectors));
+                        this::repaintPreviewConnectors,
+                        () -> reserveBesideCard(card)));
         structure.ensure(file);
-        column.update(structure.view(file));
         column.show(cardRowAfter(card, file));
-        ProjectMapStickyNotes notes = stickyNotes.get(card);
-        if (notes != null) {
-            notes.setReserved(which -> besideCard(card, which)); // the sheets step past the column
-        }
+        column.update(structure.view(file)); // shown first: its width is measured in the rows' font
+        reserveBesideCard(card); // the sheets step past the column
         touchCard(card, true);
         scheduleCardRefresh(); // the outline follows the buffer from now on
+    }
+
+    /** Places a card's sticky notes again past what stands beside the card now. */
+    private void reserveBesideCard(ProjectMapPreview card) {
+        ProjectMapStickyNotes notes = stickyNotes.get(card);
+        if (notes != null) {
+            notes.setReserved(which -> besideCard(card, which));
+        }
+    }
+
+    private void restyleCardStructure(ProjectMapPreview card) {
+        ProjectMapCardStructure column = cardStructures.get(card);
+        if (column != null) {
+            column.restyle();
+        }
     }
 
     /** Whether the card's row is after it along the flow, so its Structure column goes on the left. */
@@ -2555,10 +2572,7 @@ final class ProjectMapView extends VBox {
         }
         boolean focused = column.contains(getScene() == null ? null : getScene().getFocusOwner());
         column.dispose();
-        ProjectMapStickyNotes notes = stickyNotes.get(card);
-        if (notes != null) {
-            notes.setReserved(which -> besideCard(card, which));
-        }
+        reserveBesideCard(card);
         if (focused && cardTouches.containsKey(card)) {
             card.focusContent();
         }
@@ -3197,11 +3211,20 @@ final class ProjectMapView extends VBox {
         g.setLineWidth(1.5);
         for (Map.Entry<Path, ProjectMapPreview> entry : previews.entrySet()) {
             ProjectMapPreview preview = entry.getValue();
-            MapSurface.NodeBox anchor = surface.nodeBox(entry.getKey());
-            if (!preview.isVisible() || anchor == null || preview.getWidth() <= 0 || preview.getHeight() <= 0) {
+            if (!preview.isVisible() || preview.getWidth() <= 0 || preview.getHeight() <= 0) {
                 continue;
             }
-            previewConnectors.put(entry.getKey(), drawPreviewConnector(g, anchor, preview));
+            // A declaration in a file card's Structure column is tied to its card from there, as a row is.
+            double[] row = cardStructureRow(entry.getKey());
+            if (row != null) {
+                previewConnectors.put(
+                        entry.getKey(), drawPreviewConnector(g, row[0], row[1], row[2], row[3], true, preview));
+                continue;
+            }
+            MapSurface.NodeBox anchor = surface.nodeBox(entry.getKey());
+            if (anchor != null) {
+                previewConnectors.put(entry.getKey(), drawPreviewConnector(g, anchor, preview));
+            }
         }
         g.setStroke(surface.noteColor());
         for (Map.Entry<Path, ProjectMapNotePreview> entry : notePreviews.entrySet()) {
@@ -3218,6 +3241,26 @@ final class ProjectMapView extends VBox {
     }
 
     private PreviewConnector drawPreviewConnector(GraphicsContext g, MapSurface.NodeBox anchor, Region preview) {
+        boolean horizontal = surface.flowDirection == FlowDirection.LEFT_TO_RIGHT
+                || surface.flowDirection == FlowDirection.RIGHT_TO_LEFT;
+        return drawPreviewConnector(g, anchor.x(), anchor.y(), anchor.width(), anchor.height(), horizontal, preview);
+    }
+
+    /**
+     * The row of a declaration card's declaration in its file card's Structure column, in panel pixels, when the
+     * column is out and the row is scrolled into sight: where the card's connector starts. Else null.
+     */
+    private double @Nullable [] cardStructureRow(Path key) {
+        if (!ProjectMapStructure.isSymbolPath(key)) {
+            return null;
+        }
+        ProjectMapCardStructure column = cardStructureOf(structure.fileOf(key));
+        return column == null ? null : column.rowBounds(key);
+    }
+
+    /** A connector from the anchor box {@code ax, ay, aw, ah} to {@code preview}, across the flow or along it. */
+    private PreviewConnector drawPreviewConnector(
+            GraphicsContext g, double ax, double ay, double aw, double ah, boolean horizontal, Region preview) {
         double x1;
         double y1;
         double x2;
@@ -3226,12 +3269,10 @@ final class ProjectMapView extends VBox {
         double top = preview.getLayoutY();
         double width = preview.getWidth() * cardScale(preview);
         double height = preview.getHeight() * cardScale(preview);
-        boolean horizontal = surface.flowDirection == FlowDirection.LEFT_TO_RIGHT
-                || surface.flowDirection == FlowDirection.RIGHT_TO_LEFT;
         if (horizontal) {
-            boolean previewAfter = left + width / 2 >= anchor.x() + anchor.width() / 2;
-            x1 = previewAfter ? anchor.x() + anchor.width() : anchor.x();
-            y1 = anchor.y() + anchor.height() / 2;
+            boolean previewAfter = left + width / 2 >= ax + aw / 2;
+            x1 = previewAfter ? ax + aw : ax;
+            y1 = ay + ah / 2;
             x2 = previewAfter ? left : left + width;
             y2 = clampInto(y1, top, top + height);
             double control = Math.max(18, Math.abs(x2 - x1) * 0.45);
@@ -3240,9 +3281,9 @@ final class ProjectMapView extends VBox {
             g.bezierCurveTo(
                     x1 + (previewAfter ? control : -control), y1, x2 + (previewAfter ? -control : control), y2, x2, y2);
         } else {
-            boolean previewAfter = top + height / 2 >= anchor.y() + anchor.height() / 2;
-            x1 = anchor.x() + anchor.width() / 2;
-            y1 = previewAfter ? anchor.y() + anchor.height() : anchor.y();
+            boolean previewAfter = top + height / 2 >= ay + ah / 2;
+            x1 = ax + aw / 2;
+            y1 = previewAfter ? ay + ah : ay;
             x2 = clampInto(x1, left, left + width);
             y2 = previewAfter ? top : top + height;
             double control = Math.max(18, Math.abs(y2 - y1) * 0.45);

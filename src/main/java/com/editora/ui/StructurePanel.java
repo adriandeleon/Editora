@@ -1113,6 +1113,24 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /**
+     * A declaration label's runs, each with the token classes its source text has in {@code area} at {@code line}
+     * (the area's own line): what a Structure row shows. Labels the area does not have, or whose line it does not
+     * colour, take the kind's colour. The Project Map's card Structure columns borrow their file card's colours.
+     */
+    static List<SyntaxRun> labelRuns(CodeArea area, int line, @Nullable String label, @Nullable String kind) {
+        String text = label == null ? "" : label;
+        if (line < 0 || line >= area.getParagraphs().size()) {
+            return List.of(fallbackRun(text, kind));
+        }
+        String sourceLine = area.getParagraph(line).getText();
+        String stem = callableStem(text);
+        int column = stem.isEmpty() ? -1 : sourceLine.indexOf(stem);
+        return column < 0
+                ? List.of(fallbackRun(text, kind))
+                : styledDisplayRuns(area, line, text, sourceLine, column, kind);
+    }
+
     private static String callableStem(String label) {
         String value = label == null ? "" : label.strip();
         int signature = value.indexOf('(');

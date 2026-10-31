@@ -343,6 +343,7 @@ final class ProjectMapPreview extends StackPane {
     private Consumer<Path> onReveal = file -> com.editora.process.DesktopActions.reveal(file, false, error -> {});
     private Runnable onMoveToFreeSpace = () -> {};
     private Runnable onTextShown = () -> {};
+    private Runnable onStylesShown = () -> {};
     private java.util.function.DoubleConsumer onContentZoomed = zoom -> {};
 
     private java.util.function.@Nullable BiConsumer<Path, Integer> onOpenAt;
@@ -1491,6 +1492,11 @@ final class ProjectMapPreview extends StackPane {
         editorContextMenu.getItems().setAll(items);
     }
 
+    /** Called when the card's text has been coloured: what borrows its colours takes them again. */
+    void setOnStylesShown(Runnable callback) {
+        onStylesShown = callback == null ? () -> {} : callback;
+    }
+
     /** The card menu's Move to Free Space: the owner places the card again where it covers least. */
     void setOnMoveToFreeSpace(Runnable callback) {
         onMoveToFreeSpace = callback == null ? () -> {} : callback;
@@ -2261,6 +2267,7 @@ final class ProjectMapPreview extends StackPane {
             editor.setStyleSpans(0, spans.subView(sliceOffset, end));
         }
         status.setText(idleStatus(truncated));
+        onStylesShown.run();
     }
 
     private static boolean looksBinary(byte[] bytes) {

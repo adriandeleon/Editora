@@ -11,8 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Project Map: a Structure column on file previews.** A file preview card whose file has an outline has a
   **Structure** button in its title bar. It sticks the file's Structure column beside the card — the same
-  declarations as the Map's own Structure column, as an indented list — and clicking a method or type (or Enter
-  on it) opens its declaration preview beside the column. It moves, resizes and zooms with the card, works even
+  declarations as the Map's own Structure column, as an indented list, coloured as the editor colours them and
+  as wide as the longest name needs — and clicking a method or type (or Enter on it) opens its declaration
+  preview beside the column, tied to its row by a connector line. It moves, resizes and zooms with the card, works even
   when the file's row is filtered or scrolled off the map, and the card's sticky notes stand past it.
 
 ### Changed
