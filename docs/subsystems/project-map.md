@@ -289,6 +289,20 @@ its bookmark and note actions off. Text that arrives before the outline is not c
 follows its declaration line when lines were added or removed above it, and otherwise holds the new text,
 still showing the old lines, until the outline says where the declaration went. No language server is started
 for a closed file and nothing about the columns is remembered across restarts.
+A file card whose file can be outlined has a **Structure** button in its title bar, before Notes. It sticks a
+**Structure column** beside the card (`ProjectMapCardStructure`): the same outline as the Map's Structure column,
+as an indented list in the same violet tint, with a lone top-level type opened. It works wherever the file's row
+is — filtered, scrolled off or in a closed column — because it belongs to the card: it moves, resizes, zooms,
+hides, rises and closes with it, and does not count against the open-card limit. It goes on the side away from
+the card's row (the connector's side is left clear), else the other side, else over the card's right edge, and
+the card's sticky notes stand past it (`ProjectMapStickyNotes.setReserved`). A click or Enter on a declaration
+opens its card, as a Map row does; the right-click / Menu-key menu is the row's (Preview, Open at Declaration,
+Open Narrowed); Escape or its × takes it off. A declaration card opened from it whose row is not on the map is
+placed beside the column, by the declaration's row in it, and is kept by the orphan check while the column is
+out; taking the column off closes those cards, as closing the Map's column closes its rows' cards. The outline
+is held for as long as the column is out (`cardOutlineFiles`, kept by `ProjectMapStructure.prune`), follows the
+buffer or the file on disk, and an edit keeps what was expanded and selected. Nothing about it is remembered.
+
 The Map's global search walks file names only, but the query is also matched against the declaration rows of
 the open structure columns (no disk or server work): a matching declaration stays prominent with the rows
 that lead to it, its siblings fade, and a query that names only a declaration on screen does not read "No
@@ -593,6 +607,8 @@ Responsibilities are split as follows:
   builder), the made-up declaration paths, the rows they become, and their pruning.
 - `ProjectMapNotePreview` owns one editable Personal Notes card: a text area per note, saving, and
   adopting the store's notes on refresh.
+- `ProjectMapCardStructure` owns one file card's Structure column: the outline as a `TreeView` synced in place,
+  its side beside the card, following it, and the room it takes from the sticky notes.
 - `ProjectMapStickyNotes` owns one code card's sticky notes: their sheets, placement beside the card, following it,
   saving, adopting the store's notes, and drawing their connectors onto the view's connector canvas.
 - `ProjectMapOutputPlan` is the JavaFX-free page plan for print/PDF; `ExportCoordinator` renders the
