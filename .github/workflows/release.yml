@@ -294,6 +294,11 @@ jobs:
           app="$(ls -d "$mnt"/*.app | head -1)"
           codesign --verify --deep --strict --verbose=2 "$app"
           spctl --assess --type execute --verbose=2 "$app"
+          # Run the notarized app itself under the hardened runtime: --version needs the JIT entitlements
+          # to start the JVM at all, and --check-terminal opens a shell on a pty, which loads the natives
+          # pty4j and JNA unpack at runtime (signed by nobody, so only disable-library-validation lets them in).
+          "$app/Contents/MacOS/Editora" --version
+          "$app/Contents/MacOS/Editora" --check-terminal
           echo "- ✅ ${{ matrix.target }}: signed, notarized and stapled" >> "$GITHUB_STEP_SUMMARY"
 
       # Portable single-file Linux build from the AOT-trained app-image (no sandbox — host tools work;
