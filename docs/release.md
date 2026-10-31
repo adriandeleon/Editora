@@ -210,12 +210,38 @@ Renew the membership first, then make a new certificate and replace `MACOS_CERT_
 `MACOS_CERT_PASSWORD`. Apps signed before expiry keep working: the secure timestamp proves when they
 were signed.
 
+### Build provenance attestations
+
+Before JReleaser publishes, **Attest build provenance** (`actions/attest-build-provenance`) records a
+signed [SLSA](https://slsa.dev/) provenance statement for every file the release attaches: each
+DMG, MSI, `.deb`, `.rpm`, AppImage, tarball and fat jar. A statement ties the file's SHA-256 to the
+repository, the workflow, the commit and the tag that built it. For the Windows and Linux packages it is
+the only signature they carry.
+
+Anyone can check a download with the GitHub CLI:
+
+```bash
+gh attestation verify Editora-0.26.1-linux-x64.deb --repo adriandeleon/Editora --source-ref refs/tags/v0.26.1
+```
+
+- **Keyless.** Sigstore signs with the job's short-lived OIDC identity, so there is no key or secret
+  to store, rotate or leak. The repository is public, so the statements go to Sigstore's public
+  transparency log, which shows the file names and digests, both already public on the release.
+- **The subject list is `jreleaser.yml`'s `files.globs`.** `ReleaseSupplyChainTest` fails when the
+  two lists differ, so a new asset type is either attested or the build says why not.
+- **A dry run attests too.** That is how the step is tested before a tag. Its statements name the
+  branch, not a tag, so `--source-ref refs/tags/…` keeps a dry-run build from verifying as a
+  release.
+- `checksums_sha256.txt` (and `RELEASE.md`) are written by JReleaser after the step and are not
+  attested themselves; every file the checksums list is.
+
 ### Supply chain
 
 - The workflow token is **read-only** by default; only `release` (publishes) and `bump` (pushes the
   version-bump branch) ask for `contents: write`, and only `bump`'s checkout keeps its credentials.
   `bump` also holds `pull-requests: write` and `actions: write`, to open the pull request and
-  dispatch CI on its branch.
+  dispatch CI on its branch. `release` alone holds `id-token: write` and `attestations: write`, for
+  the [provenance attestations](#build-provenance-attestations).
 - Every action is pinned to a **full commit SHA** with its version in a trailing comment;
   `.github/dependabot.yml` opens the update PRs (weekly, for Maven dependencies too).
   `jreleaser/release-action` has no `v2` *tag* — it was being consumed from a branch — and is pinned
@@ -271,7 +297,8 @@ CI uses the BellSoft **Liberica** JDK 25 for full arch coverage (incl. linux aar
 
 - The macOS DMGs are signed and notarized (see
   [macOS signing and notarization](#macos-signing-and-notarization)). The Windows MSI and the Linux
-  packages are still **unsigned**.
+  packages are not code-signed; every asset carries a
+  [build provenance attestation](#build-provenance-attestations).
 - A JavaFX bump no longer needs any test-harness work — the headless backend has shipped inside
   JavaFX itself since 26 (the old vendored Monocle rebuild is gone; see
   [dependencies.md](dependencies.md#the-headless-test-backend-no-vendored-dependency)). Do

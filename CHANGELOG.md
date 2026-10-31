@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with a Developer ID certificate and notarized by Apple, so it opens on first launch with no Gatekeeper
   warning and no trip to System Settings → Privacy & Security. The Windows and Linux packages are still
   unsigned.
+- **Every release file has a build provenance attestation.** The release workflow now records a signed
+  statement for each installer, archive and jar, naming the repository, commit and tag that built it.
+  Check a download with
+  `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
 
 ## [0.26.0] - 2026-10-29
 

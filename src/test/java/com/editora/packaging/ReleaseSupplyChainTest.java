@@ -209,6 +209,40 @@ class ReleaseSupplyChainTest {
     }
 
     @Test
+    void everyReleaseAssetGetsAProvenanceAttestationBeforeItIsPublished() throws IOException {
+        Map<String, String> jobs = jobs(read(WORKFLOWS.resolve("release.yml")));
+        for (var job : jobs.entrySet()) {
+            boolean mints = job.getValue().contains("id-token: write");
+            assertEquals(
+                    job.getKey().equals("release"),
+                    mints,
+                    "release.yml job `" + job.getKey() + "`: only the release job may mint an OIDC token");
+        }
+        String publish = jobs.get("release");
+        assertTrue(publish.contains("attestations: write"), "the release job cannot store its attestations");
+        int check = publish.indexOf("CheckRelease.java assets");
+        int attest = publish.indexOf("actions/attest-build-provenance@");
+        int jreleaser = publish.indexOf("jreleaser/release-action@");
+        assertTrue(attest >= 0, "the release assets are no longer attested");
+        assertTrue(
+                check < attest && attest < jreleaser,
+                "attest after the asset check and before JReleaser publishes the immutable release");
+
+        List<String> attested = new ArrayList<>();
+        Matcher subjects =
+                Pattern.compile("subject-path: \\|\\n((?: {12}\\S.*\\n)+)").matcher(publish.substring(attest));
+        assertTrue(subjects.find(), "the attestation step lost its `subject-path:` list");
+        subjects.group(1).lines().map(String::trim).forEach(attested::add);
+        List<String> released = new ArrayList<>();
+        Matcher globs = Pattern.compile("(?m)^    - pattern: '(.+)'$").matcher(read(REPO.resolve("jreleaser.yml")));
+        while (globs.find()) {
+            released.add(globs.group(1));
+        }
+        assertFalse(released.isEmpty(), "found no `files.globs` in jreleaser.yml — the scan is broken");
+        assertEquals(released, attested, "every pattern JReleaser attaches must also be attested, and no other");
+    }
+
+    @Test
     void downloadsThatBecomePartOfABuildArePinnedAndVerified() throws IOException {
         String appimage = read(REPO.resolve(Path.of("scripts", "build-appimage.sh")));
         assertFalse(appimage.contains("/continuous/"), "build-appimage.sh downloads from a rolling release");
