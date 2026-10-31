@@ -230,6 +230,17 @@ jobs:
             echo "::error title=Notarization secrets missing::APPLE_API_KEY_P8 / APPLE_API_KEY_ID are not set"
             exit 1
           fi
+          # Easy to mix up when copying them off the Integrations page: the issuer is a UUID shown above the
+          # key list, the key ID is 10 characters in the key's row. Say which one is wrong before Apple does.
+          uuid='^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+          if [ -n "$APPLE_API_ISSUER" ] && ! [[ "$APPLE_API_ISSUER" =~ $uuid ]]; then
+            echo "::error title=APPLE_API_ISSUER is not an issuer ID::it must be the UUID shown as Issuer ID above the team key list (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
+            exit 1
+          fi
+          if ! [[ "$APPLE_API_KEY_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "::error title=APPLE_API_KEY_ID is not a key ID::it must be the 10-character Key ID from the key's row"
+            exit 1
+          fi
           key="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
           printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$key"
           # A team key needs the issuer; an individual key has none.
