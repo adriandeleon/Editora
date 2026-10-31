@@ -1802,6 +1802,56 @@
     -fx-background-color: -color-warning-muted;
     -fx-text-fill: -color-fg-default;
 }
+/* A file card's Structure button, lit while its Structure column is out. */
+.project-map-preview-structure:selected {
+    -fx-background-color: -color-accent-muted;
+}
+/* A file card's Structure column, stuck beside it: the Map's Structure columns' violet over an opaque background,
+   so the map never shows through. */
+.project-map-card-structure {
+    -fx-background-color: -color-bg-default;
+    -fx-background-radius: 8;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.32), 14, 0.12, 0, 5);
+}
+.project-map-card-structure-tint {
+    -fx-background-color: -state-violet;
+    -fx-background-radius: 8;
+    -fx-opacity: 0.12;
+}
+.project-map-card-structure-border {
+    -fx-border-color: -state-violet;
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+    -fx-opacity: 0.45;
+}
+.project-map-card-structure-header {
+    -fx-padding: 5 6 5 10;
+    -fx-border-color: transparent transparent -color-border-muted transparent;
+}
+.project-map-card-structure-title {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-graphic-text-gap: 6;
+}
+.project-map-card-structure-tree {
+    -color-cell-bg: transparent;
+    -color-cell-border: transparent;
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 2 2 6 2;
+}
+.project-map-card-structure-tree .tree-cell {
+    -fx-font-size: 12px;
+    -fx-padding: 2 4 2 2;
+}
+.project-map-card-structure-tree .tree-cell:message {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-style: italic;
+}
+.project-map-card-structure-line {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 10px;
+}
 /* A code card's Personal Notes, one sticky sheet per note beside it, in the note card's amber family. Some
    themes' warning tints are translucent: each sits on the opaque background so the map never shows through. */
 .project-map-sticky-note {

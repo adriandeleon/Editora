@@ -173,6 +173,8 @@ final class ProjectMapView extends VBox {
     private final Map<Path, ProjectMapNotePreview> notePreviews = new LinkedHashMap<>(16, 0.75f, true);
     /** The sticky notes a code card's Notes button stuck on it, by card. */
     private final Map<ProjectMapPreview, ProjectMapStickyNotes> stickyNotes = new java.util.IdentityHashMap<>();
+    /** The Structure columns stuck on file cards (their Structure button). */
+    private final Map<ProjectMapPreview, ProjectMapCardStructure> cardStructures = new java.util.IdentityHashMap<>();
     /** When each open card was last used (pressed, focused, scrolled or opened); the oldest is evicted. */
     private final Map<Region, Long> cardTouches = new java.util.IdentityHashMap<>();
 
@@ -1336,6 +1338,15 @@ final class ProjectMapView extends VBox {
             Path movedFile = ProjectMapModel.remap(file, from, to);
             if (movedFile != null) {
                 card.pathRenamed(movedFile);
+                if (!ProjectMapStructure.isSymbolPath(key)) {
+                    card.setStructureAvailable(structure.supports(movedFile)); // another name, maybe another language
+                }
+                ProjectMapCardStructure column = cardStructures.get(card);
+                if (column != null) {
+                    column.relabel();
+                    structure.ensure(movedFile);
+                    column.update(structure.view(movedFile));
+                }
             }
             previews.put(key, card);
             moved = true;
@@ -1811,9 +1822,9 @@ final class ProjectMapView extends VBox {
                 loadedFiles.add(entry.path());
             }
         }
-        structure.prune(loadedFiles, symbolCardFiles());
+        structure.prune(loadedFiles, cardOutlineFiles());
         showRows();
-        structure.refresh(symbolCardFiles()); // a file outlined before may have changed meanwhile
+        structure.refresh(cardOutlineFiles()); // a file outlined before may have changed meanwhile
         setOutputEnabled(!loaded.entries().isEmpty());
         if (pendingSelection != null) {
             if (loadedPaths.contains(pendingSelection) || surface.contains(pendingSelection)) {
@@ -2093,6 +2104,12 @@ final class ProjectMapView extends VBox {
             return;
         }
         showRows();
+        cardStructures.forEach((card, column) -> {
+            Path file = card.path();
+            if (file != null) {
+                column.update(structure.view(file));
+            }
+        });
         for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
             if (!ProjectMapStructure.isSymbolPath(entry.getKey())) {
                 continue;
@@ -2163,8 +2180,11 @@ final class ProjectMapView extends VBox {
         return fallback;
     }
 
-    /** The files a declaration card is open for: their outlines are kept to follow the cards' lines. */
-    private Set<Path> symbolCardFiles() {
+    /**
+     * The files a declaration card is open for, or whose card has its Structure column out: their outlines are
+     * kept to follow the cards' lines and to list them.
+     */
+    private Set<Path> cardOutlineFiles() {
         Set<Path> files = new HashSet<>();
         for (Path key : previews.keySet()) {
             if (ProjectMapStructure.isSymbolPath(key)) {
@@ -2172,6 +2192,12 @@ final class ProjectMapView extends VBox {
                 if (file != null) {
                     files.add(file);
                 }
+            }
+        }
+        for (ProjectMapPreview card : cardStructures.keySet()) {
+            Path file = card.path();
+            if (file != null) {
+                files.add(file);
             }
         }
         return files;
@@ -2262,6 +2288,7 @@ final class ProjectMapView extends VBox {
             return;
         }
         preview = createPreview(selected);
+        preview.setStructureAvailable(structure.supports(selected)); // as the row has its Structure icon
         ProjectMapPreview selectedPreview = preview;
         preview.showFile(
                 entry.path(),
@@ -2354,6 +2381,7 @@ final class ProjectMapView extends VBox {
             surface.requestFocus();
         });
         preview.setOnNotesToggled(shown -> showCardNotes(preview, shown));
+        preview.setOnStructureToggled(shown -> showCardStructure(preview, shown));
         preview.setNotesSuppressed(hideOpenNotes.isSelected());
         preview.setOnShowSuppressedNotes(() -> hideOpenNotes.setSelected(false)); // the Notes button asks for them
         preview.setOnMoveToFreeSpace(() -> cardMoveToFreeSpace(preview, path));
@@ -2387,6 +2415,10 @@ final class ProjectMapView extends VBox {
         cardTouches.put(card, ++cardTouchSequence);
         if (raise) {
             card.toFront();
+            ProjectMapCardStructure column = card instanceof ProjectMapPreview code ? cardStructures.get(code) : null;
+            if (column != null) {
+                column.raise(); // so does its Structure column
+            }
             ProjectMapStickyNotes notes = card instanceof ProjectMapPreview code ? stickyNotes.get(code) : null;
             if (notes != null) {
                 notes.raise(); // a card's sticky notes stay on it
@@ -2456,8 +2488,107 @@ final class ProjectMapView extends VBox {
             }
         });
         stuck.setHidden(hideOpenNotes.isSelected());
+        stuck.setReserved(which -> besideCard(card, which));
         stuck.show(cardNotes(card));
         touchCard(card, true);
+    }
+
+    /** What the card's Structure column takes beside it on a sticky-note side, in unzoomed units. */
+    private double besideCard(ProjectMapPreview card, ProjectMapStickyNotes.Side which) {
+        ProjectMapCardStructure column = cardStructures.get(card);
+        if (column == null) {
+            return 0;
+        }
+        return switch (which) {
+            case RIGHT -> column.reserved(ProjectMapCardStructure.Side.RIGHT);
+            case LEFT -> column.reserved(ProjectMapCardStructure.Side.LEFT);
+            case OVER -> 0;
+        };
+    }
+
+    /**
+     * The Structure button: sticks the file's Structure column beside the card, or takes it off. It goes on the
+     * side away from the card's row, where the connector to the row does not cross it; a declaration clicked in it
+     * opens its card beside it. Taking it off closes the declaration cards it opened, as closing the Map's own
+     * Structure column closes those of its rows.
+     */
+    private void showCardStructure(ProjectMapPreview card, boolean shown) {
+        Path file = card.path();
+        if (!shown || file == null || canvasHost == null) {
+            closeCardStructure(card);
+            return;
+        }
+        ProjectMapCardStructure column = cardStructures.computeIfAbsent(
+                card,
+                ignored -> new ProjectMapCardStructure(
+                        card,
+                        canvasHost,
+                        node -> previewSymbol(symbolEntry(node)),
+                        node -> symbolMenu(symbolEntry(node)),
+                        () -> touchCard(card, false),
+                        this::repaintPreviewConnectors));
+        structure.ensure(file);
+        column.update(structure.view(file));
+        column.show(cardRowAfter(card, file));
+        ProjectMapStickyNotes notes = stickyNotes.get(card);
+        if (notes != null) {
+            notes.setReserved(which -> besideCard(card, which)); // the sheets step past the column
+        }
+        touchCard(card, true);
+        scheduleCardRefresh(); // the outline follows the buffer from now on
+    }
+
+    /** Whether the card's row is after it along the flow, so its Structure column goes on the left. */
+    private boolean cardRowAfter(ProjectMapPreview card, Path file) {
+        MapSurface.NodeBox row = surface.nodeBox(file);
+        if (row == null) {
+            return false;
+        }
+        double cardMiddle = card.getLayoutX() + card.getWidth() * card.mapScale() / 2;
+        return row.x() + row.width() / 2 > cardMiddle;
+    }
+
+    private void closeCardStructure(ProjectMapPreview card) {
+        ProjectMapCardStructure column = cardStructures.remove(card);
+        if (column == null) {
+            return;
+        }
+        boolean focused = column.contains(getScene() == null ? null : getScene().getFocusOwner());
+        column.dispose();
+        ProjectMapStickyNotes notes = stickyNotes.get(card);
+        if (notes != null) {
+            notes.setReserved(which -> besideCard(card, which));
+        }
+        if (focused && cardTouches.containsKey(card)) {
+            card.focusContent();
+        }
+        scheduleOrphanCheck(); // the declaration cards it opened go with it
+    }
+
+    /** A declaration of a card's Structure column as a Map row, for the row's card and menu. */
+    private static ProjectMapModel.Entry symbolEntry(ProjectMapStructure.Node node) {
+        Path parent = node.path().getParent();
+        return ProjectMapModel.Entry.symbol(node.path(), parent == null ? node.path() : parent, 0, node.symbol());
+    }
+
+    /** The Structure column of a file card, when it is out: for a declaration card opened from it. */
+    private @Nullable ProjectMapCardStructure cardStructureOf(@Nullable Path file) {
+        if (file == null) {
+            return null;
+        }
+        for (Map.Entry<ProjectMapPreview, ProjectMapCardStructure> entry : cardStructures.entrySet()) {
+            if (file.equals(entry.getKey().path())) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private void scheduleOrphanCheck() {
+        if (!orphanCheckPending && !previews.isEmpty()) {
+            orphanCheckPending = true;
+            Platform.runLater(this::closeOrphanedCards);
+        }
     }
 
     private void closeCardNotes(ProjectMapPreview card) {
@@ -2515,6 +2646,10 @@ final class ProjectMapView extends VBox {
             return false;
         }
         boolean hasSheets = card instanceof ProjectMapPreview code && stickyNotes.containsKey(code);
+        ProjectMapCardStructure column = card instanceof ProjectMapPreview code ? cardStructures.get(code) : null;
+        if (column != null && column.contains(owner)) {
+            return true; // its Structure column is the card's own too
+        }
         for (Node current = owner; current != null; current = current.getParent()) {
             if (current == card || hasSheets && current.getStyleClass().contains("project-map-sticky-note")) {
                 return true; // a sheet is the card's own: it closes with it
@@ -2528,7 +2663,8 @@ final class ProjectMapView extends VBox {
         for (Node current = node; current != null; current = current.getParent()) {
             if (current instanceof ProjectMapPreview
                     || current instanceof ProjectMapNotePreview
-                    || current.getStyleClass().contains("project-map-sticky-note")) {
+                    || current.getStyleClass().contains("project-map-sticky-note")
+                    || current.getStyleClass().contains("project-map-card-structure")) {
                 return true;
             }
         }
@@ -2581,6 +2717,7 @@ final class ProjectMapView extends VBox {
         previews.entrySet().removeIf(entry -> entry.getValue() == preview);
         cardTouches.remove(preview);
         closeCardNotes(preview);
+        closeCardStructure(preview);
         if (canvasHost != null) {
             canvasHost.getChildren().remove(preview);
         }
@@ -2598,6 +2735,8 @@ final class ProjectMapView extends VBox {
         previews.clear();
         List.copyOf(stickyNotes.values()).forEach(ProjectMapStickyNotes::dispose);
         stickyNotes.clear();
+        List.copyOf(cardStructures.values()).forEach(ProjectMapCardStructure::dispose);
+        cardStructures.clear();
         for (ProjectMapPreview preview : open) {
             if (canvasHost != null) {
                 canvasHost.getChildren().remove(preview);
@@ -2640,7 +2779,7 @@ final class ProjectMapView extends VBox {
             return;
         }
         List<ProjectMapPreview> closing = previews.entrySet().stream()
-                .filter(entry -> orphaned(entry.getKey(), shown))
+                .filter(entry -> cardOrphaned(entry.getKey(), shown))
                 .map(Map.Entry::getValue)
                 .toList();
         closing.forEach(this::closePreview);
@@ -2649,6 +2788,18 @@ final class ProjectMapView extends VBox {
                 .map(Map.Entry::getValue)
                 .toList();
         closingNotes.forEach(this::closeNotePreview);
+    }
+
+    /**
+     * {@link #orphaned}, except that a declaration card opened from a file card's Structure column stays while that
+     * column is out and the file's own row is still on the map.
+     */
+    private boolean cardOrphaned(Path key, Set<Path> shown) {
+        if (!orphaned(key, shown)) {
+            return false;
+        }
+        Path file = ProjectMapStructure.isSymbolPath(key) ? structure.fileOf(key) : null;
+        return file == null || cardStructureOf(file) == null || orphaned(file, shown);
     }
 
     private boolean orphaned(Path path, Set<Path> shown) {
@@ -2697,8 +2848,8 @@ final class ProjectMapView extends VBox {
             card.setUnsaved(card.showsOpenBuffer() && file != null && safeTest(isModified, file));
         }
         // Structure columns follow their file too: an open buffer's edits, or a closed file rewritten on disk.
-        if (structure.hasOpenColumns() || !symbolCardFiles().isEmpty()) {
-            structure.refresh(symbolCardFiles(), cardContent);
+        if (structure.hasOpenColumns() || !cardOutlineFiles().isEmpty()) {
+            structure.refresh(cardOutlineFiles(), cardContent);
             mirrors |= structure.openFiles().stream().anyMatch(file -> safeTest(isOpen, file));
         }
         if (!polled) {
@@ -2814,6 +2965,10 @@ final class ProjectMapView extends VBox {
             double parentWidth,
             double parentHeight) {
         MapSurface.CardSite site = surface.cardSite(path);
+        MapSurface.CardSite beside = site.row() == null ? cardStructureSite(path) : null;
+        if (beside != null) {
+            site = beside;
+        }
         double margin = ProjectMapPreview.EDGE_MARGIN;
         double roomWidth = parentWidth - margin * 2;
         double roomHeight = parentHeight - margin * 2;
@@ -2827,6 +2982,18 @@ final class ProjectMapView extends VBox {
         List<double[]> obstacles = new ArrayList<>(site.obstacles());
         List<Region> cards = new ArrayList<>(previews.values());
         cards.addAll(notePreviews.values());
+        for (ProjectMapCardStructure column : cardStructures.values()) {
+            double[] drawn = column.bounds();
+            if (drawn != null) { // a card's Structure column weighs as a card does
+                obstacles.add(new double[] {
+                    drawn[0] - PREVIEW_CASCADE / 2,
+                    drawn[1] - PREVIEW_CASCADE / 2,
+                    drawn[2] + PREVIEW_CASCADE,
+                    drawn[3] + PREVIEW_CASCADE,
+                    CARD_WEIGHT_CARD
+                });
+            }
+        }
         for (Region other : cards) {
             if (other != preview && other.isVisible() && other.getWidth() > 0) {
                 double scale = cardScale(other);
@@ -2843,7 +3010,8 @@ final class ProjectMapView extends VBox {
         double[] column = site.column();
         double[] band = site.band();
         boolean horizontal = surface.flowDirection == FlowDirection.LEFT_TO_RIGHT
-                || surface.flowDirection == FlowDirection.RIGHT_TO_LEFT;
+                || surface.flowDirection == FlowDirection.RIGHT_TO_LEFT
+                || beside != null; // beside a card's Structure column, which stands upright
         double gap = MapSurface.PREVIEW_COLUMN_GAP;
         double rowX = row[0] + row[2] / 2;
         double rowY = row[1] + row[3] / 2;
@@ -2942,6 +3110,27 @@ final class ProjectMapView extends VBox {
         }
         boolean growLeft = horizontal && best[0] + best[2] <= row[0];
         return new ProjectMapPreview.Placement(best[0], best[1], best[2], best[3], growLeft);
+    }
+
+    /**
+     * Where a declaration card opened from a file card's Structure column goes when its row is not on the map: beside
+     * the column, by the declaration's row in it (or the column's middle when that row is scrolled away), as a card
+     * goes beside its row's column. Null when the declaration's file has no Structure column out.
+     */
+    private MapSurface.@Nullable CardSite cardStructureSite(Path key) {
+        if (!ProjectMapStructure.isSymbolPath(key)) {
+            return null;
+        }
+        ProjectMapCardStructure column = cardStructureOf(structure.fileOf(key));
+        double[] drawn = column == null ? null : column.bounds();
+        if (column == null || drawn == null) {
+            return null;
+        }
+        double[] row = column.rowBounds(key);
+        if (row == null) {
+            row = new double[] {drawn[0], drawn[1] + drawn[3] / 2 - 10, drawn[2], 20};
+        }
+        return new MapSurface.CardSite(row, drawn, drawn, List.of());
     }
 
     /** How much a card of the other cards weighs against a spot, per pixel it would cover (columns: 1–6). */

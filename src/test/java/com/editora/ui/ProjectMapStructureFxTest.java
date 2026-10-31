@@ -196,6 +196,135 @@ class ProjectMapStructureFxTest {
     }
 
     @Test
+    void aFileCardsStructureButtonListsItsDeclarationsBesideItAndOpensTheirCards() throws Exception {
+        root = projectRoot();
+        Path app = Files.writeString(root.resolve("App.java"), APP);
+        Path text = Files.writeString(root.resolve("notes.txt"), "no outline here\n");
+        Fixture map = openMap(path -> null);
+        try {
+            waitForRow(map, app);
+            waitForRow(map, text);
+            FxTestSupport.runOnFx(() -> {
+                openPreview(map, text);
+                assertFalse(previews(map.view()).get(text).structureAvailable(), "plain text has no Structure button");
+                openPreview(map, app);
+            });
+            ProjectMapPreview card = waitForCard(map, app);
+            waitFor(() -> card.editor().getText().contains("return a + b;"), "the card shows the file");
+            FxTestSupport.runOnFx(() -> {
+                assertTrue(card.structureAvailable(), "a Java file's card has the Structure button");
+                assertFalse(card.structureShown());
+                card.setStructureShown(true);
+            });
+            waitFor(
+                    () -> rowNames(cardStructures(map.view()).get(card))
+                            .equals(List.of("App", "add(int, int)", "reset()")),
+                    "the column lists the file's declarations, the lone class opened");
+            ProjectMapCardStructure column =
+                    FxTestSupport.callOnFx(() -> cardStructures(map.view()).get(card));
+            FxTestSupport.runOnFx(() -> {
+                map.view().applyCss();
+                map.view().layout();
+                ProjectMapStructure structure = FxTestSupport.field(map.view(), "structure");
+                assertFalse(structure.isOpen(app), "the Map's own Structure column stays as it was");
+                double[] drawn = column.bounds();
+                assertNotNull(drawn);
+                double scale = card.mapScale();
+                double cardRight = card.getLayoutX() + card.getWidth() * scale;
+                assertTrue(
+                        drawn[0] >= cardRight - 0.5 || drawn[0] + drawn[2] <= card.getLayoutX() + 0.5,
+                        "beside the card, not over its code");
+                assertEquals(card.getHeight() * scale, drawn[3], 0.5, "as tall as the card");
+
+                // It follows the card.
+                double before = drawn[0];
+                card.relocate(card.getLayoutX() - 30, card.getLayoutY() + 20);
+                assertEquals(before - 30, column.bounds()[0], 0.5);
+                assertEquals(card.getLayoutY(), column.bounds()[1], 0.5);
+
+                // Enter on a declaration opens its card, as a row of the Map's Structure column does.
+                selectRow(column, "add(int, int)");
+                column.tree()
+                        .fireEvent(
+                                new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false));
+            });
+            Path add = FxTestSupport.callOnFx(
+                    () -> nodeNamed(column, "add(int, int)").path());
+            ProjectMapPreview declaration = waitForCard(map, add);
+            waitFor(() -> declaration.editor().getText().contains("return a + b;"), "the declaration card");
+            FxTestSupport.runOnFx(() -> {
+                map.view().applyCss();
+                map.view().layout();
+                FxTestSupport.call(map.view(), "repaintPreviewConnectors", new Class<?>[0]);
+            });
+            FxTestSupport.drainFx(); // an orphan check would run now
+            FxTestSupport.runOnFx(() -> {
+                assertTrue(previews(map.view()).containsKey(add), "kept while the column it came from is out");
+                double[] drawn = column.bounds();
+                assertFalse(
+                        cardBox(declaration).intersects(drawn[0] + 1, drawn[1] + 1, drawn[2] - 2, drawn[3] - 2),
+                        "the declaration card stands clear of the column");
+                assertFalse(cardBox(declaration).intersects(cardBox(card)), "nor over the file card it came from");
+
+                card.setStructureShown(false);
+                assertTrue(cardStructures(map.view()).isEmpty(), "the button takes the column off");
+                assertFalse(map.view().lookupAll(".project-map-card-structure").stream()
+                        .anyMatch(Node::isVisible));
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                assertFalse(previews(map.view()).containsKey(add), "its declaration cards close with it");
+                assertTrue(previews(map.view()).containsKey(app), "the file card stays");
+
+                card.setStructureShown(true);
+                assertEquals(1, cardStructures(map.view()).size());
+                FxTestSupport.call(map.view(), "closePreview", new Class<?>[] {ProjectMapPreview.class}, card);
+                assertTrue(cardStructures(map.view()).isEmpty(), "it closes with its card");
+                assertTrue(map.view().lookupAll(".project-map-card-structure").isEmpty());
+            });
+        } finally {
+            map.close();
+        }
+    }
+
+    @Test
+    void aFileCardsStructureColumnFollowsEditsToTheFile() throws Exception {
+        root = projectRoot();
+        Path app = Files.writeString(root.resolve("App.java"), APP);
+        Fixture map = openMap(path -> null);
+        try {
+            waitForRow(map, app);
+            FxTestSupport.runOnFx(() -> openPreview(map, app));
+            ProjectMapPreview card = waitForCard(map, app);
+            FxTestSupport.runOnFx(() -> card.setStructureShown(true));
+            waitFor(
+                    () -> rowNames(cardStructures(map.view()).get(card)).contains("reset()"),
+                    "the column lists reset()");
+            ProjectMapCardStructure column =
+                    FxTestSupport.callOnFx(() -> cardStructures(map.view()).get(card));
+            FxTestSupport.runOnFx(() -> selectRow(column, "reset()"));
+            Files.writeString(
+                    app, APP.replace("    void reset() {", "    void clear() {\n    }\n\n    void reset() {"));
+            FxTestSupport.runOnFx(
+                    () -> FxTestSupport.call(map.view(), "refreshCards", new Class<?>[] {boolean.class}, false));
+            waitFor(() -> rowNames(column).contains("clear()"), "a declaration added on disk shows up");
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(List.of("App", "add(int, int)", "clear()", "reset()"), rowNames(column));
+                ProjectMapStructure.Node selected = column.tree()
+                        .getSelectionModel()
+                        .getSelectedItem()
+                        .getValue()
+                        .node();
+                assertNotNull(selected);
+                assertEquals("reset()", selected.symbol().label(), "the selection stays on its declaration");
+                assertEquals(15, selected.symbol().line(), "which now stands lower");
+            });
+        } finally {
+            map.close();
+        }
+    }
+
+    @Test
     void closingTheStructureClosesItsColumnsAndTheirCards() throws Exception {
         root = projectRoot();
         Path app = Files.writeString(root.resolve("App.java"), APP);
@@ -457,6 +586,55 @@ class ProjectMapStructureFxTest {
             view.setRoot(root);
             return new Fixture(view, scene, FxTestSupport.field(view, "surface"));
         });
+    }
+
+    private static void openPreview(Fixture map, Path file) {
+        FxTestSupport.call(map.surface(), "setSelected", new Class<?>[] {Path.class}, file);
+        FxTestSupport.call(map.view(), "previewSelection", new Class<?>[] {Path.class}, file);
+    }
+
+    private static Map<ProjectMapPreview, ProjectMapCardStructure> cardStructures(ProjectMapView view) {
+        return FxTestSupport.field(view, "cardStructures");
+    }
+
+    private static List<String> rowNames(ProjectMapCardStructure column) {
+        return column == null
+                ? List.of()
+                : column.visibleRows().stream()
+                        .map(row -> row.node() == null
+                                ? row.message()
+                                : row.node().symbol().label())
+                        .toList();
+    }
+
+    private static ProjectMapStructure.Node nodeNamed(ProjectMapCardStructure column, String label) {
+        return column.visibleRows().stream()
+                .map(ProjectMapCardStructure.Row::node)
+                .filter(node -> node != null && node.symbol().label().equals(label))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static void selectRow(ProjectMapCardStructure column, String label) {
+        var tree = column.tree();
+        for (int i = 0; i < tree.getExpandedItemCount(); i++) {
+            ProjectMapStructure.Node node = tree.getTreeItem(i).getValue().node();
+            if (node != null && node.symbol().label().equals(label)) {
+                tree.getSelectionModel().select(i);
+                return;
+            }
+        }
+        throw new AssertionError("no row " + label);
+    }
+
+    /** A card as drawn, without its shadow. */
+    private static javafx.geometry.Bounds cardBox(ProjectMapPreview card) {
+        double scale = card.mapScale();
+        return new javafx.geometry.BoundingBox(
+                card.getLayoutX() + 1,
+                card.getLayoutY() + 1,
+                card.getWidth() * scale - 2,
+                card.getHeight() * scale - 2);
     }
 
     private static List<ProjectMapModel.Entry> rows(Region surface) {

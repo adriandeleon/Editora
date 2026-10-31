@@ -129,16 +129,23 @@ final class ProjectMapStructure {
 
     /** Whether a file of this name gets a Structure icon. By name only; the answer is kept per name. */
     boolean supports(ProjectMapModel.Entry entry) {
-        if (!entry.isFile()) {
-            return false;
-        }
-        String name = entry.name().toLowerCase(Locale.ROOT);
+        return entry.isFile() && supports(entry.name());
+    }
+
+    /** Whether the file at {@code file} gets a Structure button on its card (see {@link #supports(String)}). */
+    boolean supports(@Nullable Path file) {
+        Path name = file == null ? null : file.getFileName();
+        return name != null && supports(name.toString());
+    }
+
+    private boolean supports(String fileName) {
+        String name = fileName.toLowerCase(Locale.ROOT);
         Boolean known = supported.get(name);
         if (known == null) {
             if (supported.size() > 4_096) {
                 supported.clear();
             }
-            known = StructureOutline.supports(entry.name());
+            known = StructureOutline.supports(fileName);
             supported.put(name, known);
         }
         return known;
@@ -348,6 +355,21 @@ final class ProjectMapStructure {
     static boolean isSymbolPath(@Nullable Path path) {
         Path name = path == null ? null : path.getFileName();
         return name != null && name.toString().startsWith(SEGMENT_PREFIX);
+    }
+
+    /**
+     * What a card's Structure column shows for {@code file}: its declarations as last outlined, or why there are
+     * none; loading while no outline is held.
+     *
+     * @param partial the file is longer than the read cap: declarations past it are left out
+     */
+    record View(List<Node> roots, Problem problem, boolean partial) {
+        static final View LOADING = new View(List.of(), Problem.LOADING, false);
+    }
+
+    View view(Path file) {
+        Outline outline = outlines.get(file);
+        return outline == null ? View.LOADING : new View(outline.roots(), outline.problem(), outline.partial());
     }
 
     /** Whether the outline of {@code file} is held (open, or kept for a card). */

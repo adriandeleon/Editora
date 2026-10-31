@@ -261,6 +261,9 @@ final class ProjectMapStickyNotes {
     private final Runnable onBlankRejected;
     private final Runnable onActivate;
     private Runnable onMore = () -> {};
+    /** What else stands beside the card on each side, in unzoomed units: the sheets go past it. */
+    private java.util.function.ToDoubleFunction<Side> reserved = which -> 0;
+
     private final List<Sticky> stickies = new ArrayList<>();
     /** The "+K more notes" sheet, when the notes outnumber what two stacks hold. */
     private @Nullable More more;
@@ -292,6 +295,18 @@ final class ProjectMapStickyNotes {
         this.onMoved = onMoved;
         this.onBlankRejected = onBlankRejected;
         this.onActivate = onActivate;
+    }
+
+    /**
+     * What else stands beside the card — its Structure column — on a side, in unzoomed units ({@link Side#OVER}
+     * is never asked): the sheets are placed past it. Sheets that were not dragged are placed again.
+     */
+    void setReserved(java.util.function.ToDoubleFunction<Side> room) {
+        reserved = room == null ? which -> 0 : room;
+        if (shown) {
+            place();
+            layout();
+        }
     }
 
     /** Called by the "+K more notes" sheet: the owner opens the file's note card, which lists them all. */
@@ -667,10 +682,14 @@ final class ProjectMapStickyNotes {
             columns = Math.max(columns, (int) at[0] + 1);
         }
         double stackWidth = (columns * WIDTH + (columns - 1) * GAP) * scale;
-        double right = left + card.getWidth() * scale;
-        Side side = side(left, right, stackWidth, host.getWidth());
+        double besideLeft = reserved.applyAsDouble(Side.LEFT);
+        double besideRight = reserved.applyAsDouble(Side.RIGHT);
+        // What stands beside the card widens it, as far as the sheets' room goes.
+        double outerLeft = left - besideLeft * scale;
+        double right = left + (card.getWidth() + besideRight) * scale;
+        Side side = side(outerLeft, right, stackWidth, host.getWidth());
         if (side == Side.OVER && columns > 1) {
-            side = side(left, right, WIDTH * scale, host.getWidth());
+            side = side(outerLeft, right, WIDTH * scale, host.getWidth());
         }
         List<Sheet> sheets = sheets();
         for (int i = 0; i < sheets.size(); i++) {
@@ -686,8 +705,8 @@ final class ProjectMapStickyNotes {
             sticky.dy = stacked.get(i)[1];
             sticky.fromRight = side != Side.LEFT;
             sticky.dx = switch (side) {
-                case RIGHT -> OFFSET + column;
-                case LEFT -> -(WIDTH + OFFSET) - column;
+                case RIGHT -> besideRight + OFFSET + column;
+                case LEFT -> -(WIDTH + OFFSET) - besideLeft - column;
                 case OVER -> -(WIDTH + GAP) - column;
             };
         }

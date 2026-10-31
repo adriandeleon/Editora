@@ -698,6 +698,23 @@ class ProjectMapCardsFxTest {
                 card.relocate(card.getLayoutX() - 40, card.getLayoutY() + 25);
                 assertEquals(before - 40, sheets.get(0).getLayoutX(), 0.5);
 
+                // The card's Structure column takes its place beside the card; the sheets step past it.
+                assertTrue(card.structureAvailable());
+                card.setStructureShown(true);
+                Map<ProjectMapPreview, ProjectMapCardStructure> columns =
+                        FxTestSupport.field(map.view, "cardStructures");
+                double[] column = columns.get(card).bounds();
+                assertNotNull(column);
+                for (Region sheet : stickies(map)) {
+                    double left = sheet.getLayoutX();
+                    double right = left + ProjectMapStickyNotes.WIDTH * scale;
+                    assertTrue(
+                            right <= column[0] + 0.5 || left >= column[0] + column[2] - 0.5,
+                            "a sheet stands clear of the Structure column");
+                }
+                card.setStructureShown(false);
+                assertEquals(before - 40, sheets.get(0).getLayoutX(), 0.5, "and back when it is taken off");
+
                 // A sheet saves an edit as a note card does, and a blank one comes back.
                 TextArea editor = (TextArea)
                         ((javafx.scene.layout.VBox) sheets.get(1)).getChildren().getLast();

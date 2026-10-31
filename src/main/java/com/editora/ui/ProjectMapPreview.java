@@ -242,6 +242,8 @@ final class ProjectMapPreview extends StackPane {
     private final Label readOnly = new Label();
     private final Button zoomOut = new Button("−");
     private final Button zoomIn = new Button("+");
+    /** Shows or hides this card's Structure column, stuck beside it (see {@link ProjectMapCardStructure}). */
+    private final ToggleButton structure = new ToggleButton();
     /** Shows or hides this card's Personal Notes, stuck beside it (see {@link ProjectMapStickyNotes}). */
     private final ToggleButton notes = new ToggleButton();
 
@@ -372,6 +374,7 @@ final class ProjectMapPreview extends StackPane {
     private Runnable onTouch = () -> {};
     private Runnable onEscape = () -> onClose.run();
     private Consumer<Boolean> onNotesToggled = shown -> {};
+    private Consumer<Boolean> onStructureToggled = shown -> {};
     /** How many of the store's notes this card shows (see {@link #setNoteCount}). */
     private int noteCount;
     /** A note was asked for here: the notes come up when the store has one more. */
@@ -429,6 +432,16 @@ final class ProjectMapPreview extends StackPane {
                 onOpenFile.accept(selected);
             }
         });
+        structure.getStyleClass().addAll("project-map-preview-button", "project-map-preview-structure");
+        structure.setGraphic(Icons.structure());
+        structure.setTooltip(new Tooltip());
+        structure.setVisible(false);
+        structure.setManaged(false);
+        structure.setOnAction(event -> {
+            updateStructureButton();
+            onStructureToggled.accept(structure.isSelected());
+        });
+        updateStructureButton();
         notes.getStyleClass().addAll("project-map-preview-button", "project-map-preview-notes");
         notes.setGraphic(Icons.notes());
         notes.setTooltip(new Tooltip());
@@ -456,7 +469,7 @@ final class ProjectMapPreview extends StackPane {
 
         titleBar.getStyleClass().add("project-map-preview-header");
         titleBar.setAlignment(Pos.CENTER_LEFT);
-        titleBar.getChildren().setAll(title, readOnly, status, zoomOut, zoomIn, notes, open, close);
+        titleBar.getChildren().setAll(title, readOnly, status, zoomOut, zoomIn, structure, notes, open, close);
         titleBar.addEventHandler(MouseEvent.MOUSE_PRESSED, this::dragPressed);
         titleBar.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::dragged);
 
@@ -1052,6 +1065,50 @@ final class ProjectMapPreview extends StackPane {
     /** Called when the Notes button shows ({@code true}) or hides this card's Personal Notes. */
     void setOnNotesToggled(Consumer<Boolean> callback) {
         onNotesToggled = callback == null ? shown -> {} : callback;
+    }
+
+    /** Called when the Structure button shows ({@code true}) or hides this card's Structure column. */
+    void setOnStructureToggled(Consumer<Boolean> callback) {
+        onStructureToggled = callback == null ? shown -> {} : callback;
+    }
+
+    /**
+     * Whether the card's file can have an outline: the Structure button is there only then, as a Map row's
+     * Structure icon is. Taking it away takes the column away too.
+     */
+    void setStructureAvailable(boolean available) {
+        structure.setVisible(available);
+        structure.setManaged(available);
+        if (!available) {
+            setStructureShown(false);
+        }
+    }
+
+    boolean structureAvailable() {
+        return structure.isVisible();
+    }
+
+    boolean structureShown() {
+        return structure.isSelected();
+    }
+
+    /** Shows or hides the card's Structure column as the Structure button does. */
+    void setStructureShown(boolean shown) {
+        boolean wanted = shown && structure.isVisible();
+        if (structure.isSelected() == wanted) {
+            return;
+        }
+        structure.setSelected(wanted);
+        updateStructureButton();
+        onStructureToggled.accept(wanted);
+    }
+
+    private void updateStructureButton() {
+        String help = structure.isSelected()
+                ? tr("project.map.preview.hideStructure")
+                : tr("project.map.preview.showStructure");
+        structure.getTooltip().setText(help);
+        structure.setAccessibleText(help);
     }
 
     /**
