@@ -113,6 +113,20 @@ public class aot_build {
             fixMacBundleMetadata(imageRoot, publicVer);
         }
 
+        // Developer ID signing (see signMacApp) replaces the ad-hoc seal above. It has to come after every
+        // change to the bundle (the AOT cache, the bin/ strip, the Info.plist edits) and before the DMG wrap
+        // copies the app into the disk image. Unset outside a signing release leg, so local builds stay ad hoc.
+        String signIdentity = mac ? System.getenv("EDITORA_MAC_SIGN_IDENTITY") : null;
+        if (signIdentity != null && !signIdentity.isBlank()) {
+            if (!signMacApp(imageRoot, appName, signIdentity, System.getenv("EDITORA_MAC_KEYCHAIN"))) {
+                System.out.println("::error title=macOS signing failed::Developer ID signing of " + imageRoot
+                        + " failed — see the codesign output above");
+                System.exit(1);
+            }
+        } else {
+            signIdentity = null;
+        }
+
         // Ensure the Linux app image carries OUR icon. The jpackage app-image phase can leave the
         // default JavaApp.png at lib/<name>.png (the panteleyev plugin's <icon> didn't take). This
         // overwrite fixes every delivery built FROM the app image (APP_IMAGE copy, .tar.gz, .AppImage)
@@ -158,6 +172,12 @@ public class aot_build {
             if (ok < attempted) {
                 System.out.println("[aot] " + ok + "/" + attempted
                         + " installers built; the rest failed (see log above)");
+            }
+            // The disk image gets its own signature so Gatekeeper can check it before mounting; the
+            // workflow then notarizes and staples it.
+            if (signIdentity != null && !signDmgs(destDir, signIdentity, System.getenv("EDITORA_MAC_KEYCHAIN"))) {
+                System.out.println("::error title=macOS signing failed::Developer ID signing of the DMG failed");
+                System.exit(1);
             }
         }
     }
@@ -638,6 +658,129 @@ public class aot_build {
         System.out.println(signed
                 ? "[aot] re-codesigned the app image (ad-hoc)"
                 : "[aot] codesign re-seal FAILED — the app may be rejected by Gatekeeper");
+    }
+
+    /**
+     * Signs the finished app with a Developer ID Application identity, hardened runtime and a secure
+     * timestamp: what notarization asks for. The release workflow's macOS legs import the certificate into a
+     * throw-away keychain and pass its identity in {@code EDITORA_MAC_SIGN_IDENTITY} and the keychain in
+     * {@code EDITORA_MAC_KEYCHAIN}.
+     *
+     * <p>Inside-out, as codesign requires: every loose Mach-O file first (the runtime's dylibs, JavaFX's
+     * natives, jspawnhelper), then the nested runtime bundle, then the app with the entitlements in
+     * packaging/macos/Editora.entitlements, which the JVM needs under the hardened runtime. {@code --deep} is
+     * not used for signing: it would give every nested binary the app's entitlements. Ends with a strict
+     * verify, so a seal broken by a later step fails here rather than at notarization.
+     */
+    private static boolean signMacApp(Path app, String appName, String identity, String keychain) throws IOException {
+        Path entitlements = Path.of(System.getProperty("user.dir"), "packaging", "macos", "Editora.entitlements");
+        if (!Files.isRegularFile(entitlements)) {
+            System.err.println("[sign] no " + entitlements + " — cannot sign without the hardened-runtime entitlements");
+            return false;
+        }
+        System.out.println("[sign] Developer ID signing " + app + " as \"" + identity + "\"");
+        // Finder metadata or resource forks anywhere in the bundle make codesign refuse to seal it.
+        runLogged(List.of("xattr", "-cr", app.toString()));
+
+        Path mainExecutable = app.resolve("Contents").resolve("MacOS").resolve(appName);
+        List<Path> libraries = new ArrayList<>();
+        List<Path> executables = new ArrayList<>();
+        try (Stream<Path> s = Files.walk(app)) {
+            for (Path p : (Iterable<Path>) s::iterator) {
+                if (!Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS) || p.equals(mainExecutable) || !isMachO(p)) {
+                    continue;
+                }
+                (Files.isExecutable(p) && !p.getFileName().toString().endsWith(".dylib") ? executables : libraries)
+                        .add(p);
+            }
+        }
+        System.out.println("[sign] " + libraries.size() + " libraries, " + executables.size() + " helper executables");
+
+        List<String> base = new ArrayList<>(List.of("codesign", "--force", "--timestamp", "--options", "runtime"));
+        if (keychain != null && !keychain.isBlank()) {
+            base.addAll(List.of("--keychain", keychain));
+        }
+        base.addAll(List.of("--sign", identity));
+
+        if (!libraries.isEmpty() && !runLogged(concat(base, paths(libraries)))) return false;
+        if (!executables.isEmpty()) {
+            List<String> cmd = concat(base, List.of("--entitlements", entitlements.toString()));
+            if (!runLogged(concat(cmd, paths(executables)))) return false;
+        }
+        Path runtime = app.resolve("Contents").resolve("runtime");
+        if (Files.isDirectory(runtime) && !runLogged(concat(base, List.of(runtime.toString())))) return false;
+        if (!runLogged(concat(base, List.of("--entitlements", entitlements.toString(), app.toString())))) return false;
+        boolean ok = runLogged(List.of("codesign", "--verify", "--deep", "--strict", "--verbose=2", app.toString()));
+        System.out.println(ok ? "[sign] app signed and verified" : "[sign] the signed app does not verify");
+        return ok;
+    }
+
+    /** Signs every disk image in {@code dir} (only this leg's DMG lands there). */
+    private static boolean signDmgs(Path dir, String identity, String keychain) throws IOException {
+        List<Path> dmgs;
+        try (Stream<Path> s = Files.list(dir)) {
+            dmgs = s.filter(p -> p.getFileName().toString().endsWith(".dmg")).toList();
+        }
+        if (dmgs.isEmpty()) {
+            System.err.println("[sign] no .dmg in " + dir + " to sign");
+            return false;
+        }
+        for (Path dmg : dmgs) {
+            List<String> cmd = new ArrayList<>(List.of("codesign", "--force", "--timestamp"));
+            if (keychain != null && !keychain.isBlank()) {
+                cmd.addAll(List.of("--keychain", keychain));
+            }
+            cmd.addAll(List.of("--sign", identity, dmg.toString()));
+            if (!runLogged(cmd) || !runLogged(List.of("codesign", "--verify", "--verbose=2", dmg.toString()))) {
+                return false;
+            }
+            System.out.println("[sign] signed " + dmg);
+        }
+        return true;
+    }
+
+    /**
+     * Whether a file is Mach-O code (thin 32/64-bit in either byte order, or universal). The universal magic
+     * is also a class file's, but the image holds no loose class files; jars and the jimage have their own.
+     */
+    private static boolean isMachO(Path p) {
+        String name = p.getFileName().toString();
+        if (name.endsWith(".class") || name.endsWith(".jar")) return false;
+        byte[] head = new byte[4];
+        try (var in = Files.newInputStream(p)) {
+            if (in.readNBytes(head, 0, 4) < 4) return false;
+        } catch (IOException e) {
+            return false;
+        }
+        int magic = ((head[0] & 0xff) << 24) | ((head[1] & 0xff) << 16) | ((head[2] & 0xff) << 8) | (head[3] & 0xff);
+        return magic == 0xFEEDFACF || magic == 0xCFFAEDFE || magic == 0xFEEDFACE || magic == 0xCEFAEDFE
+                || magic == 0xCAFEBABE || magic == 0xBEBAFECA;
+    }
+
+    private static List<String> paths(List<Path> files) {
+        return files.stream().map(Path::toString).toList();
+    }
+
+    private static List<String> concat(List<String> a, List<String> b) {
+        List<String> out = new ArrayList<>(a);
+        out.addAll(b);
+        return out;
+    }
+
+    /** Runs a command with its output in the build log; returns true on exit 0 within ten minutes. */
+    private static boolean runLogged(List<String> cmd) {
+        try {
+            Process p = new ProcessBuilder(cmd).inheritIO().start();
+            if (!p.waitFor(10, TimeUnit.MINUTES)) {
+                p.destroyForcibly();
+                System.err.println("[sign] timed out: " + cmd.get(0));
+                return false;
+            }
+            return p.exitValue() == 0;
+        } catch (Exception e) {
+            System.err.println("[sign] could not run " + cmd.get(0) + ": " + e);
+            return false;
+        }
     }
 
     /** Runs a command, discarding output; returns true on exit 0. Never throws. */

@@ -128,6 +128,61 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xvfb libgtk-3-0 libgl1 libxxf86vm1 rpm
 
+      # macOS Developer ID signing: the .p12 (certificate + key + Apple's Developer ID G2 intermediate) goes
+      # into a throw-away keychain, and the identity it holds is handed to the -Pdist build, where
+      # scripts/aot_build.java signs the finished app and its DMG. The "Notarize DMG" step below then has
+      # Apple notarize it and staples the ticket. How the secrets are made: docs/release.md.
+      #
+      # On a tag, missing secrets fail the leg: an unsigned DMG is exactly what this exists to stop shipping,
+      # and the release is immutable once published. A manual dry run without them builds unsigned and says so.
+      - name: Import signing certificate (macOS)
+        id: macsign
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          if [ -z "$MACOS_CERT_P12" ] || [ -z "$MACOS_CERT_PASSWORD" ]; then
+            if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then
+              echo "::error title=macOS signing secrets missing::MACOS_CERT_P12 / MACOS_CERT_PASSWORD are not set; refusing to release an unsigned DMG"
+              exit 1
+            fi
+            echo "::warning title=macOS build unsigned::no signing secrets, so this dry run's DMG is ad-hoc signed and not notarized"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          kc="$RUNNER_TEMP/editora-signing.keychain-db"
+          kcpass="$(uuidgen)"
+          security create-keychain -p "$kcpass" "$kc"
+          # No auto-lock during the build (the default locks after 5 minutes of inactivity).
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kcpass" "$kc"
+          p12="$RUNNER_TEMP/editora-signing.p12"
+          printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$p12"
+          if ! security import "$p12" -k "$kc" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign; then
+            rm -f "$p12"
+            echo "::error title=Certificate import failed::macOS could not open MACOS_CERT_P12 with MACOS_CERT_PASSWORD. Usually the password secret does not match the .p12 (re-set it at the gh prompt; a piped echo adds a newline); otherwise the .p12 was exported without openssl's -legacy"
+            exit 1
+          fi
+          rm -f "$p12"
+          # Lets codesign use the key without the GUI prompt a runner can never answer.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpass" "$kc" > /dev/null
+          # Add it to the search list next to the login keychain, which codesign needs to build the chain.
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          identity="$(security find-identity -v -p codesigning "$kc" | awk -F'"' '/Developer ID Application/ { print $2; exit }')"
+          if [ -z "$identity" ]; then
+            security find-identity -v -p codesigning "$kc"
+            echo "::error title=No Developer ID identity::the imported .p12 holds no valid Developer ID Application identity"
+            exit 1
+          fi
+          echo "Signing as: $identity"
+          {
+            echo "EDITORA_MAC_SIGN_IDENTITY=$identity"
+            echo "EDITORA_MAC_KEYCHAIN=$kc"
+          } >> "$GITHUB_ENV"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
       - name: Build native installer (-Pdist)
         shell: bash
         # `clean` is REQUIRED, not just tidiness: an incremental compile does not regenerate a synthetic
@@ -157,6 +212,55 @@ jobs:
           # aot_build.java, whose whole job is to notice.
           EDITORA_REQUIRE_AOT: '1'
         run: ./mvnw -B --no-transfer-progress clean -Pdist -DskipTests package
+
+      # Apple scans the signed DMG and, if it passes, issues a ticket; stapling attaches the ticket to the
+      # DMG so Gatekeeper accepts it offline too. `--wait` usually returns in a few minutes. A rejection
+      # prints Apple's log, which names each offending file. The checks at the end are what Gatekeeper does
+      # on a user's Mac: the DMG and the app inside it must both be accepted as notarized Developer ID code.
+      - name: Notarize DMG (macOS)
+        if: steps.macsign.outputs.enabled == 'true'
+        shell: bash
+        timeout-minutes: 35
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          if [ -z "$APPLE_API_KEY_P8" ] || [ -z "$APPLE_API_KEY_ID" ]; then
+            echo "::error title=Notarization secrets missing::APPLE_API_KEY_P8 / APPLE_API_KEY_ID are not set"
+            exit 1
+          fi
+          key="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$key"
+          # A team key needs the issuer; an individual key has none.
+          auth=(--key "$key" --key-id "$APPLE_API_KEY_ID")
+          [ -n "$APPLE_API_ISSUER" ] && auth+=(--issuer "$APPLE_API_ISSUER")
+
+          dmg="$(ls target/dist/*.dmg | head -1)"
+          echo "Notarizing $dmg"
+          out="$(xcrun notarytool submit "$dmg" "${auth[@]}" --wait --timeout 30m --output-format json)" || true
+          echo "$out"
+          id="$(printf '%s' "$out" | jq -r '.id // empty')"
+          status="$(printf '%s' "$out" | jq -r '.status // empty')"
+          if [ -n "$id" ]; then
+            xcrun notarytool log "$id" "${auth[@]}" || true
+          fi
+          rm -f "$key"
+          if [ "$status" != "Accepted" ]; then
+            echo "::error title=Notarization failed::Apple returned '${status:-no result}' for $(basename "$dmg"); the log above lists the problems"
+            exit 1
+          fi
+
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
+          mnt="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg" > /dev/null
+          trap 'hdiutil detach "$mnt" > /dev/null 2>&1 || true' EXIT
+          app="$(ls -d "$mnt"/*.app | head -1)"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          echo "- ✅ ${{ matrix.target }}: signed, notarized and stapled" >> "$GITHUB_STEP_SUMMARY"
 
       # Portable single-file Linux build from the AOT-trained app-image (no sandbox — host tools work;
       # see scripts/build-appimage.sh). Runs before staging so the .AppImage is picked up from target/dist.
@@ -240,6 +344,12 @@ jobs:
           name: Editora-${{ steps.ver.outputs.version }}-${{ matrix.target }}
           path: staging/*
           if-no-files-found: error
+
+      # The runner is ephemeral, but the keychain holds the private key, so remove it as soon as we're done.
+      - name: Remove signing keychain (macOS)
+        if: always() && steps.macsign.outputs.enabled == 'true'
+        shell: bash
+        run: security delete-keychain "$RUNNER_TEMP/editora-signing.keychain-db" || true
 
   # These portable archives are best-effort on each host platform. A target is
   # uploaded only after its extracted payload passes the real app workflow.
