@@ -178,7 +178,9 @@ Gatekeeper opens a downloaded Editora with no warning.
   `EDITORA_MAC_SIGN_IDENTITY` / `EDITORA_MAC_KEYCHAIN`. On a tag, missing secrets fail the leg; a dry
   run without them builds an ad-hoc signed DMG and warns.
 - [`scripts/aot_build.java`](../scripts/aot_build.java) (`signMacApp`) signs after every change to the
-  bundle (AOT cache, `bin/` strip, `Info.plist` edits) and before the DMG wrap: each Mach-O file, then
+  bundle (AOT cache, `bin/` strip, `Info.plist` edits) and before the DMG wrap. It first sets
+  `<signed>true</signed>` in `Contents/app/.jpackage.xml`: jpackage's DMG wrap otherwise treats the
+  image as unsigned and re-signs its copy ad hoc, discarding ours. Then it signs each Mach-O file, then
   `Contents/runtime`, then the app with the hardened runtime and
   [`packaging/macos/Editora.entitlements`](../packaging/macos/Editora.entitlements) (JIT, unsigned
   executable memory, and library validation off for the libraries JNA and pty4j unpack). It then

@@ -248,6 +248,17 @@ jobs:
           [ -n "$APPLE_API_ISSUER" ] && auth+=(--issuer "$APPLE_API_ISSUER")
 
           dmg="$(ls target/dist/*.dmg | head -1)"
+          # The app INSIDE the DMG must still carry our signature: jpackage re-signs an image it believes
+          # unsigned, ad hoc. Checking here takes seconds; Apple takes minutes to say the same.
+          pre="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$pre" "$dmg" > /dev/null
+          if ! codesign -dv --verbose=2 "$pre"/*.app 2>&1 | grep -q '^Authority=Developer ID Application'; then
+            codesign -dv --verbose=2 "$pre"/*.app || true
+            hdiutil detach "$pre" > /dev/null || true
+            echo "::error title=DMG app not Developer ID signed::the app inside $(basename "$dmg") lost its Developer ID signature during the DMG wrap"
+            exit 1
+          fi
+          hdiutil detach "$pre" > /dev/null
           echo "Notarizing $dmg"
           out="$(xcrun notarytool submit "$dmg" "${auth[@]}" --wait --timeout 30m --output-format json)" || true
           echo "$out"
