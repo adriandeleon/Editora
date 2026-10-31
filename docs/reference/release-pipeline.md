@@ -65,7 +65,8 @@ opt-in; separate best-effort native jobs attempt Linux x64, macOS x64/arm64 and 
 portable archives after extracted-archive smoke tests. The normal build is unaffected.
 The macOS DMGs are Developer ID signed, notarized and stapled
 ([release.md](../release.md#macos-signing-and-notarization)); the Windows MSI and Linux packages are
-still **unsigned**.
+not code-signed. Every asset gets a Sigstore build provenance attestation before JReleaser publishes
+([release.md](../release.md#build-provenance-attestations)).
 **Linux `.deb` PATH command + menu/icon registration:** jpackage installs everything under
 `/opt/editora/` (launcher at `bin/Editora`, the `.desktop` + the 512×512 `Editora.png` at
 `lib/editora-Editora.desktop`/`lib/Editora.png`) and relies on its **own generated `postinst`** to

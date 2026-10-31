@@ -548,6 +548,8 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
+      id-token: write      # the OIDC token Sigstore signs the provenance attestations with
+      attestations: write  # store them on the repository
     steps:
       # JReleaser talks to the GitHub API with JRELEASER_GITHUB_TOKEN and only READS the local history
       # (for the changelog); nothing here pushes with git, so the token is not left in .git/config.
@@ -598,6 +600,28 @@ jobs:
           mode=report
           if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF_TYPE" = "tag" ]; then mode=enforce; fi
           java scripts/release/CheckRelease.java assets artifacts "$VERSION" --pom pom.xml --mode "$mode"
+
+      # A signed SLSA build-provenance statement for every file JReleaser attaches, so a download can be
+      # traced to this workflow run, this commit and this tag:
+      #   gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/vX.Y.Z
+      # It is the only signature the Windows and Linux packages carry. Keyless: Sigstore signs with the
+      # job's OIDC identity (the public-good instance, as this repository is public), so there is no key
+      # to store or rotate. The patterns are jreleaser.yml's `files.globs`; ReleaseSupplyChainTest keeps
+      # the two lists equal. Before JReleaser, so a release never publishes an asset without one.
+      # A dry run attests too, which is how the step is tested before a tag; its statements name the
+      # branch, not a tag, so `--source-ref` keeps them from verifying as a release.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            artifacts/**/*.dmg
+            artifacts/**/*.msi
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+            artifacts/**/*.AppImage
+            artifacts/**/*.tar.gz
+            artifacts/**/Editora-*-native-experimental.zip
+            artifacts/**/Editora-*.jar
 
       - name: JReleaser
         # No `v2` TAG exists upstream — `@v2` was a branch. Pinned to that branch's head as of 2026-10-01

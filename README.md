@@ -108,6 +108,13 @@ The Windows and Linux installers are still **unsigned**, so Windows SmartScreen 
 until you allow it; the Getting Started and Troubleshooting pages in the
 [user docs](https://editora-project.dev/docs/) walk through it.
 
+Every release file has a signed build provenance attestation, so you can check that a download was built
+by this repository's release workflow from the tagged commit:
+
+```bash
+gh attestation verify Editora-0.26.1-linux-x64.deb --repo adriandeleon/Editora --source-ref refs/tags/v0.26.1
+```
+
 On startup Editora checks GitHub at most once a day for a newer release and shows an "Update: X.Y.Z"
 indicator in the status bar when there is one. The check sends no data and can be switched off under
 Settings → Workspace → Updates.
