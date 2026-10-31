@@ -308,6 +308,51 @@ class StickyScrollFxTest {
         assertTrue(height < 80, "a long logical header wrapped into an oversized sticky overlay: " + height);
     }
 
+    /**
+     * Each pinned row is one full code line tall even when the top line is mostly scrolled off. Rows took their
+     * height from the first visible paragraph's on-screen bounds, which RichTextFX clips to the area: with 80%
+     * of that line above the viewport every row was a few pixels tall and the headers drew over each other.
+     */
+    @Test
+    void rowsKeepAFullLineHeightWhenTheTopLineIsPartlyScrolledOff() throws Exception {
+        EditorBuffer b = buffer();
+        double[] heights = FxTestSupport.callOnFx(() -> {
+            javafx.scene.layout.StackPane host = new javafx.scene.layout.StackPane(b.getNode());
+            javafx.stage.Stage stage = new javafx.stage.Stage();
+            stage.setScene(new javafx.scene.Scene(host, 900, 600));
+            stage.show();
+            try {
+                host.applyCss();
+                host.layout();
+                org.fxmisc.richtext.CodeArea area = b.getArea();
+                area.showParagraphAtTop(100);
+                host.layout();
+                double line = area.getParagraphBoundsOnScreen(110).orElseThrow().getHeight();
+                area.scrollYBy(line * 0.8);
+                host.layout();
+                call(b, "stickyLinesFor", int.class, area.firstVisibleParToAllParIndex());
+                host.applyCss();
+                host.layout();
+                javafx.scene.layout.Region bar = (javafx.scene.layout.Region) call(b, "stickyScrollNode");
+                double[] out = new double[bar.getChildrenUnmodifiable().size() + 1];
+                out[0] = line;
+                for (int i = 1; i < out.length; i++) {
+                    out[i] = ((javafx.scene.layout.Region)
+                                    bar.getChildrenUnmodifiable().get(i - 1))
+                            .getHeight();
+                }
+                return out;
+            } finally {
+                stage.hide();
+                b.dispose();
+            }
+        });
+        assertEquals(3, heights.length, "the class and the method must both be pinned");
+        for (int i = 1; i < heights.length; i++) {
+            assertEquals(heights[0], heights[i], 0.5, "pinned row " + i + " must be one full code line tall");
+        }
+    }
+
     @Test
     void aBufferWithNoNestingPinsNothing() throws Exception {
         EditorBuffer b = FxTestSupport.callOnFx(() -> {
