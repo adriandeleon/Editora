@@ -168,6 +168,46 @@ leg) and best-effort only in a dry run. The experimental Native Image archives a
 required. If you add or remove a release artifact, change the `EXPECTED` table in that script, the
 Stage step and `jreleaser.yml` together — `test_check_release.py` cross-checks them.
 
+### macOS signing and notarization
+
+Both macOS legs sign the app and DMG with the **Developer ID Application** certificate of team
+`8JKSF797L8` (Adrian De Leon Saldivar), have Apple notarize the DMG and staple the ticket to it, so
+Gatekeeper opens a downloaded Editora with no warning.
+
+- **Import signing certificate (macOS)** puts the `.p12` into a throw-away keychain and exports
+  `EDITORA_MAC_SIGN_IDENTITY` / `EDITORA_MAC_KEYCHAIN`. On a tag, missing secrets fail the leg; a dry
+  run without them builds an ad-hoc signed DMG and warns.
+- [`scripts/aot_build.java`](../scripts/aot_build.java) (`signMacApp`) signs after every change to the
+  bundle (AOT cache, `bin/` strip, `Info.plist` edits) and before the DMG wrap: each Mach-O file, then
+  `Contents/runtime`, then the app with the hardened runtime and
+  [`packaging/macos/Editora.entitlements`](../packaging/macos/Editora.entitlements) (JIT, unsigned
+  executable memory, and library validation off for the libraries JNA and pty4j unpack). It then
+  signs the DMG. Without `EDITORA_MAC_SIGN_IDENTITY` (any local build) the app stays ad-hoc signed.
+- **Notarize DMG (macOS)** runs `notarytool submit --wait` with the App Store Connect API key,
+  prints Apple's log, staples, and checks the DMG and the app inside it with `spctl` the way
+  Gatekeeper will. A rejection fails the leg; the log names each file Apple objected to.
+
+Secrets (repository secrets on `adriandeleon/Editora`):
+
+| Secret | What it is |
+|---|---|
+| `MACOS_CERT_P12` | base64 of a `.p12` holding the Developer ID Application certificate, its private key and Apple's Developer ID G2 intermediate |
+| `MACOS_CERT_PASSWORD` | the `.p12` password |
+| `APPLE_API_KEY_P8` | base64 of the App Store Connect API key (`AuthKey_<id>.p8`, team key, Developer role) |
+| `APPLE_API_KEY_ID` | that key's ID |
+| `APPLE_API_ISSUER` | the issuer ID shown above the team key list (leave unset for an individual key) |
+
+Making the `.p12` without a Mac: `openssl genrsa` a 2048-bit key and `openssl req` a CSR, upload it at
+developer.apple.com → Certificates → **Developer ID Application** (G2 Sub-CA), then convert the
+downloaded `.cer` and Apple's `DeveloperIDG2CA.cer` to PEM and run
+`openssl pkcs12 -export -legacy -inkey … -in … -certfile … -out developer-id.p12`. `-legacy` matters:
+`security import` on the runner rejects OpenSSL 3's default `.p12` encryption.
+
+The certificate expires **2027-11-30** and the Apple Developer Program membership **2027-10-31**.
+Renew the membership first, then make a new certificate and replace `MACOS_CERT_P12` and
+`MACOS_CERT_PASSWORD`. Apps signed before expiry keep working: the secure timestamp proves when they
+were signed.
+
 ### Supply chain
 
 - The workflow token is **read-only** by default; only `release` (publishes) and `bump` (pushes the
@@ -227,7 +267,9 @@ CI uses the BellSoft **Liberica** JDK 25 for full arch coverage (incl. linux aar
 
 ## Notes
 
-- Installers are currently **unsigned** (signing/notarization is a follow-up).
+- The macOS DMGs are signed and notarized (see
+  [macOS signing and notarization](#macos-signing-and-notarization)). The Windows MSI and the Linux
+  packages are still **unsigned**.
 - A JavaFX bump no longer needs any test-harness work — the headless backend has shipped inside
   JavaFX itself since 26 (the old vendored Monocle rebuild is gone; see
   [dependencies.md](dependencies.md#the-headless-test-backend-no-vendored-dependency)). Do

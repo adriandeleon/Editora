@@ -103,9 +103,10 @@ or use the OS-detected button on the [home page](https://editora-project.dev/#do
   (x64 and arm64). The `.deb` and the tarball add an `editora` command and a menu entry.
 - **Any OS with a JDK 25** — a per-platform fat jar, run with `java -jar`.
 
-The native packages bundle their own Java runtime. Installers are currently **unsigned**, so macOS
-Gatekeeper and Windows SmartScreen stop the first launch until you allow it; the Getting Started and
-Troubleshooting pages in the [user docs](https://editora-project.dev/docs/) walk through it.
+The native packages bundle their own Java runtime. The macOS DMGs are signed and notarized by Apple.
+The Windows and Linux installers are still **unsigned**, so Windows SmartScreen stops the first launch
+until you allow it; the Getting Started and Troubleshooting pages in the
+[user docs](https://editora-project.dev/docs/) walk through it.
 
 On startup Editora checks GitHub at most once a day for a newer release and shows an "Update: X.Y.Z"
 indicator in the status bar when there is one. The check sends no data and can be switched off under

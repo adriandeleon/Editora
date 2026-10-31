@@ -63,8 +63,9 @@ GitHub release with all installers + fat jars + `checksums.txt` + a changelog. J
 build (the existing `dist` profile is reused as-is). The experimental `native` Maven profile is
 opt-in; separate best-effort native jobs attempt Linux x64, macOS x64/arm64 and Windows x64
 portable archives after extracted-archive smoke tests. The normal build is unaffected.
-Installers are currently **unsigned** (signing/notarization
-is a follow-up).
+The macOS DMGs are Developer ID signed, notarized and stapled
+([release.md](../release.md#macos-signing-and-notarization)); the Windows MSI and Linux packages are
+still **unsigned**.
 **Linux `.deb` PATH command + menu/icon registration:** jpackage installs everything under
 `/opt/editora/` (launcher at `bin/Editora`, the `.desktop` + the 512×512 `Editora.png` at
 `lib/editora-Editora.desktop`/`lib/Editora.png`) and relies on its **own generated `postinst`** to

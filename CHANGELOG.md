@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The macOS DMGs are signed and notarized.** Editora for macOS (Apple silicon and Intel) is now signed
+  with a Developer ID certificate and notarized by Apple, so it opens on first launch with no Gatekeeper
+  warning and no trip to System Settings → Privacy & Security. The Windows and Linux packages are still
+  unsigned.
+
 ## [0.26.0] - 2026-10-29
 
 ### Added

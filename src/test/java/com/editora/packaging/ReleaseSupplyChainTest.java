@@ -181,6 +181,34 @@ class ReleaseSupplyChainTest {
     }
 
     @Test
+    void theMacOsDmgIsSignedBeforeTheBuildAndNotarizedAfterIt() throws IOException {
+        String build = jobs(read(WORKFLOWS.resolve("release.yml"))).get("build");
+        int importCert = build.indexOf("- name: Import signing certificate (macOS)");
+        int dist = build.indexOf("- name: Build native installer (-Pdist)");
+        int notarize = build.indexOf("- name: Notarize DMG (macOS)");
+        int stage = build.indexOf("- name: Stage artifacts");
+        assertTrue(importCert >= 0 && notarize >= 0, "the macOS legs no longer sign and notarize the DMG");
+        assertTrue(
+                importCert < dist && dist < notarize && notarize < stage,
+                "the keychain must exist before -Pdist signs the app, and the DMG must be notarized before it is"
+                        + " staged for the release");
+        String importStep = build.substring(importCert, dist);
+        assertTrue(
+                importStep.contains("GITHUB_REF_TYPE\" = \"tag\"") && importStep.contains("exit 1"),
+                "a tag without the signing secrets must fail, not publish an unsigned DMG");
+        assertTrue(
+                importStep.contains("EDITORA_MAC_SIGN_IDENTITY="), "aot_build.java signs only when handed an identity");
+        String notarizeStep = build.substring(notarize, stage);
+        assertTrue(
+                notarizeStep.contains("stapler staple") && notarizeStep.contains("spctl --assess"),
+                "notarization must staple the ticket and check the result the way Gatekeeper will");
+        assertTrue(
+                build.contains("if: always() && steps.macsign.outputs.enabled == 'true'")
+                        && build.contains("security delete-keychain"),
+                "the keychain holding the private key must be removed even when the leg fails");
+    }
+
+    @Test
     void downloadsThatBecomePartOfABuildArePinnedAndVerified() throws IOException {
         String appimage = read(REPO.resolve(Path.of("scripts", "build-appimage.sh")));
         assertFalse(appimage.contains("/continuous/"), "build-appimage.sh downloads from a rolling release");
