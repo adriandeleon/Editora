@@ -230,6 +230,17 @@ jobs:
             echo "::error title=Notarization secrets missing::APPLE_API_KEY_P8 / APPLE_API_KEY_ID are not set"
             exit 1
           fi
+          # Easy to mix up when copying them off the Integrations page: the issuer is a UUID shown above the
+          # key list, the key ID is 10 characters in the key's row. Say which one is wrong before Apple does.
+          uuid='^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+          if [ -n "$APPLE_API_ISSUER" ] && ! [[ "$APPLE_API_ISSUER" =~ $uuid ]]; then
+            echo "::error title=APPLE_API_ISSUER is not an issuer ID::it must be the UUID shown as Issuer ID above the team key list (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)"
+            exit 1
+          fi
+          if ! [[ "$APPLE_API_KEY_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "::error title=APPLE_API_KEY_ID is not a key ID::it must be the 10-character Key ID from the key's row"
+            exit 1
+          fi
           key="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
           printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$key"
           # A team key needs the issuer; an individual key has none.
@@ -237,6 +248,23 @@ jobs:
           [ -n "$APPLE_API_ISSUER" ] && auth+=(--issuer "$APPLE_API_ISSUER")
 
           dmg="$(ls target/dist/*.dmg | head -1)"
+          # The app INSIDE the DMG must still carry our signature, intact: jpackage re-signs an image it
+          # believes unsigned, ad hoc, and anything the wrap changes in the bundle breaks the seal. Checking
+          # here takes seconds and names the changed file; Apple takes minutes to say only "invalid".
+          pre="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$pre" "$dmg" > /dev/null
+          if ! codesign -dv --verbose=2 "$pre"/*.app 2>&1 | grep -q '^Authority=Developer ID Application'; then
+            codesign -dv --verbose=2 "$pre"/*.app || true
+            hdiutil detach "$pre" > /dev/null || true
+            echo "::error title=DMG app not Developer ID signed::the app inside $(basename "$dmg") lost its Developer ID signature during the DMG wrap"
+            exit 1
+          fi
+          if ! codesign --verify --deep --strict --verbose=4 "$pre"/*.app; then
+            hdiutil detach "$pre" > /dev/null || true
+            echo "::error title=DMG app signature broken::the app inside $(basename "$dmg") no longer verifies; the codesign output above names what changed"
+            exit 1
+          fi
+          hdiutil detach "$pre" > /dev/null
           echo "Notarizing $dmg"
           out="$(xcrun notarytool submit "$dmg" "${auth[@]}" --wait --timeout 30m --output-format json)" || true
           echo "$out"
@@ -251,8 +279,14 @@ jobs:
             exit 1
           fi
 
-          xcrun stapler staple "$dmg"
-          xcrun stapler validate "$dmg"
+          # Stapling fetches the ticket from Apple's CDN and validates it in the same call ("The staple and
+          # validate action worked!"). That fetch can drop (error 68 on dry run 41182099691, minutes after
+          # an Accepted), and the ticket sometimes takes a moment to publish, so retry it.
+          for attempt in 1 2 3 4 5; do
+            xcrun stapler staple "$dmg" && break
+            [ "$attempt" = 5 ] && { echo "::error title=Stapling failed::notarized, but the ticket could not be stapled"; exit 1; }
+            sleep 20
+          done
           spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
           mnt="$(mktemp -d)"
           hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg" > /dev/null
@@ -260,6 +294,11 @@ jobs:
           app="$(ls -d "$mnt"/*.app | head -1)"
           codesign --verify --deep --strict --verbose=2 "$app"
           spctl --assess --type execute --verbose=2 "$app"
+          # Run the notarized app itself under the hardened runtime: --version needs the JIT entitlements
+          # to start the JVM at all, and --check-terminal opens a shell on a pty, which loads the natives
+          # pty4j and JNA unpack at runtime (signed by nobody, so only disable-library-validation lets them in).
+          "$app/Contents/MacOS/Editora" --version
+          "$app/Contents/MacOS/Editora" --check-terminal
           echo "- ✅ ${{ matrix.target }}: signed, notarized and stapled" >> "$GITHUB_STEP_SUMMARY"
 
       # Portable single-file Linux build from the AOT-trained app-image (no sandbox — host tools work;

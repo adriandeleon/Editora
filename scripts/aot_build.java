@@ -679,6 +679,9 @@ public class aot_build {
             return false;
         }
         System.out.println("[sign] Developer ID signing " + app + " as \"" + identity + "\"");
+        if (!markImageSigned(app)) {
+            return false;
+        }
         // Finder metadata or resource forks anywhere in the bundle make codesign refuse to seal it.
         runLogged(List.of("xattr", "-cr", app.toString()));
 
@@ -713,6 +716,33 @@ public class aot_build {
         boolean ok = runLogged(List.of("codesign", "--verify", "--deep", "--strict", "--verbose=2", app.toString()));
         System.out.println(ok ? "[sign] app signed and verified" : "[sign] the signed app does not verify");
         return ok;
+    }
+
+    /**
+     * Records in the image's {@code Contents/app/.jpackage.xml} that it is signed. jpackage's DMG wrap reads that
+     * flag: for an image it believes unsigned, it copies the app without {@code .jpackage.xml}, adds a
+     * {@code .package} file and re-signs the copy ad hoc, which threw our Developer ID signature away (Apple's
+     * notary then rejected every binary as unsigned). For a signed image it copies the app untouched. Must run
+     * before codesign, since the file is sealed with the rest of the bundle. (jpackage 25:
+     * MacPackagingPipeline disables COPY_SIGN and COPY_PACKAGE_FILE when predefinedAppImageSigned.)
+     */
+    private static boolean markImageSigned(Path app) throws IOException {
+        Path state = app.resolve("Contents").resolve("app").resolve(".jpackage.xml");
+        if (!Files.isRegularFile(state)) {
+            System.err.println("[sign] no " + state + " — jpackage would re-sign the app ad hoc in the DMG");
+            return false;
+        }
+        String xml = Files.readString(state);
+        String marked = xml.contains("<signed>")
+                ? xml.replaceAll("<signed>\\s*false\\s*</signed>", "<signed>true</signed>")
+                : xml.replace("</jpackage-state>", "  <signed>true</signed>\n</jpackage-state>");
+        if (!marked.contains("<signed>true</signed>")) {
+            System.err.println("[sign] could not mark " + state + " as signed");
+            return false;
+        }
+        Files.writeString(state, marked);
+        System.out.println("[sign] marked the image signed in " + state);
+        return true;
     }
 
     /** Signs every disk image in {@code dir} (only this leg's DMG lands there). */
