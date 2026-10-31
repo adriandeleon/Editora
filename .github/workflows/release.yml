@@ -160,7 +160,11 @@ jobs:
           security unlock-keychain -p "$kcpass" "$kc"
           p12="$RUNNER_TEMP/editora-signing.p12"
           printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$p12"
-          security import "$p12" -k "$kc" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          if ! security import "$p12" -k "$kc" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign; then
+            rm -f "$p12"
+            echo "::error title=Certificate import failed::macOS could not open MACOS_CERT_P12 with MACOS_CERT_PASSWORD. Usually the password secret does not match the .p12 (re-set it at the gh prompt; a piped echo adds a newline); otherwise the .p12 was exported without openssl's -legacy"
+            exit 1
+          fi
           rm -f "$p12"
           # Lets codesign use the key without the GUI prompt a runner can never answer.
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpass" "$kc" > /dev/null
