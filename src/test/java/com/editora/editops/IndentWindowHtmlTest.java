@@ -122,6 +122,67 @@ class IndentWindowHtmlTest {
         assertTrue(IndentWindow.serverReindents(IndentWindow.of(""), 0, "html"));
     }
 
+    /** Reviewer C's 42 KB page (rw/longscript/app.html): 300 handlers in one inline script, then {@code last}. */
+    private static String longScript(String last) {
+        StringBuilder sb = new StringBuilder("<!DOCTYPE html>\n<html>\n<body>\n  <div id=\"app\"></div>\n  <script>\n");
+        for (int i = 0; i < 300; i++) {
+            sb.append("    function handler")
+                    .append(i)
+                    .append("(event) {\n")
+                    .append("      if (event.target.value.length > ")
+                    .append(i)
+                    .append(") {\n")
+                    .append("        return event.target.value.slice(0, ")
+                    .append(i)
+                    .append(");\n")
+                    .append("      }\n    }\n");
+        }
+        return sb.append(last).append("  </script>\n</body>\n</html>\n").toString();
+    }
+
+    /**
+     * HTML review 3 C205: in a script longer than a back-scan (about 250 lines), and after a script string that holds
+     * {@code '<style>…</style>'} or {@code '<pre>'}, Tab and Enter lost the brace rules — Tab used markup rules and
+     * asked the server again, or kept the line as if in a {@code <pre>}.
+     */
+    @Test
+    void longScriptsAndScriptsWithTagsInTheirStringsKeepTheBraceRules() {
+        String page = longScript("    function last(a) {\n      if (a) {\n|return 1;\n      }\n    }\n");
+        assertTrue(page.length() > 40_000);
+        String tabbed = tab(page);
+        assertTrue(tabbed.contains("      if (a) {\n        |return 1;\n"), "Tab: under the if, +1 unit");
+        String text = page.replace("|", "");
+        assertFalse(IndentWindow.serverReindents(IndentWindow.of(text), text.indexOf("return 1;"), "html"));
+        String open = longScript("    function last(a) {|\n    }\n");
+        int caret = open.indexOf('|');
+        String plain = open.replace("|", "");
+        assertEquals(
+                "\n      ",
+                IndentWindow.enterEdit(IndentWindow.of(plain), caret, "html", "  ")
+                        .insert(),
+                "Enter: +1 unit");
+
+        assertEquals(
+                "<div>\n<script>\n  s = '<style>a{}</style>';\n  if (a) {\n    |return 1;\n  }\n</script>\n</div>",
+                tab("<div>\n<script>\n  s = '<style>a{}</style>';\n  if (a) {\n|return 1;\n  }\n</script>\n</div>"),
+                "a style tag in a string is text");
+        assertEquals(
+                "<div>\n<script>\n  el.innerHTML = '<pre>';\n  if (a) {\n    |b();\n  }\n</script>\n</div>",
+                tab("<div>\n<script>\n  el.innerHTML = '<pre>';\n  if (a) {\n|b();\n  }\n</script>\n</div>"),
+                "so is a pre tag");
+        String pre = "<div>\n<script>\n  el.innerHTML = '<pre>';\n  if (a) {\nb();\n  }\n</script>\n</div>";
+        assertFalse(IndentWindow.serverReindents(IndentWindow.of(pre), pre.indexOf("b();"), "html"));
+        assertEquals(
+                "\n    ",
+                enter("<script>\n  s = '<style>a{}</style>';\n  function f() {", "html"),
+                "Enter after a style tag in a string");
+        assertEquals(
+                "<script>s = '<pre>';</script>\n<div>\n  |<p>x</p>\n</div>",
+                tab("<script>s = '<pre>';</script>\n<div>\n|<p>x</p>\n</div>"),
+                "after the script, the pre in its string opened nothing: markup");
+        assertEquals("<style>a{}</style>\n<pre>\n|x\n</pre>", tab("<style>a{}</style>\n<pre>\n|x\n</pre>"));
+    }
+
     @Test
     void verbatimBeforeReadsBackToTheLastStartOrEndTag() {
         assertEquals("pre", IndentWindow.verbatimBefore("<div><pre class=\"x\">\n<code>a</code>\n"));

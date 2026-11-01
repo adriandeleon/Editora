@@ -151,31 +151,44 @@ public final class IndentWindow {
 
     /**
      * The {@code <script>} or {@code <style>} of an HTML-family buffer that {@code caret} sits in, read back over the
-     * slice a back-scan may see, or null — also when the caret is still on the line of the element's start tag,
-     * which indents as markup ({@code <script>} then Enter opens an indented line).
+     * {@link #VERBATIM_LOOKBACK} characters before it, or null — also when the caret is still on the line of the
+     * element's start tag, which indents as markup ({@code <script>} then Enter opens an indented line), and in a
+     * script that is not JavaScript. Read as {@link HtmlRegions#scriptOrStyleBefore} reads it, so a script longer than
+     * a back-scan, or one whose strings hold {@code '<style>'} or {@code '<pre>'}, is still the script (HTML review 3
+     * C205).
      */
     private static @Nullable Embedded embedded(Doc doc, int caret, String language) {
-        if (!HtmlElements.isHtmlLanguage(language) || doc.length() == 0) {
+        HtmlRegions.RawOpen open = scriptOrStyle(doc, caret, language);
+        String embedded = open == null ? null : open.language();
+        if (open == null || embedded == null) {
             return null;
         }
         int line = doc.lineOf(caret);
-        int start = backScanStart(doc, line);
-        String slice = doc.text(start, caret);
-        int[] contentStart = new int[1];
-        String embedded = HtmlRegions.embeddedBefore(slice, slice.length(), contentStart);
-        if (embedded == null) {
-            return null;
-        }
-        int content = start + contentStart[0];
+        int content = open.contentStart();
         int contentLine = doc.lineOf(content);
         int lineEnd = doc.lineStart(contentLine) + doc.lineLength(contentLine);
-        if (doc.text(content, lineEnd).isBlank()) {
+        if (doc.text(content, Math.max(content, lineEnd)).isBlank()) {
             contentLine++; // "<script>" alone on its line: the code starts on the next one
         }
         if (line < contentLine) {
             return null;
         }
         return new Embedded(embedded, doc.lineStart(contentLine));
+    }
+
+    /**
+     * The script or style an HTML-family buffer's {@code at} is inside, its offsets in the document, or null (also
+     * for any other language).
+     */
+    private static HtmlRegions.@Nullable RawOpen scriptOrStyle(Doc doc, int at, String language) {
+        if (!HtmlElements.isHtmlLanguage(language) || doc.length() == 0) {
+            return null;
+        }
+        int from = Math.max(0, at - VERBATIM_LOOKBACK);
+        HtmlRegions.RawOpen open = HtmlRegions.scriptOrStyleBefore(doc.text(from, at));
+        return open == null
+                ? null
+                : new HtmlRegions.RawOpen(open.name(), from + open.lt(), from + open.contentStart(), open.language());
     }
 
     /**
@@ -244,8 +257,11 @@ public final class IndentWindow {
      */
     private record HtmlTabRule(@Nullable String language, int start) {}
 
-    /** How far back the start tag of the verbatim element holding a line is looked for. */
-    static final int VERBATIM_LOOKBACK = 65_536;
+    /**
+     * How far back the start tag of the verbatim element holding a line is looked for: as far as the auto-quote's
+     * region reader looks ({@link HtmlCaretRegion#MAX_LOOK_BACK}), so the two agree on a long script (C205).
+     */
+    static final int VERBATIM_LOOKBACK = HtmlCaretRegion.MAX_LOOK_BACK;
 
     /**
      * The rule for Tab at {@code caret} of an HTML-family buffer when its line is inside a {@link
@@ -258,14 +274,12 @@ public final class IndentWindow {
         }
         int line = doc.lineOf(caret);
         int lineStart = doc.lineStart(line);
-        int from = Math.max(0, lineStart - VERBATIM_LOOKBACK);
-        String inside = verbatimBefore(doc.text(from, lineStart));
-        if (inside == null) {
-            return null;
+        HtmlRegions.RawOpen open = scriptOrStyle(doc, lineStart, language);
+        if (open == null) {
+            int from = Math.max(0, lineStart - VERBATIM_LOOKBACK);
+            return verbatimBefore(doc.text(from, lineStart)) == null ? null : new HtmlTabRule(null, lineStart);
         }
-        if (!inside.equals("script") && !inside.equals("style")) {
-            return new HtmlTabRule(null, lineStart);
-        }
+        String inside = open.name();
         Embedded embedded = embedded(doc, caret, language);
         if (embedded == null) {
             return new HtmlTabRule(null, lineStart); // a template or data script: its lines are kept as typed
@@ -279,14 +293,20 @@ public final class IndentWindow {
     }
 
     /**
-     * The {@link HtmlElements#VERBATIM} element whose content the end of {@code text} is in, read backwards: the last
-     * start or end tag of one, outside comments, is a start tag that is already whole. Null when there is none.
+     * The {@link HtmlElements#VERBATIM} element whose content the end of {@code text} is in, read backwards: a script
+     * or style as {@link HtmlRegions#scriptOrStyleBefore} finds it; otherwise, after the last script or style tag, the
+     * last start or end tag of one, outside comments, is a start tag that is already whole. Null when there is none.
      */
     static @Nullable String verbatimBefore(String text) {
+        HtmlRegions.RawOpen raw = HtmlRegions.scriptOrStyleBefore(text);
+        if (raw != null) {
+            return raw.name();
+        }
+        int after = HtmlRegions.afterScriptsAndStyles(text); // a '<pre>' in a closed script's string opens nothing
         int k = text.length();
-        while (k > 0) {
+        while (k > after) {
             int lt = text.lastIndexOf('<', k - 1);
-            if (lt < 0) {
+            if (lt < after) {
                 return null;
             }
             k = lt;
@@ -297,7 +317,7 @@ public final class IndentWindow {
                 nameEnd++;
             }
             String name = text.substring(nameStart, nameEnd).toLowerCase(java.util.Locale.ROOT);
-            if (name.isEmpty() || !HtmlElements.isVerbatim(name)) {
+            if (name.isEmpty() || !HtmlElements.isVerbatim(name) || name.equals("script") || name.equals("style")) {
                 continue;
             }
             if (nameEnd < text.length() && !isTagBoundary(text.charAt(nameEnd))) {
