@@ -95,6 +95,49 @@ class CommenterTemplateTest {
     }
 
     @Test
+    void anErbBlockHeadedByItsOwnCommentRoundTrips() {
+        // HTML review 3 C203: uncommenting used to turn the user's own <%# … %> into code.
+        String block = "<%# Show the name %>\n<% if user %>\n  <p><%= user.name %></p>\n<% end %>\n";
+        assertEquals(
+                "<%## Show the name %>\n<%# if user %>\n  <p><%#= user.name %></p>\n<%# end %>\n",
+                roundTrip(block, 0, block.length() - 1, "html-template", "show.html.erb"),
+                "the comment gets a second #, which uncommenting takes off");
+        assertEquals(
+                "<p><%## note %> <%#= user.name %></p>\n",
+                roundTrip("<p><%# note %> <%= user.name %></p>\n", 3, 3, "html-template", "p.ejs"),
+                "one line with a comment and a tag");
+        assertEquals(
+                "<% note %>\n",
+                apply("<%# note %>\n", 0, 0, "html-template", "v.erb"), "a comment alone is uncommented, as asked");
+    }
+
+    @Test
+    void mustacheLinesAreHtmlCommentsWithEachTagACommentTag() {
+        // HTML review 3 C202: Mustache's {{! … }} ends at the first }}, so {{!-- <li>{{name}}</li> --}} leaked.
+        assertEquals(
+                "<ul>\n  <!-- <li>{{!name}} - {{!price}}</li> -->\n</ul>\n",
+                roundTrip("<ul>\n  <li>{{name}} - {{price}}</li>\n</ul>\n", 8, 8, "html-template", "list.mustache"));
+        String list = "{{! the list }}\n{{#items}}\n\n  <li>{{{html}}} {{& raw}}</li>\n{{/items}}\n";
+        assertEquals(
+                "<!-- {{!! the list }} -->\n<!-- {{!#items}} -->\n\n  <!-- <li>{{!{html}} {{!& raw}}</li> -->\n"
+                        + "<!-- {{!/items}} -->\n",
+                roundTrip(list, 0, list.length() - 1, "html-template", "list.mustache"),
+                "sections, a triple brace, a blank line and the user's own comment");
+        assertEquals(
+                "<p>plain</p>\n",
+                apply("<!-- <p>plain</p> -->\n", 0, 0, "html-template", "a.mustache"),
+                "a line with no tag is plain HTML");
+        assertNull(
+                apply("<p>{{a}}</p> <!-- x -->\n", 0, 0, "html-template", "a.mustache"), "HTML comments do not nest");
+        Edit caret = Commenter.toggle("<li>{{x}}</li>\n", 6, 6, "html-template", Path.of("v.mustache"));
+        assertEquals(12, caret.selStart(), "the caret stays on its character: the x");
+        assertEquals(
+                "{{!-- <li>{{x}}</li> --}}\n",
+                roundTrip("<li>{{x}}</li>\n", 0, 0, "handlebars", "a.hbs"),
+                "Handlebars keeps {{!-- --}}, which may hold }}");
+    }
+
+    @Test
     void handlebarsLiquidAndGoTemplatesUseTheirOwnComments() {
         assertEquals(
                 "{{!-- {{#if a}}<b>x</b>{{/if}} --}}\n",
