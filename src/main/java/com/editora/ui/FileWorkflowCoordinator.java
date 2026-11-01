@@ -571,6 +571,56 @@ final class FileWorkflowCoordinator {
     }
 
     /**
+     * Opens {@code file} with the caret on the 0-based {@code line} at {@code column} — or, when the column is
+     * negative, on the first {@code name} in that line (else its first non-blank) — and then runs the command
+     * {@code commandId} there: how the Project Map follows code from a card or a declaration (review 3 C12).
+     */
+    void openThenRun(Path file, int line, int column, @Nullable String name, String commandId) {
+        openThen(file, () -> {
+            EditorBuffer buffer = host.services().activeBuffer();
+            if (buffer != null) {
+                var area = buffer.getArea();
+                int paragraph =
+                        Math.clamp(line, 0, Math.max(0, area.getParagraphs().size() - 1));
+                String text = area.getParagraph(paragraph).getText();
+                int at = followColumn(text, column, name);
+                area.moveTo(paragraph, at);
+                area.requestFollowCaret();
+            }
+            host.runCommand(commandId);
+        });
+    }
+
+    /** Where in {@code text} the caret goes for {@link #openThenRun}. Pure. */
+    static int followColumn(String text, int column, @Nullable String name) {
+        if (column >= 0) {
+            return Math.min(column, text.length());
+        }
+        int found = name == null || name.isEmpty() ? -1 : followNameAt(text, name);
+        if (found >= 0) {
+            return found;
+        }
+        int first = 0;
+        while (first < text.length() && Character.isWhitespace(text.charAt(first))) {
+            first++;
+        }
+        return first;
+    }
+
+    /** The first place {@code name} stands in {@code text} as a whole word, else -1. */
+    private static int followNameAt(String text, String name) {
+        for (int at = text.indexOf(name); at >= 0; at = text.indexOf(name, at + 1)) {
+            boolean before = at == 0 || !Character.isJavaIdentifierPart(text.charAt(at - 1));
+            int end = at + name.length();
+            boolean after = end >= text.length() || !Character.isJavaIdentifierPart(text.charAt(end));
+            if (before && after) {
+                return at;
+            }
+        }
+        return -1;
+    }
+
+    /**
      * Runs {@code action} with {@code file}'s tab selected once its text is in the buffer: now when it is
      * already loaded, else when the load lands. Never runs when the file has no text tab (an image, a PDF, a
      * hex view), when its load fails, or when the tab is closed first.

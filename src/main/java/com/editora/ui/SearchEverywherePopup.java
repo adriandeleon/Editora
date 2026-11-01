@@ -83,6 +83,14 @@ final class SearchEverywherePopup {
          * on the FX thread, at most once; none by default.
          */
         default void laterSymbols(String query, java.util.function.Consumer<List<Item>> cb) {}
+
+        /**
+         * Show in Map (Project Map review 3 E9): selects a file row's file — or a symbol row's — on the Project Map,
+         * opening its window. False when {@code item} has no file to show; nothing by default.
+         */
+        default boolean showInMap(Item item) {
+            return false;
+        }
     }
 
     private static final double CELL_HEIGHT = 26;
@@ -98,6 +106,8 @@ final class SearchEverywherePopup {
     private final Label hint = new Label();
     /** The raw chord token that opens the highlighted row's docs, or null if the keymap leaves none free. */
     private @Nullable String docsChord;
+    /** The chord that shows the highlighted file on the Project Map (E9), or null if the keymap leaves none free. */
+    private @Nullable String mapChord;
 
     private final ObservableList<Row> rows = FXCollections.observableArrayList();
     private final Label status = new Label();
@@ -160,9 +170,12 @@ final class SearchEverywherePopup {
     void show(String seed) {
         var keymap = com.editora.command.TextInputKeymap.sharedKeymap();
         docsChord = PickerKeys.freeChord(keymap, "C-h", "f1", "S-f1"); // as the command palette
+        mapChord = PickerKeys.freeChord(keymap, "M-enter", "S-enter", "M-m");
         String docs = docsChord;
+        String map = mapChord;
         hint.setText(PickerKeys.legend(
                 PickerKeys.hint("open", "↵"),
+                PickerKeys.hint("showInMap", map == null || keymap == null ? map : keymap.display(map)),
                 PickerKeys.hint("docs", docs == null || keymap == null ? docs : keymap.display(docs))));
         input.setText(seed == null ? "" : seed);
         showing = true;
@@ -210,6 +223,8 @@ final class SearchEverywherePopup {
             // rests somewhere Enter would do nothing.
         } else if (docsChord != null && docsChord.equals(com.editora.command.KeyDispatcher.chord(e))) {
             openDocs();
+        } else if (mapChord != null && mapChord.equals(com.editora.command.KeyDispatcher.chord(e))) {
+            showSelectedInMap();
         } else {
             return; // cancel (Esc / the keymap's cancel chord) belongs to the host, as with every overlay
         }
@@ -225,6 +240,15 @@ final class SearchEverywherePopup {
                 && row.item().enabled()) {
             overlayHost.hide();
             ops.choose(row.item());
+        }
+    }
+
+    /** The Show in Map key: the highlighted file (or a symbol's file) selected on the Project Map (review 3 E9). */
+    private void showSelectedInMap() {
+        if (list.getSelectionModel().getSelectedItem() instanceof ItemRow row
+                && row.item().kind() != Kind.COMMAND) {
+            overlayHost.hide();
+            ops.showInMap(row.item());
         }
     }
 

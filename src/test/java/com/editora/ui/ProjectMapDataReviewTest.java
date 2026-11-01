@@ -259,9 +259,11 @@ class ProjectMapDataReviewTest {
         Path inside = Files.createDirectory(slow.resolve("inside"));
         CountDownLatch release = new CountDownLatch(1);
         CountDownLatch recovered = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger slowListings = new java.util.concurrent.atomic.AtomicInteger();
         Set<Path> expanded = Set.of(root, slow, fine, inside);
         try (Listings listings = new Listings(300, directory -> {
             if (directory.equals(slow)) {
+                slowListings.incrementAndGet();
                 try {
                     release.await(10, TimeUnit.SECONDS);
                 } catch (InterruptedException interrupted) {
@@ -270,10 +272,9 @@ class ProjectMapDataReviewTest {
             }
         })) {
             listings.setOnRecovered(recovered::countDown);
-            long started = System.nanoTime();
             Snapshot stalled = ProjectMapModel.load(new Request(root, expanded, false), listings);
             assertNotNull(stalled);
-            assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started) < 5_000);
+            assertEquals(1, release.getCount(), "the load came back while the folder's listing was still blocked");
             assertEquals(
                     PlaceholderKind.NOT_RESPONDING,
                     childrenOf(stalled, slow).getFirst().placeholder().kind());
@@ -282,11 +283,11 @@ class ProjectMapDataReviewTest {
                     ProjectMapModel.pruneExpansion(root, expanded, stalled).contains(inside),
                     "nothing below a folder that did not answer is forgotten");
 
-            long again = System.nanoTime();
+            assertEquals(1, listings.waitedOutForTest.get(), "the first load waited the timeout out once");
             Snapshot still = ProjectMapModel.load(new Request(root, expanded, false), listings);
-            assertTrue(
-                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - again) < 250,
-                    "a folder already known to hang is not waited for again");
+            // Structural, not timed (Map review 3 D11): no second wait, no second listing of the folder.
+            assertEquals(1, listings.waitedOutForTest.get(), "a folder already known to hang is not waited for again");
+            assertEquals(1, slowListings.get(), "nor listed a second time while the first listing is blocked");
             assertEquals(
                     PlaceholderKind.NOT_RESPONDING,
                     childrenOf(still, slow).getFirst().placeholder().kind());

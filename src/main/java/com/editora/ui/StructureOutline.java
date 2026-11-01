@@ -114,7 +114,8 @@ final class StructureOutline {
             boolean pom,
             org.eclipse.tm4e.core.grammar.@Nullable IGrammar grammar,
             List<Region> regions,
-            List<Symbol> symbols) {
+            List<Symbol> symbols,
+            @Nullable String fileName) {
 
         static Source area(EditorBuffer buffer) {
             CodeArea area = buffer.getArea();
@@ -129,7 +130,8 @@ final class StructureOutline {
                     buffer.isPom(),
                     null,
                     buffer.getFoldManager().regions(),
-                    buffer.symbols());
+                    buffer.symbols(),
+                    nameOf(buffer));
         }
 
         /** The whole document, regions and symbols still to be detected ({@link #analyzed}). FX thread. */
@@ -148,7 +150,14 @@ final class StructureOutline {
                     buffer.isPom(),
                     GrammarRegistry.shared().forLanguageName(language),
                     List.of(),
-                    List.of());
+                    List.of(),
+                    nameOf(buffer));
+        }
+
+        private static @Nullable String nameOf(EditorBuffer buffer) {
+            java.nio.file.Path path = buffer.getPath();
+            java.nio.file.Path name = path == null ? null : path.getFileName();
+            return name == null ? null : name.toString();
         }
 
         /**
@@ -172,20 +181,34 @@ final class StructureOutline {
                     pom,
                     GrammarRegistry.shared().forLanguageName(language),
                     List.of(),
-                    List.of());
+                    List.of(),
+                    fileName);
         }
 
-        /** This source with its regions and symbols detected from the text. Pure: any thread. */
+        /**
+         * This source with its regions and symbols detected from the text. Pure: any thread. A language whose outline
+         * is read from its lines alone (Go, YAML, Dockerfile) skips the tokenizing: it was most of the cost of a big
+         * Go file's outline and none of its content.
+         */
         Source analyzed() {
+            if ("go".equals(language) || "yaml".equals(language) || "dockerfile".equals(language)) {
+                return this;
+            }
             List<Region> detected =
                     com.editora.editor.fold.FoldManager.detectRegions(text, language, null, List.of(), true);
             TextMateHighlighter.Analysis analysis = grammar == null ? null : TextMateHighlighter.analyze(text, grammar);
             List<Symbol> found = analysis == null ? List.of() : analysis.symbols();
-            return new Source(text, lineCount, lineAt, language, markdown, typst, http, pom, grammar, detected, found);
+            return new Source(
+                    text, lineCount, lineAt, language, markdown, typst, http, pom, grammar, detected, found, fileName);
         }
     }
 
     static List<StructureNode> build(Source src) {
+        List<StructureNode> nodes = outline(src);
+        return "makefile".equals(src.language()) ? makeTargets(nodes, src.lineAt(), src.lineCount()) : nodes;
+    }
+
+    private static List<StructureNode> outline(Source src) {
         if (src.markdown()) {
             return markdownHeadingNodes(src.text());
         }
@@ -203,6 +226,12 @@ final class StructureOutline {
         if ("yaml".equals(src.language())) {
             return yamlKeyNodes(src.lineAt(), paras);
         }
+        if ("go".equals(src.language())) {
+            return GoOutline.build(linesOf(src)); // receivers, fields, constants; no package-as-type (review 3, C3)
+        }
+        if ("dockerfile".equals(src.language())) {
+            return dockerfileStageNodes(src.lineAt(), paras);
+        }
         if (com.editora.text.HtmlElements.isHtmlLanguage(src.language())) {
             return HtmlOutline.build(src.text()); // tag#id.class, as the server labels them (HTML review C14)
         }
@@ -217,7 +246,17 @@ final class StructureOutline {
         // Name/kind come from the TextMate symbols on (or, for Allman braces, just above) each region's
         // header. Regions with no symbol are control-flow/anonymous blocks and are dropped (declutter).
         Map<Integer, Symbol> symbolByLine = new HashMap<>();
+        boolean shell = "shell".equals(src.language());
+        String fileName = src.fileName();
+        boolean gradleScript =
+                fileName != null && fileName.toLowerCase(java.util.Locale.ROOT).endsWith(".gradle.kts");
         for (Symbol s : src.symbols()) {
+            if (shell && !SHELL_NAME.matcher(s.name()).matches()) {
+                continue; // `"${DOCKER[@]}" version` at a line start is tagged as a name: `$` is no function (C13)
+            }
+            if (s.name().startsWith("@")) {
+                continue; // an annotation (Kotlin scopes `@Deprecated` as a type): not a declaration (C8)
+            }
             symbolByLine.putIfAbsent(s.line(), s);
         }
         boolean haveSymbols = !symbolByLine.isEmpty();
@@ -246,7 +285,9 @@ final class StructureOutline {
             if (r.startLine() < 0 || r.startLine() >= paras) {
                 continue;
             }
-            StructureNode node = nodeFor(src.lineAt(), r, symbolByLine, haveSymbols, brace);
+            // A Kotlin build script is its DSL blocks (`plugins {`, `tasks.register("x") {`), which carry no symbol:
+            // every block is labelled by its header, as a Groovy build's are; its one-line `fun`s still come below.
+            StructureNode node = nodeFor(src.lineAt(), r, symbolByLine, haveSymbols && !gradleScript, brace);
             if (node == null) {
                 continue; // no symbol: skip this region (its kept descendants nest under the nearest kept ancestor)
             }
@@ -272,10 +313,98 @@ final class StructureOutline {
             boolean script = language.startsWith("javascript") || language.startsWith("typescript");
             addFoldlessSymbols(rootNodes, symbolByLine, paras, script ? null : src.lineAt());
         }
+        if ("java".equals(language)) {
+            JavaFields.add(rootNodes, linesOf(src)); // the grammar marks no field name (review 2 C11, review 3 C6)
+        }
         if (src.pom()) {
             rootNodes = pomLabelled(src.lineAt(), paras, rootNodes);
         }
         return rootNodes;
+    }
+
+    /** A shell function's name: what `name()` or `function name` may declare, `::` and `-` included. */
+    private static final java.util.regex.Pattern SHELL_NAME =
+            java.util.regex.Pattern.compile("[\\p{L}_][\\p{L}\\p{N}_:.\\-]*");
+
+    /** The source's lines as a list (read through its {@code lineAt}). */
+    private static List<String> linesOf(Source src) {
+        java.util.function.IntFunction<String> lineAt = src.lineAt();
+        int size = src.lineCount();
+        return new java.util.AbstractList<>() {
+            @Override
+            public String get(int index) {
+                String line = lineAt.apply(index);
+                return line == null ? "" : line;
+            }
+
+            @Override
+            public int size() {
+                return size;
+            }
+        };
+    }
+
+    /**
+     * A Makefile's targets, each with its recipe (the tab-indented lines below it) as its block, and a target
+     * defined more than once — once per {@code ifeq}/{@code else} branch — labelled by its line ({@code all (line
+     * 93)}, {@code all (line 96)}): the rows were identical, with nothing to tell which branch each one opens (C14).
+     */
+    private static List<StructureNode> makeTargets(
+            List<StructureNode> nodes, java.util.function.IntFunction<String> lineAt, int paras) {
+        Map<String, Integer> counts = new HashMap<>();
+        for (StructureNode n : nodes) {
+            counts.merge(n.label(), 1, Integer::sum);
+        }
+        List<StructureNode> out = new ArrayList<>(nodes.size());
+        for (StructureNode n : nodes) {
+            Region region = n.region();
+            if (region == null) {
+                int end = n.line();
+                while (end + 1 < paras && lineAt.apply(end + 1).startsWith("\t")) {
+                    end++;
+                }
+                region = end > n.line() ? new Region(n.line(), end) : null;
+            }
+            String label = counts.getOrDefault(n.label(), 0) > 1
+                    ? tr("structure.targetAtLine", n.label(), n.line() + 1)
+                    : n.label();
+            StructureNode copy = new StructureNode(region, label, n.kind(), n.line(), n.detail());
+            copy.children().addAll(n.children());
+            out.add(copy);
+        }
+        return out;
+    }
+
+    /** A Dockerfile instruction that starts a build stage: {@code FROM [--platform=…] image [AS name]}. */
+    private static final java.util.regex.Pattern DOCKER_FROM =
+            java.util.regex.Pattern.compile("(?i)^\\s*FROM\\s+(?:--\\S+\\s+)*(\\S+)(?:\\s+AS\\s+(\\S+))?\\s*$");
+
+    /**
+     * A Dockerfile's build stages, one row per {@code FROM} line — named by its {@code AS} stage, else by its image —
+     * each running to the line before the next stage. The Structure button used to lead to "No structure" for
+     * every Dockerfile (C14).
+     */
+    static List<StructureNode> dockerfileStageNodes(java.util.function.IntFunction<String> lineAt, int paras) {
+        List<Integer> starts = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
+        for (int line = 0; line < paras; line++) {
+            String text = lineAt.apply(line);
+            java.util.regex.Matcher m = text == null ? null : DOCKER_FROM.matcher(text);
+            if (m != null && m.matches()) {
+                starts.add(line);
+                labels.add(m.group(2) != null ? m.group(2) + " — " + m.group(1) : m.group(1));
+            }
+        }
+        List<StructureNode> roots = new ArrayList<>(starts.size());
+        for (int i = 0; i < starts.size(); i++) {
+            int start = starts.get(i);
+            int end = i + 1 < starts.size() ? starts.get(i + 1) - 1 : paras - 1;
+            while (end > start && lineAt.apply(end).isBlank()) {
+                end--;
+            }
+            roots.add(new StructureNode(new Region(start, Math.max(start, end)), labels.get(i), "module", start));
+        }
+        return roots;
     }
 
     /**
@@ -319,23 +448,63 @@ final class StructureOutline {
      * not, but not the lines of a block scalar ({@code |}, {@code >}) or a comment. The grammar marks keys such as
      * {@code on} or {@code yes} as booleans, so GitHub's {@code on:} went missing and the keys under it hung under
      * the key before.
+     *
+     * <p>A key whose value goes on below it — a block scalar, a list, a nested map — gets that block as its region,
+     * up to the line before the next line indented no deeper than the key (a list written at the key's own indent,
+     * as Kubernetes manifests do, still belongs to it): a ConfigMap's {@code data} script used to preview as its one
+     * key line (review 3, C7).
      */
     static List<StructureNode> yamlKeyNodes(java.util.function.IntFunction<String> lineAt, int paras) {
         java.util.regex.Pattern key = java.util.regex.Pattern.compile(
                 "^(\\s*)(- +)?(\"[^\"]*\"|'[^']*'|[^\\s#'\"\\-?:,\\[\\]{}&*!|>%@`][^:#]*?)\\s*:(\\s|$)");
-        List<StructureNode> roots = new ArrayList<>();
-        Deque<StructureNode> stack = new ArrayDeque<>();
-        Deque<Integer> indents = new ArrayDeque<>();
-        int scalarIndent = -1; // inside a block scalar opened at this indent
-        for (int line = 0; line < paras; line++) {
-            String text = lineAt.apply(line);
-            int indent = text.length() - text.stripLeading().length();
-            if (scalarIndent >= 0) {
-                if (text.isBlank() || indent > scalarIndent) {
-                    continue;
-                }
-                scalarIndent = -1;
+        final class Open {
+            final String name;
+            final int line;
+            final int at;
+            final boolean valueBelow;
+            final List<StructureNode> children = new ArrayList<>();
+
+            Open(String name, int line, int at, boolean valueBelow) {
+                this.name = name;
+                this.line = line;
+                this.at = at;
+                this.valueBelow = valueBelow;
             }
+        }
+        List<StructureNode> roots = new ArrayList<>();
+        Deque<Open> stack = new ArrayDeque<>();
+        int lastContent = -1;
+        int scalarIndent = -1; // inside a block scalar opened at this indent
+        for (int line = 0; line <= paras; line++) {
+            String text = line < paras ? lineAt.apply(line) : null;
+            if (text != null && text.isBlank()) {
+                continue;
+            }
+            int indent = text == null ? -1 : text.length() - text.stripLeading().length();
+            if (scalarIndent >= 0 && text != null && indent > scalarIndent) {
+                lastContent = line; // a line of the block scalar
+                continue;
+            }
+            scalarIndent = -1;
+            if (text != null && text.stripLeading().startsWith("#")) {
+                continue; // a comment ends no key
+            }
+            boolean item = text != null && text.stripLeading().startsWith("-");
+            while (!stack.isEmpty()
+                    && (text == null
+                            || indent < stack.peek().at
+                            || indent == stack.peek().at && !(item && stack.peek().valueBelow))) {
+                Open done = stack.pop();
+                int end = Math.max(done.line, lastContent);
+                StructureNode node = new StructureNode(
+                        end > done.line ? new Region(done.line, end) : null, done.name, "key", done.line);
+                node.children().addAll(done.children);
+                (stack.isEmpty() ? roots : stack.peek().children).add(node);
+            }
+            if (text == null) {
+                break;
+            }
+            lastContent = line;
             java.util.regex.Matcher m = key.matcher(text);
             if (!m.find()) {
                 continue;
@@ -349,18 +518,7 @@ final class StructureOutline {
             if (rest.startsWith("|") || rest.startsWith(">")) {
                 scalarIndent = indent;
             }
-            while (!indents.isEmpty() && indents.peek() >= at) {
-                indents.pop();
-                stack.pop();
-            }
-            StructureNode node = new StructureNode(null, name, "key", line);
-            if (stack.isEmpty()) {
-                roots.add(node);
-            } else {
-                stack.peek().children().add(node);
-            }
-            stack.push(node);
-            indents.push(at);
+            stack.push(new Open(name, line, at, rest.isEmpty() || rest.startsWith("#")));
         }
         return roots;
     }
@@ -492,6 +650,11 @@ final class StructureOutline {
                 // A signature wrapped over several lines: the name is on the line that opened the
                 // parameter list, the region starts on the line that closes it (`String language) {`).
                 int opener = signatureStartLine(lineAt, start);
+                if (opener < 0) {
+                    // A class header wrapped before its brace (`class A extends B` / `implements C {`): the name is
+                    // on a line above, which neither opens nor ends anything (review 3, C5 and C8).
+                    opener = wrappedHeaderLine(lineAt, start, symbolByLine);
+                }
                 if (opener >= 0 && symbolByLine.get(opener) != null) {
                     symbol = symbolByLine.get(opener);
                     line = opener;
@@ -505,6 +668,40 @@ final class StructureOutline {
         // No grammar/symbols: keep the old header-text label and show every region.
         String text = lineAt.apply(start).trim();
         return new StructureNode(r, text.isEmpty() ? tr("structure.line", start + 1) : text, null, start);
+    }
+
+    /** How far above a block's opening line the start of a wrapped declaration header is looked for. */
+    private static final int MAX_HEADER_LINES = 6;
+
+    /**
+     * The line of the declaration whose header {@code braceLine} ends ({@code implements Foo &#123;}, Kotlin's
+     * {@code : Base &#123;} under a wrapped constructor), or -1: the nearest line above, within {@link
+     * #MAX_HEADER_LINES}, with a symbol, passing only lines that neither end a statement or block nor open one. A
+     * blank line, a comment's end, an annotation or a line ending in {@code ;}, {@code &#123;} or {@code &#125;}
+     * stops the search, so a block inside a method never borrows a declaration above it.
+     */
+    static int wrappedHeaderLine(
+            java.util.function.IntFunction<String> lineText, int braceLine, Map<Integer, Symbol> symbolByLine) {
+        String header = lineText.apply(braceLine).strip();
+        if (header.startsWith("}") || header.startsWith(")")) {
+            return -1;
+        }
+        for (int line = braceLine - 1; line >= 0 && braceLine - line <= MAX_HEADER_LINES; line--) {
+            String text = lineText.apply(line).strip();
+            if (text.isEmpty()
+                    || text.startsWith("@")
+                    || text.startsWith("}")
+                    || text.endsWith("*/")
+                    || text.endsWith(";")
+                    || text.endsWith("{")
+                    || text.endsWith("}")) {
+                return -1;
+            }
+            if (symbolByLine.containsKey(line)) {
+                return line;
+            }
+        }
+        return -1;
     }
 
     /** How far above a block's opening line the start of its wrapped signature is looked for. */

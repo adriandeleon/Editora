@@ -179,13 +179,21 @@ public final class FuzzyMatch {
      * <p>The basename is tried first and the full path only as a fallback, which is what lets a query
      * spanning both ({@code "ui main"}) still find {@code ui/MainController.java} while a plain
      * {@code "main"} is never dragged down by the directories above it.
+     *
+     * <p>A path without a separator is all basename and earns the bonus too: without it the project's own
+     * {@code README.md}, {@code go.mod} and {@code Makefile} ranked below every nested file of the same name
+     * (Project Map review 3 A6).
      */
     public static @Nullable Match ofPath(String path, String query) {
         if (path == null || path.isEmpty()) {
             return null;
         }
         int cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-        if (cut >= 0 && cut + 1 < path.length()) {
+        if (cut < 0) {
+            Match whole = of(path, query);
+            return whole == null ? null : new Match(whole.score() + BONUS_BASENAME, whole.ranges());
+        }
+        if (cut + 1 < path.length()) {
             Match base = of(path.substring(cut + 1), query);
             if (base != null) {
                 int[][] shifted = new int[base.ranges().length][];
@@ -207,7 +215,11 @@ public final class FuzzyMatch {
             return NO_MATCH;
         }
         int cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-        if (cut >= 0 && cut + 1 < path.length()) {
+        if (cut < 0) {
+            int whole = scoreOf(path, query);
+            return whole == NO_MATCH ? NO_MATCH : whole + BONUS_BASENAME; // all basename, as in ofPath
+        }
+        if (cut + 1 < path.length()) {
             int base = scoreOf(path.substring(cut + 1), query);
             if (base != NO_MATCH) {
                 return base + BONUS_BASENAME;

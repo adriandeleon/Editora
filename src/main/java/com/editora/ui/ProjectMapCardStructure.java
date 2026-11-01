@@ -40,10 +40,11 @@ import static com.editora.i18n.Messages.tr;
  * The Structure column of one Project Map file card: the file's declarations, as the Map's own Structure column
  * lists them, stuck beside the card. It belongs to the card — it moves, resizes and zooms with it and closes with
  * it — so it works wherever the file's row is, filtered or scrolled off the map included. A declaration clicked
- * (or Enter on it) opens its card, as a row of the Map's Structure column does. The outline is the Map's
+ * (or Enter on it) scrolls the card to its lines and marks them, as an outline beside a code view moves the view;
+ * Shift+click or Shift+Enter opens its own declaration card. The outline is the Map's
  * ({@link ProjectMapStructure}); nothing is read here.
  */
-final class ProjectMapCardStructure {
+final class ProjectMapCardStructure implements CardAttachment {
 
     /** The column fits its longest row between these widths; a longer one is cut at the far edge. */
     static final double MIN_WIDTH = 240;
@@ -51,16 +52,6 @@ final class ProjectMapCardStructure {
     static final double MAX_WIDTH = 560;
     /** Between the card's edge and the column. */
     static final double GAP = 8;
-
-    /** Which side of the card the column goes on. */
-    enum Side {
-        /** Beside the card's right edge, outside it. */
-        RIGHT,
-        /** Beside its left edge, outside it. */
-        LEFT,
-        /** Neither side has room in the panel: on the card itself, against its right edge. */
-        OVER
-    }
 
     /** A row of the column: a declaration, or a line that says why there are none or how many were left out. */
     record Row(ProjectMapStructure.@Nullable Node node, String message) {
@@ -76,6 +67,7 @@ final class ProjectMapCardStructure {
     private final ProjectMapPreview card;
     private final Pane host;
     private final Consumer<ProjectMapStructure.Node> onPreview;
+    private final Consumer<ProjectMapStructure.Node> onReveal;
     private final Function<ProjectMapStructure.Node, @Nullable ContextMenu> menuFor;
     private final Runnable onActivate;
     private final Runnable onMoved;
@@ -105,7 +97,8 @@ final class ProjectMapCardStructure {
     private Side side = Side.RIGHT;
 
     /**
-     * @param onPreview opens (or brings up) the card of a declaration
+     * @param onReveal scrolls the card to a declaration and marks its lines (a click, Enter)
+     * @param onPreview opens (or brings up) the card of a declaration (Shift+click, Shift+Enter, the menu)
      * @param menuFor a declaration's menu, as its row's in the Map's Structure column
      * @param onActivate the column was used: it is use of the card
      * @param onMoved the column moved, showed or hid, or its list scrolled (connectors must follow)
@@ -114,6 +107,7 @@ final class ProjectMapCardStructure {
     ProjectMapCardStructure(
             ProjectMapPreview card,
             Pane host,
+            Consumer<ProjectMapStructure.Node> onReveal,
             Consumer<ProjectMapStructure.Node> onPreview,
             Function<ProjectMapStructure.Node, @Nullable ContextMenu> menuFor,
             Runnable onActivate,
@@ -121,6 +115,7 @@ final class ProjectMapCardStructure {
             Runnable onResized) {
         this.card = card;
         this.host = host;
+        this.onReveal = onReveal;
         this.onPreview = onPreview;
         this.menuFor = menuFor;
         this.onActivate = onActivate;
@@ -129,6 +124,16 @@ final class ProjectMapCardStructure {
 
         column.getStyleClass().add("project-map-card-structure");
         column.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+        // The Structure command typed here goes back to the card's text, as typed in the card it came here.
+        column.getProperties()
+                .put(com.editora.command.KeyDispatcher.HANDLED_COMMANDS, (java.util.function.Predicate<String>)
+                        command -> {
+                            if (!ProjectMapPreview.STRUCTURE_COMMAND.equals(command)) {
+                                return false;
+                            }
+                            card.focusContent();
+                            return true;
+                        });
         column.setManaged(false);
         zoom.xProperty().bind(card.mapScaleProperty());
         zoom.yProperty().bind(card.mapScaleProperty());
@@ -179,18 +184,29 @@ final class ProjectMapCardStructure {
             raise();
             onActivate.run();
         });
+        // Reading the column by keyboard is use of its card as much as a press is: the card must not be the one
+        // evicted when a declaration opened from here needs room (review 3, C1).
+        column.focusWithinProperty().addListener((obs, was, within) -> {
+            if (within) {
+                onActivate.run();
+            }
+        });
         column.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            onActivate.run();
             if (event.getCode() == KeyCode.ESCAPE) {
                 card.setStructureShown(false);
                 card.focusContent();
                 event.consume();
             }
         });
+        tree.addEventFilter(KeyEvent.KEY_PRESSED, this::emacsKeys);
         tree.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
             if (event.getCode() == KeyCode.ENTER && !event.isShortcutDown() && !event.isAltDown()) {
                 ProjectMapStructure.Node node = selectedNode();
                 if (node != null) {
-                    onPreview.accept(node);
+                    // The column is the card's outline: Enter moves the card; Shift+Enter opens the declaration's
+                    // own card, as Shift+Enter on a Map row opens a row's card (review 3, E8).
+                    (event.isShiftDown() ? onPreview : onReveal).accept(node);
                     event.consume();
                 }
             }
@@ -204,6 +220,49 @@ final class ProjectMapCardStructure {
             }
             event.consume();
         });
+    }
+
+    /**
+     * The Structure window's Emacs moves, which the column owns as that window does ({@code editora.ownsKeys} leaves
+     * them to it): Ctrl+N / Ctrl+P down and up, Ctrl+F opens a declaration or steps into it, Ctrl+B closes it or
+     * steps out (review 3, D7). The arrows are the list's own.
+     */
+    private void emacsKeys(KeyEvent event) {
+        if (!event.isControlDown() || event.isAltDown() || event.isMetaDown() || event.isShiftDown()) {
+            return;
+        }
+        var selection = tree.getSelectionModel();
+        int rows = tree.getExpandedItemCount();
+        int index = selection.getSelectedIndex();
+        TreeItem<Row> item = selection.getSelectedItem();
+        switch (event.getCode()) {
+            case N, P -> {
+                if (rows > 0) {
+                    int step = event.getCode() == KeyCode.N ? 1 : -1;
+                    int next = index < 0 ? 0 : Math.max(0, Math.min(rows - 1, index + step));
+                    selection.select(next);
+                    tree.scrollTo(Math.max(0, next - 2));
+                }
+            }
+            case F -> {
+                if (item != null && !item.isLeaf() && !item.isExpanded()) {
+                    item.setExpanded(true);
+                } else if (item != null && !item.isLeaf()) {
+                    selection.select(index + 1);
+                }
+            }
+            case B -> {
+                if (item != null && item.isExpanded()) {
+                    item.setExpanded(false);
+                } else if (item != null && item.getParent() != null && item.getParent() != tree.getRoot()) {
+                    selection.select(item.getParent());
+                }
+            }
+            default -> {
+                return;
+            }
+        }
+        event.consume();
     }
 
     /** Names the card's file again (it was renamed): the title's tooltip and the list's spoken name. */
@@ -221,16 +280,17 @@ final class ProjectMapCardStructure {
      * neither has room. Pure.
      */
     static Side side(double cardLeft, double cardRight, double width, double panelWidth, boolean preferLeft) {
-        boolean right = panelWidth - cardRight >= width;
-        boolean left = cardLeft >= width;
-        if (preferLeft ? left : right) {
-            return preferLeft ? Side.LEFT : Side.RIGHT;
-        }
-        if (preferLeft ? right : left) {
-            return preferLeft ? Side.RIGHT : Side.LEFT;
-        }
-        return Side.OVER;
+        return CardAttachment.side(cardLeft, cardRight, width, panelWidth, preferLeft);
     }
+
+    @Override
+    public ProjectMapPreview card() {
+        return card;
+    }
+
+    /** The column's rows tie to their declaration cards from MapCards; the column itself draws no connector. */
+    @Override
+    public void drawConnectors(javafx.scene.canvas.GraphicsContext g) {}
 
     /**
      * The rows for {@code nodes}, the top level of {@code view} or a declaration's members: one per declaration, at
@@ -276,7 +336,8 @@ final class ProjectMapCardStructure {
      * What the column takes beside the card on {@code which} side, in unzoomed units: its width and gap there,
      * nothing on the other side or while it stands over the card. Sticky notes go past it.
      */
-    double reserved(Side which) {
+    @Override
+    public double reserved(Side which) {
         return shown && side == which && which != Side.OVER ? width + GAP : 0;
     }
 
@@ -365,6 +426,14 @@ final class ProjectMapCardStructure {
 
     /** Sticks the column on the card, on the side with room — {@code preferLeft} first. */
     void show(boolean preferLeft) {
+        show(null, preferLeft);
+    }
+
+    /**
+     * Sticks the column on the card on {@code chosen} — its owner weighs the sides by what each covers (review 3, C9) —
+     * or, when null, on the side with room, {@code preferLeft} first.
+     */
+    void show(@Nullable Side chosen, boolean preferLeft) {
         if (!shown) {
             shown = true;
             card.layoutXProperty().addListener(follow);
@@ -379,8 +448,33 @@ final class ProjectMapCardStructure {
         double left = card.getLayoutX();
         double right = left + card.getWidth() * scale;
         width = fittedWidth();
-        side = side(left, right, (width + GAP) * scale, host.getWidth(), preferLeft);
+        side = chosen != null ? chosen : side(left, right, (width + GAP) * scale, host.getWidth(), preferLeft);
         layout();
+    }
+
+    /**
+     * Moves the column to the other side of its card, or onto it (the card moved, or what the side covers changed):
+     * what else stands beside the card makes room again.
+     */
+    void setSide(Side next) {
+        if (!shown || next == null || next == side) {
+            return;
+        }
+        side = next;
+        layout();
+        onResized.run();
+    }
+
+    /** Where the column would be drawn on {@code which} side of its card now, {@code {x, y, w, h}} in the host's pixels. */
+    double[] boundsAt(Side which) {
+        double scale = card.mapScale();
+        double dx = switch (which) {
+            case RIGHT -> card.getWidth() + GAP;
+            case LEFT -> -(width + GAP);
+            case OVER -> card.getWidth() - width;
+        };
+        return new double[] {card.getLayoutX() + dx * scale, card.getLayoutY(), width * scale, card.getHeight() * scale
+        };
     }
 
     /** Lists {@code view}'s declarations, keeping what was expanded and selected where it still is. */
@@ -397,6 +491,9 @@ final class ProjectMapCardStructure {
         ProjectMapStructure.Node was = selectedNode();
         Path selected = was == null ? null : was.path();
         sync(tree.getRoot(), view, view.roots());
+        if (selected == null && tree.isFocused() && tree.getSelectionModel().isEmpty()) {
+            focus(); // put there by key before the outline arrived: the first row is where reading starts
+        }
         if (selected != null) {
             TreeItem<Row> item = find(tree.getRoot(), selected);
             if (item != null && tree.getSelectionModel().getSelectedItem() != item) {
@@ -488,12 +585,14 @@ final class ProjectMapCardStructure {
     }
 
     /** Puts the column above its card, which was just raised above the others. */
-    void raise() {
+    @Override
+    public void raise() {
         column.toFront();
     }
 
     /** The column as drawn, in the host's pixels: {@code x, y, width, height}; null while it is not in sight. */
-    double @Nullable [] bounds() {
+    @Override
+    public double @Nullable [] bounds() {
         if (!shown || !column.isVisible()) {
             return null;
         }
@@ -524,7 +623,8 @@ final class ProjectMapCardStructure {
     }
 
     /** Whether the keyboard is in the column. */
-    boolean contains(@Nullable Node node) {
+    @Override
+    public boolean contains(@Nullable Node node) {
         for (Node current = node; current != null; current = current.getParent()) {
             if (current == column) {
                 return true;
@@ -562,7 +662,8 @@ final class ProjectMapCardStructure {
         return column;
     }
 
-    void dispose() {
+    @Override
+    public void dispose() {
         if (!shown) {
             return;
         }
@@ -636,7 +737,7 @@ final class ProjectMapCardStructure {
                         || onDisclosure(event)) {
                     return;
                 }
-                onPreview.accept(node);
+                (event.isShiftDown() ? onPreview : onReveal).accept(node);
                 event.consume();
             });
         }
