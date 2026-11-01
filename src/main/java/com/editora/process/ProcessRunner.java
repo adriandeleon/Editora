@@ -741,6 +741,24 @@ public final class ProcessRunner {
         return resolveExecutable(command, augmentedPath(), windows);
     }
 
+    /**
+     * As {@link #resolveExecutable(List)}, against the one folder {@code dir} instead of the augmented PATH: a bare
+     * program found there is rewritten to its path there, anything else is left as it is.
+     */
+    public static List<String> resolveExecutableIn(List<String> command, Path dir) {
+        if (command.isEmpty()) {
+            return command;
+        }
+        String exe = command.get(0);
+        if (exe.isEmpty() || exe.indexOf('/') >= 0 || exe.indexOf('\\') >= 0) {
+            return command;
+        }
+        boolean windows = System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("win");
+        return resolveExecutable(command, dir.toString(), windows);
+    }
+
     private static final List<String> WINDOWS_EXECUTABLE_EXTENSIONS = List.of(".exe", ".cmd", ".bat");
 
     /**

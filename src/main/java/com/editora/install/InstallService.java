@@ -340,7 +340,10 @@ public final class InstallService {
     /** Runs one step; returns the resolved server command for an ARCHIVE step, else {@code null}. */
     private @Nullable String runStep(Step s, Path configDir) throws Exception {
         switch (s.kind()) {
-            case NPM_GLOBAL -> runNpm(InstallCatalog.npmInstallGlobalArgv(s.npmPackages()), s.id());
+            case NPM_GLOBAL -> {
+                runNpm(InstallCatalog.npmInstallGlobalArgv(s.npmPackages()), s.id());
+                checkNpmGlobalFound(s);
+            }
             case NPM_PREFIX -> installNpmPrefix(s, configDir);
             case PIP_TARGET -> {
                 Path dest = configDir.resolve(s.destSubpath());
@@ -1158,15 +1161,70 @@ public final class InstallService {
                             argv,
                             Map.of("PATH", pathFirst + java.io.File.pathSeparator + ProcessRunner.augmentedPath()));
 
+    /**
+     * Fakes the package managers. A faked {@code npm -g} puts no program anywhere, so its servers count as found
+     * afterwards ({@link #checkNpmGlobalFound}) unless a test says otherwise with {@link #setNpmProgramFoundForTest}.
+     */
     void setCommandsForTest(java.util.function.Function<List<String>, ProcessRunner.Result> commands) {
         Objects.requireNonNull(commands, "commands");
         this.commands = (argv, pathFirst) -> commands.apply(argv);
+        this.npmProgramFound = serverId -> true;
     }
 
     /** As {@link #setCommandsForTest} with the folder put first on PATH ({@code ""}: none). */
     void setCommandsWithPathForTest(
             java.util.function.BiFunction<List<String>, String, ProcessRunner.Result> commands) {
         this.commands = Objects.requireNonNull(commands, "commands");
+        this.npmProgramFound = serverId -> true;
+    }
+
+    /** Whether a server's default program is where Editora looks for it: PATH, then the Settings Node.js (A203). */
+    private volatile java.util.function.Predicate<String> npmProgramFound = this::defaultProgramFound;
+
+    /** Test seam for {@link #npmProgramFound}, after {@link #setCommandsForTest}; null: the real check. */
+    void setNpmProgramFoundForTest(java.util.function.@Nullable Predicate<String> found) {
+        this.npmProgramFound = found == null ? this::defaultProgramFound : found;
+    }
+
+    private boolean defaultProgramFound(String serverId) {
+        return NpmServerBins.defaultProgramFound(serverId, nodeSettingOrBlank());
+    }
+
+    private String nodeSettingOrBlank() {
+        try {
+            String setting = nodeSetting.get();
+            return setting == null ? "" : setting;
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    /**
+     * After {@code npm install -g}: each of the step's servers must now be found where Editora looks — PATH, then the
+     * Settings Node.js's bin folder. An npm configured with a global folder of its own puts them elsewhere, and Install
+     * said "installed" while nothing changed; now it fails, saying where npm put them (HTML review 3, A203).
+     */
+    private void checkNpmGlobalFound(Step s) throws InstallException {
+        for (String serverId : InstallCatalog.serversOfStep(s.id())) {
+            if (!npmProgramFound.test(serverId)) {
+                throw new InstallException(s.id() + ": npm installed it, but Editora does not find "
+                        + NpmServerBins.defaultProgram(serverId) + " — npm put it in " + npmGlobalBin()
+                        + ". Add that folder to PATH, or choose the Node.js there in Settings → Debugging → JavaScript,"
+                        + " then try again");
+            }
+        }
+    }
+
+    /** npm's global bin folder ({@code npm prefix -g}, its {@code bin} outside Windows), as npm says it. */
+    private String npmGlobalBin() {
+        Map.Entry<List<String>, String> cmd =
+                npmCommand(List.of("npm", "prefix", "-g"), settingsNodeBin(), windows(), Files::isRegularFile);
+        ProcessRunner.Result r = commands.apply(cmd.getKey(), cmd.getValue());
+        String prefix = r.ok() ? r.out().strip() : "";
+        if (prefix.isEmpty() || prefix.contains("\n")) {
+            return "npm's global folder (npm prefix -g)";
+        }
+        return windows() ? prefix : prefix + "/bin";
     }
 
     /** An npm command, run with the Settings Node.js when one is chosen ({@link #npmCommand}). */
