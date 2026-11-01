@@ -1737,7 +1737,7 @@ public class EditorBuffer implements TabContent {
         // A collapsed header is commented together with its (then expanded) body.
         int[] span = folds.expandHeaderSpan(
                 a.getSelection().getStart(), a.getSelection().getEnd());
-        Commenter.Edit edit = Commenter.toggle(a.getText(), span[0], span[1], language);
+        Commenter.Edit edit = Commenter.toggle(a.getText(), span[0], span[1], language, getPath());
         if (edit == null) {
             return false;
         }

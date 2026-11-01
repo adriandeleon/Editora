@@ -1,5 +1,6 @@
 package com.editora.editops;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 
@@ -150,11 +151,19 @@ public final class Commenter {
      * ({@link #intoHereDoc}): those lines are data, and a {@code #} put there is output, not a comment.
      */
     public static @Nullable Edit toggle(String text, int selStart, int selEnd, String language) {
+        return toggle(text, selStart, selEnd, language, null);
+    }
+
+    /**
+     * As {@link #toggle(String, int, int, String)} for the buffer of {@code file} (null: untitled), whose extension
+     * picks a template's comment syntax ({@link TemplateComments}, HTML review 2 C109).
+     */
+    public static @Nullable Edit toggle(String text, int selStart, int selEnd, String language, @Nullable Path file) {
         if (intoHereDoc(text, selStart, selEnd, language)) {
             return null;
         }
         if ("php".equals(language) || HtmlElements.isHtmlLanguage(language)) {
-            return toggleEmbedded(text, selStart, selEnd, language);
+            return toggleEmbedded(text, selStart, selEnd, language, file);
         }
         CommentStyle style = "ini".equals(language) ? iniStyle(text) : styleFor(language);
         return toggle(text, selStart, selEnd, style);
@@ -168,10 +177,30 @@ public final class Commenter {
      * {@link #mixesLanguages}). On a line that also holds the element's tags ({@code <script>x = 1;</script>}) only
      * the code is commented, with the block form.
      */
-    private static @Nullable Edit toggleEmbedded(String text, int selStart, int selEnd, String language) {
+    private static @Nullable Edit toggleEmbedded(
+            String text, int selStart, int selEnd, String language, @Nullable Path file) {
         int a = Math.min(selStart, selEnd);
         int b = Math.max(selStart, selEnd);
         int effEnd = b > a && lineStart(text, b) == b ? b - 1 : b;
+        if ("php".equals(language) && phpOpenerEnd(text, a) != -1) {
+            // A line that opens a PHP block is PHP: "<!-- <?php -->" would leave " -->" as code (C109).
+            int code = phpOpenerEnd(text, a);
+            if (code < 0) {
+                return null; // "<?= $x ?>": an echo has no statement to comment
+            }
+            if (code >= lineEnd(text, a)) {
+                if (effEnd <= lineEnd(text, a)) {
+                    return null; // nothing but the opener on the line
+                }
+                code = lineEnd(text, a) + 1; // the code lines below it
+            }
+            boolean bare = a == b;
+            a = Math.max(a, code);
+            b = bare ? a : Math.max(b, a);
+            effEnd = Math.max(effEnd, a);
+            selStart = a;
+            selEnd = b;
+        }
         List<HtmlRegions.Region> regions = HtmlRegions.scan(text, "php".equals(language), effEnd + 1);
         HtmlRegions.Region first = code(HtmlRegions.at(regions, a));
         HtmlRegions.Region last = code(HtmlRegions.at(regions, effEnd));
@@ -179,6 +208,10 @@ public final class Commenter {
             return null; // from the markup into a script, or out of one
         }
         if (first == null) {
+            TemplateComments.Engine engine = TemplateComments.engineFor(text, a, effEnd, language, file);
+            if (engine != null) {
+                return TemplateComments.toggle(text, selStart, selEnd, effEnd, engine);
+            }
             return toggle(text, selStart, selEnd, styleFor(HtmlElements.isHtmlLanguage(language) ? language : "html"));
         }
         CommentStyle style = styleFor(HtmlRegions.languageOf(first.kind()));
@@ -224,6 +257,37 @@ public final class Commenter {
             at = Math.clamp(a - shift, edit.from(), edit.from() + after.length()); // uncommented
         }
         return new Edit(edit.from(), edit.to(), edit.replacement(), at, at);
+    }
+
+    /**
+     * On the line of {@code at}: where the code after a leading {@code <?php} opener starts (past the spaces after
+     * it; the line's end when it has none), -2 for a leading {@code <?=} echo, or -1 when the line does not open a
+     * PHP block.
+     */
+    static int phpOpenerEnd(String text, int at) {
+        int ls = lineStart(text, at);
+        int k = ls + firstNonWs(text.substring(ls, lineEnd(text, at)));
+        if (text.startsWith("<?=", k)) {
+            return -2;
+        }
+        if (!text.regionMatches(true, k, "<?php", 0, 5)) {
+            return -1;
+        }
+        k += 5;
+        while (k < text.length() && (text.charAt(k) == ' ' || text.charAt(k) == '\t')) {
+            k++;
+        }
+        return k;
+    }
+
+    /**
+     * Whether Toggle Comment on {@code [selStart, selEnd]} in a PHP file is refused because it starts on a line that
+     * holds only a {@code <?php} opener, or an {@code <?=} echo (HTML review 2 C109).
+     */
+    public static boolean onPhpOpener(String text, int selStart, int selEnd, String language) {
+        int a = Math.min(selStart, selEnd);
+        int code = "php".equals(language) ? phpOpenerEnd(text, a) : -1;
+        return code == -2 || code >= lineEnd(text, a) && Math.max(selStart, selEnd) <= lineEnd(text, a);
     }
 
     /** {@code r} when its content takes a comment syntax of its own (script, style, PHP), else null (markup). */
