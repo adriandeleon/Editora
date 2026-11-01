@@ -68,15 +68,21 @@ class CheckReleaseTest implements AutoCloseable {
         assertEquals(List.of(
                         "Editora-1.2.3-linux-arm64.jar",
                         "Editora-1.2.3-linux-arm64.tar.gz",
+                        "Editora-1.2.3-linux-arm64.tar.gz.asc",
                         "Editora-1.2.3-linux-x64.AppImage",
+                        "Editora-1.2.3-linux-x64.AppImage.asc",
                         "Editora-1.2.3-linux-x64.deb",
+                        "Editora-1.2.3-linux-x64.deb.asc",
                         "Editora-1.2.3-linux-x64.jar",
                         "Editora-1.2.3-linux-x64.rpm",
+                        "Editora-1.2.3-linux-x64.rpm.asc",
                         "Editora-1.2.3-linux-x64.tar.gz",
+                        "Editora-1.2.3-linux-x64.tar.gz.asc",
                         "Editora-1.2.3-macos-arm64.dmg",
                         "Editora-1.2.3-macos-x64.dmg",
                         "Editora-1.2.3-windows-x64.jar",
-                        "Editora-1.2.3-windows-x64.msi"),
+                        "Editora-1.2.3-windows-x64.msi",
+                        "editora-signing-key.asc"),
                 CheckRelease.expectedAssets("1.2.3", "1.2.3").stream().sorted().toList());
     }
 

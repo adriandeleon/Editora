@@ -537,13 +537,117 @@ jobs:
           path: staging/*
           if-no-files-found: error
 
+  # Signs the Linux downloads (scripts/release/sign-linux-packages.sh): the .rpm and .deb embedded, and
+  # a detached .asc beside every .deb, .rpm, .AppImage and .tar.gz. In a job of its own so the key is never
+  # on a runner that builds — those run whatever Maven resolves — and once for both architectures, since a
+  # signature does not care which one it covers. It replaces the build legs' Linux artifacts with the signed
+  # files, so the release job checks, attests and attaches only those. The key: docs/release.md, "Linux
+  # signing".
+  #
+  # On a tag the key is required, and must be the committed packaging/linux/signing-key.asc. A manual dry
+  # run without it signs with a key made for the run, so the step is still exercised, and says so.
+  sign-linux:
+    name: Sign Linux packages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="$(grep -m1 '<version>' pom.xml | sed -E 's/.*<version>(.+)<\/version>.*/\1/')"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      # rpm carries rpmsign; debsig-verify checks the .deb the way a user's policy would.
+      - name: Signing tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm debsig-verify
+
+      - name: Download the linux-x64 build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: Editora-${{ steps.ver.outputs.version }}-linux-x64
+          path: linux/x64
+
+      - name: Download the linux-arm64 build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: Editora-${{ steps.ver.outputs.version }}-linux-arm64
+          path: linux/arm64
+
+      - name: Sign
+        shell: bash
+        env:
+          LINUX_GPG_KEY: ${{ secrets.LINUX_GPG_KEY }}
+          LINUX_GPG_PASSPHRASE: ${{ secrets.LINUX_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -n "$LINUX_GPG_KEY" ]; then
+            export EDITORA_GPG_KEY="$LINUX_GPG_KEY" EDITORA_GPG_PASSPHRASE="$LINUX_GPG_PASSPHRASE"
+            if [ "$GITHUB_REF_TYPE" = "tag" ] || [ -f packaging/linux/signing-key.asc ]; then
+              export EDITORA_GPG_EXPECTED_KEY=packaging/linux/signing-key.asc
+            fi
+          elif [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            echo "::error title=Linux signing key missing::LINUX_GPG_KEY is not set; refusing to release unsigned Linux packages"
+            exit 1
+          else
+            echo "::warning title=Linux packages signed with a throw-away key::no LINUX_GPG_KEY, so this dry run signs with a key made for it"
+            export GNUPGHOME="$RUNNER_TEMP/throwaway-gnupg"
+            mkdir -m 700 "$GNUPGHOME"
+            gpg --batch --pinentry-mode loopback --passphrase '' --quick-gen-key 'Editora dry run <dry-run@editora.invalid>' rsa4096 sign 1d
+            EDITORA_GPG_KEY="$(gpg --batch --armor --export-secret-keys)"
+            export EDITORA_GPG_KEY
+            unset GNUPGHOME
+          fi
+          mkdir -p key
+          bash scripts/release/sign-linux-packages.sh key/editora-signing-key.asc linux/x64 linux/arm64
+          bash scripts/release/check-linux-signatures.sh key/editora-signing-key.asc linux/x64 linux/arm64
+          ls -la linux/*/
+          fpr=$(gpg --with-colons --import-options show-only --import key/editora-signing-key.asc | awk -F: '$1 == "fpr" { print $10; exit }')
+          echo "- ✅ Linux: signed with \`$fpr\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload signed (linux-x64)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Editora-${{ steps.ver.outputs.version }}-linux-x64
+          path: linux/x64/*
+          overwrite: true
+          if-no-files-found: error
+
+      - name: Upload signed (linux-arm64)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Editora-${{ steps.ver.outputs.version }}-linux-arm64
+          path: linux/arm64/*
+          overwrite: true
+          if-no-files-found: error
+
+      - name: Upload the public key
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Editora-signing-key
+          path: key/editora-signing-key.asc
+          if-no-files-found: error
+
   release:
     name: Release
     # native-experimental is left out of `needs` while it is disabled. With it in the chain, a cancelled
     # or skipped Native Image leg also skipped the `bump` job below, so master was not reopened after
     # v0.19.0 and v0.20.0.
-    needs: build
-    if: always() && needs.build.result == 'success'
+    # sign-linux is in it: the Linux artifacts this job downloads are the signed ones it uploaded.
+    needs: [build, sign-linux]
+    if: always() && needs.build.result == 'success' && needs.sign-linux.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -604,7 +708,8 @@ jobs:
       # A signed SLSA build-provenance statement for every file JReleaser attaches, so a download can be
       # traced to this workflow run, this commit and this tag:
       #   gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/vX.Y.Z
-      # It is the only signature the Windows and Linux packages carry. Keyless: Sigstore signs with the
+      # It is the only signature the Windows MSI carries; the Linux packages also have sign-linux's OpenPGP
+      # signatures, and those .asc files are attested like everything else. Keyless: Sigstore signs with the
       # job's OIDC identity (the public-good instance, as this repository is public), so there is no key
       # to store or rotate. The patterns are jreleaser.yml's `files.globs`; ReleaseSupplyChainTest keeps
       # the two lists equal. Before JReleaser, so a release never publishes an asset without one.
@@ -622,6 +727,7 @@ jobs:
             artifacts/**/*.tar.gz
             artifacts/**/Editora-*-native-experimental.zip
             artifacts/**/Editora-*.jar
+            artifacts/**/*.asc
 
       - name: JReleaser
         # No `v2` TAG exists upstream — `@v2` was a branch. Pinned to that branch's head as of 2026-10-01

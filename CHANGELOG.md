@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The Linux downloads are signed.** Every `.deb`, `.rpm`, `.AppImage` and `.tar.gz` has an OpenPGP
+  signature beside it (`.asc`), by the key attached to the release as `editora-signing-key.asc` — the
+  same key that signs Termina's and Torrenta's. The `.rpm` and `.deb` are signed inside as well, for
+  `rpm -K`, dnf and `debsig-verify`. Check a download with `gpg --verify <file>.asc <file>`.
+
 - **Project Map: a Structure column on file previews.** A file preview card whose file has an outline has a
   **Structure** button in its title bar. It sticks the file's Structure column beside the card — the same
   declarations as the Map's own Structure column, as an indented list — and clicking a method or type (or Enter
@@ -19,8 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The macOS DMGs are signed and notarized.** Editora for macOS (Apple silicon and Intel) is now signed
   with a Developer ID certificate and notarized by Apple, so it opens on first launch with no Gatekeeper
-  warning and no trip to System Settings → Privacy & Security. The Windows and Linux packages are still
-  unsigned.
+  warning and no trip to System Settings → Privacy & Security. The Windows MSI is still unsigned.
 - **Every release file has a build provenance attestation.** The release workflow now records a signed
   statement for each installer, archive and jar, naming the repository, commit and tag that built it.
   Check a download with

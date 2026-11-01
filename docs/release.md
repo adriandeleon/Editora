@@ -146,7 +146,8 @@ Each runner:
 
 Installers and fat jars are renamed to a consistent `Editora-<version>-<target>.<ext>` prefix
 (the version comes from a `Resolve version` step — the tag minus `v`, else the pom version) and
-uploaded as artifacts.
+uploaded as artifacts. The **Sign Linux packages** job then signs both Linux legs' downloads and
+replaces their artifacts with the signed files ([Linux signing](#linux-signing)).
 
 A final job hands everything to **JReleaser** (`jreleaser.yml`, via `jreleaser/release-action`),
 which creates the GitHub release with all installers + fat jars + `checksums.txt` + a changelog.
@@ -160,8 +161,9 @@ upstream steps are tolerant by design — JReleaser's globs match zero files wit
 `aot_build.java` lets the `.rpm` succeed alone when the `.deb` wrap fails. So immediately before
 JReleaser, the `Release` job runs
 [`scripts/release/CheckRelease.java`](../scripts/release/CheckRelease.java) against the downloaded
-artifacts and, on a tag, **refuses to publish unless all eleven expected files are present and
-non-empty** (the table above; fat jars are named after the pom version, everything else after the
+artifacts and, on a tag, **refuses to publish unless all seventeen expected files are present and
+non-empty** (the table above, a `.asc` beside each Linux `.deb`, `.rpm`, `.AppImage` and `.tar.gz`,
+and `editora-signing-key.asc`; fat jars are named after the pom version, everything else after the
 tag). It prints the full list with `ok`/`MISSING` per file. The AppImage and tarball steps are
 likewise strict on a tag (a failure fails the linux leg, so *Re-run failed jobs* rebuilds just that
 leg) and best-effort only in a dry run. The experimental Native Image archives are reported but never
@@ -215,8 +217,9 @@ were signed.
 Before JReleaser publishes, **Attest build provenance** (`actions/attest-build-provenance`) records a
 signed [SLSA](https://slsa.dev/) provenance statement for every file the release attaches: each
 DMG, MSI, `.deb`, `.rpm`, AppImage, tarball and fat jar. A statement ties the file's SHA-256 to the
-repository, the workflow, the commit and the tag that built it. For the Windows and Linux packages it is
-the only signature they carry.
+repository, the workflow, the commit and the tag that built it. For the Windows MSI it is the only
+signature; the Linux downloads also carry OpenPGP signatures ([Linux signing](#linux-signing)), and
+their `.asc` files are attested too.
 
 Anyone can check a download with the GitHub CLI:
 
@@ -234,6 +237,43 @@ gh attestation verify Editora-0.26.1-linux-x64.deb --repo adriandeleon/Editora -
   release.
 - `checksums_sha256.txt` (and `RELEASE.md`) are written by JReleaser after the step and are not
   attested themselves; every file the checksums list is.
+
+### Linux signing
+
+The **Sign Linux packages** job (`sign-linux`) signs both Linux legs' downloads once the matrix is
+done, in a job of its own so the key is never on a runner that builds (those run whatever Maven
+resolves). [`scripts/release/sign-linux-packages.sh`](../scripts/release/sign-linux-packages.sh)
+signs the `.rpm` with `rpmsign` and the `.deb` with an origin signature in debsigs' format (an
+`_gpgorigin` member; debsigs itself skips `.xz` members and exits 0), then writes an armoured
+`<file>.asc` beside every `.deb`, `.rpm`, `.AppImage` and `.tar.gz` — the only signature the
+AppImage and the tarball carry, since appimagetool can embed one only while it builds.
+[`check-linux-signatures.sh`](../scripts/release/check-linux-signatures.sh) then checks each one
+against the public key alone, with `gpgv`, `rpmkeys` and `debsig-verify`. The job uploads the
+signed files over the legs' artifacts, so the `Release` job checks, attests and attaches only those,
+with `editora-signing-key.asc` beside them.
+
+Users check a download with:
+
+```bash
+gpg --import editora-signing-key.asc
+gpg --verify Editora-0.26.1-linux-x64.deb.asc Editora-0.26.1-linux-x64.deb
+```
+
+`sudo rpm --import editora-signing-key.asc` lets `rpm -K` and dnf check the `.rpm`'s own
+signature. apt and dpkg check nothing about a downloaded `.deb`; its `.asc` is the check.
+
+- **One key for all three projects.** Termina, Editora and Torrenta sign with the same key,
+  "Adrian De Leon (release signing)", `8486A7AF4FC8FEE93D83CDB4EA5FA138C2C09C4A`, so users trust
+  one key for all of them. A leaked key taints all three at once. The scripts are shared too; a fix
+  to one belongs in all three repositories. The key's creation, backup and renewal are in
+  Termina's README, "Linux signing".
+- **Secrets:** `LINUX_GPG_KEY` (the armoured secret key) and `LINUX_GPG_PASSPHRASE`, the same
+  values in all three repositories. The public half is committed as
+  `packaging/linux/signing-key.asc`, and a tag refuses to sign with any other key.
+- **On a tag the key is required.** A manual dry run without it signs with a key made for the run,
+  so the step is still exercised, and warns.
+- `ReleaseSupplyChainTest` pins the job's place: after `build`, before `release`, the key only in
+  it, and the signed artifacts replacing the unsigned ones.
 
 ### Supply chain
 
@@ -296,9 +336,9 @@ CI uses the BellSoft **Liberica** JDK 25 for full arch coverage (incl. linux aar
 ## Notes
 
 - The macOS DMGs are signed and notarized (see
-  [macOS signing and notarization](#macos-signing-and-notarization)). The Windows MSI and the Linux
-  packages are not code-signed; every asset carries a
-  [build provenance attestation](#build-provenance-attestations).
+  [macOS signing and notarization](#macos-signing-and-notarization)), and the Linux downloads are
+  OpenPGP-signed ([Linux signing](#linux-signing)). The Windows MSI is not code-signed; every asset
+  carries a [build provenance attestation](#build-provenance-attestations).
 - A JavaFX bump no longer needs any test-harness work — the headless backend has shipped inside
   JavaFX itself since 26 (the old vendored Monocle rebuild is gone; see
   [dependencies.md](dependencies.md#the-headless-test-backend-no-vendored-dependency)). Do

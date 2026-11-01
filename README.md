@@ -104,9 +104,17 @@ or use the OS-detected button on the [home page](https://editora-project.dev/#do
 - **Any OS with a JDK 25** — a per-platform fat jar, run with `java -jar`.
 
 The native packages bundle their own Java runtime. The macOS DMGs are signed and notarized by Apple.
-The Windows and Linux installers are still **unsigned**, so Windows SmartScreen stops the first launch
-until you allow it; the Getting Started and Troubleshooting pages in the
-[user docs](https://editora-project.dev/docs/) walk through it.
+Every Linux download has an OpenPGP signature beside it (`<file>.asc`), by the key attached to the
+release as `editora-signing-key.asc`:
+
+```bash
+gpg --import editora-signing-key.asc
+gpg --verify Editora-0.26.1-linux-x64.deb.asc Editora-0.26.1-linux-x64.deb
+```
+
+The `.rpm` is signed inside too, for `rpm -K` and dnf. The Windows installer is still **unsigned**,
+so Windows SmartScreen stops the first launch until you allow it; the Getting Started and
+Troubleshooting pages in the [user docs](https://editora-project.dev/docs/) walk through it.
 
 Every release file has a signed build provenance attestation, so you can check that a download was built
 by this repository's release workflow from the tagged commit:
