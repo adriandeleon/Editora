@@ -1,0 +1,29 @@
+# This ConfigMap is used to ingest logs against new resources like
+# "k8s_container" and "k8s_node" when $LOGGING_STACKDRIVER_RESOURCE_TYPES is set
+# to "new".
+# When $LOGGING_STACKDRIVER_RESOURCE_TYPES is set to "old", the ConfigMap in
+# fluentd-gcp-configmap-old.yaml will be used for ingesting logs against old
+# resources like "gke_container" and "gce_instance".
+kind: ConfigMap
+apiVersion: v1
+data:
+  containers.input.conf: |-
+    # This configuration file for Fluentd is used
+    # to watch changes to Docker log files that live in the
+    # directory /var/lib/docker/containers/ and are symbolically
+    # linked to from the /var/log/containers directory using names that capture the
+    # pod name and container name. These logs are then submitted to
+    # Google Cloud Logging which assumes the installation of the cloud-logging plug-in.
+    <source>
+      @type tail
+    </source>
+  system.input.conf: |-
+    # Example:
+    # Dec 21 23:17:22 gke-foo-1-1-4b5cbd14-node-4eoj startupscript: Finished running startup script /var/run/google.startup.script
+    <source>
+    </source>
+metadata:
+  name: fluentd-gcp-config-v1.2.5
+  namespace: kube-system
+  labels:
+    addonmanager.kubernetes.io/mode: Reconcile

@@ -96,7 +96,7 @@ class ProjectMapStructureFxTest {
                         .filter(row -> type.equals(row.parent()))
                         .map(ProjectMapModel.Entry::name)
                         .toList();
-                assertEquals(List.of("add(int, int)", "reset()"), members);
+                assertEquals(List.of("count", "add(int, int)", "reset()"), members); // its field too (review 3, C6)
             });
         } finally {
             map.close();
@@ -232,7 +232,7 @@ class ProjectMapStructureFxTest {
             });
             waitFor(
                     () -> rowNames(cardStructures(map.view()).get(card))
-                            .equals(List.of("App", "add(int, int)", "reset()")),
+                            .equals(List.of("App", "count", "add(int, int)", "reset()")),
                     "the column lists the file's declarations, the lone class opened");
             ProjectMapCardStructure column =
                     FxTestSupport.callOnFx(() -> cardStructures(map.view()).get(card));
@@ -346,7 +346,7 @@ class ProjectMapStructureFxTest {
                     () -> FxTestSupport.call(map.view(), "refreshCards", new Class<?>[] {boolean.class}, false));
             waitFor(() -> rowNames(column).contains("clear()"), "a declaration added on disk shows up");
             FxTestSupport.runOnFx(() -> {
-                assertEquals(List.of("App", "add(int, int)", "clear()", "reset()"), rowNames(column));
+                assertEquals(List.of("App", "count", "add(int, int)", "clear()", "reset()"), rowNames(column));
                 ProjectMapStructure.Node selected = column.tree()
                         .getSelectionModel()
                         .getSelectedItem()
@@ -459,6 +459,9 @@ class ProjectMapStructureFxTest {
             waitFor(() -> type.equals(selected(map.surface())), "the second arrow goes into the structure");
             FxTestSupport.runOnFx(() -> {
                 key(map.surface(), KeyCode.RIGHT);
+                assertEquals(
+                        "count", entry(map.surface(), selected(map.surface())).name()); // the field (C6)
+                key(map.surface(), KeyCode.DOWN);
                 assertEquals(
                         "add(int, int)",
                         entry(map.surface(), selected(map.surface())).name());
