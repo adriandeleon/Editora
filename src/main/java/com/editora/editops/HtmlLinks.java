@@ -16,9 +16,10 @@ import org.jspecify.annotations.Nullable;
  * (HTML review B6, C8, D4, D5, C16). Go to Definition and Ctrl-click follow the one at the caret, the markup
  * check reports the local ones whose file is missing, and Related File offers a page's stylesheets and scripts.
  *
- * <p>The language server's own document links are preferred where a server runs (it knows the workspace folder
- * a root-relative {@code /css/site.css} starts from); this is what answers without one, and what both share for
- * the fragment: the server hands {@code about.html#team} back as {@code about.html%23team}.
+ * <p>This resolution comes first, server or not; the language server's document link is asked only when it names no
+ * file (the server knows the workspace folder a loose page's root-relative {@code /css/site.css} starts from, but
+ * ignores {@code <base>} and keeps the query in the file name). What both share is the fragment: the server hands
+ * {@code about.html#team} back as {@code about.html%23team}.
  */
 public final class HtmlLinks {
 
@@ -199,7 +200,7 @@ public final class HtmlLinks {
         if (scheme != null && (scheme.equals("http") || scheme.equals("https"))) {
             return new Target(Kind.WEB, null, "", uri);
         }
-        return fileUri(withoutFragment(uri), fragmentOf(uri));
+        return fileUri(withoutQuery(withoutFragment(uri)), fragmentOf(uri));
     }
 
     private static Target fileUri(String uri, String fragment) {
@@ -217,6 +218,17 @@ public final class HtmlLinks {
             hash = uri.toLowerCase(Locale.ROOT).lastIndexOf("%23");
         }
         return hash < 0 ? uri : uri.substring(0, hash);
+    }
+
+    /**
+     * {@code uri} (already without its fragment) without its query: the language server percent-encodes the
+     * {@code ?} of {@code site.css?v=3} into the file name, {@code site.css%3Fv=3} (HTML review 2, B103).
+     */
+    public static String withoutQuery(String uri) {
+        int q = uri.indexOf('?');
+        int encoded = uri.toLowerCase(Locale.ROOT).indexOf("%3f");
+        int cut = q < 0 ? encoded : encoded < 0 ? q : Math.min(q, encoded);
+        return cut < 0 ? uri : uri.substring(0, cut);
     }
 
     /** The fragment of a server URI ({@code #} or the encoded {@code %23}), decoded; empty when it has none. */

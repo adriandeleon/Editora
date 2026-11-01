@@ -132,6 +132,21 @@ class HtmlLinksTest {
                 HtmlLinks.Kind.WEB, HtmlLinks.fromUri("https://example.com/").kind());
     }
 
+    /** HTML review 2 B103: the server encodes a link's query into the file name; it is cut off, as a browser would. */
+    @Test
+    void theServersEncodedQueryIsCutOff() {
+        Path css = PAGE.getParent().resolve("css/site.css");
+        String uri = css.toUri() + "%3Fv=3";
+        assertEquals(css.toUri().toString(), HtmlLinks.withoutQuery(uri));
+        assertEquals(css.toUri().toString(), HtmlLinks.withoutQuery(css.toUri() + "%3fv=3"), "either case");
+        assertEquals("file:///a/b.html", HtmlLinks.withoutQuery("file:///a/b.html?x=1%3Fy"));
+        assertEquals("file:///a/b.html", HtmlLinks.withoutQuery("file:///a/b.html"));
+        HtmlLinks.Target t =
+                HtmlLinks.fromUri(PAGE.getParent().resolve("about.html").toUri() + "%3Fref=nav%23team");
+        assertEquals(PAGE.getParent().resolve("about.html"), t.file());
+        assertEquals("team", t.fragment());
+    }
+
     @Test
     void theAnchorIsTheElementWithThatIdOrAnAnchorsName() {
         String about = "<h1>About</h1>\n<h2 id=\"team\">Team</h2>\n<a name=\"old\"></a><p name=\"no\">";

@@ -1181,8 +1181,7 @@ final class LspCoordinator {
 
     /**
      * The Problems tool-window content (the {@code ToolWindow} itself stays in {@code MainController}), built
-     * on the window's first open. Diagnostics that arrived before then are in {@link #problems}; the build
-     * shows them.
+     * on the window's first open. Diagnostics that arrived before then are in {@link #problems}; the build shows them.
      */
     ProblemsPanel problemsPanel() {
         if (problemsPanel == null) {
@@ -2129,7 +2128,7 @@ final class LspCoordinator {
                 com.editora.lsp.XmlServerSettings.of(host.settings(), config == null ? null : config.getConfigDir()));
         XmlOutline.setLimit(host.settings().getXmlSymbolLimit()); // the outline without the server too (C9)
         xmlNotices.reset();
-        lspManager.setHtmlSettings(host.settings(), projectSettings().getHtml(), ops.lspProjectRoot()); // HTML's (B2)
+        html.applySettings(projectSettings().getHtml()); // the HTML servers' (B2), ignored project keys said (A107)
     }
 
     /** Hands Bash servers their settings: {@link #bashIdeConfig()} in the project, the user's elsewhere (A1). */
@@ -2467,8 +2466,7 @@ final class LspCoordinator {
      * the exclusive range end, so a 27-line file was asking for {@code Position(227, 0)}. jdtls tolerates it,
      * but every response path ends in {@code .exceptionally(t -> List.of())}, so a stricter server would fail
      * <em>silently and indistinguishably from "no results"</em>. Clamped, the end becomes exactly
-     * {@code Position(lineCount, 0)} — the document end, which is what a well-formed whole-file request
-     * looks like.
+     * {@code Position(lineCount, 0)} — the document end, which is what a well-formed whole-file request looks like.
      */
     static int[] paddedWindow(int[] visible, int pad, int lineCount) {
         int last = Math.max(0, lineCount - 1);
@@ -9680,6 +9678,7 @@ final class LspCoordinator {
      * (#677). FX thread; bursts coalesce (300 ms) into one notification per session.
      */
     void watchedFilesChanged(List<ProjectPanel.FsChange> changes) {
+        html.panelChanged(changes); // the pages' "File not found" marks, LSP on or off (HTML review 2, B106)
         if (!ops.lspFeatureEnabled() || changes == null || changes.isEmpty()) {
             return;
         }
@@ -9738,6 +9737,7 @@ final class LspCoordinator {
      * false errors under "Loaded and ready" (fourteenth check CJ8).
      */
     private void buildFilesChanged(List<LspManager.WatchedFile> changes) {
+        html.filesChanged(changes); // and the pages' "File not found" marks (B106)
         for (LspManager.WatchedFile c : changes) {
             Path name = c.file().getFileName();
             Path root = name != null && JAVA_BUILD_FILES.contains(name.toString())

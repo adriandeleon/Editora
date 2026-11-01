@@ -66,8 +66,9 @@ class LspServerSettingsTest {
         for (String section : List.of("css", "scss", "less")) {
             assertEquals(Map.of(), LspServerSettings.answer("css", section));
         }
-        for (String section : List.of("css", "javascript")) {
-            assertEquals(Map.of(), LspServerSettings.answer("html", section));
+        for (String section : List.of("css", "javascript")) { // VS Code's format defaults (HTML review 2 B105)
+            var embedded = (Map<String, Object>) LspServerSettings.answer("html", section);
+            assertTrue(embedded.get("format") instanceof Map, section);
         }
         var html = (Map<String, Object>) LspServerSettings.answer("html", "html");
         String unformatted = (String) ((Map<String, Object>) html.get("format")).get("contentUnformatted");
@@ -138,8 +139,10 @@ class LspServerSettingsTest {
     @Test
     void aSessionAnswersConfigurationForItsOwnServer() {
         List<Object> html = ask(session("html"), "css", "html", "javascript", "js/ts");
+        HtmlServerSettings d = HtmlServerSettings.defaults();
         assertEquals(
-                java.util.Arrays.asList(Map.of(), HtmlServerSettings.defaults().section(null), Map.of(), null), html);
+                java.util.Arrays.asList(d.answer("css", null), d.section(null), d.answer("javascript", null), null),
+                html);
         assertEquals(java.util.Arrays.asList((Object) null), ask(session("json"), "css"));
         assertTrue(ask(session("python"), "python").get(0) instanceof Map);
     }
@@ -165,7 +168,7 @@ class LspServerSettingsTest {
                 s.configuration(new ConfigurationParams(List.of(item))).join().get(0);
         var format = (Map<String, Object>) html.get("format");
         assertEquals(60, format.get("wrapLineLength"));
-        assertEquals(Boolean.TRUE, format.get("endWithNewline"));
+        assertEquals(Boolean.FALSE, format.get("endWithNewline"), "Editora keeps the final newline (B104)");
 
         int before = fake.configurations.size();
         s.setHtmlSettings(HtmlServerSettings.defaults());

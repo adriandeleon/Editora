@@ -47,6 +47,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (Hugo). On a PHP file's `<?php` line it comments the code after the opener, never the opener itself.
   - Spell check skips `{{ … }}`, `{% … %}` and `<% … %>` in `title`/`alt` values and text, and tag names mentioned in
     comments.
+- **HTML with the language server: links, Format Document and project settings.**
+  - Go to Definition on a link resolves it the way a browser does before asking the server, so `site.css?v=3`,
+    pages that use `<base href>` and file names with `%23` open their file instead of saying "File not found".
+  - A link to a folder that has no `index.html` says so instead of "File not found".
+  - "File not found" marks follow the disk: creating, deleting or renaming a linked file updates them without
+    editing the page.
+  - Format Document no longer adds a blank line before every `</style>`. The final newline is kept as the file
+    had it, or as EditorConfig's `insert_final_newline` says.
+  - Inline `<script>` code is formatted with VS Code's spacing: `function f() { return 1 }`.
+  - With LSP off, following a link no longer leaves "LSP support is disabled". Format Document in a template file
+    says there is no formatter.
+  - A project's `.editora/settings.json` takes VS Code's dotted keys (`"html.format.wrapAttributes"`). The keys
+    it ignores are named on the status bar. `html.autoClosingTags` there no longer overrides Editora's own
+    auto-close.
 
 ## [0.26.0] - 2026-10-29
 

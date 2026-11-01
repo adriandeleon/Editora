@@ -81,7 +81,7 @@ class LspHtmlSettingsFxTest {
         Map<String, Object> html = askHtml();
         assertEquals("pre,code,textarea", format(html).get("contentUnformatted"));
         assertEquals(72, format(html).get("wrapLineLength"), "the file's max_line_length");
-        assertEquals(Boolean.TRUE, format(html).get("endWithNewline"), "the text ends with a newline");
+        assertEquals(Boolean.FALSE, format(html).get("endWithNewline"), "B104: Editora keeps the final newline");
     }
 
     @SuppressWarnings("unchecked")
@@ -115,7 +115,39 @@ class LspHtmlSettingsFxTest {
         done.get(10, TimeUnit.SECONDS);
         var options = FakeLanguageServer.last(fake.formattings).getOptions();
         assertEquals(120, options.getNumber("wrapLineLength").intValue(), "no max_line_length: the setting");
-        assertEquals(Boolean.FALSE, options.getBoolean("endWithNewline"), "the text as it is now");
+        assertEquals(Boolean.FALSE, options.getBoolean("endWithNewline"), "never the server's (B104)");
         assertEquals(2, options.getTabSize());
+    }
+
+    private List<com.editora.text.LspTextEdit> format(FormattingIndent indent) throws Exception {
+        CompletableFuture<List<com.editora.text.LspTextEdit>> done = new CompletableFuture<>();
+        Platform.runLater(() -> manager.formatDocument(file, indent, done::complete));
+        return done.get(10, TimeUnit.SECONDS);
+    }
+
+    /**
+     * HTML review 2 B104: the server answers without a final newline (it is told {@code endWithNewline: false}, which
+     * kept a blank line from appearing before every {@code </style>}); the edits Editora applies keep the one the
+     * file had, or take off one EditorConfig says it must not have. Another server's edits are left alone.
+     */
+    @Test
+    void theFinalNewlineIsKeptByEditoraNotTheServer() throws Exception {
+        FakeLanguageServer fake = fakes.get(0);
+        fake.formattingResponse = List.of(new org.eclipse.lsp4j.TextEdit(
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(0, 0), new org.eclipse.lsp4j.Position(1, 0)),
+                "<pre>  a  </pre>"));
+        var indent = new FormattingIndent(2, true).withDocument(null, true);
+        assertEquals("<pre>  a  </pre>\n", format(indent).get(0).newText(), "the file ends with a newline: kept");
+        assertEquals(
+                "<pre>  a  </pre>",
+                format(indent.withSaveRules(null, false)).get(0).newText(),
+                "insert_final_newline = false: none");
+        fake.formattingResponse = List.of(new org.eclipse.lsp4j.TextEdit(
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(0, 0), new org.eclipse.lsp4j.Position(1, 0)),
+                "<pre>  a  </pre>\n\n"));
+        assertEquals(
+                "<pre>  a  </pre>\n\n",
+                format(new FormattingIndent(2, true)).get(0).newText(),
+                "nothing known of the text: as the server made it");
     }
 }

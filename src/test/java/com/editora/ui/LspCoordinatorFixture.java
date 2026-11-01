@@ -274,6 +274,9 @@ final class LspCoordinatorFixture implements AutoCloseable {
     final Host host = new Host();
     final Ops ops = new Ops();
     final ServerCapabilities capabilities;
+    /** The diagnostics the manager published last for each file, as the window would show them. */
+    final Map<Path, List<com.editora.text.LspDiagnostic>> published = new java.util.concurrent.ConcurrentHashMap<>();
+
     LspCoordinator coordinator;
     private Stage stage;
     private StackPane sceneRoot;
@@ -286,7 +289,7 @@ final class LspCoordinatorFixture implements AutoCloseable {
         FxTestSupport.bootToolkit();
         this.root = root;
         this.capabilities = capabilities;
-        manager = new LspManager((f, d) -> {}, (t, m) -> {});
+        manager = new LspManager((f, d) -> published.put(f, List.copyOf(d)), (t, m) -> {});
         fakes = LspTestHooks.useFakeSessionsWithRawRequests(manager, capabilities);
         manager.configure(true, Map.of("java", "jdtls"));
         FxTestSupport.runOnFx(() -> {
