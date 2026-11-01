@@ -1722,10 +1722,14 @@
 .project-map-preview-readonly {
     -fx-background-color: -color-neutral-muted;
     -fx-background-radius: 4;
-    -fx-padding: 1 5 1 5;
+    -fx-padding: 1 4 1 4;
     -fx-font-size: 10px; /* the status line's size: 8 px was barely legible */
     -fx-font-weight: bold;
     -fx-text-fill: -color-fg-muted;
+}
+/* Read-only is a muted lock (review 3, C11): not the accent lock of an encrypted file. */
+.project-map-preview-readonly .toolbar-icon {
+    -fx-fill: -color-fg-muted;
 }
 .project-map-preview-button {
     -fx-background-color: transparent;

@@ -26,6 +26,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -216,6 +217,37 @@ class ProjectMapCardsReview3FxTest {
                     .orElseThrow()
                     .fire();
             assertTrue(card.structureShown(), "and puts it back");
+        });
+    }
+
+    // --- B18 / C11 ---------------------------------------------------------------------------------------
+
+    @Test
+    void aCodeCardOpensPastItsLicenceHeaderAndItsTitleOutlastsTheStatus() throws Exception {
+        root = Files.createDirectories(temp.resolve("project")).toRealPath();
+        Path file = Files.writeString(root.resolve("ReconcilerControllerManager.java"), source());
+        map = openMap();
+        ProjectMapPreview card = openFileCard(file);
+        int opening = lineOf(source(), "package demo;");
+        await("the card opens on the package line", () -> firstVisible(card) == opening);
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(opening, card.editor().getCurrentParagraph(), "the caret starts there too");
+            javafx.scene.control.Label status = FxTestSupport.field(card, "status");
+            status.setText("Preview truncated · Colours for the first 3048 lines · Unsaved changes in the editor");
+            card.resize(ProjectMapPreview.MIN_WIDTH, card.getHeight());
+            card.applyCss();
+            card.layout();
+            javafx.scene.layout.HBox bar = FxTestSupport.field(card, "titleBar");
+            bar.layout();
+            javafx.scene.control.Label title = FxTestSupport.field(card, "title");
+            javafx.scene.text.Text name = new javafx.scene.text.Text("ReconcilerControllerManager.java");
+            name.setFont(title.getFont());
+            double wanted = Math.min(name.getLayoutBounds().getWidth(), ProjectMapPreview.MIN_WIDTH * 0.5);
+            assertTrue(title.getWidth() >= wanted - 1, "the file's name keeps its room: " + title.getWidth());
+            assertTrue(status.getWidth() < title.getWidth(), "the status gives way first");
+            assertNotNull(status.getTooltip(), "and is read in full from its tooltip");
+            javafx.scene.control.Button open = FxTestSupport.field(card, "open");
+            assertEquals(open.prefWidth(-1), open.getWidth(), 0.5, "Open is never cut to O…");
         });
     }
 

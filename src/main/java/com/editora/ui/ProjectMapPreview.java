@@ -397,14 +397,22 @@ final class ProjectMapPreview extends StackPane {
         setVisible(false);
 
         title.getStyleClass().add("project-map-preview-title");
-        title.setMinWidth(0);
+        title.setMinWidth(0); // see titleMinWidth: the name keeps its room, the status gives way first
         title.setTextOverrun(OverrunStyle.ELLIPSIS);
         status.getStyleClass().add("project-map-preview-status");
         status.setMinWidth(0);
         status.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(status, Priority.ALWAYS);
-        readOnly.setText(tr("project.map.preview.readOnly"));
+        // The status gives way first: cut short, it is read in full from its tooltip (review 3, C11).
+        Tooltip statusTip = new Tooltip();
+        statusTip.textProperty().bind(status.textProperty());
+        status.textProperty().addListener((obs, old, now) -> status.setTooltip(now.isEmpty() ? null : statusTip));
+        // Read-only is a lock, not a word that took the file's name's room.
+        readOnly.setGraphic(Icons.lock());
+        readOnly.setTooltip(new Tooltip(tr("project.map.preview.readOnly")));
+        readOnly.setAccessibleText(tr("project.map.preview.readOnly"));
         readOnly.getStyleClass().add("project-map-preview-readonly");
+        readOnly.setMinWidth(Region.USE_PREF_SIZE);
 
         for (Button button : java.util.List.of(zoomOut, zoomIn)) {
             button.getStyleClass().add("project-map-preview-button");
@@ -468,6 +476,9 @@ final class ProjectMapPreview extends StackPane {
             onNotesToggled.accept(notesOn);
         });
         close.getStyleClass().add("project-map-preview-button");
+        for (javafx.scene.control.Control button : java.util.List.of(zoomOut, zoomIn, structure, notes, open, close)) {
+            button.setMinWidth(Region.USE_PREF_SIZE); // "Open" stays "Open", never "O…"
+        }
         close.setTooltip(new Tooltip(tr("project.map.preview.close")));
         close.setAccessibleText(tr("project.map.preview.close"));
         close.setOnAction(event -> onClose.run());
@@ -484,6 +495,7 @@ final class ProjectMapPreview extends StackPane {
         editor.setParagraphGraphicFactory(LineNumberFactory.get(editor));
         editor.setAccessibleHelp(tr("project.map.preview.accessibleHelp"));
         installEditorContextMenu();
+        // Sized in the pass that lays its lines out: scrolled here, the card opens where it was asked to.
         frame.getStyleClass().add("project-map-preview-frame");
         frame.setTop(titleBar);
         imageView.setPreserveRatio(true);
@@ -516,7 +528,10 @@ final class ProjectMapPreview extends StackPane {
                 onActivate.run();
             }
         });
-        addEventFilter(ScrollEvent.SCROLL, event -> onTouch.run());
+        addEventFilter(ScrollEvent.SCROLL, event -> {
+            openingPending = -1; // the user's own scroll is not undone by the opening line
+            onTouch.run();
+        });
         addEventFilter(KeyEvent.KEY_PRESSED, this::keyPressed);
         setContentZoom(1.0);
     }
@@ -536,6 +551,7 @@ final class ProjectMapPreview extends StackPane {
      * area has no use for a tab character, and swallowing the key trapped keyboard focus in the card.
      */
     private void keyPressed(KeyEvent event) {
+        openingPending = -1;
         double[] step = geometryStep(event);
         if (step != null) {
             moveOrResizeBy(step);
@@ -1006,6 +1022,7 @@ final class ProjectMapPreview extends StackPane {
         int start = editor.getAbsolutePosition(first, 0);
         int end = editor.getAbsolutePosition(last, editor.getParagraph(last).length());
         editor.selectRange(end, start); // the caret at the top: keyboard reading carries on from there
+        openingPending = -1;
         editor.showParagraphAtTop(first);
         return true;
     }
@@ -1644,9 +1661,50 @@ final class ProjectMapPreview extends StackPane {
             node.setVisible(!compact);
             node.setManaged(!compact);
         }
+        double titleMin = titleMinWidth(title.getText(), range != null, getWidth());
+        if (title.getMinWidth() != titleMin) {
+            title.setMinWidth(titleMin);
+        }
         frame.resizeRelocate(0, 0, getWidth(), getHeight());
         double grip = 18;
         resizeGrip.resizeRelocate(Math.max(0, getWidth() - grip), Math.max(0, getHeight() - grip), grip, grip);
+    }
+
+    /** What {@link #titleMinWidth} last measured: the title's text and the width of its name in it. */
+    private String measuredTitle = "";
+
+    private double measuredTitleWidth;
+
+    /**
+     * The title's minimum width: room for the file's name, or a declaration card's file and declaration name up to its
+     * parameters ({@code kubelet.go › Run}), with its icon — at most half the card. The status line and the buttons
+     * give way before it does, so several cards can be told apart (review 3, C11).
+     */
+    private double titleMinWidth(String text, boolean declaration, double cardWidth) {
+        if (text == null || text.isEmpty() || cardWidth <= 0) {
+            return 0;
+        }
+        if (!text.equals(measuredTitle)) {
+            measuredTitle = text;
+            Text measure = new Text(titleKey(text, declaration));
+            measure.setFont(title.getFont());
+            javafx.scene.Node icon = title.getGraphic();
+            double iconWidth = icon == null ? 0 : icon.prefWidth(-1) + title.getGraphicTextGap();
+            measuredTitleWidth = Math.ceil(measure.getLayoutBounds().getWidth() + iconWidth + 4);
+        }
+        return Math.min(measuredTitleWidth, cardWidth * 0.5);
+    }
+
+    /**
+     * The part of a card's title that must stay readable: a declaration card's title up to its parameter list, a file
+     * card's whole name. Pure.
+     */
+    static String titleKey(String title, boolean declaration) {
+        if (!declaration) {
+            return title;
+        }
+        int parameters = title.indexOf('(', Math.max(0, title.indexOf('›')));
+        return parameters > 0 ? title.substring(0, parameters) : title;
     }
 
     /** Retries {@link #ensurePlaced} once the card has a parent with a size; null while not waiting. */
@@ -1934,6 +1992,7 @@ final class ProjectMapPreview extends StackPane {
             source = cut > 0 ? text.substring(0, cut) : "";
         }
         if (source.isEmpty() || source.length() > MAX_HIGHLIGHT_CHARS) {
+            Platform.runLater(this::applyOpening); // nothing to colour: the opening scroll waits for no styles
             return;
         }
         submitLatest(() -> {
@@ -2044,11 +2103,86 @@ final class ProjectMapPreview extends StackPane {
             return false; // held until the outline says where the declaration went
         }
         if (first) {
-            editor.moveTo(0);
-            editor.scrollToPixel(0, 0);
+            // A whole-file card opens past a leading licence header, on the package or first declaration line;
+            // the numbers stay the file's (review 3, B18).
+            int opening = range == null ? openingLine(shownText) : 0;
+            editor.moveTo(opening, 0);
+            if (opening == 0) {
+                editor.scrollToPixel(0, 0);
+            } else {
+                editor.showParagraphAtTop(opening);
+                openingPending = opening;
+            }
             fitTextWidth(shownText);
         }
         return true;
+    }
+
+    /** The line a new card is to open on, until its text is coloured (see {@link #applyOpening}); -1 when none. */
+    private int openingPending = -1;
+
+    /** How far {@link #openingLine} looks for the end of a leading comment. */
+    private static final int OPENING_SCAN_LINES = 200;
+
+    /**
+     * The 0-based line a whole-file card opens on: the first non-blank line after a leading licence header — a
+     * comment block of at least three lines (after an optional {@code #!} or {@code <?xml} line) that names a
+     * copyright or licence — else 0. Block comments ({@code /* … *}{@code /}, {@code <!-- … -->}) and runs of
+     * {@code //}, {@code #}, {@code --} or {@code ;} lines count. Pure.
+     */
+    static int openingLine(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        String[] lines = text.split("\n", OPENING_SCAN_LINES + 1);
+        int count = Math.min(lines.length, OPENING_SCAN_LINES);
+        int at = 0;
+        if (at < count && (lines[at].startsWith("#!") || lines[at].startsWith("<?xml"))) {
+            at++;
+        }
+        while (at < count && lines[at].isBlank()) {
+            at++;
+        }
+        if (at >= count) {
+            return 0;
+        }
+        int start = at;
+        String head = lines[at].strip();
+        int end = -1;
+        if (head.startsWith("/*") || head.startsWith("<!--")) {
+            String close = head.startsWith("/*") ? "*/" : "-->";
+            for (int i = at; i < count; i++) {
+                String line = i == at ? lines[i].strip().substring(2) : lines[i];
+                if (line.contains(close)) {
+                    end = i;
+                    break;
+                }
+            }
+        } else {
+            String prefix = java.util.stream.Stream.of("//", "#", "--", ";")
+                    .filter(head::startsWith)
+                    .findFirst()
+                    .orElse(null);
+            if (prefix != null) {
+                end = at;
+                while (end + 1 < count && lines[end + 1].strip().startsWith(prefix)) {
+                    end++;
+                }
+            }
+        }
+        if (end < 0 || end - start < 2) {
+            return 0; // not a comment, an unclosed one, or a line or two that is worth reading
+        }
+        String block = String.join("\n", java.util.Arrays.asList(lines).subList(start, end + 1))
+                .toLowerCase(java.util.Locale.ROOT);
+        if (!block.contains("copyright") && !block.contains("licen") && !block.contains("spdx")) {
+            return 0; // a file's own doc comment is its opening, not boilerplate
+        }
+        int next = end + 1;
+        while (next < count && lines[next].isBlank()) {
+            next++;
+        }
+        return next < lines.length && next < count ? next : 0;
     }
 
     /**
@@ -2312,7 +2446,11 @@ final class ProjectMapPreview extends StackPane {
             boolean prefix,
             boolean truncated,
             @Nullable StyleSpans<Collection<String>> spans) {
-        if (disposed || requested != generation.get() || !requestedPath.equals(path) || spans == null) {
+        if (disposed || requested != generation.get() || !requestedPath.equals(path)) {
+            return;
+        }
+        if (spans == null) {
+            applyOpening();
             return;
         }
         if (!fullText.equals(text) || editor.getLength() != shownText.length()) {
@@ -2339,7 +2477,20 @@ final class ProjectMapPreview extends StackPane {
             editor.setStyleSpans(0, spans.subView(sliceOffset, end));
         }
         status.setText(idleStatus(truncated));
+        applyOpening();
         onStylesShown.run();
+    }
+
+    /**
+     * Scrolls a new card to its opening line once its text is coloured (or known not to be): the text area forgets a
+     * scroll asked for before its new lines were first laid out and styled. Nothing once the user scrolled or typed.
+     */
+    private void applyOpening() {
+        int line = openingPending;
+        openingPending = -1;
+        if (line > 0 && !disposed && line < editor.getParagraphs().size()) {
+            editor.showParagraphAtTop(line);
+        }
     }
 
     private static boolean looksBinary(byte[] bytes) {
