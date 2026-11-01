@@ -73,7 +73,7 @@
         <spotless.version>3.10.4</spotless.version>
         <palantir.version>2.102.0</palantir.version>
         <!-- 0.8.15 adds Java 27 class-file instrumentation (experimental upstream support). -->
-        <jacoco.version>0.8.15</jacoco.version>
+        <jacoco.version>0.8.16</jacoco.version>
         <!-- Null checking (docs/conventions.md, "Null annotations"): NullAway, an Error Prone plugin, checks every
              @NullMarked package of the main compile and fails the build on a null it cannot prove safe. JSpecify
              supplies the annotations. Error Prone reaches into javac, hence .mvn/jvm.config. -->
