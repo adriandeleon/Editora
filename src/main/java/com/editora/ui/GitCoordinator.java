@@ -1900,6 +1900,9 @@ final class GitCoordinator {
             return;
         }
         host.setStatus(summary);
+        if (!host.window().isShowing()) {
+            return; // git finished after its window closed: a dialog now would be an orphan nobody can see to close
+        }
         // A sign-in failure gets its next step appended: git's own line ("terminal prompts disabled") has none.
         String body = detail == null || detail.isBlank() ? summary : GitAuthFailure.withGuidance(detail.strip());
         Alert alert = new Alert(Alert.AlertType.ERROR);
