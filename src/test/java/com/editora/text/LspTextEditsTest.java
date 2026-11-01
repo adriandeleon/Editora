@@ -80,4 +80,46 @@ class LspTextEditsTest {
         List<LspTextEdit> outside = List.of(new LspTextEdit(9, 0, 9, 1, "y"));
         assertEquals(outside, LspTextEdits.withFinalNewline("x", outside, true, true));
     }
+
+    /**
+     * HTML review 3 A205: under {@code insert_final_newline = true} the HTML server answered an already formatted page
+     * with its text less the final line break, then that line break inserted — no change together.
+     */
+    @Test
+    void editsThatChangeNothingTogetherChangeNothing() {
+        String page = "<div>\n    <p>ec on</p>\n</div>\n";
+        List<LspTextEdit> answer = List.of(
+                new LspTextEdit(0, 0, 3, 0, "<div>\n    <p>ec on</p>\n</div>"), new LspTextEdit(3, 0, 3, 0, "\n"));
+        assertTrue(LspTextEdits.changesNothing(page, answer));
+        assertTrue(LspTextEdits.changesNothing(page, List.of(answer.get(1), answer.get(0))), "in either order");
+        assertFalse(LspTextEdits.changesNothing(page, List.of(answer.get(0))), "the line break taken off is a change");
+        assertFalse(LspTextEdits.changesNothing(
+                page,
+                List.of(
+                        new LspTextEdit(0, 0, 3, 0, "<div>\n  <p>ec on</p>\n</div>"),
+                        new LspTextEdit(3, 0, 3, 0, "\n"))));
+        // what the edits leave counts, wherever each one is
+        assertTrue(LspTextEdits.changesNothing(
+                "ab",
+                List.of(
+                        new LspTextEdit(0, 0, 0, 2, ""),
+                        new LspTextEdit(0, 0, 0, 0, "a"),
+                        new LspTextEdit(0, 2, 0, 2, "b"))));
+        assertFalse(LspTextEdits.changesNothing(
+                "ab",
+                List.of(
+                        new LspTextEdit(0, 0, 0, 2, ""),
+                        new LspTextEdit(0, 2, 0, 2, "a"),
+                        new LspTextEdit(0, 0, 0, 0, "b"))));
+        assertFalse(
+                LspTextEdits.changesNothing(
+                        "abc",
+                        List.of(
+                                new LspTextEdit(0, 0, 0, 2, "ab"),
+                                new LspTextEdit(0, 1, 0, 3, "bc"),
+                                new LspTextEdit(0, 0, 0, 0, "x"))),
+                "overlapping edits are not judged a no-op");
+        assertTrue(LspTextEdits.changesNothing(
+                "a\r\nb", List.of(new LspTextEdit(0, 0, 0, 1, ""), new LspTextEdit(0, 0, 0, 0, "a"))));
+    }
 }
