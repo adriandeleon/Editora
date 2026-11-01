@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -157,6 +158,8 @@ final class MapCards {
     private final Map<ProjectMapPreview, ProjectMapStickyNotes> stickyNotes = new java.util.IdentityHashMap<>();
     /** The Structure columns stuck on file cards (their Structure button). */
     final Map<ProjectMapPreview, ProjectMapCardStructure> cardStructures = new java.util.IdentityHashMap<>();
+    /** The Overview card, when open (review 3 B4): not counted against the limit and never evicted. */
+    private @Nullable ProjectMapOverviewCard overviewCard;
     /** When each open card was last used (pressed, focused, scrolled or opened); the oldest is evicted. */
     private final Map<Region, Long> cardTouches = new java.util.IdentityHashMap<>();
 
@@ -239,11 +242,76 @@ final class MapCards {
         return notePreviews.get(path);
     }
 
+    /**
+     * Opens the Overview card of the project at {@code root} with {@code facts}, or fills the open one again and
+     * brings it up (review 3 B4). {@code reveal} is what a press on one of its folders or files does, {@code open} its
+     * README's Open button.
+     */
+    ProjectMapOverviewCard openOverviewCard(
+            Path root, ProjectMapOverview.Facts facts, Consumer<Path> reveal, Consumer<Path> open) {
+        ProjectMapOverviewCard card = overviewCard;
+        if (card != null) {
+            card.show(root, facts);
+            touchCard(card, true);
+            return card;
+        }
+        card = new ProjectMapOverviewCard();
+        ProjectMapOverviewCard created = card;
+        created.setOnClose(this::closeOverviewCard);
+        created.setOnActivate(() -> touchCard(created, true));
+        created.setOnEscape(() -> {
+            closeOverviewCard();
+            host.focusMap();
+        });
+        created.setOnReveal(reveal);
+        created.setOnOpen(open);
+        created.setMapScale(host.zoom());
+        installPreviewListeners(created);
+        overviewCard = created;
+        cardTouches.put(created, ++cardTouchSequence);
+        canvasHost.getChildren().add(created);
+        created.show(root, facts);
+        created.place(previewPlacement(
+                created,
+                root,
+                ProjectMapOverviewCard.DEFAULT_WIDTH,
+                ProjectMapOverviewCard.DEFAULT_HEIGHT,
+                ProjectMapOverviewCard.MIN_WIDTH,
+                ProjectMapOverviewCard.MIN_HEIGHT,
+                canvasHost.getWidth(),
+                canvasHost.getHeight()));
+        return created;
+    }
+
+    /** The open Overview card, or null. */
+    @Nullable
+    ProjectMapOverviewCard overviewCard() {
+        return overviewCard;
+    }
+
+    private void closeOverviewCard() {
+        ProjectMapOverviewCard card = overviewCard;
+        if (card == null) {
+            return;
+        }
+        boolean focused = focusReturnsFrom(card);
+        overviewCard = null;
+        cardTouches.remove(card);
+        canvasHost.getChildren().remove(card);
+        repaintPreviewConnectors();
+        focusReturnToMap(focused);
+    }
+
     /** Every open card, the most recently used first. */
     List<OpenCard> openCards() {
         List<OpenCard> open = new ArrayList<>();
         previews.forEach((key, card) -> open.add(new OpenCard(key, card, card.title(), false)));
         notePreviews.forEach((key, card) -> open.add(new OpenCard(key, card, card.title(), true)));
+        ProjectMapOverviewCard overview = overviewCard;
+        Path root = host.root();
+        if (overview != null && root != null) {
+            open.add(new OpenCard(root, overview, overview.title(), false));
+        }
         open.sort(java.util.Comparator.comparingLong((OpenCard card) -> cardTouches.getOrDefault(card.node(), 0L))
                 .reversed());
         return open;
@@ -283,12 +351,14 @@ final class MapCards {
             code.focusContent();
         } else if (card instanceof ProjectMapNotePreview note) {
             note.focusContent();
+        } else if (card instanceof ProjectMapOverviewCard overview) {
+            overview.focusContent();
         }
     }
 
     /** Whether any card is open. */
     boolean isEmpty() {
-        return previews.isEmpty() && notePreviews.isEmpty();
+        return previews.isEmpty() && notePreviews.isEmpty() && overviewCard == null;
     }
 
     /** Closes one code or note card, with what is stuck on it. */
@@ -297,6 +367,8 @@ final class MapCards {
             closePreview(code);
         } else if (card instanceof ProjectMapNotePreview note) {
             closeNotePreview(note);
+        } else if (card == overviewCard) {
+            closeOverviewCard();
         }
     }
 
@@ -322,7 +394,11 @@ final class MapCards {
                 .toList();
         cards.forEach(this::closePreview);
         notes.forEach(this::closeNotePreview);
-        return !cards.isEmpty() || !notes.isEmpty();
+        boolean overview = overviewCard != null && overviewCard.isVisible();
+        if (overview) {
+            closeOverviewCard();
+        }
+        return !cards.isEmpty() || !notes.isEmpty() || overview;
     }
 
     /** The files whose outline the cards need: declaration cards' files and those with a Structure column out. */
@@ -402,6 +478,11 @@ final class MapCards {
         double ratio = zoom / fromZoom;
         List<Region> cards = new ArrayList<>(previews.values());
         cards.addAll(notePreviews.values());
+        ProjectMapOverviewCard overview = overviewCard;
+        if (overview != null) {
+            cards.add(overview);
+            overview.setMapScale(zoom);
+        }
         for (Region card : cards) {
             card.relocate(x + (card.getLayoutX() - fromX) * ratio, y + (card.getLayoutY() - fromY) * ratio);
         }
@@ -959,6 +1040,9 @@ final class MapCards {
         obstacles.addAll(host.chrome());
         List<Region> others = new ArrayList<>(previews.values());
         others.addAll(notePreviews.values());
+        if (overviewCard != null) {
+            others.add(overviewCard);
+        }
         for (Region other : others) {
             if (other != card && other.isVisible() && other.getWidth() > 0) {
                 double scale = cardScale(other);
@@ -1140,7 +1224,7 @@ final class MapCards {
      */
     private void makeRoomForCard(@Nullable ProjectMapPreview keep) {
         while (previews.size() + notePreviews.size() >= MAX_OPEN_PREVIEWS) {
-            Region oldest = oldestCard(card -> card != keep);
+            Region oldest = oldestCard(card -> card != keep && card != overviewCard);
             if (oldest instanceof ProjectMapPreview code && cardStructures.containsKey(code)) {
                 Set<ProjectMapPreview> members = cardGroupMembers(code);
                 Region member = oldestCard(members::contains);
@@ -1242,6 +1326,7 @@ final class MapCards {
         for (Node current = node; current != null; current = current.getParent()) {
             if (current instanceof ProjectMapPreview
                     || current instanceof ProjectMapNotePreview
+                    || current instanceof ProjectMapOverviewCard
                     || current.getStyleClass().contains("project-map-sticky-note")
                     || current.getStyleClass().contains("project-map-card-structure")) {
                 return true;
@@ -1322,6 +1407,7 @@ final class MapCards {
             }
             preview.dispose();
         }
+        closeOverviewCard();
         List<ProjectMapNotePreview> openNotes = List.copyOf(notePreviews.values());
         notePreviews.clear();
         for (ProjectMapNotePreview preview : openNotes) {
@@ -1494,6 +1580,9 @@ final class MapCards {
     private void constrainPreviews(double width, double height) {
         previews.values().forEach(preview -> preview.constrainTo(width, height));
         notePreviews.values().forEach(preview -> preview.constrainTo(width, height));
+        if (overviewCard != null) {
+            overviewCard.constrainTo(width, height);
+        }
     }
 
     /**
@@ -1574,6 +1663,9 @@ final class MapCards {
         obstacles.addAll(chrome); // the zoom bar and the overview: never covered when anything else will do
         List<Region> cards = new ArrayList<>(previews.values());
         cards.addAll(notePreviews.values());
+        if (overviewCard != null) {
+            cards.add(overviewCard);
+        }
         for (CardAttachment stuck : allAttachments()) {
             double[] drawn = stuck.card() == preview ? null : stuck.bounds(); // its own move with it
             if (drawn != null) { // what is stuck on a card weighs as a card does
@@ -1800,6 +1892,9 @@ final class MapCards {
     private static double cardScale(Region card) {
         if (card instanceof ProjectMapPreview code) {
             return code.mapScale();
+        }
+        if (card instanceof ProjectMapOverviewCard overview) {
+            return overview.mapScale();
         }
         return card instanceof ProjectMapNotePreview note ? note.mapScale() : 1;
     }

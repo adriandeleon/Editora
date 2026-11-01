@@ -1813,6 +1813,48 @@
 .project-map-note-preview-empty {
     -fx-text-fill: -color-fg-muted;
 }
+/* The Project Map's Overview card (review 3 B4): a code card's frame, with headed sections of short text and links. */
+.project-map-overview-scroll,
+.project-map-overview-scroll > .viewport,
+.project-map-overview-sections {
+    -fx-background-color: -color-bg-default;
+}
+.project-map-overview-card .label {
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-overview-card .label.project-map-overview-heading {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 4 0 0 0;
+}
+.project-map-overview-card .label.project-map-overview-hint,
+.project-map-overview-card .label.project-map-overview-muted,
+.project-map-overview-card .label.project-map-overview-footer {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-overview-card .label.project-map-overview-readme {
+    -fx-padding: 0 0 0 8;
+    -fx-border-color: transparent transparent transparent -color-border-default;
+    -fx-border-width: 0 0 0 2;
+}
+.project-map-overview-link,
+.project-map-overview-open {
+    -fx-padding: 1 5 1 5;
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-accent-fg;
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+.project-map-overview-link:hover,
+.project-map-overview-open:hover,
+.project-map-overview-link:focused,
+.project-map-overview-open:focused {
+    -fx-background-color: -color-accent-subtle;
+}
 /* A code card's Notes button, lit while its notes are stuck on it. */
 .project-map-preview-notes:selected {
     -fx-background-color: -color-warning-muted;
