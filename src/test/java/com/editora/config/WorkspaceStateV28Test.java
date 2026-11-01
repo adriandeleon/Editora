@@ -37,7 +37,7 @@ class WorkspaceStateV28Test {
         assertTrue(state.isProjectMapFollowActiveFile());
         assertEquals(WorkspaceState.PROJECT_VIEW_MAP, state.getProjectViewMode());
         assertEquals(List.of("kept"), state.getDebugWatches());
-        assertEquals(28, state.getSchemaVersion());
+        assertEquals(WorkspaceState.SCHEMA_VERSION, state.getSchemaVersion());
     }
 
     @Test

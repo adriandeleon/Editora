@@ -1871,7 +1871,80 @@ final class ProjectMapPreview extends StackPane {
         MenuItem freeSpace = new MenuItem(tr("project.map.preview.moveToFreeSpace"));
         freeSpace.setOnAction(ignored -> onMoveToFreeSpace.run());
         items.add(freeSpace);
+        java.util.List<MenuItem> views = viewsMenu.get();
+        if (!views.isEmpty()) {
+            items.add(new SeparatorMenuItem());
+            items.addAll(views);
+        }
         editorContextMenu.getItems().setAll(items);
+    }
+
+    // --- views: trails (Map explore, views group) -------------------------------------------------------------
+
+    /** What the owner adds at the end of the card menu (Add this card as a stop), built as the menu opens. */
+    private java.util.function.Supplier<java.util.List<MenuItem>> viewsMenu = java.util.List::of;
+    /** Lines a trail stop asked for before the text was laid out: {@code {first, last}}, 0-based file lines. */
+    private int @Nullable [] viewsRevealPending;
+
+    void setViewsMenu(java.util.function.@Nullable Supplier<java.util.List<MenuItem>> items) {
+        viewsMenu = items == null ? java.util.List::of : items;
+    }
+
+    /**
+     * Views (trails): scrolls a whole-file card to the 0-based file lines {@code first..last} and marks them, now if
+     * its text is laid out, else once it is (after the opening line a new card scrolls to). A declaration card
+     * shows its own lines and is left as it is.
+     */
+    void viewsRevealLines(int first, int last) {
+        if (disposed || range != null) {
+            return;
+        }
+        viewsRevealPending = null;
+        Range shown = new Range("", first, first, Math.max(first, last));
+        if (openingPending >= 0 || !revealRange(shown)) {
+            viewsRevealPending = new int[] {first, Math.max(first, last)};
+        }
+    }
+
+    private void viewsApplyPendingReveal() {
+        int[] lines = viewsRevealPending;
+        viewsRevealPending = null;
+        if (lines != null && !disposed) {
+            revealRange(new Range("", lines[0], lines[0], lines[1]));
+        }
+    }
+
+    /**
+     * Views (trails): the 1-based file lines a stop made of this card covers, {@code {first, last}}: a declaration
+     * card's lines (known before its text arrives); else the selected lines, or the lines in sight. Null while a
+     * whole-file card shows no text.
+     */
+    int @Nullable [] viewsStopLines() {
+        if (range != null) {
+            return disposed ? null : new int[] {range.startLine() + 1, range.endLine() + 1};
+        }
+        if (disposed || frame.getCenter() != textPane || editor.getLength() == 0) {
+            return null;
+        }
+        int first;
+        int last;
+        if (editor.getSelection().getLength() > 0) {
+            first = editor.offsetToPosition(
+                            editor.getSelection().getStart(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                    .getMajor();
+            last = editor.offsetToPosition(
+                            editor.getSelection().getEnd(), org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                    .getMajor();
+        } else {
+            try {
+                first = editor.firstVisibleParToAllParIndex();
+                last = editor.lastVisibleParToAllParIndex();
+            } catch (RuntimeException notLaidOut) {
+                first = editor.getCurrentParagraph();
+                last = first;
+            }
+        }
+        return new int[] {first + 1, Math.max(first, last) + 1};
     }
 
     /** Called when the card's text has been coloured: what borrows its colours takes them again. */
@@ -3406,6 +3479,7 @@ final class ProjectMapPreview extends StackPane {
         if (line > 0 && !disposed && line < editor.getParagraphs().size()) {
             editor.showParagraphAtTop(line);
         }
+        viewsApplyPendingReveal(); // a trail stop's lines, once the text can be scrolled
     }
 
     private static boolean looksBinary(byte[] bytes) {

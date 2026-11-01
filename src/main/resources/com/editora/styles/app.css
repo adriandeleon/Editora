@@ -6184,3 +6184,55 @@
 .encryption-banner .hyperlink {
     -fx-text-fill: -state-red;
 }
+
+/* Map explore, views: a trail's bar over the map, a stop's note sheet (the accent family, so it never reads as one
+   of the user's Personal Notes) and the trail editor card. */
+.project-map-trail-bar {
+    -fx-background-color: -color-bg-overlay;
+    -fx-background-radius: 6;
+    -fx-border-color: -color-accent-muted;
+    -fx-border-radius: 6;
+    -fx-border-width: 1;
+    -fx-padding: 2 4 2 4;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.28), 10, 0.1, 0, 3);
+}
+.project-map-trail-bar-button {
+    -fx-padding: 1 6 1 6;
+}
+.project-map-trail-bar-position {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-trail-bar-title {
+    -fx-font-weight: bold;
+    -fx-padding: 0 6 0 6;
+}
+.project-map-sticky-note.project-map-trail-note {
+    -fx-background-color: -color-bg-default, -color-accent-subtle;
+    -fx-border-color: -color-accent-muted;
+}
+.project-map-trail-note > .project-map-sticky-note-header {
+    -fx-background-color: -color-accent-muted;
+}
+.project-map-trail-note-body {
+    -fx-padding: 6 8 8 8;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-trail-editor {
+    -fx-padding: 8;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.42), 22, 0.16, 0, 7);
+}
+.project-map-trail-editor-header {
+    -fx-cursor: move;
+}
+.project-map-trail-editor-title {
+    -fx-font-weight: bold;
+}
+.project-map-trail-editor-where {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-trail-editor-note {
+    -fx-font-size: 11px;
+    -fx-font-style: italic;
+}

@@ -544,6 +544,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 },
                 entry -> deleteSelected(new MapRowItem(entry.path())));
         this.mapView.setEscapeActions(mapFilterField::clear, this::leaveMap);
+        // Working sets and trails ask for names and notes in the Map window, where their menu is.
+        this.mapView.setViewsPrompt(this::viewsPrompt);
         this.mapView.setOnRevealActiveFile(this::revealActiveFileInMap); // the crosshair by the breadcrumb (E9)
         this.mapWindow = new ProjectMapWindow(buildMapWindowContent());
         this.mapWindow.setOnShowing(mapView::setShowing); // refreshes, polls and loads follow the window
@@ -1264,6 +1266,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Injects how a name is asked for in another window's overlay host (the Map window's). */
     public void setPromptIn(java.util.function.Function<OverlayHost, OverlayInput.Prompt> promptIn) {
         this.promptIn = promptIn;
+    }
+
+    /** Where the Map's working sets and trails ask for a name or a note: the Map window's overlay. */
+    private void viewsPrompt(String title, String label, String initial, Consumer<String> onAccept) {
+        java.util.function.Function<OverlayHost, OverlayInput.Prompt> in = promptIn;
+        OverlayInput.Prompt shown = in != null ? in.apply(mapWindow.overlayHost()) : prompt;
+        if (shown != null) {
+            shown.show(title, label, initial, onAccept);
+        }
     }
 
     /** Test seam for {@link #promptIn}: the one prompt, whichever window asks. */
@@ -2503,6 +2514,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         // The exploration itself — folders, selection, places, zoom, cards — kept with the session (review 3 B6).
         mapView.setRememberedPlace(
                 stored.getProjectMapState(), place -> state.get().setProjectMapState(place));
+        mapView.setRememberedWorkingSets(stored.getProjectMapWorkingSets(), sets -> {
+            state.get().setProjectMapWorkingSets(sets);
+            save.run();
+        });
         mapView.setRememberedHideUnmatched(stored.isProjectMapHideUnmatched(), hide -> {
             state.get().setProjectMapHideUnmatched(hide);
             save.run();
