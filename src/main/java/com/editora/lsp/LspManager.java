@@ -695,6 +695,31 @@ public final class LspManager {
     }
 
     /**
+     * {@code edits}, the HTML server's format of {@code sent}, with the final newline Editora keeps itself (HTML
+     * review 2, B104); any other server's as they are. {@code whole}: a Format Document, not a selection's.
+     */
+    private static List<com.editora.text.LspTextEdit> keptFinalNewline(
+            LanguageServerSession s,
+            FormattingIndent indent,
+            @Nullable String sent,
+            List<com.editora.text.LspTextEdit> edits,
+            boolean whole) {
+        Boolean want = HtmlServerSettings.SERVER_ID.equals(s.serverId())
+                ? s.htmlSettings().finalNewline(indent)
+                : null;
+        return want == null || sent == null
+                ? edits
+                : com.editora.text.LspTextEdits.withFinalNewline(sent, edits, want, whole);
+    }
+
+    /** The text an HTML server holds for {@code file}, what its format edits are against; null for other servers. */
+    private static @Nullable String htmlText(LanguageServerSession s, Path file) {
+        return HtmlServerSettings.SERVER_ID.equals(s.serverId())
+                ? s.documentSnapshots().get(uri(file))
+                : null;
+    }
+
+    /**
      * Sets bash-language-server's {@code bashIde} configuration: answered when a Bash server asks for it, and
      * pushed to the running ones when it changed (they re-read it and re-lint).
      */
@@ -2327,8 +2352,9 @@ public final class LspManager {
                 tsserver = choice.tsserver();
             }
             if (!remote && (TypeScriptServer.SERVER_ID.equals(serverId) || nodeScriptServer(serverId))) {
-                // the Node.js chosen in Settings runs every npm server's "#!/usr/bin/env node", not only tsserver (A8)
-                session.setPathPrepend(nodeBinDir(root, nodeSetting));
+                // the Node.js chosen in Settings runs every npm server's "#!/usr/bin/env node", not only tsserver (A8);
+                // a project's .nvmrc picks only tsserver's, since the others are Editora's tools (HTML review 2 A103)
+                session.setPathPrepend(nodeBinDir(root, nodeSetting, TypeScriptServer.SERVER_ID.equals(serverId)));
             }
             Path tsserverPath = tsserver;
             List<JavaRuntimes.Jdk> jdks = hostJdks;
@@ -4073,6 +4099,7 @@ public final class LspManager {
         }
         org.eclipse.lsp4j.Range range =
                 new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
+        String sent = htmlText(s, file);
         s.rangeFormatting(uri(file), range, formattingOptions(s, indent)).whenComplete((result, error) -> {
             noteFormatOutcome(file, error);
             List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
@@ -4088,7 +4115,8 @@ public final class LspManager {
                     }
                 }
             }
-            Platform.runLater(() -> cb.accept(edits));
+            List<com.editora.text.LspTextEdit> kept = keptFinalNewline(s, indent, sent, edits, false);
+            Platform.runLater(() -> cb.accept(kept));
         });
     }
 
@@ -4130,6 +4158,7 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
+        String sent = htmlText(s, file);
         s.formatting(uri(file), formattingOptions(s, indent)).whenComplete((result, error) -> {
             noteFormatOutcome(file, error);
             List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
@@ -4145,7 +4174,8 @@ public final class LspManager {
                     }
                 }
             }
-            Platform.runLater(() -> cb.accept(edits));
+            List<com.editora.text.LspTextEdit> kept = keptFinalNewline(s, indent, sent, edits, true);
+            Platform.runLater(() -> cb.accept(kept));
         });
     }
 
@@ -5029,7 +5059,9 @@ public final class LspManager {
                     if (target.startsWith("http://") || target.startsWith("https://")) {
                         return com.editora.editops.HtmlLinks.fromUri(target);
                     }
-                    Path to = s.uris().toPath(com.editora.editops.HtmlLinks.withoutFragment(target));
+                    Path to = s.uris()
+                            .toPath(com.editora.editops.HtmlLinks.withoutQuery(
+                                    com.editora.editops.HtmlLinks.withoutFragment(target)));
                     return to == null
                             ? null
                             : new com.editora.editops.HtmlLinks.Target(
@@ -6061,10 +6093,16 @@ public final class LspManager {
         return com.editora.install.InstallCatalog.npmPackage(serverId) != null;
     }
 
-    /** The bin folder of the Node.js a root's Node tools run with (Settings, .nvmrc, PATH), or null. */
-    private static @Nullable Path nodeBinDir(Path root, String nodeSetting) {
+    /**
+     * The bin folder of the Node.js a server under {@code root} runs with, or null: the Settings Node.js, then —
+     * only when {@code projectVersionFile} (tsserver, which runs the project's own TypeScript) — the project's
+     * {@code .nvmrc}/{@code .node-version}, then PATH. Editora's own npm servers never follow a project's pin: an
+     * old pinned Node.js cannot run them (HTML review 2 A103).
+     */
+    static @Nullable Path nodeBinDir(Path root, String nodeSetting, boolean projectVersionFile) {
         try {
-            return com.editora.run.NodeRuntimes.resolveLocal(root.resolve("package.json"), null, "", nodeSetting)
+            Path file = projectVersionFile ? root.resolve("package.json") : null;
+            return com.editora.run.NodeRuntimes.resolveLocal(file, null, "", nodeSetting)
                     .binDir()
                     .orElse(null);
         } catch (RuntimeException e) {

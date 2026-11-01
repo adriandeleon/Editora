@@ -986,10 +986,19 @@ final class EditingCoordinator {
                                     ? "status.commentShebang"
                                     : intoHereDoc(buffer)
                                             ? "status.commentHereDoc"
-                                            : mixesLanguages(buffer)
-                                                    ? "status.commentMixedLanguages"
-                                                    : "status.commentCannotNest"));
+                                            : onPhpOpener(buffer)
+                                                    ? "status.commentPhpOpener"
+                                                    : mixesLanguages(buffer)
+                                                            ? "status.commentMixedLanguages"
+                                                            : "status.commentCannotNest"));
         }
+    }
+
+    /** Whether the selection starts on a {@code <?php}-only or {@code <?=} line, which Toggle Comment leaves alone. */
+    private static boolean onPhpOpener(EditorBuffer buffer) {
+        org.fxmisc.richtext.CodeArea a = buffer.getFocusedArea() != null ? buffer.getFocusedArea() : buffer.getArea();
+        return com.editora.editops.Commenter.onPhpOpener(
+                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), buffer.getLanguage());
     }
 
     /** Whether the selection runs from HTML markup into an embedded script, style or PHP block (HTML review C3). */

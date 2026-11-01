@@ -243,6 +243,9 @@ final class WindowCommandRegistrar {
 
         void ifLsp(Runnable action);
 
+        /** Whether LSP support is on in this window (the setting, and not Simple mode). */
+        boolean lspEnabled();
+
         void toggleLsp();
 
         void runTestsForContext();
@@ -2280,13 +2283,10 @@ final class WindowCommandRegistrar {
             HtmlLinkFollow links = host.lspCoordinator().html.links;
             java.util.function.BooleanSupplier fallback =
                     () -> links.followAtCaret() || host.indexCoordinator().gotoDefinitionAtCaret();
-            boolean[] lsp = {false};
-            host.ifLsp(() -> {
-                lsp[0] = true;
+            if (host.lspEnabled()) {
                 host.lspCoordinator().gotoDefinition(null, fallback);
-            });
-            if (!lsp[0]) {
-                fallback.getAsBoolean(); // false: ifLsp's "LSP is off" stays
+            } else if (!fallback.getAsBoolean()) {
+                host.ifLsp(() -> {}); // nothing followed: "LSP is off" (after a link, not over it: HTML review 2, C110)
             }
         }));
         host.registry()
@@ -2403,7 +2403,13 @@ final class WindowCommandRegistrar {
                                 .setProjectWideProblems(!host.lspCoordinator().isProjectWideProblems()))));
         host.registry().register(Command.of("lsp.formatDocument", () -> {
             // Python: Ruff/Black, XML: the built-in formatter, unless a language server formats it — LSP off too.
-            if (!host.lspCoordinator().formatPythonExternally()) {
+            EditorBuffer active = host.activeBuffer();
+            if (host.lspCoordinator().formatPythonExternally()) {
+                return;
+            }
+            if (active != null && !com.editora.lsp.LspServerRegistry.isSupported(active.getLanguage())) {
+                host.setStatus(tr("status.lsp.formatUnavailable")); // no server would: not "LSP is off" (C110)
+            } else {
                 host.ifLsp(host.lspCoordinator()::formatDocument);
             }
         }));

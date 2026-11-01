@@ -520,6 +520,11 @@ final class WindowCommandHost implements WindowCommandRegistrar.Host {
     }
 
     @Override
+    public boolean lspEnabled() {
+        return mc.lspEnabled();
+    }
+
+    @Override
     public void toggleLsp() {
         mc.toggleLsp();
     }

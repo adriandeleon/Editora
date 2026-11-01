@@ -1,6 +1,7 @@
 package com.editora.editor.completion;
 
 import javafx.geometry.Bounds;
+import javafx.geometry.Insets;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
 import javafx.scene.control.Label;
@@ -26,7 +27,7 @@ import org.jspecify.annotations.Nullable;
 final class CompletionDocPopup {
 
     private static final double WIDTH = 420;
-    private static final double MAX_HEIGHT = 320;
+    static final double MAX_HEIGHT = 320;
     private static final double GAP = 4;
 
     private final Popup popup = new Popup();
@@ -92,6 +93,7 @@ final class CompletionDocPopup {
         }
         scroll.setContent(content);
         scroll.setVvalue(0); // each item's docs from their first line, not where the last item's were scrolled
+        fitHeight(content);
         Rectangle2D vis = screenFor(listBounds);
         double x = listBounds.getMaxX() + GAP;
         if (x + WIDTH > vis.getMaxX()) {
@@ -105,6 +107,25 @@ final class CompletionDocPopup {
         } else {
             popup.show(owner, x, y);
         }
+    }
+
+    /**
+     * Sizes the panel to {@code content} as laid out at the panel's own width, up to {@link #MAX_HEIGHT}. Left to
+     * itself the scroll pane took the content's height at no particular width (one long unwrapped line per
+     * paragraph), so the panel showed two or three lines of a wrapped description and cut the next one in half
+     * (HTML review 2 C112).
+     */
+    private void fitHeight(VBox content) {
+        card.applyCss();
+        scroll.applyCss();
+        content.applyCss();
+        Insets cardInsets = card.getInsets();
+        Insets scrollInsets = scroll.getInsets();
+        double width =
+                WIDTH - cardInsets.getLeft() - cardInsets.getRight() - scrollInsets.getLeft() - scrollInsets.getRight();
+        double chrome = cardInsets.getTop() + cardInsets.getBottom() + scrollInsets.getTop() + scrollInsets.getBottom();
+        double wanted = Math.ceil(content.prefHeight(width)); // past the maximum, it scrolls
+        scroll.setPrefViewportHeight(Math.max(1, Math.min(wanted, MAX_HEIGHT - chrome)));
     }
 
     void hide() {

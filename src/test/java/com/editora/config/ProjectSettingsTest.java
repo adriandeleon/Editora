@@ -22,6 +22,40 @@ class ProjectSettingsTest {
         return file;
     }
 
+    /**
+     * HTML review 2 A107: the HTML server's settings as {@code .vscode/settings.json} writes them — top-level
+     * {@code "html.format.wrapAttributes"} — reach the {@code html} object (as dotted keys) beside a nested one;
+     * any other unknown key is still ignored.
+     */
+    @Test
+    void topLevelVsCodeStyleHtmlKeysJoinTheHtmlObject(@TempDir Path root) throws Exception {
+        write(root, """
+                {"html.format.wrapAttributes": "force-expand-multiline",
+                 "html": {"format": {"wrapLineLength": 90}},
+                 "html.validate.styles": false,
+                 "html.": 1, "editor.fontSize": 30}
+                """);
+
+        ProjectSettings ps = ProjectSettings.load(root);
+
+        assertFalse(ps.isEmpty());
+        assertEquals(
+                java.util.Map.of(
+                        "format",
+                        java.util.Map.of("wrapLineLength", 90),
+                        "format.wrapAttributes",
+                        "force-expand-multiline",
+                        "validate.styles",
+                        false),
+                ps.getHtml());
+        write(root, "{\"html.format.wrapLineLength\": 80}");
+        assertEquals(
+                java.util.Map.of("format.wrapLineLength", 80),
+                ProjectSettings.load(root).getHtml());
+        write(root, "{\"vscode.thing\": 1}");
+        assertTrue(ProjectSettings.load(root).isEmpty());
+    }
+
     @Test
     void aProjectOverridesTheServerCommand(@TempDir Path root) throws Exception {
         write(root, "{\"lspCommands\": {\"java\": \"/opt/jdk17/bin/jdtls\"}}");

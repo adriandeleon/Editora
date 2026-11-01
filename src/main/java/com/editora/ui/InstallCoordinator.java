@@ -85,6 +85,9 @@ final class InstallCoordinator {
         // The Build Tools JDK satisfies the Java prerequisite and runs the JVM servers' post-install smoke (C4).
         service.setJdkHomeSupplier(
                 () -> host.settings() == null ? "" : host.settings().getMavenJdkHome());
+        // The Debugging Node.js: npm is found beside it and runs with it (HTML review 2 A105).
+        service.setNodeSettingSupplier(
+                () -> host.settings() == null ? "" : host.settings().getNodePath());
     }
 
     /** Whether every tool that makes up {@code lang}'s support is already installed/detected. */

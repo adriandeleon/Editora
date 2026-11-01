@@ -17,6 +17,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** The HTML review's install fixes that are pure decisions in the window layer (A5, A8, A10, C15). */
 class HtmlInstallUiTest {
 
+    @org.junit.jupiter.api.BeforeAll
+    static void english() {
+        com.editora.i18n.Messages.init("en"); // run alone, nothing else has loaded the catalog
+    }
+
     /** A5: a failed format is not "Already formatted". */
     @Test
     void aFailedFormatSaysHowItFailed() {
@@ -80,5 +85,35 @@ class HtmlInstallUiTest {
         assertEquals("install.banner.enableCss", InstallPromptCoordinator.turnOnMessageKey("css"));
         assertTrue(tr("install.banner.enableHtml").contains("Node.js"));
         assertTrue(tr("install.banner.webServer", "HTML", "4.10.0").contains("vscode-langservers-extracted 4.10.0"));
+    }
+
+    /** HTML review 2 A109: one server or several, and the server rows name the Settings Node.js too. */
+    @Test
+    void theNodeRowSaysServerOrServersAndTheServerRowNamesSettings() {
+        String one = DoctorCoordinator.nodeServers(Set.of("html"));
+        String several = DoctorCoordinator.nodeServers(Set.of("html", "yaml", "bash"));
+        assertEquals("doctor.tip.nodeMissingServers", DoctorCoordinator.nodeServersTip(one));
+        assertEquals("doctor.tip.nodeMissingServersMany", DoctorCoordinator.nodeServersTip(several));
+        assertTrue(tr("doctor.tip.nodeMissingServersMany", "node", several).contains("language servers need it"));
+        assertTrue(tr("doctor.tip.serverNeedsNode").contains("Settings → Debugging → JavaScript"));
+        assertTrue(
+                tr("install.banner.webServerNoNpm", "HTML", "npm").contains("beside the Node.js chosen in Settings"));
+    }
+
+    /** HTML review 2 A110: a program in Editora's config folder is shown by name; others whole. */
+    @Test
+    void aCommandInsideTheConfigFolderIsShownByItsProgram(@TempDir Path dir) {
+        Path config = dir.resolve("config");
+        String launcher = config.resolve("plugins/lsp/web/node_modules/.bin/vscode-css-language-server")
+                .toString();
+        assertEquals(
+                tr("doctor.command.editorasCopy", "vscode-css-language-server --stdio"),
+                DoctorCoordinator.shownCommand(java.util.List.of(launcher, "--stdio"), config));
+        assertEquals(
+                launcher + " --stdio", DoctorCoordinator.shownCommand(java.util.List.of(launcher, "--stdio"), null));
+        assertEquals(
+                "vscode-css-language-server --stdio",
+                DoctorCoordinator.shownCommand(java.util.List.of("vscode-css-language-server", "--stdio"), config));
+        assertEquals("", DoctorCoordinator.shownCommand(java.util.List.of(), config));
     }
 }

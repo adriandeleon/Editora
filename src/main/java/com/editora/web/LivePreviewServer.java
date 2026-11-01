@@ -1,6 +1,7 @@
 package com.editora.web;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -14,20 +15,22 @@ import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CoderResult;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.IntUnaryOperator;
 
+import com.editora.text.EncryptedNames;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -37,30 +40,32 @@ import org.jspecify.annotations.Nullable;
  * A tiny embedded HTTP server (JDK {@link HttpServer}) that serves HTML sites so a real browser can render a page
  * with its CSS/JS/image assets, bound to <strong>loopback only</strong> (never the LAN).
  *
- * <p>It serves any number of <em>sites</em>, each a folder under its own prefix {@code /<token>/<siteId>/…}
- * ({@link #serve}): previewing a page in another folder adds a site instead of re-rooting the server, so tabs open
- * on the first one keep working. A file that is open in the editor is served from its <em>live in-memory text</em>
- * (the injected {@link #setLiveText lookup}), so unsaved edits show. Every HTML page gets a small
- * <strong>live-reload script</strong> that short-polls {@code <site>/__editora_livereload} every
- * {@value #POLL_INTERVAL_MS} ms; the server answers each poll at once (no request is ever held), and
- * {@link #changed} advances the version of the site holding the changed file. A stylesheet-only change is
- * answered with {@code "<version> css"} and the page swaps its stylesheets instead of reloading.
+ * <p>It serves any number of <em>sites</em> ({@link #serve}), each a folder with <strong>its own origin</strong>:
+ * its own loopback listener (port) and its own random token, so a page previewed later — a downloaded one, say —
+ * cannot read an earlier site's files or unsaved buffers, which the browser's same-origin policy now keeps apart
+ * (HTML review 2, E102). Every listener runs on one shared executor. A file that is open in the editor is served
+ * from its <em>live in-memory text</em> (the injected {@link #setLiveText lookup}), so unsaved edits show. Every
+ * HTML page gets a small <strong>live-reload script</strong> that short-polls {@code /<token>/__editora_livereload}
+ * every {@value #POLL_INTERVAL_MS} ms; the server answers each poll at once (no request is ever held), and {@link
+ * #changed} advances the version of the site holding the changed file. A stylesheet-only change is answered with
+ * {@code "<version> css"} and the page swaps its own-origin stylesheets instead of reloading.
  *
  * <p>Loopback binding is not a boundary on its own: any local process can reach the port, a web page can reach it
  * through DNS rebinding (its own hostname re-pointed at 127.0.0.1), and every script the page runs (CDN ones
- * included) is same-origin with everything served. So every request must (1) carry a {@code Host} header naming
- * this loopback listener ({@link #isAllowedHost}) and (2) present the random {@link #token} (new on every
- * {@link #start}) as its first path segment ({@link #route}); hidden files and folders and private keys are never
- * served ({@link #isHiddenOrSecret}); and a root that would expose the home directory, a catch-all folder such as
- * Downloads, the temp folder, a filesystem root or a remote file system is refused outright
- * ({@link #isUnsafeDocRoot}). Files are streamed (with single-range {@code Range} support), not read whole: only
- * HTML up to {@link #MAX_INJECT_BYTES} and small text files are held in memory.
+ * included) is same-origin with its site. So every request must (1) carry a {@code Host} header naming that
+ * site's listener ({@link #isAllowedHost}) and (2) present the site's random token (new for every site and every
+ * {@link #start}) as its first path segment ({@link #route}); hidden files and folders, private keys, credential
+ * stores and encrypted files are never served ({@link #isHiddenOrSecret}); and a root that would expose the home
+ * directory, a catch-all folder such as Downloads, a temp folder, a filesystem root or a remote file system is
+ * refused outright ({@link SiteRoots#isUnsafeDocRoot}). {@code /} and a folder URL serve that folder's {@code
+ * index.html}. Files are streamed (with single-range {@code Range} support), not read whole: only HTML up to
+ * {@link #MAX_INJECT_BYTES} (and live text) is held in memory, at most {@value #MAX_BUFFERED} responses at a time.
  *
  * <p>Lifecycle is owned by {@code HtmlPreviewService} (one server per window). The pure helpers are unit-tested.
  */
 public final class LivePreviewServer {
 
-    /** The poll endpoint the injected script hits, under a site's prefix; always answered at once. */
+    /** The poll endpoint the injected script hits, under a site's token; always answered at once. */
     static final String LR_PATH = "/__editora_livereload";
 
     /** How often the injected client polls, in milliseconds. */
@@ -69,36 +74,61 @@ public final class LivePreviewServer {
     /** HTML on disk larger than this is streamed as is (no live-reload script) rather than read into memory. */
     static final long MAX_INJECT_BYTES = 20L * 1024 * 1024;
 
+    /**
+     * Editor text longer than this is not served live (the file is served from disk): the window does not even
+     * snapshot such a buffer, as every other feature backs off for large files (E105, E111).
+     */
+    public static final int MAX_LIVE_CHARS = 4 * 1024 * 1024;
+
+    /** At most this many responses are built in memory at once (HTML with the script, live text): E105. */
+    static final int MAX_BUFFERED = 4;
+
+    /** At most this many sites keep a listener; serving one more stops the least recently served. */
+    static final int MAX_SITES = 32;
+
+    /** A text file larger than this is streamed without first checking that its bytes are UTF-8. */
+    private static final long MAX_CHARSET_CHECK = 64L * 1024 * 1024;
+
+    private static final int CHUNK = 64 * 1024;
+
     /** {@link #parseRange}'s answer for a range that starts past the end of the file (416). */
     static final long[] UNSATISFIABLE = new long[0];
 
-    /** The unguessable first path segment every request must carry (128 random bits, new for every start). */
-    private volatile String token = newToken();
+    static {
+        // The JDK server's own limits, read once by its configuration class (so they apply only when it has not
+        // been used yet in this JVM, and only where the user has not set them): a connection that has not sent
+        // its whole request within 60 s is closed, and one listener holds at most 512 connections (E113).
+        setIfAbsent("sun.net.httpserver.maxReqTime", "60");
+        setIfAbsent("jdk.httpserver.maxConnections", "512");
+    }
 
     /** {@link #MAX_INJECT_BYTES}, lowered by tests. */
     volatile long injectCap = MAX_INJECT_BYTES;
 
-    private @Nullable HttpServer server;
     private @Nullable ExecutorService pool;
-
-    private final Map<String, Site> sitesById = new ConcurrentHashMap<>();
-    private final Map<Path, Site> sitesByRoot = new ConcurrentHashMap<>();
-    private final AtomicInteger nextSiteId = new AtomicInteger();
+    private final Semaphore buffered = new Semaphore(MAX_BUFFERED);
+    private final Map<Path, Site> sites = new ConcurrentHashMap<>();
+    private final AtomicLong clock = new AtomicLong();
     private volatile Function<Path, @Nullable String> liveText = p -> null;
     private volatile String goneMessage = "The Editora preview server has stopped.";
 
-    /** One served folder: its prefix id, the page "/" maps to, and its reload version. */
+    /** One served folder: its own listener and token, the pages opened in it, and its reload version. */
     private static final class Site {
-        final String id;
         final Path root; // absolute, normalized
-        volatile String entryRel;
+        final String token = newToken();
+        final HttpServer http;
+        final int port;
+        /** The pages previewed in this site (root-relative, {@code /}-separated): served even in a hidden folder. */
+        final Set<String> entries = ConcurrentHashMap.newKeySet();
+
+        volatile long lastServed;
         private long version = 1;
         private long fullVersion = 1; // the last version that needs a full reload (not just a stylesheet swap)
 
-        Site(String id, Path root, String entryRel) {
-            this.id = id;
+        Site(Path root, HttpServer http) {
             this.root = root;
-            this.entryRel = entryRel;
+            this.http = http;
+            this.port = http.getAddress().getPort();
         }
 
         synchronized void changed(boolean stylesheetOnly) {
@@ -119,34 +149,25 @@ public final class LivePreviewServer {
             }
             return fullVersion <= since ? version + " css" : Long.toString(version);
         }
+
+        String base() {
+            return "http://127.0.0.1:" + port + "/" + token;
+        }
     }
 
-    /** Starts the server on an ephemeral loopback port with a fresh token (idempotent); returns the bound port. */
-    public synchronized int start() throws IOException {
-        if (server != null) {
-            return server.getAddress().getPort();
+    /** Readies the server (idempotent): sites get their listeners, and fresh tokens, as they are served. */
+    public synchronized void start() {
+        if (pool == null) {
+            // A virtual thread per exchange: the JDK server reads request headers on the executor, so a fixed
+            // pool could be exhausted by a few idle connections (any local process, no token needed). Nothing
+            // here holds a request open on purpose: the live-reload poll is answered at once.
+            pool = Executors.newThreadPerTaskExecutor(
+                    Thread.ofVirtual().name("html-preview-http-", 0).factory());
         }
-        token = newToken(); // a URL from an earlier run (in a browser's argv or history) no longer works
-        HttpServer s = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
-        // A virtual thread per exchange: the JDK server reads request headers on the executor, so a fixed pool
-        // could be exhausted by a few idle connections (any local process, no token needed). Nothing here holds a
-        // request open on purpose any more: the live-reload poll is answered at once.
-        ExecutorService p = Executors.newThreadPerTaskExecutor(
-                Thread.ofVirtual().name("html-preview-http-", 0).factory());
-        s.setExecutor(p);
-        s.createContext("/", this::handle);
-        s.start();
-        server = s;
-        pool = p;
-        return s.getAddress().getPort();
     }
 
     public synchronized boolean isRunning() {
-        return server != null;
-    }
-
-    public synchronized int port() {
-        return server == null ? -1 : server.getAddress().getPort();
+        return pool != null;
     }
 
     /** The text of an open file (absolute, normalized path), or null to serve it from disk. Called off FX. */
@@ -160,11 +181,13 @@ public final class LivePreviewServer {
     }
 
     /**
-     * Serves {@code root} (adding it as a site, or reusing the site already serving it) and returns the URL that
-     * renders {@code entry}, which must lie under it. Refuses an unsafe root ({@link #isUnsafeDocRoot}).
+     * Serves {@code root} (adding it as a site on a listener of its own, or reusing the site already serving it)
+     * and returns the URL that renders {@code entry}, which must lie under it. Refuses an unsafe root ({@link
+     * SiteRoots#isUnsafeDocRoot}).
      */
     public synchronized String serve(Path root, Path entry) throws IOException {
-        if (server == null) {
+        ExecutorService p = pool;
+        if (p == null) {
             throw new IOException("the preview server is not running");
         }
         Path r = root.toAbsolutePath().normalize();
@@ -172,24 +195,47 @@ public final class LivePreviewServer {
         if (!e.startsWith(r) || e.equals(r)) {
             throw new IOException(entry + " is not inside " + root);
         }
-        if (isUnsafeDocRoot(r, userHome())) {
+        if (SiteRoots.isUnsafeDocRoot(r, SiteRoots.userHome())) {
             throw new IOException("refusing to serve " + r + " (home, catch-all or temp folder, or a filesystem root)");
         }
         String rel = r.relativize(e).toString().replace('\\', '/');
-        Site site = sitesByRoot.get(r);
+        Site site = sites.get(r);
         if (site == null) {
-            site = new Site(Integer.toString(nextSiteId.incrementAndGet()), r, rel);
-            sitesByRoot.put(r, site);
-            sitesById.put(site.id, site);
+            evictIfFull();
+            HttpServer s = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+            s.setExecutor(p);
+            Site created = new Site(r, s);
+            s.createContext("/", ex -> handle(ex, created));
+            s.start();
+            sites.put(r, created);
+            site = created;
         }
-        site.entryRel = rel;
-        return "http://127.0.0.1:" + port() + "/" + token + "/" + site.id + "/" + encodePath(rel);
+        site.entries.add(rel);
+        site.lastServed = clock.incrementAndGet();
+        return site.base() + "/" + encodePath(rel);
+    }
+
+    /** Stops the least recently served site when {@link #MAX_SITES} are served (its open tabs show "stopped"). */
+    private void evictIfFull() {
+        while (sites.size() >= MAX_SITES) {
+            Site oldest = null;
+            for (Site s : sites.values()) {
+                if (oldest == null || s.lastServed < oldest.lastServed) {
+                    oldest = s;
+                }
+            }
+            if (oldest == null) {
+                return;
+            }
+            sites.remove(oldest.root);
+            oldest.http.stop(0);
+        }
     }
 
     /** Whether {@code file} lies under a served site (so its edits and saves should reload the browser). */
     public boolean serves(Path file) {
         Path p = file.toAbsolutePath().normalize();
-        for (Site s : sitesByRoot.values()) {
+        for (Site s : sites.values()) {
             if (p.startsWith(s.root)) {
                 return true;
             }
@@ -205,7 +251,7 @@ public final class LivePreviewServer {
         Path p = file.toAbsolutePath().normalize();
         boolean stylesheet = isStylesheet(p);
         boolean any = false;
-        for (Site s : sitesByRoot.values()) {
+        for (Site s : sites.values()) {
             if (p.startsWith(s.root)) {
                 s.changed(stylesheet);
                 any = true;
@@ -216,26 +262,24 @@ public final class LivePreviewServer {
 
     /** Advances every site's version so every open page reloads. */
     public void bumpVersion() {
-        sitesByRoot.values().forEach(s -> s.changed(false));
+        sites.values().forEach(s -> s.changed(false));
     }
 
-    /** Stops the server and forgets every site (idempotent). */
+    /** Stops every site's listener and forgets them (idempotent); a later {@link #start} hands out new tokens. */
     public synchronized void stop() {
-        if (server != null) {
-            server.stop(0);
-            server = null;
+        for (Site s : sites.values()) {
+            s.http.stop(0);
         }
+        sites.clear();
         if (pool != null) {
             pool.shutdownNow();
             pool = null;
         }
-        sitesById.clear();
-        sitesByRoot.clear();
     }
 
     // --- request handling -------------------------------------------------------------------------
 
-    private void handle(HttpExchange ex) throws IOException {
+    private void handle(HttpExchange ex, Site site) throws IOException {
         try {
             Headers out = ex.getResponseHeaders();
             out.set("Cache-Control", "no-store");
@@ -243,8 +287,9 @@ public final class LivePreviewServer {
             // Same-origin pages still send a Referer (the bounce below needs it); a cross-origin request — a
             // CDN script or image, a link out — never carries the token.
             out.set("Referrer-Policy", "same-origin");
-            int port = ex.getLocalAddress().getPort();
-            if (!isAllowedHost(ex.getRequestHeaders().getFirst("Host"), port)) {
+            // Another origin (another previewed site, any web page) cannot even embed what is served here.
+            out.set("Cross-Origin-Resource-Policy", "same-origin");
+            if (!isAllowedHost(ex.getRequestHeaders().getFirst("Host"), site.port)) {
                 sendStatus(ex, 403); // DNS rebinding / a foreign origin: not addressed to this loopback listener
                 return;
             }
@@ -254,37 +299,30 @@ public final class LivePreviewServer {
                 sendStatus(ex, 405);
                 return;
             }
-            String inner = route(ex.getRequestURI().getPath(), token);
+            String path = ex.getRequestURI().getPath();
+            String query = ex.getRequestURI().getRawQuery();
+            String inner = route(path, site.token);
             if (inner == null) {
-                // A root-absolute asset reference (<link href="/app.css">) from a page we served: the browser's
-                // Referer proves it already holds the token, so bounce it under that page's site prefix.
-                String site = refererSite(ex.getRequestHeaders().getFirst("Referer"), port, token);
-                if (site != null) {
-                    String query = ex.getRequestURI().getRawQuery();
-                    String to = "/" + token + "/" + site + ex.getRequestURI().getRawPath()
-                            + (query == null ? "" : "?" + query);
-                    out.set("Location", to);
-                    sendStatus(ex, 307);
+                // A root-absolute reference (<link href="/app.css">, <a href="/">) from a page of this site: the
+                // browser's Referer proves it already holds the token, so bounce it under the token.
+                if (isOwnPage(ex.getRequestHeaders().getFirst("Referer"), site.port, site.token)) {
+                    redirect(ex, 307, "/" + site.token + ex.getRequestURI().getRawPath(), query);
                 } else {
                     sendStatus(ex, 404);
                 }
                 return;
             }
-            int slash = inner.indexOf('/', 1);
-            String siteId = slash < 0 ? inner.substring(1) : inner.substring(1, slash);
-            String rest = slash < 0 ? "/" : inner.substring(slash);
-            Site site = sitesById.get(siteId);
-            if (site == null) {
-                sendStatus(ex, 404);
-            } else if (LR_PATH.equals(rest)) {
-                String answer = site.poll(parseSince(ex.getRequestURI().getRawQuery()));
+            if (path.equals("/" + site.token)) {
+                redirect(ex, 301, "/" + site.token + "/", query); // so the index's relative links resolve
+            } else if (LR_PATH.equals(inner)) {
+                String answer = site.poll(parseSince(query));
                 if (answer == null) {
                     sendStatus(ex, 204); // no change: the client polls again shortly
                 } else {
                     writeBody(ex, 200, "text/plain; charset=utf-8", answer.getBytes(StandardCharsets.UTF_8));
                 }
             } else {
-                serveFile(ex, site, rest);
+                serveFile(ex, site, inner);
             }
         } catch (RuntimeException e) {
             sendStatus(ex, 500);
@@ -294,16 +332,19 @@ public final class LivePreviewServer {
     }
 
     private void serveFile(HttpExchange ex, Site site, String urlPath) throws IOException {
+        // Read first: an edit landing while the text is read then bumps past the version the page is given, so
+        // the page reloads once more rather than missing that edit (E113).
+        long version = site.version();
         // urlPath is URI.getPath(), which is already %-decoded — do NOT URLDecoder.decode again (that is form
         // decoding: it turns "+" into a space and double-decodes "%25", breaking asset filenames that contain
         // "+", "%", or a space).
         String rel = urlPath.startsWith("/") ? urlPath.substring(1) : urlPath;
-        if (rel.isEmpty()) {
-            rel = site.entryRel; // "/" ⇒ the previewed file
+        boolean folderUrl = rel.isEmpty() || rel.endsWith("/");
+        if (folderUrl) {
+            rel = rel + "index.html"; // "/" and "blog/" serve that folder's index, as every static host does
         }
-        boolean entry = rel.equals(site.entryRel); // the page the user asked for is served even in a hidden folder
-        if (!entry && isHiddenOrSecret(rel)) {
-            sendStatus(ex, 404); // .env, .git/config, id_rsa, *.pem: same-origin with every script on the page
+        if (!isServable(rel, site.entries)) {
+            sendStatus(ex, 404); // .env, .git/config, id_rsa, *.p12, *.gpg: same-origin with every script
             return;
         }
         Path resolved = safeResolve(site.root, rel);
@@ -311,18 +352,26 @@ public final class LivePreviewServer {
             sendStatus(ex, 403); // path traversal outside the site root
             return;
         }
-        if (!entry && hidesBehindALink(site.root, resolved)) {
+        if (hidesBehindALink(site.root, resolved, site.entries)) {
             sendStatus(ex, 404); // an in-root symlink that leads into .git or another hidden folder
+            return;
+        }
+        if (!folderUrl && Files.isDirectory(resolved)) {
+            redirect(
+                    ex,
+                    301,
+                    ex.getRequestURI().getRawPath() + "/",
+                    ex.getRequestURI().getRawQuery());
             return;
         }
         Path fileName = resolved.getFileName();
         String type = contentType(fileName == null ? "" : fileName.toString());
         boolean html = "text/html".equals(type);
+        String script = html ? reloadScript(version, "/" + site.token, goneMessage) : null;
         String live = liveText.apply(resolved);
-        if (live != null) {
+        if (live != null && live.length() <= MAX_LIVE_CHARS) {
             // An open file: the editor's text, unsaved edits included (encoded as UTF-8, so labelled so).
-            String text = html ? injectReloadScript(live, scriptFor(site)) : live;
-            writeBody(ex, 200, withCharset(type, true), text.getBytes(StandardCharsets.UTF_8));
+            buffered(ex, withCharset(type, true), () -> live.getBytes(StandardCharsets.UTF_8), script);
             return;
         }
         if (!Files.isRegularFile(resolved)) {
@@ -331,16 +380,70 @@ public final class LivePreviewServer {
         }
         long size = Files.size(resolved);
         String range = ex.getRequestHeaders().getFirst("Range");
-        if (size <= injectCap && (html || (isText(type) && range == null))) {
-            byte[] bytes = Files.readAllBytes(resolved);
-            // Label UTF-8 only when the bytes are UTF-8; otherwise the page's own <meta charset> (or @charset, or
-            // the browser's sniffing) decides, so a Latin-1 page is not turned into U+FFFD.
-            boolean utf8 = isUtf8(bytes);
-            byte[] body = html ? injectReloadScript(bytes, scriptFor(site)) : bytes;
-            writeBody(ex, 200, withCharset(type, utf8), body);
+        if (html && size <= injectCap) {
+            buffered(ex, null, () -> Files.readAllBytes(resolved), script);
             return;
         }
-        streamFile(ex, resolved, size, type, range);
+        // Only HTML needs splicing; everything else is streamed. A text file is labelled UTF-8 only when its bytes
+        // are (checked through a small buffer), so a Latin-1 stylesheet keeps its own @charset.
+        boolean utf8 = isText(type) && size <= MAX_CHARSET_CHECK && isUtf8(resolved);
+        streamFile(ex, resolved, size, withCharset(type, utf8), range);
+    }
+
+    /** Builds a response body in memory. */
+    @FunctionalInterface
+    private interface Body {
+        byte[] read() throws IOException;
+    }
+
+    /**
+     * Sends a body built in memory, the live-reload {@code script} spliced in when non-null, holding one of {@link
+     * #MAX_BUFFERED} permits while the body exists (so parallel requests for a big page cannot exhaust the heap).
+     * A null {@code contentType} means HTML read from disk: labelled UTF-8 only when its bytes are.
+     */
+    private void buffered(HttpExchange ex, @Nullable String contentType, Body body, @Nullable String script)
+            throws IOException {
+        try {
+            buffered.acquire();
+        } catch (InterruptedException stopping) {
+            Thread.currentThread().interrupt();
+            sendStatus(ex, 503);
+            return;
+        }
+        try {
+            byte[] bytes = body.read();
+            // Label UTF-8 only when the bytes are UTF-8; otherwise the page's own <meta charset> (or the browser's
+            // sniffing) decides, so a Latin-1 page is not turned into U+FFFD.
+            String type = contentType != null ? contentType : withCharset("text/html", isUtf8(bytes));
+            byte[] s = script == null ? new byte[0] : script.getBytes(StandardCharsets.US_ASCII);
+            int at = script == null ? -1 : injectionPoint(bytes);
+            int extra = at < 0 ? 0 : s.length;
+            ex.getResponseHeaders().set("Content-Type", type);
+            long length = (long) bytes.length + extra;
+            if (isHead(ex) || length == 0) {
+                ex.getResponseHeaders().set("Content-Length", Long.toString(length));
+                ex.sendResponseHeaders(200, -1);
+                return;
+            }
+            ex.sendResponseHeaders(200, length);
+            try (OutputStream out = ex.getResponseBody()) {
+                int split = at < 0 ? bytes.length : at;
+                writeChunked(out, bytes, 0, split);
+                if (at >= 0) {
+                    out.write(s);
+                }
+                writeChunked(out, bytes, split, bytes.length);
+            }
+        } finally {
+            buffered.release();
+        }
+    }
+
+    /** Writes in {@value #CHUNK}-byte pieces: the JDK copies each write into a buffer of its size. */
+    private static void writeChunked(OutputStream out, byte[] b, int from, int to) throws IOException {
+        for (int i = from; i < to; i += CHUNK) {
+            out.write(b, i, Math.min(CHUNK, to - i));
+        }
     }
 
     /** Streams {@code file} (or the one byte range asked for) without reading it into memory. */
@@ -379,7 +482,7 @@ public final class LivePreviewServer {
             long pos = start;
             long left = length;
             while (left > 0) {
-                long n = ch.transferTo(pos, left, sink);
+                long n = ch.transferTo(pos, Math.min(left, CHUNK), sink);
                 if (n <= 0) {
                     break; // the file shrank under us: the short body ends the exchange
                 }
@@ -400,6 +503,11 @@ public final class LivePreviewServer {
         try (OutputStream out = ex.getResponseBody()) {
             out.write(body);
         }
+    }
+
+    private static void redirect(HttpExchange ex, int status, String location, @Nullable String rawQuery) {
+        ex.getResponseHeaders().set("Location", location + (rawQuery == null ? "" : "?" + rawQuery));
+        sendStatus(ex, status);
     }
 
     private static boolean isHead(HttpExchange ex) {
@@ -430,8 +538,14 @@ public final class LivePreviewServer {
         return 0;
     }
 
-    private String scriptFor(Site site) {
-        return reloadScript(site.version(), "/" + token + "/" + site.id, goneMessage);
+    private static void setIfAbsent(String key, String value) {
+        try {
+            if (System.getProperty(key) == null) {
+                System.setProperty(key, value);
+            }
+        } catch (SecurityException ignored) {
+            // the JDK defaults then apply
+        }
     }
 
     // --- pure helpers (unit-tested) ---------------------------------------------------------------
@@ -440,16 +554,6 @@ public final class LivePreviewServer {
         byte[] bytes = new byte[16];
         new java.security.SecureRandom().nextBytes(bytes);
         return java.util.HexFormat.of().formatHex(bytes);
-    }
-
-    /** The preview token, for tests in this package. */
-    String token() {
-        return token;
-    }
-
-    private static @Nullable Path userHome() {
-        String home = System.getProperty("user.home");
-        return home == null || home.isBlank() ? null : Path.of(home);
     }
 
     /**
@@ -486,35 +590,34 @@ public final class LivePreviewServer {
     }
 
     /**
-     * The site id of {@code referer} when it is a page this server itself served under the token (same listener,
-     * the token prefix, a numeric site segment), else null.
+     * Whether {@code referer} is a page of the site on {@code port} with {@code token}: the same listener and the
+     * token prefix. Only then is a root-absolute request bounced under the token (not an open redirect).
      */
-    static @Nullable String refererSite(@Nullable String referer, int port, String token) {
+    static boolean isOwnPage(@Nullable String referer, int port, String token) {
         if (referer == null) {
-            return null;
+            return false;
         }
         try {
             java.net.URI uri = java.net.URI.create(referer.strip());
-            if (!"http".equalsIgnoreCase(uri.getScheme()) || !isAllowedHost(uri.getRawAuthority(), port)) {
-                return null;
-            }
-            String inner = route(uri.getPath(), token);
-            if (inner == null || inner.length() < 2) {
-                return null;
-            }
-            int slash = inner.indexOf('/', 1);
-            String site = slash < 0 ? inner.substring(1) : inner.substring(1, slash);
-            return site.isEmpty() || !site.chars().allMatch(c -> c >= '0' && c <= '9') ? null : site;
+            return "http".equalsIgnoreCase(uri.getScheme())
+                    && isAllowedHost(uri.getRawAuthority(), port)
+                    && route(uri.getPath(), token) != null;
         } catch (RuntimeException e) {
-            return null;
+            return false;
         }
     }
+
+    /** Folders never served, not even when a previewed page sits in them. */
+    private static final Set<String> NEVER_FOLDERS = Set.of(".git", ".ssh", ".gnupg", ".aws", ".docker", ".kube");
 
     /**
      * Whether a URL path (relative to a site root) names something no page should read: any segment starting
      * with {@code .} ({@code .env}, {@code .git/config}, {@code .ssh/}, {@code .npmrc}, {@code .netrc}) other than
-     * {@code .well-known}, or a private key ({@code *.pem}, {@code *.key}, an SSH identity {@code id_*} without
-     * an extension or ending in {@code .pub}).
+     * {@code .well-known}; a private key ({@code *.pem}, {@code *.key}, an SSH identity {@code id_*} without an
+     * extension or ending in {@code .pub}); a certificate or password store, infrastructure state or a database
+     * ({@code *.p12}, {@code *.pfx}, {@code *.kdbx}, {@code *.tfstate}, {@code *.tfvars}, {@code *.sqlite},
+     * {@code *.sqlite3}, {@code *.db}, {@code credentials*.json}, {@code secrets.*}); or an encrypted file
+     * ({@code *.gpg}, {@code *.asc}, {@code *.pgp}: ADR 0017 — even its ciphertext is not handed out).
      */
     static boolean isHiddenOrSecret(String rel) {
         String[] segments = rel.split("[/\\\\]");
@@ -523,148 +626,71 @@ public final class LivePreviewServer {
                 return true;
             }
         }
-        String name = segments.length == 0 ? "" : segments[segments.length - 1].toLowerCase(Locale.ROOT);
-        if (name.endsWith(".pem") || name.endsWith(".key")) {
+        return isSecretName(segments.length == 0 ? "" : segments[segments.length - 1]);
+    }
+
+    private static boolean isSecretName(String fileName) {
+        String name = fileName.toLowerCase(Locale.ROOT);
+        for (String ext :
+                List.of(".pem", ".key", ".p12", ".pfx", ".kdbx", ".tfstate", ".tfvars", ".sqlite", ".sqlite3", ".db")) {
+            if (name.endsWith(ext)) {
+                return true;
+            }
+        }
+        if (name.contains(".tfstate.") // terraform.tfstate.backup
+                || name.startsWith("credentials") && name.endsWith(".json")
+                || name.startsWith("secrets.")
+                || EncryptedNames.extensionOf(name) != null) {
             return true;
         }
         return name.startsWith("id_") && (name.indexOf('.') < 0 || name.endsWith(".pub"));
     }
 
-    /** Whether {@code resolved}'s real path, relative to the root's, passes through a hidden or secret name. */
-    private static boolean hidesBehindALink(Path root, Path resolved) {
-        try {
-            Path rel = root.toRealPath().relativize(resolved.toRealPath());
-            return isHiddenOrSecret(rel.toString());
-        } catch (IOException | IllegalArgumentException e) {
-            return false; // not there (the read 404s) or not comparable
-        }
-    }
-
     /**
-     * Whether serving {@code docRoot} would expose far more than a web site: a filesystem root; the user's home
-     * directory or any ancestor of it ({@code /home}, {@code /Users}); a catch-all folder of the home (Downloads,
-     * Desktop, Documents, and their localized XDG names) when the page sits directly in it; the temp folder or an
-     * ancestor of it; or anything on a non-default (remote) file system, whose home cannot be compared with
-     * ours. {@code home} may be null (unknown) — then only the home rules are skipped.
+     * Whether {@code rel} may be served, given the {@code entries} previewed in its site: a previewed page itself,
+     * and what lies in its own folder, are served even in a hidden folder ({@code .github/}, {@code .vitepress/}),
+     * still minus dotfiles and secrets inside it and never in {@code .git}, {@code .ssh} and their like; secrets
+     * and encrypted files never are (E113).
      */
-    public static boolean isUnsafeDocRoot(@Nullable Path docRoot, @Nullable Path home) {
-        if (docRoot == null || docRoot.getFileSystem() != FileSystems.getDefault()) {
-            return true;
+    static boolean isServable(String rel, Collection<String> entries) {
+        String r = rel.replace('\\', '/');
+        String[] segments = r.split("/");
+        if (isSecretName(segments.length == 0 ? "" : segments[segments.length - 1])) {
+            return false;
         }
-        Path root = real(docRoot);
-        if (root.getParent() == null) {
-            return true;
-        }
-        if (home != null) {
-            Path h = real(home);
-            if (h.startsWith(root)) {
+        for (String entry : entries) {
+            int slash = entry.lastIndexOf('/');
+            String folder = slash < 0 ? "" : entry.substring(0, slash);
+            if (neverServed(folder)) {
+                continue;
+            }
+            if (r.equals(entry)
+                    || !folder.isEmpty()
+                            && r.startsWith(folder + "/")
+                            && !isHiddenOrSecret(r.substring(folder.length() + 1))) {
                 return true;
             }
-            for (Path folder : catchAllFolders(h)) {
-                if (root.equals(real(folder))) {
-                    return true;
-                }
+        }
+        return !isHiddenOrSecret(r);
+    }
+
+    private static boolean neverServed(String folder) {
+        for (String seg : folder.split("/")) {
+            if (NEVER_FOLDERS.contains(seg.toLowerCase(Locale.ROOT))
+                    || seg.toLowerCase(Locale.ROOT).startsWith(".env")) {
+                return true;
             }
         }
-        String tmp = System.getProperty("java.io.tmpdir");
-        return tmp != null && !tmp.isBlank() && real(Path.of(tmp)).startsWith(root);
+        return false;
     }
 
-    /** {@link #isUnsafeDocRoot(Path, Path)} against the current user's home. */
-    public static boolean isUnsafeDocRoot(@Nullable Path docRoot) {
-        return isUnsafeDocRoot(docRoot, userHome());
-    }
-
-    /** Downloads, Desktop and Documents under {@code home}, plus their names from {@code ~/.config/user-dirs.dirs}. */
-    static List<Path> catchAllFolders(Path home) {
-        List<Path> out = new ArrayList<>();
-        out.add(home.resolve("Downloads"));
-        out.add(home.resolve("Desktop"));
-        out.add(home.resolve("Documents"));
-        Path dirs = home.resolve(".config").resolve("user-dirs.dirs");
+    /** Whether {@code resolved}'s real path, relative to the root's, passes through a hidden or secret name. */
+    private static boolean hidesBehindALink(Path root, Path resolved, Collection<String> entries) {
         try {
-            if (Files.isRegularFile(dirs)) {
-                for (String line : Files.readAllLines(dirs)) {
-                    Path p = xdgUserDir(line, home);
-                    if (p != null) {
-                        out.add(p);
-                    }
-                }
-            }
-        } catch (IOException | RuntimeException ignored) {
-            // unreadable: the English names still apply
-        }
-        return out;
-    }
-
-    /** {@code XDG_DOWNLOAD_DIR="$HOME/Descargas"} ⇒ {@code <home>/Descargas}, for the three catch-all keys only. */
-    static @Nullable Path xdgUserDir(String line, Path home) {
-        String l = line.strip();
-        int eq = l.indexOf('=');
-        if (eq < 0) {
-            return null;
-        }
-        String key = l.substring(0, eq).strip();
-        if (!key.equals("XDG_DOWNLOAD_DIR") && !key.equals("XDG_DESKTOP_DIR") && !key.equals("XDG_DOCUMENTS_DIR")) {
-            return null;
-        }
-        String value = l.substring(eq + 1).strip();
-        if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
-            value = value.substring(1, value.length() - 1);
-        }
-        if (value.startsWith("$HOME/")) {
-            return home.resolve(value.substring("$HOME/".length()));
-        }
-        return value.startsWith("/") ? Path.of(value) : null;
-    }
-
-    /**
-     * The folder to serve for {@code file}: the window's project root when the file is inside it (and the project
-     * is a safe root); for a loose file, the nearest ancestor holding an {@code index.html} (searching up to, not
-     * into, an unsafe folder such as the home), else the file's own folder. The result may still be unsafe (a
-     * page sitting directly in the home): the caller checks {@link #isUnsafeDocRoot} and refuses.
-     */
-    public static Path siteRoot(Path file, @Nullable Path projectRoot, @Nullable Path home) {
-        Path abs = file.toAbsolutePath().normalize();
-        Path parent = abs.getParent();
-        Path folder = parent == null ? abs : parent;
-        if (projectRoot != null && projectRoot.getFileSystem() == abs.getFileSystem()) {
-            Path pr = projectRoot.toAbsolutePath().normalize();
-            if (abs.startsWith(pr) && !abs.equals(pr) && !isUnsafeDocRoot(pr, home)) {
-                return pr;
-            }
-        }
-        for (Path d = folder; d != null && !isUnsafeDocRoot(d, home); d = d.getParent()) {
-            if (Files.isRegularFile(d.resolve("index.html"))) {
-                return d;
-            }
-        }
-        return folder;
-    }
-
-    /** {@link #siteRoot(Path, Path, Path)} against the current user's home. */
-    public static Path siteRoot(Path file, @Nullable Path projectRoot) {
-        return siteRoot(file, projectRoot, userHome());
-    }
-
-    /**
-     * {@code p} canonicalized. A path that does not exist yet is canonicalized through its nearest existing
-     * ancestor, so it still compares equal to the same folder reached through a canonical parent (macOS
-     * {@code /var} → {@code /private/var}, Windows 8.3 short names).
-     */
-    private static Path real(Path p) {
-        Path abs = p.toAbsolutePath().normalize();
-        Path existing = abs;
-        while (existing != null && !Files.exists(existing)) {
-            existing = existing.getParent();
-        }
-        if (existing == null) {
-            return abs;
-        }
-        try {
-            return existing.toRealPath().resolve(existing.relativize(abs));
-        } catch (IOException e) {
-            return abs;
+            Path rel = root.toRealPath().relativize(resolved.toRealPath());
+            return !isServable(rel.toString(), entries);
+        } catch (IOException | IllegalArgumentException e) {
+            return false; // not there (the read 404s) or not comparable
         }
     }
 
@@ -707,22 +733,33 @@ public final class LivePreviewServer {
      * (byte-order mark, or a leading NUL) is returned unchanged — it previews, without live reload.
      */
     static byte[] injectReloadScript(byte[] html, String script) {
+        int at = injectionPoint(html);
+        if (at < 0) {
+            return html;
+        }
+        byte[] s = script.getBytes(StandardCharsets.US_ASCII);
+        byte[] out = new byte[html.length + s.length];
+        System.arraycopy(html, 0, out, 0, at);
+        System.arraycopy(s, 0, out, at, s.length);
+        System.arraycopy(html, at, out, at + s.length, html.length - at);
+        return out;
+    }
+
+    /**
+     * Where the script goes in a page's bytes: before the last {@code </body>}, else at the end; -1 for a
+     * UTF-16/32 page (byte-order mark, or a leading NUL), which is left alone.
+     */
+    static int injectionPoint(byte[] html) {
         boolean wide = html.length >= 2
                 && ((html[0] == (byte) 0xFF && html[1] == (byte) 0xFE)
                         || (html[0] == (byte) 0xFE && html[1] == (byte) 0xFF)
                         || html[0] == 0
                         || html[1] == 0);
         if (wide) {
-            return html;
+            return -1;
         }
-        byte[] s = script.getBytes(StandardCharsets.US_ASCII);
         int idx = lastBodyClose(html.length, i -> html[i] & 0xFF);
-        int at = idx >= 0 ? idx : html.length;
-        byte[] out = new byte[html.length + s.length];
-        System.arraycopy(html, 0, out, 0, at);
-        System.arraycopy(s, 0, out, at, s.length);
-        System.arraycopy(html, at, out, at + s.length, html.length - at);
-        return out;
+        return idx >= 0 ? idx : html.length;
     }
 
     /**
@@ -755,8 +792,8 @@ public final class LivePreviewServer {
 
     /**
      * The live-reload client: polls {@code <base>/__editora_livereload?v=<version>} every
-     * {@value #POLL_INTERVAL_MS} ms. 204 ⇒ no change; 200 ⇒ reload, or with {@code " css"} re-fetch the
-     * stylesheets only; anything else (a 404 after a restart, a 500, a network error) backs off exponentially and
+     * {@value #POLL_INTERVAL_MS} ms. 204 ⇒ no change; 200 ⇒ reload, or with {@code " css"} re-fetch the page's
+     * own-origin stylesheets only; anything else (a 404 after a restart, a 500, a network error) backs off exponentially and
      * after six failures in a row stops and shows {@code goneMessage}. The script is pure ASCII.
      */
     static String reloadScript(long version, String base, String goneMessage) {
@@ -769,6 +806,8 @@ public final class LivePreviewServer {
                 + "function fail(){f++;if(f>=6){gone();}else{later(Math.min(30000,1000*Math.pow(2,f)));}}"
                 + "function css(){var l=document.querySelectorAll('link[rel~=\"stylesheet\"]');"
                 + "for(var i=0;i<l.length;i++){var h=l[i].getAttribute('href');if(!h){continue;}"
+                // Only this site's own stylesheets: a CDN one is left cached and untouched (E110).
+                + "try{if(new URL(h,location.href).origin!==location.origin){continue;}}catch(e){continue;}"
                 + "h=h.replace(/([?&])editora-lr=\\d+&?/,'$1').replace(/[?&]$/,'');"
                 + "l[i].setAttribute('href',h+(h.indexOf('?')<0?'?':'&')+'editora-lr='+Date.now());}}"
                 + "function poll(){fetch(u+v,{cache:'no-store'}).then(function(r){"
@@ -922,6 +961,40 @@ public final class LivePreviewServer {
                 return !decoder.flush(out).isError();
             }
             out.clear(); // overflow: drop what was decoded and go on
+        }
+    }
+
+    /** {@link #isUtf8(byte[])} for a file, read through a small buffer (nothing is held in memory). */
+    static boolean isUtf8(Path file) {
+        CharsetDecoder decoder = StandardCharsets.UTF_8
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        ByteBuffer in = ByteBuffer.allocate(CHUNK);
+        CharBuffer out = CharBuffer.allocate(CHUNK);
+        try (InputStream stream = Files.newInputStream(file)) {
+            while (true) {
+                int n = stream.read(in.array(), in.position(), in.remaining());
+                boolean end = n < 0;
+                if (!end) {
+                    in.position(in.position() + n);
+                }
+                in.flip();
+                CoderResult r;
+                do {
+                    r = decoder.decode(in, out, end);
+                    if (r.isError()) {
+                        return false;
+                    }
+                    out.clear();
+                } while (r.isOverflow());
+                in.compact();
+                if (end) {
+                    return !decoder.flush(out).isError();
+                }
+            }
+        } catch (IOException e) {
+            return false;
         }
     }
 

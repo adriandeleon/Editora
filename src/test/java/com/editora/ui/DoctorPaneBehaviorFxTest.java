@@ -409,4 +409,30 @@ class DoctorPaneBehaviorFxTest {
         }
         return false;
     }
+
+    /** HTML review 2 A110: beside a long detail, a short command keeps its program name rather than "vsco…". */
+    @Test
+    void aShortCommandStaysWholeBesideALongDetail() throws Exception {
+        String command = "vscode-html-language-server --stdio (Editora’s copy)";
+        DoctorCheck html = DoctorCheck.checking("lsp.html", "lsp", "HTML", command)
+                .withSettings("lsp")
+                .warn(
+                        "4.10.0 — /very/long/configuration/folder/of/this/user/plugins/lsp/web/node_modules/.bin/"
+                                + "vscode-html-language-server and some more words to make it longer than the row",
+                        "doctor.tip.serverFailing");
+        Shown s = show(List.of(html));
+        try {
+            boolean whole = FxTestSupport.callOnFx(() -> {
+                s.stage().setWidth(900);
+                s.pane().applyCss();
+                s.pane().layout();
+                Node row = row(s.pane(), "lsp.html");
+                javafx.scene.control.Label label = (javafx.scene.control.Label) row.lookup(".doctor-command");
+                return label.getText().equals(command) && label.getWidth() + 0.5 >= label.prefWidth(-1);
+            });
+            assertTrue(whole, "the command is not cut down");
+        } finally {
+            FxTestSupport.runOnFx(s.stage()::hide);
+        }
+    }
 }

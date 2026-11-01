@@ -7,10 +7,10 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * What Editora knows about HTML elements, in one table (HTML review E21): which are void, which hold raw text, whose
- * whitespace is significant, whose end tag may be left out, and which are phrasing content. Tag auto-close, rename and
- * join, the indenter, folding, the Structure outline, spell checking, the built-in formatter and the HTML-to-Markdown
- * paste all read it, where each used to carry its own drifting copy ({@code <title>} was raw text for rename but not
- * for the indenter, {@code <pre>} the other way round).
+ * whitespace is significant, whose end tag may be left out, and which a formatter keeps inline. Tag auto-close,
+ * rename and join, the indenter, folding, the Structure outline, spell checking, the built-in formatter and the
+ * HTML-to-Markdown paste all read it, where each used to carry its own drifting copy ({@code <title>} was raw text for
+ * rename but not for the indenter, {@code <pre>} the other way round).
  *
  * <p>Names are compared lower-cased: HTML element names are case-insensitive. Pure; any thread.
  */
@@ -47,12 +47,19 @@ public final class HtmlElements {
             "body", "caption", "colgroup", "dd", "dt", "head", "html", "li", "optgroup", "option", "p", "rb", "rp",
             "rt", "rtc", "tbody", "td", "tfoot", "th", "thead", "tr");
 
-    /** Phrasing (inline) elements: they stay on the line of the text around them. */
-    public static final Set<String> PHRASING = Set.of(
-            "a", "abbr", "acronym", "b", "bdi", "bdo", "big", "br", "button", "cite", "code", "data", "del", "dfn",
-            "em", "font", "i", "img", "input", "ins", "kbd", "label", "mark", "meter", "nobr", "output", "progress",
-            "q", "rp", "rt", "ruby", "s", "samp", "small", "span", "strike", "strong", "sub", "sup", "time", "tt",
-            "u", "var", "wbr");
+    /**
+     * Elements a formatter puts on lines of their own; every other element — phrasing content, {@code <select>},
+     * {@code <textarea>}, {@code <svg>}, {@code <video>}, a custom element — stays on the line of the text around it,
+     * where a line break would show as a space (HTML review 2 E106, as js-beautify's {@code inline} list and
+     * {@code inline_custom_elements}). {@code <script>} is here but stays inline when it follows text on its line.
+     */
+    public static final Set<String> BLOCK = Set.of(
+            "address", "article", "aside", "base", "blockquote", "body", "caption", "center", "col", "colgroup", "dd",
+            "details", "dialog", "dir", "div", "dl", "dt", "fieldset", "figcaption", "figure", "footer", "form",
+            "frame", "frameset", "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hgroup", "hr", "html",
+            "legend", "li", "link", "listing", "main", "menu", "meta", "nav", "noframes", "ol", "optgroup", "option",
+            "p", "plaintext", "pre", "script", "search", "section", "style", "summary", "table", "tbody", "td",
+            "template", "tfoot", "th", "thead", "title", "tr", "ul", "xmp");
 
     /** Phrasing elements that hold code or computer output rather than prose: spell check skips their content. */
     public static final Set<String> CODE_PHRASING = Set.of("code", "kbd", "samp", "var");
@@ -108,8 +115,9 @@ public final class HtmlElements {
         return OPTIONAL_END.contains(lower(name));
     }
 
-    public static boolean isPhrasing(String name) {
-        return PHRASING.contains(lower(name));
+    /** Whether a formatter keeps {@code name} on the line of the text around it: not one of the {@link #BLOCK}s. */
+    public static boolean isInline(String name) {
+        return !BLOCK.contains(lower(name));
     }
 
     /** The HTML template language id: ERB, EJS, Nunjucks, Jinja, Twig, Liquid and Mustache files (HTML review C7). */
@@ -129,6 +137,48 @@ public final class HtmlElements {
     /** Whether {@code language} is one of the template languages ({@link #isHtmlLanguage} but not plain HTML). */
     public static boolean isTemplateLanguage(@Nullable String language) {
         return TEMPLATE_LANGUAGE.equals(language) || HANDLEBARS_LANGUAGE.equals(language);
+    }
+
+    /**
+     * Elements the HTML parser treats as void although they are not in {@link #VOID}: {@code <image>}, which it reads
+     * as {@code <img>} (HTML review 2 C103). Inside {@code <svg>} it is SVG's own element, which may have content.
+     */
+    public static boolean isVoidInHtml(String name) {
+        return isVoid(name) || "image".equals(lower(name));
+    }
+
+    /**
+     * Whether {@code text} holds template-engine syntax that can leave its HTML tags unbalanced as written (HTML review
+     * 2 C101, C108): a Django/Jinja/Twig/Liquid tag {@code {% … %}} or comment <code>{# … #}</code>, an ERB/EJS tag
+     * {@code <% … %>}, or a {@code {{ … }}} in a block form — Handlebars/Mustache {@code {{#if}}}, {@code {{/if}}},
+     * {@code {{^x}}}, {@code {{! … }}}, or Go/Hugo {@code {{ if }}}, {@code {{ else }}}, {@code {{ end }}}. A plain
+     * {@code {{ value }}} (Angular, Vue) is only a value and does not count. The markup check does not look for
+     * unclosed elements in such text, and the built-in formatter leaves it alone.
+     */
+    public static boolean hasTemplateSyntax(CharSequence text) {
+        String s = text.toString();
+        return paired(s, "{%", "%}", false)
+                || paired(s, "{#", "#}", true) // on one line: a JavaScript class body "{#field" is not one
+                || paired(s, "<%", "%>", false)
+                || s.contains("{{") && MUSTACHE_BLOCK.matcher(s).find();
+    }
+
+    private static final java.util.regex.Pattern MUSTACHE_BLOCK = java.util.regex.Pattern.compile(
+            "\\{\\{~?-?\\s*(?:[#/^!]|(?:else|end|if|range|with|define|block|unless|each)\\b)");
+
+    /** Whether {@code open} occurs with a {@code close} after it (on the same line when {@code sameLine}). */
+    private static boolean paired(String s, String open, String close, boolean sameLine) {
+        for (int at = s.indexOf(open); at >= 0; at = s.indexOf(open, at + open.length())) {
+            int end = s.indexOf(close, at + open.length());
+            if (end < 0) {
+                return false;
+            }
+            int nl = s.indexOf('\n', at);
+            if (!sameLine || nl < 0 || nl > end) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String lower(String name) {

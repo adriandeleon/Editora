@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.testfx.api.FxToolkit;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -25,7 +26,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 /**
  * Opt-in probe against the real vscode-html-language-server (HTML review B2, A3): Format Document leaves the
  * content of {@code <pre>} and {@code <textarea>} byte for byte and keeps the file's final newline. With the
- * {@code {}} answer Editora gave before, the server re-spaced both and dropped the newline.
+ * {@code {}} answer Editora gave before, the server re-spaced both and dropped the newline. The final newline is
+ * Editora's to keep (the server's own option added a blank line before {@code </style>}), and an inline script gets
+ * VS Code's brace spacing (HTML review 2, B104, B105).
  *
  * <p>Locally: {@code ./mvnw test -Dtest=HtmlServerFormatNodeProbeFxTest -Dgroups=node -Dnode.probe=true}, with
  * {@code vscode-html-language-server} (vscode-langservers-extracted) and {@code node} on the PATH.
@@ -89,6 +92,12 @@ class HtmlServerFormatNodeProbeFxTest {
             assertTrue(formatted.contains(PRE), "<pre> content changed:\n" + formatted);
             assertTrue(formatted.contains(TEXTAREA), "<textarea> content changed:\n" + formatted);
             assertTrue(formatted.endsWith("</html>\n"), "the final newline was dropped:\n" + formatted);
+            // HTML review 2: endWithNewline reached the <style> beautifier (B104); javascript {} lost the braces'
+            // spaces
+            assertFalse(formatted.contains("}\n\n  </style>"), "a blank line before </style>:\n" + formatted);
+            assertTrue(
+                    formatted.contains("function f() { if (true) { return 1 } }"),
+                    "VS Code's brace spacing in <script>:\n" + formatted);
         } finally {
             manager.close();
         }

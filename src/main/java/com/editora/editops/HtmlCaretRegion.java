@@ -32,6 +32,60 @@ public final class HtmlCaretRegion {
 
     private HtmlCaretRegion() {}
 
+    /** How far before the window {@link #before} looks for the start tag of a script or style the window is in. */
+    public static final int MAX_LOOK_BACK = 100_000;
+
+    /** Read access to a document: its text in {@code [from, to)}. */
+    @FunctionalInterface
+    public interface Text {
+        String text(int from, int to);
+    }
+
+    /**
+     * The text before {@code caret} the region scans read: the {@link #MAX_SCAN} characters before it, headed by
+     * the start tag of the {@code <script>}, {@code <style>} (or other raw-text element) that window begins inside.
+     * Read from the middle of a long inline script, the window looked like markup: its {@code i<n} opened a tag, so
+     * {@code total=} got quotes and HTML snippets were offered in the code (HTML review 2 E112). Whether it begins
+     * inside one is read backwards from the window's start (up to {@link #MAX_LOOK_BACK} characters): the last start
+     * or end tag of a raw-text element there, outside comments, is a start tag.
+     */
+    public static String before(Text doc, int caret) {
+        int start = Math.max(0, caret - MAX_SCAN);
+        String window = doc.text(start, caret);
+        String open = start == 0 ? null : rawOpenBefore(doc, start, caret);
+        return open == null ? window : "<" + open + ">" + window;
+    }
+
+    /**
+     * The raw-text element whose start tag is the last such tag starting before {@code at}, else null (see {@link
+     * #before}); the text up to {@code end} may be read for a name that runs past {@code at}.
+     */
+    static @Nullable String rawOpenBefore(Text doc, int at, int end) {
+        for (int hi = at; hi > 0 && at - hi < MAX_LOOK_BACK; ) {
+            int lo = Math.max(0, hi - MAX_SCAN);
+            // A little past `hi`, so the name of a tag whose '<' is just before it is read whole.
+            String chunk = doc.text(lo, Math.min(end, hi + 16)).toLowerCase(Locale.ROOT);
+            for (int k = chunk.lastIndexOf('<', hi - lo - 1); k >= 0; k = k == 0 ? -1 : chunk.lastIndexOf('<', k - 1)) {
+                boolean closing = k + 1 < chunk.length() && chunk.charAt(k + 1) == '/';
+                int nameStart = k + (closing ? 2 : 1);
+                int nameEnd = nameStart;
+                while (nameEnd < chunk.length() && isNameChar(chunk.charAt(nameEnd))) {
+                    nameEnd++;
+                }
+                if (!HtmlElements.isRawText(chunk.substring(nameStart, nameEnd))) {
+                    continue;
+                }
+                int comment = chunk.lastIndexOf("<!--", k);
+                if (comment >= 0 && chunk.lastIndexOf("-->", k) < comment) {
+                    continue; // a tag mentioned in a comment
+                }
+                return closing ? null : chunk.substring(nameStart, nameEnd);
+            }
+            hi = lo;
+        }
+        return null;
+    }
+
     /** The region at the end of {@code before} (the text preceding the caret, at most {@link #MAX_SCAN} chars). */
     public static Region at(String before) {
         return scan(before).region();
@@ -94,12 +148,16 @@ public final class HtmlCaretRegion {
      * Whether an {@code =} typed at the caret ends an attribute name, so its value's quotes go in with it (VS Code's
      * {@code html.autoCreateQuotes}; HTML review D10): the caret is in a start tag, outside any quoted value, right
      * after a name that follows a space, and no quote or {@code =} is already next ({@code after}, the text after
-     * the caret). {@code before} is the text before the caret, at most {@link #MAX_SCAN} chars.
+     * the caret), and not inside a template tag. {@code before} is the text before the caret, as {@link #before}
+     * reads it.
      */
     public static boolean quotesAfterEquals(String before, String after) {
         Scan s = scan(before);
         if (s.region() != Region.TAG || s.quote() != 0 || !Character.isLetter(before.charAt(s.tagStart() + 1))) {
             return false; // not in a start tag (an end tag, a doctype), or inside a value already
+        }
+        if (inTemplateTag(before, s.tagStart())) {
+            return false; // `<option {% if a==b %}`: the template's code, not an attribute (HTML review 2 C104)
         }
         int i = before.length();
         while (i > 0 && isAttributeNameChar(before.charAt(i - 1))) {
@@ -110,6 +168,21 @@ public final class HtmlCaretRegion {
         }
         char next = after.isEmpty() ? 0 : after.charAt(0);
         return next != '"' && next != '\'' && next != '=';
+    }
+
+    /**
+     * Whether the end of {@code before} is inside a template tag opened at or after {@code from}: {@code {% … %}},
+     * {@code {{ … }}} or {@code <% … %>} (Jinja, Django, Twig, Liquid, Handlebars, ERB, EJS) not yet closed.
+     */
+    static boolean inTemplateTag(String before, int from) {
+        return unclosed(before, from, "{%", "%}")
+                || unclosed(before, from, "{{", "}}")
+                || unclosed(before, from, "<%", "%>");
+    }
+
+    private static boolean unclosed(String s, int from, String open, String close) {
+        int at = s.lastIndexOf(open);
+        return at >= from && s.indexOf(close, at + open.length()) < 0;
     }
 
     private static boolean isAttributeNameChar(char c) {

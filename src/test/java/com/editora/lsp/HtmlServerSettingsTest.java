@@ -43,7 +43,7 @@ class HtmlServerSettingsTest {
         assertEquals(Boolean.FALSE, format.get("indentInnerHtml"));
         assertEquals(Boolean.TRUE, format.get("preserveNewLines"));
         assertEquals(Boolean.FALSE, format.get("templating"));
-        assertFalse(format.containsKey("endWithNewline"), "no document: the formatter's own default");
+        assertEquals(Boolean.FALSE, format.get("endWithNewline"), "VS Code's: Editora keeps the final newline (B104)");
         assertEquals(Map.of("html5", true), html.get("suggest"));
         assertEquals(Map.of("scripts", true, "styles", true), html.get("validate"));
         assertEquals(Map.of("documentation", true, "references", true), html.get("hover"));
@@ -86,27 +86,24 @@ class HtmlServerSettingsTest {
 
     /**
      * A3, D6: the formatter's default dropped the final newline on every format. The file's
-     * {@code insert_final_newline} decides; without one, the text as it is now.
+     * {@code insert_final_newline} decides; without one, the text as it is now. B104: the server is always told
+     * {@code endWithNewline: false} (it reached every {@code <style>}'s CSS beautifier) and Editora applies this.
      */
     @Test
     void theFinalNewlineFollowsEditorConfigElseTheText() {
         var user = HtmlServerSettings.defaults();
         var indent = new FormattingIndent(2, true);
+        assertEquals(Boolean.TRUE, user.finalNewline(indent.withDocument(null, true)));
+        assertEquals(Boolean.FALSE, user.finalNewline(indent.withDocument(null, false)));
         assertEquals(
-                Boolean.TRUE,
-                format(user.section(indent.withDocument(null, true))).get("endWithNewline"));
+                Boolean.TRUE, user.finalNewline(indent.withDocument(null, false).withSaveRules(null, true)));
         assertEquals(
-                Boolean.FALSE,
-                format(user.section(indent.withDocument(null, false))).get("endWithNewline"));
-        assertEquals(
-                Boolean.TRUE,
-                format(user.section(indent.withDocument(null, false).withSaveRules(null, true)))
-                        .get("endWithNewline"));
-        assertEquals(
-                Boolean.FALSE,
-                format(user.section(indent.withDocument(null, true).withSaveRules(null, false)))
-                        .get("endWithNewline"));
-        assertFalse(format(user.section(indent)).containsKey("endWithNewline"), "unknown text: not said");
+                Boolean.FALSE, user.finalNewline(indent.withDocument(null, true).withSaveRules(null, false)));
+        assertNull(user.finalNewline(indent), "unknown text (Tab re-indent): left as the server made it");
+        assertNull(user.finalNewline(indent.withSaveRules(null, true)), "nor for a save rule alone");
+        for (var doc : java.util.List.of(indent.withDocument(null, true), indent.withSaveRules(null, true))) {
+            assertEquals(Boolean.FALSE, format(user.section(doc)).get("endWithNewline"));
+        }
     }
 
     /**
@@ -120,10 +117,10 @@ class HtmlServerSettingsTest {
         assertEquals(4, options.getTabSize());
         assertFalse(options.isInsertSpaces());
         assertEquals(80, options.getNumber("wrapLineLength").intValue());
-        assertEquals(Boolean.TRUE, options.getBoolean("endWithNewline"));
+        assertEquals(Boolean.FALSE, options.getBoolean("endWithNewline"), "B104: never the server's to add");
         var plain = HtmlServerSettings.defaults().formattingOptions(new FormattingIndent(2, true));
         assertEquals(120, plain.getNumber("wrapLineLength").intValue());
-        assertNull(plain.get("endWithNewline"));
+        assertEquals(Boolean.FALSE, plain.getBoolean("endWithNewline"));
     }
 
     /** A4, D2: a project's {@code html} object, in VS Code's key names, is laid over the user's settings. */
@@ -155,19 +152,70 @@ class HtmlServerSettingsTest {
         assertEquals("force", format(html).get("wrapAttributes"));
         assertEquals(90, format(html).get("wrapLineLength"));
         assertEquals(Boolean.TRUE, format(html).get("indentInnerHtml"));
-        assertEquals(Boolean.TRUE, format(html).get("endWithNewline"));
+        assertEquals(Boolean.FALSE, format(html).get("endWithNewline"), "Editora's to apply (B104)");
         assertEquals(Boolean.FALSE, format(html).get("templating"));
         assertFalse(format(html).containsKey("nonsense"));
         assertEquals(Map.of("scripts", true, "styles", false), html.get("validate"));
-        assertEquals(Boolean.FALSE, html.get("autoClosingTags"));
+        assertEquals(Boolean.TRUE, html.get("autoClosingTags"), "D102: Editora's own auto-close, not the project's");
         assertFalse(html.containsKey("customData"));
         // The project's explicit choice beats the text's last character; EditorConfig beats both.
         var indent = new FormattingIndent(2, true).withDocument(70, false);
-        assertEquals(Boolean.TRUE, format(settings.section(indent)).get("endWithNewline"));
+        assertEquals(Boolean.TRUE, settings.finalNewline(indent));
         assertEquals(70, format(settings.section(indent)).get("wrapLineLength"));
+        assertEquals(Boolean.FALSE, settings.finalNewline(indent.withSaveRules(null, false)));
+        // A107: what was not taken is named, as dotted keys.
+        assertEquals(
+                java.util.Set.of("format.templating", "format.nonsense", "autoClosingTags", "customData"),
+                java.util.Set.copyOf(settings.ignoredProjectKeys()));
+        assertEquals(java.util.List.of(), HtmlServerSettings.defaults().ignoredProjectKeys());
+    }
+
+    /**
+     * D102: a project's {@code autoClosingTags} (copied from a VS Code setup, where {@code false} means "VS Code,
+     * don't close") must not bring back the server's closer while Editora closes tags itself, nor hide it from a
+     * user who turned Editora's auto-close off.
+     */
+    @Test
+    void autoClosingTagsAlwaysFollowsEditorasOwnSwitch() {
+        Settings off = new Settings();
+        off.setAutoCloseTags(false);
+        assertEquals(
+                Boolean.TRUE,
+                HtmlServerSettings.defaults()
+                        .withProject(Map.of("autoClosingTags", false))
+                        .section(null)
+                        .get("autoClosingTags"));
         assertEquals(
                 Boolean.FALSE,
-                format(settings.section(indent.withSaveRules(null, false))).get("endWithNewline"));
+                HtmlServerSettings.of(off)
+                        .withProject(Map.of("autoClosingTags", true))
+                        .section(null)
+                        .get("autoClosingTags"));
+    }
+
+    /**
+     * A107: VS Code's dotted keys work as well as nested ones — {@code "format.wrapAttributes"} in the object (and
+     * the top-level {@code "html.format.wrapAttributes"}, which {@code ProjectSettings} hands over the same way).
+     */
+    @Test
+    void dottedKeysAreTakenLikeNestedOnes() {
+        Map<String, Object> project = new java.util.LinkedHashMap<>();
+        project.put("format", Map.of("wrapLineLength", 90));
+        project.put("format.wrapAttributes", "force-expand-multiline");
+        project.put("validate.styles", false);
+        project.put("format.endWithNewline", false);
+        project.put("format.wrapAtributes", "force"); // misspelt
+        var settings = HtmlServerSettings.defaults().withProject(project);
+        Map<String, Object> html = settings.section(null);
+        assertEquals(90, format(html).get("wrapLineLength"));
+        assertEquals("force-expand-multiline", format(html).get("wrapAttributes"));
+        assertEquals(Map.of("scripts", true, "styles", false), html.get("validate"));
+        assertEquals(Boolean.FALSE, settings.finalNewline(new FormattingIndent(2, true).withDocument(null, true)));
+        assertEquals(java.util.List.of("format.wrapAtributes"), settings.ignoredProjectKeys());
+        assertEquals(
+                Map.of("a", Map.of("b", 1, "c", 2)),
+                HtmlServerSettings.unflatten(Map.of("a", Map.of("b", 1), "a.c", 2)),
+                "nested and dotted keys of one object are merged");
     }
 
     /** The project's settings serve only the servers on its root; a loose file's server gets the user's. */
@@ -182,12 +230,32 @@ class HtmlServerSettingsTest {
         assertSame(user, HtmlServerSettings.perRoot(project, user, null).apply(Path.of("/work/site")));
     }
 
-    /** The four sections the server asks for, and a dotted path into the html object. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> embeddedFormat(Object section) {
+        return (Map<String, Object>) ((Map<String, Object>) section).get("format");
+    }
+
+    /**
+     * The four sections the server asks for, and a dotted path into the html object. B105: {@code javascript} is
+     * VS Code's format defaults — with {@code {}} the server's TypeScript formatter dropped the spaces inside
+     * non-empty braces ({@code function f() {return 1} }) — and {@code css} too, for parity.
+     */
     @Test
     void theServersFourSectionsAreAnswered() {
         var settings = HtmlServerSettings.defaults();
-        assertEquals(Map.of(), settings.answer("css", null));
-        assertEquals(Map.of(), settings.answer("javascript", null));
+        Map<String, Object> js = embeddedFormat(settings.answer("javascript", null));
+        assertEquals(Boolean.TRUE, js.get("insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces"));
+        assertEquals(Boolean.TRUE, js.get("insertSpaceAfterOpeningAndBeforeClosingEmptyBraces"));
+        assertEquals(Boolean.TRUE, js.get("insertSpaceAfterKeywordsInControlFlowStatements"));
+        assertEquals(Boolean.FALSE, js.get("insertSpaceBeforeFunctionParenthesis"));
+        assertEquals(Boolean.FALSE, js.get("placeOpenBraceOnNewLineForFunctions"));
+        assertEquals("ignore", js.get("semicolons"));
+        Map<String, Object> css = embeddedFormat(settings.answer("css", null));
+        assertEquals("collapse", css.get("braceStyle"));
+        assertEquals(Boolean.TRUE, css.get("newlineBetweenRules"));
+        js.put("semicolons", "insert");
+        assertEquals(
+                "ignore", embeddedFormat(settings.answer("javascript", null)).get("semicolons"), "a copy");
         assertNull(settings.answer("js/ts", null), "{} makes the server's JavaScript mode throw");
         assertTrue(settings.answer("html", null) instanceof Map);
         assertEquals("pre,code,textarea", settings.answer("html.format.contentUnformatted", null));
@@ -196,12 +264,13 @@ class HtmlServerSettingsTest {
         assertNull(settings.answer(null, null));
     }
 
-    /** The push: the section with no document facts, and objects for the embedded CSS and JavaScript. */
+    /** The push: the section with no document facts, and the embedded CSS and JavaScript ones (B105). */
     @Test
-    void thePushCarriesTheSectionAndEmptyEmbeddedSections() {
+    void thePushCarriesTheSectionAndTheEmbeddedSections() {
         Map<String, Object> push = HtmlServerSettings.defaults().push();
         assertEquals(java.util.Set.of("html", "css", "javascript"), push.keySet());
-        assertEquals(Map.of(), push.get("css"));
+        assertEquals(HtmlServerSettings.defaults().answer("css", null), push.get("css"));
+        assertEquals(HtmlServerSettings.defaults().answer("javascript", null), push.get("javascript"));
         assertEquals(HtmlServerSettings.defaults().section(null), push.get("html"));
     }
 

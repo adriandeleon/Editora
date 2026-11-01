@@ -196,4 +196,28 @@ class WebServerInstallTest {
                 PinnedVersions.fromVersionOutput(InstallCatalog.WEB_LS_PACKAGE, "vscode-langservers-extracted 4.10.0"));
         assertNull(PinnedVersions.fromVersionOutput(InstallCatalog.WEB_LS_PACKAGE, "pyright 1.1.400"));
     }
+
+    /** HTML review 2 A108: the banner's test — a copy outside Editora's prefix that lacks the libraries. */
+    @Test
+    void aForeignCopyWithoutLibrariesIsTheOneUpdateFixes(@TempDir Path dir) throws Exception {
+        Path config = Files.createDirectories(dir.resolve("config"));
+        Path global = dir.resolve("npm-global");
+        Path pkg = npmLayout(global, true);
+        String launcher = pkg.resolve("bin/vscode-html-language-server").toString();
+        assertTrue(WebServerInstall.foreignCopyWithoutLibs(List.of(launcher, "--stdio"), config));
+        assertTrue(WebServerInstall.foreignCopyWithoutLibs(List.of(launcher, "--stdio"), null));
+
+        Path own = npmLayout(WebServerInstall.folder(config), true);
+        String ownLauncher = own.resolve("bin/vscode-html-language-server").toString();
+        assertFalse(
+                WebServerInstall.foreignCopyWithoutLibs(List.of(ownLauncher, "--stdio"), config),
+                "Editora's own copy is not offered an Update by the banner");
+
+        WebServerInstall.linkTypeScriptLibs(global);
+        assertFalse(WebServerInstall.foreignCopyWithoutLibs(List.of(launcher, "--stdio"), config), "it has them now");
+        assertFalse(WebServerInstall.foreignCopyWithoutLibs(List.of("no-such-html-server-a108", "--stdio"), config));
+        assertFalse(WebServerInstall.foreignCopyWithoutLibs(
+                List.of(dir.resolve("gone").toString()), config));
+        assertFalse(WebServerInstall.foreignCopyWithoutLibs(List.of(), config));
+    }
 }
