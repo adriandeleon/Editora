@@ -2989,6 +2989,15 @@ public class SettingsWindow {
                 autoCloseTagsCheck,
                 null,
                 "auto close tags html xml closing tag insert body vs code");
+        choiceRow( // what a typed `=` and a completed attribute get, server or not (HTML review 3 C204)
+                editing,
+                Category.EDITOR,
+                "htmlAttributeQuotes",
+                true,
+                Settings.HTML_ATTRIBUTE_QUOTES,
+                Settings::getHtmlAttributeQuotes,
+                Settings::setHtmlAttributeQuotes,
+                "html attribute quotes double single empty none value equals typed completion auto create vs code");
         checkRow(
                 editing,
                 Category.EDITOR,
