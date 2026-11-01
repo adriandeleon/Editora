@@ -10,15 +10,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystem;
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -203,85 +200,6 @@ class LivePreviewServerTest {
         assertNotNull(LivePreviewServer.safeResolve(root, "alias.css"), "an in-root symlink is fine");
     }
 
-    // --- unsafe roots and the site root (E2, E3, E4) --------------------------------------------
-
-    /** A missing catch-all folder under a home reached through a link (macOS /var → /private/var). */
-    @Test
-    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS) // symlinks need a right
-    void aMissingCatchAllFolderIsUnsafeWhenHomeIsReachedThroughALink(@TempDir Path tmp) throws Exception {
-        Path realHome = Files.createDirectories(tmp.resolve("private/home/alice"));
-        Path link = Files.createSymbolicLink(tmp.resolve("home"), realHome.getParent());
-        Path home = link.resolve("alice");
-        assertTrue(LivePreviewServer.isUnsafeDocRoot(home.resolve("Desktop"), home), "Desktop, not created yet");
-        assertTrue(LivePreviewServer.isUnsafeDocRoot(realHome.resolve("Documents"), home), "through the real path");
-        assertFalse(LivePreviewServer.isUnsafeDocRoot(home.resolve("projects/site"), home));
-    }
-
-    @Test
-    void homeItsAncestorsCatchAllFoldersTempAndRootsAreUnsafe(@TempDir Path tmp) throws Exception {
-        Path home = Files.createDirectories(tmp.resolve("home/alice"));
-        Path site = Files.createDirectories(home.resolve("projects/site"));
-        Path downloads = Files.createDirectories(home.resolve("Downloads"));
-        Path descargas = Files.createDirectories(home.resolve("Descargas"));
-        Files.createDirectories(home.resolve(".config"));
-        Files.writeString(
-                home.resolve(".config/user-dirs.dirs"),
-                "# xdg-user-dirs\nXDG_DOWNLOAD_DIR=\"$HOME/Descargas\"\nXDG_MUSIC_DIR=\"$HOME/Music\"\n");
-        assertTrue(LivePreviewServer.isUnsafeDocRoot(home, home), "the home directory itself");
-        assertTrue(LivePreviewServer.isUnsafeDocRoot(home.getParent(), home), "an ancestor of home (/home)");
-        assertTrue(LivePreviewServer.isUnsafeDocRoot(tmp.getRoot(), home), "a filesystem root");
-        assertTrue(LivePreviewServer.isUnsafeDocRoot(tmp.getRoot(), null), "a root is refused even with no home");
-        assertTrue(LivePreviewServer.isUnsafeDocRoot(null, home));
-        assertTrue(LivePreviewServer.isUnsafeDocRoot(downloads, home), "a page sitting directly in Downloads");
-        assertTrue(LivePreviewServer.isUnsafeDocRoot(home.resolve("Desktop"), home));
-        assertTrue(LivePreviewServer.isUnsafeDocRoot(home.resolve("Documents"), home));
-        assertTrue(LivePreviewServer.isUnsafeDocRoot(descargas, home), "the localized XDG download folder");
-        assertFalse(LivePreviewServer.isUnsafeDocRoot(home.resolve("Music"), home), "not a catch-all key");
-        assertTrue(
-                LivePreviewServer.isUnsafeDocRoot(Path.of(System.getProperty("java.io.tmpdir")), home),
-                "the temp folder");
-        assertFalse(LivePreviewServer.isUnsafeDocRoot(site, home), "a project folder under home is fine");
-        assertFalse(LivePreviewServer.isUnsafeDocRoot(downloads.resolve("site"), home), "a site inside Downloads");
-        assertFalse(LivePreviewServer.isUnsafeDocRoot(tmp.resolve("elsewhere"), home), "an unrelated folder");
-    }
-
-    @Test
-    void aRemoteFileSystemIsNeverASafeRoot(@TempDir Path tmp) throws Exception {
-        Path zip = tmp.resolve("remote.zip");
-        try (FileSystem zfs = FileSystems.newFileSystem(zip, Map.of("create", "true"))) {
-            Path remote = Files.createDirectories(zfs.getPath("/home/bob/site"));
-            // A remote home cannot be compared with ours, so even a deep folder there is refused.
-            assertTrue(LivePreviewServer.isUnsafeDocRoot(remote, Path.of(System.getProperty("user.home"))));
-            assertTrue(LivePreviewServer.isUnsafeDocRoot(zfs.getPath("/home/bob"), null));
-        }
-    }
-
-    @Test
-    void siteRootIsTheProjectElseTheNearestIndexElseTheFolder(@TempDir Path tmp) throws Exception {
-        Path home = Files.createDirectories(tmp.resolve("home/alice"));
-        Path project = Files.createDirectories(home.resolve("work/site"));
-        Path page = Files.createDirectories(project.resolve("pages")).resolve("about.html");
-        assertEquals(project, LivePreviewServer.siteRoot(page, project, home), "inside the project: its root");
-
-        Path loose = Files.createDirectories(home.resolve("loose/blog/2026"));
-        Files.writeString(home.resolve("loose/index.html"), "<html/>");
-        assertEquals(
-                home.resolve("loose"),
-                LivePreviewServer.siteRoot(loose.resolve("post.html"), null, home),
-                "a loose file: the nearest folder up holding an index.html");
-        Files.writeString(home.resolve("index.html"), "<html/>"); // in the home: never a site root
-        Path lone = Files.createDirectories(home.resolve("notes/html"));
-        assertEquals(
-                lone,
-                LivePreviewServer.siteRoot(lone.resolve("x.html"), null, home),
-                "the search stops below the home; else the file's own folder");
-        assertEquals(
-                lone,
-                LivePreviewServer.siteRoot(lone.resolve("x.html"), home, home),
-                "a project rooted at the home is not served whole");
-        assertEquals(home, LivePreviewServer.siteRoot(home.resolve("page.html"), null, home), "unsafe: caller refuses");
-    }
-
     // --- end-to-end: a real loopback server (no browser involved) ---------------------------------
 
     @Test
@@ -295,15 +213,15 @@ class LivePreviewServerTest {
         server.setLiveText(p -> p.equals(liveKey) ? "<html><body>LIVE EDIT</body></html>" : null);
         server.start();
         String url = server.serve(dir, html);
-        String base = "http://127.0.0.1:" + server.port() + "/" + server.token() + "/1";
-        assertEquals(base + "/index.html", url, "the URL carries the token and the site prefix");
+        String base = url.substring(0, url.lastIndexOf('/'));
+        assertTrue(base.matches("http://127\\.0\\.0\\.1:\\d+/[0-9a-f]{32}"), "the site's own port and token: " + url);
 
         HttpResponse<String> page = get(url);
         assertEquals(200, page.statusCode());
         assertTrue(page.body().contains("LIVE EDIT"), "served the live buffer text");
         assertFalse(page.body().contains("placeholder"), "did not serve the stale disk content");
         assertTrue(page.body().contains("__editora_livereload"), "reload script injected");
-        assertEquals(page.body(), get(base + "/").body(), "/ is the previewed page");
+        assertEquals(page.body(), get(base + "/").body(), "/ is the site's index.html");
 
         HttpResponse<String> css = get(base + "/app.css");
         assertEquals(200, css.statusCode());
@@ -368,15 +286,19 @@ class LivePreviewServerTest {
         Path about = Files.createDirectories(site.resolve("pages")).resolve("about.html");
         Files.writeString(about, "<link rel=stylesheet href=\"../css/site.css\"><a href=\"../index.html\">");
         server.start();
-        String url = server.serve(LivePreviewServer.siteRoot(about, null, dir.resolve("no-home")), about);
-        assertTrue(url.endsWith("/1/pages/about.html"), url);
+        String url = server.serve(SiteRoots.siteRoot(about, null, dir.resolve("no-home")), about);
+        assertTrue(url.endsWith("/pages/about.html"), url);
         URI page = URI.create(url);
         assertEquals(200, get(page.resolve("../css/site.css").toString()).statusCode(), "../css from pages/");
         assertEquals(200, get(page.resolve("../index.html").toString()).statusCode());
-        // A root-absolute reference bounces under the page's own site prefix.
-        int port = server.port();
+        // A root-absolute reference bounces under the page's own site token.
+        int port = page.getPort();
+        String token = page.getPath().split("/")[1];
         String location = rawHeader(port, "/css/site.css", "127.0.0.1:" + port, url, "Location");
-        assertEquals("/" + server.token() + "/1/css/site.css", location);
+        assertEquals("/" + token + "/css/site.css", location);
+        // href="/" — the logo link — is the site's home page, not the page it was clicked on (E104).
+        assertEquals("/" + token + "/", rawHeader(port, "/", "127.0.0.1:" + port, url, "Location"));
+        assertTrue(get(page.resolve("/" + token + "/").toString()).body().contains("home"));
     }
 
     @Test
@@ -392,6 +314,7 @@ class LivePreviewServerTest {
         assertTrue(get(urlA).body().contains("A"), "the first tab still works after a second site is served");
         assertTrue(get(urlB).body().contains("B"));
         assertEquals(urlA, server.serve(a, pageA), "previewing the first again reuses its site");
+        assertNotEquals(URI.create(urlA).getPort(), URI.create(urlB).getPort(), "each site has its own origin");
         server.changed(pageB);
         String pollA = urlA.replace("/index.html", LivePreviewServer.LR_PATH + "?v=1");
         String pollB = urlB.replace("/index.html", LivePreviewServer.LR_PATH + "?v=1");
@@ -512,7 +435,7 @@ class LivePreviewServerTest {
         Path html = Files.writeString(dir.resolve("index.html"), "<body></body>");
         server.start();
         String url = server.serve(dir, html);
-        int port = server.port();
+        int port = URI.create(url).getPort();
         List<Socket> idle = new ArrayList<>();
         try {
             for (int i = 0; i < 40; i++) { // more than the old 16-thread pool; no token needed to do this
@@ -538,13 +461,16 @@ class LivePreviewServerTest {
         Path html = Files.writeString(dir.resolve("index.html"), "<body></body>");
         server.start();
         String first = server.serve(dir, html);
-        String token = server.token();
         server.stop();
         server.start();
-        assertNotEquals(token, server.token(), "a URL from the last run (argv, history) stops working");
         assertFalse(server.serves(html));
         String second = server.serve(dir, html);
-        String stale = "http://127.0.0.1:" + server.port() + URI.create(first).getPath();
+        assertNotEquals(
+                URI.create(first).getPath(),
+                URI.create(second).getPath(),
+                "a URL from the last run (argv, history) stops working");
+        String stale = "http://127.0.0.1:" + URI.create(second).getPort()
+                + URI.create(first).getPath();
         assertEquals(404, get(stale).statusCode());
         assertEquals(200, get(second).statusCode());
     }
@@ -579,14 +505,16 @@ class LivePreviewServerTest {
     }
 
     @Test
-    void refererMustBeAPageThisServerServedUnderTheToken() {
-        assertEquals("2", LivePreviewServer.refererSite("http://127.0.0.1:4000/abc123/2/index.html", 4000, "abc123"));
-        assertNull(LivePreviewServer.refererSite("http://127.0.0.1:4000/abc123/index.html", 4000, "abc123"));
-        assertNull(LivePreviewServer.refererSite("http://127.0.0.1:4000/index.html", 4000, "abc123"));
-        assertNull(LivePreviewServer.refererSite("http://evil.example:4000/abc123/1/x.html", 4000, "abc123"));
-        assertNull(LivePreviewServer.refererSite("http://127.0.0.1:4001/abc123/1/x.html", 4000, "abc123"));
-        assertNull(LivePreviewServer.refererSite("not a url", 4000, "abc123"));
-        assertNull(LivePreviewServer.refererSite(null, 4000, "abc123"));
+    void refererMustBeAPageOfThisSiteUnderItsToken() {
+        assertTrue(LivePreviewServer.isOwnPage("http://127.0.0.1:4000/abc123/index.html", 4000, "abc123"));
+        assertTrue(LivePreviewServer.isOwnPage("http://localhost:4000/abc123/", 4000, "abc123"));
+        assertFalse(LivePreviewServer.isOwnPage("http://127.0.0.1:4000/index.html", 4000, "abc123"));
+        assertFalse(LivePreviewServer.isOwnPage("http://127.0.0.1:4000/other/x.html", 4000, "abc123"));
+        assertFalse(LivePreviewServer.isOwnPage("http://evil.example:4000/abc123/x.html", 4000, "abc123"));
+        assertFalse(LivePreviewServer.isOwnPage("http://127.0.0.1:4001/abc123/x.html", 4000, "abc123"));
+        assertFalse(LivePreviewServer.isOwnPage("https://127.0.0.1:4000/abc123/x.html", 4000, "abc123"));
+        assertFalse(LivePreviewServer.isOwnPage("not a url", 4000, "abc123"));
+        assertFalse(LivePreviewServer.isOwnPage(null, 4000, "abc123"));
     }
 
     @Test
@@ -603,9 +531,9 @@ class LivePreviewServerTest {
         Path html = Files.writeString(dir.resolve("index.html"), "<html><body>x</body></html>");
         Files.writeString(dir.resolve("app.css"), "body{color:red}");
         server.start();
-        server.serve(dir, html);
-        int port = server.port();
-        String site = "/" + server.token() + "/1";
+        URI url = URI.create(server.serve(dir, html));
+        int port = url.getPort();
+        String site = "/" + url.getPath().split("/")[1];
         String host = "127.0.0.1:" + port;
 
         // DNS rebinding: the attacker's hostname resolves to 127.0.0.1, but the Host header gives it away.
@@ -614,15 +542,238 @@ class LivePreviewServerTest {
         // A local port scanner: right Host, no token → nothing is reachable.
         assertEquals(404, rawStatus(port, "/app.css", host, null));
         assertEquals(404, rawStatus(port, "/", host, null));
-        assertEquals(404, rawStatus(port, "/1" + LivePreviewServer.LR_PATH + "?v=0", host, null));
-        assertEquals(404, rawStatus(port, "/deadbeef/1/app.css", host, null), "a wrong token");
-        assertEquals(404, rawStatus(port, "/" + server.token() + "/9/app.css", host, null), "an unknown site");
+        assertEquals(404, rawStatus(port, LivePreviewServer.LR_PATH + "?v=0", host, null));
+        assertEquals(404, rawStatus(port, "/deadbeef/app.css", host, null), "a wrong token");
         assertEquals(200, rawStatus(port, site + "/app.css", host, null));
         assertEquals(200, rawStatus(port, site + "/app.css", "localhost:" + port, null));
         String ownPage = "http://" + host + site + "/index.html";
         assertEquals(307, rawStatus(port, "/app.css", host, ownPage));
         assertEquals(404, rawStatus(port, "/app.css", host, "http://evil.example/x.html"));
         assertEquals(404, rawStatus(port, "/app.css", host, "http://" + host + "/index.html"));
+    }
+
+    // --- HTML review 2 (E101–E105, E110, E113, position 2) ----------------------------------------
+
+    /** E102: a page of one site cannot read another site's files or unsaved text, whatever path it guesses. */
+    @Test
+    void eachSiteHasItsOwnOriginAndToken(@TempDir Path dir) throws Exception {
+        Path project = Files.createDirectories(dir.resolve("project"));
+        Path loose = Files.createDirectories(dir.resolve("download"));
+        Path index = Files.writeString(project.resolve("index.html"), "<body>project</body>");
+        Files.writeString(project.resolve("app.js"), "on disk");
+        Path page = Files.writeString(loose.resolve("page.html"), "<body>downloaded</body>");
+        Path app = project.resolve("app.js").toAbsolutePath().normalize();
+        server.setLiveText(p -> p.equals(app) ? "apiKey='sk-live-123'" : null);
+        server.start();
+        URI a = URI.create(server.serve(project, index));
+        URI b = URI.create(server.serve(loose, page));
+        String tokenA = a.getPath().split("/")[1];
+        String tokenB = b.getPath().split("/")[1];
+        assertNotEquals(a.getPort(), b.getPort(), "another port is another origin for the browser");
+        assertNotEquals(tokenA, tokenB);
+        assertTrue(tokenA.matches("[0-9a-f]{32}") && tokenB.matches("[0-9a-f]{32}"), "random, not a counter");
+        String originB = "http://127.0.0.1:" + b.getPort();
+        for (String guess : List.of("/" + tokenB + "/app.js", "/" + tokenB + "/1/app.js", "/" + tokenA + "/app.js")) {
+            assertEquals(404, get(originB + guess).statusCode(), guess);
+        }
+        assertEquals("apiKey='sk-live-123'", get(a.resolve("app.js").toString()).body(), "its own site still reads it");
+        assertEquals(
+                "same-origin",
+                get(a.toString())
+                        .headers()
+                        .firstValue("Cross-Origin-Resource-Policy")
+                        .orElse(""));
+    }
+
+    /** E104: "/" and a folder URL serve that folder's index.html; a folder without the slash is redirected. */
+    @Test
+    void foldersServeTheirIndexAndGetTheirSlash(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("index.html"), "<body>home</body>");
+        Path blog = Files.createDirectories(dir.resolve("blog"));
+        Files.writeString(blog.resolve("index.html"), "<body>blog home</body>");
+        Path post = Files.writeString(blog.resolve("post.html"), "<body>post</body>");
+        Files.createDirectories(dir.resolve("empty"));
+        server.start();
+        URI url = URI.create(server.serve(dir, post));
+        String base = "http://127.0.0.1:" + url.getPort() + "/" + url.getPath().split("/")[1];
+        assertTrue(get(base + "/").body().contains("home"), "/ is the site root's index.html, not the previewed page");
+        assertFalse(get(base + "/").body().contains("post"));
+        assertTrue(get(base + "/blog/").body().contains("blog home"));
+        int port = url.getPort();
+        String host = "127.0.0.1:" + port;
+        String token = url.getPath().split("/")[1];
+        assertEquals(301, rawStatus(port, "/" + token + "/blog?x=1", host, null));
+        assertEquals("/" + token + "/blog/?x=1", rawHeader(port, "/" + token + "/blog?x=1", host, null, "Location"));
+        assertEquals("/" + token + "/", rawHeader(port, "/" + token, host, null, "Location"));
+        assertEquals(404, get(base + "/empty/").statusCode(), "no index, no listing");
+    }
+
+    /** E101 and position 2: encrypted files, credential stores, state files and databases are never served. */
+    @Test
+    void encryptedFilesAndCredentialStoresAre404(@TempDir Path dir) throws Exception {
+        Path html = Files.writeString(dir.resolve("index.html"), "<body></body>");
+        List<String> secret = List.of(
+                "notes.txt.gpg",
+                "page.html.asc",
+                "cert.p12",
+                "cert.PFX",
+                "vault.kdbx",
+                "terraform.tfstate",
+                "terraform.tfstate.backup",
+                "prod.tfvars",
+                "app.sqlite",
+                "app.sqlite3",
+                "data.db",
+                "credentials.json",
+                "credentials-prod.json",
+                "secrets.yml");
+        for (String name : secret) {
+            Files.writeString(dir.resolve(name), "secret");
+        }
+        Files.writeString(dir.resolve("data.json"), "{}");
+        Path live = dir.resolve("notes.txt.gpg").toAbsolutePath().normalize();
+        server.setLiveText(p -> p.equals(live) ? "DECRYPTED" : null);
+        server.start();
+        String base = server.serve(dir, html).replace("/index.html", "");
+        for (String name : secret) {
+            assertEquals(404, get(base + "/" + name).statusCode(), name);
+        }
+        assertEquals(200, get(base + "/data.json").statusCode());
+        assertEquals(404, get(server.serve(dir, dir.resolve("page.html.asc"))).statusCode(), "not even as a page");
+    }
+
+    /** E113: a page previewed in a hidden folder loads its own assets there, but not that folder's dotfiles. */
+    @Test
+    void aPageInAHiddenFolderLoadsItsOwnAssets(@TempDir Path dir) throws Exception {
+        Path hidden = Files.createDirectories(dir.resolve(".vitepress"));
+        Path page = Files.writeString(hidden.resolve("page.html"), "<link rel=stylesheet href=h.css>");
+        Files.writeString(hidden.resolve("h.css"), "body{}");
+        Files.writeString(hidden.resolve(".env"), "SECRET=1");
+        Files.createDirectories(dir.resolve(".other"));
+        Files.writeString(dir.resolve(".other/x.css"), "body{}");
+        server.start();
+        String url = server.serve(dir, page);
+        String folder = url.substring(0, url.lastIndexOf('/'));
+        assertEquals(200, get(url).statusCode());
+        assertEquals(200, get(folder + "/h.css").statusCode(), "the entry's own folder");
+        assertEquals(404, get(folder + "/.env").statusCode());
+        assertEquals(404, get(folder + "/../.other/x.css").statusCode(), "another hidden folder");
+    }
+
+    @Test
+    void servableNamesAllowAnEntrysFolderButNeverGitOrSecrets() {
+        List<String> entries = List.of(".github/docs/page.html", ".git/hooks/x.html");
+        assertTrue(LivePreviewServer.isServable("index.html", List.of()));
+        assertFalse(LivePreviewServer.isServable(".github/x.css", List.of()));
+        assertTrue(LivePreviewServer.isServable(".github/docs/page.html", entries));
+        assertTrue(LivePreviewServer.isServable(".github/docs/img/logo.png", entries));
+        assertFalse(LivePreviewServer.isServable(".github/docs/.env", entries));
+        assertFalse(LivePreviewServer.isServable(".github/docs/cert.p12", entries));
+        assertFalse(LivePreviewServer.isServable(".git/hooks/x.html", entries), ".git is never served");
+        assertFalse(LivePreviewServer.isServable(".git/hooks/pre-commit", entries));
+        assertFalse(LivePreviewServer.isServable("page.html.gpg", List.of("page.html.gpg")), "not even as an entry");
+        assertFalse(LivePreviewServer.isServable(".ssh/id_rsa", List.of(".ssh/page.html")));
+        assertTrue(LivePreviewServer.isServable(".draft.html", List.of(".draft.html")), "a dotfile page at the root");
+        assertTrue(
+                LivePreviewServer.isServable(".a/.b/x.css", List.of(".a/p.html", ".a/.b/q.html")),
+                "the closest entry folder that allows it wins");
+    }
+
+    /**
+     * E105: at most {@link LivePreviewServer#MAX_BUFFERED} pages are built in memory at once. With every permit
+     * taken, a page request waits instead of allocating, and it is answered once one is free.
+     */
+    @Test
+    void inMemoryResponsesAreBounded(@TempDir Path dir) throws Exception {
+        Path html = Files.writeString(dir.resolve("index.html"), "<body>" + "x".repeat(10_000) + "</body>");
+        server.start();
+        String url = server.serve(dir, html);
+        java.util.concurrent.Semaphore permits = permits();
+        permits.acquire(LivePreviewServer.MAX_BUFFERED);
+        var pending =
+                client.sendAsync(HttpRequest.newBuilder(URI.create(url)).build(), HttpResponse.BodyHandlers.ofString());
+        try {
+            Thread.sleep(700); // well past the time an unblocked answer takes
+            assertFalse(pending.isDone(), "no permit, no in-memory page");
+        } finally {
+            permits.release(LivePreviewServer.MAX_BUFFERED);
+        }
+        HttpResponse<String> r = pending.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        assertEquals(200, r.statusCode());
+        assertTrue(r.body().contains("__editora_livereload") && r.body().contains("x".repeat(10_000)));
+        assertEquals(LivePreviewServer.MAX_BUFFERED, permits.availablePermits(), "released after the answer");
+    }
+
+    /** E105: text other than HTML is streamed (never read whole), still labelled UTF-8 only when it is. */
+    @Test
+    void textIsStreamedAndKeepsItsCharsetLabel(@TempDir Path dir) throws Exception {
+        Path html = Files.writeString(dir.resolve("index.html"), "<body></body>");
+        Files.writeString(dir.resolve("data.json"), "{\"k\":\"é\"}");
+        Files.write(dir.resolve("latin1.css"), "a{content:\"é\"}".getBytes(StandardCharsets.ISO_8859_1));
+        server.start();
+        String base = server.serve(dir, html).replace("/index.html", "");
+        HttpResponse<byte[]> json = getBytes(base + "/data.json", null);
+        assertEquals(
+                "application/json; charset=utf-8",
+                json.headers().firstValue("Content-Type").orElse(""));
+        assertEquals("bytes", json.headers().firstValue("Accept-Ranges").orElse(""), "the streaming path");
+        assertEquals(206, getBytes(base + "/data.json", "bytes=0-1").statusCode(), "so ranges work for text too");
+        HttpResponse<byte[]> css = getBytes(base + "/latin1.css", null);
+        assertEquals("text/css", css.headers().firstValue("Content-Type").orElse(""), "not forced to UTF-8");
+        assertTrue(LivePreviewServer.isUtf8(dir.resolve("data.json")));
+        assertFalse(LivePreviewServer.isUtf8(dir.resolve("latin1.css")));
+        assertFalse(LivePreviewServer.isUtf8(dir.resolve("missing.txt")));
+        // A multi-byte character split across the 64 KB read boundary is still UTF-8.
+        Path edge = dir.resolve("edge.txt");
+        Files.writeString(edge, "a".repeat(64 * 1024 - 1) + "é" + "b".repeat(10));
+        assertTrue(LivePreviewServer.isUtf8(edge));
+    }
+
+    /** E105/E111: editor text over the live cap is not served; the file on disk is. */
+    @Test
+    void liveTextOverTheCapIsServedFromDisk(@TempDir Path dir) throws Exception {
+        Path html = Files.writeString(dir.resolve("index.html"), "<body>disk</body>");
+        String huge = "x".repeat(LivePreviewServer.MAX_LIVE_CHARS + 1);
+        Path key = html.toAbsolutePath().normalize();
+        server.setLiveText(p -> p.equals(key) ? huge : null);
+        server.start();
+        String body = get(server.serve(dir, html)).body();
+        assertTrue(body.startsWith("<body>disk"), "the disk copy, with the script");
+    }
+
+    /** E110: the stylesheet swap leaves other origins' stylesheets (a CDN, Google Fonts) alone. */
+    @Test
+    void theStylesheetSwapOnlyTouchesOwnOriginLinks() {
+        String script = LivePreviewServer.reloadScript(1, "/t", "gone");
+        assertTrue(script.contains("new URL(h,location.href).origin!==location.origin"), script);
+        assertTrue(script.chars().allMatch(c -> c < 0x80));
+    }
+
+    /** More than {@link LivePreviewServer#MAX_SITES} sites: the least recently served one is stopped. */
+    @Test
+    void theLeastRecentlyServedSiteIsStoppedPastTheLimit(@TempDir Path dir) throws Exception {
+        server.start();
+        List<String> urls = new ArrayList<>();
+        for (int i = 0; i <= LivePreviewServer.MAX_SITES; i++) {
+            Path site = Files.createDirectories(dir.resolve("s" + i));
+            Files.writeString(site.resolve("index.html"), "<body>site " + i + "</body>");
+        }
+        for (int i = 0; i < LivePreviewServer.MAX_SITES; i++) {
+            urls.add(server.serve(dir.resolve("s" + i), dir.resolve("s" + i + "/index.html")));
+        }
+        server.serve(dir.resolve("s0"), dir.resolve("s0/index.html")); // s1 is now the least recently served
+        Path last = dir.resolve("s" + LivePreviewServer.MAX_SITES);
+        server.serve(last, last.resolve("index.html"));
+        assertTrue(server.serves(dir.resolve("s0/index.html")), "served recently: kept");
+        assertFalse(server.serves(dir.resolve("s1/index.html")), "the least recent one is gone");
+        assertTrue(get(urls.get(0)).body().contains("site 0"));
+        assertThrows(IOException.class, () -> get(urls.get(1)), "its listener is closed");
+    }
+
+    private java.util.concurrent.Semaphore permits() throws Exception {
+        java.lang.reflect.Field f = LivePreviewServer.class.getDeclaredField("buffered");
+        f.setAccessible(true);
+        return (java.util.concurrent.Semaphore) f.get(server);
     }
 
     /** Sends one raw HTTP/1.x GET (so the Host header is ours to choose) and returns the response status. */

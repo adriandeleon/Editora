@@ -327,4 +327,39 @@ class RootResolverTest {
         Files.writeString(docs.resolve("package.json"), "{}");
         assertEquals(docs, RootResolver.siteRoot(docs, page, null, home), "a marker in its own folder decides");
     }
+
+    /**
+     * HTML review 2, A101/A102: the HTML server roots a loose site where Live Preview serves it (one shared rule), a
+     * dotfiles {@code ~/.git} or a stray {@code ~/package.json} does not switch that rule off, and a saved page in
+     * Downloads does not root the server at all of Downloads.
+     */
+    @Test
+    void theHtmlServerSharesLivePreviewsSiteRootAndIgnoresMarkersInHome(@TempDir Path tmp) throws IOException {
+        Path home = Files.createDirectories(tmp.resolve("home"));
+        Path site = Files.createDirectories(home.resolve("sites/site"));
+        Path blog = Files.createDirectories(site.resolve("blog"));
+        Files.writeString(site.resolve("index.html"), "");
+        Files.writeString(blog.resolve("index.html"), "");
+        Path post = Files.writeString(blog.resolve("post.html"), "");
+        Path pages = Files.createDirectories(site.resolve("pages"));
+        Path about = Files.writeString(pages.resolve("about.html"), "");
+        assertEquals(site, RootResolver.siteRoot(blog, post, null, home));
+        assertEquals(
+                com.editora.web.SiteRoots.siteRoot(post, null, home), RootResolver.siteRoot(blog, post, null, home));
+
+        Files.createDirectories(home.resolve(".git")); // a dotfiles repository
+        Files.writeString(home.resolve("package.json"), "{}");
+        List<String> markers = LspServerRegistry.WEB_ROOT_MARKERS;
+        Path resolved = RootResolver.resolve(null, about, markers, home);
+        assertEquals(pages, resolved, "resolve() already ignores a marker in the home folder");
+        assertEquals(site, RootResolver.siteRoot(resolved, about, null, home), "and so does the site rule");
+
+        Path downloads = Files.createDirectories(home.resolve("Downloads"));
+        Files.writeString(downloads.resolve("index.html"), "");
+        Path dsite = Files.createDirectories(downloads.resolve("site/blog"));
+        Files.writeString(downloads.resolve("site/index.html"), "");
+        Path dpost = Files.writeString(dsite.resolve("post.html"), "");
+        assertEquals(
+                downloads.resolve("site"), RootResolver.siteRoot(dsite, dpost, null, home), "not all of Downloads");
+    }
 }

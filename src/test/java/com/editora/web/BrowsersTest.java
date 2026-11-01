@@ -119,6 +119,62 @@ class BrowsersTest {
                         "MimeType=x-scheme-handler/http;")));
     }
 
+    /** E109: only browsers — not every app that opens links — and only launchers that can run here. */
+    @Test
+    void onlyBrowserLaunchersThatCanRunHereAreOffered() {
+        List<String> chat = List.of(
+                "[Desktop Entry]",
+                "Name=ChatGPT",
+                "Exec=chatgpt %U",
+                "Type=Application",
+                "Categories=Utility;Development;",
+                "MimeType=x-scheme-handler/codex;x-scheme-handler/http;x-scheme-handler/https;text/csv;");
+        assertNull(Browsers.parseDesktopEntry("chatgpt.desktop", chat), "opens links, but is no browser");
+        List<String> noCategory = List.of(
+                "[Desktop Entry]",
+                "Name=Web",
+                "Exec=web %u",
+                "Type=Application",
+                "MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;");
+        assertEquals(
+                "Web", Browsers.parseDesktopEntry("web.desktop", noCategory).name(), "https + text/html");
+        List<String> noType = List.of(
+                "[Desktop Entry]", "Name=N", "Exec=n %u", "Categories=WebBrowser;", "MimeType=x-scheme-handler/http;");
+        assertNull(Browsers.parseDesktopEntry("n.desktop", noType), "Type is required");
+        List<String> gone = new java.util.ArrayList<>(LIBREWOLF);
+        gone.add(2, "TryExec=/nonexistent/gone");
+        assertNull(Browsers.parseDesktopEntry("x.desktop", gone, List.of(), bin -> false), "its binary is gone");
+        assertEquals(
+                "LibreWolf",
+                Browsers.parseDesktopEntry("x.desktop", gone, List.of(), bin -> true)
+                        .name());
+        List<String> kde = new java.util.ArrayList<>(LIBREWOLF);
+        kde.add(2, "OnlyShowIn=KDE;");
+        assertNull(Browsers.parseDesktopEntry("k.desktop", kde, List.of("ubuntu", "GNOME"), bin -> true));
+        assertEquals(
+                "LibreWolf",
+                Browsers.parseDesktopEntry("k.desktop", kde, List.of("KDE"), bin -> true)
+                        .name());
+        List<String> notGnome = new java.util.ArrayList<>(LIBREWOLF);
+        notGnome.add(2, "NotShowIn=GNOME;");
+        assertNull(Browsers.parseDesktopEntry("g.desktop", notGnome, List.of("ubuntu", "GNOME"), bin -> true));
+        List<String> files = List.of(
+                "[Desktop Entry]",
+                "Name=F",
+                "Exec=f %F",
+                "Type=Application",
+                "Categories=WebBrowser;",
+                "MimeType=x-scheme-handler/http;");
+        assertNull(Browsers.parseDesktopEntry("f.desktop", files), "takes files only, not a URL");
+        assertEquals(List.of("ubuntu", "GNOME"), Browsers.currentDesktops("ubuntu:GNOME"));
+        assertTrue(Browsers.currentDesktops(null).isEmpty()
+                && Browsers.currentDesktops(" ").isEmpty());
+        assertEquals(
+                List.of("b", "--new", "http://x"),
+                Browsers.execArgv("b %f --new", "http://x"),
+                "%f is not given the URL");
+    }
+
     @Test
     void execLinesBecomeArgvWithTheUrl() {
         assertEquals(
