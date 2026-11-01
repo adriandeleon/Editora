@@ -79,7 +79,6 @@ import javafx.stage.WindowEvent;
 import javafx.util.Duration;
 import javafx.util.StringConverter;
 
-import com.editora.config.PersonalNote;
 import com.editora.git.GitFileStatus;
 import org.jspecify.annotations.Nullable;
 
@@ -91,19 +90,12 @@ import static com.editora.i18n.Messages.tr;
  */
 final class ProjectMapView extends VBox {
 
-    /** Code and note cards together: one bound on what floats over the map, however the eight are split. */
-    private static final int MAX_OPEN_PREVIEWS = 8;
     /** Selections kept for Back/Forward; the oldest are dropped beyond this. */
     static final int MAX_SELECTION_HISTORY = 100;
 
     private static final int MAX_REMEMBERED_ROOTS = 8;
     private static final int MAX_REVEAL_PINS = 64;
     private static final double LOADING_NOTICE_MILLIS = 200;
-    private static final double PREVIEW_CASCADE = 28;
-    /** Quiet time after a state or filesystem notification before open cards are brought up to date. */
-    private static final Duration CARD_REFRESH_DELAY = Duration.millis(250);
-    /** How often a card that mirrors an open buffer looks for edits; nothing else announces a keystroke. */
-    private static final Duration CARD_POLL_INTERVAL = Duration.seconds(1);
 
     enum FlowDirection {
         LEFT_TO_RIGHT,
@@ -167,28 +159,13 @@ final class ProjectMapView extends VBox {
     private @Nullable Popup helpPopup;
     private long helpHiddenAt;
     private final MapSurface surface = new MapSurface();
-    private final Canvas previewConnectorCanvas = new Canvas(1, 1);
-    private final Map<Path, PreviewConnector> previewConnectors = new HashMap<>();
-    private final Map<Path, ProjectMapPreview> previews = new LinkedHashMap<>(16, 0.75f, true);
-    private final Map<Path, ProjectMapNotePreview> notePreviews = new LinkedHashMap<>(16, 0.75f, true);
-    /** The sticky notes a code card's Notes button stuck on it, by card. */
-    private final Map<ProjectMapPreview, ProjectMapStickyNotes> stickyNotes = new java.util.IdentityHashMap<>();
-    /** The Structure columns stuck on file cards (their Structure button). */
-    private final Map<ProjectMapPreview, ProjectMapCardStructure> cardStructures = new java.util.IdentityHashMap<>();
-    /** When each open card was last used (pressed, focused, scrolled or opened); the oldest is evicted. */
-    private final Map<Region, Long> cardTouches = new java.util.IdentityHashMap<>();
-
-    private long cardTouchSequence;
-    private final javafx.animation.PauseTransition cardRefresh =
-            new javafx.animation.PauseTransition(CARD_REFRESH_DELAY);
-    private final javafx.animation.PauseTransition cardPoll = new javafx.animation.PauseTransition(CARD_POLL_INTERVAL);
-    /** Rate limit for re-reading cards after content-only disk changes: a log may be rewritten many times a second. */
-    private final javafx.animation.PauseTransition cardDiskRefresh =
-            new javafx.animation.PauseTransition(CARD_POLL_INTERVAL);
-    /** The expansion the cards were last checked against (an identity, replaced by every reload). */
-    private @Nullable Set<Path> cardsCheckedAgainst;
-
-    private boolean orphanCheckPending;
+    /** The cards over the map, and what is stuck on them (see {@link MapCards}). */
+    private final MapCards cards;
+    // The card manager's own maps, under the names the tests have long read them by.
+    private final Map<Path, ProjectMapPreview> previews;
+    private final Map<Path, ProjectMapNotePreview> notePreviews;
+    private final Map<ProjectMapPreview, ProjectMapCardStructure> cardStructures;
+    private final Map<Path, MapCards.PreviewConnector> previewConnectors;
     private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "project-map-loader");
         thread.setDaemon(true);
@@ -280,25 +257,7 @@ final class ProjectMapView extends VBox {
     private Consumer<ProjectMapOutput> onPrint = ignored -> {};
     private Consumer<ProjectMapOutput> onExportPdf = ignored -> {};
     private ProjectMapPreview.@Nullable MarkerActions previewMarkerActions;
-    /** The text zoom of the card last zoomed with −/+: new cards open at it. */
-    private double cardTextZoom = 1.0;
-    /** The editor window whose editor font the cards use (see {@link ProjectMapPreview#EDITOR_FONT_KEY}). */
-    private java.util.function.Supplier<javafx.stage.@Nullable Window> cardFontSource = () -> null;
-
-    private javafx.stage.@Nullable Window cardFontWindow;
-    /** Follows the editor window's font; weakly held by the window, so a closed view is not kept. */
-    private final javafx.collections.MapChangeListener<Object, Object> cardFontListener = change -> {
-        if (ProjectMapPreview.EDITOR_FONT_KEY.equals(change.getKey())
-                && change.getValueAdded() instanceof javafx.scene.text.Font font) {
-            previews.values().forEach(card -> card.setEditorFont(font));
-        }
-    };
-
-    private final javafx.collections.WeakMapChangeListener<Object, Object> weakCardFontListener =
-            new javafx.collections.WeakMapChangeListener<>(cardFontListener);
-
-    private ProjectPanel.@Nullable MarkerActions notePreviewActions;
-    private StackPane canvasHost;
+    private final StackPane canvasHost = new StackPane();
     /** The open structure columns and the outlines behind them. */
     private final ProjectMapStructure structure;
 
@@ -327,9 +286,14 @@ final class ProjectMapView extends VBox {
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
 
+        cards = new MapCards(cardsHost(), structure, canvasHost);
+        previews = cards.previews;
+        notePreviews = cards.notePreviews;
+        cardStructures = cards.cardStructures;
+        previewConnectors = cards.previewConnectors;
         FlowPane filters = buildFilters();
         HBox navigation = buildNavigation();
-        canvasHost = buildCanvasHost();
+        buildCanvasHost();
         getChildren().addAll(filters, navigation, canvasHost);
         VBox.setVgrow(getChildren().get(2), Priority.ALWAYS);
         surface.setOnActivate(this::activate);
@@ -594,7 +558,7 @@ final class ProjectMapView extends VBox {
         apply.run();
     }
 
-    private StackPane buildCanvasHost() {
+    private void buildCanvasHost() {
         Label zoom = new Label("100%");
         zoom.getStyleClass().addAll("project-map-zoom-control", "project-map-zoom-level");
         zoom.setMinWidth(Region.USE_PREF_SIZE);
@@ -617,10 +581,9 @@ final class ProjectMapView extends VBox {
         noMatchesLabel.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
         noMatchesDelay.setOnFinished(event -> showNoMatches());
         surface.setOnNoMatchesChanged(this::noMatchesChanged);
-        previewConnectorCanvas.setManaged(false);
-        previewConnectorCanvas.setMouseTransparent(true);
-        StackPane host =
-                new StackPane(surface, previewConnectorCanvas, noMatchesLabel, zoomBar, surface.overviewLayer());
+        StackPane host = canvasHost;
+        host.getChildren()
+                .setAll(surface, cards.previewConnectorCanvas, noMatchesLabel, zoomBar, surface.overviewLayer());
         // Cards are added after these and raised to the front when used. The zoom bar, the overview and the two
         // notices are drawn and picked above every card whatever the child order (C8); only the zoom bar's
         // buttons take clicks, not the gaps between them (B3).
@@ -637,8 +600,8 @@ final class ProjectMapView extends VBox {
                     && !event.isAltDown()
                     && !event.isMetaDown()
                     && event.getTarget() instanceof Node target
-                    && cardFocusInCard(target)) {
-                Platform.runLater(this::cardFocusKeptOnMap);
+                    && MapCards.holdsFocus(target)) {
+                Platform.runLater(cards::keepFocusOnMap);
             }
         });
         host.getStyleClass().add("project-map-host");
@@ -658,26 +621,14 @@ final class ProjectMapView extends VBox {
         zoomBar.boundsInParentProperty()
                 .addListener((obs, old, bounds) -> surface.setReservedZoomBar(
                         bounds.getMaxX() + ZOOM_BAR_MARGIN, bounds.getHeight() + ZOOM_BAR_MARGIN * 2));
-        host.widthProperty().addListener((obs, old, value) -> {
-            previewConnectorCanvas.setWidth(value.doubleValue());
-            constrainPreviews(value.doubleValue(), host.getHeight());
-            repaintPreviewConnectors();
-        });
-        host.heightProperty().addListener((obs, old, value) -> {
-            previewConnectorCanvas.setHeight(value.doubleValue());
-            constrainPreviews(host.getWidth(), value.doubleValue());
-            repaintPreviewConnectors();
-        });
-        cardRefresh.setOnFinished(event -> refreshCards(false));
-        cardDiskRefresh.setOnFinished(event -> refreshCards(false));
-        cardPoll.setOnFinished(event -> refreshCards(true));
+        host.widthProperty().addListener((obs, old, value) -> cards.hostResized(value.doubleValue(), host.getHeight()));
+        host.heightProperty().addListener((obs, old, value) -> cards.hostResized(host.getWidth(), value.doubleValue()));
         // Cards survive a switch to the Tree; whatever changed meanwhile is picked up when the Map returns.
         host.sceneProperty().addListener((obs, old, scene) -> {
             if (scene != null) {
                 scheduleCardRefresh();
             }
         });
-        return host;
     }
 
     private static final double ZOOM_BAR_MARGIN = 8;
@@ -928,7 +879,7 @@ final class ProjectMapView extends VBox {
                 && !com.editora.config.PathKeys.sameFileSystem(this.root, normalized);
         rememberRoot();
         this.root = normalized;
-        closeAllPreviews();
+        cards.closeAll();
         structure.clear();
         expanded.clear();
         clearSearchState();
@@ -1006,9 +957,7 @@ final class ProjectMapView extends VBox {
         }
         this.active = showing;
         if (!showing) {
-            cardRefresh.stop();
-            cardPoll.stop();
-            cardDiskRefresh.stop();
+            cards.stopRefreshing();
             return;
         }
         reload();
@@ -1232,12 +1181,11 @@ final class ProjectMapView extends VBox {
 
     void setPreviewMarkerActions(ProjectMapPreview.@Nullable MarkerActions actions) {
         previewMarkerActions = actions;
-        previews.values().forEach(preview -> preview.setMarkerActions(actions));
+        cards.setMarkerActions(actions);
     }
 
     void setNotePreviewActions(ProjectPanel.MarkerActions actions) {
-        notePreviewActions = actions;
-        previews.values().forEach(this::updateCardNotes);
+        cards.setNoteActions(actions);
     }
 
     /** Anything on disk may have changed (a focus regain, an in-app file operation): every folder is listed again. */
@@ -1304,7 +1252,7 @@ final class ProjectMapView extends VBox {
         if (selected != null && renamed != null && selected.startsWith(renamed)) {
             pendingSelection = ProjectMapModel.remap(selected, from, to);
         }
-        renamedCarryCards(from, to);
+        cards.pathRenamed(from, to);
         listings.invalidateAll(); // the folders on both sides of the move are listed afresh
         // A load that is listing the old tree may be in flight. Its snapshot would prune the folders just
         // remapped (they are not in it) and close them: it must not land, and the new tree is listed instead.
@@ -1313,61 +1261,6 @@ final class ProjectMapView extends VBox {
         } else {
             generation.incrementAndGet();
             loadFinished();
-        }
-    }
-
-    /** Preview and note cards of a renamed file, or of files under a renamed folder, follow it (C21). */
-    private void renamedCarryCards(Path from, Path to) {
-        Path source = ProjectMapModel.normalize(from);
-        if (source == null) {
-            return;
-        }
-        boolean moved = false;
-        for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
-            if (!entry.getKey().startsWith(source)) {
-                continue;
-            }
-            ProjectMapPreview card = entry.getValue();
-            previews.remove(entry.getKey());
-            Path key = ProjectMapModel.remap(entry.getKey(), from, to);
-            Path file = card.path();
-            if (key == null || file == null) {
-                closePreview(card);
-                continue;
-            }
-            Path movedFile = ProjectMapModel.remap(file, from, to);
-            if (movedFile != null) {
-                card.pathRenamed(movedFile);
-                if (!ProjectMapStructure.isSymbolPath(key)) {
-                    card.setStructureAvailable(structure.supports(movedFile)); // another name, maybe another language
-                }
-                ProjectMapCardStructure column = cardStructures.get(card);
-                if (column != null) {
-                    column.relabel();
-                    structure.ensure(movedFile);
-                    column.update(structure.view(movedFile));
-                }
-            }
-            previews.put(key, card);
-            moved = true;
-        }
-        for (Map.Entry<Path, ProjectMapNotePreview> entry : List.copyOf(notePreviews.entrySet())) {
-            if (!entry.getKey().startsWith(source)) {
-                continue;
-            }
-            notePreviews.remove(entry.getKey());
-            Path key = ProjectMapModel.remap(entry.getKey(), from, to);
-            if (key == null) {
-                closeNotePreview(entry.getValue());
-                continue;
-            }
-            entry.getValue().pathRenamed(key);
-            notePreviews.put(key, entry.getValue());
-            moved = true;
-        }
-        if (moved) {
-            repaintPreviewConnectors();
-            scheduleCardRefresh(); // note cards re-read the store once the notes have moved with the file
         }
     }
 
@@ -1409,14 +1302,8 @@ final class ProjectMapView extends VBox {
     /** Escape: close the open cards, else clear the search, else leave the map for the editor. */
     private void escapePressed() {
         // Cards hidden by "Hide unmatched" or "Hide all open Personal Notes" are not on screen: leave them be.
-        List<ProjectMapPreview> cards =
-                previews.values().stream().filter(ProjectMapPreview::isVisible).toList();
-        List<ProjectMapNotePreview> notes = notePreviews.values().stream()
-                .filter(ProjectMapNotePreview::isVisible)
-                .toList();
-        if (!cards.isEmpty() || !notes.isEmpty()) {
-            cards.forEach(this::closePreview);
-            notes.forEach(this::closeNotePreview);
+        if (cards.closeVisible()) {
+            return;
         } else if (!query.isBlank()) {
             onClearSearch.run();
         } else {
@@ -1622,30 +1509,22 @@ final class ProjectMapView extends VBox {
     }
 
     void hidePreview() {
-        closeAllPreviews();
+        cards.closeAll();
     }
 
     /**
      * A file under the root was rewritten on disk. That changes no listing, so no reload follows; it is
-     * only of interest to a preview card showing the file. Checked at most once per
-     * {@link #CARD_POLL_INTERVAL}, after the first change rather than after the last, so a file that never
-     * stops changing is still followed.
+     * only of interest to a preview card showing the file (see {@link MapCards#filesChangedOnDisk}).
      */
     void filesChangedOnDisk() {
-        if (disposed
-                || previews.isEmpty() && !structure.hasOpenColumns()
-                || !showingOnScreen() // the show that follows refreshes every card
-                || cardDiskRefresh.getStatus() == javafx.animation.Animation.Status.RUNNING) {
-            return;
+        if (!disposed) {
+            cards.filesChangedOnDisk();
         }
-        cardDiskRefresh.playFromStart();
     }
 
     void dispose() {
         disposed = true;
-        cardRefresh.stop();
-        cardPoll.stop();
-        cardDiskRefresh.stop();
+        cards.stopRefreshing();
         generation.incrementAndGet();
         loader.shutdownNow();
         listings.close();
@@ -1653,7 +1532,7 @@ final class ProjectMapView extends VBox {
         loadInFlight = false;
         loadingDelay.stop();
         surface.dispose();
-        closeAllPreviews();
+        cards.dispose();
         noMatchesDelay.stop();
         if (helpPopup != null) {
             helpPopup.hide();
@@ -1822,9 +1701,9 @@ final class ProjectMapView extends VBox {
                 loadedFiles.add(entry.path());
             }
         }
-        structure.prune(loadedFiles, cardOutlineFiles());
+        structure.prune(loadedFiles, cards.outlineFiles());
         showRows();
-        structure.refresh(cardOutlineFiles()); // a file outlined before may have changed meanwhile
+        structure.refresh(cards.outlineFiles()); // a file outlined before may have changed meanwhile
         setOutputEnabled(!loaded.entries().isEmpty());
         if (pendingSelection != null) {
             if (loadedPaths.contains(pendingSelection) || surface.contains(pendingSelection)) {
@@ -2054,7 +1933,7 @@ final class ProjectMapView extends VBox {
         } else {
             expanded.removeIf(path -> path.startsWith(normalized));
         }
-        closePreviewsUnder(normalized);
+        cards.closeUnder(normalized);
         if (surface.selectionBelow(normalized)) { // a selection elsewhere stays where it is
             pendingSelection = normalized;
             surface.select(normalized);
@@ -2104,147 +1983,17 @@ final class ProjectMapView extends VBox {
             return;
         }
         showRows();
-        cardStructures.forEach((card, column) -> {
-            Path file = card.path();
-            if (file != null) {
-                column.update(structure.view(file));
-            }
-        });
-        for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
-            if (!ProjectMapStructure.isSymbolPath(entry.getKey())) {
-                continue;
-            }
-            Path key = entry.getKey();
-            ProjectMapStructure.Node node = structure.node(key);
-            ProjectMapPreview card = entry.getValue();
-            Path next = node == null ? structure.successor(key) : null;
-            if (next != null && !previews.containsKey(next)) {
-                // Its parameter list was edited: the card follows the declaration to its new path.
-                previews.remove(key);
-                previews.put(next, card);
-                node = structure.node(next);
-            }
-            Path file = structure.fileOf(entry.getKey());
-            if (node == null) {
-                if (file != null && structure.hasOutline(file)) {
-                    card.setSymbolMissing(true); // keeps its last lines: they may be the last copy to read
-                }
-                continue;
-            }
-            card.setSymbolMissing(false);
-            card.setRange(rangeOf(node.symbol()));
-            updateCardNotes(card); // the declaration's lines may hold other notes now
-        }
-    }
-
-    private static ProjectMapPreview.Range rangeOf(ProjectMapModel.Symbol symbol) {
-        return new ProjectMapPreview.Range(symbol.label(), symbol.line(), symbol.startLine(), symbol.endLine());
+        cards.outlineChanged();
     }
 
     /** Where the cards' editor font comes from: the editor window this Map belongs to. */
     void setEditorFontSource(java.util.function.Supplier<javafx.stage.@Nullable Window> source) {
-        cardFontSource = source == null ? () -> null : source;
+        cards.setEditorFontSource(source);
     }
 
-    /** The editor window's editor font for cards, following the window from now on; null when not known. */
-    private javafx.scene.text.@Nullable Font cardEditorFont() {
-        javafx.stage.Window window;
-        try {
-            window = cardFontSource.get();
-        } catch (RuntimeException unknown) {
-            window = null;
-        }
-        if (window != cardFontWindow) {
-            if (cardFontWindow != null) {
-                cardFontWindow.getProperties().removeListener(weakCardFontListener);
-            }
-            cardFontWindow = window;
-            if (window != null) {
-                window.getProperties().addListener(weakCardFontListener);
-            }
-        }
-        return window != null
-                        && window.getProperties().get(ProjectMapPreview.EDITOR_FONT_KEY)
-                                instanceof javafx.scene.text.Font font
-                ? font
-                : null;
-    }
-
-    /** The path a card is open under now (a declaration card follows its declaration), else {@code fallback}. */
-    private Path cardKeyOf(ProjectMapPreview card, Path fallback) {
-        for (Map.Entry<Path, ProjectMapPreview> entry : previews.entrySet()) {
-            if (entry.getValue() == card) {
-                return entry.getKey();
-            }
-        }
-        return fallback;
-    }
-
-    /**
-     * The files a declaration card is open for, or whose card has its Structure column out: their outlines are
-     * kept to follow the cards' lines and to list them.
-     */
-    private Set<Path> cardOutlineFiles() {
-        Set<Path> files = new HashSet<>();
-        for (Path key : previews.keySet()) {
-            if (ProjectMapStructure.isSymbolPath(key)) {
-                Path file = structure.fileOf(key);
-                if (file != null) {
-                    files.add(file);
-                }
-            }
-        }
-        for (ProjectMapPreview card : cardStructures.keySet()) {
-            Path file = card.path();
-            if (file != null) {
-                files.add(file);
-            }
-        }
-        return files;
-    }
-
-    /**
-     * A declaration row: opens (or focuses) the card of its lines. The card reads and colours the whole file
-     * and shows the declaration's block with its doc comment, numbered as the file numbers it.
-     */
+    /** A declaration row: opens (or focuses) the card of its lines (see {@link MapCards#openDeclarationCard}). */
     private void previewSymbol(ProjectMapModel.Entry entry) {
-        ProjectMapModel.Symbol symbol = entry.symbol();
-        if (symbol == null) {
-            return;
-        }
-        Path key = entry.path();
-        ProjectMapPreview existing = previews.get(key);
-        if (existing != null) {
-            touchCard(existing, true);
-            existing.focusContent();
-            return;
-        }
-        Path file = symbol.file();
-        ProjectMapPreview preview = createPreview(key);
-        preview.setOnOpenAt((path, line) -> onOpenAt.accept(path, line));
-        preview.setOnOpenNarrowed(() -> {
-            ProjectMapStructure.Node node = structure.node(cardKeyOf(preview, key));
-            ProjectMapModel.Symbol current = node == null ? symbol : node.symbol();
-            com.editora.text.FoldRegions.Region block = current.block();
-            onOpenNarrowed.accept(
-                    file,
-                    block != null ? block : new com.editora.text.FoldRegions.Region(current.line(), current.endLine()));
-        });
-        preview.showRange(
-                file,
-                rangeOf(symbol),
-                previewContentFor(file),
-                (width, height, parentWidth, parentHeight) -> previewPlacement(
-                        preview,
-                        key,
-                        width,
-                        height,
-                        ProjectMapPreview.MIN_WIDTH,
-                        ProjectMapPreview.MIN_HEIGHT,
-                        parentWidth,
-                        parentHeight));
-        updateCardNotes(preview);
-        scheduleCardRefresh();
+        cards.openDeclarationCard(entry);
     }
 
     /**
@@ -2277,33 +2026,9 @@ final class ProjectMapView extends VBox {
         ProjectMapModel.Entry entry = surface.selectedEntry()
                 .filter(candidate -> candidate.path().equals(path))
                 .orElse(null);
-        if (entry == null || !entry.isFile()) {
-            return;
+        if (entry != null && entry.isFile()) {
+            cards.openFileCard(entry.path());
         }
-        Path selected = entry.path().toAbsolutePath().normalize();
-        ProjectMapPreview preview = previews.get(selected);
-        if (preview != null) {
-            touchCard(preview, true);
-            preview.focusContent();
-            return;
-        }
-        preview = createPreview(selected);
-        preview.setStructureAvailable(structure.supports(selected)); // as the row has its Structure icon
-        ProjectMapPreview selectedPreview = preview;
-        preview.showFile(
-                entry.path(),
-                previewContentFor(entry.path()),
-                (width, height, parentWidth, parentHeight) -> previewPlacement(
-                        selectedPreview,
-                        entry.path(),
-                        width,
-                        height,
-                        ProjectMapPreview.MIN_WIDTH,
-                        ProjectMapPreview.MIN_HEIGHT,
-                        parentWidth,
-                        parentHeight));
-        updateCardNotes(preview);
-        scheduleCardRefresh(); // starts following the buffer when the card mirrors one
     }
 
     private ProjectMapPreview.@Nullable Content previewContentFor(Path path) {
@@ -2315,937 +2040,148 @@ final class ProjectMapView extends VBox {
         }
     }
 
+    // --- cards (MapCards): what the view and its tests still name here ---------------------------------------
+
     private void previewNotes(Path path) {
-        if (notePreviewActions == null || !notePreviewActions.personalNotesEnabled()) {
-            return;
-        }
-        Path selected = path.toAbsolutePath().normalize();
-        ProjectMapNotePreview existing = notePreviews.get(selected);
-        if (existing != null) {
-            updateCardVisibility();
-            touchCard(existing, true);
-            existing.focusContent();
-            return;
-        }
-        List<PersonalNote> values = notePreviewActions.personalNotes(selected);
-        if (values.isEmpty()) {
-            return;
-        }
-        makeRoomForCard(null);
-        ProjectMapNotePreview preview = new ProjectMapNotePreview((note, body) -> {
-            ProjectPanel.MarkerActions actions = notePreviewActions;
-            if (actions != null) {
-                actions.updatePersonalNote(selected, note, body);
-            }
-        });
-        preview.setOnClose(() -> closeNotePreview(preview));
-        preview.setOnActivate(() -> touchCard(preview, true));
-        preview.setOnTouch(() -> touchCard(preview, false));
-        preview.setOnEscape(() -> {
-            closeNotePreview(preview);
-            surface.requestFocus();
-        });
-        preview.setOnBlankRejected(() -> onStatus.accept(tr("status.projectMap.noteBlankRestored")));
-        preview.setOnOpenAt((file, line) -> onOpenAt.accept(file, line)); // a note's heading opens the file there
-        preview.setMapScale(surface.cardZoom());
-        installPreviewListeners(preview);
-        notePreviews.put(selected, preview);
-        cardTouches.put(preview, ++cardTouchSequence);
-        canvasHost.getChildren().add(preview);
-        ProjectMapPreview.Placement placement = previewPlacement(
-                preview,
-                selected,
-                ProjectMapNotePreview.DEFAULT_WIDTH,
-                ProjectMapNotePreview.DEFAULT_HEIGHT,
-                ProjectMapNotePreview.MIN_WIDTH,
-                ProjectMapNotePreview.MIN_HEIGHT,
-                canvasHost.getWidth(),
-                canvasHost.getHeight());
-        preview.showNotes(selected, values, placement);
-        updateCardVisibility();
+        cards.openNoteCard(path);
     }
 
     private ProjectMapPreview createPreview(Path path) {
-        // A declaration card of a file whose card has its Structure column out belongs to that card's group.
-        makeRoomForCard(ProjectMapStructure.isSymbolPath(path) ? cardGroupOwner(structure.fileOf(path)) : null);
-        ProjectMapPreview preview = new ProjectMapPreview(onOpenFile);
-        preview.setMapScale(surface.cardZoom());
-        preview.setEditorFont(cardEditorFont());
-        preview.setInitialContentZoom(cardTextZoom); // the last −/+ zoom, so it need not be set on every card
-        preview.setOnContentZoomed(zoom -> cardTextZoom = zoom);
-        preview.setMarkerActions(previewMarkerActions);
-        preview.setOnClose(() -> closePreview(preview));
-        preview.setOnActivate(() -> touchCard(preview, true));
-        preview.setOnTouch(() -> touchCard(preview, false));
-        preview.setOnEscape(() -> {
-            closePreview(preview);
-            surface.requestFocus();
-        });
-        preview.setOnNotesToggled(shown -> showCardNotes(preview, shown));
-        preview.setOnStructureToggled(shown -> showCardStructure(preview, shown));
-        preview.setOnFocusStructure(() -> {
-            ProjectMapCardStructure column = cardStructures.get(preview);
-            if (column != null) {
-                column.focus();
-            }
-        });
-        preview.setNotesSuppressed(hideOpenNotes.isSelected());
-        preview.setOnShowSuppressedNotes(() -> hideOpenNotes.setSelected(false)); // the Notes button asks for them
-        preview.setOnMoveToFreeSpace(() -> cardMoveToFreeSpace(preview, path));
-        preview.setOnTextShown(() -> {
-            updateCardNotes(preview); // stored notes are found again in the new text
-            restyleCardStructure(preview);
-        });
-        preview.setOnStylesShown(() -> restyleCardStructure(preview)); // its Structure column borrows the colours
-        // A sticky note's connector meets its line in the text, which scrolls under it.
-        preview.editor().estimatedScrollYProperty().addListener((obs, old, value) -> {
-            if (stickyNotes.containsKey(preview)) {
-                repaintPreviewConnectors();
-            }
-        });
-        installPreviewListeners(preview);
-        previews.put(path, preview);
-        cardTouches.put(preview, ++cardTouchSequence);
-        canvasHost.getChildren().add(preview);
-        return preview;
-    }
-
-    private void installPreviewListeners(Region preview) {
-        preview.layoutXProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
-        preview.layoutYProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
-        preview.widthProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
-        preview.heightProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
-        preview.visibleProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
-    }
-
-    /** Records use of an open card for eviction, and optionally raises it above the others. */
-    private void touchCard(Region card, boolean raise) {
-        if (!cardTouches.containsKey(card)) {
-            return; // closed meanwhile
-        }
-        cardTouches.put(card, ++cardTouchSequence);
-        if (raise) {
-            card.toFront();
-            ProjectMapCardStructure column = card instanceof ProjectMapPreview code ? cardStructures.get(code) : null;
-            if (column != null) {
-                column.raise(); // so does its Structure column
-            }
-            ProjectMapStickyNotes notes = card instanceof ProjectMapPreview code ? stickyNotes.get(code) : null;
-            if (notes != null) {
-                notes.raise(); // a card's sticky notes stay on it
-            }
-        }
-    }
-
-    /**
-     * Counts, on a code card's Notes button, the Personal Notes of what it shows — and brings the sticky notes it
-     * has up, if any, in line with the store.
-     */
-    private void updateCardNotes(ProjectMapPreview card) {
-        ProjectPanel.MarkerActions actions = notePreviewActions;
-        boolean enabled = actions != null && actions.personalNotesEnabled();
-        List<PersonalNote> notes = cardNotes(card);
-        card.setNoteCount(notes.size(), enabled); // may bring the notes up: one the user asked for arrived
-        ProjectMapStickyNotes stuck = stickyNotes.get(card);
-        if (stuck != null && !notes.isEmpty()) {
-            stuck.refresh(notes);
-        }
-    }
-
-    private List<PersonalNote> cardNotes(ProjectMapPreview card) {
-        ProjectPanel.MarkerActions actions = notePreviewActions;
-        Path file = card.path();
-        if (actions == null || !actions.personalNotesEnabled() || file == null) {
-            return List.of();
-        }
-        try {
-            // Found again in the card's text first: a file changed outside Editora moved them (C5).
-            return ProjectMapStickyNotes.notesFor(
-                    ProjectMapStickyNotes.reanchored(actions.personalNotes(file), card.fullText()), card.range());
-        } catch (RuntimeException failed) {
-            ProjectMapLog.unexpected("reading a card's Personal Notes", failed);
-            return List.of();
-        }
-    }
-
-    /** The Notes button: sticks the card's notes beside it, or takes them off. */
-    private void showCardNotes(ProjectMapPreview card, boolean shown) {
-        if (!shown) {
-            ProjectMapStickyNotes stuck = stickyNotes.remove(card);
-            if (stuck != null) {
-                stuck.dispose();
-            }
-            return;
-        }
-        ProjectMapStickyNotes stuck = stickyNotes.computeIfAbsent(
-                card,
-                ignored -> new ProjectMapStickyNotes(
-                        card,
-                        canvasHost,
-                        (note, body) -> {
-                            ProjectPanel.MarkerActions actions = notePreviewActions;
-                            Path file = card.path();
-                            if (actions != null && file != null) {
-                                actions.updatePersonalNote(file, note, body);
-                            }
-                        },
-                        this::repaintPreviewConnectors,
-                        () -> onStatus.accept(tr("status.projectMap.noteBlankRestored")),
-                        () -> touchCard(card, false)));
-        stuck.setOnAllClosed(() -> card.setNotesShown(false)); // every sheet closed: the Notes button goes off
-        stuck.setOnMore(() -> {
-            Path file = card.path();
-            if (file != null) {
-                previewNotes(file); // the note card lists every note of the file
-            }
-        });
-        stuck.setHidden(hideOpenNotes.isSelected());
-        stuck.setReserved(which -> besideCard(card, which));
-        stuck.show(cardNotes(card));
-        touchCard(card, true);
-    }
-
-    /** What the card's Structure column takes beside it on a sticky-note side, in unzoomed units. */
-    private double besideCard(ProjectMapPreview card, ProjectMapStickyNotes.Side which) {
-        ProjectMapCardStructure column = cardStructures.get(card);
-        if (column == null) {
-            return 0;
-        }
-        return switch (which) {
-            case RIGHT -> column.reserved(ProjectMapCardStructure.Side.RIGHT);
-            case LEFT -> column.reserved(ProjectMapCardStructure.Side.LEFT);
-            case OVER -> 0;
-        };
-    }
-
-    /**
-     * The Structure button: sticks the file's Structure column beside the card, or takes it off. It goes on the
-     * side away from the card's row, where the connector to the row does not cross it; a declaration clicked in it
-     * opens its card beside it. Taking it off closes the declaration cards it opened, as closing the Map's own
-     * Structure column closes those of its rows.
-     */
-    private void showCardStructure(ProjectMapPreview card, boolean shown) {
-        Path file = card.path();
-        if (!shown || file == null || canvasHost == null) {
-            closeCardStructure(card);
-            return;
-        }
-        ProjectMapCardStructure column = cardStructures.computeIfAbsent(
-                card,
-                ignored -> new ProjectMapCardStructure(
-                        card,
-                        canvasHost,
-                        node -> cardRevealDeclaration(card, node),
-                        node -> {
-                            touchCard(card, false); // the column's card is in use: never the one evicted
-                            previewSymbol(symbolEntry(node));
-                        },
-                        node -> symbolMenu(symbolEntry(node)),
-                        () -> touchCard(card, false),
-                        this::repaintPreviewConnectors,
-                        () -> reserveBesideCard(card)));
-        structure.ensure(file);
-        column.show(cardRowAfter(card, file));
-        column.update(structure.view(file)); // shown first: its width is measured in the rows' font
-        reserveBesideCard(card); // the sheets step past the column
-        touchCard(card, true);
-        scheduleCardRefresh(); // the outline follows the buffer from now on
-    }
-
-    /**
-     * A click or Enter on a declaration in a file card's Structure column: the card scrolls to the declaration and
-     * marks its lines (review 3, E8). A declaration past what the card shows opens its own card instead.
-     */
-    private void cardRevealDeclaration(ProjectMapPreview card, ProjectMapStructure.Node node) {
-        touchCard(card, false);
-        if (!card.revealRange(rangeOf(node.symbol()))) {
-            previewSymbol(symbolEntry(node));
-        }
-    }
-
-    /** Places a card's sticky notes again past what stands beside the card now. */
-    private void reserveBesideCard(ProjectMapPreview card) {
-        ProjectMapStickyNotes notes = stickyNotes.get(card);
-        if (notes != null) {
-            notes.setReserved(which -> besideCard(card, which));
-        }
-    }
-
-    private void restyleCardStructure(ProjectMapPreview card) {
-        ProjectMapCardStructure column = cardStructures.get(card);
-        if (column != null) {
-            column.restyle();
-        }
-    }
-
-    /** Whether the card's row is after it along the flow, so its Structure column goes on the left. */
-    private boolean cardRowAfter(ProjectMapPreview card, Path file) {
-        MapSurface.NodeBox row = surface.nodeBox(file);
-        if (row == null) {
-            return false;
-        }
-        double cardMiddle = card.getLayoutX() + card.getWidth() * card.mapScale() / 2;
-        return row.x() + row.width() / 2 > cardMiddle;
-    }
-
-    private void closeCardStructure(ProjectMapPreview card) {
-        ProjectMapCardStructure column = cardStructures.remove(card);
-        if (column == null) {
-            return;
-        }
-        boolean focused = column.contains(getScene() == null ? null : getScene().getFocusOwner());
-        column.dispose();
-        reserveBesideCard(card);
-        if (focused && cardTouches.containsKey(card)) {
-            card.focusContent();
-        }
-        scheduleOrphanCheck(); // the declaration cards it opened go with it
-    }
-
-    /** A declaration of a card's Structure column as a Map row, for the row's card and menu. */
-    private static ProjectMapModel.Entry symbolEntry(ProjectMapStructure.Node node) {
-        Path parent = node.path().getParent();
-        return ProjectMapModel.Entry.symbol(node.path(), parent == null ? node.path() : parent, 0, node.symbol());
-    }
-
-    /** The Structure column of a file card, when it is out: for a declaration card opened from it. */
-    private @Nullable ProjectMapCardStructure cardStructureOf(@Nullable Path file) {
-        if (file == null) {
-            return null;
-        }
-        for (Map.Entry<ProjectMapPreview, ProjectMapCardStructure> entry : cardStructures.entrySet()) {
-            if (file.equals(entry.getKey().path())) {
-                return entry.getValue();
-            }
-        }
-        return null;
-    }
-
-    private void scheduleOrphanCheck() {
-        if (!orphanCheckPending && !previews.isEmpty()) {
-            orphanCheckPending = true;
-            Platform.runLater(this::closeOrphanedCards);
-        }
-    }
-
-    private void closeCardNotes(ProjectMapPreview card) {
-        ProjectMapStickyNotes stuck = stickyNotes.remove(card);
-        if (stuck != null) {
-            stuck.dispose();
-        }
-    }
-
-    /**
-     * Closes the least recently used cards, of either kind, until one more fits under the shared limit. Cards go
-     * by group: a file card with its Structure column out, and the declaration cards of its file, which the column
-     * keeps. A group's file card goes only after its declaration cards (the oldest of them first), and {@code
-     * keep} — the file card whose column a new declaration card comes from — never goes (review 3, C1).
-     */
-    private void makeRoomForCard(@Nullable ProjectMapPreview keep) {
-        while (previews.size() + notePreviews.size() >= MAX_OPEN_PREVIEWS) {
-            Region oldest = oldestCard(card -> card != keep);
-            if (oldest instanceof ProjectMapPreview code && cardStructures.containsKey(code)) {
-                Set<ProjectMapPreview> members = cardGroupMembers(code);
-                Region member = oldestCard(members::contains);
-                if (member != null) {
-                    oldest = member; // its owner waits until the cards it keeps are gone
-                }
-            }
-            if (oldest instanceof ProjectMapPreview code) {
-                closePreview(code);
-            } else if (oldest instanceof ProjectMapNotePreview note) {
-                closeNotePreview(note);
-            } else {
-                return;
-            }
-        }
-    }
-
-    /** The least recently used open card among those {@code wanted} accepts, or null. */
-    private @Nullable Region oldestCard(Predicate<Region> wanted) {
-        Region oldest = null;
-        long oldestTouch = Long.MAX_VALUE;
-        for (Map.Entry<Region, Long> touch : cardTouches.entrySet()) {
-            if (touch.getValue() < oldestTouch && wanted.test(touch.getKey())) {
-                oldestTouch = touch.getValue();
-                oldest = touch.getKey();
-            }
-        }
-        return oldest;
-    }
-
-    /** The declaration cards a file card's Structure column keeps: those of its file. */
-    private Set<ProjectMapPreview> cardGroupMembers(ProjectMapPreview owner) {
-        Path file = owner.path();
-        Set<ProjectMapPreview> members = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-        if (file == null || !cardStructures.containsKey(owner)) {
-            return members;
-        }
-        previews.forEach((key, card) -> {
-            if (card != owner && ProjectMapStructure.isSymbolPath(key) && file.equals(structure.fileOf(key))) {
-                members.add(card);
-            }
-        });
-        return members;
-    }
-
-    /** The file card whose Structure column keeps a declaration card of {@code file}, if one is out. */
-    private @Nullable ProjectMapPreview cardGroupOwner(@Nullable Path file) {
-        if (file == null) {
-            return null;
-        }
-        for (ProjectMapPreview card : cardStructures.keySet()) {
-            if (file.equals(card.path())) {
-                return card;
-            }
-        }
-        return null;
-    }
-
-    private void closeNotePreview(ProjectMapNotePreview preview) {
-        if (preview == null) {
-            return;
-        }
-        boolean focused = focusReturnsFrom(preview);
-        notePreviews.entrySet().removeIf(entry -> entry.getValue() == preview);
-        cardTouches.remove(preview);
-        if (canvasHost != null) {
-            canvasHost.getChildren().remove(preview);
-        }
-        preview.dispose();
-        repaintPreviewConnectors();
-        focusReturnToMap(focused);
-    }
-
-    /**
-     * Whether the keyboard is in {@code card} (or, for a code card, on one of its sticky notes): closing it
-     * must then hand the keyboard back to the map. Left to the scene, it went to the window's first control,
-     * the search field, and the next arrow key typed there (C18).
-     */
-    private boolean focusReturnsFrom(Region card) {
-        Scene scene = getScene();
-        Node owner = scene == null ? null : scene.getFocusOwner();
-        if (owner == null) {
-            return false;
-        }
-        boolean hasSheets = card instanceof ProjectMapPreview code && stickyNotes.containsKey(code);
-        ProjectMapCardStructure column = card instanceof ProjectMapPreview code ? cardStructures.get(code) : null;
-        if (column != null && column.contains(owner)) {
-            return true; // its Structure column is the card's own too
-        }
-        for (Node current = owner; current != null; current = current.getParent()) {
-            if (current == card || hasSheets && current.getStyleClass().contains("project-map-sticky-note")) {
-                return true; // a sheet is the card's own: it closes with it
-            }
-        }
-        return false;
-    }
-
-    /** Whether {@code node} is inside an open code or note card, or on a sticky note. */
-    private static boolean cardFocusInCard(Node node) {
-        for (Node current = node; current != null; current = current.getParent()) {
-            if (current instanceof ProjectMapPreview
-                    || current instanceof ProjectMapNotePreview
-                    || current.getStyleClass().contains("project-map-sticky-note")
-                    || current.getStyleClass().contains("project-map-card-structure")) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** After a Tab out of a card: when the keyboard left the map area altogether, it goes to the map. */
-    private void cardFocusKeptOnMap() {
-        Scene scene = getScene();
-        Node owner = scene == null ? null : scene.getFocusOwner();
-        for (Node current = owner; current != null; current = current.getParent()) {
-            if (current == canvasHost) {
-                return;
-            }
-        }
-        if (!disposed && scene != null) {
-            surface.requestFocus();
-        }
-    }
-
-    private void focusReturnToMap(boolean focused) {
-        if (focused && !disposed) {
-            surface.requestFocus();
-        }
-    }
-
-    /**
-     * A card stays open but out of sight while "Hide unmatched" has taken its file's row off the map, and comes
-     * back with the row; a note card, and a code card's sticky notes, are also hidden by "Hide all open Personal
-     * Notes".
-     */
-    private void updateCardVisibility() {
-        for (Map.Entry<Path, ProjectMapPreview> entry : previews.entrySet()) {
-            Path key = entry.getKey();
-            Path file = ProjectMapStructure.isSymbolPath(key) ? structure.fileOf(key) : key;
-            entry.getValue().setVisible(file == null || !surface.narrowsAway(file));
-        }
-        boolean notes = !hideOpenNotes.isSelected();
-        previews.values().forEach(card -> card.setNotesSuppressed(!notes)); // their Notes buttons say why
-        notePreviews.forEach((path, card) -> card.setVisible(notes && !surface.narrowsAway(path)));
-        stickyNotes.values().forEach(stuck -> stuck.setHidden(!notes)); // a hidden card hides its own as well
-        repaintPreviewConnectors();
+        return cards.createPreview(path);
     }
 
     private void closePreview(ProjectMapPreview preview) {
-        if (preview == null) {
-            return;
-        }
-        boolean focused = focusReturnsFrom(preview);
-        previews.entrySet().removeIf(entry -> entry.getValue() == preview);
-        cardTouches.remove(preview);
-        closeCardNotes(preview);
-        closeCardStructure(preview);
-        if (canvasHost != null) {
-            canvasHost.getChildren().remove(preview);
-        }
-        preview.dispose();
-        repaintPreviewConnectors();
-        focusReturnToMap(focused);
+        cards.close(preview);
     }
 
-    private void closeAllPreviews() {
-        cardRefresh.stop();
-        cardPoll.stop();
-        cardDiskRefresh.stop();
-        cardTouches.clear();
-        List<ProjectMapPreview> open = List.copyOf(previews.values());
-        previews.clear();
-        List.copyOf(stickyNotes.values()).forEach(ProjectMapStickyNotes::dispose);
-        stickyNotes.clear();
-        List.copyOf(cardStructures.values()).forEach(ProjectMapCardStructure::dispose);
-        cardStructures.clear();
-        for (ProjectMapPreview preview : open) {
-            if (canvasHost != null) {
-                canvasHost.getChildren().remove(preview);
-            }
-            preview.dispose();
-        }
-        List<ProjectMapNotePreview> openNotes = List.copyOf(notePreviews.values());
-        notePreviews.clear();
-        for (ProjectMapNotePreview preview : openNotes) {
-            if (canvasHost != null) {
-                canvasHost.getChildren().remove(preview);
-            }
-            preview.dispose();
-        }
-        repaintPreviewConnectors();
-    }
-
-    private void closePreviewsUnder(Path directory) {
-        List<ProjectMapPreview> closing = previews.entrySet().stream()
-                .filter(entry -> entry.getKey().startsWith(directory))
-                .map(Map.Entry::getValue)
-                .toList();
-        closing.forEach(this::closePreview);
-        List<ProjectMapNotePreview> closingNotes = notePreviews.entrySet().stream()
-                .filter(entry -> entry.getKey().startsWith(directory))
-                .map(Map.Entry::getValue)
-                .toList();
-        closingNotes.forEach(this::closeNotePreview);
-    }
-
-    /**
-     * Closes every card whose row is no longer on the map because a folder above it is not expanded any
-     * more — however it was collapsed (its row, its column's close button, history, a search that ended).
-     * A row that is merely filtered out or scrolled away keeps its card.
-     */
-    private void closeOrphanedCards() {
-        orphanCheckPending = false;
-        Set<Path> shown = cardsCheckedAgainst;
-        if (disposed || shown == null || root == null) {
-            return;
-        }
-        List<ProjectMapPreview> closing = previews.entrySet().stream()
-                .filter(entry -> cardOrphaned(entry.getKey(), shown))
-                .map(Map.Entry::getValue)
-                .toList();
-        closing.forEach(this::closePreview);
-        List<ProjectMapNotePreview> closingNotes = notePreviews.entrySet().stream()
-                .filter(entry -> orphaned(entry.getKey(), shown))
-                .map(Map.Entry::getValue)
-                .toList();
-        closingNotes.forEach(this::closeNotePreview);
-    }
-
-    /**
-     * {@link #orphaned}, except that a declaration card opened from a file card's Structure column stays while that
-     * column is out and the file's own row is still on the map.
-     */
-    private boolean cardOrphaned(Path key, Set<Path> shown) {
-        if (!orphaned(key, shown)) {
-            return false;
-        }
-        Path file = ProjectMapStructure.isSymbolPath(key) ? structure.fileOf(key) : null;
-        return file == null || cardStructureOf(file) == null || orphaned(file, shown);
-    }
-
-    private boolean orphaned(Path path, Set<Path> shown) {
-        if (!path.startsWith(root)) {
-            return false;
-        }
-        for (Path parent = path.getParent(); parent != null && !parent.equals(root); parent = parent.getParent()) {
-            if (!shown.contains(parent)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** Asks for {@link #refreshCards} once the notifications that prompted it have settled. */
-    private void scheduleCardRefresh() {
-        if (disposed
-                || !showingOnScreen()
-                || previews.isEmpty() && notePreviews.isEmpty() && !structure.hasOpenColumns()) {
-            return; // the Map window is closed: setShowing(true) refreshes them when it opens again
-        }
-        cardRefresh.playFromStart();
-    }
-
-    /**
-     * Brings open cards up to date: code cards with their buffer's text or their file on disk, note cards
-     * with the store. A {@code polled} pass only looks at cards that mirror an open buffer, and keeps
-     * running at {@link #CARD_POLL_INTERVAL} while there is one and the Map is on screen.
-     */
     private void refreshCards(boolean polled) {
-        if (disposed) {
-            return;
-        }
-        boolean mirrors = false;
-        // One look at each file per pass, shared by its cards and its outline: a buffer's text is read once.
-        Map<Path, ProjectMapPreview.@Nullable Content> cardTick = new HashMap<>();
-        Function<Path, ProjectMapPreview.@Nullable Content> cardContent =
-                file -> cardTick.containsKey(file) ? cardTick.get(file) : cardTickPut(cardTick, file);
-        for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
-            ProjectMapPreview card = entry.getValue();
-            Path file = card.path();
-            if (!polled || card.showsOpenBuffer()) {
-                card.refresh(cardContent.apply(file != null ? file : entry.getKey()));
+        cards.refresh(polled);
+    }
+
+    private void repaintPreviewConnectors() {
+        cards.drawConnectors();
+    }
+
+    private void scheduleCardRefresh() {
+        cards.scheduleRefresh();
+    }
+
+    private void updateCardVisibility() {
+        cards.updateVisibility();
+    }
+
+    /** What the cards need of the map: the surface's rows, layout, zoom and colours, and the view's actions. */
+    private MapCards.Host cardsHost() {
+        return new MapCards.Host() {
+            @Override
+            public double @Nullable [] rowBox(Path path) {
+                MapSurface.NodeBox box = surface.nodeBox(path);
+                return box == null ? null : new double[] {box.x(), box.y(), box.width(), box.height()};
             }
-            mirrors |= card.showsOpenBuffer();
-            card.setUnsaved(card.showsOpenBuffer() && file != null && safeTest(isModified, file));
-        }
-        // Structure columns follow their file too: an open buffer's edits, or a closed file rewritten on disk.
-        if (structure.hasOpenColumns() || !cardOutlineFiles().isEmpty()) {
-            structure.refresh(cardOutlineFiles(), cardContent);
-            mirrors |= structure.openFiles().stream().anyMatch(file -> safeTest(isOpen, file));
-        }
-        if (!polled) {
-            refreshNoteCards();
-        }
-        if (mirrors && showingOnScreen()) { // a closed window's cards are refreshed when it shows again
-            cardPoll.playFromStart();
-        } else {
-            cardPoll.stop();
-        }
-    }
 
-    private ProjectMapPreview.@Nullable Content cardTickPut(
-            Map<Path, ProjectMapPreview.@Nullable Content> tick, Path file) {
-        ProjectMapPreview.Content content = previewContentFor(file);
-        tick.put(file, content);
-        return content;
-    }
-
-    private void refreshNoteCards() {
-        List.copyOf(previews.values()).forEach(this::updateCardNotes);
-        ProjectPanel.MarkerActions actions = notePreviewActions;
-        boolean enabled = actions != null && actions.personalNotesEnabled();
-        for (Map.Entry<Path, ProjectMapNotePreview> entry : List.copyOf(notePreviews.entrySet())) {
-            List<PersonalNote> values;
-            try {
-                values = enabled && actions != null ? actions.personalNotes(entry.getKey()) : List.of();
-            } catch (RuntimeException failed) {
-                ProjectMapLog.unexpected("reading a note card's notes", failed);
-                continue;
+            @Override
+            public MapCards.Site site(Path path) {
+                return surface.cardSite(path);
             }
-            entry.getValue().refreshNotes(values);
-            if (values.isEmpty()) {
-                closeNotePreview(entry.getValue()); // its notes were deleted elsewhere: nothing left to show
+
+            @Override
+            public double zoom() {
+                return surface.cardZoom();
             }
-        }
-    }
 
-    /**
-     * The card menu's Move to Free Space: the card is placed again, at its present size, where placement would
-     * put a new card for its row — the spot that covers the least of the map. The map is not panned.
-     */
-    private void cardMoveToFreeSpace(Region card, Path key) {
-        if (canvasHost == null || !cardTouches.containsKey(card)) {
-            return;
-        }
-        double scale = cardScale(card);
-        ProjectMapPreview.Placement placement = previewPlacement(
-                card,
-                key,
-                card.getWidth(),
-                card.getHeight(),
-                Math.min(card.getWidth(), ProjectMapPreview.MIN_WIDTH),
-                Math.min(card.getHeight(), ProjectMapPreview.MIN_HEIGHT),
-                canvasHost.getWidth(),
-                canvasHost.getHeight());
-        card.resize(placement.width(), placement.height());
-        card.relocate(placement.x(), placement.y());
-        ProjectMapPreview.announceGeometry(card, scale);
-    }
-
-    private void constrainPreviews(double width, double height) {
-        previews.values().forEach(preview -> preview.constrainTo(width, height));
-        notePreviews.values().forEach(preview -> preview.constrainTo(width, height));
-    }
-
-    /**
-     * The one placement path for code and note cards: beside the row's column when there is room for the
-     * card's minimum size, otherwise over the map inside the panel, then shifted or cascaded clear of the
-     * cards already open — of those in view; one dragged or panned off the panel takes no room. The map
-     * itself is never panned to make room. Sizes in and out are the card's own, unzoomed; the room is found
-     * for the card as drawn at its zoom.
-     */
-    private ProjectMapPreview.Placement previewPlacement(
-            Region preview,
-            Path path,
-            double width,
-            double height,
-            double minimumWidth,
-            double minimumHeight,
-            double parentWidth,
-            double parentHeight) {
-        double scale = cardScale(preview);
-        ProjectMapPreview.Placement drawn = drawnPlacement(
-                preview,
-                path,
-                width * scale,
-                height * scale,
-                minimumWidth * scale,
-                minimumHeight * scale,
-                parentWidth,
-                parentHeight);
-        return new ProjectMapPreview.Placement(
-                drawn.x(), drawn.y(), drawn.width() / scale, drawn.height() / scale, drawn.growLeft());
-    }
-
-    /**
-     * {@link #previewPlacement} in panel pixels: every size here is a card as drawn. The spot that covers the least:
-     * beside the row's column after it, before it, above or below the columns' band, or any free part of the
-     * panel, scored by how much of the columns, the zoom bar, the overview and the other cards it would cover (see
-     * {@link #cardOverlapCost}). The columns that lead to the row weigh most, and so does the band where the row's
-     * next column — its folder's, or its file's Structure column — would open. The map is never panned. A card
-     * used to take the side after its column, else the side before it, which is where the columns leading to it
-     * are, and so often covered the very path to its row.
-     */
-    private ProjectMapPreview.Placement drawnPlacement(
-            Region preview,
-            Path path,
-            double width,
-            double height,
-            double minimumWidth,
-            double minimumHeight,
-            double parentWidth,
-            double parentHeight) {
-        MapSurface.CardSite site = surface.cardSite(path);
-        MapSurface.CardSite beside = site.row() == null ? cardStructureSite(path) : null;
-        if (beside != null) {
-            site = beside;
-        }
-        double margin = ProjectMapPreview.EDGE_MARGIN;
-        double roomWidth = parentWidth - margin * 2;
-        double roomHeight = parentHeight - margin * 2;
-        double fullWidth = cardBounded(width, minimumWidth, roomWidth);
-        double fullHeight = cardBounded(height, minimumHeight, roomHeight);
-        if (site.row() == null) {
-            // The row is not on the map (filtered, scrolled off): against the panel's far edge, as before.
-            return new ProjectMapPreview.Placement(
-                    Math.max(margin, parentWidth - fullWidth - margin), margin, fullWidth, fullHeight);
-        }
-        List<double[]> obstacles = new ArrayList<>(site.obstacles());
-        List<Region> cards = new ArrayList<>(previews.values());
-        cards.addAll(notePreviews.values());
-        for (ProjectMapCardStructure column : cardStructures.values()) {
-            double[] drawn = column.bounds();
-            if (drawn != null) { // a card's Structure column weighs as a card does
-                obstacles.add(new double[] {
-                    drawn[0] - PREVIEW_CASCADE / 2,
-                    drawn[1] - PREVIEW_CASCADE / 2,
-                    drawn[2] + PREVIEW_CASCADE,
-                    drawn[3] + PREVIEW_CASCADE,
-                    CARD_WEIGHT_CARD
-                });
+            @Override
+            public boolean horizontalFlow() {
+                return surface.flowDirection == FlowDirection.LEFT_TO_RIGHT
+                        || surface.flowDirection == FlowDirection.RIGHT_TO_LEFT;
             }
-        }
-        for (Region other : cards) {
-            if (other != preview && other.isVisible() && other.getWidth() > 0) {
-                double scale = cardScale(other);
-                obstacles.add(new double[] {
-                    other.getLayoutX() - PREVIEW_CASCADE / 2,
-                    other.getLayoutY() - PREVIEW_CASCADE / 2,
-                    other.getWidth() * scale + PREVIEW_CASCADE,
-                    other.getHeight() * scale + PREVIEW_CASCADE,
-                    CARD_WEIGHT_CARD
-                });
+
+            @Override
+            public boolean narrowsAway(Path file) {
+                return surface.narrowsAway(file);
             }
-        }
-        double[] row = site.row();
-        double[] column = site.column();
-        double[] band = site.band();
-        boolean horizontal = surface.flowDirection == FlowDirection.LEFT_TO_RIGHT
-                || surface.flowDirection == FlowDirection.RIGHT_TO_LEFT
-                || beside != null; // beside a card's Structure column, which stands upright
-        double gap = MapSurface.PREVIEW_COLUMN_GAP;
-        double rowX = row[0] + row[2] / 2;
-        double rowY = row[1] + row[3] / 2;
-        List<double[]> spots = new ArrayList<>();
-        if (horizontal) {
-            double y = rowY - fullHeight / 2;
-            double afterX = column[0] + column[2] + gap;
-            cardSpot(spots, afterX, y, Math.min(fullWidth, parentWidth - margin - afterX), fullHeight, minimumWidth, 1);
-            double beforeEnd = column[0] - gap;
-            double beforeWidth = Math.min(fullWidth, beforeEnd - margin);
-            cardSpot(spots, beforeEnd - beforeWidth, y, beforeWidth, fullHeight, minimumWidth, 1);
-            double aboveHeight = Math.min(fullHeight, band[1] - gap - margin);
-            cardSpot(
-                    spots, rowX - fullWidth / 2, band[1] - gap - aboveHeight, fullWidth, aboveHeight, minimumHeight, 0);
-            double belowY = band[1] + band[3] + gap;
-            cardSpot(
-                    spots,
-                    rowX - fullWidth / 2,
-                    belowY,
-                    fullWidth,
-                    Math.min(fullHeight, parentHeight - margin - belowY),
-                    minimumHeight,
-                    0);
-        } else {
-            double x = rowX - fullWidth / 2;
-            double afterY = column[1] + column[3] + gap;
-            cardSpot(
-                    spots,
-                    x,
-                    afterY,
-                    fullWidth,
-                    Math.min(fullHeight, parentHeight - margin - afterY),
-                    minimumHeight,
-                    0);
-            double beforeEnd = column[1] - gap;
-            double beforeHeight = Math.min(fullHeight, beforeEnd - margin);
-            cardSpot(spots, x, beforeEnd - beforeHeight, fullWidth, beforeHeight, minimumHeight, 0);
-            double leftWidth = Math.min(fullWidth, band[0] - gap - margin);
-            cardSpot(spots, band[0] - gap - leftWidth, rowY - fullHeight / 2, leftWidth, fullHeight, minimumWidth, 1);
-            double rightX = band[0] + band[2] + gap;
-            cardSpot(
-                    spots,
-                    rightX,
-                    rowY - fullHeight / 2,
-                    Math.min(fullWidth, parentWidth - margin - rightX),
-                    fullHeight,
-                    minimumWidth,
-                    1);
-        }
-        // Any free part of the panel: the card against each obstacle's edges, and against the panel's.
-        java.util.TreeSet<Double> xs = new java.util.TreeSet<>(List.of(margin, parentWidth - fullWidth - margin));
-        java.util.TreeSet<Double> ys = new java.util.TreeSet<>(List.of(margin, parentHeight - fullHeight - margin));
-        for (double[] o : obstacles) {
-            xs.add(o[0] + o[2] + gap);
-            xs.add(o[0] - fullWidth - gap);
-            ys.add(o[1] + o[3] + gap);
-            ys.add(o[1] - fullHeight - gap);
-        }
-        for (double x : xs) {
-            for (double y : ys) {
-                spots.add(new double[] {x, y, fullWidth, fullHeight});
-                // The largest card from that corner that stays inside the panel, down to the card's minimum:
-                // a free spot a little smaller beats covering the path to the row.
-                double fitWidth = Math.min(fullWidth, parentWidth - margin - x);
-                double fitHeight = Math.min(fullHeight, parentHeight - margin - y);
-                if (x >= margin
-                        && y >= margin
-                        && (fitWidth < fullWidth || fitHeight < fullHeight)
-                        && fitWidth >= Math.min(minimumWidth, fullWidth)
-                        && fitHeight >= Math.min(minimumHeight, fullHeight)) {
-                    spots.add(new double[] {x, y, fitWidth, fitHeight});
+
+            @Override
+            public Set<Path> expandedSnapshot() {
+                return surface.expandedSnapshot;
+            }
+
+            @Override
+            public @Nullable Path root() {
+                return root;
+            }
+
+            @Override
+            public Color accent() {
+                return surface.accentColor();
+            }
+
+            @Override
+            public Color note() {
+                return surface.noteColor();
+            }
+
+            @Override
+            public void focusMap() {
+                if (!disposed) {
+                    surface.requestFocus();
                 }
             }
-        }
-        double[] best = null;
-        double bestCost = Double.MAX_VALUE;
-        for (double[] spot : spots) {
-            double w = spot[2];
-            double h = spot[3];
-            double x = clampInto(spot[0], margin, Math.max(margin, parentWidth - w - margin));
-            double y = clampInto(spot[1], margin, Math.max(margin, parentHeight - h - margin));
-            // Least covered first; between spots that cover alike, the one nearer its row, then the larger.
-            double distance = Math.hypot(x + w / 2 - rowX, y + h / 2 - rowY);
-            // A card cut narrower than its lines needs makes them scroll sideways: that weighs more than height.
-            double cost = cardOverlapCost(x, y, w, h, obstacles)
-                    + distance * 0.5
-                    - w * h * 0.05
-                    + Math.max(0, fullWidth - w) * h * 0.1;
-            if (cost < bestCost) {
-                bestCost = cost;
-                best = new double[] {x, y, w, h};
+
+            @Override
+            public boolean onScreen() {
+                return !disposed && showingOnScreen();
             }
-        }
-        if (best == null) {
-            return new ProjectMapPreview.Placement(margin, margin, fullWidth, fullHeight);
-        }
-        boolean growLeft = horizontal && best[0] + best[2] <= row[0];
-        return new ProjectMapPreview.Placement(best[0], best[1], best[2], best[3], growLeft);
-    }
 
-    /**
-     * Where a declaration card opened from a file card's Structure column goes when its row is not on the map: beside
-     * the column, by the declaration's row in it (or the column's middle when that row is scrolled away), as a card
-     * goes beside its row's column. Null when the declaration's file has no Structure column out.
-     */
-    private MapSurface.@Nullable CardSite cardStructureSite(Path key) {
-        if (!ProjectMapStructure.isSymbolPath(key)) {
-            return null;
-        }
-        ProjectMapCardStructure column = cardStructureOf(structure.fileOf(key));
-        double[] drawn = column == null ? null : column.bounds();
-        if (column == null || drawn == null) {
-            return null;
-        }
-        double[] row = column.rowBounds(key);
-        if (row == null) {
-            row = new double[] {drawn[0], drawn[1] + drawn[3] / 2 - 10, drawn[2], 20};
-        }
-        return new MapSurface.CardSite(row, drawn, drawn, List.of());
-    }
-
-    /** How much a card of the other cards weighs against a spot, per pixel it would cover (columns: 1–6). */
-    private static final double CARD_WEIGHT_CARD = 5;
-
-    /** Adds a spot whose extent along {@code axis} (0 height, 1 width) is at least the card's minimum there. */
-    private static void cardSpot(
-            List<double[]> spots, double x, double y, double w, double h, double minimum, int axis) {
-        if ((axis == 1 ? w : h) >= minimum && w > 0 && h > 0) {
-            spots.add(new double[] {x, y, w, h});
-        }
-    }
-
-    private static double cardBounded(double requested, double minimum, double available) {
-        double maximum = Math.max(1, available);
-        return Math.min(Math.max(Math.min(minimum, maximum), requested), maximum);
-    }
-
-    /**
-     * What a card at {@code x, y} sized {@code w × h} covers: the area of each obstacle {@code {x, y, w, h, weight}}
-     * under it, times the obstacle's weight. Pure.
-     */
-    static double cardOverlapCost(double x, double y, double w, double h, List<double[]> obstacles) {
-        double cost = 0;
-        for (double[] o : obstacles) {
-            double across = Math.min(x + w, o[0] + o[2]) - Math.max(x, o[0]);
-            double down = Math.min(y + h, o[1] + o[3]) - Math.max(y, o[1]);
-            if (across > 0 && down > 0) {
-                cost += across * down * o[4];
+            @Override
+            public void status(String message) {
+                onStatus.accept(message);
             }
-        }
-        return cost;
+
+            @Override
+            public ProjectMapPreview.@Nullable Content content(Path file) {
+                return previewContentFor(file);
+            }
+
+            @Override
+            public boolean isOpen(Path file) {
+                return safeTest(isOpen, file);
+            }
+
+            @Override
+            public boolean isModified(Path file) {
+                return safeTest(isModified, file);
+            }
+
+            @Override
+            public ContextMenu symbolMenu(ProjectMapModel.Entry entry) {
+                return ProjectMapView.this.symbolMenu(entry);
+            }
+
+            @Override
+            public boolean hideOpenNotes() {
+                return hideOpenNotes.isSelected();
+            }
+
+            @Override
+            public void showOpenNotes() {
+                hideOpenNotes.setSelected(false);
+            }
+
+            @Override
+            public void openFile(Path file) {
+                onOpenFile.accept(file);
+            }
+
+            @Override
+            public void openAt(Path file, int line) {
+                onOpenAt.accept(file, line);
+            }
+
+            @Override
+            public void openNarrowed(Path file, com.editora.text.FoldRegions.Region block) {
+                onOpenNarrowed.accept(file, block);
+            }
+        };
     }
 
     /** {@code value} within [{@code minimum}, {@code maximum}]; unlike {@link Math#clamp} it tolerates an empty range. */
@@ -3253,119 +2189,10 @@ final class ProjectMapView extends VBox {
         return Math.max(minimum, Math.min(maximum, value));
     }
 
-    /** The map zoom a card is drawn at: its width and height are unzoomed, its corner is in panel pixels. */
-    private static double cardScale(Region card) {
-        if (card instanceof ProjectMapPreview code) {
-            return code.mapScale();
-        }
-        return card instanceof ProjectMapNotePreview note ? note.mapScale() : 1;
+    /** {@link MapCards#cardOverlapCost}, where the placement tests find it. Pure. */
+    static double cardOverlapCost(double x, double y, double w, double h, List<double[]> obstacles) {
+        return MapCards.cardOverlapCost(x, y, w, h, obstacles);
     }
-
-    private void repaintPreviewConnectors() {
-        GraphicsContext g = previewConnectorCanvas.getGraphicsContext2D();
-        g.clearRect(0, 0, previewConnectorCanvas.getWidth(), previewConnectorCanvas.getHeight());
-        previewConnectors.clear();
-        // Every reload hands the surface a new expansion set: one reference comparison per repaint tells
-        // whether a folder may have been collapsed under an open card.
-        Set<Path> shown = surface.expandedSnapshot;
-        if (shown != cardsCheckedAgainst) {
-            cardsCheckedAgainst = shown;
-            if (!orphanCheckPending && !(previews.isEmpty() && notePreviews.isEmpty())) {
-                orphanCheckPending = true;
-                Platform.runLater(this::closeOrphanedCards); // not from inside a paint or a layout pass
-            }
-        }
-        g.setStroke(surface.accentColor());
-        g.setGlobalAlpha(0.78);
-        g.setLineWidth(1.5);
-        for (Map.Entry<Path, ProjectMapPreview> entry : previews.entrySet()) {
-            ProjectMapPreview preview = entry.getValue();
-            if (!preview.isVisible() || preview.getWidth() <= 0 || preview.getHeight() <= 0) {
-                continue;
-            }
-            // A declaration in a file card's Structure column is tied to its card from there, as a row is.
-            double[] row = cardStructureRow(entry.getKey());
-            if (row != null) {
-                previewConnectors.put(
-                        entry.getKey(), drawPreviewConnector(g, row[0], row[1], row[2], row[3], true, preview));
-                continue;
-            }
-            MapSurface.NodeBox anchor = surface.nodeBox(entry.getKey());
-            if (anchor != null) {
-                previewConnectors.put(entry.getKey(), drawPreviewConnector(g, anchor, preview));
-            }
-        }
-        g.setStroke(surface.noteColor());
-        for (Map.Entry<Path, ProjectMapNotePreview> entry : notePreviews.entrySet()) {
-            ProjectMapNotePreview preview = entry.getValue();
-            MapSurface.NodeBox anchor = surface.nodeBox(entry.getKey());
-            if (!preview.isVisible() || anchor == null || preview.getWidth() <= 0 || preview.getHeight() <= 0) {
-                continue;
-            }
-            drawPreviewConnector(g, anchor, preview);
-        }
-        g.setFill(surface.noteColor());
-        stickyNotes.values().forEach(notes -> notes.drawConnectors(g));
-        g.setGlobalAlpha(1);
-    }
-
-    private PreviewConnector drawPreviewConnector(GraphicsContext g, MapSurface.NodeBox anchor, Region preview) {
-        boolean horizontal = surface.flowDirection == FlowDirection.LEFT_TO_RIGHT
-                || surface.flowDirection == FlowDirection.RIGHT_TO_LEFT;
-        return drawPreviewConnector(g, anchor.x(), anchor.y(), anchor.width(), anchor.height(), horizontal, preview);
-    }
-
-    /**
-     * The row of a declaration card's declaration in its file card's Structure column, in panel pixels, when the
-     * column is out and the row is scrolled into sight: where the card's connector starts. Else null.
-     */
-    private double @Nullable [] cardStructureRow(Path key) {
-        if (!ProjectMapStructure.isSymbolPath(key)) {
-            return null;
-        }
-        ProjectMapCardStructure column = cardStructureOf(structure.fileOf(key));
-        return column == null ? null : column.rowBounds(key);
-    }
-
-    /** A connector from the anchor box {@code ax, ay, aw, ah} to {@code preview}, across the flow or along it. */
-    private PreviewConnector drawPreviewConnector(
-            GraphicsContext g, double ax, double ay, double aw, double ah, boolean horizontal, Region preview) {
-        double x1;
-        double y1;
-        double x2;
-        double y2;
-        double left = preview.getLayoutX();
-        double top = preview.getLayoutY();
-        double width = preview.getWidth() * cardScale(preview);
-        double height = preview.getHeight() * cardScale(preview);
-        if (horizontal) {
-            boolean previewAfter = left + width / 2 >= ax + aw / 2;
-            x1 = previewAfter ? ax + aw : ax;
-            y1 = ay + ah / 2;
-            x2 = previewAfter ? left : left + width;
-            y2 = clampInto(y1, top, top + height);
-            double control = Math.max(18, Math.abs(x2 - x1) * 0.45);
-            g.beginPath();
-            g.moveTo(x1, y1);
-            g.bezierCurveTo(
-                    x1 + (previewAfter ? control : -control), y1, x2 + (previewAfter ? -control : control), y2, x2, y2);
-        } else {
-            boolean previewAfter = top + height / 2 >= ay + ah / 2;
-            x1 = ax + aw / 2;
-            y1 = previewAfter ? ay + ah : ay;
-            x2 = clampInto(x1, left, left + width);
-            y2 = previewAfter ? top : top + height;
-            double control = Math.max(18, Math.abs(y2 - y1) * 0.45);
-            g.beginPath();
-            g.moveTo(x1, y1);
-            g.bezierCurveTo(
-                    x1, y1 + (previewAfter ? control : -control), x2, y2 + (previewAfter ? -control : control), x2, y2);
-        }
-        g.stroke();
-        return new PreviewConnector(x1, y1, x2, y2);
-    }
-
-    private record PreviewConnector(double startX, double startY, double endX, double endY) {}
 
     private void recordSelection(Path path) {
         recordSelection(path, false);
@@ -4526,15 +3353,7 @@ final class ProjectMapView extends VBox {
             if (Double.isNaN(fromZoom) || fromX == offsetX && fromY == offsetY && fromZoom == zoom) {
                 return;
             }
-            double ratio = zoom / fromZoom;
-            List<Region> cards = new ArrayList<>(previews.values());
-            cards.addAll(notePreviews.values());
-            for (Region card : cards) {
-                card.relocate(
-                        offsetX + (card.getLayoutX() - fromX) * ratio, offsetY + (card.getLayoutY() - fromY) * ratio);
-            }
-            previews.values().forEach(card -> card.setMapScale(zoom));
-            notePreviews.values().forEach(card -> card.setMapScale(zoom));
+            cards.moveWithViewport(fromX, fromY, fromZoom, offsetX, offsetY, zoom);
         }
 
         /** The zoom of the last paint, which the open cards are drawn at and a new card opens at. */
@@ -7855,7 +6674,7 @@ final class ProjectMapView extends VBox {
          * weighs 6, those that lead to it 4, others 1), the band where the row's next column would open (3), and the
          * zoom bar and the overview (4). Reads the layout only.
          */
-        private CardSite cardSite(Path path) {
+        private MapCards.Site cardSite(Path path) {
             NodeBox node = boxes.stream()
                     .filter(box -> box.entry().path().equals(path))
                     .findFirst()
@@ -7867,7 +6686,7 @@ final class ProjectMapView extends VBox {
                             .findFirst()
                             .orElse(null);
             if (node == null || own == null) {
-                return new CardSite(null, new double[4], new double[4], List.of());
+                return new MapCards.Site(null, new double[4], new double[4], List.of());
             }
             List<double[]> obstacles = new ArrayList<>();
             double top = Double.MAX_VALUE;
@@ -7919,16 +6738,13 @@ final class ProjectMapView extends VBox {
                 left = own.x();
                 right = own.x() + own.width();
             }
-            return new CardSite(
+            return new MapCards.Site(
                     new double[] {node.x(), node.y(), node.width(), node.height()},
                     new double[] {own.x(), own.y(), own.width(), own.height()},
                     new double[] {left, Math.max(0, top), right - left, Math.min(getHeight(), bottom) - Math.max(0, top)
                     },
                     obstacles);
         }
-
-        /** See {@link #cardSite}; {@code row} is null when the row is not on the map. */
-        private record CardSite(double @Nullable [] row, double[] column, double[] band, List<double[]> obstacles) {}
 
         private double screenX(double worldX) {
             return offsetX + worldX * zoom;

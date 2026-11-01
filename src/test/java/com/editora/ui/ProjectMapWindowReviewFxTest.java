@@ -261,7 +261,8 @@ class ProjectMapWindowReviewFxTest {
     }
 
     private static boolean running(ProjectMapView view, String timer) {
-        return FxTestSupport.<PauseTransition>field(view, timer).getStatus() == Animation.Status.RUNNING;
+        Object cards = FxTestSupport.field(view, "cards"); // the card manager's timers (review 3, MapCards)
+        return FxTestSupport.<PauseTransition>field(cards, timer).getStatus() == Animation.Status.RUNNING;
     }
 
     // --- A4 / A12: the window ----------------------------------------------------------------------------
