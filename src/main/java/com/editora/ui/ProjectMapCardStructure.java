@@ -45,7 +45,10 @@ import static com.editora.i18n.Messages.tr;
  */
 final class ProjectMapCardStructure {
 
-    static final double WIDTH = 260;
+    /** The column fits its longest row between these widths; a longer one is cut at the far edge. */
+    static final double MIN_WIDTH = 240;
+
+    static final double MAX_WIDTH = 560;
     /** Between the card's edge and the column. */
     static final double GAP = 8;
 
@@ -76,6 +79,7 @@ final class ProjectMapCardStructure {
     private final Function<ProjectMapStructure.Node, @Nullable ContextMenu> menuFor;
     private final Runnable onActivate;
     private final Runnable onMoved;
+    private final Runnable onResized;
 
     /** The column: its tint and border over the card's background, the header and the list on top. */
     private final StackPane column = new StackPane();
@@ -88,6 +92,14 @@ final class ProjectMapCardStructure {
     private final Set<Path> expanded = new HashSet<>();
     /** A lone top-level declaration with members was opened for the user (once, as the Map's column does). */
     private boolean autoExpanded;
+    /** Measures labels in the rows' font, for the column's width. */
+    private final javafx.scene.text.Text measure = new javafx.scene.text.Text();
+    /** Bumped when the card's colours change: every row takes its label's colours again. */
+    private long styles;
+
+    private double width = MIN_WIDTH;
+    private ProjectMapStructure.View view = ProjectMapStructure.View.LOADING;
+    private boolean movePending;
 
     private boolean shown;
     private Side side = Side.RIGHT;
@@ -96,7 +108,8 @@ final class ProjectMapCardStructure {
      * @param onPreview opens (or brings up) the card of a declaration
      * @param menuFor a declaration's menu, as its row's in the Map's Structure column
      * @param onActivate the column was used: it is use of the card
-     * @param onMoved the column moved, showed or hid (what stands beside the card must follow)
+     * @param onMoved the column moved, showed or hid, or its list scrolled (connectors must follow)
+     * @param onResized the column took another width (what stands beside the card must make room)
      */
     ProjectMapCardStructure(
             ProjectMapPreview card,
@@ -104,13 +117,15 @@ final class ProjectMapCardStructure {
             Consumer<ProjectMapStructure.Node> onPreview,
             Function<ProjectMapStructure.Node, @Nullable ContextMenu> menuFor,
             Runnable onActivate,
-            Runnable onMoved) {
+            Runnable onMoved,
+            Runnable onResized) {
         this.card = card;
         this.host = host;
         this.onPreview = onPreview;
         this.menuFor = menuFor;
         this.onActivate = onActivate;
         this.onMoved = onMoved;
+        this.onResized = onResized;
 
         column.getStyleClass().add("project-map-card-structure");
         column.getProperties().put("editora.ownsKeys", Boolean.TRUE);
@@ -148,7 +163,17 @@ final class ProjectMapCardStructure {
         border.getStyleClass().add("project-map-card-structure-border");
         border.setMouseTransparent(true);
         VBox content = new VBox(header, tree);
-        column.getChildren().setAll(tint, content, border);
+        measure.getStyleClass().add("project-map-card-structure-measure");
+        measure.setManaged(false);
+        measure.setVisible(false);
+        column.getChildren().setAll(tint, content, border, measure);
+        // A row scrolled or expanded moves under its card's connector, which is drawn after the list's layout.
+        tree.expandedItemCountProperty().addListener((obs, old, now) -> moved());
+        tree.skinProperty().addListener((obs, old, skin) -> {
+            if (tree.lookup(".virtual-flow") instanceof javafx.scene.control.skin.VirtualFlow<?> flow) {
+                flow.positionProperty().addListener((o, was, now) -> moved());
+            }
+        });
 
         column.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
             raise();
@@ -252,7 +277,90 @@ final class ProjectMapCardStructure {
      * nothing on the other side or while it stands over the card. Sticky notes go past it.
      */
     double reserved(Side which) {
-        return shown && side == which && which != Side.OVER ? WIDTH + GAP : 0;
+        return shown && side == which && which != Side.OVER ? width + GAP : 0;
+    }
+
+    /** The column's width, unzoomed: what its longest row needs, within {@link #MIN_WIDTH}–{@link #MAX_WIDTH}. */
+    double width() {
+        return width;
+    }
+
+    /**
+     * The width a row needs: its indent and disclosure arrow at {@code depth}, the kind's glyph, the label
+     * {@code labelWidth} wide and the line number {@code lineWidth} wide, and the list's own padding and scroll bar,
+     * within {@link #MIN_WIDTH}–{@link #MAX_WIDTH}. Pure.
+     */
+    static double fit(int depth, double labelWidth, double lineWidth) {
+        // Indent 10 a level, arrow 18, glyph 16 + gap 5, gap 5, cell padding 6, list padding 4, scroll bar 14,
+        // border 2, and room for a bold keyword run the measure did not see.
+        double needed = depth * 10 + 18 + 21 + labelWidth * 1.06 + 5 + lineWidth + 6 + 4 + 14 + 2 + 8;
+        return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.ceil(needed)));
+    }
+
+    /** The width the column's longest row needs, measured in the rows' font; members of closed rows count too. */
+    private double fittedWidth() {
+        if (column.getScene() == null) {
+            return width;
+        }
+        measure.applyCss();
+        double[] widest = {MIN_WIDTH};
+        measureRows(view.roots(), 0, widest, new int[] {0});
+        return widest[0];
+    }
+
+    private void measureRows(List<ProjectMapStructure.Node> nodes, int depth, double[] widest, int[] budget) {
+        for (ProjectMapStructure.Node node : nodes) {
+            if (++budget[0] > ProjectMapStructure.MAX_ROWS || widest[0] >= MAX_WIDTH) {
+                return; // enough measured: a huge outline must not cost a pass over every row
+            }
+            ProjectMapModel.Symbol symbol = node.symbol();
+            measure.setText(symbol.label());
+            double label = measure.getLayoutBounds().getWidth();
+            measure.setText(tr("structure.line", symbol.line() + 1));
+            double line = measure.getLayoutBounds().getWidth() * 10 / 12; // the line number is 10px, the label 12px
+            widest[0] = Math.max(widest[0], fit(depth, label, line));
+            measureRows(node.children(), depth + 1, widest, budget);
+        }
+    }
+
+    /** Takes the width the rows need, and tells the card's side neighbours when it changed. */
+    private void refit() {
+        double fitted = fittedWidth();
+        if (Math.abs(fitted - width) < 0.5) {
+            return;
+        }
+        width = fitted;
+        layout();
+        onResized.run();
+    }
+
+    /** The card's text or colours changed: each row takes its label's colours from it again. */
+    void restyle() {
+        styles++;
+        tree.refresh();
+    }
+
+    /**
+     * The runs of a declaration's label, coloured as the card colours its declaration line — a whole-file card's
+     * text is the file's, line for line. A declaration on a line the card does not colour (past the highlighting
+     * cap) takes its kind's colour, as the Structure window does.
+     */
+    private List<StructureNode.SyntaxRun> runsOf(ProjectMapModel.Symbol symbol) {
+        int line = card.range() == null ? symbol.line() : -1;
+        return StructurePanel.labelRuns(card.editor(), line, symbol.label(), symbol.kind());
+    }
+
+    private void moved() {
+        if (!shown || movePending) {
+            return;
+        }
+        movePending = true;
+        javafx.application.Platform.runLater(() -> {
+            movePending = false;
+            if (shown) {
+                onMoved.run();
+            }
+        });
     }
 
     /** Sticks the column on the card, on the side with room — {@code preferLeft} first. */
@@ -270,12 +378,14 @@ final class ProjectMapCardStructure {
         double scale = card.mapScale();
         double left = card.getLayoutX();
         double right = left + card.getWidth() * scale;
-        side = side(left, right, (WIDTH + GAP) * scale, host.getWidth(), preferLeft);
+        width = fittedWidth();
+        side = side(left, right, (width + GAP) * scale, host.getWidth(), preferLeft);
         layout();
     }
 
     /** Lists {@code view}'s declarations, keeping what was expanded and selected where it still is. */
     void update(ProjectMapStructure.View view) {
+        this.view = view;
         if (!autoExpanded
                 && view.problem() == ProjectMapStructure.Problem.NONE
                 && !view.roots().isEmpty()) {
@@ -292,6 +402,9 @@ final class ProjectMapCardStructure {
             if (item != null && tree.getSelectionModel().getSelectedItem() != item) {
                 tree.getSelectionModel().select(item);
             }
+        }
+        if (shown) {
+            refit();
         }
     }
 
@@ -474,10 +587,10 @@ final class ProjectMapCardStructure {
         double scale = card.mapScale();
         double dx = switch (side) {
             case RIGHT -> card.getWidth() + GAP;
-            case LEFT -> -(WIDTH + GAP);
-            case OVER -> card.getWidth() - WIDTH;
+            case LEFT -> -(width + GAP);
+            case OVER -> card.getWidth() - width;
         };
-        column.resize(WIDTH, card.getHeight());
+        column.resize(width, card.getHeight());
         column.relocate(card.getLayoutX() + dx * scale, card.getLayoutY());
         column.setVisible(card.isVisible());
         onMoved.run();
@@ -485,11 +598,18 @@ final class ProjectMapCardStructure {
 
     /** A declaration's row: its kind's glyph, its label and its line, as the Map's Structure column draws it. */
     private final class RowCell extends TreeCell<Row> {
-        private final Label name = new Label();
+        /** The label's runs, coloured as the card colours them; cut at the far edge when the column is too narrow. */
+        private final HBox name = new HBox();
+
         private final Label line = new Label();
         private final HBox box = new HBox(5, name, line);
+        private final javafx.scene.shape.Rectangle nameClip = new javafx.scene.shape.Rectangle();
         private @Nullable String kind;
         private boolean hasKind;
+        /** What the runs were built for: the row and the card's colours then. */
+        private @Nullable Row shownRow;
+
+        private long shownStyles = -1;
 
         private final Tooltip tip = new Tooltip();
 
@@ -499,7 +619,10 @@ final class ProjectMapCardStructure {
             setPrefWidth(0);
             name.getStyleClass().add("project-map-card-structure-name");
             name.setMinWidth(0);
-            name.setTextOverrun(OverrunStyle.ELLIPSIS);
+            name.setAlignment(Pos.CENTER_LEFT);
+            nameClip.widthProperty().bind(name.widthProperty());
+            nameClip.heightProperty().bind(name.heightProperty());
+            name.setClip(nameClip); // the line number follows the name, as in the Structure window
             line.getStyleClass().add("project-map-card-structure-line");
             line.setMinWidth(Region.USE_PREF_SIZE);
             box.setAlignment(Pos.CENTER_LEFT);
@@ -544,6 +667,7 @@ final class ProjectMapCardStructure {
                 setGraphic(null);
                 pseudoClassStateChanged(MESSAGE, false);
                 setTooltip(null);
+                shownRow = null;
                 return;
             }
             ProjectMapStructure.Node node = item.node();
@@ -552,6 +676,7 @@ final class ProjectMapCardStructure {
                 setText(item.message());
                 setGraphic(null);
                 setTooltip(null);
+                shownRow = null;
                 return;
             }
             setText(null);
@@ -563,7 +688,26 @@ final class ProjectMapCardStructure {
                 icon.getStyleClass().add("project-map-card-structure-icon");
                 box.getChildren().setAll(icon, name, line);
             }
-            name.setText(symbol.label());
+            if (item != shownRow || shownStyles != styles) {
+                // Rebuilt only when the row or the card's colours changed: a selection change runs this again
+                // from layout, after the CSS pass, and fresh runs would paint unstyled for a frame.
+                shownRow = item;
+                shownStyles = styles;
+                List<javafx.scene.text.Text> runs = new ArrayList<>();
+                for (StructureNode.SyntaxRun run : runsOf(symbol)) {
+                    javafx.scene.text.Text text = new javafx.scene.text.Text(run.text());
+                    // `text` + the token classes are what syntax.css and every editor theme colour, as in an editor.
+                    text.getStyleClass()
+                            .addAll(
+                                    run.styles().isEmpty()
+                                            ? List.of("project-map-card-structure-plain")
+                                            : List.of("project-map-card-structure-run", "text"));
+                    text.getStyleClass().addAll(run.styles());
+                    runs.add(text);
+                }
+                name.getChildren().setAll(runs);
+                name.applyCss();
+            }
             line.setText(tr("structure.line", symbol.line() + 1));
             tip.setText(symbol.label());
             setTooltip(tip);

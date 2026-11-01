@@ -171,19 +171,33 @@ class ProjectMapStructureFxTest {
                 Label status = FxTestSupport.field(card, "status");
                 assertEquals(tr("project.map.preview.lines", 6, 11, 17), status.getText());
 
-                // Open goes to the declaration's line; Open Narrowed to its block.
-                FxTestSupport.<javafx.scene.control.Button>field(card, "open").fire();
+                // Open, and the menu's Open Narrowed, open the file narrowed to the declaration's block.
+                javafx.scene.control.Button open = FxTestSupport.field(card, "open");
+                assertEquals(
+                        tr("project.map.preview.openNarrowedHelp"),
+                        open.getTooltip().getText());
+                open.fire();
                 FxTestSupport.call(card, "rebuildEditorContextMenu", new Class<?>[] {int.class}, 0);
                 ContextMenu menu = FxTestSupport.field(card, "editorContextMenu");
                 MenuItem openNarrowed = menu.getItems().getFirst();
                 assertEquals(tr("project.map.preview.openNarrowed"), openNarrowed.getText());
                 openNarrowed.fire();
             });
+            assertEquals(List.of(), openedAt, "not merely at its line");
+            assertEquals(2, narrowed.size());
+            for (Object[] opened : narrowed) {
+                assertEquals(app, opened[0]);
+                assertEquals(new FoldRegions.Region(8, 10), opened[1], "the fold block, without the doc");
+            }
+
+            // A declaration that is gone from its file has no block to narrow to: Open goes to its last line.
+            FxTestSupport.runOnFx(() -> {
+                card.setSymbolMissing(true);
+                FxTestSupport.<javafx.scene.control.Button>field(card, "open").fire();
+                card.setSymbolMissing(false);
+            });
             assertEquals(1, openedAt.size());
-            assertEquals(app, openedAt.getFirst()[0]);
             assertEquals(8, openedAt.getFirst()[1]);
-            assertEquals(1, narrowed.size());
-            assertEquals(new FoldRegions.Region(8, 10), narrowed.getFirst()[1], "the fold block, without the doc");
 
             // A second declaration of the same file gets a card of its own.
             FxTestSupport.runOnFx(() -> clickRow(map.surface(), reset));
@@ -258,6 +272,29 @@ class ProjectMapStructureFxTest {
                 FxTestSupport.call(map.view(), "repaintPreviewConnectors", new Class<?>[0]);
             });
             FxTestSupport.drainFx(); // an orphan check would run now
+            // The declaration's row in the column is tied to its card, as a Map row is to its card.
+            FxTestSupport.runOnFx(() -> {
+                FxTestSupport.call(map.view(), "repaintPreviewConnectors", new Class<?>[0]);
+                Map<Path, ?> connectors = FxTestSupport.field(map.view(), "previewConnectors");
+                Object connector = connectors.get(add);
+                assertNotNull(connector, "a connector from the declaration's row to its card");
+                double[] row = column.rowBounds(add);
+                assertNotNull(row);
+                double startX = (double) FxTestSupport.call(connector, "startX", new Class<?>[0]);
+                double startY = (double) FxTestSupport.call(connector, "startY", new Class<?>[0]);
+                assertTrue(
+                        Math.abs(startX - (row[0] + row[2])) < 0.5 || Math.abs(startX - row[0]) < 0.5,
+                        "it leaves the row's edge");
+                assertEquals(row[1] + row[3] / 2, startY, 0.5, "at the row's middle");
+            });
+            // The labels take the card's colours: the method name is coloured as the card colours it.
+            waitFor(
+                    () -> column.tree().lookupAll(".project-map-card-structure-run").stream()
+                            .anyMatch(node -> node instanceof javafx.scene.text.Text run
+                                    && run.getText().equals("add")
+                                    && run.getStyleClass().contains("text")
+                                    && run.getStyleClass().size() > 2),
+                    "add's name carries its token classes");
             FxTestSupport.runOnFx(() -> {
                 assertTrue(previews(map.view()).containsKey(add), "kept while the column it came from is out");
                 double[] drawn = column.bounds();

@@ -214,7 +214,9 @@ does not look pressed, says why, and a press turns that option off. A stored not
 card's text as an editor tab finds it (`ProjectMapStickyNotes.reanchored`, `NoteAnchors.relocate`), so a file
 changed outside Editora does not mark the wrong line; one whose text is gone is headed "Text not found in the file"
 and not marked. It sticks them on the card as **sticky
-notes** (`ProjectMapStickyNotes`): one small editable amber sheet per note, headed by its line, each tied by a
+notes** (`ProjectMapStickyNotes`): one small editable amber sheet per note, headed by its line and a × that
+closes that one note on the card (`closeNote`: it stays in the store and comes back when the card's notes are shown
+again; closing the last turns the Notes button off), each tied by a
 note-coloured connector from a dot on the card's edge at its line (the text's top or bottom when scrolled past)
 to the sheet. While the sheets are in sight, each note's text in the card is marked as an editor tab marks it —
 the editor's `NoteHighlightOverlay` over the card's text, an amber wash with a marker at the note's start, the whole
@@ -259,8 +261,8 @@ the block it opens off, when it runs to the next declaration or the end of what 
 highlights the whole file and shows that slice, so a line inside a comment or a string is coloured as in the
 editor; its gutter keeps the file's numbers in the narrowed amber, its title reads `App.java › add(int, int)`, its
 status line says `Lines 9–19 of 29`, and it opens no taller than its lines need (but no smaller than the card
-minimum). **Open** opens the file at the declaration; **Open Narrowed** (the card's and the row's menu) opens
-it narrowed to the declaration's fold block through `EditingCoordinator.narrowToFoldRegionAt`, as the Structure
+minimum). **Open**, and **Open Narrowed** (the card's and the row's menu), open the file narrowed to the
+declaration's fold block (a card whose declaration is gone from the file opens it at its last line instead) through `EditingCoordinator.narrowToFoldRegionAt`, as the Structure
 window's Narrow to fold region does. Bookmarks and Personal Notes added from a declaration card land on the
 file's own lines. Declaration cards are keyed by the declaration's row, so several of one file can be open,
 under the shared eight-card limit.
@@ -291,14 +293,18 @@ still showing the old lines, until the outline says where the declaration went. 
 for a closed file and nothing about the columns is remembered across restarts.
 A file card whose file can be outlined has a **Structure** button in its title bar, before Notes. It sticks a
 **Structure column** beside the card (`ProjectMapCardStructure`): the same outline as the Map's Structure column,
-as an indented list in the same violet tint, with a lone top-level type opened. It works wherever the file's row
+as an indented list in the same violet tint, with a lone top-level type opened. Each label is coloured as the
+card colours its declaration line (`StructurePanel.labelRuns` over the card's own `CodeArea`, again whenever the
+card's text or colours change), and the column is as wide as its longest row needs, between 240 and 560 px
+(`ProjectMapCardStructure.fit`, measured in the rows' font). It works wherever the file's row
 is — filtered, scrolled off or in a closed column — because it belongs to the card: it moves, resizes, zooms,
 hides, rises and closes with it, and does not count against the open-card limit. It goes on the side away from
 the card's row (the connector's side is left clear), else the other side, else over the card's right edge, and
 the card's sticky notes stand past it (`ProjectMapStickyNotes.setReserved`). A click or Enter on a declaration
 opens its card, as a Map row does; the right-click / Menu-key menu is the row's (Preview, Open at Declaration,
 Open Narrowed); Escape or its × takes it off. A declaration card opened from it whose row is not on the map is
-placed beside the column, by the declaration's row in it, and is kept by the orphan check while the column is
+placed beside the column, by the declaration's row in it, with a connector from that row (while it is scrolled
+into sight) as a Map row has to its card, and is kept by the orphan check while the column is
 out; taking the column off closes those cards, as closing the Map's column closes its rows' cards. The outline
 is held for as long as the column is out (`cardOutlineFiles`, kept by `ProjectMapStructure.prune`), follows the
 buffer or the file on disk, and an edit keeps what was expanded and selected. Nothing about it is remembered.
