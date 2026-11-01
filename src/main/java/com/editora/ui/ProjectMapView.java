@@ -2853,6 +2853,10 @@ final class ProjectMapView extends VBox {
         private static final String CHAIN_SEPARATOR = " / ";
 
         private static final double NODE_HEIGHT = 32;
+        /** A row's height with "Compact rows" on (review 3 B15): about two thirds of the default pitch. */
+        private static final double COMPACT_NODE_HEIGHT = 26;
+
+        private static final double COMPACT_ROW_GAP = 4;
         private static final double COLUMN_GAP = 50;
         private static final double ROW_GAP = 9;
         private static final double WORLD_PADDING = 22;
@@ -3125,6 +3129,14 @@ final class ProjectMapView extends VBox {
         private long layoutsComputed;
         /** "Compact folder chains": a run of single-child folders is drawn as one column (Map review E4). */
         private boolean compactChains = true;
+        /** "Compact rows" (review 3 B15): shorter rows closer together. */
+        private boolean layoutCompactRows;
+        /** "Hide ignored and generated" (review 3 A11): such rows are left out instead of dimmed. */
+        private boolean layoutHideIgnored;
+        /** Bumped whenever more rows were found ignored or generated, so the layout is computed again. */
+        private int layoutIgnoredVersion;
+        /** The folders that hold a build file (a module's root): their rows carry a badge (review 3 B4). */
+        private Set<Path> layoutModuleFolders = Set.of();
         /** A pan or zoom moved the map since the boxes were last projected. */
         private boolean boxesStale;
         /** Inside {@link #layoutChildren}: a draw asked for now is left to the pulse. */
@@ -3403,6 +3415,24 @@ final class ProjectMapView extends VBox {
             }
         }
 
+        void setCompactRows(boolean compact) {
+            if (layoutCompactRows != compact) {
+                layoutCompactRows = compact;
+                repaint();
+                keepSelectionDrawn();
+            }
+        }
+
+        /** A row's height in world units: 32, or 26 with "Compact rows". */
+        private double rowHeight() {
+            return layoutCompactRows ? COMPACT_NODE_HEIGHT : NODE_HEIGHT;
+        }
+
+        /** The gap between two rows of a column in world units: 9, or 4 with "Compact rows". */
+        private double rowGap() {
+            return layoutCompactRows ? COMPACT_ROW_GAP : ROW_GAP;
+        }
+
         void setFocusNewColumn(boolean focus) {
             focusNewColumn = focus;
         }
@@ -3442,11 +3472,11 @@ final class ProjectMapView extends VBox {
             double headRight = right;
             double headBottom = bottom;
             if (isVerticalFlow()) {
-                headRight = Math.min(right, box.x() + (2 * (MIN_NODE_WIDTH + ROW_GAP) + 20) * zoom);
+                headRight = Math.min(right, box.x() + (2 * (MIN_NODE_WIDTH + rowGap()) + 20) * zoom);
             } else {
                 double header = columnHeaderHeight(box.column().depth(), box.width() / zoom);
                 headBottom =
-                        Math.min(bottom, box.y() + (COLUMN_TOP_INSET + header + 3 * (NODE_HEIGHT + ROW_GAP)) * zoom);
+                        Math.min(bottom, box.y() + (COLUMN_TOP_INSET + header + 3 * (rowHeight() + rowGap())) * zoom);
             }
             if (parent != null) {
                 include(pan, parent.x(), parent.y(), parent.x() + parent.width(), parent.y() + parent.height());
@@ -4558,7 +4588,8 @@ final class ProjectMapView extends VBox {
                     bookmarkedPaths,
                     notedPaths,
                     fontFamily(),
-                    compactChains);
+                    compactChains,
+                    new LayoutExtras(layoutCompactRows, layoutHideIgnored, layoutIgnoredVersion, layoutModuleFolders));
             WorldLayout cached = cachedLayout;
             if (cached != null && key.equals(cachedLayoutKey)) {
                 return cached;
@@ -4606,13 +4637,21 @@ final class ProjectMapView extends VBox {
             Map<ProjectMapModel.ColumnId, Double> flowShift = new HashMap<>();
             boolean verticalFlow = isVerticalFlow();
             double direction = isReverseFlow() ? -1 : 1;
-            for (ProjectMapModel.Column column : columns) {
+            // Every level's band is known before any card is placed (review 3 B3). The listing is breadth-first on
+            // disk while a level counts columns from the first one, so a compacted chain deep on disk is listed after
+            // shallower branches' next levels: built as the cards came, its wider band arrived too late to push
+            // them, and its card was laid over theirs.
+            double[][] sizes = new double[columns.size()][];
+            Map<Integer, Double> finalBand = layoutFinalBands(columns, rowsByColumn, sizes);
+            for (int columnNumber = 0; columnNumber < columns.size(); columnNumber++) {
+                ProjectMapModel.Column column = columns.get(columnNumber);
                 if (column.depth() == 0) {
                     continue; // the root row: the first column's title stands for it
                 }
                 ProjectMapModel.ColumnId id = column.id();
                 ColumnLayout layout = columnLayouts.computeIfAbsent(id, ignored -> new ColumnLayout());
-                double nodeWidth = nodeWidthFor(column, rowsByColumn.getOrDefault(id, List.of()));
+                double[] size = sizes[columnNumber];
+                double nodeWidth = size[0];
                 Integer anchorRow = column.anchor() == null ? null : rowIndex.get(column.anchor());
                 NodeBox parent = anchorRow == null ? null : rowList.get(anchorRow);
                 Integer anchorColumn = parent == null ? null : columnIndex.get(columnId(parent.entry()));
@@ -4622,20 +4661,11 @@ final class ProjectMapView extends VBox {
                         : levels.getOrDefault(parentColumn.column().id(), 0) + 1;
                 levels.put(id, level);
                 double depthStep = verticalFlow
-                        ? COLUMN_TOP_INSET + COLUMN_HEADER_HEIGHT + NODE_HEIGHT + COLUMN_BOTTOM_PADDING + COLUMN_GAP
+                        ? COLUMN_TOP_INSET + COLUMN_HEADER_HEIGHT + rowHeight() + COLUMN_BOTTOM_PADDING + COLUMN_GAP
                         : 0;
-                int rowCount = column.entries().size();
-                // A column whose filter matches nothing keeps one row of space for its "No matches" line.
-                int rowSlots = Math.max(1, rowCount);
-                double rowsHeight = rowSlots * NODE_HEIGHT + (rowSlots - 1) * ROW_GAP;
-                double rowsWidth = rowSlots * nodeWidth + (rowSlots - 1) * ROW_GAP;
-                double cardWidth = verticalFlow ? rowsWidth + 20 : nodeWidth + 20;
-                double headerHeight = columnHeaderHeight(column.depth(), cardWidth);
-                double cardHeight = COLUMN_TOP_INSET
-                        + headerHeight
-                        + (verticalFlow ? NODE_HEIGHT : rowsHeight)
-                        + narrowedFooterHeight(column)
-                        + COLUMN_BOTTOM_PADDING;
+                double cardWidth = size[1];
+                double headerHeight = size[2];
+                double cardHeight = size[3];
                 double baseWorldX = WORLD_PADDING;
                 double baseWorldY = WORLD_PADDING + (verticalFlow ? direction * level * depthStep : 0);
                 double inheritedShift = 0;
@@ -4648,7 +4678,7 @@ final class ProjectMapView extends VBox {
                     double horizontalCardGap = COLUMN_GAP - 20;
                     inheritedShift =
                             flowShift.getOrDefault(parentColumn.column().id(), 0.0);
-                    Double band = flowBand.get(level - 1);
+                    Double band = layoutBand(flowBand.get(level - 1), finalBand.get(level - 1), direction);
                     double leadY = Math.min(cardHeight / 2, MAX_COLUMN_LEAD);
                     double leadX = Math.min(cardWidth / 2, nodeWidth * 1.5 + 10);
                     switch (flowDirection) {
@@ -4721,9 +4751,9 @@ final class ProjectMapView extends VBox {
                     }
                 }
                 for (int row = 0; row < column.entries().size(); row++) {
-                    double worldX = columnWorldX + (verticalFlow ? row * (nodeWidth + ROW_GAP) : 0);
-                    double worldY = columnWorldY + headerHeight + (verticalFlow ? 0 : row * (NODE_HEIGHT + ROW_GAP));
-                    NodeBox box = new NodeBox(column.entries().get(row), worldX, worldY, nodeWidth, NODE_HEIGHT);
+                    double worldX = columnWorldX + (verticalFlow ? row * (nodeWidth + rowGap()) : 0);
+                    double worldY = columnWorldY + headerHeight + (verticalFlow ? 0 : row * (rowHeight() + rowGap()));
+                    NodeBox box = new NodeBox(column.entries().get(row), worldX, worldY, nodeWidth, rowHeight());
                     rowIndex.put(box.entry().path(), rowList.size());
                     rowList.add(box);
                 }
@@ -4739,6 +4769,81 @@ final class ProjectMapView extends VBox {
                     List.copyOf(anchorRows),
                     List.copyOf(anchorColumns),
                     narrowedTotal);
+        }
+
+        /**
+         * A column card's size in world units, {@code {nodeWidth, cardWidth, headerHeight, cardHeight}}: the same for
+         * the band pass and the placement pass.
+         */
+        private double[] layoutCardSize(ProjectMapModel.Column column, List<ProjectMapModel.Entry> rows) {
+            boolean verticalFlow = isVerticalFlow();
+            double nodeWidth = nodeWidthFor(column, rows);
+            // A column whose filter matches nothing keeps one row of space for its "No matches" line.
+            int rowSlots = Math.max(1, column.entries().size());
+            double rowsHeight = rowSlots * rowHeight() + (rowSlots - 1) * rowGap();
+            double rowsWidth = rowSlots * nodeWidth + (rowSlots - 1) * rowGap();
+            double cardWidth = verticalFlow ? rowsWidth + 20 : nodeWidth + 20;
+            double headerHeight = columnHeaderHeight(column.depth(), cardWidth);
+            double cardHeight = COLUMN_TOP_INSET
+                    + headerHeight
+                    + (verticalFlow ? rowHeight() : rowsHeight)
+                    + narrowedFooterHeight(column)
+                    + COLUMN_BOTTOM_PADDING;
+            return new double[] {nodeWidth, cardWidth, headerHeight, cardHeight};
+        }
+
+        /**
+         * The far edge of every level's band along the flow, before any card is placed, measured without the manual
+         * offsets (as {@code flowBand} is): the widest card of a level sets where the next level starts, whichever
+         * branch it is in and whenever it is listed (review 3 B3). Fills {@code sizes} with each column's
+         * {@link #layoutCardSize}.
+         */
+        private Map<Integer, Double> layoutFinalBands(
+                List<ProjectMapModel.Column> columns,
+                Map<ProjectMapModel.ColumnId, List<ProjectMapModel.Entry>> rowsByColumn,
+                double[][] sizes) {
+            boolean verticalFlow = isVerticalFlow();
+            boolean reverse = isReverseFlow();
+            double gap = verticalFlow ? COLUMN_GAP : COLUMN_GAP - 20;
+            double start = WORLD_PADDING - (verticalFlow ? COLUMN_TOP_INSET : 10);
+            Map<Path, Integer> rowLevel = new HashMap<>(); // a row's path → the level of the column it is in
+            Map<Integer, Double> bands = new HashMap<>();
+            for (int index = 0; index < columns.size(); index++) {
+                ProjectMapModel.Column column = columns.get(index);
+                if (column.depth() == 0) {
+                    sizes[index] = new double[4];
+                    continue;
+                }
+                double[] size = layoutCardSize(column, rowsByColumn.getOrDefault(column.id(), List.of()));
+                sizes[index] = size;
+                Integer parentLevel = column.anchor() == null ? null : rowLevel.get(column.anchor());
+                int level = parentLevel == null ? 0 : parentLevel + 1;
+                for (ProjectMapModel.Entry row : column.entries()) {
+                    rowLevel.put(row.path(), level);
+                }
+                double along = verticalFlow ? size[3] : size[1];
+                double edge;
+                if (level == 0) {
+                    edge = reverse ? start : start + along;
+                } else {
+                    Double before = bands.get(level - 1);
+                    double from = before == null ? start : before;
+                    edge = reverse ? from - gap - along : from + gap + along;
+                }
+                bands.merge(level, edge, reverse ? Math::min : Math::max);
+            }
+            return bands;
+        }
+
+        /** The band a level's cards start beyond: the final one, or the one built so far when it reaches farther. */
+        private static @Nullable Double layoutBand(@Nullable Double sofar, @Nullable Double fixed, double direction) {
+            if (sofar == null) {
+                return fixed;
+            }
+            if (fixed == null) {
+                return sofar;
+            }
+            return direction > 0 ? Math.max(sofar, fixed) : Math.min(sofar, fixed);
         }
 
         /** Draws the last projection: cards, connectors, rows and the overview. */
@@ -5499,6 +5604,9 @@ final class ProjectMapView extends VBox {
                 drawPlaceholderRow(g, box);
                 return;
             }
+            // The row's marks are laid out for the default height: a compact row draws them on a 32-unit band
+            // centred on itself (review 3 B15).
+            NodeBox content = layoutRowContent(box);
             boolean isSelected = entry.path().equals(selected);
             boolean isHovered = entry.path().equals(hovered) && !outputPaint;
             boolean selectedPath = isOnSelectedPath(entry.path());
@@ -5536,13 +5644,13 @@ final class ProjectMapView extends VBox {
                         box.x() - 3, box.y() - 3, box.width() + 6, box.height() + 6, 8 * zoom + 6, 8 * zoom + 6);
             }
             g.setGlobalAlpha(dimmed ? DIMMED_MARK_ALPHA : 1.0);
-            drawOpenMarker(g, entry, box, focusedSelection);
+            drawOpenMarker(g, entry, content, focusedSelection);
 
-            double iconX = box.x() + 7 * zoom;
-            double iconY = box.y() + 6 * zoom;
+            double iconX = content.x() + 7 * zoom;
+            double iconY = content.y() + 6 * zoom;
             drawIcon(g, entry, iconX, iconY, focusedSelection);
             if (entry.isSymbol()) {
-                drawSymbolRow(g, entry, box, focusedSelection, isSelected);
+                drawSymbolRow(g, entry, content, focusedSelection, isSelected);
                 g.setGlobalAlpha(1);
                 dimmedGround = null;
                 return;
@@ -5555,20 +5663,20 @@ final class ProjectMapView extends VBox {
             g.setFont(rowFont(isSelected));
             // A name wider than the row (the width is capped) loses its middle; the tooltip has it whole.
             String label = entry.name();
-            double room = box.width() - rowExtraWidth(entry) * zoom;
+            double room = content.width() - rowExtraWidth(entry) * zoom;
             if (measuredLabelWidth(label) * zoom > room) {
                 label = elideMiddle(label, 12 * zoom, room);
             }
-            fillLabel(g, ink, label, box.x() + 31 * zoom, box.y() + 20.5 * zoom);
+            fillLabel(g, ink, label, content.x() + 31 * zoom, content.y() + 20.5 * zoom);
 
-            drawStatusMarks(g, entry, box, focusedSelection);
-            drawFileMarkers(g, entry, box, focusedSelection);
+            drawStatusMarks(g, entry, content, focusedSelection);
+            drawFileMarkers(g, entry, content, focusedSelection);
             if (entry.directory()) {
-                drawChevron(g, entry, box, focusedSelection);
+                drawChevron(g, entry, content, focusedSelection);
             } else {
-                drawPreviewAffordance(g, box, focusedSelection, isHovered);
+                drawPreviewAffordance(g, content, focusedSelection, isHovered);
                 if (hasStructure(entry)) {
-                    drawStructureAffordance(g, entry, box, focusedSelection, isHovered);
+                    drawStructureAffordance(g, entry, content, focusedSelection, isHovered);
                 }
             }
             g.setGlobalAlpha(1);
@@ -5680,7 +5788,16 @@ final class ProjectMapView extends VBox {
             }
             g.setFill(more ? color(textProbe, Color.web("#d8dee9")) : color(mutedProbe, Color.web("#8b949e")));
             g.setFont(mapFont(more ? FontWeight.SEMI_BOLD : FontWeight.NORMAL, FontPosture.REGULAR, 12 * zoom));
-            g.fillText(entry.name(), box.x() + 10 * zoom, box.y() + 20.5 * zoom);
+            g.fillText(entry.name(), box.x() + 10 * zoom, layoutRowContent(box).y() + 20.5 * zoom);
+        }
+
+        /** The 32-unit band a row's icon, label and marks are drawn on: the row itself, or centred on a compact one. */
+        private NodeBox layoutRowContent(NodeBox box) {
+            double nominal = NODE_HEIGHT * zoom;
+            if (box.height() >= nominal - 0.01) {
+                return box;
+            }
+            return new NodeBox(box.entry(), box.x(), box.y() + (box.height() - nominal) / 2, box.width(), nominal);
         }
 
         /**
@@ -7566,7 +7683,11 @@ final class ProjectMapView extends VBox {
                 Set<Path> bookmarks,
                 Set<Path> notes,
                 String fontFamily,
-                boolean compactChains) {}
+                boolean compactChains,
+                LayoutExtras layout) {}
+
+        /** What the review 3 layout options add to the layout's inputs: row density, ignored rows, module badges. */
+        private record LayoutExtras(boolean compactRows, boolean hideIgnored, int ignoredVersion, Set<Path> modules) {}
 
         private record FontKey(String family, FontWeight weight, FontPosture posture, double size) {}
 
