@@ -66,4 +66,51 @@ class HtmlCaretRegionTest {
         assertFalse(HtmlCaretRegion.quotesAfterEquals("<a class ", ">"), "a space, not a name, before the caret");
         assertFalse(HtmlCaretRegion.quotesAfterEquals("<style>a { b", ""), "CSS");
     }
+
+    private static String before(String text) {
+        return HtmlCaretRegion.before(text::substring, text.length());
+    }
+
+    /** A long inline script read from its middle looked like markup (HTML review 2 E112). */
+    @Test
+    void theWindowOfALongScriptIsReadFromTheScriptsStartTag() {
+        String code = "for (var i = 0; i<n; i++) { total += i; }\n".repeat(1_000);
+        String page = "<body>\n<script>\n" + code + "total";
+        String window = page.substring(page.length() - HtmlCaretRegion.MAX_SCAN);
+        assertTrue(HtmlCaretRegion.quotesAfterEquals(window, ""), "the trap: the window alone reads `<n;` as a tag");
+        assertFalse(HtmlCaretRegion.quotesAfterEquals(before(page), ""));
+        assertEquals(Region.SCRIPT, HtmlCaretRegion.at(before(page)));
+        assertEquals("javascript", HtmlCaretRegion.snippetLanguage("html", before(page)));
+        assertEquals(Region.STYLE, HtmlCaretRegion.at(before("<STYLE>\n" + "a{}\n".repeat(6_000) + "p { col")));
+
+        String closed = "<script>x()</script>\n" + "<p class=\"a\">i<n</p>\n".repeat(1_500) + "<p id";
+        assertEquals(Region.TAG, HtmlCaretRegion.at(before(closed)), "after a closed script: markup");
+        assertTrue(HtmlCaretRegion.quotesAfterEquals(before(closed), ">"));
+        String commented = "<!-- <script> -->\n" + "<p>x</p>\n".repeat(4_000) + "<p id";
+        assertTrue(HtmlCaretRegion.quotesAfterEquals(before(commented), ">"), "a script mentioned in a comment");
+        assertEquals("<p id", before("<p id"), "a short page is read whole");
+        assertNull(HtmlCaretRegion.rawOpenBefore(page::substring, 0, 0));
+        String far = "<script>\n" + "x();\n".repeat(30_000);
+        assertNull(
+                HtmlCaretRegion.rawOpenBefore(far::substring, far.length(), far.length()),
+                "beyond the look-back: not guessed");
+        // A start tag cut by a chunk's edge is still read by its name.
+        String edge = "<p>\n<script>" + "y".repeat(HtmlCaretRegion.MAX_SCAN - 6); // its '<' 2 before the window
+        assertEquals(
+                "script",
+                HtmlCaretRegion.rawOpenBefore(
+                        edge::substring, edge.length() - HtmlCaretRegion.MAX_SCAN, edge.length()));
+    }
+
+    @Test
+    void templateTagsInAStartTagTakeNoQuotes() {
+        assertFalse(HtmlCaretRegion.quotesAfterEquals("<option {% if a", ">"));
+        assertFalse(HtmlCaretRegion.quotesAfterEquals("<p {% set x", ">"));
+        assertFalse(HtmlCaretRegion.quotesAfterEquals("<button {{action \"save\" on", ">"));
+        assertFalse(HtmlCaretRegion.quotesAfterEquals("<p <% if a", ">"));
+        assertTrue(HtmlCaretRegion.quotesAfterEquals("{% if x %}<p class", ">"), "a template tag closed before");
+        assertTrue(HtmlCaretRegion.quotesAfterEquals("<p {% if x %}selected{% endif %} class", ">"));
+        assertTrue(HtmlCaretRegion.inTemplateTag("<b {{ x", 0));
+        assertFalse(HtmlCaretRegion.inTemplateTag("{{ x <b", 3), "opened before the tag");
+    }
 }

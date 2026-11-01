@@ -116,22 +116,27 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   `json.validate.enable`, even `{}`, as "validation off". `workspace/configuration` is answered per server
   and section: the Python server's `python` / `*.analysis` objects (always with `autoSearchPaths: true`
   beside `autoImportCompletions`, because Pyright turns its default-on `src/` search path off as soon as an
-  `analysis` object without that key exists); `{}` for the CSS server's `css`/`scss`/`less` and the HTML
-  server's `css`/`javascript`, whose validators throw on `null`; and `null` for everything else —
+  `analysis` object without that key exists); `{}` for the CSS server's `css`/`scss`/`less`, whose validators throw on
+  `null`; VS Code's `format` defaults for the HTML server's `css`/`javascript` (with `{}` its TypeScript formatter
+  dropped the spaces inside braces of every inline script); and `null` for everything else —
   including the HTML server's `js/ts`, where `{}` makes its JavaScript mode throw. A new server's sections
   must be checked against the real server before anything other than `null` is answered.
 - **The HTML server's `html` section** (`lsp/HtmlServerSettings`, Settings → LSP, the HTML card) is VS Code's
   defaults — the server has none of its own, and with `{}` its formatter protected only `script`, so Format
   Document re-spaced every `<pre>` and `<textarea>` — with the user's values (wrap column, wrap attributes, content
   kept as written, attribute quotes, embedded script/style validation), `autoClosingTags` from Editora's own
-  auto-close switch (so completion does not offer a closer Editora already typed), and a project's `html` object
-  from `.editora/settings.json` (VS Code's key names, known keys of the right type only) for servers on the
-  project's root. The answer is per document (`scopeUri` → the recorded `FormattingIndent`):
-  `format.wrapLineLength` is the file's EditorConfig `max_line_length` when set (`off` = 0, never wrap), and
-  `format.endWithNewline` its `insert_final_newline`, else whether the text ends with a newline now. The server
-  caches each document's answer until `didChangeConfiguration` or `didClose`, so every change is pushed
-  (`LanguageServerSession.setHtmlSettings`) and a formatting request repeats the two per-document values as
-  `FormattingOptions`, which the server lays over its settings. Proven against the real server by
+  auto-close switch whatever the project says (so completion does not offer a closer Editora already typed), and a
+  project's `html` object from `.editora/settings.json` (VS Code's key names, nested or dotted, and top-level
+  `html.*` keys as `.vscode/settings.json` writes them; known keys of the right type only, the rest named once on
+  the status bar and in the log) for servers on the project's root. The answer is per document (`scopeUri` → the
+  recorded `FormattingIndent`): `format.wrapLineLength` is the file's EditorConfig `max_line_length` when set
+  (`off` = 0, never wrap). `format.endWithNewline` is always `false` (VS Code's value: the formatter hands it to the
+  CSS beautifier of every `<style>`, which then adds a blank line before `</style>`); Editora keeps the final
+  newline on the edits instead (`LspTextEdits.withFinalNewline`): the file's `insert_final_newline`, else the
+  project's `format.endWithNewline`, else what the text has now. The server caches each document's answer until
+  `didChangeConfiguration` or `didClose`, so every change is pushed (`LanguageServerSession.setHtmlSettings`) and a
+  formatting request repeats the wrap column as a `FormattingOptions` value, which the server lays over its
+  settings. Proven against the real server by
   `HtmlServerFormatNodeProbeFxTest` (opt-in, `-Dgroups=node -Dnode.probe=true`).
 - **lemminx's settings** (`lsp/XmlServerSettings`, Settings → LSP, the XML card) go to the `xml` and `maven-pom`
   servers through all three channels: `initializationOptions.settings.xml` (so the first validation already
@@ -805,10 +810,25 @@ against the page, root-relative against the project; the file opens at the eleme
 a missing one says "File not found", a web address goes to the browser after a confirm. The same fallback runs with
 LSP off. The server validates no markup, so `editops.HtmlMarkupCheck` (unclosed and stray tags, missing local link
 targets) is added to its pulled or pushed diagnostics off the FX thread (`LspManager.withMarkupChecks`, source
-`editora`); a page no server serves shows the same check on the `.http` variable marks' squiggle overlay
-(`HttpVariableMarks.MarkupCheck`, gated on `!isLspActive()`). `textDocument/documentColor` (any server with a
+`editora`). A page with template syntax (`HtmlElements.hasTemplateSyntax`: `{% %}`, `{# #}`, `<% %>`, a `{{ }}` block
+form) or in a template folder (`templates/`, `_layouts/`, `partials/` …) is not checked for balance, only for links;
+a link missing where it points is accepted under the project's `public/`, `static/` or `assets/`
+(`HtmlMarkupCheck.servedElsewhere`). A page no server serves shows the same check on the `.http` variable marks'
+squiggle overlay (`HttpVariableMarks.MarkupCheck`, gated on `!isLspActive()`). `textDocument/documentColor` (any server with a
 `colorProvider`: html, css) rides `requestFoldingRanges`' pulses; `EditorBuffer.setColorSwatches` draws an inlay per
-colour, painted by a per-buffer `data:` stylesheet with one class per colour (`ColorSwatchInlays`).
+colour, painted by a per-buffer `data:` stylesheet with one class per colour (`ColorSwatchInlays`). Between answers
+the cached colours move with each edit (`ColorSwatch.shifted`, on the area's `plainTextChanges`), so a swatch stays
+before its literal while the user types.
+
+**HTML typing aids.** A completion item whose command is `editor.action.triggerSuggest` (a CSS property, a folder in
+`href`) re-opens the list manually after the accept; the accept's own automatic passes at that version and caret
+(the queued one and the 90 ms settled-edit one) leave it alone (`BufferCompletion.twoStepVersion`) — they used to
+hide it or drop the server's answer in flight. Tab never asks the server to re-indent a line inside a verbatim
+element (`IndentWindow.serverReindents`): the server formats a two-line fragment without the element around it.
+Inside a page's `<script>`/`<style>` Tab and Enter use the embedded language's brace rules; a `<pre>`/`<textarea>`
+line keeps its whitespace. Auto-quote (`TagTyping`) follows `htmlAttributeQuotes` (an application-wide static set
+by `EditorSettingsCoordinator`), and `HtmlCaretRegion.before` heads its 20,000-char window with the start tag of
+the script or style the window begins inside, read backwards.
 
 **A refused `initialize` is not a crash.** A server that answers `initialize` with an error (its message kept as
 `LanguageServerSession.initializeRefusal`; the exit is reported only after LSP4J has read the server's last

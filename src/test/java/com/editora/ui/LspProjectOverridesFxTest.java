@@ -131,6 +131,17 @@ class LspProjectOverridesFxTest {
         return LspTestHooks.configuredCommand(manager, "java");
     }
 
+    /** HTML review 2 A106: the default text in a command field is not the user's own command (Doctor's Update). */
+    @Test
+    void aCommandThatIsTheDefaultTextIsNotTheUsersOwn() throws Exception {
+        host.settings.setHtmlLspCommand("  vscode-html-language-server   --stdio ");
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.serverCommandSet("html")), "the default, spelled out");
+        host.settings.setHtmlLspCommand("/opt/web/bin/vscode-html-language-server --stdio");
+        assertTrue(FxTestSupport.callOnFx(() -> coordinator.serverCommandSet("html")), "a program of the user's own");
+        host.settings.setHtmlLspCommand("");
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.serverCommandSet("html")));
+    }
+
     @Test
     void anUntrustedProjectCannotChooseWhatRuns() throws Exception {
         overrideJavaAndEnableRust();

@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -88,6 +89,12 @@ public class ProjectSettings {
      */
     private Map<String, Object> html = new LinkedHashMap<>();
 
+    /**
+     * The top-level {@code "html.format.wrapAttributes"}-style keys, as {@code .vscode/settings.json} writes them,
+     * without their {@code html.} (HTML review 2, A107): {@link #getHtml} lays them over {@link #html}.
+     */
+    private final Map<String, Object> dottedHtml = new LinkedHashMap<>();
+
     /** Where a project's overrides live. */
     public static Path fileFor(Path projectRoot) {
         return projectRoot.resolve(DIR).resolve(FILE);
@@ -153,7 +160,7 @@ public class ProjectSettings {
         return lspCommands.isEmpty()
                 && lspEnabled.isEmpty()
                 && bashIde.isEmpty()
-                && html.isEmpty()
+                && getHtml().isEmpty()
                 && editor.isEmpty()
                 && blankValues(buildCommands)
                 && blankValues(debugTools);
@@ -569,8 +576,22 @@ public class ProjectSettings {
         this.bashIde = bashIde == null ? new LinkedHashMap<>() : new LinkedHashMap<>(bashIde);
     }
 
+    /** The project's {@code html} object, with its top-level {@code html.*} keys added as dotted keys. */
     public Map<String, Object> getHtml() {
-        return html;
+        if (dottedHtml.isEmpty()) {
+            return html;
+        }
+        Map<String, Object> all = new LinkedHashMap<>(html);
+        all.putAll(dottedHtml);
+        return all;
+    }
+
+    /** A key this model does not have: a VS Code-style {@code html.*} one is kept, any other is ignored. */
+    @JsonAnySetter
+    void otherKey(String key, @Nullable Object value) {
+        if (key != null && key.startsWith("html.") && key.length() > "html.".length() && value != null) {
+            dottedHtml.put(key.substring("html.".length()), value);
+        }
     }
 
     public void setHtml(Map<String, Object> html) {

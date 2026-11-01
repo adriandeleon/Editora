@@ -338,26 +338,39 @@ public enum SpellMode {
     }
 
     /**
+     * What an HTML line holds that is never prose, wherever it is (HTML review 2 C113): a template expression or tag
+     * ({@code {{ titel }}}, {@code {% if %}}, {@code <%= x %>}; not a template comment), in an {@code alt} or
+     * {@code title} value as much as in the text, and a bare tag named in a comment ({@code <!-- a <pre> mention -->}).
+     */
+    private static final java.util.regex.Pattern HTML_NOT_PROSE =
+            java.util.regex.Pattern.compile("\\{\\{.*?}}|\\{%.*?%}|<%(?!#).*?%>|</?[A-Za-z][\\w-]*\\s*/?>");
+
+    /**
      * An HTML line with the name, {@code =} and quotes of an {@code alt}/{@code title}/… attribute blanked out, same
      * length: its value is then words of its own ({@code title="Clik here"} was one structured token, never checked).
+     * Template expressions and tag mentions ({@link #HTML_NOT_PROSE}) are blanked too.
      */
     private static String htmlProse(String line) {
-        if (line.indexOf('=') < 0) {
+        boolean attribute = line.indexOf('=') >= 0;
+        if (!attribute && line.indexOf('<') < 0 && line.indexOf('{') < 0) {
             return line;
         }
+        char[] out = null;
         java.util.regex.Matcher m = HTML_PROSE_ATTRIBUTE.matcher(line);
-        if (!m.find()) {
-            return line;
-        }
-        char[] out = line.toCharArray();
-        do {
+        while (attribute && m.find()) {
+            out = out == null ? line.toCharArray() : out;
             java.util.Arrays.fill(out, m.start(), m.end(), ' ');
             int close = line.indexOf(m.group(1).charAt(0), m.end());
             if (close >= 0) {
                 out[close] = ' ';
             }
-        } while (m.find());
-        return new String(out);
+        }
+        java.util.regex.Matcher t = HTML_NOT_PROSE.matcher(line);
+        while (t.find()) {
+            out = out == null ? line.toCharArray() : out;
+            java.util.Arrays.fill(out, t.start(), t.end(), ' ');
+        }
+        return out == null ? line : new String(out);
     }
 
     static BitSet typstCodeLines(int count, IntFunction<String> lineAt) {

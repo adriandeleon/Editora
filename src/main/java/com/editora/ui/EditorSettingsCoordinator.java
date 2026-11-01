@@ -1091,6 +1091,7 @@ final class EditorSettingsCoordinator {
                 .setChords(id -> host.keymap() == null ? null : host.keymap().displayChord(id));
         buffer.setSmartSemicolonEnabled(s.isLspSmartSemicolon()); // #746 (inert without a jdtls session)
         buffer.setAutoCloseTags(s.isAutoCloseTags()); // ">" inserts the matching closer (html/xml buffers only)
+        com.editora.editor.TagTyping.setAttributeQuotes(s.getHtmlAttributeQuotes()); // what a typed `=` brings
         buffer.setFillColumn(s.getFillColumn());
         buffer.setAutoFillEnabled(s.isAutoFill()); // break prose lines at the fill column as you type (prose only)
         buffer.setAbbrevs(

@@ -81,4 +81,41 @@ class LspTabReindentFxTest {
             buffer.dispose();
         });
     }
+
+    /**
+     * In an HTML page, a line in a {@code <pre>} or a {@code <script>} is not sent to the server: it formatted the
+     * two-line fragment without the element around it, indenting {@code <pre>} content and script code as markup
+     * (HTML review 2 B102). The {@code <pre>} line keeps its whitespace; the script line follows the braces.
+     */
+    @Test
+    void anHtmlPreOrScriptLineIsNotSentToTheServer() throws Exception {
+        EditorFx.onFx(() -> {
+            List<Asked> asked = new ArrayList<>();
+            String text =
+                    "<body>\n  <pre>\n  x\n</pre>\n  <script>\n    if (a) {\nf();\n    }\n  </script>\n<p>a</p>\n</body>\n";
+            // A server that would push every line it is asked about to column 8.
+            EditorBuffer buffer = xml(text, asked, List.of());
+            buffer.setLanguageOverride("html");
+            buffer.setLspRangeFormatter((sl, sc, el, ec, cb) -> {
+                asked.add(new Asked(sl, sc, el, ec));
+                cb.accept(List.of(new LspTextEdit(el, 0, el, 0, "        ")));
+            });
+            Stage stage = EditorFx.show(buffer, 400, 200);
+            CodeArea area = buffer.getArea();
+            for (int line : new int[] {2, 3, 6}) {
+                area.moveTo(line, 0);
+                area.fireEvent(EditorFx.pressed(KeyCode.TAB, false, false));
+            }
+            assertEquals(List.of(), asked, "no pre or script line was sent");
+            assertEquals("  x", area.getParagraph(2).getText(), "<pre> content is kept");
+            assertEquals("</pre>", area.getParagraph(3).getText());
+            assertEquals("      f();", area.getParagraph(6).getText(), "the brace rules, as Enter");
+
+            area.moveTo(9, 0); // markup: the server's as before
+            area.fireEvent(EditorFx.pressed(KeyCode.TAB, false, false));
+            assertEquals(1, asked.size(), "markup lines still ask the server");
+            stage.close();
+            buffer.dispose();
+        });
+    }
 }

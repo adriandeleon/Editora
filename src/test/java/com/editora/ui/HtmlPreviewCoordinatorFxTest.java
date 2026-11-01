@@ -343,4 +343,155 @@ class HtmlPreviewCoordinatorFxTest {
             c.shutdown();
         }
     }
+
+    // --- HTML review 2 (E101, E103, E107, E111) ----------------------------------------------------
+
+    private static EditorBuffer fileBuffer(java.nio.file.Path file) throws Exception {
+        String text = java.nio.file.Files.readString(file);
+        return FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setPath(file);
+            b.setContent(text);
+            return b;
+        });
+    }
+
+    /** Opens the host's active buffer through {@code htmlPreview.open} and returns the served URL. */
+    private static String openAndWait(HtmlPreviewCoordinator c, FakeHost host) throws Exception {
+        FxTestSupport.runOnFx(c::open);
+        for (int i = 0; i < 200; i++) {
+            Thread.sleep(50);
+            String st = FxTestSupport.callOnFx(() -> host.lastStatus);
+            int at = st == null ? -1 : st.indexOf("http://127.0.0.1:");
+            if (at >= 0 && !st.startsWith("Opening")) {
+                return st.substring(at).split(" ")[0];
+            }
+        }
+        throw new AssertionError("not served: " + host.lastStatus);
+    }
+
+    private static java.net.http.HttpResponse<String> fetch(String url) throws Exception {
+        return java.net.http.HttpClient.newHttpClient()
+                .send(
+                        java.net.http.HttpRequest.newBuilder(java.net.URI.create(url))
+                                .timeout(java.time.Duration.ofSeconds(5))
+                                .build(),
+                        java.net.http.HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** E101: an encrypted buffer gets no globe, is not previewed, and its text never reaches the server. */
+    @Test
+    void anEncryptedBufferIsNeverServed(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path page = java.nio.file.Files.writeString(dir.resolve("index.html"), "<body>x</body>");
+        java.nio.file.Path secret = java.nio.file.Files.writeString(dir.resolve("diary.txt"), "ciphertext");
+        FakeHost host = new FakeHost();
+        host.settings.setHtmlPreviewSupport(true);
+        HtmlPreviewCoordinator c = new HtmlPreviewCoordinator(host);
+        EditorBuffer html = fileBuffer(page);
+        EditorBuffer sb = fileBuffer(secret);
+        EditorBuffer gpgPage = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setPath(dir.resolve("page.html.gpg"));
+            return b;
+        });
+        host.buffers.add(html);
+        host.buffers.add(sb);
+        try {
+            FxTestSupport.runOnFx(() -> c.ensureControl(gpgPage));
+            assertTrue(FxTestSupport.callOnFx(gpgPage::isHtml), "an encrypted page is still HTML");
+            assertFalse(FxTestSupport.callOnFx(gpgPage::hasHtmlPreviewControl), "but gets no globe");
+            String url = openAndWait(c, host);
+            FxTestSupport.runOnFx(() -> {
+                c.wireBuffer(sb);
+                sb.encryption()
+                        .setState(new com.editora.editor.crypto.EncryptionState(
+                                com.editora.editor.crypto.EncryptionState.Mode.PASSPHRASE, List.of(), true));
+                sb.getArea().replaceText("DECRYPTED PLAINTEXT");
+                c.onBufferEdited(sb);
+                c.onBufferSaved(sb);
+            });
+            Thread.sleep(600); // past the settled-edit pulse
+            String served = fetch(url.replace("index.html", "diary.txt")).body();
+            assertEquals("ciphertext", served, "the decrypted text is not served");
+
+            host.buffers.add(0, gpgPage);
+            FxTestSupport.runOnFx(c::open);
+            assertTrue(host.lastStatus.startsWith("HTML Live Preview doesn't serve encrypted files"), host.lastStatus);
+        } finally {
+            c.shutdown();
+        }
+    }
+
+    /** E103/E111: opening a file of the site reloads nothing; a large-file buffer is served from disk, uncopied. */
+    @Test
+    void openingAFileReloadsNothingAndALargeFileIsNotCopied(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path page = java.nio.file.Files.writeString(dir.resolve("index.html"), "<body>x</body>");
+        java.nio.file.Path about = java.nio.file.Files.writeString(dir.resolve("about.html"), "<p>about</p>");
+        java.nio.file.Path log = java.nio.file.Files.writeString(dir.resolve("big.log"), "on disk");
+        FakeHost host = new FakeHost();
+        host.settings.setHtmlPreviewSupport(true);
+        HtmlPreviewCoordinator c = new HtmlPreviewCoordinator(host);
+        EditorBuffer html = fileBuffer(page);
+        host.buffers.add(html);
+        try {
+            String url = openAndWait(c, host);
+            String poll = url.replace("index.html", "__editora_livereload?v=1");
+            EditorBuffer opened = fileBuffer(about);
+            EditorBuffer large = FxTestSupport.callOnFx(() -> {
+                EditorBuffer b = new EditorBuffer();
+                b.setPath(log);
+                b.setLargeFile(true);
+                b.setContent("on disk");
+                return b;
+            });
+            FxTestSupport.runOnFx(() -> {
+                host.buffers.add(opened);
+                host.buffers.add(large);
+                c.wireBuffer(opened);
+                c.wireBuffer(large);
+                c.onBufferEdited(opened); // the settled pulse after a load
+                c.onBufferEdited(large);
+            });
+            Thread.sleep(600); // and any real pulse
+            assertEquals(204, fetch(poll).statusCode(), "opened, not edited: nothing to reload");
+
+            FxTestSupport.runOnFx(() -> large.getArea().replaceText("typed in a large file"));
+            Thread.sleep(600);
+            FxTestSupport.runOnFx(() -> c.onBufferEdited(large));
+            assertEquals("on disk", fetch(url.replace("index.html", "big.log")).body(), "served from disk");
+            assertEquals(204, fetch(poll).statusCode(), "and nothing was snapshotted to reload for");
+
+            FxTestSupport.runOnFx(() -> opened.getArea().replaceText("<p>about us</p>"));
+            for (int i = 0; i < 60 && fetch(poll).statusCode() == 204; i++) {
+                Thread.sleep(50); // the settled-edit pulse fires 250 ms after the keystroke
+            }
+            assertEquals("2", fetch(poll).body(), "one edit, one reload");
+            assertTrue(fetch(url.replace("index.html", "about.html")).body().startsWith("<p>about us</p>"));
+        } finally {
+            c.shutdown();
+        }
+    }
+
+    /** E107: a remembered browser that is gone opens the default one, says so, and stays remembered. */
+    @Test
+    void aRememberedBrowserThatIsGoneIsReportedAndKept(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path page = java.nio.file.Files.writeString(dir.resolve("index.html"), "<body>x</body>");
+        FakeHost host = new FakeHost();
+        host.settings.setHtmlPreviewSupport(true);
+        host.settings.setHtmlPreviewBrowser("desktop:editora-test-gone.desktop");
+        HtmlPreviewCoordinator c = new HtmlPreviewCoordinator(host);
+        host.buffers.add(fileBuffer(page));
+        try {
+            openAndWait(c, host); // pressed before any detection ran: it waits for one
+            assertTrue(
+                    host.lastStatus.startsWith("editora-test-gone wasn't found, so the default browser opened"),
+                    host.lastStatus);
+            assertEquals("desktop:editora-test-gone.desktop", host.settings.getHtmlPreviewBrowser(), "kept");
+            assertEquals(0, host.saveCount, "nothing to remember");
+        } finally {
+            c.shutdown();
+        }
+    }
 }

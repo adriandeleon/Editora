@@ -39,7 +39,9 @@ own tool, configured the way they already use it.
   no crash-recovery copy (one taken before it was encrypted is deleted), no Local History (its revisions would be
   its text), no line text in bookmarks/breakpoints, no personal notes, no language server unless Settings allow
   it, no agent / MCP / AI access, no diagram renders (they write their source to temporary files), no Git gutter
-  or blame, no closed-file Replace in Files rewrite. Export, print and external tools ask once per tab.
+  or blame, no closed-file Replace in Files rewrite, no HTML Live Preview (no globe, its text never reaches the
+  preview server, and the server answers 404 for an encrypted file name). Export, print and external tools ask
+  once per tab.
 - **The plugin is retired, not kept alongside**: `RetiredPlugins` removes an installed copy at startup (carrying
   over its gpg path and last recipient), and the id is refused by discovery, install and the registry listing.
   Signing (clear-sign, detached, verify) moved into core with it.

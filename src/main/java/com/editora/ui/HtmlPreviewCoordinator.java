@@ -11,6 +11,7 @@ import com.editora.web.Browsers;
 import com.editora.web.Browsers.Browser;
 import com.editora.web.HtmlPreviewService;
 import com.editora.web.LivePreviewServer;
+import com.editora.web.SiteRoots;
 import org.jspecify.annotations.Nullable;
 
 import static com.editora.i18n.Messages.tr;
@@ -22,16 +23,23 @@ import static com.editora.i18n.Messages.tr;
  * It reaches the window only through the narrow {@link CoordinatorHost} interface; {@code MainController} keeps
  * one-line delegations at the call sites.
  *
- * <p>A preview serves a whole site folder ({@link LivePreviewServer#siteRoot}): the project root for a file in
- * the window's project, else the nearest folder up holding an {@code index.html}. Only local files are served.
- * While anything is served, every open buffer reports its settled edits ({@link #onBufferEdited}), saves and
- * closes, and those under a served site reload its pages.
+ * <p>A preview serves a whole site folder ({@link SiteRoots#siteRoot}): the project root for a file in the
+ * window's project, else the highest contiguous folder up holding an {@code index.html}. Only local files are
+ * served, and never an encrypted one (ADR 0017): an encrypted buffer gets no globe and its text is never handed
+ * to the server. While anything is served, every open buffer reports its settled edits ({@link #onBufferEdited}),
+ * saves and closes, and those under a served site reload its pages — once it is edited: opening a file to read
+ * it reloads nothing.
  */
 final class HtmlPreviewCoordinator {
 
     private final CoordinatorHost host;
     private final HtmlPreviewService service;
     private List<Browser> browsers = List.of();
+    /** Whether {@link #browsers} holds a finished detection; until then an Open waits for it ({@link #afterDetection}). */
+    private boolean detected;
+
+    private boolean detecting;
+    private final List<Runnable> afterDetection = new ArrayList<>();
     private @Nullable QuickOpen<Browser> browserPalette; // built lazily on first "Open in…"
 
     HtmlPreviewCoordinator(CoordinatorHost host) {
@@ -53,9 +61,11 @@ final class HtmlPreviewCoordinator {
     void applySupport() {
         host.forEachBuffer(this::ensureControl);
         if (isEnabled()) {
-            service.detectBrowsers(list -> browsers = list);
+            detect();
         } else {
             browsers = List.of();
+            detected = false;
+            afterDetection.clear();
             service.stopServer(); // stop serving + clear the preview; the service stays reusable
             watchEdits(false);
         }
@@ -72,9 +82,37 @@ final class HtmlPreviewCoordinator {
         }
     }
 
-    /** Attaches/removes the floating browser globe so it shows only on local HTML buffers with the feature on. */
+    /** Detects browsers off-thread, then runs whatever waited for the list (an Open pressed early). */
+    private void detect() {
+        detecting = true;
+        service.detectBrowsers(list -> {
+            browsers = list;
+            detected = true;
+            detecting = false;
+            List<Runnable> waiting = new ArrayList<>(afterDetection);
+            afterDetection.clear();
+            waiting.forEach(Runnable::run);
+        });
+    }
+
+    /** Runs {@code action} once browsers are detected (at once when they are), so a missing one can be told. */
+    private void whenDetected(Runnable action) {
+        if (detected) {
+            action.run();
+            return;
+        }
+        afterDetection.add(action);
+        if (!detecting) {
+            detect();
+        }
+    }
+
+    /**
+     * Attaches/removes the floating browser globe so it shows only on local, unencrypted HTML buffers with the
+     * feature on (an encrypted page would be served decrypted to every script it runs: ADR 0017).
+     */
     void ensureControl(EditorBuffer buffer) {
-        boolean want = isEnabled() && buffer.isHtml() && host.isLocalBuffer(buffer);
+        boolean want = isEnabled() && buffer.isHtml() && host.isLocalBuffer(buffer) && !sensitive(buffer);
         boolean has = buffer.hasHtmlPreviewControl();
         if (want && !has) {
             buffer.setHtmlPreviewControl(new HtmlPreviewToggle(
@@ -84,17 +122,50 @@ final class HtmlPreviewCoordinator {
         }
     }
 
-    /** The settled-edit pulse of any buffer: a file under a served site reloads its pages (CSS: a swap). */
+    /**
+     * The settled-edit pulse of any buffer: a file under a served site reloads its pages (CSS: a swap). An
+     * encrypted buffer's text is never served, nor a large one's (it is served from disk: no copy on the FX
+     * thread); a file opened but not edited is already served from disk, so it reloads nothing (E103).
+     */
     void onBufferEdited(EditorBuffer buffer) {
         Path path = buffer.getPath();
-        if (isEnabled() && path != null && service.serves(path)) {
+        if (!isEnabled() || path == null || !service.serves(path)) {
+            return;
+        }
+        if (sensitive(buffer) || tooLargeToServeLive(buffer)) {
+            service.closed(path); // drops a snapshot taken before (a no-op without one)
+        } else if (buffer.isDirty() || service.hasSnapshot(path)) {
             service.edited(path, buffer.getContent());
         }
     }
 
-    /** A save reloads too (an edit the pulse has not reported yet; a no-op when the text is what is served). */
+    /** An encrypted buffer, or one whose name says it is encrypted (ADR 0017: every surface asks). */
+    private static boolean sensitive(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        String name = path == null ? buffer.getDisplayName() : String.valueOf(path.getFileName());
+        return buffer.encryption().isEncrypted()
+                || name != null && com.editora.text.EncryptedNames.extensionOf(name) != null;
+    }
+
+    /** Large-file mode, or text over {@link LivePreviewServer#MAX_LIVE_CHARS}: served from disk instead (E111). */
+    private static boolean tooLargeToServeLive(EditorBuffer buffer) {
+        return buffer.isLargeFile() || buffer.getArea().getLength() > LivePreviewServer.MAX_LIVE_CHARS;
+    }
+
+    /**
+     * A save reloads too: an edit the pulse has not reported yet (a no-op when the text is what is served), or a
+     * file served from disk, which now holds the saved text.
+     */
     void onBufferSaved(EditorBuffer buffer) {
-        onBufferEdited(buffer);
+        Path path = buffer.getPath();
+        if (!isEnabled() || path == null || !service.serves(path)) {
+            return;
+        }
+        if (sensitive(buffer) || tooLargeToServeLive(buffer) || !service.hasSnapshot(path)) {
+            service.changedOnDisk(path);
+        } else {
+            service.edited(path, buffer.getContent());
+        }
     }
 
     /** A closed buffer's file is served from disk again, and its site reloads. */
@@ -139,31 +210,61 @@ final class HtmlPreviewCoordinator {
             host.setStatus(tr("status.htmlPreview.remote"));
             return false;
         }
+        if (sensitive(buffer)) {
+            host.setStatus(tr("status.htmlPreview.encrypted"));
+            return false;
+        }
         return true;
     }
 
-    /** Serves {@code buffer}'s site (its own text live) and opens it in {@code browser}; remembers the choice. */
+    /**
+     * The site folder to serve for {@code buffer}, or null after saying why not (no file yet, or an unsafe root).
+     */
+    private @Nullable Path siteFor(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        if (file == null) {
+            host.setStatus(tr("status.htmlPreview.unsaved")); // need a file on disk so relative assets resolve
+            return null;
+        }
+        Path root = SiteRoots.siteRoot(file, host.projectScope().root());
+        if (SiteRoots.isUnsafeDocRoot(root)) {
+            // The server exposes the whole folder; a home, Downloads, temp or drive root is not a web root.
+            host.setStatus(tr("status.htmlPreview.unsafeRoot", root));
+            return null;
+        }
+        return root;
+    }
+
+    /**
+     * Serves {@code buffer}'s site (its own text live) and opens it in {@code browser}; remembers the choice. A
+     * remembered browser that is no longer installed opens the page in the system default one, says so, and stays
+     * remembered (E107).
+     */
     private void previewActive(EditorBuffer buffer, Browser browser) {
         if (!previewable(buffer)) {
             return;
         }
+        Path root = siteFor(buffer);
         Path file = buffer.getPath();
-        if (file == null) {
-            host.setStatus(tr("status.htmlPreview.unsaved")); // need a file on disk so relative assets resolve
+        if (root == null || file == null) {
             return;
         }
-        Path root = LivePreviewServer.siteRoot(file, host.projectScope().root());
-        if (LivePreviewServer.isUnsafeDocRoot(root)) {
-            // The server exposes the whole folder; a home, Downloads, temp or drive root is not a web root.
-            host.setStatus(tr("status.htmlPreview.unsafeRoot", root));
-            return;
+        boolean missing = detected
+                && !Browsers.SYSTEM_DEFAULT.equals(browser.id())
+                && browsers.stream().noneMatch(b -> b.id().equals(browser.id()));
+        if (!missing) {
+            host.settings().setHtmlPreviewBrowser(browser.id());
+            host.save();
         }
-        host.settings().setHtmlPreviewBrowser(browser.id());
-        host.save();
         String name = label(browser);
-        host.setStatus(tr("status.htmlPreview.opening", name));
+        Browser launch = missing ? new Browser(Browsers.SYSTEM_DEFAULT, "System Default") : browser;
+        host.setStatus(tr("status.htmlPreview.opening", missing ? label(launch) : name));
         watchEdits(true); // from now on: an edit made before the server is up still reaches the snapshot
-        service.preview(file, root, buffer.getContent(), browser, r -> {
+        String text = tooLargeToServeLive(buffer) ? null : buffer.getContent();
+        service.preview(file, root, text, launch, done -> {
+            HtmlPreviewService.Result r = missing && done.outcome() == HtmlPreviewService.Outcome.OPENED
+                    ? new HtmlPreviewService.Result(HtmlPreviewService.Outcome.FALLBACK, done.url(), null)
+                    : done;
             String status = statusFor(r, name);
             if (!service.isServing()) {
                 watchEdits(false);
@@ -181,13 +282,19 @@ final class HtmlPreviewCoordinator {
         host.forEachBuffer(b -> b.setHtmlPreviewDirtyListener(on ? () -> onBufferEdited(b) : null));
     }
 
-    /** The last-used browser (from Settings), else System Default, else the first detected. */
+    /**
+     * The last-used browser (from Settings) — named, not detected, when it is gone, so the preview says so — else
+     * System Default, else the first detected.
+     */
     private Browser lastUsedBrowser() {
         String id = host.settings().getHtmlPreviewBrowser();
         for (Browser b : browsers) {
             if (b.id().equals(id)) {
                 return b;
             }
+        }
+        if (id != null && !id.isBlank() && !Browsers.SYSTEM_DEFAULT.equals(id)) {
+            return new Browser(id, Browsers.knownName(id));
         }
         for (Browser b : browsers) {
             if (Browsers.SYSTEM_DEFAULT.equals(b.id())) {
@@ -203,8 +310,8 @@ final class HtmlPreviewCoordinator {
     void open() {
         ifEnabled(() -> {
             EditorBuffer b = host.activeBuffer();
-            if (previewable(b) && b != null) {
-                previewActive(b, lastUsedBrowser());
+            if (previewable(b) && b != null && siteFor(b) != null) {
+                whenDetected(() -> previewActive(b, lastUsedBrowser())); // so a browser that is gone is told
             }
         });
     }

@@ -342,6 +342,8 @@ final class LanguageServerSession implements LanguageClient {
             return request;
         }
         var timer = new java.util.concurrent.atomic.AtomicReference<java.util.concurrent.ScheduledFuture<?>>();
+        // One sent before the handshake finished waits behind it: its timeout says nothing of a hang (HTML 2 A104).
+        boolean sentReady = owner == null || owner.initialized;
         Runnable expire = new Runnable() {
             @Override
             public void run() {
@@ -355,7 +357,7 @@ final class LanguageServerSession implements LanguageClient {
                         timer.get().cancel(false);
                     }
                 } else {
-                    if (owner != null) {
+                    if (owner != null && sentReady) {
                         owner.requestTimedOut(); // before the cancel: whoever sees it done sees it counted
                     }
                     request.cancel(true);
@@ -389,9 +391,14 @@ final class LanguageServerSession implements LanguageClient {
     /**
      * A request ran out of time. The second in a row with no answer between says, once, that the server is not
      * responding and that Restart Language Servers brings it back: a hung server used to leave every request waiting
-     * 30 s while the status still read "Loaded and ready" (HTML review A11).
+     * 30 s while the status still read "Loaded and ready" (HTML review A11). A server that says it is busy (see
+     * {@link #busy}) is not counted: jdtls holds requests until its import is done, and Restart would only start
+     * the import over (HTML review 2 A104).
      */
     void requestTimedOut() {
+        if (busy()) {
+            return;
+        }
         if (timeoutsInARow.incrementAndGet() >= NOT_RESPONDING_AFTER
                 && !disposed
                 && saidNotResponding.compareAndSet(false, true)) {
@@ -407,6 +414,22 @@ final class LanguageServerSession implements LanguageClient {
         if (saidNotResponding.compareAndSet(true, false) && !disposed) {
             onStatus.accept("Message", com.editora.i18n.Messages.tr("lsp.status.respondingAgain"));
         }
+    }
+
+    /**
+     * Whether the server says it is still working: jdtls before it said it is ready, or a work-done progress (or
+     * jdtls's progress report) it began and has not ended — gopls loading, rust-analyzer indexing, Metals importing.
+     */
+    boolean busy() {
+        return stillImporting() || !openProgress.isEmpty() || !jdtProgressIds.isEmpty();
+    }
+
+    /** The {@code $/progress} tokens begun and not yet ended. */
+    private final java.util.Set<String> openProgress = ConcurrentHashMap.newKeySet();
+
+    /** Test seam: the handshake is done, so a request's timeout counts toward "not responding". */
+    void initializedForTest() {
+        initialized = true;
     }
 
     /** Whether this session has been reported as not responding (Doctor, tests). */
@@ -2159,6 +2182,14 @@ final class LanguageServerSession implements LanguageClient {
             return;
         }
         var n = params.getValue().getLeft();
+        String token = params.getToken() == null
+                ? ""
+                : String.valueOf(params.getToken().get());
+        if (n instanceof org.eclipse.lsp4j.WorkDoneProgressBegin) {
+            openProgress.add(token);
+        } else if (n instanceof org.eclipse.lsp4j.WorkDoneProgressEnd) {
+            openProgress.remove(token);
+        }
         if (n instanceof org.eclipse.lsp4j.WorkDoneProgressBegin begin) {
             onStatus.accept("Progress", progressText(begin.getTitle(), begin.getMessage(), begin.getPercentage()));
         } else if (n instanceof org.eclipse.lsp4j.WorkDoneProgressEnd end) {
