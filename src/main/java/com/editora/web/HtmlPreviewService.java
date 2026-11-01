@@ -27,8 +27,9 @@ import org.jspecify.annotations.Nullable;
  * <p>{@link #preview} serves a site folder and opens a page of it in the chosen browser — launched
  * <em>detached</em> (we don't wait on it, so a foreground browser process on Linux/Windows can't block the
  * executor), or via the injected system opener ({@code HostServices}) for the default browser. Files open in
- * the editor are served from immutable snapshots of their text taken on the FX thread ({@link #edited}), and
- * every edit, save or close of a file under a served site reloads that site's open pages.
+ * the editor and edited are served from immutable snapshots of their text taken on the FX thread ({@link
+ * #edited}), and every edit, save or close of a file under a served site reloads that site's open pages. Each
+ * site gets its own origin (a loopback listener and token of its own, {@link LivePreviewServer#serve}).
  */
 public final class HtmlPreviewService {
 
@@ -106,14 +107,17 @@ public final class HtmlPreviewService {
 
     /**
      * Serves {@code root} (a safe folder holding {@code file}; the caller picked and checked it), with {@code file}
-     * itself from {@code liveText}, and opens {@code file}'s page in {@code browser}. Posts the {@link Result} on
-     * the FX thread — and, when the browser quits at once with an error, an {@link Outcome#EXITED} one after it.
+     * itself from {@code liveText} (null: from disk), and opens {@code file}'s page in {@code browser}. Posts the
+     * {@link Result} on the FX thread — and, when the browser quits at once with an error, an {@link
+     * Outcome#EXITED} one after it.
      */
-    public void preview(Path file, Path root, String liveText, Browser browser, Consumer<Result> onResult) {
+    public void preview(Path file, Path root, @Nullable String liveText, Browser browser, Consumer<Result> onResult) {
         long at = epoch.get();
         Path abs = normalized(file);
         Path site = normalized(root);
-        live.put(abs, liveText == null ? "" : liveText);
+        if (liveText != null) {
+            live.put(abs, liveText);
+        }
         roots.add(site); // edits right after this (before the worker runs) already update the snapshot
         exec.submit(() -> {
             if (at != epoch.get()) {
@@ -188,10 +192,30 @@ public final class HtmlPreviewService {
         }
     }
 
-    /** A closed file is served from disk again; its site reloads (its unsaved edits are gone). */
+    /**
+     * Whether {@code file}'s editor text is what is served (it was edited, or is a previewed page). A file opened
+     * but never edited is served from disk, which already holds its text: the caller need not copy it (E103).
+     */
+    public boolean hasSnapshot(Path file) {
+        return live.containsKey(normalized(file));
+    }
+
+    /**
+     * A closed file is served from disk again; its site reloads (its unsaved edits are gone). Also how a buffer
+     * whose text must no longer be served (it became encrypted, or too large) drops its snapshot.
+     */
     public void closed(Path file) {
         Path p = normalized(file);
         if (live.remove(p) != null) {
+            server.changed(p);
+        }
+    }
+
+    /** {@code file} changed on disk (it was saved): it is served from there, and its site reloads. */
+    public void changedOnDisk(Path file) {
+        Path p = normalized(file);
+        if (serves(p)) {
+            live.remove(p);
             server.changed(p);
         }
     }

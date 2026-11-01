@@ -1,7 +1,9 @@
 package com.editora.lsp;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -22,17 +24,31 @@ import org.jspecify.annotations.Nullable;
  *
  * <ul>
  *   <li>{@code format.wrapLineLength}: the file's EditorConfig {@code max_line_length} when it sets one ({@code off}
- *       = never wrap), else the setting (A3, B10);
- *   <li>{@code format.endWithNewline}: the file's {@code insert_final_newline} when it sets one, else whether the text
- *       ends with a line break now — the formatter's own default dropped the newline on every format (A3, D6).
+ *       = never wrap), else the setting (A3, B10).
  * </ul>
  *
- * <p>{@code autoClosingTags} is Editora's own auto-close setting: while Editora closes a tag on {@code >}, the server
- * must not offer the closer again in completion, which made {@code <div></div></div>} (D3).
+ * <p>{@code format.endWithNewline} is always {@code false}, VS Code's value: the formatter hands it on to the CSS
+ * beautifier of every {@code <style>}, which then put a blank line before each {@code </style>} (HTML review 2,
+ * B104). Editora keeps the final newline itself instead ({@link #finalNewline}, applied to the edits by
+ * {@link com.editora.text.LspTextEdits#withFinalNewline}): the file's {@code insert_final_newline} when it sets one,
+ * else the project's {@code format.endWithNewline}, else what the text has now — the formatter's own default dropped
+ * the newline on every format (A3, D6).
  *
- * <p>The server caches each document's answer until it is closed or the configuration is pushed, so the two
- * per-document values are also sent as options of every formatting request ({@link #formattingOptions}), which the
- * server lays over its settings.
+ * <p>{@code autoClosingTags} is Editora's own auto-close setting, whatever the project says (B2 D102): while Editora
+ * closes a tag on {@code >}, the server must not offer the closer again in completion, which made
+ * {@code <div></div></div>} (D3).
+ *
+ * <p>The embedded {@code javascript} and {@code css} sections are VS Code's {@code format} defaults (B105): with an
+ * empty object the server's TypeScript formatter turned off the spaces inside braces
+ * ({@code function f() {return 1} }).
+ *
+ * <p>The project's object takes VS Code's dotted keys too ({@code "format.wrapAttributes": "force"}, and
+ * {@code "html.format.wrapAttributes"} at the top of {@code .editora/settings.json}, as {@code .vscode/settings.json}
+ * writes them); what it sets that the server does not take is listed by {@link #ignoredProjectKeys} (A107).
+ *
+ * <p>The server caches each document's answer until it is closed or the configuration is pushed, so the wrap column
+ * is also sent as an option of every formatting request ({@link #formattingOptions}), which the server lays over its
+ * settings.
  *
  * @param wrapLineLength the column Format Document wraps at; 0 = never wraps
  * @param wrapAttributes {@code html.format.wrapAttributes}, one of {@link Settings#HTML_WRAP_ATTRIBUTES}
@@ -73,8 +89,39 @@ public record HtmlServerSettings(
      * Keys a project may set beyond the ones the section always carries, with a value of their type: the rest of
      * VS Code's {@code html.format.*} that the server reads.
      */
-    private static final Map<String, Object> PROJECT_ONLY_FORMAT_KEYS = Map.of(
-            "endWithNewline", false, "maxPreserveNewLines", 0, "wrapAttributesIndentSize", 0, "indentScripts", "");
+    private static final Map<String, Object> PROJECT_ONLY_FORMAT_KEYS =
+            Map.of("maxPreserveNewLines", 0, "wrapAttributesIndentSize", 0, "indentScripts", "");
+
+    /** VS Code's {@code javascript.format} defaults (its TypeScript extension's {@code package.json}). */
+    private static final Map<String, Object> JAVASCRIPT_FORMAT = orderedMap(
+            "enable", true,
+            "insertSpaceAfterCommaDelimiter", true,
+            "insertSpaceAfterConstructor", false,
+            "insertSpaceAfterSemicolonInForStatements", true,
+            "insertSpaceBeforeAndAfterBinaryOperators", true,
+            "insertSpaceAfterKeywordsInControlFlowStatements", true,
+            "insertSpaceAfterFunctionKeywordForAnonymousFunctions", true,
+            "insertSpaceBeforeFunctionParenthesis", false,
+            "insertSpaceAfterOpeningAndBeforeClosingNonemptyParenthesis", false,
+            "insertSpaceAfterOpeningAndBeforeClosingNonemptyBrackets", false,
+            "insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces", true,
+            "insertSpaceAfterOpeningAndBeforeClosingEmptyBraces", true,
+            "insertSpaceAfterOpeningAndBeforeClosingTemplateStringBraces", false,
+            "insertSpaceAfterOpeningAndBeforeClosingJsxExpressionBraces", false,
+            "insertSpaceAfterTypeAssertion", false,
+            "placeOpenBraceOnNewLineForFunctions", false,
+            "placeOpenBraceOnNewLineForControlBlocks", false,
+            "semicolons", "ignore",
+            "indentSwitchCase", true);
+
+    /** VS Code's {@code css.format} defaults (its CSS extension's {@code package.json}), for parity. */
+    private static final Map<String, Object> CSS_FORMAT = orderedMap(
+            "enable", true,
+            "newlineBetweenSelectors", true,
+            "newlineBetweenRules", true,
+            "spaceAroundSelectorSeparator", false,
+            "braceStyle", "collapse",
+            "preserveNewLines", true);
 
     public HtmlServerSettings {
         wrapLineLength = Math.max(0, wrapLineLength);
@@ -155,19 +202,88 @@ public record HtmlServerSettings(
         html.put("autoClosingTags", autoClosingTags);
         html.put("hover", map("documentation", true, "references", true));
         html.put("completion", map("attributeDefaultValue", attributeQuotes));
-        overlay(html, project, true); // into the nested objects: format is still the object above
+        overlay(html, projectTree(), "", null); // into the nested objects: format is still the object above
+        html.put("autoClosingTags", autoClosingTags); // Editora's own, never the project's (D102)
+        format.put("endWithNewline", false); // VS Code's: Editora keeps the final newline itself (B104)
         if (doc != null) {
-            Map<String, Object> f = format;
             Integer wrap = wrapColumn(doc);
             if (wrap != null) {
-                f.put("wrapLineLength", wrap);
-            }
-            Boolean finalNewline = doc.finalNewline();
-            if (finalNewline != null && (doc.insertFinalNewline() != null || !f.containsKey("endWithNewline"))) {
-                f.put("endWithNewline", finalNewline);
+                format.put("wrapLineLength", wrap);
             }
         }
         return html;
+    }
+
+    /**
+     * Whether a formatted document should end with a line break (null: leave it as the server made it, for a request
+     * that knows nothing of the text): the file's {@code insert_final_newline} when it sets one, else the project's
+     * {@code format.endWithNewline}, else whether the text ends with one now.
+     */
+    public @Nullable Boolean finalNewline(FormattingIndent doc) {
+        if (doc.endsWithNewline() == null) {
+            return null; // nothing known of the text: Tab re-indent, on-type formatting
+        }
+        if (doc.insertFinalNewline() != null) {
+            return doc.insertFinalNewline();
+        }
+        return projectTree().get("format") instanceof Map<?, ?> f && f.get("endWithNewline") instanceof Boolean b
+                ? b
+                : doc.endsWithNewline();
+    }
+
+    /**
+     * What the project's object sets that the server is not given, as dotted names ({@code format.wrapAtributes}):
+     * unknown keys, values of the wrong kind, and {@code autoClosingTags}, which follows Editora's own setting.
+     */
+    public List<String> ignoredProjectKeys() {
+        List<String> ignored = new ArrayList<>();
+        Map<String, Object> tree = projectTree();
+        if (tree.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Object> scratch = new HtmlServerSettings(
+                        wrapLineLength,
+                        wrapAttributes,
+                        contentUnformatted,
+                        attributeQuotes,
+                        validateScripts,
+                        validateStyles,
+                        autoClosingTags,
+                        Map.of())
+                .section(null);
+        overlay(scratch, tree, "", ignored);
+        return List.copyOf(ignored);
+    }
+
+    /** The project's object with VS Code's dotted keys ({@code "format.wrapAttributes"}) made nested. */
+    private Map<String, Object> projectTree() {
+        return project.isEmpty() ? Map.of() : unflatten(project);
+    }
+
+    /** {@code flat} with every dotted key turned into nested objects, merged with any written nested already. */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> unflatten(Map<?, ?> flat) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        flat.forEach((k, v) -> {
+            String[] parts = String.valueOf(k).split("\\.", -1);
+            Map<String, Object> at = out;
+            for (int i = 0; i < parts.length - 1; i++) {
+                Object next = at.get(parts[i]);
+                if (!(next instanceof Map<?, ?>)) {
+                    next = new LinkedHashMap<String, Object>();
+                    at.put(parts[i], next);
+                }
+                at = (Map<String, Object>) next;
+            }
+            String last = parts[parts.length - 1];
+            Object value = v instanceof Map<?, ?> nested ? unflatten(nested) : v;
+            if (at.get(last) instanceof Map<?, ?> have && value instanceof Map<?, ?> more) {
+                ((Map<String, Object>) have).putAll((Map<String, Object>) more);
+            } else {
+                at.put(last, value);
+            }
+        });
+        return out;
     }
 
     /** The column a document's EditorConfig says to wrap at (0 for {@code off}), or null when it says nothing. */
@@ -187,21 +303,21 @@ public record HtmlServerSettings(
     public Map<String, Object> push() {
         Map<String, Object> settings = new LinkedHashMap<>();
         settings.put(SECTION, section(null));
-        settings.put("css", new LinkedHashMap<String, Object>());
-        settings.put("javascript", new LinkedHashMap<String, Object>());
+        settings.put("css", embedded("css"));
+        settings.put("javascript", embedded("javascript"));
         return settings;
     }
 
     /**
      * The answer to the HTML server asking {@code workspace/configuration} for {@code section} of the document whose
-     * facts are {@code doc} (null = unknown): the {@code html} object (or a value inside it, by dotted path), an empty
-     * object for {@code css} and {@code javascript}, and null for anything else — {@code js/ts} included, where an
-     * empty object makes its JavaScript mode throw.
+     * facts are {@code doc} (null = unknown): the {@code html} object (or a value inside it, by dotted path), VS Code's
+     * {@code format} defaults for {@code css} and {@code javascript}, and null for anything else — {@code js/ts}
+     * included, where an empty object makes its JavaScript mode throw.
      */
     public @Nullable Object answer(@Nullable String section, @Nullable FormattingIndent doc) {
         String s = section == null ? "" : section;
         if (s.equals("css") || s.equals("javascript")) {
-            return new LinkedHashMap<String, Object>();
+            return embedded(s);
         }
         if (s.equals(SECTION)) {
             return section(doc);
@@ -220,21 +336,29 @@ public record HtmlServerSettings(
     }
 
     /**
-     * A formatting request's options for the HTML server: {@code indent}'s, plus the document's own wrap column and
-     * final newline, which the server lays over the settings it cached for the document — the text may have gained
-     * or lost its last line break since, or its {@code .editorconfig} changed.
+     * A formatting request's options for the HTML server: {@code indent}'s, plus the document's own wrap column, which
+     * the server lays over the settings it cached for the document — its {@code .editorconfig} may have changed
+     * since — and {@code endWithNewline: false} (B104: Editora keeps the final newline itself).
      */
     public org.eclipse.lsp4j.FormattingOptions formattingOptions(FormattingIndent indent) {
         org.eclipse.lsp4j.FormattingOptions options = indent.options();
-        if (section(indent).get("format") instanceof Map<?, ?> format) {
-            if (format.get("wrapLineLength") instanceof Number n) {
-                options.putNumber("wrapLineLength", n);
-            }
-            if (format.get("endWithNewline") instanceof Boolean b) {
-                options.putBoolean("endWithNewline", b);
-            }
+        if (section(indent).get("format") instanceof Map<?, ?> format
+                && format.get("wrapLineLength") instanceof Number n) {
+            options.putNumber("wrapLineLength", n);
         }
+        options.putBoolean("endWithNewline", false);
         return options;
+    }
+
+    /** The {@code css} or {@code javascript} section: VS Code's {@code format} defaults, a fresh copy. */
+    private static Map<String, Object> embedded(String section) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("format", new LinkedHashMap<>(section.equals("css") ? CSS_FORMAT : JAVASCRIPT_FORMAT));
+        return out;
+    }
+
+    private static Map<String, Object> orderedMap(Object... keyValues) {
+        return java.util.Collections.unmodifiableMap(map(keyValues));
     }
 
     private static Map<String, Object> map(Object... keyValues) {
@@ -246,26 +370,42 @@ public record HtmlServerSettings(
     }
 
     /**
-     * Lays {@code over} onto {@code into}: a key {@code into} has takes a value of the same kind (a nested object is
-     * laid over in turn); other keys are dropped, except the extra {@code format} keys a project may add.
+     * Lays {@code over} onto {@code into} ({@code path}: where {@code into} is, {@code ""} at the top): a key
+     * {@code into} has takes a value of the same kind (a nested object is laid over in turn), as do the extra
+     * {@code format} keys a project may add; every other key is dropped, and named in {@code ignored} when given.
+     * {@code format.endWithNewline} is Editora's to apply ({@link #finalNewline}), and {@code autoClosingTags} is
+     * replaced by Editora's own value after this.
      */
     @SuppressWarnings("unchecked")
-    private static void overlay(Map<String, Object> into, Map<?, ?> over, boolean top) {
+    private static void overlay(Map<String, Object> into, Map<?, ?> over, String path, @Nullable List<String> ignored) {
         over.forEach((k, v) -> {
             String key = String.valueOf(k);
+            String name = path + key;
             Object have = into.get(key);
+            if (name.equals("format.endWithNewline") && v instanceof Boolean) {
+                return; // taken by finalNewline
+            }
             if (have instanceof Map<?, ?> nested && v instanceof Map<?, ?> nestedOver) {
-                overlay((Map<String, Object>) nested, nestedOver, false);
-                if (top && key.equals("format")) {
+                Map<String, Object> extra = new LinkedHashMap<>();
+                if (name.equals("format")) {
                     nestedOver.forEach((fk, fv) -> {
                         Object kind = PROJECT_ONLY_FORMAT_KEYS.get(String.valueOf(fk));
                         if (kind != null && sameKind(kind, fv)) {
-                            ((Map<String, Object>) nested).put(String.valueOf(fk), fv);
+                            extra.put(String.valueOf(fk), fv);
                         }
                     });
                 }
-            } else if (have != null && !(have instanceof Map<?, ?>) && sameKind(have, v)) {
+                Map<Object, Object> rest = new LinkedHashMap<>(nestedOver);
+                rest.keySet().removeAll(extra.keySet());
+                overlay((Map<String, Object>) nested, rest, name + ".", ignored);
+                ((Map<String, Object>) nested).putAll(extra);
+            } else if (have != null
+                    && !(have instanceof Map<?, ?>)
+                    && sameKind(have, v)
+                    && !name.equals("autoClosingTags")) {
                 into.put(key, have instanceof Number && v instanceof Number n ? (Object) n.intValue() : v);
+            } else if (ignored != null) {
+                ignored.add(name);
             }
         });
     }

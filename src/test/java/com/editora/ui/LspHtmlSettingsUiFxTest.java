@@ -81,6 +81,45 @@ class LspHtmlSettingsUiFxTest {
 
         var options = FakeLanguageServer.last(fx.server().formattings).getOptions();
         assertEquals(120, options.getNumber("wrapLineLength").intValue());
-        assertEquals(Boolean.TRUE, options.getBoolean("endWithNewline"), "the buffer ends with a newline");
+        assertEquals(Boolean.FALSE, options.getBoolean("endWithNewline"), "B104: Editora keeps the final newline");
+    }
+
+    /**
+     * HTML review 2 B104: the server, told {@code endWithNewline: false}, answers without the final newline; the
+     * buffer still ends with the one it had after Format Document.
+     */
+    @Test
+    void formatDocumentKeepsTheBuffersFinalNewline() throws Exception {
+        fx.server().formattingResponse = java.util.List.of(new org.eclipse.lsp4j.TextEdit(
+                new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(0, 0), new org.eclipse.lsp4j.Position(3, 0)),
+                "<pre>\n  keep   this\n</pre>\n<p>x</p>"));
+        fx.run(() -> fx.coordinator.formatDocument());
+        FxTestSupport.runOnFx(
+                () -> assertEquals("<pre>\n  keep   this\n</pre>\n<p>x</p>\n", fx.host.active.getContent()));
+    }
+
+    /**
+     * A107: VS Code's top-level {@code "html.format.wrapAttributes"} reaches the server; what the server does not
+     * take is said once — D102's {@code autoClosingTags} among it, which stays Editora's own.
+     */
+    @Test
+    void aProjectsVsCodeStyleKeysApplyAndTheIgnoredOnesAreSaid() throws Exception {
+        Files.createDirectories(root.resolve(".editora"));
+        Files.writeString(
+                root.resolve(".editora/settings.json"),
+                "{\"html.format.wrapAttributes\": \"force-aligned\", \"html.autoClosingTags\": false,"
+                        + " \"html.format.wrapAtributes\": \"force\"}");
+        fx.ops.projectRoot = root;
+
+        fx.run(() -> fx.coordinator.reloadProjectSettings());
+
+        Map<String, Object> html = lastPushedHtml();
+        assertEquals("force-aligned", format(html).get("wrapAttributes"));
+        assertEquals(Boolean.TRUE, html.get("autoClosingTags"), "Editora closes tags: the server must not");
+        String said =
+                com.editora.i18n.Messages.tr("status.html.projectKeysIgnored", "format.wrapAtributes, autoClosingTags");
+        assertEquals(1, fx.host.statuses.stream().filter(said::equals).count());
+        fx.run(() -> fx.coordinator.applyXmlSettings()); // another apply, the same keys: not said again
+        assertEquals(1, fx.host.statuses.stream().filter(said::equals).count());
     }
 }

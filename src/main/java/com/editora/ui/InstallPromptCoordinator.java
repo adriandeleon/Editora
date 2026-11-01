@@ -110,6 +110,10 @@ final class InstallPromptCoordinator {
         if (offerShellTools(buffer)) {
             return;
         }
+        // A copy of the HTML server from an earlier `npm install -g`: its <script> has no DOM library (HTML 2 A108).
+        if (offerOwnWebCopy(buffer)) {
+            return;
+        }
         // A live LSP session already serving this file ⇒ its server is present; never nag.
         if (host.lspCoordinator().isManaged(buffer.getPath())) {
             buffer.showInstallBar(false);
@@ -327,6 +331,62 @@ final class InstallPromptCoordinator {
                     buffer.showInstallBar(false);
                 });
         buffer.showInstallBar(true);
+    }
+
+    /** {@link com.editora.install.WebServerInstall#foreignCopyWithoutLibs}; a test resolves the command itself. */
+    java.util.function.BiPredicate<java.util.List<String>, java.nio.file.Path> foreignWebCopy =
+            com.editora.install.WebServerInstall::foreignCopyWithoutLibs;
+
+    /** Whether this window has looked at which HTML server copy runs (once: it reads files). */
+    private boolean ownWebCopyChecked;
+
+    /** The buffer showing the "Update to Editora's own copy" offer until it is answered. */
+    private java.lang.ref.WeakReference<EditorBuffer> ownWebCopyBuffer = new java.lang.ref.WeakReference<>(null);
+
+    /**
+     * Once per window, on an HTML file served by a vscode-langservers-extracted that is not Editora's own and has no
+     * TypeScript libraries (every earlier {@code npm install -g} of it): JavaScript in {@code <script>} then gets no DOM
+     * completion, and only Doctor said so. The banner's Update installs Editora's copy, as Doctor's does, and the
+     * running servers move to it (HTML review 2 A108). Not for the user's own command, which Update would not change.
+     */
+    private boolean offerOwnWebCopy(EditorBuffer buffer) {
+        String id = "html";
+        if (buffer == ownWebCopyBuffer.get()) {
+            return true; // still unanswered: the offer stays on its tab
+        }
+        if (ownWebCopyChecked
+                || !id.equals(com.editora.lsp.LspServerRegistry.serverIdFor(buffer.getLanguage()))
+                || !host.lspEnabled()
+                || !host.lspCoordinator().serverEnabled(id)
+                || host.lspCoordinator().isServerMissing(id)
+                || host.lspCoordinator().customServerCommand(id) != null) {
+            return false;
+        }
+        ownWebCopyChecked = true;
+        if (!foreignWebCopy.test(
+                host.lspCoordinator().serverArgv(id), host.config().getConfigDir())) {
+            return false;
+        }
+        ownWebCopyBuffer = new java.lang.ref.WeakReference<>(buffer);
+        buffer.setInstallPrompt(
+                tr("install.banner.htmlNoTsLibs"),
+                tr("install.banner.update"),
+                () -> {
+                    buffer.setInstallBarBusy(true);
+                    host.installCoordinator().installServer(id, true, ok -> {
+                        buffer.setInstallBarBusy(false);
+                        if (ok) {
+                            ownWebCopyBuffer.clear();
+                            buffer.showInstallBar(false);
+                        }
+                    });
+                },
+                () -> {
+                    ownWebCopyBuffer.clear();
+                    buffer.showInstallBar(false);
+                });
+        buffer.showInstallBar(true);
+        return true;
     }
 
     /** Builds + shows the install banner for {@code buffer} with its message and an install trigger that is

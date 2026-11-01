@@ -22,8 +22,10 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>Known browsers are probed per OS: macOS app bundles; on Linux a binary on the PATH or a desktop launcher
  * ({@code .desktop} entry — native, Flatpak or Snap); on Windows the machine-wide and per-user install folders.
- * On Linux every other launcher that handles {@code http} links (LibreWolf, Zen, a Flatpak-only browser…) is
- * offered too, launched through its own {@code Exec} line.
+ * On Linux every other launcher that is a web browser (LibreWolf, Zen, a Flatpak-only browser…) is offered too,
+ * launched through its own {@code Exec} line: one in the {@code WebBrowser} category, or handling both {@code
+ * https} links and {@code text/html} — not every app that merely opens links (a chat app), not one whose {@code
+ * TryExec} binary is gone, and not one meant for another desktop ({@code OnlyShowIn}/{@code NotShowIn}).
  *
  * <p>Detection + argv construction are <em>pure</em> (the OS, the filesystem/PATH probes, the environment and
  * the launchers are injected), so they're unit-tested; only {@link #detect()} and {@link #launchArgv(Browser,
@@ -397,6 +399,13 @@ public final class Browsers {
      * launcher hides the system one of the same id) plus the Flatpak and Snap export folders.
      */
     static List<DesktopEntry> desktopEntries(String home, Function<String, @Nullable String> env) {
+        return desktopEntries(home, env, Browsers::binOnPath);
+    }
+
+    /** {@link #desktopEntries(String, Function)} with the {@code TryExec} probe supplied (tests). */
+    static List<DesktopEntry> desktopEntries(
+            String home, Function<String, @Nullable String> env, Predicate<String> tryExecFound) {
+        List<String> desktops = currentDesktops(env.apply("XDG_CURRENT_DESKTOP"));
         Map<String, DesktopEntry> byId = new LinkedHashMap<>();
         for (Path dir : applicationDirs(home, env)) {
             if (!Files.isDirectory(dir)) {
@@ -409,7 +418,7 @@ public final class Browsers {
                         continue;
                     }
                     try {
-                        DesktopEntry e = parseDesktopEntry(fileId, Files.readAllLines(f));
+                        DesktopEntry e = parseDesktopEntry(fileId, Files.readAllLines(f), desktops, tryExecFound);
                         if (e != null) {
                             byId.put(fileId, e);
                         } else {
@@ -450,12 +459,33 @@ public final class Browsers {
         return dirs.stream().distinct().toList();
     }
 
-    /**
-     * Parses a {@code .desktop} file: an {@code Application} in the {@code [Desktop Entry]} group that lists
-     * {@code x-scheme-handler/http} in its {@code MimeType}, is not {@code Hidden} or {@code NoDisplay}, and has
-     * an {@code Exec}; else null.
-     */
+    /** {@code XDG_CURRENT_DESKTOP} ({@code "ubuntu:GNOME"}) as its list of names; empty when unset. */
+    static List<String> currentDesktops(@Nullable String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(value.split(":"))
+                .map(String::strip)
+                .filter(d -> !d.isEmpty())
+                .toList();
+    }
+
+    /** {@link #parseDesktopEntry(String, List, List, Predicate)} on no particular desktop, every binary present. */
     static @Nullable DesktopEntry parseDesktopEntry(String fileId, List<String> lines) {
+        return parseDesktopEntry(fileId, lines, List.of(), bin -> true);
+    }
+
+    /**
+     * Parses a {@code .desktop} file: an {@code Application} (the {@code Type} key is required) in the {@code
+     * [Desktop Entry]} group that lists {@code x-scheme-handler/http} in its {@code MimeType} and is a browser — in
+     * the {@code WebBrowser} category, or also handling {@code x-scheme-handler/https} and {@code text/html} — is
+     * not {@code Hidden} or {@code NoDisplay}, is shown on one of {@code desktops} ({@code OnlyShowIn}/{@code
+     * NotShowIn}; an empty list matches any), has a {@code TryExec} that {@code tryExecFound} finds (when it has
+     * one), and an {@code Exec} that takes a URL ({@code %u}/{@code %U}, or no field code; a launcher that takes only
+     * files, {@code %f}/{@code %F}, is not one); else null.
+     */
+    static @Nullable DesktopEntry parseDesktopEntry(
+            String fileId, List<String> lines, List<String> desktops, Predicate<String> tryExecFound) {
         boolean inEntry = false;
         Map<String, String> keys = new LinkedHashMap<>();
         for (String raw : lines) {
@@ -473,22 +503,60 @@ public final class Browsers {
                         line.substring(0, eq).strip(), line.substring(eq + 1).strip());
             }
         }
-        String type = keys.getOrDefault("Type", "Application");
+        String type = keys.getOrDefault("Type", "");
         String exec = keys.getOrDefault("Exec", "");
         String name = keys.getOrDefault("Name", "");
-        boolean http = List.of(keys.getOrDefault("MimeType", "").split(";")).contains("x-scheme-handler/http");
+        List<String> mime = List.of(keys.getOrDefault("MimeType", "").split(";"));
+        boolean http = mime.contains("x-scheme-handler/http");
+        boolean browser =
+                List.of(keys.getOrDefault("Categories", "").split(";")).contains("WebBrowser")
+                        || mime.contains("x-scheme-handler/https") && mime.contains("text/html");
         boolean hidden = "true".equalsIgnoreCase(keys.get("Hidden")) || "true".equalsIgnoreCase(keys.get("NoDisplay"));
-        if (!type.equals("Application") || !http || hidden || exec.isBlank() || name.isBlank()) {
+        if (!type.equals("Application")
+                || !http
+                || !browser
+                || hidden
+                || exec.isBlank()
+                || name.isBlank()
+                || !shownOn(keys.get("OnlyShowIn"), keys.get("NotShowIn"), desktops)
+                || !takesUrl(exec)) {
             return null;
+        }
+        String tryExec = keys.get("TryExec");
+        if (tryExec != null && !tryExec.isBlank() && !tryExecFound.test(unescapeValue(tryExec))) {
+            return null; // the launcher of an uninstalled program
         }
         return new DesktopEntry(fileId, unescapeValue(name), exec);
     }
 
+    /** {@code OnlyShowIn}/{@code NotShowIn} against the current desktops (unknown desktops: everything shows). */
+    private static boolean shownOn(@Nullable String only, @Nullable String not, List<String> desktops) {
+        if (desktops.isEmpty()) {
+            return true;
+        }
+        if (only != null && !only.isBlank()) {
+            List<String> allowed = List.of(only.split(";"));
+            if (desktops.stream().noneMatch(allowed::contains)) {
+                return false;
+            }
+        }
+        if (not != null && !not.isBlank()) {
+            List<String> refused = List.of(not.split(";"));
+            return desktops.stream().noneMatch(refused::contains);
+        }
+        return true;
+    }
+
+    /** Whether an {@code Exec} line can take a URL: it has {@code %u}/{@code %U}, or no file field code. */
+    private static boolean takesUrl(String exec) {
+        return exec.contains("%u") || exec.contains("%U") || !(exec.contains("%f") || exec.contains("%F"));
+    }
+
     /**
      * The argv of a launcher's {@code Exec} line for {@code url} (Desktop Entry spec): quoted arguments, the
-     * {@code %u %U %f %F} field code replaced by the URL (appended when there is none), {@code %%} kept as
-     * {@code %}, the other field codes and Flatpak's {@code @@}/{@code @@u} markers dropped. Empty when the line
-     * cannot be parsed.
+     * {@code %u}/{@code %U} field code replaced by the URL (appended when there is none), {@code %%} kept as
+     * {@code %}, the other field codes — {@code %f}/{@code %F} too, which name local files, not URLs — and
+     * Flatpak's {@code @@}/{@code @@u} markers dropped. Empty when the line cannot be parsed.
      */
     static List<String> execArgv(String exec, String url) {
         List<String> tokens = tokenizeExec(unescapeValue(exec));
@@ -501,7 +569,7 @@ public final class Browsers {
             if (t.equals("@@") || t.equals("@@u") || t.equals("@@f")) {
                 continue;
             }
-            if (!placed && (t.equals("%u") || t.equals("%U") || t.equals("%f") || t.equals("%F"))) {
+            if (!placed && (t.equals("%u") || t.equals("%U"))) {
                 out.add(url);
                 placed = true;
                 continue;
@@ -513,7 +581,7 @@ public final class Browsers {
                     char code = t.charAt(++i);
                     if (code == '%') {
                         sb.append('%');
-                    } else if (!placed && (code == 'u' || code == 'U' || code == 'f' || code == 'F')) {
+                    } else if (!placed && (code == 'u' || code == 'U')) {
                         sb.append(url);
                         placed = true;
                     } // other codes (%i %c %k, deprecated ones) expand to nothing

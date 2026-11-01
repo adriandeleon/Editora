@@ -24,8 +24,12 @@ import static com.editora.i18n.Messages.tr;
  * missing.html") rather than "No definition found".
  *
  * <p>The HTML server's definition answers only for embedded JavaScript, so this is what runs when it found
- * nothing. Where the server runs, its document link at the caret is taken (it resolves a root-relative link
- * against the workspace folder); without one — or LSP off — the value is resolved against the page itself.
+ * nothing. The value is resolved against the page itself first, as a browser would: its {@code <base>}, the query
+ * dropped, percent-escapes decoded, a root-relative link from the project. Only when that names no file is the
+ * server's document link at the caret asked (it resolves a root-relative link against its own workspace folder,
+ * which for a loose page is the site's) — the server ignores {@code <base>}, keeps {@code ?v=3} in the file name and
+ * hands {@code C%23notes.html} back as {@code C} with a fragment (HTML review 2, B103). A folder without an
+ * {@code index.html} says so (B107).
  */
 final class HtmlLinkFollow {
 
@@ -71,14 +75,26 @@ final class HtmlLinkFollow {
         HtmlLinks.Target local = file == null
                 ? fragmentOrWeb(link.value())
                 : HtmlLinks.resolve(file, ops.lspProjectRoot(), link.value(), HtmlLinks.baseHref(text));
-        if (file != null && lsp.isManaged(file) && local.kind() == HtmlLinks.Kind.FILE) {
+        Path localFile = local.file();
+        if (file != null && localFile != null && lsp.isManaged(file) && local.kind() == HtmlLinks.Kind.FILE) {
             int line = a.getCurrentParagraph();
             int column = a.getCaretColumn();
-            lsp.documentLinkTarget(file, line, column, server -> {
-                if (host.activeBuffer() == b) {
-                    go(b, server != null ? server : local, link.value());
-                }
-            });
+            CompletableFuture.supplyAsync(() -> Files.exists(localFile), IO)
+                    .exceptionally(t -> false)
+                    .thenAccept(found -> Platform.runLater(() -> {
+                        if (host.activeBuffer() != b) {
+                            return;
+                        }
+                        if (found) {
+                            go(b, local, link.value());
+                            return;
+                        }
+                        lsp.documentLinkTarget(file, line, column, server -> {
+                            if (host.activeBuffer() == b) {
+                                go(b, server != null ? server : local, link.value());
+                            }
+                        });
+                    }));
         } else {
             go(b, local, link.value());
         }
@@ -112,14 +128,16 @@ final class HtmlLinkFollow {
     /** Opens {@code file} (a folder's {@code index.html}), at {@code fragment}'s element; checked off the FX thread. */
     private void openFile(EditorBuffer from, Path file, String fragment, String written) {
         CompletableFuture.supplyAsync(() -> look(file, fragment), IO)
-                .exceptionally(t -> new Looked(null, null))
+                .exceptionally(t -> new Looked(null, null, false))
                 .thenAccept(found -> Platform.runLater(() -> {
                     if (host.activeBuffer() != from) {
                         return; // the user moved on while the file was looked for
                     }
                     Path to = found.file();
                     if (to == null) {
-                        host.setStatus(tr("status.html.linkMissing", missingName(written)));
+                        host.setStatus(tr(
+                                found.folder() ? "status.html.linkNoIndex" : "status.html.linkMissing",
+                                missingName(written)));
                         return;
                     }
                     if (fragment.isEmpty()) {
@@ -132,16 +150,20 @@ final class HtmlLinkFollow {
                 }));
     }
 
-    /** What the I/O thread found: the file to open (null when missing) and, for a fragment, its text. */
-    private record Looked(@Nullable Path file, @Nullable String text) {}
+    /**
+     * What the I/O thread found: the file to open (null when missing), for a fragment its text, and whether the link
+     * named a folder (that has no index page when {@code file} is null).
+     */
+    private record Looked(@Nullable Path file, @Nullable String text, boolean folder) {}
 
     private static Looked look(Path file, String fragment) {
         Path to = file;
-        if (Files.isDirectory(to)) {
+        boolean folder = Files.isDirectory(to);
+        if (folder) {
             to = to.resolve("index.html"); // a link to a folder serves its index page
         }
         if (!Files.isRegularFile(to)) {
-            return new Looked(null, null);
+            return new Looked(null, null, folder);
         }
         String text = null;
         try {
@@ -151,7 +173,7 @@ final class HtmlLinkFollow {
         } catch (java.io.IOException | RuntimeException unreadable) {
             text = null; // opened at the top instead
         }
-        return new Looked(to, text);
+        return new Looked(to, text, folder);
     }
 
     /**

@@ -179,6 +179,63 @@ class HtmlLinksFxTest {
         }
     }
 
+    /**
+     * HTML review 2 B106: a page no server serves checks its "File not found" marks again when a file it links is
+     * created (the Project panel's event), without being edited.
+     */
+    @Test
+    void creatingTheMissingFileClearsItsMarkWithoutAnEdit(@TempDir Path dir) throws Exception {
+        Path index = site(dir);
+        try (WindowRig w = new WindowRig()) {
+            EditorBuffer b = w.open(index);
+            w.await("the page's marks", () -> marks(b).size() == 2);
+            Thread.sleep(1500); // every check the opening queued has run: what follows is the file event's
+            w.async.awaitFx();
+            FxTestSupport.runOnFx(() -> assertEquals(2, marks(b).size()));
+            Path created = Files.writeString(dir.resolve("missing.html"), "<p>here</p>\n");
+            Thread.sleep(1500);
+            w.async.awaitFx();
+            FxTestSupport.runOnFx(() -> assertEquals(2, marks(b).size(), "nothing re-checks without the event"));
+            FxTestSupport.runOnFx(() -> {
+                LspCoordinator lsp = w.field("lspCoordinator");
+                lsp.watchedFilesChanged(List.of(new ProjectPanel.FsChange(created, ProjectPanel.FsKind.CREATED)));
+            });
+            w.await("only the unclosed div is left", () -> marks(b).size() == 1);
+            FxTestSupport.runOnFx(() -> assertEquals(
+                    tr("html.check.unclosed", "div"),
+                    b.httpVariableDiagnostics().get(0).message()));
+        }
+    }
+
+    /**
+     * C110: with LSP support off (the default), a link that was followed leaves no "LSP support is disabled"; a caret
+     * on no link still says it. Format Document on a template file says there is no formatter, which is true with
+     * LSP on as well.
+     */
+    @Test
+    void withLspOffAFollowedLinkDoesNotSayLspIsOff(@TempDir Path dir) throws Exception {
+        Path index = site(dir);
+        Path jinja = Files.writeString(dir.resolve("base.jinja"), "<p>{{ title }}</p>\n");
+        try (WindowRig w = new WindowRig()) {
+            w.open(index);
+            String off = tr("statusbar.tip.lspDisabled");
+            caretIn(w, "#bottom");
+            w.run("lsp.gotoDefinition");
+            int bottom = (int)
+                    INDEX.lines().takeWhile(l -> !l.contains("id=\"bottom\"")).count();
+            w.await("the element with that id", () -> caretLineIs(w, bottom));
+            assertTrue(!off.equals(w.status()), "followed: " + w.status());
+
+            FxTestSupport.runOnFx(() -> w.active().getFocusedArea().moveTo(INDEX.indexOf("Team</a>") + 1));
+            w.run("lsp.gotoDefinition");
+            assertEquals(off, w.status(), "no link at the caret: LSP is off");
+
+            w.open(jinja);
+            w.run("lsp.formatDocument");
+            assertEquals(tr("status.lsp.formatUnavailable"), w.status());
+        }
+    }
+
     @Test
     void relatedFileFromAPageReachesItsLinkedStylesheet(@TempDir Path dir) throws Exception {
         Path index = site(dir);
@@ -212,6 +269,50 @@ class HtmlLinksFxTest {
             });
             FxTestSupport.runOnFx(() -> b.setColorSwatches(null));
             w.await("cleared", () -> swatches(b).isEmpty());
+        }
+    }
+
+    /**
+     * Typing before a colour moves its swatch with the text until the server answers again; it stayed at its column
+     * and landed inside the words typed (HTML review 2 C111/B108). The server's answer is stood in for by the cache.
+     */
+    @Test
+    void swatchesMoveWithTheTextTypedBeforeThem(@TempDir Path dir) throws Exception {
+        Path css = Files.writeString(dir.resolve("b.css"), "a { color: red; background: lime; }\nb { color: blue; }\n");
+        try (WindowRig w = new WindowRig()) {
+            EditorBuffer b = w.open(css);
+            LspCoordinator coordinator = w.field("lspCoordinator");
+            HtmlLspAids aids = coordinator.html;
+            FxTestSupport.runOnFx(() -> {
+                java.util.Map<EditorBuffer, List<ColorSwatch>> colors = FxTestSupport.field(aids, "colors");
+                colors.put(
+                        b,
+                        List.of(
+                                new ColorSwatch(0, 11, 1, 0, 0, 1),
+                                new ColorSwatch(0, 28, 0, 1, 0, 1),
+                                new ColorSwatch(1, 11, 0, 0, 1, 1)));
+                FxTestSupport.call(aids, "followScroll", new Class<?>[] {EditorBuffer.class}, b);
+                FxTestSupport.call(aids, "showColors", new Class<?>[] {EditorBuffer.class}, b);
+            });
+            w.await("the swatches laid out", () -> swatches(b).size() == 3);
+            FxTestSupport.runOnFx(() -> b.getArea().insertText(4, "border-top-color: navy; "));
+            FxTestSupport.runOnFx(() -> {
+                Object inlays = FxTestSupport.field(b, "swatchInlays");
+                java.util.Map<Integer, List<org.fxmisc.richtext.Inlay>> byLine = FxTestSupport.field(inlays, "byLine");
+                assertEquals(
+                        List.of(35, 52),
+                        byLine.get(0).stream()
+                                .map(org.fxmisc.richtext.Inlay::getColumn)
+                                .toList(),
+                        "still before `red` and `lime`");
+                assertEquals(11, byLine.get(1).getFirst().getColumn(), "the next line's stays");
+            });
+            FxTestSupport.runOnFx(() -> b.getArea().replaceText(0, 0, "x {}\n"));
+            FxTestSupport.runOnFx(() -> {
+                Object inlays = FxTestSupport.field(b, "swatchInlays");
+                java.util.Map<Integer, List<org.fxmisc.richtext.Inlay>> byLine = FxTestSupport.field(inlays, "byLine");
+                assertEquals(java.util.Set.of(1, 2), byLine.keySet(), "a line added above moves them down");
+            });
         }
     }
 

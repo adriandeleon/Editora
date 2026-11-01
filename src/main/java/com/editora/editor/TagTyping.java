@@ -33,8 +33,12 @@ import org.jspecify.annotations.Nullable;
  * start tag: {@code <item>t|</item>} plus {@code </itme>} gave {@code <itmeem>t</itme>em>}.
  *
  * <p>In an HTML start tag, an {@code =} typed right after an attribute name brings its quotes: {@code <a class=}
- * gives {@code <a class="|">} (VS Code's {@code html.autoCreateQuotes}; HTML review D10). A {@code "} typed straight
- * after is taken as that opening quote, so a habitual {@code class="x"} still gives {@code class="x"}.
+ * gives {@code <a class="|">} (VS Code's {@code html.autoCreateQuotes}; HTML review D10), of the kind Settings → LSP →
+ * HTML "Quotes for completed attributes" names — single quotes, or none at all (HTML review 2 C104/D101). The quote
+ * typed straight after is taken as that opening quote, so a habitual {@code class="x"} still gives {@code class="x"};
+ * the other quote replaces the pair ({@code class='x'} gives {@code class='x'}, not {@code class="'x'"}); and a space
+ * or {@code >} typed while the pair is still empty takes it back ({@code a= "x"}, {@code a=>}). Not inside a template
+ * tag ({@code {% … %}}, {@code {{ … }}}, {@code <% … %>}).
  *
  * <p>The join's edge keystrokes (XML/pom review 3, C22): Backspace while a join is pending takes back the last
  * character the user typed — {@code </} and the name so far, less one, go back as the user's own text before the
@@ -43,7 +47,7 @@ import org.jspecify.annotations.Nullable;
  * longer leaves {@code >>}); HTML names step over case-insensitively; and the pending join is dropped when the caret
  * moves, so typing after the caret comes back edits the closer as text.
  */
-final class TagTyping {
+public final class TagTyping {
 
     private static final Pattern CLOSER = Pattern.compile("</[A-Za-z_:][-A-Za-z0-9_.:]*>");
 
@@ -74,6 +78,17 @@ final class TagTyping {
 
     private int quoteAt = -1;
 
+    /** The quote the pending pair is made of. */
+    private char quoteChar = '"';
+
+    /** Settings → LSP → HTML "Quotes for completed attributes": {@code doublequotes}, {@code singlequotes}, {@code empty}. */
+    private static volatile String attributeQuotes = "doublequotes";
+
+    /** Sets the quotes an {@code =} typed after an HTML attribute name brings (an application-wide setting). */
+    public static void setAttributeQuotes(@Nullable String quotes) {
+        attributeQuotes = quotes == null ? "doublequotes" : quotes;
+    }
+
     /** Handles {@code c} typed at the caret of {@code a} in a {@code language} buffer; true when it did. */
     boolean typed(CodeArea a, char c, String language) {
         boolean html = HtmlElements.isHtmlLanguage(language); // templates too (HTML review C7)
@@ -82,10 +97,22 @@ final class TagTyping {
             return false;
         }
         int caret = a.getCaretPosition();
-        boolean quoted = a == quoteArea && caret == quoteAt;
+        boolean quoted = a == quoteArea
+                && caret == quoteAt
+                && caret < a.getLength()
+                && a.getText(caret - 1, caret + 1).equals("" + quoteChar + quoteChar);
         quoteArea = null;
-        if (quoted && c == '"') {
+        if (quoted && c == quoteChar) {
             return true; // the habitual `class="`: that quote is the one already there, and the caret is inside it
+        }
+        if (quoted && (c == '"' || c == '\'')) {
+            a.replaceText(caret - 1, caret + 1, "" + c + c); // `class='`: the user's own kind of quote
+            a.moveTo(caret);
+            return true;
+        }
+        if (quoted && (c == ' ' || c == '>')) {
+            a.deleteText(caret - 1, caret + 1); // `a= "x"`, `a=>`: no quotes wanted here
+            caret--;
         }
         String pending = rest;
         if (pending != null && caret == at && a == joinArea) {
@@ -196,13 +223,18 @@ final class TagTyping {
 
     /** An {@code =} typed after an attribute name in an HTML start tag: {@code =""}, the caret inside (D10). */
     private boolean autoQuote(CodeArea a, int caret) {
-        // The wider window: a page's script may be long, and `if (a <b) x =` there is code, not a tag.
-        String before = a.getText(Math.max(0, caret - HtmlCaretRegion.MAX_SCAN), caret);
+        String quotes = attributeQuotes;
+        if ("empty".equals(quotes)) {
+            return false; // "No quotes": the `=` alone
+        }
+        // Read back to the script or style the caret may be in: `if (a <b) x =` there is code, not a tag (E112).
+        String before = HtmlCaretRegion.before(a::getText, caret);
         String after = a.getText(caret, Math.min(a.getLength(), caret + 1));
         if (!HtmlCaretRegion.quotesAfterEquals(before, after)) {
             return false;
         }
-        a.replaceText(caret, caret, "=\"\"");
+        quoteChar = "singlequotes".equals(quotes) ? '\'' : '"';
+        a.replaceText(caret, caret, "=" + quoteChar + quoteChar);
         a.moveTo(caret + 2);
         quoteArea = a;
         quoteAt = caret + 2;

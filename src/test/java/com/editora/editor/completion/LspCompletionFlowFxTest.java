@@ -285,6 +285,56 @@ class LspCompletionFlowFxTest {
                 EditorFx.callFx(() -> completion(b).completionPopup().selected().label()));
     }
 
+    /**
+     * A real server answers the second step later, on its own thread. The accept's own automatic passes (the
+     * immediate one and the 90 ms settled-edit one) ran at the accepted version, found it suppressed and hid the
+     * list: it flashed when the answer beat the milestone and never came when it did not (HTML review B101/C114).
+     * Both orders: an answer before the milestone, and one after it.
+     */
+    @Test
+    void theSecondStepStaysOpenWhenTheServerAnswersAsynchronously() throws Exception {
+        for (long delay : new long[] {15, 180}) {
+            List<String> prefixes = new CopyOnWriteArrayList<>();
+            Completion color = Completion.lsp("color", "color: ", null)
+                    .withProtocol(
+                            new Completion.Protocol("color", null, List.of(), 0, Completion.Protocol.TRIGGER_SUGGEST));
+            EditorBuffer b = lspBuffer("a { colo", List.of(color));
+            EditorFx.onFx(() -> b.setLspCompletionProvider((position, answer) -> {
+                prefixes.add(b.getArea().getText());
+                var items = prefixes.size() == 1 ? List.of(color) : List.of(Completion.lsp("red", "red", null));
+                long wait = prefixes.size() == 1 ? 0 : delay;
+                Thread.ofVirtual().start(() -> {
+                    try {
+                        Thread.sleep(wait);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    javafx.application.Platform.runLater(() -> answer.accept(items));
+                });
+            }));
+            open(b);
+            EditorFx.onFx(() -> b.getArea().fireEvent(EditorFx.pressed(KeyCode.ENTER, false, false)));
+            await(
+                    "the list of values (" + delay + " ms)",
+                    () -> prefixes.size() == 2 && completion(b).completionPopupShowing());
+            Thread.sleep(400); // well past the 90 ms settled-edit milestone and the answer
+            EditorFx.drain();
+            assertTrue(
+                    EditorFx.callFx(() -> completion(b).completionPopupShowing()),
+                    "the values list is still showing (" + delay + " ms)");
+            assertEquals("a { color: ", EditorFx.callFx(() -> b.getArea().getText()));
+            assertEquals(
+                    "red",
+                    EditorFx.callFx(
+                            () -> completion(b).completionPopup().selected().label()));
+            // Escape closes it, and a later pass at the same version leaves it shut.
+            EditorFx.onFx(() -> b.getArea().fireEvent(EditorFx.pressed(KeyCode.ESCAPE, false, false)));
+            Thread.sleep(200);
+            EditorFx.drain();
+            assertFalse(EditorFx.callFx(() -> completion(b).completionPopupShowing()), "Escape closes it");
+        }
+    }
+
     @Test
     void typingAPrefixNoItemMatchesClosesTheList() throws Exception {
         EditorBuffer b = lspBuffer("out.pr", List.of(Completion.lsp("println", "println", "void println()")));

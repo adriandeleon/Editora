@@ -116,6 +116,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name (`zz_generated.openapi.go` read `zzgenerated.openapi.go`).
 - **Structure: Kubernetes' `core/v1/types.go` outline stopped at `NodeAddress`**; files past the card's 400,000-character
   display limit are now outlined whole.
+- **HTML templates (HTML review 2: templates).**
+  - The markup check no longer flags Django, Jinja, Jekyll, Hugo, Handlebars or ERB pages saved as `.html`, nor
+    header/footer partials in `templates/`, `_layouts/`, `partials/` and similar folders: their branches are not
+    checked for unclosed tags (links still are). A link to a file in `public/`, `static/` or `assets/` (Vite, Create
+    React App, Angular, Hugo), a `%PUBLIC_URL%` placeholder and a `.css` built from `.scss` are no longer "File not
+    found". `<a href=/about/>` no longer reads as self-closing, and `<image>` counts as `<img>`.
+  - Format without a language server refuses a page with template syntax ("Not formatted: this page uses template
+    syntax") instead of splitting `{# #}` comments and nesting `{% if %}` branches. On other pages it keeps
+    `<select>`, `<textarea>`, `<svg>`, `<video>`, custom elements and a comment inside a word on their line, and moves
+    a `<style>`'s or `<script>`'s code and end tag along with the start tag.
+  - Toggle Comment on a template line writes the engine's own comment, which stops the code: `{# #}` (Jinja, Twig,
+    Nunjucks, Django), `{% comment %}` (Liquid), `<%#` (ERB, EJS), `{{!-- --}}` (Handlebars, Mustache), `{{/* */}}`
+    (Hugo). On a PHP file's `<?php` line it comments the code after the opener, never the opener itself.
+  - Spell check skips `{{ … }}`, `{% … %}` and `<% … %>` in `title`/`alt` values and text, and tag names mentioned in
+    comments.
+- **HTML with the language server: links, Format Document and project settings.**
+  - Go to Definition on a link resolves it the way a browser does before asking the server, so `site.css?v=3`,
+    pages that use `<base href>` and file names with `%23` open their file instead of saying "File not found".
+  - A link to a folder that has no `index.html` says so instead of "File not found".
+  - "File not found" marks follow the disk: creating, deleting or renaming a linked file updates them without
+    editing the page.
+  - Format Document no longer adds a blank line before every `</style>`. The final newline is kept as the file
+    had it, or as EditorConfig's `insert_final_newline` says.
+  - Inline `<script>` code is formatted with VS Code's spacing: `function f() { return 1 }`.
+  - With LSP off, following a link no longer leaves "LSP support is disabled". Format Document in a template file
+    says there is no formatter.
+  - A project's `.editora/settings.json` takes VS Code's dotted keys (`"html.format.wrapAttributes"`). The keys
+    it ignores are named on the status bar. `html.autoClosingTags` there no longer overrides Editora's own
+    auto-close.
+- **HTML typing (HTML review 2).**
+  - Accepting a CSS property now really opens the list of its values, and a folder in `href`/`src` its files: the
+    second list no longer flashes and closes, or never opens, with the real language server.
+  - A typed `=` brings the quotes Settings → LSP → HTML "Quotes for completed attributes" names (double, single or
+    none). Typing your own `'` replaces the pair (`class='x'` no longer becomes `class="'x'"`), a space or `>`
+    typed straight after takes the empty pair back, and no quotes go into `{% %}`, `{{ }}` or `<% %>` in a tag or
+    into code in the middle of a long inline script.
+  - Enter between `<style>|</style>` or `<script>|</script>` puts the end tag on its own line again.
+  - Tab in an inline `<script>` or `<style>` re-indents by its braces, as Enter does; Tab on a line in `<pre>` or
+    `<textarea>` keeps its whitespace and is never sent to the language server.
+  - Colour swatches move with the text typed before them instead of landing inside the words.
+  - The documentation panel beside the completion list is tall enough for its text (up to its maximum) instead of
+    showing two or three lines.
+- **HTML, CSS, JSON and the other npm language servers (install and Node.js).** A project's `.nvmrc` or
+  `.node-version` no longer picks the Node.js these servers run on, so an old pinned Node.js can no longer
+  crash them; they use the Node.js chosen in Settings → Debugging → JavaScript, else the one on PATH
+  (TypeScript still follows the project). Install finds npm beside that Node.js and runs with it.
+  "Not responding" is no longer said while a server is still importing or reports work in progress. An HTML
+  server from an earlier `npm install -g`, whose `<script>` gets no DOM completion, is offered Update once per
+  window. In Doctor, a command field that holds the default text counts as the default (Update is offered),
+  Editora's own copy is shown by its program name, and the Node.js tips read right for several servers and
+  name the Settings choice.
+- **HTML Live Preview (review 2).** Encrypted files are never served: an encrypted page gets no globe, an
+  unlocked encrypted buffer's text never reaches the preview server, and `*.gpg`/`*.asc`/`*.pgp` names answer
+  404. Each previewed site now has its own origin (its own port and random address), so a page previewed later
+  cannot read another site's files or unsaved edits; certificate and password stores, Terraform state, databases,
+  `credentials*.json` and `secrets.*` are not served either. Opening a file of the site no longer reloads the
+  page — only an edit does. `href="/"` and folder links (`blog/`) open that folder's `index.html`. Big files are
+  streamed and at most four pages are built in memory at a time, so parallel requests cannot exhaust memory; a
+  large-file buffer is served from disk instead of being copied on every pause. A browser you picked that is no
+  longer installed is named in the status ("Brave wasn't found…") and stays your choice. On Linux only real web
+  browsers are offered (not every app that opens links). Typing in a stylesheet no longer re-downloads CDN
+  stylesheets. `/var/tmp`, `/dev/shm`, macOS `/tmp` and OneDrive's Desktop and Documents are refused as site
+  roots like Downloads, and a page in a hidden folder (`.github/`) loads its own assets. The HTML language server
+  and the preview now root a loose site at the same folder (the highest folder of a contiguous chain of
+  `index.html` pages, never Downloads or the home folder), even with a dotfiles `~/.git` or a stray
+  `~/package.json`.
 
 ## [0.26.0] - 2026-10-29
 

@@ -81,8 +81,7 @@ public final class SnippetTyping {
         if (!"html".equals(language) || caret <= 0) {
             return language;
         }
-        return HtmlCaretRegion.snippetLanguage(
-                language, a.getText(Math.max(0, caret - HtmlCaretRegion.MAX_SCAN), caret));
+        return HtmlCaretRegion.snippetLanguage(language, HtmlCaretRegion.before(a::getText, caret));
     }
 
     private static boolean inCommentOrString(CodeArea a, int offset) {

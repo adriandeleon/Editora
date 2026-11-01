@@ -18,6 +18,8 @@ import com.editora.lsp.LspManager;
 import com.editora.text.ColorSwatch;
 import org.jspecify.annotations.Nullable;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * The HTML review's link, check and colour aids, kept out of {@link LspCoordinator} (which owns one and calls it
  * from a line each):
@@ -56,6 +58,17 @@ final class HtmlLspAids {
      */
     private @Nullable Boolean markupChecksOn;
 
+    /** The project's ignored html keys last reported (A107): the same list is not said again on every apply. */
+    private List<String> reportedIgnored = List.of();
+
+    /** How long after the last file event the pages' links are checked again (B106). */
+    static final Duration LINK_RECHECK_DELAY = Duration.millis(300);
+
+    /** Checks the pages' links again once file events stop coming; built on first use. */
+    private @Nullable PauseTransition linkRecheck;
+
+    private static final java.util.logging.Logger LOG = java.util.logging.Logger.getLogger(HtmlLspAids.class.getName());
+
     HtmlLspAids(CoordinatorHost host, LspManager lsp, LspCoordinator.Ops ops) {
         this.host = host;
         this.lsp = lsp;
@@ -79,6 +92,62 @@ final class HtmlLspAids {
                             .exceptionally(t -> List.of())
                             .thenAccept(marks -> Platform.runLater(() -> done.accept(marks)));
                 }));
+    }
+
+    /**
+     * Hands the HTML servers their settings: the user's, with the project's {@code html} object ({@code projectHtml})
+     * for the project's own root (B2). What that object sets that the server does not take is said once, on the
+     * status bar and in the log, until the list changes (HTML review 2, A107, D102).
+     */
+    void applySettings(Map<String, Object> projectHtml) {
+        lsp.setHtmlSettings(host.settings(), projectHtml, ops.lspProjectRoot());
+        List<String> ignored = com.editora.lsp.HtmlServerSettings.of(host.settings())
+                .withProject(projectHtml)
+                .ignoredProjectKeys();
+        if (!ignored.equals(reportedIgnored)) {
+            reportedIgnored = ignored;
+            if (!ignored.isEmpty()) {
+                String keys = String.join(", ", ignored);
+                LOG.warning(() -> "ignored project html settings: " + keys);
+                host.setStatus(tr("status.html.projectKeysIgnored", keys));
+            }
+        }
+    }
+
+    /**
+     * Files were created, deleted or renamed (seen by a watcher, or done in Editora): every open page's "File not
+     * found" marks are checked again, a moment later so a burst (a checkout) is one check (B106). A page a server
+     * serves is pulled again (the markup check joins its answer); any other page re-runs its own check.
+     */
+    void filesChanged(List<LspManager.WatchedFile> changes) {
+        if (changes.stream().anyMatch(c -> c.kind() != LspManager.WatchedKind.CHANGED)) {
+            recheckLinksSoon(); // a file's content says nothing about which links resolve
+        }
+    }
+
+    /** As {@link #filesChanged}, for the Project panel's events, which come with LSP support off too. */
+    void panelChanged(@Nullable List<ProjectPanel.FsChange> changes) {
+        if (changes != null && changes.stream().anyMatch(c -> c != null && c.kind() != ProjectPanel.FsKind.CHANGED)) {
+            recheckLinksSoon();
+        }
+    }
+
+    private void recheckLinksSoon() {
+        if (linkRecheck == null) {
+            linkRecheck = new PauseTransition(LINK_RECHECK_DELAY);
+            linkRecheck.setOnFinished(e -> host.forEachBuffer(b -> {
+                Path path = b.getPath();
+                if (path == null || !HtmlLinks.isHtml(b.getLanguage()) || !HtmlMarkupLint.applies(path)) {
+                    return;
+                }
+                if (lsp.isManaged(path)) {
+                    lsp.pullDiagnostics(path);
+                } else {
+                    b.refreshHttpVariableLint(); // the markup check of a page no server serves
+                }
+            }));
+        }
+        linkRecheck.playFromStart();
     }
 
     /** A settings apply: when the markup check was switched, every page is checked again (or cleared). */
@@ -137,11 +206,29 @@ final class HtmlLspAids {
         return all.stream().filter(s -> s.line() >= first && s.line() <= last).toList();
     }
 
-    /** Re-bounds the swatches when scrolling settles (from the cached answer: documentColor has no range). */
+    /**
+     * Re-bounds the swatches when scrolling settles (from the cached answer: documentColor has no range), and moves
+     * them with each edit until the next answer: column-anchored, they stayed put and landed inside the words typed
+     * before them (HTML review 2 C111/B108).
+     */
     private void followScroll(EditorBuffer buffer) {
         if (followed.put(buffer, Boolean.TRUE) != null) {
             return;
         }
+        var area = buffer.getArea();
+        area.plainTextChanges().subscribe(change -> {
+            List<ColorSwatch> all = colors.get(buffer);
+            if (all == null || all.isEmpty()) {
+                return;
+            }
+            var at = area.offsetToPosition(change.getPosition(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+            List<ColorSwatch> moved =
+                    ColorSwatch.shifted(all, at.getMajor(), at.getMinor(), change.getRemoved(), change.getInserted());
+            if (moved != all) {
+                colors.put(buffer, moved);
+                showColors(buffer);
+            }
+        });
         PauseTransition settle = new PauseTransition(Duration.millis(150));
         settle.setOnFinished(e -> showColors(buffer));
         buffer.getArea().estimatedScrollYProperty().addListener((obs, was, now) -> {

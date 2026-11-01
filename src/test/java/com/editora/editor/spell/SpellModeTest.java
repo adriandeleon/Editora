@@ -146,6 +146,30 @@ class SpellModeTest {
         assertEquals(SpellMode.HTML, SpellMode.forLanguage("html-template"));
     }
 
+    /**
+     * Template expressions are not prose, in a {@code title} as much as in the text, and a tag named in a comment is
+     * not a word (HTML review 2 C113); a template comment's text still is.
+     */
+    @Test
+    void htmlProseBlanksTemplateExpressionsAndTagMentions() {
+        String button =
+                "<button title=\"{{ titel }} Clik\">{% trans 'Sendd' %} <%= usr %> Speling {# Commnet #}</button>";
+        String prose = SpellMode.HTML.prose(button);
+        assertEquals(button.length(), prose.length());
+        assertFalse(prose.contains("titel"), prose);
+        assertFalse(prose.contains("Sendd"), prose);
+        assertFalse(prose.contains("usr"), prose);
+        assertTrue(prose.contains(" Clik "), "the rest of the value is read: " + prose);
+        assertTrue(prose.contains(" Speling "), prose);
+        assertTrue(prose.contains("Commnet"), "a template comment is prose: " + prose);
+        String comment = "<!-- a <pre> mention and </div> too -->";
+        String cleaned = SpellMode.HTML.prose(comment);
+        assertFalse(cleaned.contains("pre"), cleaned);
+        assertFalse(cleaned.contains("div"), cleaned);
+        assertTrue(cleaned.contains(" mention "), cleaned);
+        assertEquals("plain words only", SpellMode.HTML.prose("plain words only"));
+    }
+
     @Test
     void typstInstructionLinesAreCodeLines() {
         String doc = "= Title\n" // 0
@@ -244,9 +268,11 @@ class SpellModeTest {
     @Test
     void onlyMarkdownIsMasked() {
         String line = "see [the text](https://example.com) <b>x</b>";
-        for (SpellMode mode : List.of(SpellMode.PROSE, SpellMode.HTML, SpellMode.TYPST, SpellMode.CODE)) {
+        for (SpellMode mode : List.of(SpellMode.PROSE, SpellMode.TYPST, SpellMode.CODE)) {
             assertEquals(line, mode.prose(line), mode.toString());
         }
+        // HTML blanks only its bare tags (a tag named in a comment, HTML review 2 C113): the rest is left as written.
+        assertEquals("see [the text](https://example.com)    x    ", SpellMode.HTML.prose(line));
         assertEquals("plain words", SpellMode.MARKDOWN.prose("plain words"));
     }
 }

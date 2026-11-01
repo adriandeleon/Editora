@@ -46,7 +46,9 @@ Each surface checks `buffer.encryption().isEncrypted()` (or, for a closed file, 
 `DebugCoordinator` persistence (no line text), `NotesCoordinator`, `LspCoordinator.syncBuffer` (unless
 `encryptionLanguageServers`), `AgentCoordinator`, `WindowMcpBridge`, `AiCoordinator`, `EditorBuffer.hasPreview`
 and `MarkdownPreview.setDiagrams`, `GitCoordinator`/`GitBlameCoordinator`, `SearchCoordinator.replaceClosedFile`,
-`EncodingCommands.reopen`, and `ExportCoordinator`/`ExternalToolCoordinator` through `confirmPlaintextOut`.
+`EncodingCommands.reopen`, `HtmlPreviewCoordinator` (no globe, no snapshot for the preview server, which also
+answers 404 for any `EncryptedNames` file: `LivePreviewServer.isHiddenOrSecret`), and
+`ExportCoordinator`/`ExternalToolCoordinator` through `confirmPlaintextOut`.
 Plugins can ask `ActiveEditor.isEncrypted()`. A new feature that copies buffer text anywhere must ask too.
 
 ## Tests

@@ -1,5 +1,6 @@
 package com.editora.lsp;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -948,5 +950,31 @@ class LspManagerTest {
         assertNull(LspManager.documentationOf(item));
         item.setDocumentation("**bare** string");
         assertEquals("**bare** string", LspManager.documentationOf(item), "a bare string is left as it came");
+    }
+
+    @Test
+    void projectNodeVersionFilePicksOnlyTsserversNode(@TempDir Path tmp) throws Exception {
+        // HTML review 2 A103: a project's .nvmrc pinning an old Node.js must not run Editora's own npm servers.
+        Path home = tmp.resolve("home");
+        Path oldBin = home.resolve(".nvm/versions/node/v12.22.12/bin");
+        java.nio.file.Files.createDirectories(oldBin);
+        java.nio.file.Files.writeString(oldBin.resolve("node"), "");
+        Path root = tmp.resolve("legacy");
+        java.nio.file.Files.createDirectories(root);
+        java.nio.file.Files.writeString(root.resolve(".nvmrc"), "12\n");
+        java.nio.file.Files.writeString(root.resolve("package.json"), "{}");
+        String saved = System.getProperty("user.home");
+        System.setProperty("user.home", home.toString());
+        try {
+            assertEquals(oldBin, LspManager.nodeBinDir(root, "", true), "tsserver keeps the project's Node.js");
+            assertNotEquals(oldBin, LspManager.nodeBinDir(root, "", false), "an npm server ignores the .nvmrc");
+            Path chosen = tmp.resolve("node24/bin");
+            assertEquals(
+                    chosen,
+                    LspManager.nodeBinDir(root, chosen.resolve("node").toString(), false),
+                    "the Settings Node.js runs Editora's npm servers");
+        } finally {
+            System.setProperty("user.home", saved);
+        }
     }
 }
