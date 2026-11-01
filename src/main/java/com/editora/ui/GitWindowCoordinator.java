@@ -1330,6 +1330,37 @@ final class GitWindowCoordinator {
         openGitLog(file);
     }
 
+    /**
+     * Project tree / Map folder Git ▸ Show Git History (Project Map review 3 E10): the repository's log searched for
+     * the commits that touch {@code folder} — a {@code path:} term, which the log's search box then shows and can
+     * clear. The repository's root is its whole log.
+     */
+    void gitFolderHistoryForPath(@Nullable Path folder) {
+        Path root = host.git().repoRoot();
+        if (folder == null || root == null) {
+            host.git().reportIfNoRepo();
+            return;
+        }
+        Path dir = folder.toAbsolutePath().normalize();
+        if (!dir.startsWith(root)) {
+            host.setStatus(tr("status.git.history.noFile"));
+            return;
+        }
+        String relative = root.relativize(dir).toString().replace('\\', '/');
+        gitLogFilter = null;
+        searchGitLog(folderHistoryQuery(relative));
+    }
+
+    /** The log search for a folder's history: {@code path:<folder>}, quoted when the path has a blank. Pure. */
+    static String folderHistoryQuery(String relative) {
+        if (relative.isEmpty()) {
+            return "";
+        }
+        return relative.chars().anyMatch(c -> c <= ' ')
+                ? "path:\"" + relative.replace("\"", "") + "\""
+                : "path:" + relative;
+    }
+
     /** The current text of {@code file}: the open buffer's live text when open, else the on-disk content. */
     String currentTextOf(Path file) {
         EditorBuffer open = host.openBufferFor(file);

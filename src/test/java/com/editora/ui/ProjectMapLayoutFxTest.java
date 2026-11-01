@@ -755,6 +755,7 @@ class ProjectMapLayoutFxTest {
                             tr("project.map.layout.compactChains"),
                             tr("project.map.filter.hideOpenNotes"),
                             tr("project.map.navigation.followActiveFile"),
+                            tr("project.map.revealActiveFile"), // review 3, E9
                             tr("project.map.openCards"), // the open cards' list (review 3, C10)
                             tr("project.map.print"),
                             tr("project.map.exportPdf")),
@@ -795,7 +796,7 @@ class ProjectMapLayoutFxTest {
             mapView.lookupAll(".project-map-zoom-control").stream()
                     .filter(Button.class::isInstance)
                     .forEach(node -> glyphButtons.add((ButtonBase) node));
-            assertEquals(8, glyphButtons.size(), "back, forward, help and five zoom buttons");
+            assertEquals(9, glyphButtons.size(), "back, forward, reveal active file, help and five zoom buttons");
             for (ButtonBase button : glyphButtons) {
                 assertTrue(
                         button.getAccessibleText() != null
@@ -822,8 +823,9 @@ class ProjectMapLayoutFxTest {
                     }
                 }
             }
-            // The intro, four headings (pointer, cards and notes, keyboard, filters) and 43 gesture rows.
-            assertEquals(1 + 4 + 43 * 2, text.size());
+            // The intro, four headings (pointer, cards and notes, keyboard, filters) and 44 gesture rows (the
+            // type-ahead's, review 3 B14).
+            assertEquals(1 + 4 + 44 * 2, text.size());
             assertTrue(text.contains(tr("project.map.help.chevron")));
             assertTrue(text.contains(tr("project.map.help.dragHeader.gesture")));
             assertTrue(text.contains(tr("project.map.help.escape")));

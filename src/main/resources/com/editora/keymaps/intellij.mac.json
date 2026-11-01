@@ -121,5 +121,7 @@
   "M-Cmd-f7": "lsp.findReferences",
   "Cmd-u": "lsp.gotoSuperMethod",
   "Cmd-S-subtract": "view.foldAll",
-  "Cmd-S-add": "view.unfoldAll"
+  "Cmd-S-add": "view.unfoldAll",
+  "Cmd-S-1": "project.toggleMapView",
+  "M-f1": "projectMap.revealActiveFile"
 }

@@ -258,6 +258,19 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         /** Add {@code file} (a directory gets a trailing {@code /}) to the repo-root {@code .gitignore}. */
         void gitAddToGitignore(Path file);
+
+        /** Find in Folder…: the Find in Files popup, its folder set to {@code folder} (Project Map review 3 E10). */
+        default void findInFolder(Path folder) {}
+
+        /** A folder's Git ▸ Show Git History: the log of the commits that touch it (Project Map review 3 E10). */
+        default void gitShowFolderHistory(Path folder) {}
+
+        /**
+         * Follows code from the Project Map (review 3 C12): opens {@code file} in the editor with the caret at the
+         * 0-based {@code line} and {@code column} — or, with a negative column, on {@code name} in that line — and
+         * runs the command {@code commandId} there (Go to Definition, Find Usages, …).
+         */
+        default void followCode(Path file, int line, int column, @Nullable String name, String commandId) {}
     }
 
     /** Bookmark/note state and actions shared by the classic tree and Canvas map. */
@@ -506,6 +519,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 },
                 entry -> deleteSelected(new MapRowItem(entry.path())));
         this.mapView.setEscapeActions(mapFilterField::clear, this::leaveMap);
+        this.mapView.setOnRevealActiveFile(this::revealActiveFileInMap); // the crosshair by the breadcrumb (E9)
         this.mapWindow = new ProjectMapWindow(buildMapWindowContent());
         this.mapWindow.setOnShowing(mapView::setShowing); // refreshes, polls and loads follow the window
         this.mapWindow.setOnHidden(this::mapWindowHidden);
@@ -759,7 +773,29 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * no file to reveal.
      */
     public void revealActiveFileInMap() {
-        Path file = activeFile;
+        revealFileInMap(activeFile, true);
+    }
+
+    /**
+     * Search Everywhere's Show in Map (Project Map review 3 E9): a file row's file, or a symbol row's, selected on
+     * the Map as the active file is by {@link #revealActiveFileInMap}. False for a row with no file.
+     */
+    public boolean showInMap(Object payload) {
+        Path file = payload instanceof Path path
+                ? path
+                : payload instanceof com.editora.index.SymbolIndex.Hit hit ? hit.file() : null;
+        if (file == null) {
+            return false;
+        }
+        revealFileInMap(file, false);
+        return true;
+    }
+
+    /**
+     * Opens (or raises) the Map window and selects {@code file} on it, re-rooting a pinned Map that lacks it;
+     * {@code active}: the file is the active tab's, which the status names when there is none to show.
+     */
+    private void revealFileInMap(@Nullable Path file, boolean active) {
         if (file != null
                 && root != null
                 && mapRoot != null
@@ -772,7 +808,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         if (file == null || mapRoot == null || !com.editora.config.PathKeys.isAtOrUnder(file, mapRoot)) {
-            onStatus.accept(tr("status.projectMap.noActiveFile"));
+            onStatus.accept(
+                    active || file == null
+                            ? tr("status.projectMap.noActiveFile")
+                            : tr("project.map.status.notInMap", com.editora.config.PathDisplay.fileName(file)));
             return;
         }
         mapView.revealPath(file);
@@ -2403,6 +2442,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     state.get().setProjectMapFocusNewColumn(focusColumn);
                     save.run();
                 });
+        // The exploration itself — folders, selection, places, zoom, cards — kept with the session (review 3 B6).
+        mapView.setRememberedPlace(
+                stored.getProjectMapState(), place -> state.get().setProjectMapState(place));
         mapView.setRememberedHideUnmatched(stored.isProjectMapHideUnmatched(), hide -> {
             state.get().setProjectMapHideUnmatched(hide);
             save.run();
@@ -2568,6 +2610,77 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Injects the per-file Local History + Git actions shown on a file cell's menu. */
     public void setFileActions(FileActions fileActions) {
         this.fileActions = fileActions;
+        mapView.setFollowCode(fileActions == null ? null : bearingsFollowCode(fileActions));
+    }
+
+    /**
+     * How the Map's cards and declaration rows follow the code (Project Map review 3 C12): into the editor, where
+     * the command runs at the place chosen — the editor window comes forward — and to related files on the Map.
+     */
+    private ProjectMapView.FollowCode bearingsFollowCode(FileActions actions) {
+        return new ProjectMapView.FollowCode() {
+            @Override
+            public void follow(Path file, int line, int column, @Nullable String name, String commandId) {
+                actions.followCode(file, line, column, name, commandId);
+                raiseEditorWindow();
+            }
+
+            @Override
+            public void relatedFiles(Path file, Consumer<List<Path>> found) {
+                bearingsRelatedFiles(file, found);
+            }
+
+            @Override
+            public void fileHistory(Path file) {
+                actions.gitShowFileHistory(file);
+                raiseEditorWindow();
+            }
+        };
+    }
+
+    /**
+     * The files that exist among {@code file}'s related tests or subjects ({@link com.editora.search.RelatedFiles}):
+     * its siblings first, then the Map's file list in the order the names are tried. Found on the search thread,
+     * handed back on the FX thread; nothing outside the Map's folder.
+     */
+    void bearingsRelatedFiles(Path file, Consumer<List<Path>> found) {
+        Path searchRoot = mapRoot;
+        Path name = file.getFileName();
+        List<String> names = name == null ? List.of() : com.editora.search.RelatedFiles.candidates(name.toString());
+        if (searchRoot == null || names.isEmpty()) {
+            found.accept(List.of());
+            return;
+        }
+        com.editora.search.ProjectFileList.Settings settings =
+                new com.editora.search.ProjectFileList.Settings(respectGitignore, showHidden);
+        submitUnlessDisposed(searchExecutor, () -> {
+            List<Path> out = new ArrayList<>();
+            Path dir = file.getParent();
+            for (String candidate : names) {
+                Path sibling = dir == null ? null : dir.resolve(candidate);
+                if (sibling != null && Files.isRegularFile(sibling)) {
+                    out.add(sibling);
+                }
+            }
+            com.editora.search.ProjectFileList list =
+                    com.editora.vfs.Vfs.isLocal(searchRoot) ? searchFileList(searchRoot, settings) : null;
+            List<Path> elsewhere = new ArrayList<>();
+            if (list != null) {
+                java.util.Set<String> wanted = java.util.Set.copyOf(names);
+                for (String relative : list.snapshot().files()) {
+                    String last = relative.substring(relative.lastIndexOf('/') + 1);
+                    Path candidate = searchRoot.resolve(relative).normalize();
+                    if (wanted.contains(last) && !out.contains(candidate) && !candidate.equals(file)) {
+                        elsewhere.add(candidate);
+                    }
+                }
+            }
+            elsewhere.sort(java.util.Comparator.comparingInt((Path p) -> names.indexOf(String.valueOf(p.getFileName())))
+                    .thenComparingInt(Path::getNameCount)
+                    .thenComparing(Path::toString));
+            out.addAll(elsewhere);
+            Platform.runLater(() -> found.accept(List.copyOf(out)));
+        });
     }
 
     /**
@@ -3935,6 +4048,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (fileOps != null && isDir && !simple) {
             Path dir = treeItem.getValue();
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+            // Exploring one folder (Project Map review 3 E10): search only inside it, and what changed here lately.
+            MenuItem findInFolder = new MenuItem(tr("project.menu.findInFolder"));
+            findInFolder.setGraphic(Icons.findInFiles());
+            findInFolder.setOnAction(e -> fileOps.findInFolder(dir));
+            menu.getItems().add(findInFolder);
             MenuItem folderHistory = new MenuItem(tr("project.menu.localHistory"));
             folderHistory.setGraphic(Icons.history());
             folderHistory.setOnAction(e -> fileOps.showLocalHistory(dir));
@@ -3960,6 +4078,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             MenuItem compareRevision = new MenuItem(tr("project.menu.git.compareRevision"));
             compareRevision.setGraphic(Icons.diff());
             compareRevision.setOnAction(e -> fileOps.gitCompareWithRevision(dir));
+            MenuItem folderGitHistory = new MenuItem(tr("project.menu.git.folderHistory"));
+            folderGitHistory.setGraphic(Icons.gitLog());
+            folderGitHistory.setOnAction(e -> fileOps.gitShowFolderHistory(dir));
             git.getItems()
                     .addAll(
                             stage,
@@ -3968,7 +4089,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                             compareHead,
                             compareBranch,
                             compareTag,
-                            compareRevision);
+                            compareRevision,
+                            folderGitHistory);
             menu.getItems().add(git);
 
             menu.setOnShowing(e -> {

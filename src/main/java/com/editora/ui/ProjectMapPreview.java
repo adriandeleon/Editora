@@ -90,8 +90,8 @@ final class ProjectMapPreview extends StackPane {
     private static final int MAX_PREVIEW_BYTES = 1_000_000;
     private static final int MAX_IMAGE_BYTES = 20_000_000;
     private static final int MAX_HIGHLIGHT_CHARS = 160_000;
-    private static final double DEFAULT_WIDTH = 640;
-    private static final double DEFAULT_HEIGHT = 420;
+    static final double DEFAULT_WIDTH = 640;
+    static final double DEFAULT_HEIGHT = 420;
     static final double MIN_WIDTH = 340;
     static final double MIN_HEIGHT = 220;
     static final double EDGE_MARGIN = 14;
@@ -216,6 +216,48 @@ final class ProjectMapPreview extends StackPane {
      * @param endLine the 0-based last line shown
      */
     record Range(String symbol, int line, int startLine, int endLine) {}
+
+    /**
+     * Following the code from a card (Project Map review 3 C12): Go to Definition, Find Usages and the rest open
+     * the card's file in the editor at a place of the card and run there; Related Test / Subject is revealed on the
+     * Map; File History is the file's Git log.
+     */
+    interface FollowActions {
+        /** Opens {@code file} at the 0-based {@code line} and {@code column} and runs {@code commandId} there. */
+        void follow(Path file, int line, int column, String commandId);
+
+        /** Reveals {@code file}'s related test or subject on the Map. */
+        void related(Path file);
+
+        /** Shows {@code file}'s Git history. */
+        void fileHistory(Path file);
+    }
+
+    /** The editor commands a card and a declaration row follow the code with, in their menus' order (C12). */
+    static final java.util.List<String> FOLLOW_COMMANDS = java.util.List.of(
+            "lsp.gotoDefinition",
+            "lsp.findReferences",
+            "lsp.gotoImplementation",
+            "lsp.typeHierarchy",
+            "lsp.callHierarchy");
+
+    /** The menu label of one of {@link #FOLLOW_COMMANDS}. */
+    static String followLabel(String commandId) {
+        return switch (commandId) {
+            case "lsp.gotoDefinition" -> tr("project.map.follow.gotoDefinition");
+            case "lsp.findReferences" -> tr("project.map.follow.findReferences");
+            case "lsp.gotoImplementation" -> tr("project.map.follow.gotoImplementation");
+            case "lsp.typeHierarchy" -> tr("project.map.follow.typeHierarchy");
+            case "lsp.callHierarchy" -> tr("project.map.follow.callHierarchy");
+            default -> commandId;
+        };
+    }
+
+    /** The Go To Related File command: typed in a card, it reveals the card's file's counterpart on the Map. */
+    static final String RELATED_COMMAND = "nav.relatedFile";
+
+    /** The file-history command: typed in a card, the card's file's Git history rather than the active tab's. */
+    static final String FILE_HISTORY_COMMAND = "git.fileHistory";
 
     interface MarkerActions {
         boolean personalNotesEnabled();
@@ -375,6 +417,7 @@ final class ProjectMapPreview extends StackPane {
     private @Nullable Stamp loadedStamp;
     private @Nullable PlacementResolver placementResolver;
     private @Nullable MarkerActions markerActions;
+    private @Nullable FollowActions followActions;
     private double preferredWidth = DEFAULT_WIDTH;
     private double preferredHeight = DEFAULT_HEIGHT;
     /** The map's zoom, applied from the card's top-left corner. */
@@ -626,6 +669,9 @@ final class ProjectMapPreview extends StackPane {
         if (STRUCTURE_COMMAND.equals(commandId)) {
             return focusStructure();
         }
+        if (followRunsCommand(commandId)) {
+            return true;
+        }
         if (!MARKER_COMMANDS.contains(commandId)) {
             return false;
         }
@@ -650,6 +696,35 @@ final class ProjectMapPreview extends StackPane {
             default -> setNotesShown(true); // notes.editNote: the notes stuck on the card are where they are edited
         }
         return true;
+    }
+
+    /**
+     * Go to Definition, Find Usages and the other code commands typed in the card — F12 and Shift+F12 in most
+     * keymaps — follow the code from the card's caret (review 3 C12) instead of acting on the active editor tab;
+     * Related File and File History act on the card's file. False for any other command, or with nothing to follow.
+     */
+    private boolean followRunsCommand(String commandId) {
+        FollowActions actions = followActions;
+        Path file = path;
+        boolean follows = FOLLOW_COMMANDS.contains(commandId)
+                || RELATED_COMMAND.equals(commandId)
+                || FILE_HISTORY_COMMAND.equals(commandId);
+        if (!follows || actions == null || file == null || disposed) {
+            return false;
+        }
+        if (RELATED_COMMAND.equals(commandId)) {
+            actions.related(file);
+        } else if (FILE_HISTORY_COMMAND.equals(commandId)) {
+            actions.fileHistory(file);
+        } else if (!symbolMissing && frame.getCenter() == textPane && editor.getLength() > 0) {
+            actions.follow(file, fileLine(editor.getCurrentParagraph()), editor.getCaretColumn(), commandId);
+        }
+        return true;
+    }
+
+    /** Where the card's follow actions go (review 3 C12); null leaves the code commands to the keymap. */
+    void setFollowActions(@Nullable FollowActions actions) {
+        followActions = actions;
     }
 
     /** The file's 0-based line for a line of the card's text (a declaration card starts at its first line). */
@@ -1547,6 +1622,9 @@ final class ProjectMapPreview extends StackPane {
      * bookmark or a line note on whatever line happened to be in the middle of the card.
      */
     private void showEditorContextMenu(ContextMenuEvent event) {
+        followAt = event.isKeyboardTrigger()
+                ? new int[] {editor.getCurrentParagraph(), editor.getCaretColumn()}
+                : clickPositionAt(event.getX(), event.getY());
         if (event.isKeyboardTrigger()) {
             rebuildEditorContextMenu(editor.getCurrentParagraph());
             javafx.geometry.Bounds caret = editor.getCaretBounds().orElse(null);
@@ -1586,6 +1664,11 @@ final class ProjectMapPreview extends StackPane {
             openNarrowed.setOnAction(ignored -> narrowed.run());
             items.add(0, openNarrowed);
             items.add(1, new SeparatorMenuItem());
+        }
+        java.util.List<MenuItem> follow = followMenuItems();
+        if (!follow.isEmpty()) {
+            items.add(new SeparatorMenuItem());
+            items.addAll(follow);
         }
         MarkerActions actions = markerActions;
         if (!empty && selected != null && actions != null) {
@@ -1647,6 +1730,47 @@ final class ProjectMapPreview extends StackPane {
         ClipboardContent content = new ClipboardContent();
         content.putString(text);
         Clipboard.getSystemClipboard().setContent(content);
+    }
+
+    /** The card line and column the menu's follow items act on: the caret's, or the right-click's. */
+    private int[] followAt = {0, 0};
+
+    /** {@code {line, column}} of the card's text under a point, else the caret's. */
+    private int[] clickPositionAt(double x, double y) {
+        try {
+            int offset = editor.hit(x, y).getInsertionIndex();
+            var position = editor.offsetToPosition(offset, TwoDimensional.Bias.Forward);
+            return new int[] {position.getMajor(), position.getMinor()};
+        } catch (RuntimeException ignored) {
+            return new int[] {editor.getCurrentParagraph(), editor.getCaretColumn()};
+        }
+    }
+
+    /** The card menu's follow-the-code items (review 3 C12), acting at {@link #followAt}; empty without actions. */
+    private java.util.List<MenuItem> followMenuItems() {
+        FollowActions actions = followActions;
+        Path file = path;
+        if (actions == null || file == null || missing) {
+            return java.util.List.of();
+        }
+        java.util.List<MenuItem> items = new java.util.ArrayList<>();
+        boolean text = !symbolMissing && frame.getCenter() == textPane && editor.getLength() > 0;
+        int line = fileLine(followAt[0]);
+        int column = followAt[1];
+        for (String commandId : FOLLOW_COMMANDS) {
+            MenuItem item = new MenuItem(followLabel(commandId));
+            item.setDisable(!text);
+            item.setOnAction(ignored -> actions.follow(file, line, column, commandId));
+            items.add(item);
+        }
+        items.add(new SeparatorMenuItem());
+        MenuItem related = new MenuItem(tr("project.map.follow.related"));
+        related.setOnAction(ignored -> actions.related(file));
+        MenuItem history = new MenuItem(tr("project.map.follow.fileHistory"), Icons.gitLog());
+        history.setOnAction(ignored -> actions.fileHistory(file));
+        items.add(related);
+        items.add(history);
+        return items;
     }
 
     private int clickLineAt(double x, double y) {
@@ -2687,7 +2811,19 @@ final class ProjectMapPreview extends StackPane {
         return Font.font(editorFont.getFamily(), editorFont.getSize() * contentZoom);
     }
 
-    private void setContentZoom(double requested) {
+    /** A card brought back where it was (B6): nothing moves or resizes it for the user, as after a drag. */
+    void keepRestoredGeometry() {
+        userMoved = true;
+        userSized = true;
+    }
+
+    /** The card's text zoom (−/+), 1.0 at the editor's font size: what the Map remembers of a card (B6). */
+    double contentZoom() {
+        return contentZoom;
+    }
+
+    /** Sets the card's text zoom, clamped to 0.5–3.0: a card brought back from the last session (B6). */
+    void setContentZoom(double requested) {
         contentZoom = clamp(requested, 0.5, 3.0);
         Font font = textFont();
         editor.setStyle("-fx-font-family: '" + font.getFamily().replace("'", "\\'") + "'; -fx-font-size: "

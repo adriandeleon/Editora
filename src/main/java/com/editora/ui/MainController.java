@@ -499,9 +499,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.closes = new CloseCoordinator(
                 stage, editorArea, pinned, MainController::bufferOf, fileWorkflows, this::persistSessionForClose);
         stage.setOnCloseRequest(e -> {
-            // Busy terminals first (closing ends them), then this window's dirty buffers + its session;
-            // cancel the close if the user backs out. (No separate "Quit?" prompt — each window closes
-            // independently now.)
+            // Busy terminals first (closing ends them), then this window's dirty buffers + its session; cancel the
+            // close if the user backs out. (No separate "Quit?" prompt — each window closes independently now.)
             if (!terminalCoordinator.confirmCloseWithBusyTerminals() || !closes.confirmCloseAll()) {
                 e.consume();
                 return;
@@ -721,14 +720,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.snippets = snippetCoordinator.manager();
         templateActions.templates = new com.editora.template.TemplateRegistry(config);
         this.completion = new com.editora.completion.CompletionEngine(snippets, config::getUserDictionary);
-        // Project commands (incl. the Project tool window) are hidden from the palette unless project
-        // support is enabled.
-        // Project + Git commands are hidden from the palette unless their feature is enabled.
-        // A command whose feature is off, or which has nothing to act on right now, is listed but grayed
-        // out and inert (see Chrome.paletteEnabled, which is pure + unit-tested). The gate/context snapshot
-        // is taken once per palette refresh — not once per command — because the predicate runs over the
-        // whole registry (several hundred commands) on every keystroke in the query field, and the context
-        // half reads the active buffer (whose hasPreview() sniffs buffer text).
+        // Project commands (incl. the Project tool window) are hidden from the palette unless project support is
+        // enabled. Project + Git commands are hidden from the palette unless their feature is enabled. A command whose
+        // feature is off, or which has nothing to act on right now, is listed but grayed out and inert (see
+        // Chrome.paletteEnabled, which is pure + unit-tested). The gate/context snapshot is taken once per palette
+        // refresh — not once per command — because the predicate runs over the whole registry (several hundred
+        // commands) on every keystroke in the query field, and the context half reads the active buffer (whose
+        // hasPreview() sniffs buffer text).
         this.palette = new CommandPalette(registry, keymap, () -> {
             Chrome.PaletteGates gates = paletteGates();
             Chrome.PaletteContext context = paletteContext();
@@ -1491,8 +1489,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setFsChangeSink(lspCoordinator::watchedFilesChanged);
         panel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         panel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
-        panel.setFileActions(new ProjectTreeFileActions(
-                git, gitWindows, diffCoordinator, historyCoordinator, fileWorkflows, this::localHistoryEnabled));
+        panel.setFileActions(ProjectTreeFileActions.of(this, this::localHistoryEnabled));
         panel.setMarkerActions(new ProjectTreeMarkerActions(bookmarkCoordinator, notesCoordinator));
         panel.setMapOpenActions(this::openAndNavigate, this::openNarrowedFromMap);
         panel.setMapServerSymbols(file -> structurePanel == null ? null : structurePanel.serverSymbolsFor(file));
@@ -1797,11 +1794,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                     config.getSettings().isSearchRespectGitignore()); // skip .gitignore'd files in the filter search
         }
         boolean on = projectsEnabled();
-        // Turning projects off just hides the project chrome — each window keeps editing its open files
-        // (windows no longer share one session that could be "stranded"). On the next launch with projects
-        // off, WindowManager opens a single global window.
-        // The project toolbar group is also hidden by Simple UI mode (it stays a project even though the
-        // selector is hidden); kept here so this later pass doesn't re-show it over applySimpleMode.
+        // Turning projects off just hides the project chrome — each window keeps editing its open files (windows no
+        // longer share one session that could be "stranded"). On the next launch with projects off, WindowManager opens
+        // a single global window. The project toolbar group is also hidden by Simple UI mode (it stays a project even
+        // though the selector is hidden); kept here so this later pass doesn't re-show it over applySimpleMode.
         boolean showProjectGroup = on && !chrome.simpleModeActive();
         openFolderButton.setVisible(showProjectGroup);
         openFolderButton.setManaged(showProjectGroup);
@@ -2377,12 +2373,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 if (c.wasRemoved() && !editorArea.isRelocating()) {
                     mru.removeAll(c.getRemoved());
                     pinned.removeAll(c.getRemoved());
-                    // Tear down each closed buffer. dispose() bumps the generation guards so any
-                    // in-flight preview/highlight/TODO task discards its result instead of touching a
-                    // dead buffer, and drops the preview subscription. It does NOT stop threads: the
-                    // preview/highlight executors are shared app-lifetime pools, not one pair per
-                    // buffer (measured: 4 highlighter threads with 24 files open). See
-                    // EditorBuffer.dispose.
+                    // Tear down each closed buffer. dispose() bumps the generation guards so any in-flight
+                    // preview/highlight/TODO task discards its result instead of touching a dead buffer, and drops the
+                    // preview subscription. It does NOT stop threads: the preview/highlight executors are shared
+                    // app-lifetime pools, not one pair per buffer (measured: 4 highlighter threads with 24 files open).
+                    // See EditorBuffer.dispose.
                     for (Tab removed : c.getRemoved()) {
                         EditorBuffer closed = bufferOf(removed);
                         if (closed != null) {
@@ -5943,6 +5938,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             } else {
                 setStatus(tr("status.searchEverywhere.noDocs"));
             }
+        }
+
+        @Override
+        public boolean showInMap(com.editora.search.SearchEverywhere.Item item) {
+            return projectsEnabled() && projectPanel().showInMap(item.payload()); // Map review 3 E9
         }
 
         @Override

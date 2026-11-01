@@ -8,10 +8,13 @@ share the active project root, filesystem watcher, file-opening callback, editor
 ordering, icons, and context menu actions; each has its own search field.
 
 The focus-traversable **Map** button beside the Project search field opens the window, or brings it
-forward when it is open already; the `project.toggleMapView` command (no default key) does the same from
+forward when it is open already; the `project.toggleMapView` command (Alt+Shift+1, ⌘⇧1 on macOS, `C-c o m` in Emacs) does the same from
 the palette — even with the Project tool window closed — and closes the window when it is the one in use.
-`projectMap.revealActiveFile` (Project Map: Reveal Active File, no default key) opens the window or brings it
-forward and selects the active editor file on it; a Map that opens with nothing but its root selected starts
+`projectMap.revealActiveFile` (Project Map: Reveal Active File; Alt+F1, `C-c o r` in Emacs; also the crosshair
+button after the breadcrumb and the ⋯ menu's **Reveal Active File**) opens the window or brings it
+forward and selects the active editor file on it; Search Everywhere's **Show in Map** key (Alt+Enter where the
+keymap leaves it free, else Shift+Enter or Alt+M; the picker's legend names it) does the same for the highlighted
+file row, or a symbol row's file (`ProjectPanel.showInMap`); a Map that opens with nothing but its root selected starts
 at the active file too, and the ⋯ menu's default-off **Always select opened file** selects every file the
 editor makes active while the window is open. With Project support off both commands say so in the status bar.
 The window is *not* owned by the editor window: an owned stage stays above its owner for good, so a file
@@ -97,7 +100,7 @@ right-to-left to left-to-right once (`ConfigMigrations.resetRightToLeftMapFlow`)
 | Click a file's Structure icon (just before the eye) | Open or close the file's structure column |
 | Click a declaration | Open or focus a floating preview of only its lines |
 | Click a declaration's chevron | Open or close the column of the declarations it holds |
-| Right-click a node | Select it and open its menu: the Map's own **Preview**, **Show Structure** / **Hide Structure**, **Personal Notes** (when the row has some) and **Close Column** (the column the row is in) first, then the same context menu as the Project tree, including first-line bookmark and Personal Note actions |
+| Right-click a node | Select it and open its menu: the Map's own **Preview**, **Show Structure** / **Hide Structure**, **Personal Notes** (when the row has some) and **Close Column** (the column the row is in) first, then the same context menu as the Project tree, including first-line bookmark and Personal Note actions; a file row also has **Related Test / Subject**, and a folder's has **Find in Folder…** (the Find in Files popup set to that folder) and Git ▸ **Show Git History** (the Git log searched for `path:<folder>`) |
 | Drag empty canvas space, or a row | Pan the map (from a row, once the pointer has moved 5 px, so a click stays a click) |
 | Middle-button drag | Pan the map, wherever the drag starts (including on a row) |
 | Mouse wheel | Zoom around the pointer position; scroll inertia does not zoom |
@@ -212,7 +215,15 @@ that it is read-only. Alt+arrows move a focused card, note card or sticky sheet 
 resize a card (`ProjectMapPreview.GEOMETRY_KEYS`, claimed through `KeyDispatcher.CLAIMED_KEYS`); the new place and
 size go in its accessible help. The Structure tool window's command (`tool.structure`: Alt+7 in the Emacs and
 IntelliJ keymaps) typed in a file card shows the card's own Structure column and puts the keyboard there; typed in
-the column it goes back to the card; the card menu's **Show / Hide this preview's Structure** does the same. Cards share two `project-map-preview-loader` threads that time out when idle, each
+the column it goes back to the card; the card menu's **Show / Hide this preview's Structure** does the same.
+A card follows the code (`ProjectMapPreview.FOLLOW_COMMANDS`): Go to Definition, Find Usages, Go to
+Implementation, Type Hierarchy and Call Hierarchy typed in a card (F12 / Shift+F12 in the CUA and VS Code keymaps)
+or picked from its menu open the card's file in the editor at the card's caret (the menu's: where it was
+right-clicked) and run the command there (`FileActions.followCode` → `FileWorkflowCoordinator.openThenRun`), and the
+editor window comes forward; Go to Related File typed in a card, and the menu's **Related Test / Subject**, reveal
+the file's test or subject on the Map (`search.RelatedFiles` names, looked up beside it and in the Map's file list;
+several are offered in a menu under the breadcrumb), and Show Git History typed in a card, or its menu's item, is
+the card's file's. A declaration row's menu has the same items at the declaration, with the caret on its name. Cards share two `project-map-preview-loader` threads that time out when idle, each
 card's reads still in order; a card created before its host has a size waits for the size, not on `runLater`.
 
 Context menus use JavaFX auto-hide plus a next-pulse owner-scene press filter. This mirrors the
@@ -335,7 +346,7 @@ outlined extension), so the first Structure column does not wait for it. When an
 its bookmark and note actions off. Text that arrives before the outline is not cut by the old lines: the card
 follows its declaration line when lines were added or removed above it, and otherwise holds the new text,
 still showing the old lines, until the outline says where the declaration went. No language server is started
-for a closed file and nothing about the columns is remembered across restarts.
+for a closed file; a declaration card the workspace brought back (below) waits for its file's outline.
 A file card whose file can be outlined has a **Structure** button in its title bar, before Notes. It sticks a
 **Structure column** beside the card (`ProjectMapCardStructure`): the same outline as the Map's Structure column,
 as an indented list in the same violet tint, with a lone top-level type opened. Each label is coloured as the
@@ -383,8 +394,9 @@ files match".
 | `Delete` | Delete the selected file through the Project tree's confirmed delete |
 | Menu key / `Shift-F10` | Open the selected node's context menu at its row (the root's, or a chain folder's, under its column's title), with the Map's Preview, Structure, Personal Notes and Close Column items |
 | `Backspace` | Select the parent (the row a compacted column hangs from; the root from the first column) |
-| `Home` | Select the first row of the first column |
-| `Alt-Left` / `Alt-Right` | Move backward or forward through map selection history |
+| `Home` / `End` | Select the first or last row of the selected row's column (`Shift-Home`: the first column's first row) |
+| Typing a name | Type-ahead in the column: the next row whose name starts with the typed letters; a 1 s pause starts again, and the same letter again steps to the next row with that initial |
+| `Alt-Left` / `Alt-Right` | Move backward or forward through the places visited; right-click either button for the list |
 | `/` | Focus and select the selected column's filter text |
 | Shortcut + `0` | Fit all visible columns |
 | `Escape` | Close the open preview and note cards; otherwise clear the Map's search query (the selection returns to where it was before the search, unless a row picked during it stays on the map); otherwise return focus to the editor (in the editor window) |
@@ -416,8 +428,12 @@ swallowed as an unbound `Alt` chord. The surface always consumes them; the dispa
 claimed `Alt` chord that comes back unconsumed, so none reaches the native menu. The shared Project
 search field claims `Ctrl-N` / `Ctrl-P` the same way.
 
-Selection history holds at most 100 entries. A run of sibling moves is one entry, so Back returns to
-where the run started rather than retracing each row. Closing a column moves the selection to that
+Back/Forward is a history of places, at most 100 (`HistoryHead`). A place is a file opened or previewed, a
+search landing, a reveal, a breadcrumb jump or a row picked with the pointer; it is never replaced. A run of
+keyboard steps — sibling moves, Left/Right/Backspace to a parent or child, Home/End, type-ahead — is one entry, the
+row it leads to, so Back returns to where the run started rather than retracing each row; a run that ends where
+it started folds away. The landings a query makes as it is typed are one entry too (its last); a match stepped to
+is a place. Back and Forward have a menu of the places ("name — folder", the current one ticked). Closing a column moves the selection to that
 column's folder only when the selection was inside the closed branch.
 
 The bottom-left zoom bar is icon buttons (each with a tooltip and accessible name) around the current
@@ -820,12 +836,19 @@ Changing roots clears expansion, selection history, per-column filters, position
 preview state. The view remembers the open branches, row limits and selection of the last eight local
 folders it showed, so in the window with no project — where a Map opened anew takes the active tab's
 folder — returning to a folder restores its map instead of starting from the root; zoom and column positions
-are not carried over. Workspace state persists whether the Map window is open (`projectViewMode`, schema
+are not carried over. Across restarts the workspace keeps the exploration of one local folder
+(`projectMapState`, schema v28, `config.ProjectMapState`): the folders opened by hand, the selection, the places of
+Back/Forward, the zoom and pan, and the open code cards (file or declaration, place, size, text zoom, Structure
+column out). It is written into the workspace state at most every 0.6 s while it changes, when the window
+hides and when the root changes, and saved with the window's session; the first show of that folder brings it
+back — places and cards that no longer exist are dropped, the zoom and pan replace the first view's fit, the cards
+open where they were once the map is laid out, and a declaration card when its file's outline is in. Workspace state persists whether the Map window is open (`projectViewMode`, schema
 v13 — "MAP" meant the Map was the panel's view before v24, and means its window is open since), the
 window's bounds (`projectMapWindowBounds`, v24) and maximized state (`projectMapWindowMaximized`, v27), the
 flow, and the two navigation options; v27 also adds `projectMapSingleClickOpens`,
-`projectMapCompactChains` and `projectMapFollowActiveFile` for three ⋯ options. Expansion, zoom
-and the status/type filters are not persisted.
+`projectMapCompactChains` and `projectMapFollowActiveFile` for three ⋯ options; v28 adds `projectMapState` (above)
+and `projectMapCompactRows`, `projectMapHideIgnored` and `projectMapOverviewSeen` for the review-3 ⋯ options. The
+status/type filters are not persisted.
 
 The Map recovers from every failure it meets (an empty listing, an unmarked row, no outline, a card left
 uncoloured). A failure that is not the disk's or a remote connection's is a bug, and `ProjectMapLog.unexpected`

@@ -174,6 +174,9 @@ final class MapCards {
     private boolean disposed;
 
     private ProjectMapPreview.@Nullable MarkerActions previewMarkerActions;
+    /** Where a card's Go to Definition, Find Usages and the rest go (Project Map review 3 C12). */
+    private ProjectMapPreview.@Nullable FollowActions followActions;
+
     private ProjectPanel.@Nullable MarkerActions notePreviewActions;
     /** The text zoom of the card last zoomed with −/+: new cards open at it. */
     private double cardTextZoom = 1.0;
@@ -220,6 +223,33 @@ final class MapCards {
     /** Opens (or brings up and focuses) the card of a declaration row: its lines of its file. */
     void openDeclarationCard(ProjectMapModel.Entry symbolRow) {
         previewSymbol(symbolRow);
+    }
+
+    /**
+     * Brings back a code card of the last session (Project Map review 3 B6): the card of {@code key} — a file, or a
+     * declaration whose file is outlined — where it was ({@code x, y} in the map area's pixels, {@code width ×
+     * height} unzoomed), at its text zoom and with its Structure column out if it was. Null when a declaration is
+     * not (or no longer) in its file's outline.
+     */
+    @Nullable
+    ProjectMapPreview restoreCard(
+            Path key, double x, double y, double width, double height, double textZoom, boolean structureShown) {
+        ProjectMapPreview.Placement placed = new ProjectMapPreview.Placement(x, y, width, height);
+        ProjectMapPreview card;
+        if (ProjectMapStructure.isSymbolPath(key)) {
+            ProjectMapStructure.Node node = structure.node(key);
+            card = node == null ? null : previewSymbol(symbolEntry(node), placed);
+        } else {
+            card = previewFile(key.toAbsolutePath().normalize(), key, placed);
+        }
+        if (card != null) {
+            card.setContentZoom(textZoom);
+            card.keepRestoredGeometry();
+            if (structureShown) {
+                card.setStructureShown(true);
+            }
+        }
+        return card;
     }
 
     /** Opens (or brings up) the note card of a file or folder, when it has Personal Notes and notes are on. */
@@ -338,6 +368,12 @@ final class MapCards {
     void setMarkerActions(ProjectMapPreview.@Nullable MarkerActions actions) {
         previewMarkerActions = actions;
         previews.values().forEach(preview -> preview.setMarkerActions(actions));
+    }
+
+    /** Where every card follows the code to: the editor, the Map's reveal and the Git log (review 3 C12). */
+    void setFollowActions(ProjectMapPreview.@Nullable FollowActions actions) {
+        followActions = actions;
+        previews.values().forEach(preview -> preview.setFollowActions(actions));
     }
 
     void setNoteActions(ProjectPanel.@Nullable MarkerActions actions) {
@@ -587,16 +623,24 @@ final class MapCards {
      * and shows the declaration's block with its doc comment, numbered as the file numbers it.
      */
     private void previewSymbol(ProjectMapModel.Entry entry) {
+        previewSymbol(entry, null);
+    }
+
+    /** {@link #previewSymbol(ProjectMapModel.Entry)}, placed by {@code placed} when given (a card brought back). */
+    private @Nullable ProjectMapPreview previewSymbol(
+            ProjectMapModel.Entry entry, ProjectMapPreview.@Nullable Placement placed) {
         ProjectMapModel.Symbol symbol = entry.symbol();
         if (symbol == null) {
-            return;
+            return null;
         }
         Path key = entry.path();
         ProjectMapPreview existing = previews.get(key);
         if (existing != null) {
             touchCard(existing, true);
-            existing.focusContent();
-            return;
+            if (placed == null) {
+                existing.focusContent();
+            }
+            return existing;
         }
         Path file = symbol.file();
         ProjectMapPreview preview = createPreview(key);
@@ -613,25 +657,35 @@ final class MapCards {
                 file,
                 rangeOf(symbol),
                 host.content(file),
-                (width, height, parentWidth, parentHeight) -> previewPlacement(
-                        preview,
-                        key,
-                        width,
-                        height,
-                        ProjectMapPreview.MIN_WIDTH,
-                        ProjectMapPreview.MIN_HEIGHT,
-                        parentWidth,
-                        parentHeight));
+                placed != null
+                        ? (width, height, parentWidth, parentHeight) -> placed
+                        : (width, height, parentWidth, parentHeight) -> previewPlacement(
+                                preview,
+                                key,
+                                width,
+                                height,
+                                ProjectMapPreview.MIN_WIDTH,
+                                ProjectMapPreview.MIN_HEIGHT,
+                                parentWidth,
+                                parentHeight));
         updateCardNotes(preview);
         scheduleCardRefresh();
+        return preview;
     }
 
     /** A file's card under its normalized path {@code selected}, showing {@code shown} (the row's own path). */
     private ProjectMapPreview previewFile(Path selected, Path shown) {
+        return previewFile(selected, shown, null);
+    }
+
+    /** {@link #previewFile(Path, Path)}, placed by {@code placed} when given (a card brought back, B6). */
+    private ProjectMapPreview previewFile(Path selected, Path shown, ProjectMapPreview.@Nullable Placement placed) {
         ProjectMapPreview preview = previews.get(selected);
         if (preview != null) {
             touchCard(preview, true);
-            preview.focusContent();
+            if (placed == null) {
+                preview.focusContent();
+            }
             return preview;
         }
         preview = createPreview(selected);
@@ -640,15 +694,17 @@ final class MapCards {
         preview.showFile(
                 shown,
                 host.content(shown),
-                (width, height, parentWidth, parentHeight) -> previewPlacement(
-                        selectedPreview,
-                        shown,
-                        width,
-                        height,
-                        ProjectMapPreview.MIN_WIDTH,
-                        ProjectMapPreview.MIN_HEIGHT,
-                        parentWidth,
-                        parentHeight));
+                placed != null
+                        ? (width, height, parentWidth, parentHeight) -> placed
+                        : (width, height, parentWidth, parentHeight) -> previewPlacement(
+                                selectedPreview,
+                                shown,
+                                width,
+                                height,
+                                ProjectMapPreview.MIN_WIDTH,
+                                ProjectMapPreview.MIN_HEIGHT,
+                                parentWidth,
+                                parentHeight));
         updateCardNotes(preview);
         scheduleCardRefresh(); // starts following the buffer when the card mirrors one
         return preview;
@@ -714,6 +770,7 @@ final class MapCards {
         preview.setInitialContentZoom(cardTextZoom); // the last −/+ zoom, so it need not be set on every card
         preview.setOnContentZoomed(zoom -> cardTextZoom = zoom);
         preview.setMarkerActions(previewMarkerActions);
+        preview.setFollowActions(followActions);
         preview.setOnClose(() -> closePreview(preview));
         preview.setOnActivate(() -> touchCard(preview, true));
         preview.setOnTouch(() -> touchCard(preview, false));
