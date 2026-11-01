@@ -63,7 +63,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spot; F12 and Shift+F12 work in a card), Related Test / Subject (revealed on the Map) and Show Git History. A
   folder's menu, in the tree and the Map, has **Find in Folder…** and Git ▸ **Show Git History**.
 
+- **Project Map: working sets and trails.**
+  - ⋯ → **Working sets** ▸ Save Current As… keeps the Map's view under a name: open folders, the selected row, zoom
+    and pan, and open cards with their Structure columns. Pick one to go back to it as a restart would, or delete it.
+    Sets are kept per workspace (workspace schema 28 → 29).
+  - **Trails** are guided tours of a project, kept in its `.editora/map-trails/` folder to commit with it. Add a stop
+    from a card (⋯ → Trails or the card's menu) with a note; **Play** steps through the stops with a bar, opening each
+    stop's card at its lines with the note beside it; **Edit** reorders, removes and renames stops. A damaged trail file
+    is listed and left alone.
+- **Project Map: where the work happens and who owns it.** ⋯ → **Show recent changes** tints files and folders by how
+  many commits touched them in the last 90 days, with a heat bar along each row; the tooltip gives the count and who
+  changed it last, and the Project overview lists the most changed folders. Tooltips and the overview name owners from
+  CODEOWNERS or Kubernetes-style OWNERS files. The history read is capped, and shallow clones say why they show no heat.
+- **Project Map: follow the code as cards.** A card's or a declaration's menu has **Show References as Cards** and
+  **Show Callers as Cards**: up to six places open as cards around it, joined by labelled edges ("calls",
+  "references"); a "+N more" chip lists the rest. The language server already running for the language answers for
+  files with no editor tab, without opening the editor; with none, the name is matched in the project's files and the
+  edges say "by name".
+- **Project Map: more from a card.** Find in a card (Ctrl+F, Cmd+F, C-s) with "k of N" and match case; pin a card so it
+  is never closed to make room; step a declaration card through its file's declarations (‹ ›, Alt+Page Up/Down) and
+  Show in Structure; the status line ends with the last change to the file or the declaration's lines, with Annotate in
+  the menu. Structure columns use the outline of a language server already running, even for files with no tab.
+- **Project Map: tidy and share the map.** ⋯ → **Collapse All**, and a row's **Close Other Branches**. ⋯ → **Export**
+  saves the view as a PNG at twice its size, or the whole map as an SVG with every name as text; the PDF export is now
+  searchable. **Reveal in Map** on editor tabs and in the Project tree's menus. Screen readers move through the rows on
+  screen as tree items.
+
 ### Changed
+
+- **Search Everywhere and the Project tree filter use the Project Map's file list.** One list of the project's files,
+  kept current as you work, and one ranking: the name as typed first, then the project's own source, then vendored
+  code, then tests. Deep and very large projects are searched completely (the tree filter no longer stops at 20,000
+  entries or 25 levels), and a path such as `core/v1/types.go` narrows a common name.
+- **Project Map: long folders and quieter chrome.** On a local project a long folder is listed whole (up to 50,000
+  entries), so a 5,000-file folder scrolls end to end with no "+N more"; remote folders keep "+N more". The flow
+  direction moved into ⋯ → Flow, and a column's lock shows only while you use that column. A file's Personal Notes badge
+  opens its card with the notes beside it (note cards remain for folders), and a card's lock reads "Preview — read
+  only; Open to edit".
 
 - **Project Map: search ranking.** The name in the case you typed comes first, then source before tests, fixtures,
   resources and docs, then project code before vendored code. A top-level `README.md`, `go.mod` or `Makefile` now
@@ -102,6 +138,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
 
 ### Fixed
+
+- **Project Map: a declaration card from the last session was dropped on restart** while its file's outline was still
+  loading; it now waits for the outline.
 
 - **Project Map: search said "No files match" for files that exist.** On a big repository the search stopped after
   20,000 entries, so deep files (Kubernetes' `staging/` modules) were never found and the notice went to the editor
