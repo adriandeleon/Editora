@@ -65,9 +65,14 @@ class GitErrorClosedWindowFxTest {
             throws Exception {
         try (AsyncTestScope async = new AsyncTestScope()) {
             GitFeatureFx w = GitFeatureFx.create(async);
-            Path repo = w.fx.useProject();
-            // In a JUnit TempDir: its cleanup clears the read-only flag git puts on objects (Windows refuses
-            // otherwise).
+            // Both repositories in a JUnit TempDir: its cleanup clears the read-only flag git puts on objects
+            // (the window fixture's own folder cleanup cannot delete them on Windows).
+            Path repo = Files.createDirectories(dir.resolve("project"));
+            FxTestSupport.runOnFx(() -> {
+                w.fx.shared.getSettings().setProjectSupport(true);
+                w.fx.controller.setWindowContext(
+                        w.fx.windowManager, new com.editora.config.Project("project", "project", repo.toString()));
+            });
             Path bare = dir.resolve("remote.git");
             git(dir, "init", "-q", "--bare", bare.toString());
             git(repo, "init", "-q", "-b", "main");
