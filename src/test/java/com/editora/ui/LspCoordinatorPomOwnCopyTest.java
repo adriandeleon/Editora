@@ -31,7 +31,7 @@ class LspCoordinatorPomOwnCopyTest {
                 "lemminx-maven-1.jar",
                 "guava-1.jar",
                 "commons-lang3-1.jar",
-                "jsoup-1.jar")) {
+                "jsoup-1.14.3.jar")) {
             Files.createFile(dir.resolve(jar));
         }
         String own = InstallCatalog.jvmClasspathCommand(dir, InstallCatalog.LEMMINX_MAIN_CLASS);

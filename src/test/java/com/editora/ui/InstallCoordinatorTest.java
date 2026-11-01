@@ -73,7 +73,11 @@ class InstallCoordinatorTest {
         java.nio.file.Path maven = java.nio.file.Files.createDirectories(
                 config.resolve(com.editora.install.InstallCatalog.LEMMINX_MAVEN_DIR));
         for (String artifact : com.editora.install.XmlServerInstall.PLAIN_LEMMINX_ARTIFACTS) {
-            java.nio.file.Files.writeString(maven.resolve(artifact + "-1.0.jar"), "");
+            java.nio.file.Files.writeString(
+                    maven.resolve(artifact + "-"
+                            + (artifact.equals("jsoup") ? com.editora.install.InstallCatalog.JSOUP_VERSION : "1.0")
+                            + ".jar"),
+                    "");
         }
         java.nio.file.Files.writeString(maven.resolve("lemminx-maven-0.12.0.jar"), "");
         String step = com.editora.install.InstallCatalog.LEMMINX_MAVEN_STEP;

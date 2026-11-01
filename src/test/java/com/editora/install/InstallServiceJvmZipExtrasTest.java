@@ -90,7 +90,7 @@ class InstallServiceJvmZipExtrasTest {
                 List.of(
                         "commons-lang3-3.21.0.jar",
                         "guava-33.7.2-jre.jar",
-                        "jsoup-1.23.2.jar",
+                        "jsoup-1.14.3.jar",
                         "lemminx-maven-0.12.0.jar",
                         "org.eclipse.lemminx-0.30.1.jar"),
                 installed());
@@ -139,7 +139,7 @@ class InstallServiceJvmZipExtrasTest {
         InstallService.Result result = install();
 
         assertFalse(result.ok());
-        assertTrue(result.message().contains("jsoup-1.23.2.jar"), result.message());
+        assertTrue(result.message().contains("jsoup-1.14.3.jar"), result.message());
         assertTrue(result.message().contains("checksum"), result.message());
         assertFalse(Files.exists(dest()), "nothing of a refused install is left behind");
     }

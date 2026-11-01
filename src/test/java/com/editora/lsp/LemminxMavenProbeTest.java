@@ -50,7 +50,7 @@ class LemminxMavenProbeTest {
                 <dependency>
                   <groupId>org.jsoup</groupId>
                   <artifactId>jsoup</artifactId>
-                  <version>1.23.2</version>
+                  <version>1.14.3</version>
                 </dependency>
               </dependencies>
             </project>
@@ -103,7 +103,8 @@ class LemminxMavenProbeTest {
         Path bare = Files.createDirectories(work.resolve("bare"));
         copyJars(installed(), bare, name -> !extra(name));
         assertEquals(
-                List.of("guava-*.jar", "commons-lang3-*.jar", "jsoup-*.jar"), MavenServerInstall.missingJars(bare));
+                List.of("guava-*.jar", "commons-lang3-*.jar", "jsoup-1.14.*.jar"),
+                MavenServerInstall.missingJars(bare));
         assertFalse(LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, argv(bare)), "detection: incomplete");
         Optional<String> bareVerdict = JvmLspSmoke.hoverCheck(argv(bare), Duration.ofSeconds(90));
         record("smoke.bare", bareVerdict.orElse("passed"));

@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **pom.xml hover works on the Maven server.** Hovering an element the POM schema documents (and any XSD-backed
+  element on the Java XML fallback) failed inside the server with `NoClassDefFoundError: org/jsoup/safety/Whitelist`:
+  the bundle's remark library needs jsoup 1.14, and Editora installed 1.23.2. The pom.xml server now installs jsoup
+  1.14.3, pinned by version and SHA-256; an install made with the newer jsoup reads as incomplete, and Install…
+  repairs it.
+
 - **XML and HTML: Emacs word kills on a tag name keep the caret in that tag.** M-DEL or M-d in a closing tag left
   the caret where it was before auto-rename shortened the start tag, so the next word renamed the following element,
   and at the end of the file the next key threw.

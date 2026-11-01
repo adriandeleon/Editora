@@ -134,7 +134,10 @@ class XmlServerInstallTest {
     /** A pom server bundle as the install leaves it: lemminx's own jars, lemminx-maven and the Maven libraries. */
     private static void fillBundle(Path maven) throws IOException {
         for (String artifact : XmlServerInstall.PLAIN_LEMMINX_ARTIFACTS) {
-            Files.writeString(maven.resolve(artifact + "-2.0.1.jar"), "");
+            Files.writeString(
+                    maven.resolve(artifact + "-" + (artifact.equals("jsoup") ? InstallCatalog.JSOUP_VERSION : "2.0.1")
+                            + ".jar"),
+                    "");
         }
         for (String jar :
                 List.of("lemminx-maven-0.12.0.jar", "maven-core-3.9.9.jar", "org.eclipse.sisu.plexus-0.9.0.M3.jar")) {

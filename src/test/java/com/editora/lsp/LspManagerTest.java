@@ -850,7 +850,7 @@ class LspManagerTest {
             java.nio.file.Files.writeString(maven.resolve(name), "");
         }
         assertFalse(LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, argv), "jsoup still missing");
-        java.nio.file.Files.writeString(maven.resolve("jsoup-1.23.2.jar"), "");
+        java.nio.file.Files.writeString(maven.resolve("jsoup-1.14.3.jar"), "");
         assertTrue(LspManager.available(LspServerRegistry.MAVEN_POM_SERVER_ID, argv));
 
         java.util.List<String> script = java.util.List.of(javaExe.toString());

@@ -844,7 +844,7 @@ class DoctorCatalogFxTest {
         DoctorCheck incomplete = spec(specs(host, ops), "lsp.maven-pom").probe().get();
         assertEquals(DoctorStatus.MISSING, incomplete.status());
         assertEquals("doctor.tip.mavenIncomplete", incomplete.tipKey());
-        assertEquals(List.of("guava-*.jar, commons-lang3-*.jar, jsoup-*.jar"), incomplete.tipArgs());
+        assertEquals(List.of("guava-*.jar, commons-lang3-*.jar, jsoup-1.14.*.jar"), incomplete.tipArgs());
         assertEquals(DoctorCheck.Install.SERVER, incomplete.install(), "Install… repairs it");
 
         for (var jar : InstallCatalog.LEMMINX_MAVEN_EXTRA_JARS) {
@@ -905,7 +905,9 @@ class DoctorCatalogFxTest {
         Path maven = Files.createDirectories(host.config.resolve(com.editora.install.InstallCatalog.LEMMINX_MAVEN_DIR));
         List<String> jars = new java.util.ArrayList<>();
         for (String artifact : com.editora.install.XmlServerInstall.PLAIN_LEMMINX_ARTIFACTS) {
-            String version = artifact.equals("org.eclipse.lemminx") ? "0.30.1" : "1.0";
+            String version = artifact.equals("org.eclipse.lemminx")
+                    ? "0.30.1"
+                    : artifact.equals("jsoup") ? com.editora.install.InstallCatalog.JSOUP_VERSION : "1.0";
             jars.add(Files.writeString(maven.resolve(artifact + "-" + version + ".jar"), "")
                     .toString());
         }
