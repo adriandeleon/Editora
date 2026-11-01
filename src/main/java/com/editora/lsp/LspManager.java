@@ -669,6 +669,31 @@ public final class LspManager {
     }
 
     /**
+     * {@code edits}, the HTML server's format of {@code sent}, with the final newline Editora keeps itself (HTML
+     * review 2, B104); any other server's as they are. {@code whole}: a Format Document, not a selection's.
+     */
+    private static List<com.editora.text.LspTextEdit> keptFinalNewline(
+            LanguageServerSession s,
+            FormattingIndent indent,
+            @Nullable String sent,
+            List<com.editora.text.LspTextEdit> edits,
+            boolean whole) {
+        Boolean want = HtmlServerSettings.SERVER_ID.equals(s.serverId())
+                ? s.htmlSettings().finalNewline(indent)
+                : null;
+        return want == null || sent == null
+                ? edits
+                : com.editora.text.LspTextEdits.withFinalNewline(sent, edits, want, whole);
+    }
+
+    /** The text an HTML server holds for {@code file}, what its format edits are against; null for other servers. */
+    private static @Nullable String htmlText(LanguageServerSession s, Path file) {
+        return HtmlServerSettings.SERVER_ID.equals(s.serverId())
+                ? s.documentSnapshots().get(uri(file))
+                : null;
+    }
+
+    /**
      * Sets bash-language-server's {@code bashIde} configuration: answered when a Bash server asks for it, and
      * pushed to the running ones when it changed (they re-read it and re-lint).
      */
@@ -4011,6 +4036,7 @@ public final class LspManager {
         }
         org.eclipse.lsp4j.Range range =
                 new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
+        String sent = htmlText(s, file);
         s.rangeFormatting(uri(file), range, formattingOptions(s, indent)).whenComplete((result, error) -> {
             noteFormatOutcome(file, error);
             List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
@@ -4026,7 +4052,8 @@ public final class LspManager {
                     }
                 }
             }
-            Platform.runLater(() -> cb.accept(edits));
+            List<com.editora.text.LspTextEdit> kept = keptFinalNewline(s, indent, sent, edits, false);
+            Platform.runLater(() -> cb.accept(kept));
         });
     }
 
@@ -4068,6 +4095,7 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
+        String sent = htmlText(s, file);
         s.formatting(uri(file), formattingOptions(s, indent)).whenComplete((result, error) -> {
             noteFormatOutcome(file, error);
             List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
@@ -4083,7 +4111,8 @@ public final class LspManager {
                     }
                 }
             }
-            Platform.runLater(() -> cb.accept(edits));
+            List<com.editora.text.LspTextEdit> kept = keptFinalNewline(s, indent, sent, edits, true);
+            Platform.runLater(() -> cb.accept(kept));
         });
     }
 
