@@ -339,6 +339,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final PauseTransition mapFilterDebounce = new PauseTransition(Duration.millis(150));
     /** Bumped by every Map search and by the Map window closing, so a stale result has nowhere to land. */
     private final AtomicLong mapSearchGen = new AtomicLong();
+    /**
+     * The names of the Map root's files and folders, for the Map search; listed on its first search (search
+     * thread), replaced when the root or the settings that shape it change, kept current from the watcher.
+     */
+    private volatile com.editora.search.@Nullable ProjectFileList mapFiles;
+    /** Where {@code @name} queries look declarations up (the symbol index and the language servers). */
+    private ProjectMapSymbolSearch.@Nullable Source mapSymbols;
+    /** The open editor files: a language server that runs for one of them answers {@code @name} queries. */
+    private java.util.function.Supplier<java.util.Collection<Path>> mapOpenFiles = List::of;
     /** The window the Map always opens in; built on the first open. */
     private final ProjectMapWindow mapWindow;
     /** The editor window this panel belongs to, for when the panel itself is not on screen. */
@@ -821,7 +830,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         syncWatches(); // the Map's open folders need no watching now; its cards keep their place
     }
 
-    /** Runs the Map window's search: the whole project, off the FX thread, as the tree's filter does. */
+    /**
+     * Runs the Map window's search. Files and folders are matched in memory against the project's file list
+     * ({@link com.editora.search.ProjectFileList}), built off the FX thread on the first search and kept current
+     * from the watcher, so a search covers the whole project and a keystroke costs a scan, not a walk (Project
+     * Map review 3 A1, A3). An {@code @name} query looks declarations up instead ({@link #searchMapSymbols}).
+     */
     private void searchMap() {
         long gen = mapSearchGen.incrementAndGet(); // invalidate any in-flight Map search
         String q = mapFilterField.getText().trim();
@@ -831,28 +845,144 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (q.isEmpty() || searchRoot == null || !isMapShowing()) {
             return;
         }
-        boolean includeHidden = showHidden;
-        boolean useGitignore = respectGitignore && com.editora.vfs.Vfs.isLocal(searchRoot);
-        if (q.codePointCount(0, q.length()) < MIN_MAP_SEARCH_LENGTH) {
-            // One character matches most of a project: walking it, opening the folders of 300 matches and
-            // drawing them stalled every window for a third of a second on a mid-size repository. It filters
-            // the rows already on the map instead, and the status says how to search the whole project.
+        ProjectMapSearch.Query parsed = ProjectMapSearch.Query.parse(q);
+        String text = parsed.text();
+        if (text.codePointCount(0, text.length()) < MIN_MAP_SEARCH_LENGTH) {
+            // One character matches most of a project: opening the folders of 300 matches and drawing them
+            // stalled every window for a third of a second on a mid-size repository. It filters the rows already
+            // on the map instead, and the status says how to search the whole project.
             mapView.setSearchMatches(q, List.of(), 0, false);
             onStatus.accept(tr("project.map.status.searchTooShort", MIN_MAP_SEARCH_LENGTH));
             return;
         }
+        if (parsed.symbols()) {
+            searchMapSymbols(gen, q, text, searchRoot);
+            return;
+        }
+        com.editora.search.ProjectFileList.Settings settings =
+                new com.editora.search.ProjectFileList.Settings(respectGitignore, showHidden);
+        java.util.function.BooleanSupplier superseded = () -> gen != mapSearchGen.get();
         submitUnlessDisposed(searchExecutor, () -> {
-            com.editora.search.GitignoreFilter gitignore = useGitignore
-                    ? com.editora.search.GitignoreFilter.load(searchRoot)
-                    : com.editora.search.GitignoreFilter.NONE;
-            SearchResult found = searchRanked(searchRoot, q, includeHidden, gitignore, () -> gen != mapSearchGen.get());
+            if (superseded.getAsBoolean()) {
+                return; // a newer keystroke is queued behind this one: its answer is the one to show
+            }
+            com.editora.search.ProjectFileList list = searchFileList(searchRoot, settings);
+            if (list == null) {
+                return;
+            }
+            ProjectMapSearchResult found =
+                    ProjectMapSearch.search(searchRoot, list.snapshot(), q, ProjectMapSearch.MAX_MATCHES, superseded);
+            if (found == null) {
+                return;
+            }
             Platform.runLater(() -> {
                 if (gen != mapSearchGen.get() || !isMapShowing()) {
                     return;
                 }
-                mapView.setSearchMatches(q, found.matches(), found.total(), found.partial());
+                mapView.setSearchMatches(found);
             });
+            if (list.stale()) {
+                searchRefreshFileList(list); // answered from the list as it was; list again and answer again
+            }
         });
+    }
+
+    /**
+     * The Map's file list for {@code root}, listed now on this (search) thread when there is none for it yet or
+     * the settings that shape it changed. Null when the panel went away meanwhile.
+     */
+    private com.editora.search.@Nullable ProjectFileList searchFileList(
+            Path root, com.editora.search.ProjectFileList.Settings settings) {
+        com.editora.search.ProjectFileList list = mapFiles;
+        if (list != null && list.isFor(root, settings)) {
+            return list;
+        }
+        list = com.editora.search.ProjectFileList.build(root, settings, () -> disposed);
+        if (list != null) {
+            mapFiles = list;
+        }
+        return list;
+    }
+
+    /** Lists the project again after {@code stale} was marked out of date, and re-runs a search it changes. */
+    private void searchRefreshFileList(com.editora.search.ProjectFileList stale) {
+        com.editora.search.ProjectFileList fresh =
+                com.editora.search.ProjectFileList.build(stale.root(), stale.settings(), () -> disposed);
+        if (fresh == null || mapFiles != stale) {
+            return; // gone, or replaced by a list for another root or other settings
+        }
+        mapFiles = fresh;
+        if (!fresh.snapshot().equals(stale.snapshot())) {
+            Platform.runLater(this::searchMapAgain);
+        }
+    }
+
+    /**
+     * Keeps the Map's file list current: each path an in-app operation or a watch event touched is looked at
+     * again, on the search thread (it touches the disk). Any thread.
+     */
+    private void searchFilesChanged(java.util.Collection<Path> paths) {
+        com.editora.search.ProjectFileList list = mapFiles;
+        if (list == null || paths.isEmpty()) {
+            return;
+        }
+        List<Path> copy = List.copyOf(paths);
+        submitUnlessDisposed(searchExecutor, () -> list.changed(copy));
+    }
+
+    /** The watcher's view of a batch: what came or went (a rewritten file changes no name). */
+    private void searchFilesChanged(List<FsChange> batch, boolean overflow) {
+        com.editora.search.ProjectFileList list = mapFiles;
+        if (list == null) {
+            return;
+        }
+        if (overflow) {
+            list.markStale(); // events were lost: only a new listing knows what changed
+        }
+        List<Path> touched = new ArrayList<>();
+        for (FsChange change : batch) {
+            if (change.kind() != FsKind.CHANGED) {
+                touched.add(change.path());
+            }
+        }
+        searchFilesChanged(touched);
+    }
+
+    /**
+     * An {@code @name} query: declarations from the symbol index and the language servers (Project Map review 3
+     * E2). The index is built on the first such query; the status says so meanwhile.
+     */
+    private void searchMapSymbols(long gen, String q, String text, Path root) {
+        ProjectMapSymbolSearch.Source source = mapSymbols;
+        if (source == null) {
+            mapView.setSearchMatches(new ProjectMapSearchResult(q, List.of(), 0, false));
+            return;
+        }
+        source.find(
+                root,
+                text,
+                mapOpenFiles.get(),
+                (matches, done) -> {
+                    if (gen != mapSearchGen.get() || !isMapShowing()) {
+                        return;
+                    }
+                    mapView.setSearchMatches(new ProjectMapSearchResult(q, matches, matches.size(), false));
+                },
+                message -> {
+                    if (gen == mapSearchGen.get()) {
+                        onStatus.accept(message);
+                    }
+                });
+    }
+
+    /** Where the Map's {@code @name} queries look declarations up; without one they find none. */
+    void setMapSymbolSearch(ProjectMapSymbolSearch.@Nullable Source source) {
+        mapSymbols = source;
+    }
+
+    /** The Map search's file list as it is now (tests); null before the first search. */
+    com.editora.search.@Nullable ProjectFileList mapFileListForTest() {
+        return mapFiles;
     }
 
     /** Re-runs a Map search on show, after a setting changed what it finds. */
@@ -957,6 +1087,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Open editor files, so the Map's Open / Modified chips can mark the collapsed folders that hold them. */
     public void setOpenFiles(java.util.function.Supplier<java.util.Collection<Path>> openFiles) {
         mapView.setOpenFiles(openFiles);
+        mapOpenFiles = openFiles == null ? List::of : openFiles;
     }
 
     /** Re-renders the visible tree cells so each file's modified marker/color reflects current state. */
@@ -1117,6 +1248,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      */
     public void refreshTree() {
         treeRefreshCountForTest++;
+        com.editora.search.ProjectFileList files = mapFiles;
+        if (files != null) {
+            files.markStale(); // what changed in folders nobody watches: the next Map search lists again
+        }
         GitPathScope.learnRemote(root, false); // a repository made or removed there since (at most once a minute)
         if (isMapShowing()) {
             mapView.refresh();
@@ -1154,6 +1289,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * produces are not taken for an external change. FX thread.
      */
     public void noteLocalWrite(Path file) {
+        if (file != null) {
+            searchFilesChanged(List.of(file)); // a first save adds a name to the Map search's file list
+        }
         if (file == null || watchService == null || !com.editora.vfs.Vfs.isLocal(file)) {
             return;
         }
@@ -1500,6 +1638,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * host without inotifywait that is how a deletion shows: the folder changed).
      */
     private void onRemoteChanges(List<FsChange> batch) {
+        searchFilesChanged(batch, false);
         var sink = fsChangeSink;
         if (sink != null) {
             sink.accept(batch);
@@ -1664,6 +1803,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 }
                 var sink = fsChangeSink;
                 List<FsChange> batch = List.copyOf(changes);
+                searchFilesChanged(batch, overflow);
                 if (sink != null && !batch.isEmpty()) {
                     Platform.runLater(() -> {
                         if (!disposed) {
@@ -1860,7 +2000,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         continue; // .gitignore'd (e.g. target/, node_modules/, *.log) — skip file + subtree
                     }
                     if (dir) {
-                        if (current.depth() + 1 < MAX_DEPTH && (includeHidden || !hidden)) {
+                        if (current.depth() + 1 >= MAX_DEPTH && (includeHidden || !hidden)) {
+                            partial = true; // too deep to enter: what lies below was not searched (A16)
+                        } else if (includeHidden || !hidden) {
                             // descend later — shallower first
                             queue.add(new Dir(p, current.depth() + 1, ignore.nested(p, rel)));
                         }
@@ -3170,6 +3312,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * Only events at or under these paths are skipped: an outside change in the same window still lands.
      */
     private void markLocalChange(java.util.Collection<Path> paths) {
+        searchFilesChanged(paths); // the Map search's file list follows what the operation did
         long now = localWriteClockForTest.getAsLong();
         localChanges.values().removeIf(at -> now - at >= localWriteWindowMs);
         for (Path path : paths) {

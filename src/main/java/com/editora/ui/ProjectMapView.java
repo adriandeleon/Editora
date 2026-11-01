@@ -216,6 +216,26 @@ final class ProjectMapView extends VBox {
     private int searchMatchesTotal;
 
     private boolean searchMatchesPartial;
+    /**
+     * How many of a search's matches the map opens the folders of and keeps loaded (the best ones); the rest are
+     * in {@link #searchResult()} only.
+     */
+    static final int SEARCH_OPEN_LIMIT = 300;
+
+    /** The current query's whole answer: its files, folders and declarations, best first (review 3 A5, E2). */
+    private ProjectMapSearchResult searchResult = ProjectMapSearchResult.EMPTY;
+    /** The folder match the search landed on: opened, on top of the ancestors of every match. */
+    private @Nullable Path searchFocusFolder;
+    /** A match stepped to beyond the {@link #SEARCH_OPEN_LIMIT} opened ones: its folders are opened as well. */
+    private @Nullable Path searchCurrent;
+    /** The file whose Structure column a declaration landing opened (not one the user had open). */
+    private @Nullable Path searchStructureOpened;
+    /** A declaration the search is landing on, waiting for its file's row and outline. */
+    private @Nullable SearchLanding searchPendingSymbol;
+
+    /** A declaration to select once its file is outlined; {@code openCard} also opens its declaration card. */
+    private record SearchLanding(Path file, String name, int line, boolean openCard) {}
+
     /** The query whose first match was last selected, so re-running it does not steal the selection again. */
     private String searchSelectionQuery = "";
     /** The selection when the current query was started, restored when it is cleared. */
@@ -1082,6 +1102,12 @@ final class ProjectMapView extends VBox {
         searchMatches = List.of();
         searchMatchesTotal = 0;
         searchMatchesPartial = false;
+        searchResult = ProjectMapSearchResult.EMPTY;
+        searchFocusFolder = null;
+        searchCurrent = null;
+        searchStructureOpened = null;
+        searchPendingSymbol = null;
+        surface.setSearchHits(Set.of());
         searchOpened.clear();
         searchClosed.clear();
         searchSelectionQuery = "";
@@ -1154,44 +1180,240 @@ final class ProjectMapView extends VBox {
     }
 
     /**
-     * The global search's answer: {@code matches}, best first, out of {@code total} names that matched;
-     * {@code partial} when the walk stopped before it saw the whole project. When fewer are shown than
-     * matched, the status line says so (A5): a search that kept only the best few never says it found all.
+     * A file-name search's answer: {@code matches}, best first, out of {@code total} names that matched;
+     * {@code partial} when the search did not see the whole project. When fewer are shown than matched, the
+     * status line says so (A5): a search that kept only the best few never says it found all.
      */
     void setSearchMatches(String query, List<Path> matches, int total, boolean partial) {
-        String value = query == null ? "" : query;
-        if (disposed || value.isBlank() || !this.query.equals(value)) {
+        setSearchMatches(ProjectMapSearchResult.ofFiles(query, matches, total, partial));
+    }
+
+    /**
+     * The global search's answer: files, folders and declarations, best first (Project Map review 3 A5, E2).
+     * The map opens the folders that lead to every match and lands on the first: a file or folder is selected
+     * (a folder is opened too); a declaration's file is selected, its Structure column opened, and the
+     * declaration selected once the outline is in. Ignored unless {@code result} answers the query in the field.
+     */
+    void setSearchMatches(ProjectMapSearchResult result) {
+        String value = result == null ? "" : result.query();
+        if (disposed || result == null || value.isBlank() || !this.query.equals(value)) {
             return;
         }
-        searchMatchesTotal = Math.max(total, matches == null ? 0 : matches.size());
-        searchMatchesPartial = partial;
-        List<Path> nextMatches = matches == null
-                ? List.of()
-                : matches.stream()
-                        .map(ProjectMapModel::normalize)
-                        .filter(java.util.Objects::nonNull)
-                        .filter(path -> root != null && path.startsWith(root))
-                        .toList();
-        Set<Path> nextExpansion = ProjectMapModel.expandedAncestors(root, nextMatches);
-        Path firstMatch = nextMatches.isEmpty() ? null : nextMatches.getFirst();
-        boolean changed = !searchExpanded.equals(nextExpansion) || !searchMatches.equals(nextMatches);
-        searchExpanded = nextExpansion;
-        searchMatches = nextMatches;
+        Path currentRoot = root;
+        List<ProjectMapSearchResult.Match> kept = result.matches().stream()
+                .filter(match -> currentRoot != null && match.path().startsWith(currentRoot))
+                .toList();
+        searchResult = new ProjectMapSearchResult(value, kept, result.total(), result.partial());
+        searchMatchesTotal = searchResult.total();
+        searchMatchesPartial = searchResult.partial();
+        List<Path> allPaths = searchResult.paths();
+        // The map opens the folders of the best few hundred; the result keeps every match for a results list.
+        List<Path> nextMatches =
+                allPaths.size() > SEARCH_OPEN_LIMIT ? List.copyOf(allPaths.subList(0, SEARCH_OPEN_LIMIT)) : allPaths;
+        ProjectMapSearchResult.Match first = searchResult.first();
         // The same query runs again after every in-app file change; only a new query moves the selection.
         boolean newQuery = !value.equals(searchSelectionQuery);
         searchSelectionQuery = value;
-        if (newQuery) {
-            pendingSelection = firstMatch;
-            searchSelected = firstMatch;
+        Path nextFocus = newQuery
+                ? (first != null && first.kind() == ProjectMapSearchResult.Kind.FOLDER ? first.path() : null)
+                : (searchFocusFolder != null && allPaths.contains(searchFocusFolder) ? searchFocusFolder : null);
+        Set<Path> nextExpansion = ProjectMapModel.expandedAncestors(root, nextMatches);
+        boolean changed = !searchExpanded.equals(nextExpansion)
+                || !searchMatches.equals(nextMatches)
+                || !java.util.Objects.equals(searchFocusFolder, nextFocus);
+        searchExpanded = nextExpansion;
+        searchMatches = nextMatches;
+        searchFocusFolder = nextFocus;
+        if (newQuery || searchCurrent != null && !allPaths.contains(searchCurrent)) {
+            searchCurrent = null;
         }
-        if (changed || newQuery && firstMatch != null && !surface.contains(firstMatch)) {
+        surface.setSearchHits(Set.copyOf(allPaths));
+        Path target = first == null ? null : first.path();
+        if (newQuery) {
+            pendingSelection = target;
+            searchSelected = target;
+            searchPrepareLanding(first, false);
+        }
+        if (changed || newQuery && target != null && !surface.contains(target)) {
             announceMatches = true;
             reload();
             onExpandedChanged.run();
-        } else if (newQuery && firstMatch != null) {
+        } else if (newQuery && target != null) {
             pendingSelection = null;
-            surface.select(firstMatch);
+            surface.select(target);
+            searchResolveSymbol();
         }
+    }
+
+    /** The current query's answer as the map holds it (only matches under its root); empty without one. */
+    ProjectMapSearchResult searchResult() {
+        return searching() ? searchResult : ProjectMapSearchResult.EMPTY;
+    }
+
+    /**
+     * Lands on one match of the current query, as the search does on its first: selects and reveals it; a
+     * folder is opened; a declaration's file gets its Structure column and the declaration is selected.
+     * {@code open} also opens it: a file in the editor, a declaration's card (a folder is opened either way).
+     * For stepping through the results (Project Map review 3 B1).
+     */
+    void showSearchMatch(ProjectMapSearchResult.Match match, boolean open) {
+        Path currentRoot = root;
+        if (match == null
+                || !searching()
+                || currentRoot == null
+                || !match.path().startsWith(currentRoot)) {
+            return;
+        }
+        Path target = match.path();
+        boolean refocus = match.kind() == ProjectMapSearchResult.Kind.FOLDER && !target.equals(searchFocusFolder);
+        if (refocus) {
+            searchFocusFolder = target;
+        }
+        Path beyond = searchMatches.contains(target) ? null : target;
+        if (!java.util.Objects.equals(beyond, searchCurrent)) {
+            searchCurrent = beyond; // past the opened ones: its own folders open for it
+            refocus = true;
+        }
+        searchSelected = target;
+        searchPrepareLanding(match, open);
+        if (refocus || !surface.contains(target)) {
+            pendingSelection = target;
+            reloadForUser();
+            onExpandedChanged.run();
+        } else {
+            surface.select(target);
+            searchResolveSymbol();
+        }
+        if (open && match.kind() == ProjectMapSearchResult.Kind.FILE) {
+            onOpenFile.accept(target);
+        }
+    }
+
+    /**
+     * Before landing on {@code match}: a declaration's file gets its Structure column (the one an earlier
+     * landing opened closes), and the declaration waits for the outline. Nothing for a file or folder.
+     */
+    private void searchPrepareLanding(ProjectMapSearchResult.@Nullable Match match, boolean openCard) {
+        searchPendingSymbol = null;
+        Path file = match == null || match.kind() != ProjectMapSearchResult.Kind.SYMBOL ? null : match.path();
+        Path previous = searchStructureOpened;
+        if (previous != null && !previous.equals(file)) {
+            structure.close(previous);
+            searchStructureOpened = null;
+        }
+        if (match == null || file == null) {
+            return;
+        }
+        Path parent = file.getParent();
+        if (!structure.isOpen(file) && parent != null && structure.supports(file)) {
+            if (structure.toggle(new ProjectMapModel.Entry(file, parent, 0, false))) {
+                searchStructureOpened = file;
+            }
+        }
+        if (structure.isOpen(file)) {
+            String name = match.symbol();
+            searchPendingSymbol = new SearchLanding(file, name == null ? "" : name, match.line(), openCard);
+        }
+    }
+
+    /**
+     * Selects the declaration a landing waits for once its file's row is on the map and its outline is in,
+     * opening the columns of the declarations that hold it. A file that cannot be outlined stays selected.
+     */
+    private void searchResolveSymbol() {
+        SearchLanding landing = searchPendingSymbol;
+        if (landing == null || !searching() || disposed) {
+            return;
+        }
+        ProjectMapStructure.View view = structure.view(landing.file());
+        if (view.problem() == ProjectMapStructure.Problem.LOADING || !surface.contains(landing.file())) {
+            return; // the outline or the row is still on its way: an arriving one calls again
+        }
+        searchPendingSymbol = null;
+        if (view.problem() != ProjectMapStructure.Problem.NONE) {
+            return;
+        }
+        List<ProjectMapStructure.Node> chain = searchDeclarationChain(view.roots(), landing.name(), landing.line());
+        if (chain.isEmpty()) {
+            return;
+        }
+        boolean opened = false;
+        Path parent = landing.file();
+        for (int index = 0; index < chain.size() - 1; index++) {
+            ProjectMapStructure.Node holder = chain.get(index);
+            if (!structure.isOpen(holder.path())) {
+                opened |= structure.toggle(ProjectMapModel.Entry.symbol(holder.path(), parent, 0, holder.symbol()));
+            }
+            parent = holder.path();
+        }
+        Path declaration = chain.getLast().path();
+        if (opened || !surface.contains(declaration)) {
+            showRows(); // the column the landing opened, with an outline that was already held
+        }
+        if (!surface.contains(declaration)) {
+            return; // past the column's row limit: its file stays selected
+        }
+        searchSelected = declaration;
+        surface.select(declaration);
+        surface.revealAfterLoad(declaration);
+        ProjectMapModel.Entry entry = surface.entryByPath.get(declaration);
+        if (landing.openCard() && entry != null) {
+            previewSymbol(entry);
+        }
+    }
+
+    /**
+     * The declarations from an outline's root down to the one a symbol search found: the one on {@code line}
+     * named {@code name}, else the nearest named so, else the one on that line. Empty when none fits.
+     */
+    static List<ProjectMapStructure.Node> searchDeclarationChain(
+            List<ProjectMapStructure.Node> roots, String name, int line) {
+        List<List<ProjectMapStructure.Node>> found = new ArrayList<>();
+        searchCollectChains(roots, new ArrayList<>(), found);
+        List<ProjectMapStructure.Node> best = List.of();
+        long bestCost = Long.MAX_VALUE;
+        for (List<ProjectMapStructure.Node> chain : found) {
+            ProjectMapModel.Symbol symbol = chain.getLast().symbol();
+            boolean named = !name.isEmpty() && searchLabelNames(symbol.label(), name);
+            int distance = Math.abs(symbol.line() - line);
+            if (!named && distance != 0) {
+                continue;
+            }
+            long cost = (named ? 0 : 1_000_000L) + distance;
+            if (cost < bestCost) {
+                bestCost = cost;
+                best = chain;
+            }
+        }
+        return best;
+    }
+
+    private static void searchCollectChains(
+            List<ProjectMapStructure.Node> nodes,
+            List<ProjectMapStructure.Node> above,
+            List<List<ProjectMapStructure.Node>> out) {
+        for (ProjectMapStructure.Node node : nodes) {
+            List<ProjectMapStructure.Node> chain = new ArrayList<>(above);
+            chain.add(node);
+            out.add(chain);
+            searchCollectChains(node.children(), chain, out);
+        }
+    }
+
+    /** Whether an outline label ({@code "func NewScheduler(…)"}, {@code "PodSpec"}) declares {@code name}. */
+    static boolean searchLabelNames(String label, String name) {
+        if (label == null || name.isEmpty()) {
+            return false;
+        }
+        for (int at = label.indexOf(name); at >= 0; at = label.indexOf(name, at + 1)) {
+            int end = at + name.length();
+            boolean starts = at == 0 || !Character.isJavaIdentifierPart(label.charAt(at - 1));
+            boolean ends = end == label.length() || !Character.isJavaIdentifierPart(label.charAt(end));
+            if (starts && ends) {
+                return true;
+            }
+        }
+        return false;
     }
 
     void setGitStatus(Map<Path, GitFileStatus> status) {
@@ -1277,6 +1499,12 @@ final class ProjectMapView extends VBox {
         if (searching()) {
             result.addAll(searchExpanded);
             result.addAll(searchOpened);
+            if (searchFocusFolder != null) {
+                result.add(searchFocusFolder); // the folder match the search landed on
+            }
+            if (searchCurrent != null) {
+                result.addAll(ProjectMapModel.expandedAncestors(root, List.of(searchCurrent)));
+            }
             if (!searchClosed.isEmpty()) {
                 result.removeIf(path -> searchClosed.stream().anyMatch(path::startsWith));
             }
@@ -1663,7 +1891,7 @@ final class ProjectMapView extends VBox {
     private void updateFilters() {
         ProjectMapModel.TypeFilter type = typeFilter.getValue();
         surface.setFilters(new ProjectMapModel.Filters(
-                query,
+                ProjectMapSearch.nameFilter(query), // a path query's last name, a declaration query's name
                 openFilter.isSelected(),
                 modifiedFilter.isSelected(),
                 gitFilter.isSelected(),
@@ -1721,6 +1949,9 @@ final class ProjectMapView extends VBox {
             return;
         }
         List<Path> pinned = new ArrayList<>(searching() ? searchMatches : List.<Path>of());
+        if (searching() && searchCurrent != null) {
+            pinned.add(searchCurrent); // a match stepped to beyond the opened ones
+        }
         pinned.addAll(revealPins);
         ProjectMapModel.Request request = new ProjectMapModel.Request(
                 requestedRoot,
@@ -1837,6 +2068,7 @@ final class ProjectMapView extends VBox {
             }
             pendingSelection = null;
         }
+        searchResolveSymbol(); // a search landing on a declaration: its file's row may have just arrived
         finishLoadMore(loaded, loadedPaths, selectedBefore);
         reportLimits(loaded, loadedPaths);
         windowReportUnreadable(requestedRoot, loaded);
@@ -1922,8 +2154,10 @@ final class ProjectMapView extends VBox {
                 } else if (searchMatchesTotal > searchMatches.size()) {
                     onStatus.accept(tr("project.map.status.searchTruncated", searchMatches.size(), searchMatchesTotal));
                 } else if (searchMatchesPartial) {
-                    onStatus.accept(
-                            tr("project.map.status.searchPartial", searchMatches.size(), ProjectPanel.MAX_VISIT));
+                    onStatus.accept(tr(
+                            "project.map.status.searchPartial",
+                            searchMatches.size(),
+                            com.editora.search.ProjectFileList.MAX_FILES));
                 }
             }
         } else if (loaded.capped() && (announceLimit || !wasCapped)) {
@@ -2104,6 +2338,7 @@ final class ProjectMapView extends VBox {
             return;
         }
         showRows();
+        searchResolveSymbol(); // a search landing on a declaration waited for this outline
         cardStructures.forEach((card, column) -> {
             Path file = card.path();
             if (file != null) {
@@ -4333,6 +4568,22 @@ final class ProjectMapView extends VBox {
             });
         }
 
+        /**
+         * The global search's matches (files, folders, declarations' files): each counts as matching the query
+         * whatever its name, so a path or declaration query lights what it found (review 3 A5, E2).
+         */
+        private Set<Path> searchHits = Set.of();
+
+        void setSearchHits(Set<Path> hits) {
+            Set<Path> next = hits == null ? Set.of() : hits;
+            if (next.equals(searchHits)) {
+                return;
+            }
+            searchHits = next;
+            recomputeEmphasis();
+            repaint();
+        }
+
         void setFilters(ProjectMapModel.Filters filters) {
             this.filters = filters;
             recomputeEmphasis();
@@ -5003,6 +5254,16 @@ final class ProjectMapView extends VBox {
             Set<Path> direct = new HashSet<>();
             Set<Path> loadedPaths = new HashSet<>();
             List<ProjectMapModel.Entry> symbolRows = new ArrayList<>();
+            ProjectMapModel.Filters hitFilters = searchHits.isEmpty()
+                    ? filters
+                    : new ProjectMapModel.Filters(
+                            "",
+                            filters.open(),
+                            filters.modified(),
+                            filters.gitChanged(),
+                            filters.bookmarked(),
+                            filters.personalNotes(),
+                            filters.type());
             for (ProjectMapModel.Entry entry : entries) {
                 Path path = entry.path();
                 loadedPaths.add(path);
@@ -5014,7 +5275,7 @@ final class ProjectMapView extends VBox {
                 }
                 if (ProjectMapModel.matches(
                         entry,
-                        filters,
+                        searchHits.contains(path) ? hitFilters : filters,
                         openPaths.contains(path),
                         modifiedPaths.contains(path),
                         gitChanged(path),

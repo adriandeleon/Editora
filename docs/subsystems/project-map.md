@@ -309,7 +309,8 @@ out; taking the column off closes those cards, as closing the Map's column close
 is held for as long as the column is out (`cardOutlineFiles`, kept by `ProjectMapStructure.prune`), follows the
 buffer or the file on disk, and an edit keeps what was expanded and selected. Nothing about it is remembered.
 
-The Map's global search walks file names only, but the query is also matched against the declaration rows of
+The Map's global search matches the names of files and folders (and, with `@`, declarations; see "Filters,
+ordering, and state"), and the query is also matched against the declaration rows of
 the open structure columns (no disk or server work): a matching declaration stays prominent with the rows
 that lead to it, its siblings fade, and a query that names only a declaration on screen does not read "No
 files match".
@@ -449,16 +450,41 @@ has no language for. Build and tool files (`pom.xml`, `*.gradle`, `CMakeLists.tx
 the registry is asked, and plain-text documents (`.txt`, extension-less `README`, `LICENSE`, `CHANGELOG`,
 `NOTICE`, `AUTHORS`) are Markup.
 
-A global filename query uses the Project tree's bounded, off-thread search and temporarily opens every
-ancestor column needed to reveal its matches. The walk is bounded by the entries it visits (20,000), not by
-the matches it finds: every match is ranked as it is found and the best 300 are kept. The rank is how the
-file name answers the query (`ProjectSearchRank`: the exact name or name without extension, then a prefix of
-whole words, whole words elsewhere, a prefix, a word start, a substring, a fuzzy match), then the shorter
-name, then the fuzzy score of the relative path. The matches are loaded before anything else, in rank order,
-so the first (best) match is always present and is selected; when they do not all fit the row limit the
-status bar says "showing N of M matches", and when more names matched than were kept, or the walk stopped
-at its bound, it says so too. A one-character query does not walk the project: it only filters the rows
-already on the map, and the status bar says how many characters a project-wide search needs. The search never writes to the manual expansion set. Folders opened or
+A global query is answered from the project's file list (`com.editora.search.ProjectFileList`), not by
+walking the disk per keystroke (Project Map review 3 A1, A3). The list holds the names of every file and
+folder under the Map's root: built off the FX thread on the first search by one names-only `ProjectWalk`
+(`.gitignore`d and dependency folders pruned when "respect .gitignore" is on; dot-entries only with "show
+hidden", never `.git`), or on a remote root by one command on the host (`RemoteFiles.list`, SFTP walk as the
+fallback). It is capped at 200,000 files and 64 levels; only then is a result `partial`. It is kept current
+from the Project watcher's create and delete events and from in-app operations and first saves (each path is
+looked at again on the search thread; a created folder of more than 5,000 entries, an overflow, or a focus
+regain marks the list stale, and the next search answers from it and lists again in the background, re-running
+the query when the list changed). On a 31,000-file repository the listing takes about 0.2 s and a query 6–15
+ms. A query that is still queued behind a newer keystroke is dropped unanswered.
+
+What a query asks for (`ProjectMapSearch.Query`): a name matches file and folder names (a folder only when
+the query is in its name as written, not scattered); a query with `/` is matched against the relative path
+(`core/v1/types.go`, `cmd/kube-scheduler`), a trailing `/` asks for folders only; several words must all
+match the path; `#name` is files only and `@name` is declarations, as in Search Everywhere. Declarations come
+from the symbol index (built on the first `@` query, with a status line) and the `workspace/symbol` answer of a
+language server running for an open file (`ProjectMapSymbolSearch`); the server's answer follows the index's
+and goes first for the same declaration.
+
+The rank is how the name answers the query (`ProjectSearchRank`: the exact name or name without extension,
+then a prefix of whole words, whole words elsewhere, a prefix, a word start, a substring, a fuzzy match; for a
+path query the same tiers over path segments), then a name in the case typed (smart case), then a folder
+before a file for the exact and whole-word tiers, then source before tests, fixtures, resources and docs, then
+project code before `vendor/`, `third_party/` and `node_modules`, then the fuzzy score of the relative path (a
+root file earns the same basename bonus as a nested one, so the top-level `README.md` comes first), the
+shallower path, the shorter name. The best 2,000 are kept (`ProjectMapSearchResult`, handed to
+`ProjectMapView.setSearchMatches`); the map opens the ancestor columns of the best 300 and loads those matches
+before anything else, in rank order, so the first (best) match is always present and is selected. A folder
+match is selected and opened; a declaration match selects its file, opens the file's Structure column and
+selects the declaration once the outline is in (`showSearchMatch(match, true)` also opens its card). When the
+matches do not all fit the row limit the status bar says "showing N of M matches", and when more matched than
+the map opened, or the file list was cut, it says so too. A one-character query does not search the project: it
+only filters the rows already on the map, and the status bar says how many characters a project-wide search
+needs. The search never writes to the manual expansion set. Folders opened or
 closed by hand while a query is active (chevron, column ×, a reveal) are kept in the search's own view, so
 closing a search-opened column really closes it, and clearing the query restores exactly the manually
 expanded branches. Re-running the same query after an in-app file change reloads the map and leaves the
@@ -589,7 +615,8 @@ Responsibilities are split as follows:
   open state and its persistence, the filesystem watcher (watching the tree's and the map's open folders
   together), root, editor state, Git state, open-file action, and construction of the traditional context
   menu. It keeps the Map's own root (`mapRoot`, pinned in the No Project window), forwards the hidden-files
-  setting, and reports in-app renames and moves (`pathRenamed`).
+  setting, reports in-app renames and moves (`pathRenamed`), and runs the Map's search over its file list
+  (`ProjectFileList`, `ProjectMapSearch`).
 - `ProjectMapWindow` owns only the stage: building it, mirroring the editor window's look, placement from
   the remembered bounds and maximized state (or large and centred on the editor window), telling the view
   when it starts and stops showing (`ProjectMapView.setShowing`), closing with the editor window, and
@@ -648,8 +675,9 @@ Listings go through `ProjectMapModel.Listings`. A folder the Project watcher fol
 the watched set to `setWatchedDirectories` after every watch sync) keeps its sorted listing between loads,
 so opening a folder lists only that folder. A watcher event for a folder (`refresh(directories)`), a file
 rewritten there or saved by Editora (`listingsChanged`), and a focus regain or in-app file operation
-(`refresh()`, everything) drop the listing; a folder that stops being watched is dropped too. A remote root
-has no local watcher and lists afresh every time. Each listing runs on a worker with a 10 s timeout: a folder
+(`refresh()`, everything) drop the listing; a folder that stops being watched is dropped too. A remote folder
+has no local watcher: its listing is reused for 30 s (`Listings.REMOTE_TTL_MILLIS`) and dropped by the same
+invalidations, so a click does not cost one SFTP round trip per open folder (Project Map review 3 A4). Each listing runs on a worker with a 10 s timeout: a folder
 that does not answer holds a "Not responding" stub (nothing below it is forgotten), its next loads do not wait
 for it again, and the Map reloads when it finally answers.
 

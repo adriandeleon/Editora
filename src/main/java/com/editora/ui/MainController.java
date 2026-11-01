@@ -1487,8 +1487,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             diffCoordinator.refreshOpenDiffs();
             fileWorkflows.checkRemoteExternalChanges(changes); // reported by a remote folder's host
         });
-        // Forward the watcher's raw events to the language servers (didChangeWatchedFiles) so a git
-        // checkout / CLI build / external editor doesn't leave their project models stale (#677).
+        // The watcher's raw events reach the language servers (didChangeWatchedFiles): no stale models (#677).
         panel.setFsChangeSink(lspCoordinator::watchedFilesChanged);
         panel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         panel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
@@ -1497,6 +1496,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setMarkerActions(new ProjectTreeMarkerActions(bookmarkCoordinator, notesCoordinator));
         panel.setMapOpenActions(this::openAndNavigate, this::openNarrowedFromMap);
         panel.setMapServerSymbols(file -> structurePanel == null ? null : structurePanel.serverSymbolsFor(file));
+        panel.setMapSymbolSearch(new ProjectMapSymbolSearch(indexCoordinator, lspManager)::find); // "@name"
         panel.setSimpleMode(chrome::simpleModeActive);
         panel.setShowHidden(config.getSettings().isProjectShowHidden());
         panel.setRespectGitignore(config.getSettings().isSearchRespectGitignore());
