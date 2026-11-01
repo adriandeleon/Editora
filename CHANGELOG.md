@@ -184,6 +184,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **pom.xml completion (XML/pom review 4).**
+  - A well-formed pom lemminx-maven cannot build (a duplicated or unknown tag, or a DOCTYPE with entities, under a
+    parent it cannot resolve) no longer restarts the Maven server every two minutes or blames a "malformed" pom. The
+    status says once that Maven completion is off and names the likely pom and line; fixing it restarts the server.
+  - A left-out pom fixed on disk restarts its project's Maven server within a second, in any folder, not only in
+    folders expanded in the Project panel.
+  - An empty completion with no failure from the server is delivered at once and never leaves a pom out.
+  - With two Maven projects open, each one's "Loaded and ready" is shown.
+  - `${env.*}` completion items in a pom no longer show the environment variable's value.
+
 - **Project Map window (Map review).**
   - In the No Project window the Map keeps the folder it was opened on: opening a file from it, or switching to a
     tab in another folder or an untitled tab, no longer re-roots it (losing its columns and cards) or closes it.

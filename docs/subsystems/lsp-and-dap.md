@@ -156,8 +156,15 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   (upstream: `getCurrentWorkspaceProjects` filters null futures, not null projects). On such an answer Editora walks the
   root the way lemminx-maven does, reads each pom from disk (what the server built from), takes each malformed one out
   with a `workspace/didChangeWorkspaceFolders` that removes its own file URI, and asks again. lemminx-maven never
-  rebuilds a closed pom, so one cannot be put back in the same session: when a left-out pom parses again, that root's
-  server is restarted.
+  rebuilds a closed pom, so one cannot be put back in the same session: when a left-out pom parses again (a save, or
+  either watcher: the Project panel's or `LspManager`'s root watcher), that root's server is restarted. The proof that
+  an answer is the broken one is the server's own log (`xml.logs.client`, counted per session); an empty answer without
+  it is an honest no-match and changes nothing. lemminx-maven also keeps a null project for a well-formed pom whose
+  effective model fails (an unresolvable parent) and whose strict re-read fails (a duplicated or unknown `<project>`
+  child, a DOCTYPE with entities). Such a pom is never left out: the status says once per root that Maven completion
+  is off, naming the pom `MalformedPoms.unbuildable` finds, and the root restarts only when one of its poms changed on
+  disk since that server started, never twice for the same files. `${env.*}` completion items keep their names but
+  not their values.
 - **Formatting options** (`lsp/FormattingIndent`): every formatting request describes the document's own indentation;
   Format Document and Format Selection also carry the file's save rules (EditorConfig `trim_trailing_whitespace` /
   `insert_final_newline`, else the project's) as `trimTrailingWhitespace` / `insertFinalNewline`. Tab re-indent and

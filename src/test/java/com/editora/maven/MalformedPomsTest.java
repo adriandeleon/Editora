@@ -110,4 +110,74 @@ class MalformedPomsTest {
         assertEquals(Set.of(), found());
         assertNull(MalformedPoms.check(root.resolve("gone/pom.xml"), null), "a missing file is no problem");
     }
+
+    private static final String PARENT = "<parent><groupId>com.acme.corp</groupId><artifactId>corp-parent</artifactId>"
+            + "<version>42</version></parent>";
+
+    @Test
+    void aWellFormedPomMavensStrictReaderRefusesIsNamedWithWhy() throws IOException {
+        Path dup = file(
+                "dup/pom.xml",
+                "<project xmlns=\"http://maven.apache.org/POM/4.0.0\">\n" + PARENT
+                        + "\n<artifactId>dup</artifactId>\n<dependencies/>\n<dependencies/>\n</project>");
+        var u = MalformedPoms.unbuildable(dup, Files.readString(dup));
+        assertEquals(MalformedPoms.Why.DUPLICATE, u.why());
+        assertEquals("dependencies", u.element());
+        assertEquals(5, u.line());
+        assertTrue(u.hasParent());
+
+        var odd = MalformedPoms.unbuildable(
+                Path.of("odd/pom.xml"),
+                "<project>\n<artifactId>o</artifactId>\n" + "<dependencie>\n</dependencie>\n</project>");
+        assertEquals(MalformedPoms.Why.UNKNOWN, odd.why());
+        assertEquals("dependencie", odd.element());
+        assertEquals(3, odd.line());
+        assertFalse(odd.hasParent());
+
+        var dt = MalformedPoms.unbuildable(
+                Path.of("dt/pom.xml"),
+                "<?xml version=\"1.0\"?>\n"
+                        + "<!DOCTYPE project [ <!ENTITY v \"1.0\"> ]>\n<project><version>&v;</version></project>");
+        assertEquals(MalformedPoms.Why.ENTITIES, dt.why());
+        assertEquals(2, dt.line());
+    }
+
+    @Test
+    void whatMavenReadsIsNotNamed() {
+        Path p = Path.of("pom.xml");
+        assertNull(MalformedPoms.unbuildable(p, GOOD));
+        assertNull(
+                MalformedPoms.unbuildable(p, "<?xml version=\"1.0\"?>\n<!DOCTYPE project>\n" + GOOD), "plain DOCTYPE");
+        assertNull(
+                MalformedPoms.unbuildable(Path.of("pomegranate.xml"), "<fruits><fruit/><fruit/></fruits>"),
+                "not a project: lemminx-maven ignores it");
+        assertNull(MalformedPoms.unbuildable(p, BROKEN), "malformed: that is check's business");
+        assertNull(
+                MalformedPoms.unbuildable(p, "<project><build><plugins/><plugins/></build></project>"),
+                "only <project>'s own children are checked");
+        assertNull(MalformedPoms.unbuildable(p, null));
+    }
+
+    @Test
+    void theScanSeparatesMalformedFromUnbuildableAndKeepsEachPomsTime() throws IOException {
+        Path good = file("pom.xml", GOOD);
+        Path broken = file("broken/pom.xml", BROKEN);
+        Path dup = file("dup/pom.xml", "<project><artifactId>d</artifactId><artifactId>d</artifactId></project>");
+        Files.setLastModifiedTime(good, java.nio.file.attribute.FileTime.fromMillis(1_000_000));
+
+        MalformedPoms.Scan scan = MalformedPoms.scan(root);
+
+        assertEquals(
+                List.of(broken),
+                scan.malformed().stream().map(MalformedPoms.Problem::file).toList());
+        assertEquals(
+                List.of(dup),
+                scan.unbuildable().stream().map(MalformedPoms.Unbuildable::file).toList());
+        assertEquals(Set.of(good, broken, dup), scan.modified().keySet());
+        assertEquals(1_000_000L, scan.modified().get(good));
+        assertTrue(scan.changedAfter(1_000_000 - 1));
+        Files.setLastModifiedTime(broken, java.nio.file.attribute.FileTime.fromMillis(1_000_000));
+        Files.setLastModifiedTime(dup, java.nio.file.attribute.FileTime.fromMillis(1_000_000));
+        assertFalse(MalformedPoms.scan(root).changedAfter(1_000_000), "nothing after the server's start");
+    }
 }

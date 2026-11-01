@@ -136,4 +136,45 @@ class MavenPomServerTest {
         assertEquals(fine, MavenPomServer.fixHoverLinks(fine));
         assertEquals("", MavenPomServer.fixHoverLinks(null));
     }
+
+    @Test
+    void eachMavenRootHasItsOwnReadyGate() {
+        var gates = new MavenPomServer.ReadyGates();
+        assertEquals(List.of(), gates.onStatus("maven-pom\u0000/w/a", "ServiceReady", null));
+        assertEquals(List.of(), gates.onStatus("maven-pom\u0000/w/b", "ServiceReady", null));
+        assertEquals(
+                List.of("ProgressEnd", "ServiceReady"),
+                types(gates.onStatus("maven-pom\u0000/w/a", "ProgressEnd", "Maven initialization done")));
+        // the second root's own end still releases its own ready line (review 4, E34: it was swallowed)
+        assertEquals(
+                List.of("ProgressEnd", "ServiceReady"),
+                types(gates.onStatus("maven-pom\u0000/w/b", "ProgressEnd", "Maven initialization done")));
+        assertEquals(List.of(), gates.onStatus(null, "ServiceReady", null), "an unnamed source has a gate too");
+    }
+
+    @Test
+    void anEnvironmentVariablesValueIsNeverShown() {
+        com.editora.i18n.Messages.init("en");
+        var env = new org.eclipse.lsp4j.CompletionItem("${env.GITHUB_TOKEN}");
+        env.setDocumentation("Default Value: ghp_secret");
+        env.setDetail("ghp_secret");
+        var prop = new org.eclipse.lsp4j.CompletionItem("${project.version}");
+        prop.setDocumentation("Default Value: 1.0");
+        var items = com.editora.lsp.CompletionMapper.map(List.of(env, prop), null);
+
+        var shown = MavenPomServer.hideEnvironmentValues(items);
+
+        assertEquals(
+                List.of("${env.GITHUB_TOKEN}", "${project.version}"),
+                shown.stream().map(com.editora.completion.Completion::label).toList(),
+                "the names stay (review 4, D31)");
+        String hidden = com.editora.i18n.Messages.tr("completion.maven.envValueHidden");
+        assertEquals(hidden, LspManager.documentationOf(env), "the doc popup asks the server for nothing more");
+        assertNull(shown.get(0).detail());
+        assertFalse(String.valueOf(shown.get(0)).contains("ghp_secret"));
+        assertEquals("Default Value: 1.0", LspManager.documentationOf(prop), "a project property keeps its value");
+        assertSame(items.get(1), shown.get(1));
+        List<com.editora.completion.Completion> none = List.of(items.get(1));
+        assertSame(none, MavenPomServer.hideEnvironmentValues(none), "no env item: the list as it came");
+    }
 }

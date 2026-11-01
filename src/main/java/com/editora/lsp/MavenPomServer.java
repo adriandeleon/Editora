@@ -18,6 +18,7 @@ import org.jspecify.annotations.Nullable;
  *       downloading in the cache path" schema message is information, not an error.</li>
  *   <li>{@link #filterCompletion}: {@code ${env.*}} property items flood a GAV completion — they are dropped
  *       unless the typed prefix starts with {@code $}.</li>
+ *   <li>{@link #hideEnvironmentValues}: those items carry the variable's value as their documentation — hidden.</li>
  * </ul>
  */
 public final class MavenPomServer {
@@ -67,6 +68,21 @@ public final class MavenPomServer {
         /** Whether a ready status is being held back. */
         public boolean holding() {
             return held;
+        }
+    }
+
+    /**
+     * One {@link ReadyGate} per Maven server (keyed by the window's status source: server id and root). With one gate
+     * for every root, the second reactor's held ready line was dropped by the first's "Launching" (review 4, E34).
+     */
+    public static final class ReadyGates {
+        private final java.util.Map<String, ReadyGate> gates = new java.util.concurrent.ConcurrentHashMap<>();
+
+        /** {@link ReadyGate#onStatus} on {@code source}'s own gate ({@code null}: the server's unnamed one). */
+        public List<ReadyGate.Status> onStatus(
+                @Nullable String source, @Nullable String type, @Nullable String message) {
+            return gates.computeIfAbsent(source == null ? "" : source, k -> new ReadyGate())
+                    .onStatus(type, message);
         }
     }
 
@@ -174,6 +190,56 @@ public final class MavenPomServer {
             }
         }
         return out;
+    }
+
+    /** The prefix of lemminx-maven's environment-variable property items, {@code ${env.HOME}}. */
+    static final String ENV_PREFIX = "${env.";
+
+    /**
+     * {@code items} with each {@code ${env.*}} item's value hidden (review 4, D31): lemminx-maven offers every
+     * environment variable of the server's process — Editora's own — as a property, documented "Default Value:
+     * &lt;value&gt;", which put a token such as {@code GITHUB_TOKEN} on screen. The names stay; the documentation
+     * says the value is hidden (so the doc popup asks the server for nothing) and the detail goes. The LSP item
+     * behind each is changed in place.
+     */
+    public static List<com.editora.completion.Completion> hideEnvironmentValues(
+            List<com.editora.completion.Completion> items) {
+        if (items == null || items.stream().noneMatch(c -> isEnvironmentProperty(c.label()))) {
+            return items == null ? List.of() : items;
+        }
+        String hidden = com.editora.i18n.Messages.tr("completion.maven.envValueHidden");
+        List<com.editora.completion.Completion> out = new ArrayList<>(items.size());
+        for (com.editora.completion.Completion c : items) {
+            if (!isEnvironmentProperty(c.label())) {
+                out.add(c);
+                continue;
+            }
+            if (c.resolveToken() instanceof org.eclipse.lsp4j.CompletionItem item) {
+                item.setDocumentation(hidden);
+                item.setDetail(null);
+                item.setLabelDetails(null);
+            }
+            out.add(new com.editora.completion.Completion(
+                    c.label(),
+                    c.insert(),
+                    c.kind(),
+                    null,
+                    c.snippet(),
+                    c.onAccept(),
+                    c.iconKind(),
+                    c.sortText(),
+                    c.preselect(),
+                    c.deprecated(),
+                    c.resolveToken(),
+                    c.replaceRange(),
+                    c.protocol()));
+        }
+        return out;
+    }
+
+    /** Whether {@code label} is an environment-variable property, {@code ${env.NAME}}. Pure. */
+    static boolean isEnvironmentProperty(@Nullable String label) {
+        return label != null && label.startsWith(ENV_PREFIX) && isPropertyReference(label);
     }
 
     /**
