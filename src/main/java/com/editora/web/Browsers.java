@@ -662,8 +662,20 @@ public final class Browsers {
         return out;
     }
 
-    /** True when {@code name} resolves to an absolute path on the augmented PATH (i.e. the binary exists). */
-    private static boolean binOnPath(String name) {
+    /**
+     * True when the program {@code name} is installed: a path (a {@code TryExec=/opt/x/x.AppImage}) names an
+     * executable file, and a bare name resolves on the augmented PATH. A path used to count as found unchecked, as
+     * the PATH lookup hands a path back unchanged, so a removed AppImage's launcher stayed on offer (E203).
+     */
+    static boolean binOnPath(String name) {
+        if (name.indexOf('/') >= 0 || name.indexOf('\\') >= 0) {
+            try {
+                Path p = Path.of(name);
+                return Files.isRegularFile(p) && Files.isExecutable(p);
+            } catch (java.nio.file.InvalidPathException notAPath) {
+                return false;
+            }
+        }
         String resolved = ProcessRunner.resolveExecutable(List.of(name)).get(0);
         return resolved.indexOf('/') >= 0 || resolved.indexOf('\\') >= 0;
     }

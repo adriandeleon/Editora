@@ -704,6 +704,65 @@ class LivePreviewServerTest {
         assertEquals(LivePreviewServer.MAX_BUFFERED, permits.availablePermits(), "released after the answer");
     }
 
+    /**
+     * E202: real clients that ask for a big page and never read it hold every permit (each is held while its body
+     * is written). Another page then gets a 503 once the bounded wait is over — not a hang — while streamed files
+     * still answer, and pages load again as soon as those clients go.
+     */
+    @Test
+    void clientsThatStopReadingCannotStallEveryPage(@TempDir Path dir) throws Exception {
+        byte[] body = new byte[12 * 1024 * 1024]; // well past any loopback socket buffer, under the 20 MB cap
+        java.util.Arrays.fill(body, (byte) 'x');
+        Files.write(dir.resolve("big.html"), body);
+        Path page = Files.writeString(dir.resolve("index.html"), "<body>small</body>");
+        Files.writeString(dir.resolve("app.js"), "let a = 1;");
+        server.bufferedWaitMillis = 1500;
+        server.start();
+        String url = server.serve(dir, page);
+        URI uri = URI.create(url);
+        String bigPath = uri.getRawPath().replace("index.html", "big.html");
+        java.util.concurrent.Semaphore permits = permits();
+        List<Socket> held = new ArrayList<>();
+        try {
+            for (int i = 0; i < LivePreviewServer.MAX_BUFFERED; i++) {
+                Socket s = new Socket();
+                s.setReceiveBufferSize(4096);
+                s.connect(new java.net.InetSocketAddress(InetAddress.getLoopbackAddress(), uri.getPort()), 5000);
+                OutputStream out = s.getOutputStream();
+                out.write(("GET " + bigPath + " HTTP/1.1\r\nHost: 127.0.0.1:" + uri.getPort() + "\r\n\r\n")
+                        .getBytes(StandardCharsets.US_ASCII));
+                out.flush();
+                held.add(s); // never read
+            }
+            long deadline = System.nanoTime() + 10_000_000_000L;
+            int stillTaken = 0;
+            while (stillTaken < 10) { // all taken, and still taken half a second later: those writes are stuck
+                stillTaken = permits.availablePermits() == 0 ? stillTaken + 1 : 0;
+                assertTrue(System.nanoTime() < deadline, "the stalled clients hold every permit");
+                Thread.sleep(50);
+            }
+            long t0 = System.nanoTime();
+            HttpResponse<String> busy = get(url);
+            long waited = (System.nanoTime() - t0) / 1_000_000;
+            assertEquals(503, busy.statusCode(), "a page that cannot be built in time is refused, not left hanging");
+            assertEquals("1", busy.headers().firstValue("Retry-After").orElse(null));
+            assertTrue(waited >= 1400 && waited < 5000, "answered after the bounded wait: " + waited + " ms");
+            assertEquals(200, get(url.replace("index.html", "app.js")).statusCode(), "streamed files still answer");
+        } finally {
+            for (Socket s : held) {
+                s.close();
+            }
+        }
+        long deadline = System.nanoTime() + 10_000_000_000L;
+        while (permits.availablePermits() < LivePreviewServer.MAX_BUFFERED) {
+            assertTrue(System.nanoTime() < deadline, "the permits come back once those clients are gone");
+            Thread.sleep(20);
+        }
+        HttpResponse<String> again = get(url);
+        assertEquals(200, again.statusCode());
+        assertTrue(again.body().contains("small"));
+    }
+
     /** E105: text other than HTML is streamed (never read whole), still labelled UTF-8 only when it is. */
     @Test
     void textIsStreamedAndKeepsItsCharsetLabel(@TempDir Path dir) throws Exception {

@@ -103,6 +103,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HTML Live Preview: a file's old name kept serving its editor text (HTML review 3).**
+  - After Save As, Encrypt File or a rename (tab menu or Project tree, a file or a whole folder), the preview kept
+    serving the buffer's text at the old address until the preview was turned off — for Encrypt File, the
+    plaintext, including edits never saved in plaintext, and a previewed page's open tab reloaded into it. The old
+    address now answers from disk (404 once the old file is gone), the new name is served as any edited file is,
+    and an encrypted file's text is never served.
+  - Clients that requested a big page and stopped reading it could stall every page of every previewed site with
+    no time limit; a page now waits at most 10 seconds for its turn and is then answered "503 Service Unavailable".
+  - A browser launcher whose `TryExec` is a path (typical for AppImage and `/opt` browsers) was offered after the
+    browser was removed; it is now offered only while that path is an executable file.
 - **Project Map: search said "No files match" for files that exist.** On a big repository the search stopped after
   20,000 entries, so deep files (Kubernetes' `staging/` modules) were never found and the notice went to the editor
   window's status bar. The search now covers the whole project, and "No files match" says when it did not.

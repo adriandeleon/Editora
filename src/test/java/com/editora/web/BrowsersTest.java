@@ -175,6 +175,46 @@ class BrowsersTest {
                 "%f is not given the URL");
     }
 
+    /**
+     * E203: with the production {@code TryExec} probe (no predicate injected), a path names an executable file
+     * (a removed AppImage's launcher is no longer offered; a folder or a plain file is no program), and a bare
+     * name is looked up on PATH.
+     */
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // POSIX execute bits; desktop launchers are Linux's
+    void aTryExecPathMustBeAnExecutableFile(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        Path apps = java.nio.file.Files.createDirectories(dir.resolve("data/applications"));
+        Path program = java.nio.file.Files.writeString(dir.resolve("browser.AppImage"), "#!/bin/sh\n");
+        java.nio.file.Files.setPosixFilePermissions(
+                program, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
+        Path plain = java.nio.file.Files.writeString(dir.resolve("plain.AppImage"), "not a program\n");
+        java.util.Map<String, String> tryExec = new java.util.LinkedHashMap<>();
+        tryExec.put("e203-here", program.toString());
+        tryExec.put("e203-gone", dir.resolve("removed/brave.AppImage").toString());
+        tryExec.put("e203-plain", plain.toString());
+        tryExec.put("e203-folder", dir.toString());
+        tryExec.put("e203-name-gone", "editora-e203-no-such-browser");
+        tryExec.put("e203-name-here", "sh");
+        for (var e : tryExec.entrySet()) {
+            List<String> lines = new java.util.ArrayList<>(LIBREWOLF);
+            lines.set(2, "Name=" + e.getKey());
+            lines.add(2, "TryExec=" + e.getValue());
+            java.nio.file.Files.write(apps.resolve(e.getKey() + ".desktop"), lines);
+        }
+        java.util.Map<String, String> env = java.util.Map.of(
+                "XDG_DATA_HOME", dir.resolve("data").toString(),
+                "XDG_DATA_DIRS", dir.resolve("none").toString(),
+                "XDG_CURRENT_DESKTOP", "GNOME");
+        List<String> offered = Browsers.desktopEntries(dir.resolve("home").toString(), env::get).stream()
+                .map(Browsers.DesktopEntry::name)
+                .filter(n -> n.startsWith("e203-"))
+                .sorted()
+                .toList();
+        assertEquals(List.of("e203-here", "e203-name-here"), offered);
+        assertTrue(Browsers.binOnPath(program.toString()));
+        assertFalse(Browsers.binOnPath(dir.resolve("removed/brave.AppImage").toString()));
+    }
+
     @Test
     void execLinesBecomeArgvWithTheUrl() {
         assertEquals(

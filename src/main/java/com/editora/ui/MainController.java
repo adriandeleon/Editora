@@ -2009,6 +2009,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // The saved HTTP responses follow the file (or every .http file under a moved folder), shown or not: the
         // tree's rename never reached the history, so closing the tab or quitting lost it.
         httpClient.onFileMoved(old, target);
+        htmlPreview.renamed(old, target); // nothing served from the editor under the old name (E201); globes
         requestSave();
         setStatus(tr("status.renamedTo", target.getFileName()));
     }
@@ -8950,7 +8951,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         onProjectFileRenamed(old, target); // every window: path, EditorConfig, LSP, tab, path-keyed session state
         previews.ensurePreviewControls(buffer); // a rename to/from .md/.mmd flips previewability
-        htmlPreview.ensureControl(buffer); // a rename to/from .html flips the browser globe
         logViewer.ensureControl(buffer); // a rename to/from .log flips the log control
         if (recentFiles != null) {
             recentFiles.add(target);

@@ -2339,7 +2339,7 @@ final class FileWorkflowCoordinator {
         // .editorconfig gets none of its rules.
         host.editorSettings().applyEditorConfig(buffer);
         host.previews().ensurePreviewControls(buffer); // a new untitled saved as .md/.mmd now gets the preview toggle
-        host.htmlPreview().ensureControl(buffer); // a save-as to .html now gets the "open in browser" globe
+        host.htmlPreview().pathChanged(buffer, previousPath); // old name: no editor text served (E201); new: the globe
         host.logViewer().ensureControl(buffer); // a save-as to .log now gets the log control + level overlay
         boolean ok = synchronous ? writeBufferSynchronously(buffer, file, true) : writeBuffer(buffer, file, true);
         Tab tab = host.tabFor(buffer);
@@ -3260,6 +3260,7 @@ final class FileWorkflowCoordinator {
         }
         buffer.setPath(origin.path());
         host.bufferPathChanged(buffer, current, false);
+        host.htmlPreview().pathChanged(buffer, current);
         host.editorSettings().applyEditorConfig(buffer);
         if (origin.path() == null) {
             buffer.markUnsaved();
