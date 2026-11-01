@@ -266,6 +266,19 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
          * runs the command {@code commandId} there (Go to Definition, Find Usages, …).
          */
         default void followCode(Path file, int line, int column, @Nullable String name, String commandId) {}
+
+        /**
+         * The commit that last changed {@code file} — with {@code startLine >= 0}, its 0-based lines {@code
+         * startLine..endLine} — for a Map card's status line (Map explore round, position 9); null, on the FX thread,
+         * when Git is off or knows none.
+         */
+        default void gitLastChange(
+                Path file,
+                int startLine,
+                int endLine,
+                java.util.function.Consumer<com.editora.git.GitService.@Nullable LastChange> found) {
+            found.accept(null);
+        }
     }
 
     /** Bookmark/note state and actions shared by the classic tree and Canvas map. */
@@ -1118,6 +1131,26 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     void shareIndexes(IndexCoordinator index, com.editora.lsp.@Nullable LspManager lsp) {
         setMapSymbolSearch(new ProjectMapSymbolSearch(index, lsp)::find);
         index.setFileIndex(projectIndex);
+        mapView.setClosedFileSymbols(lsp == null ? null : cardsClosedFileSymbols(lsp));
+    }
+
+    /**
+     * The Map's outlines of files with no tab from a language server already running in this window (Map explore
+     * round, position 10): it is asked, never started.
+     */
+    private static ProjectMapStructure.ClosedFileSymbols cardsClosedFileSymbols(com.editora.lsp.LspManager lsp) {
+        return new ProjectMapStructure.ClosedFileSymbols() {
+            @Override
+            public boolean serves(Path file) {
+                return lsp.outlinesClosedFile(file);
+            }
+
+            @Override
+            public void symbols(
+                    Path file, String text, Consumer<java.util.@Nullable List<com.editora.lsp.SymbolNode>> found) {
+                lsp.closedFileSymbols(file, text, found);
+            }
+        };
     }
 
     /** The project index the Map search, Search Everywhere's files and the tree's filter share. */
@@ -2673,6 +2706,21 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             public void fileHistory(Path file) {
                 actions.gitShowFileHistory(file);
                 raiseEditorWindow();
+            }
+
+            @Override
+            public void annotate(Path file) {
+                actions.gitAnnotate(file);
+                raiseEditorWindow();
+            }
+
+            @Override
+            public void lastChange(
+                    Path file,
+                    int startLine,
+                    int endLine,
+                    Consumer<com.editora.git.GitService.@Nullable LastChange> found) {
+                actions.gitLastChange(file, startLine, endLine, found);
             }
         };
     }

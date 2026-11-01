@@ -231,6 +231,21 @@ final class ProjectMapPreview extends StackPane {
 
         /** Shows {@code file}'s Git history. */
         void fileHistory(Path file);
+
+        /** Opens {@code file} in the editor annotated with Git blame (Map explore round, position 9). */
+        default void annotate(Path file) {}
+
+        /**
+         * The commit that last changed {@code file}, or its 0-based lines {@code startLine..endLine} when {@code
+         * startLine >= 0}; null, on the FX thread, when Git knows none (Map explore round, position 9).
+         */
+        default void lastChange(
+                Path file,
+                int startLine,
+                int endLine,
+                Consumer<com.editora.git.GitService.@Nullable LastChange> found) {
+            found.accept(null);
+        }
     }
 
     /** The editor commands a card and a declaration row follow the code with, in their menus' order (C12). */
@@ -306,6 +321,28 @@ final class ProjectMapPreview extends StackPane {
 
     private final Button open = new Button();
     private final Button close = new Button("×");
+    /**
+     * Pins the card: a pinned card is never the one closed to make room for a new card (Map explore round, position
+     * 7). The card menu has the same toggle.
+     */
+    private final ToggleButton pin = new ToggleButton();
+    /** A declaration card's ‹ and ›: the previous and next declaration of its file, in this card (position 8). */
+    private final Button previousDeclaration = new Button();
+
+    private final Button nextDeclaration = new Button();
+    /** The title bar, and the find bar under it while it is open (see {@link #showFind}). */
+    private final javafx.scene.layout.VBox header = new javafx.scene.layout.VBox();
+    /** Find in the card (position 6): the field, "k of N", previous / next, match case and close. */
+    private final HBox findBar = new HBox(4);
+
+    private final javafx.scene.control.TextField findField = new javafx.scene.control.TextField();
+    private final Label findCount = new Label();
+    private final Button findPrevious = new Button();
+    private final Button findNext = new Button();
+    private final ToggleButton findCase = new ToggleButton("Aa");
+    private final Button findClose = new Button("×");
+    /** Where the find started: typing searches from here, so each letter refines the same match. */
+    private int findOrigin;
     /** The floating bar over a selection in the text, as in a Markdown buffer: here it adds a Personal Note. */
     private final HBox selectionBar = new HBox(2);
 
@@ -446,6 +483,24 @@ final class ProjectMapPreview extends StackPane {
 
     private boolean selectionBarPending;
 
+    private Consumer<Boolean> onPinned = pinned -> {};
+    /** Told -1 or +1: a declaration card's ‹ or › (and Alt+Page Up / Alt+Page Down). */
+    private java.util.function.IntConsumer onStep = direction -> {};
+    /** Whether the file has a declaration before / after the one a declaration card shows. */
+    private boolean stepBack;
+
+    private boolean stepForward;
+    /** A declaration card's Show in Structure, or null where it has none. */
+    private @Nullable Runnable onShowInStructure;
+    /** Notes are on: the Notes button is in the title bar (it gives way, as the others do, on a narrow card). */
+    private boolean notesEnabled;
+    /** The status line's last part, "Last change: author, 3 days ago", or "" (position 9). */
+    private String lastChangeText = "";
+    /** What the status's tooltip adds under it for the last change: its subject and commit. */
+    private String lastChangeTip = "";
+
+    private final Tooltip statusTip = new Tooltip();
+
     ProjectMapPreview(Consumer<Path> onOpenFile) {
         this.onOpenFile = onOpenFile == null ? ignored -> {} : onOpenFile;
         getStyleClass().add("project-map-preview");
@@ -465,14 +520,14 @@ final class ProjectMapPreview extends StackPane {
         status.setMinWidth(0);
         status.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(status, Priority.ALWAYS);
-        // The status gives way first: cut short, it is read in full from its tooltip (review 3, C11).
-        Tooltip statusTip = new Tooltip();
-        statusTip.textProperty().bind(status.textProperty());
-        status.textProperty().addListener((obs, old, now) -> status.setTooltip(now.isEmpty() ? null : statusTip));
-        // Read-only is a lock, not a word that took the file's name's room.
+        // The status gives way first: cut short, it is read in full from its tooltip (review 3, C11), with the
+        // subject of the last change under it (position 9).
+        status.textProperty().addListener((obs, old, now) -> updateStatusTip());
+        // Read-only is a lock, not a word that took the file's name's room; it says what a card is for: a glance,
+        // with Open for reading and editing in the editor (position 12).
         readOnly.setGraphic(Icons.lock());
-        readOnly.setTooltip(new Tooltip(tr("project.map.preview.readOnly")));
-        readOnly.setAccessibleText(tr("project.map.preview.readOnly"));
+        readOnly.setTooltip(new Tooltip(tr("project.map.preview.glance")));
+        readOnly.setAccessibleText(tr("project.map.preview.glance"));
         readOnly.getStyleClass().add("project-map-preview-readonly");
         readOnly.setMinWidth(Region.USE_PREF_SIZE);
 
@@ -538,7 +593,9 @@ final class ProjectMapPreview extends StackPane {
             onNotesToggled.accept(notesOn);
         });
         close.getStyleClass().add("project-map-preview-button");
-        for (javafx.scene.control.Control button : java.util.List.of(zoomOut, zoomIn, structure, notes, open, close)) {
+        installPinAndStepping();
+        for (javafx.scene.control.Control button : java.util.List.of(
+                zoomOut, zoomIn, structure, notes, pin, previousDeclaration, nextDeclaration, open, close)) {
             button.setMinWidth(Region.USE_PREF_SIZE); // "Open" stays "Open", never "O…"
         }
         close.setTooltip(new Tooltip(tr("project.map.preview.close")));
@@ -547,9 +604,24 @@ final class ProjectMapPreview extends StackPane {
 
         titleBar.getStyleClass().add("project-map-preview-header");
         titleBar.setAlignment(Pos.CENTER_LEFT);
-        titleBar.getChildren().setAll(title, readOnly, status, zoomOut, zoomIn, structure, notes, open, close);
+        titleBar.getChildren()
+                .setAll(
+                        title,
+                        readOnly,
+                        status,
+                        previousDeclaration,
+                        nextDeclaration,
+                        zoomOut,
+                        zoomIn,
+                        pin,
+                        structure,
+                        notes,
+                        open,
+                        close);
         titleBar.addEventHandler(MouseEvent.MOUSE_PRESSED, this::dragPressed);
         titleBar.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::dragged);
+        header.getChildren().setAll(titleBar);
+        installFindBar();
 
         editor.getStyleClass().addAll("editor-area", "project-map-preview-editor");
         editor.setEditable(false);
@@ -559,7 +631,7 @@ final class ProjectMapPreview extends StackPane {
         installEditorContextMenu();
         // Sized in the pass that lays its lines out: scrolled here, the card opens where it was asked to.
         frame.getStyleClass().add("project-map-preview-frame");
-        frame.setTop(titleBar);
+        frame.setTop(header);
         imageView.setPreserveRatio(true);
         imageView.setSmooth(true);
         imageScroll.setPannable(true);
@@ -630,6 +702,12 @@ final class ProjectMapPreview extends StackPane {
             event.consume();
             return;
         }
+        int declarationStep = declarationStepOf(event);
+        if (declarationStep != 0 && range != null) {
+            stepDeclaration(declarationStep);
+            event.consume();
+            return;
+        }
         if (event.isControlDown() || event.isAltDown() || event.isMetaDown()) {
             return;
         }
@@ -639,6 +717,8 @@ final class ProjectMapPreview extends StackPane {
                 editorContextMenu.hide();
             } else if (selectionBar.isVisible()) {
                 selectionBar.setVisible(false); // as in an editor: the bar goes first, the card on the next Escape
+            } else if (findShown()) {
+                closeFind(); // the find bar goes before the card, and the match stays selected
             } else {
                 onEscape.run();
             }
@@ -668,6 +748,9 @@ final class ProjectMapPreview extends StackPane {
     boolean runMarkerCommand(String commandId) {
         if (STRUCTURE_COMMAND.equals(commandId)) {
             return focusStructure();
+        }
+        if (FIND_COMMANDS.contains(commandId)) {
+            return runFindCommand(commandId);
         }
         if (followRunsCommand(commandId)) {
             return true;
@@ -871,6 +954,11 @@ final class ProjectMapPreview extends StackPane {
         }
         String name = PathDisplay.fileName(shownPath);
         Range shown = range;
+        getProperties()
+                .put(
+                        com.editora.command.KeyDispatcher.CLAIMED_KEYS,
+                        shown == null ? GEOMETRY_KEYS : DECLARATION_CARD_KEYS);
+        updateStepButtons();
         if (shown == null) {
             title.setText(name);
             title.setTooltip(new Tooltip(shownPath.toString()));
@@ -916,6 +1004,9 @@ final class ProjectMapPreview extends StackPane {
         }
         if (unsaved && fromBuffer) {
             parts.add(tr("project.map.preview.unsaved"));
+        }
+        if (!lastChangeText.isEmpty() && !(shown != null && symbolMissing)) {
+            parts.add(lastChangeText); // last: the status gives way from its end
         }
         return String.join(" · ", parts);
     }
@@ -1313,8 +1404,12 @@ final class ProjectMapPreview extends StackPane {
     void setNoteCount(int count, boolean enabled) {
         int before = noteCount;
         noteCount = enabled ? Math.max(0, count) : 0;
-        notes.setVisible(enabled);
-        notes.setManaged(enabled);
+        if (notesEnabled != enabled) {
+            notesEnabled = enabled;
+            notes.setVisible(enabled);
+            notes.setManaged(enabled);
+            requestLayout(); // what the title bar has room for is weighed again
+        }
         if (noteCount == 0 && notesOn) {
             setNotesShown(false);
         } else if (revealNotesOnAdd && noteCount > before) {
@@ -1372,6 +1467,7 @@ final class ProjectMapPreview extends StackPane {
                                 : tr("project.map.preview.showNotes", noteCount);
         notes.getTooltip().setText(help);
         notes.setAccessibleText(help);
+        requestLayout(); // pressed, the button no longer gives way
     }
 
     /**
@@ -1654,7 +1750,10 @@ final class ProjectMapPreview extends StackPane {
             editor.requestFocus();
         });
 
-        java.util.List<MenuItem> items = new java.util.ArrayList<>(java.util.List.of(copy, selectAll));
+        MenuItem find = new MenuItem(tr("project.map.preview.find"), Icons.find());
+        find.setDisable(empty);
+        find.setOnAction(ignored -> showFind());
+        java.util.List<MenuItem> items = new java.util.ArrayList<>(java.util.List.of(copy, selectAll, find));
         Path selected = path;
         Range shown = range;
         Runnable narrowed = onOpenNarrowed;
@@ -1703,6 +1802,29 @@ final class ProjectMapPreview extends StackPane {
             });
             items.add(column);
         }
+        if (shown != null) {
+            // A declaration card's ‹ › and Show in Structure (position 8): the buttons may have given way.
+            MenuItem previous = new MenuItem(tr("project.map.preview.previousDeclaration.menu"), Icons.chevronLeft());
+            previous.setDisable(!stepBack);
+            previous.setOnAction(ignored -> stepDeclaration(-1));
+            MenuItem next = new MenuItem(tr("project.map.preview.nextDeclaration.menu"), Icons.chevronRight());
+            next.setDisable(!stepForward);
+            next.setOnAction(ignored -> stepDeclaration(1));
+            items.add(previous);
+            items.add(next);
+            Runnable inStructure = onShowInStructure;
+            if (inStructure != null) {
+                MenuItem showInStructure = new MenuItem(tr("project.map.preview.showInStructure"), Icons.structure());
+                showInStructure.setDisable(symbolMissing);
+                showInStructure.setOnAction(ignored -> inStructure.run());
+                items.add(showInStructure);
+            }
+        }
+        MenuItem pinItem =
+                new MenuItem(tr(pin.isSelected() ? "project.map.preview.unpin.menu" : "project.map.preview.pin.menu"));
+        pinItem.setGraphic(Icons.pin());
+        pinItem.setOnAction(ignored -> setPinned(!pin.isSelected()));
+        items.add(pinItem);
         MenuItem freeSpace = new MenuItem(tr("project.map.preview.moveToFreeSpace"));
         freeSpace.setOnAction(ignored -> onMoveToFreeSpace.run());
         items.add(freeSpace);
@@ -1768,8 +1890,20 @@ final class ProjectMapPreview extends StackPane {
         related.setOnAction(ignored -> actions.related(file));
         MenuItem history = new MenuItem(tr("project.map.follow.fileHistory"), Icons.gitLog());
         history.setOnAction(ignored -> actions.fileHistory(file));
+        // Annotate: the editor's blame, on the card's file — a declaration card's opens at its declaration (position
+        // 9).
+        MenuItem annotate = new MenuItem(tr("project.map.preview.annotate"));
+        Range shown = range;
+        java.util.function.BiConsumer<Path, Integer> openAt = onOpenAt;
+        annotate.setOnAction(ignored -> {
+            if (shown != null && openAt != null && !symbolMissing) {
+                openAt.accept(file, shown.line());
+            }
+            actions.annotate(file);
+        });
         items.add(related);
         items.add(history);
+        items.add(annotate);
         return items;
     }
 
@@ -1823,14 +1957,473 @@ final class ProjectMapPreview extends StackPane {
         return new NoteDraft(NoteScope.LINE, anchor);
     }
 
+    // --- Map explore round, cards: pin, declaration stepping, find, Git context ----------------------------
+
+    /** The find commands a focused card runs on its own text (position 6), whatever keys the keymap gives them. */
+    static final java.util.Set<String> FIND_COMMANDS =
+            java.util.Set.of("find.show", "find.showBackward", "find.next", "find.previous");
+
+    /** A declaration card's keys: its moves and resizes, and Alt+Page Up / Alt+Page Down to step (position 8). */
+    static final java.util.Set<String> DECLARATION_CARD_KEYS = java.util.Set.copyOf(
+            java.util.stream.Stream.concat(GEOMETRY_KEYS.stream(), java.util.stream.Stream.of("M-pageup", "M-pagedown"))
+                    .toList());
+
+    /** The status line's room, past a whole title, under which a card's −/+ give way to it. */
+    private static final double STATUS_ROOM = 140;
+
+    /** At most this many matches are counted in a card; past it the count reads "k of N+". */
+    static final int MAX_FIND_MATCHES = 10_000;
+
+    private void installPinAndStepping() {
+        pin.getStyleClass().addAll("project-map-preview-button", "project-map-preview-pin");
+        pin.setGraphic(Icons.pin());
+        pin.setTooltip(new Tooltip());
+        pin.setOnAction(event -> {
+            updatePinButton();
+            onPinned.accept(pin.isSelected());
+        });
+        updatePinButton();
+        previousDeclaration.setGraphic(Icons.chevronLeft());
+        nextDeclaration.setGraphic(Icons.chevronRight());
+        String back = tr(
+                "project.map.preview.previousDeclaration", ProjectMapHelp.chord("alt", ProjectMapHelp.key("pageUp")));
+        String forward =
+                tr("project.map.preview.nextDeclaration", ProjectMapHelp.chord("alt", ProjectMapHelp.key("pageDown")));
+        previousDeclaration.setTooltip(new Tooltip(back));
+        previousDeclaration.setAccessibleText(back);
+        nextDeclaration.setTooltip(new Tooltip(forward));
+        nextDeclaration.setAccessibleText(forward);
+        for (Button button : java.util.List.of(previousDeclaration, nextDeclaration)) {
+            button.getStyleClass().addAll("project-map-preview-button", "project-map-preview-step");
+        }
+        previousDeclaration.setOnAction(event -> stepDeclaration(-1));
+        nextDeclaration.setOnAction(event -> stepDeclaration(1));
+        updateStepButtons();
+    }
+
+    private void updatePinButton() {
+        String help = pin.isSelected() ? tr("project.map.preview.unpin") : tr("project.map.preview.pin");
+        pin.getTooltip().setText(help);
+        pin.setAccessibleText(help);
+        requestLayout(); // pressed, the pin no longer gives way
+    }
+
+    /** Whether the card is pinned: never closed to make room for another (position 7). */
+    boolean pinned() {
+        return pin.isSelected();
+    }
+
+    /** Pins or unpins the card as its pin button does. */
+    void setPinned(boolean pinned) {
+        if (pin.isSelected() != pinned) {
+            pin.setSelected(pinned);
+            updatePinButton();
+            onPinned.accept(pinned);
+        }
+    }
+
+    /** Told when the card is pinned ({@code true}) or unpinned. */
+    void setOnPinned(Consumer<Boolean> callback) {
+        onPinned = callback == null ? pinned -> {} : callback;
+    }
+
+    /** Where a declaration card's ‹ › go: told -1 for the previous declaration of its file, +1 for the next. */
+    void setOnStep(java.util.function.IntConsumer callback) {
+        onStep = callback == null ? direction -> {} : callback;
+    }
+
+    /** Whether the declaration card's file has a declaration before and after the one it shows. */
+    void setDeclarationStepping(boolean previous, boolean next) {
+        stepBack = previous;
+        stepForward = next;
+        updateStepButtons();
+    }
+
+    private void updateStepButtons() {
+        previousDeclaration.setDisable(!stepBack);
+        nextDeclaration.setDisable(!stepForward);
+        requestLayout(); // a file card has no ‹ ›: the title bar is weighed again
+    }
+
+    /** -1 for Alt+Page Up, +1 for Alt+Page Down, else 0. Pure. */
+    static int declarationStepOf(KeyEvent event) {
+        if (event.getEventType() != KeyEvent.KEY_PRESSED
+                || !event.isAltDown()
+                || event.isControlDown()
+                || event.isMetaDown()
+                || event.isShiftDown()) {
+            return 0;
+        }
+        return switch (event.getCode()) {
+            case PAGE_UP -> -1;
+            case PAGE_DOWN -> 1;
+            default -> 0;
+        };
+    }
+
+    /** Shows the previous ({@code -1}) or next declaration of the file in this declaration card. */
+    void stepDeclaration(int direction) {
+        if (disposed || range == null || direction < 0 && !stepBack || direction > 0 && !stepForward) {
+            return;
+        }
+        onStep.accept(direction < 0 ? -1 : 1);
+    }
+
+    /**
+     * Moves a declaration card to another declaration of its file (‹ ›): the title, the lines and the gutter follow,
+     * the card stays where it is, and its text starts at the declaration's first line.
+     */
+    void showDeclaration(Range shown) {
+        if (disposed || range == null || shown == null) {
+            return;
+        }
+        setRange(shown);
+        if (editor.getLength() > 0) {
+            editor.moveTo(0, 0);
+            editor.showParagraphAtTop(0);
+        }
+    }
+
+    /** A declaration card's Show in Structure (position 8); null takes the menu item away. */
+    void setOnShowInStructure(@Nullable Runnable callback) {
+        onShowInStructure = callback;
+    }
+
+    /**
+     * Fits the title bar to the card: the title keeps {@code titleMin} (review 3, C11) and the status gives way first;
+     * then, when even an empty status leaves too little room, the optional buttons go in turn — −/+, then the pin
+     * (unless pressed), then ‹ ›, then Notes (unless pressed). The card menu has every one of them. Returns the title's
+     * minimum width: {@code titleMin}, raised by what room is left up to the whole title, so the status has room only
+     * once the title has all it wants.
+     */
+    private double fitTitleBar(double titleMin) {
+        boolean declaration = range != null;
+        boolean notesPressed = notesOn && !notesSuppressed;
+        java.util.List<java.util.List<javafx.scene.control.Control>> optional = java.util.List.of(
+                java.util.List.of(zoomOut, zoomIn),
+                pin.isSelected() ? java.util.List.of() : java.util.List.of(pin),
+                declaration ? java.util.List.of(previousDeclaration, nextDeclaration) : java.util.List.of(),
+                notesEnabled && !notesPressed ? java.util.List.of(notes) : java.util.List.of());
+        java.util.Set<javafx.scene.Node> wanted =
+                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        wanted.addAll(java.util.List.of(readOnly, open, close));
+        if (structure.isVisible()) {
+            wanted.add(structure);
+        }
+        if (notesEnabled) {
+            wanted.add(notes);
+        }
+        if (pin.isSelected()) {
+            wanted.add(pin);
+        }
+        optional.forEach(wanted::addAll);
+        double width = getWidth();
+        int dropped = width < COMPACT_WIDTH ? 1 : 0; // under the compact width −/+ always go
+        while (dropped < optional.size() && titleBarWidth(titleMin, wanted, optional, dropped) > width) {
+            dropped++;
+        }
+        double whole = Math.ceil(title.prefWidth(-1));
+        if (dropped == 0
+                && !status.getText().isEmpty()
+                && width - titleBarWidth(Math.max(titleMin, whole), wanted, optional, 0) < STATUS_ROOM) {
+            dropped = 1; // −/+ give way before the status is squeezed out by a whole title
+        }
+        double left = width - titleBarWidth(titleMin, wanted, optional, dropped);
+        for (int group = 0; group < optional.size(); group++) {
+            for (javafx.scene.control.Control control : optional.get(group)) {
+                boolean shown = group >= dropped;
+                if (control.isVisible() != shown) {
+                    control.setVisible(shown);
+                    control.setManaged(shown);
+                }
+            }
+        }
+        // Outside the groups: a pressed pin and pressed Notes stay, a file card has no ‹ ›, Notes go with notes off.
+        for (javafx.scene.control.Control control :
+                java.util.List.of(pin, previousDeclaration, nextDeclaration, notes)) {
+            boolean shown = control == pin ? pin.isSelected() : control == notes && notesEnabled;
+            boolean inGroup = optional.stream().anyMatch(group -> group.contains(control));
+            if (!inGroup && control.isVisible() != shown) {
+                control.setVisible(shown);
+                control.setManaged(shown);
+            }
+        }
+        return left <= 0 || whole <= titleMin ? titleMin : Math.min(whole, titleMin + Math.floor(left));
+    }
+
+    /** The title bar's width with the first {@code dropped} groups of {@code optional} left out. */
+    private double titleBarWidth(
+            double titleMin,
+            java.util.Set<javafx.scene.Node> wanted,
+            java.util.List<java.util.List<javafx.scene.control.Control>> optional,
+            int dropped) {
+        java.util.Set<javafx.scene.Node> out = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (int group = 0; group < dropped; group++) {
+            out.addAll(optional.get(group));
+        }
+        javafx.geometry.Insets insets = titleBar.getInsets();
+        double total = insets.getLeft() + insets.getRight() + titleMin;
+        int children = 2; // the title and the status
+        for (javafx.scene.Node node : wanted) {
+            if (!out.contains(node)) {
+                total += node.prefWidth(-1);
+                children++;
+            }
+        }
+        return total + titleBar.getSpacing() * (children - 1);
+    }
+
+    // --- find in a card (position 6) ---
+
+    private void installFindBar() {
+        findBar.getStyleClass().add("project-map-preview-find");
+        findBar.setAlignment(Pos.CENTER_LEFT);
+        findBar.setPadding(new javafx.geometry.Insets(3, 6, 3, 6));
+        findField.setPromptText(tr("project.map.preview.find.prompt"));
+        findField.setAccessibleText(tr("project.map.preview.find.prompt"));
+        findField.getStyleClass().add("project-map-preview-find-field");
+        HBox.setHgrow(findField, Priority.ALWAYS);
+        findField.setMinWidth(60);
+        findCount.getStyleClass().add("project-map-preview-find-count");
+        findCount.setMinWidth(Region.USE_PREF_SIZE);
+        findPrevious.setGraphic(Icons.chevronLeft());
+        findNext.setGraphic(Icons.chevronRight());
+        findPrevious.setTooltip(new Tooltip(tr("project.map.preview.find.previous")));
+        findPrevious.setAccessibleText(tr("project.map.preview.find.previous"));
+        findNext.setTooltip(new Tooltip(tr("project.map.preview.find.next")));
+        findNext.setAccessibleText(tr("project.map.preview.find.next"));
+        findCase.setTooltip(new Tooltip(tr("project.map.preview.find.matchCase")));
+        findCase.setAccessibleText(tr("project.map.preview.find.matchCase"));
+        findClose.setTooltip(new Tooltip(tr("project.map.preview.find.close")));
+        findClose.setAccessibleText(tr("project.map.preview.find.close"));
+        for (javafx.scene.control.Control control : java.util.List.of(findPrevious, findNext, findCase, findClose)) {
+            control.getStyleClass().add("project-map-preview-button");
+            control.setMinWidth(Region.USE_PREF_SIZE);
+            control.setFocusTraversable(false);
+        }
+        findPrevious.setOnAction(event -> findStep(-1));
+        findNext.setOnAction(event -> findStep(1));
+        findCase.setOnAction(event -> findStep(0));
+        findClose.setOnAction(event -> closeFind());
+        findField.textProperty().addListener((obs, old, now) -> findStep(0));
+        findField.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == KeyCode.ENTER && !event.isControlDown() && !event.isMetaDown()) {
+                findStep(event.isShiftDown() ? -1 : 1);
+                event.consume();
+            } else if (event.getCode() == KeyCode.F3) {
+                findStep(event.isShiftDown() ? -1 : 1);
+                event.consume();
+            }
+        });
+        findBar.getChildren().setAll(findField, findCount, findPrevious, findNext, findCase, findClose);
+    }
+
+    /** Whether the card's find bar is open. */
+    boolean findShown() {
+        return header.getChildren().contains(findBar);
+    }
+
+    /**
+     * Opens the card's find bar (Find, typed in the card: Ctrl+F, Cmd+F, Emacs C-s) with the keyboard in its field: a
+     * one-line selection is what it looks for, and typing searches from where the selection or caret was.
+     */
+    void showFind() {
+        if (disposed || frame.getCenter() != textPane) {
+            return;
+        }
+        String selected = editor.getSelectedText();
+        boolean opening = !findShown();
+        if (opening) {
+            header.getChildren().add(findBar);
+            findOrigin = editor.getSelection().getStart();
+        }
+        if (opening && selected != null && !selected.isEmpty() && selected.indexOf('\n') < 0) {
+            findField.setText(selected);
+        }
+        findField.requestFocus();
+        findField.selectAll();
+        findStep(0);
+    }
+
+    /** Closes the find bar; the match it found stays selected, and the keyboard goes back to the text. */
+    void closeFind() {
+        if (!findShown()) {
+            return;
+        }
+        header.getChildren().remove(findBar);
+        editor.requestFocus();
+    }
+
+    /** The find bar's field and its "k of N". For tests. */
+    javafx.scene.control.TextField findField() {
+        return findField;
+    }
+
+    String findCountText() {
+        return findCount.getText();
+    }
+
+    /** Find, Find Backward, Find Next and Find Previous typed in the card act on its text, never on the editor's. */
+    private boolean runFindCommand(String commandId) {
+        if (disposed || frame.getCenter() != textPane) {
+            return false;
+        }
+        boolean focusedInBar = findShown() && findField.isFocused();
+        switch (commandId) {
+            case "find.show" -> {
+                if (focusedInBar) {
+                    findStep(1); // C-s again in the field: the next match, as an incremental search
+                } else {
+                    showFind();
+                }
+            }
+            case "find.showBackward" -> {
+                if (focusedInBar) {
+                    findStep(-1);
+                } else {
+                    showFind();
+                }
+            }
+            default -> {
+                if (findField.getText().isEmpty()) {
+                    showFind();
+                } else {
+                    findStep("find.previous".equals(commandId) ? -1 : 1);
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Selects the next ({@code 1}) or previous ({@code -1}) match of the find field's text after or before the current
+     * one, wrapping, or ({@code 0}) the first at or after where the find began; then says "k of N".
+     */
+    private void findStep(int direction) {
+        String query = findField.getText();
+        String text = editor.getText();
+        if (query == null || query.isEmpty()) {
+            findCount.setText("");
+            findField.pseudoClassStateChanged(FIND_MISSING, false);
+            return;
+        }
+        int[] starts = findMatches(text, query, findCase.isSelected(), MAX_FIND_MATCHES);
+        if (starts.length == 0) {
+            findCount.setText(tr("project.map.preview.find.none"));
+            findField.pseudoClassStateChanged(FIND_MISSING, true);
+            return;
+        }
+        findField.pseudoClassStateChanged(FIND_MISSING, false);
+        int current =
+                editor.getSelection().getLength() > 0 ? editor.getSelection().getStart() : editor.getCaretPosition();
+        int index = findPick(starts, direction == 0 ? findOrigin : current, direction);
+        int start = starts[index];
+        editor.selectRange(start, start + query.length());
+        editor.requestFollowCaret();
+        findCount.setText(
+                starts.length >= MAX_FIND_MATCHES
+                        ? tr("project.map.preview.find.countMore", index + 1, starts.length)
+                        : tr("project.map.preview.find.count", index + 1, starts.length));
+    }
+
+    private static final javafx.css.PseudoClass FIND_MISSING = javafx.css.PseudoClass.getPseudoClass("missing");
+
+    /** Where {@code query} starts in {@code text}, in order, at most {@code max} of them; overlaps count. Pure. */
+    static int[] findMatches(String text, String query, boolean matchCase, int max) {
+        if (text == null || query == null || query.isEmpty() || text.length() < query.length()) {
+            return new int[0];
+        }
+        String haystack = matchCase ? text : text.toLowerCase(java.util.Locale.ROOT);
+        String needle = matchCase ? query : query.toLowerCase(java.util.Locale.ROOT);
+        if (haystack.length() != text.length() || needle.length() != query.length()) {
+            haystack = text; // a case fold that changed lengths: offsets must stay the text's
+            needle = query;
+        }
+        int[] found = new int[16];
+        int count = 0;
+        for (int at = haystack.indexOf(needle); at >= 0 && count < max; at = haystack.indexOf(needle, at + 1)) {
+            if (count == found.length) {
+                found = Arrays.copyOf(found, found.length * 2);
+            }
+            found[count++] = at;
+        }
+        return Arrays.copyOf(found, count);
+    }
+
+    /**
+     * The index in {@code starts} (ascending, non-empty) of the match a step lands on from {@code from}: the first at or
+     * after it ({@code direction 0}), the first after it ({@code 1}) or the last before it ({@code -1}), wrapping. Pure.
+     */
+    static int findPick(int[] starts, int from, int direction) {
+        if (direction < 0) {
+            for (int i = starts.length - 1; i >= 0; i--) {
+                if (starts[i] < from) {
+                    return i;
+                }
+            }
+            return starts.length - 1;
+        }
+        for (int i = 0; i < starts.length; i++) {
+            if (direction == 0 ? starts[i] >= from : starts[i] > from) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
+    // --- Git context (position 9) ---
+
+    /**
+     * The commit that last changed what the card shows — its file, or a declaration card's lines — at the end of its
+     * status line ("Last change: Ada, 3 days ago") with its subject in the status's tooltip; null takes it away.
+     */
+    void setLastChange(com.editora.git.GitService.@Nullable LastChange change) {
+        if (change == null) {
+            lastChangeText = "";
+            lastChangeTip = "";
+        } else {
+            long now = System.currentTimeMillis() / 1000;
+            String when = GitLogPanel.relativeDate(change.epochSeconds(), "", now);
+            lastChangeText = when.isEmpty()
+                    ? tr("project.map.preview.lastChangeBy", change.author())
+                    : tr("project.map.preview.lastChange", change.author(), when);
+            String shortHash =
+                    change.hash().substring(0, Math.min(9, change.hash().length()));
+            lastChangeTip = tr(
+                    range != null && change.lines()
+                            ? "project.map.preview.lastChangeLinesTip"
+                            : "project.map.preview.lastChangeFileTip",
+                    change.subject(),
+                    shortHash);
+        }
+        if (!loading && !missing) {
+            status.setText(idleStatus(truncatedShown));
+        }
+        updateStatusTip();
+    }
+
+    /** The status line's Git part ("Last change: …"), or "". For tests. */
+    String lastChangeText() {
+        return lastChangeText;
+    }
+
+    private void updateStatusTip() {
+        String text = status.getText();
+        String full = lastChangeTip.isEmpty() || !text.contains(lastChangeText) || lastChangeText.isEmpty()
+                ? text
+                : text + "\n" + lastChangeTip;
+        statusTip.setText(full);
+        status.setTooltip(full.isEmpty() ? null : statusTip);
+    }
+
+    /** The status's tooltip text, or "" without one. For tests. */
+    String statusTipText() {
+        return status.getTooltip() == null ? "" : statusTip.getText();
+    }
+
     @Override
     protected void layoutChildren() {
-        boolean compact = getWidth() < COMPACT_WIDTH;
-        for (javafx.scene.Node node : java.util.List.of(zoomOut, zoomIn)) {
-            node.setVisible(!compact);
-            node.setManaged(!compact);
-        }
-        double titleMin = titleMinWidth(title.getText(), range != null, getWidth());
+        double titleMin = fitTitleBar(titleMinWidth(title.getText(), range != null, getWidth()));
         if (title.getMinWidth() != titleMin) {
             title.setMinWidth(titleMin);
         }

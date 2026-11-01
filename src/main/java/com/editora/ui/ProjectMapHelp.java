@@ -55,9 +55,28 @@ final class ProjectMapHelp {
             row = addRow(pointer, row, tr("project.map.help." + id + ".gesture"), "project.map.help." + id);
         }
         row = addHeading(pointer, row, "project.map.help.cards");
-        for (String id : List.of("cardTitle", "cardGrip", "cardStructure", "cardNotes", "addNote", "sticky")) {
+        // What cards are for, first (Map explore round, position 12): a glance; the editor is for reading and editing.
+        Label cardsIntro = new Label(tr("project.map.help.cardsIntro"));
+        cardsIntro.getStyleClass().addAll("project-map-help-text", "project-map-help-cards-intro");
+        cardsIntro.setWrapText(true);
+        cardsIntro.setMaxWidth(320);
+        pointer.add(cardsIntro, 0, row++, 2, 1);
+        for (String id :
+                List.of("cardTitle", "cardGrip", "cardStructure", "cardNotes", "addNote", "sticky", "cardPin")) {
             row = addRow(pointer, row, tr("project.map.help." + id + ".gesture"), "project.map.help." + id);
         }
+        row = addRow(
+                pointer,
+                row,
+                tr(
+                        "project.map.help.cardStep.gesture",
+                        chord("alt", key("pageUp")) + " / " + chord("alt", key("pageDown"))),
+                "project.map.help.cardStep");
+        row = addRow(
+                pointer,
+                row,
+                tr("project.map.help.cardFind.gesture", chord("shortcut", "F")),
+                "project.map.help.cardFind");
 
         GridPane keys = grid();
         row = addHeading(keys, 0, "project.map.help.keyboard");

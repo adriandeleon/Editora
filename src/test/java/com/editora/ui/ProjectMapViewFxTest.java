@@ -1057,11 +1057,11 @@ class ProjectMapViewFxTest {
                         .getChildren()
                         .contains(editorScroll));
                 javafx.scene.control.Label readOnly = FxTestSupport.field(preview, "readOnly");
-                // A lock, named for screen readers and in its tooltip (review 3, C11).
-                assertEquals(tr("project.map.preview.readOnly"), readOnly.getAccessibleText());
+                // A lock, named for screen readers and in its tooltip (review 3, C11), saying what a card is for: a
+                // glance, with Open to edit (Map explore round, position 12).
+                assertEquals(tr("project.map.preview.glance"), readOnly.getAccessibleText());
                 assertEquals(
-                        tr("project.map.preview.readOnly"),
-                        readOnly.getTooltip().getText());
+                        tr("project.map.preview.glance"), readOnly.getTooltip().getText());
                 Button zoomIn = FxTestSupport.field(preview, "zoomIn");
                 zoomIn.fire();
                 assertTrue((double) FxTestSupport.field(preview, "contentZoom") > 1.0);
@@ -1401,8 +1401,10 @@ class ProjectMapViewFxTest {
                         List.of(
                                 tr("project.map.preview.copyAll"), // nothing selected: Copy takes it all
                                 tr("editmenu.selectAll"),
+                                tr("project.map.preview.find"), // explore round: find in the card
                                 tr("editmenu.addBookmark"),
                                 tr("editmenu.addNote"),
+                                tr("project.map.preview.pin.menu"), // and pin it
                                 tr("project.map.preview.moveToFreeSpace")),
                         menu.getItems().stream()
                                 .filter(item -> !(item instanceof javafx.scene.control.SeparatorMenuItem))
