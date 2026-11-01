@@ -304,6 +304,170 @@ class ProjectMapCardsReview3FxTest {
                 "the map's row list was not rebuilt for an outline only the card shows"));
     }
 
+    // --- C9 / E11 ---------------------------------------------------------------------------------------
+
+    @Test
+    void aCardsStructureColumnChangesSideWhenItsCardIsDraggedToTheEdge() throws Exception {
+        Path big = writeBig();
+        map = openMap();
+        ProjectMapPreview card = openFileCard(big);
+        ProjectMapCardStructure column = showStructure(card);
+        FxTestSupport.runOnFx(() -> {
+            Region host = (Region) card.getParent();
+            double width = card.getWidth() * card.mapScale();
+            card.relocate(host.getWidth() - width - 10, card.getLayoutY()); // dragged against the right edge
+            map.view().layout(); // the pulse's layout pass
+            assertEquals(CardAttachment.Side.LEFT, column.side(), "the column goes where it can be seen");
+            double[] drawn = column.bounds();
+            assertTrue(drawn[0] >= 0 && drawn[0] + drawn[2] <= host.getWidth(), "inside the map area");
+            card.relocate(14, card.getLayoutY()); // and back against the left edge
+            map.view().layout();
+            assertEquals(CardAttachment.Side.RIGHT, column.side());
+        });
+    }
+
+    @Test
+    void cardPlacementKeepsClearOfTheZoomBarAndTheOverview() throws Exception {
+        double[] zoomBar = {0, 640, 260, 60, MapCards.CHROME_WEIGHT};
+        double[] overview = {840, 600, 150, 90, MapCards.CHROME_WEIGHT};
+        double[] row = {30, 610, 164, 24};
+        double[] column = {20, 20, 180, 660};
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.layout.Pane pane = new javafx.scene.layout.Pane();
+            pane.resize(1000, 700);
+            MapCards cards = new MapCards(
+                    new StubHost(
+                            new MapCards.Site(row, column, column, List.of(new double[] {20, 20, 180, 660, 6})),
+                            List.of(zoomBar, overview)),
+                    new ProjectMapStructure(path -> null),
+                    pane);
+            Region card = new Region();
+            ProjectMapPreview.Placement placed = cards.previewPlacement(
+                    card, Path.of("/p/a.txt"), 640, 420, 340, 220, pane.getWidth(), pane.getHeight());
+            for (double[] chrome : List.of(zoomBar, overview)) {
+                assertEquals(
+                        0,
+                        MapCards.cardOverlapCost(
+                                placed.x(), placed.y(), placed.width(), placed.height(), List.of(chrome)),
+                        1e-9,
+                        "covers nothing of " + java.util.Arrays.toString(chrome) + ": " + placed);
+            }
+            assertTrue(placed.height() >= 220 && placed.width() >= 340, "and keeps at least its minimum: " + placed);
+
+            // A row that is not on the map: the far edge, ending above the overview.
+            MapCards off = new MapCards(
+                    new StubHost(
+                            new MapCards.Site(null, new double[4], new double[4], List.of()),
+                            List.of(zoomBar, new double[] {700, 300, 290, 390, MapCards.CHROME_WEIGHT})),
+                    new ProjectMapStructure(path -> null),
+                    pane);
+            ProjectMapPreview.Placement far = off.previewPlacement(
+                    card, Path.of("/p/b.txt"), 640, 420, 340, 220, pane.getWidth(), pane.getHeight());
+            assertTrue(far.y() + far.height() <= 300, "above the overview: " + far);
+        });
+    }
+
+    /** A map with one row's site and the chrome given, for placement alone. */
+    private record StubHost(MapCards.Site site, List<double[]> chrome) implements MapCards.Host {
+        @Override
+        public double[] rowBox(Path path) {
+            return site.row();
+        }
+
+        @Override
+        public MapCards.Site site(Path path) {
+            return site;
+        }
+
+        @Override
+        public List<double[]> columns() {
+            return List.of();
+        }
+
+        @Override
+        public double zoom() {
+            return 1;
+        }
+
+        @Override
+        public boolean horizontalFlow() {
+            return true;
+        }
+
+        @Override
+        public boolean narrowsAway(Path file) {
+            return false;
+        }
+
+        @Override
+        public java.util.Set<Path> expandedSnapshot() {
+            return java.util.Set.of();
+        }
+
+        @Override
+        public Path root() {
+            return Path.of("/p");
+        }
+
+        @Override
+        public javafx.scene.paint.Color accent() {
+            return javafx.scene.paint.Color.BLUE;
+        }
+
+        @Override
+        public javafx.scene.paint.Color note() {
+            return javafx.scene.paint.Color.ORANGE;
+        }
+
+        @Override
+        public void focusMap() {}
+
+        @Override
+        public boolean onScreen() {
+            return true;
+        }
+
+        @Override
+        public void status(String message) {}
+
+        @Override
+        public ProjectMapPreview.Content content(Path file) {
+            return null;
+        }
+
+        @Override
+        public boolean isOpen(Path file) {
+            return false;
+        }
+
+        @Override
+        public boolean isModified(Path file) {
+            return false;
+        }
+
+        @Override
+        public javafx.scene.control.ContextMenu symbolMenu(ProjectMapModel.Entry entry) {
+            return new javafx.scene.control.ContextMenu();
+        }
+
+        @Override
+        public boolean hideOpenNotes() {
+            return false;
+        }
+
+        @Override
+        public void showOpenNotes() {}
+
+        @Override
+        public void openFile(Path file) {}
+
+        @Override
+        public void openAt(Path file, int line) {}
+
+        @Override
+        public void openNarrowed(Path file, com.editora.text.FoldRegions.Region block) {}
+    }
+
     private static void setDouble(Object target, String name, double value) {
         try {
             java.lang.reflect.Field field = target.getClass().getDeclaredField(name);

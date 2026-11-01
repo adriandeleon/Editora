@@ -426,6 +426,14 @@ final class ProjectMapCardStructure implements CardAttachment {
 
     /** Sticks the column on the card, on the side with room — {@code preferLeft} first. */
     void show(boolean preferLeft) {
+        show(null, preferLeft);
+    }
+
+    /**
+     * Sticks the column on the card on {@code chosen} — its owner weighs the sides by what each covers (review 3, C9) —
+     * or, when null, on the side with room, {@code preferLeft} first.
+     */
+    void show(@Nullable Side chosen, boolean preferLeft) {
         if (!shown) {
             shown = true;
             card.layoutXProperty().addListener(follow);
@@ -440,8 +448,33 @@ final class ProjectMapCardStructure implements CardAttachment {
         double left = card.getLayoutX();
         double right = left + card.getWidth() * scale;
         width = fittedWidth();
-        side = side(left, right, (width + GAP) * scale, host.getWidth(), preferLeft);
+        side = chosen != null ? chosen : side(left, right, (width + GAP) * scale, host.getWidth(), preferLeft);
         layout();
+    }
+
+    /**
+     * Moves the column to the other side of its card, or onto it (the card moved, or what the side covers changed):
+     * what else stands beside the card makes room again.
+     */
+    void setSide(Side next) {
+        if (!shown || next == null || next == side) {
+            return;
+        }
+        side = next;
+        layout();
+        onResized.run();
+    }
+
+    /** Where the column would be drawn on {@code which} side of its card now, {@code {x, y, w, h}} in the host's pixels. */
+    double[] boundsAt(Side which) {
+        double scale = card.mapScale();
+        double dx = switch (which) {
+            case RIGHT -> card.getWidth() + GAP;
+            case LEFT -> -(width + GAP);
+            case OVER -> card.getWidth() - width;
+        };
+        return new double[] {card.getLayoutX() + dx * scale, card.getLayoutY(), width * scale, card.getHeight() * scale
+        };
     }
 
     /** Lists {@code view}'s declarations, keeping what was expanded and selected where it still is. */

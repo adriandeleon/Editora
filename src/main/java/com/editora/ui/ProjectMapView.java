@@ -2105,6 +2105,16 @@ final class ProjectMapView extends VBox {
             }
 
             @Override
+            public List<double[]> chrome() {
+                return surface.cardChrome();
+            }
+
+            @Override
+            public List<double[]> columns() {
+                return surface.cardColumns();
+            }
+
+            @Override
             public double zoom() {
                 return surface.cardZoom();
             }
@@ -6692,8 +6702,42 @@ final class ProjectMapView extends VBox {
          * drawnPlacement}): the row and its column as {@code {x, y, w, h}}, the extent of the columns on screen, and
          * what a card should not cover, as {@code {x, y, w, h, weight}} — every column on screen (the row's own
          * weighs 6, those that lead to it 4, others 1), the band where the row's next column would open (3), and the
-         * zoom bar and the overview (4). Reads the layout only.
+         * zoom bar and the overview are added by the cards themselves ({@link #cardChrome}). Reads the layout only.
          */
+        /**
+         * The zoom bar and the overview as drawn, {@code {x, y, w, h, weight}}: cards and their Structure columns keep
+         * clear of them (review 3, E11).
+         */
+        private List<double[]> cardChrome() {
+            List<double[]> chrome = new ArrayList<>(2);
+            if (reservedBarWidth > 0 && reservedBottom > 0) {
+                chrome.add(new double[] {
+                    0, getHeight() - reservedBottom, reservedBarWidth, reservedBottom, MapCards.CHROME_WEIGHT
+                });
+            }
+            OverviewBox overview = overviewBox;
+            if (overview != null) {
+                chrome.add(new double[] {
+                    overview.x(), overview.y(), overview.width(), overview.height(), MapCards.CHROME_WEIGHT
+                });
+            }
+            return chrome;
+        }
+
+        /** Every column on screen as {@code {x, y, w, h, 1}}, for a card's Structure column choosing its side. */
+        private List<double[]> cardColumns() {
+            List<double[]> columns = new ArrayList<>();
+            for (ColumnBox column : columnBoxes) {
+                if (column.x() <= getWidth()
+                        && column.x() + column.width() >= 0
+                        && column.y() <= getHeight()
+                        && column.y() + column.height() >= 0) {
+                    columns.add(new double[] {column.x(), column.y(), column.width(), column.height(), 1});
+                }
+            }
+            return columns;
+        }
+
         private MapCards.Site cardSite(Path path) {
             NodeBox node = boxes.stream()
                     .filter(box -> box.entry().path().equals(path))
@@ -6745,13 +6789,7 @@ final class ProjectMapView extends VBox {
                 double nextY = horizontal ? own.y() : own.y() + (forward ? step : -step);
                 obstacles.add(new double[] {nextX, nextY, own.width(), own.height(), 3});
             }
-            if (reservedBarWidth > 0 && reservedBottom > 0) {
-                obstacles.add(new double[] {0, getHeight() - reservedBottom, reservedBarWidth, reservedBottom, 4});
-            }
-            OverviewBox overview = overviewBox;
-            if (overview != null) {
-                obstacles.add(new double[] {overview.x(), overview.y(), overview.width(), overview.height(), 4});
-            }
+            // The zoom bar and the overview are the cards' own obstacles (cardChrome), heavier than any column.
             if (top > bottom) {
                 top = own.y();
                 bottom = own.y() + own.height();

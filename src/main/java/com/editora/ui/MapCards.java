@@ -62,6 +62,15 @@ final class MapCards {
         /** What placement needs to know about the row of {@code path} (see {@link Site}). */
         Site site(Path path);
 
+        /**
+         * The zoom bar and the overview as drawn, {@code {x, y, w, h, weight}} at {@link #CHROME_WEIGHT}: what floats
+         * over the map and must not be covered by a card or what is stuck on one.
+         */
+        List<double[]> chrome();
+
+        /** Every column on screen as {@code {x, y, w, h, 1}}: what a card's Structure column weighs its side by. */
+        List<double[]> columns();
+
         /** The map's zoom the cards are drawn at. */
         double zoom();
 
@@ -832,8 +841,11 @@ final class MapCards {
                         this::connectorsMoved,
                         () -> reserveBesideCard(card)));
         structure.ensure(file);
-        column.show(cardRowAfter(card, file));
+        boolean rowAfter = cardRowAfter(card, file);
+        column.show(rowAfter);
         column.update(structure.view(file)); // shown first: its width is measured in the rows' font
+        column.setSide(chooseColumnSide(card, column, null)); // the side that covers least (review 3, C9)
+        nudgeForColumn(card, column);
         reserveBesideCard(card); // the sheets step past the column
         touchCard(card, true);
         scheduleCardRefresh(); // the outline follows the buffer from now on
@@ -848,6 +860,142 @@ final class MapCards {
         if (!card.revealRange(rangeOf(node.symbol()))) {
             previewSymbol(symbolEntry(node));
         }
+    }
+
+    /** How much what lies outside the map area weighs against a Structure column's side, per pixel: unseen. */
+    private static final double OUTSIDE_WEIGHT = 8;
+
+    /**
+     * What a card's Structure column would cover on {@code which} side, as drawn: the map's columns (its row's own and
+     * those leading to it heaviest, when its row is on the map), the zoom bar and the overview, other cards and what is
+     * stuck on them, and the part of it outside the map area, which would not be seen. Over the card it covers the
+     * card's own text, so that side is the last resort.
+     */
+    private double columnSideCost(
+            ProjectMapCardStructure column, CardAttachment.Side which, List<double[]> obstacles, boolean rowAfter) {
+        double[] r = column.boundsAt(which);
+        double area = Math.max(0, r[2] * r[3]);
+        double cost = cardOverlapCost(r[0], r[1], r[2], r[3], obstacles);
+        double inside = cardOverlapCost(
+                r[0], r[1], r[2], r[3], List.of(new double[] {0, 0, canvasHost.getWidth(), canvasHost.getHeight(), 1}));
+        cost += (area - inside) * OUTSIDE_WEIGHT;
+        if (which == CardAttachment.Side.OVER) {
+            cost += area * 3;
+        }
+        // Toward the row the column crosses the card's connector: between sides that cover alike, the other one.
+        if (which == (rowAfter ? CardAttachment.Side.RIGHT : CardAttachment.Side.LEFT)) {
+            cost += area * 0.02;
+        }
+        return cost;
+    }
+
+    /** What a card's Structure column weighs its sides against (see {@link #columnSideCost}). */
+    private List<double[]> columnObstacles(ProjectMapPreview card) {
+        Path file = card.path();
+        Site site = file == null ? null : host.site(file);
+        List<double[]> obstacles =
+                new ArrayList<>(site != null && site.row() != null ? site.obstacles() : host.columns());
+        obstacles.addAll(host.chrome());
+        List<Region> others = new ArrayList<>(previews.values());
+        others.addAll(notePreviews.values());
+        for (Region other : others) {
+            if (other != card && other.isVisible() && other.getWidth() > 0) {
+                double scale = cardScale(other);
+                obstacles.add(new double[] {
+                    other.getLayoutX(),
+                    other.getLayoutY(),
+                    other.getWidth() * scale,
+                    other.getHeight() * scale,
+                    CARD_WEIGHT_CARD
+                });
+            }
+        }
+        for (CardAttachment stuck : allAttachments()) {
+            double[] drawn = stuck.card() == card ? null : stuck.bounds();
+            if (drawn != null) {
+                obstacles.add(new double[] {drawn[0], drawn[1], drawn[2], drawn[3], CARD_WEIGHT_CARD});
+            }
+        }
+        return obstacles;
+    }
+
+    /**
+     * The side of its card a Structure column goes on: the one that covers least (see {@link #columnSideCost}). Once it
+     * stands somewhere it moves only when the other side covers clearly less, so it does not flap while its card is
+     * dragged or the map panned under it (review 3, C9).
+     */
+    private CardAttachment.Side chooseColumnSide(
+            ProjectMapPreview card, ProjectMapCardStructure column, CardAttachment.@Nullable Side current) {
+        List<double[]> obstacles = columnObstacles(card);
+        Path file = card.path();
+        boolean rowAfter = file != null && cardRowAfter(card, file);
+        CardAttachment.Side best = CardAttachment.Side.RIGHT;
+        double bestCost = Double.MAX_VALUE;
+        double currentCost = Double.MAX_VALUE;
+        for (CardAttachment.Side which : CardAttachment.Side.values()) {
+            double cost = columnSideCost(column, which, obstacles, rowAfter);
+            if (which == current) {
+                currentCost = cost;
+            }
+            if (cost < bestCost) {
+                bestCost = cost;
+                best = which;
+            }
+        }
+        return current != null && best != current && bestCost > currentCost * 0.7 - 1 ? current : best;
+    }
+
+    /** Puts every Structure column on the side of its card that covers least now (its card moved, the map moved). */
+    private void resideColumns() {
+        for (Map.Entry<ProjectMapPreview, ProjectMapCardStructure> entry : List.copyOf(cardStructures.entrySet())) {
+            ProjectMapPreview card = entry.getKey();
+            ProjectMapCardStructure column = entry.getValue();
+            if (card.isVisible() && column.shown()) {
+                column.setSide(chooseColumnSide(card, column, column.side()));
+            }
+        }
+    }
+
+    /**
+     * A Structure column opened on a card with no free side — it would cover much of the map, another card or the
+     * card itself — moves the card where the card and its column together cover less, as Move to Free Space places a
+     * card, when there is such a spot (review 3, C9). The map is not panned.
+     */
+    private void nudgeForColumn(ProjectMapPreview card, ProjectMapCardStructure column) {
+        Path file = card.path();
+        if (file == null || !card.isVisible() || card.getWidth() <= 0) {
+            return;
+        }
+        double[] drawn = column.boundsAt(column.side());
+        boolean rowAfter = cardRowAfter(card, file);
+        double cost = columnSideCost(column, column.side(), columnObstacles(card), rowAfter);
+        if (cost <= drawn[2] * drawn[3] * 0.15) {
+            return; // it covers little where it stands
+        }
+        double together = card.getWidth() + column.width() + ProjectMapCardStructure.GAP;
+        ProjectMapPreview.Placement spot = previewPlacement(
+                card,
+                file,
+                together,
+                card.getHeight(),
+                together,
+                Math.min(card.getHeight(), ProjectMapPreview.MIN_HEIGHT),
+                canvasHost.getWidth(),
+                canvasHost.getHeight());
+        if (spot.width() < together - 0.5) {
+            return; // no spot holds both
+        }
+        double x = card.getLayoutX();
+        double y = card.getLayoutY();
+        card.relocate(spot.x(), spot.y());
+        CardAttachment.Side next = chooseColumnSide(card, column, null);
+        boolean nextRowAfter = cardRowAfter(card, file);
+        if (columnSideCost(column, next, columnObstacles(card), nextRowAfter) >= cost) {
+            card.relocate(x, y); // no better there: it stays where the user had it
+            return;
+        }
+        column.setSide(next);
+        ProjectMapPreview.announceGeometry(card, card.mapScale());
     }
 
     /** Places a card's sticky notes again past what stands beside the card now. */
@@ -1294,7 +1442,7 @@ final class MapCards {
      * itself is never panned to make room. Sizes in and out are the card's own, unzoomed; the room is found
      * for the card as drawn at its zoom.
      */
-    private ProjectMapPreview.Placement previewPlacement(
+    ProjectMapPreview.Placement previewPlacement(
             Region preview,
             Path path,
             double width,
@@ -1345,16 +1493,28 @@ final class MapCards {
         double roomHeight = parentHeight - margin * 2;
         double fullWidth = cardBounded(width, minimumWidth, roomWidth);
         double fullHeight = cardBounded(height, minimumHeight, roomHeight);
+        List<double[]> chrome = host.chrome();
         if (site.row() == null) {
-            // The row is not on the map (filtered, scrolled off): against the panel's far edge, as before.
-            return new ProjectMapPreview.Placement(
-                    Math.max(margin, parentWidth - fullWidth - margin), margin, fullWidth, fullHeight);
+            // The row is not on the map (filtered, scrolled off): against the panel's far edge, as before, and ending
+            // above the zoom bar or the overview when it would run over them (review 3, E11).
+            double x = Math.max(margin, parentWidth - fullWidth - margin);
+            double h = fullHeight;
+            for (double[] c : chrome) {
+                if (cardOverlapCost(x, margin, fullWidth, h, List.of(c)) > 0) {
+                    double above = c[1] - COLUMN_GAP / 2 - margin;
+                    if (above >= Math.min(minimumHeight, fullHeight)) {
+                        h = above;
+                    }
+                }
+            }
+            return new ProjectMapPreview.Placement(x, margin, fullWidth, h);
         }
         List<double[]> obstacles = new ArrayList<>(site.obstacles());
+        obstacles.addAll(chrome); // the zoom bar and the overview: never covered when anything else will do
         List<Region> cards = new ArrayList<>(previews.values());
         cards.addAll(notePreviews.values());
         for (CardAttachment stuck : allAttachments()) {
-            double[] drawn = stuck.bounds();
+            double[] drawn = stuck.card() == preview ? null : stuck.bounds(); // its own move with it
             if (drawn != null) { // what is stuck on a card weighs as a card does
                 obstacles.add(new double[] {
                     drawn[0] - PREVIEW_CASCADE / 2,
@@ -1456,13 +1616,41 @@ final class MapCards {
                 }
             }
         }
-        double[] best = null;
-        double bestCost = Double.MAX_VALUE;
+        // Each spot also cut short of the zoom bar and the overview, down to the card's minimum: a card a little
+        // smaller
+        // beats one whose last lines and scroll bar sit under them (review 3, E11).
+        List<double[]> clamped = new ArrayList<>(spots.size() * 2);
         for (double[] spot : spots) {
             double w = spot[2];
             double h = spot[3];
             double x = clampInto(spot[0], margin, Math.max(margin, parentWidth - w - margin));
             double y = clampInto(spot[1], margin, Math.max(margin, parentHeight - h - margin));
+            clamped.add(new double[] {x, y, w, h});
+            for (double[] c : chrome) {
+                if (cardOverlapCost(x, y, w, h, List.of(c)) <= 0) {
+                    continue;
+                }
+                double cutHeight = c[1] - gap / 2 - y;
+                if (cutHeight >= Math.min(minimumHeight, fullHeight) && cutHeight < h) {
+                    clamped.add(new double[] {x, y, w, cutHeight});
+                }
+                double cutWidth = c[0] - gap / 2 - x;
+                if (cutWidth >= Math.min(minimumWidth, fullWidth) && cutWidth < w) {
+                    clamped.add(new double[] {x, y, cutWidth, h});
+                }
+                double after = c[0] + c[2] + gap / 2;
+                if (after > x && x + w - after >= Math.min(minimumWidth, fullWidth)) {
+                    clamped.add(new double[] {after, y, x + w - after, h});
+                }
+            }
+        }
+        double[] best = null;
+        double bestCost = Double.MAX_VALUE;
+        for (double[] spot : clamped) {
+            double x = spot[0];
+            double y = spot[1];
+            double w = spot[2];
+            double h = spot[3];
             // Least covered first; between spots that cover alike, the one nearer its row, then the larger.
             double distance = Math.hypot(x + w / 2 - rowX, y + h / 2 - rowY);
             // A card cut narrower than its lines needs makes them scroll sideways: that weighs more than height.
@@ -1502,6 +1690,12 @@ final class MapCards {
         }
         return new Site(row, drawn, drawn, List.of());
     }
+
+    /**
+     * How much the zoom bar and the overview weigh against a spot, per pixel a card would cover: far above anything
+     * on the map, so a card covers them only when nothing else is left (review 3, E11).
+     */
+    static final double CHROME_WEIGHT = 60;
 
     /** How much a card of the other cards weighs against a spot, per pixel it would cover (columns: 1–6). */
     private static final double CARD_WEIGHT_CARD = 5;
@@ -1561,9 +1755,13 @@ final class MapCards {
         canvasHost.requestLayout();
     }
 
-    /** Draws the connectors now if something marked them (see {@link #connectorsMoved}). */
+    /**
+     * Draws the connectors now if something marked them (see {@link #connectorsMoved}). A card that moved may first
+     * take its Structure column to the side of it that covers less (review 3, C9).
+     */
     void flushConnectors() {
         if (connectorsPending) {
+            resideColumns();
             repaintPreviewConnectors();
         }
     }
