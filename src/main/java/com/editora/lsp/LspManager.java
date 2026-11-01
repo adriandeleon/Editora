@@ -1162,6 +1162,15 @@ public final class LspManager {
         return s == null ? 0 : s.workspaceCompletionFailures();
     }
 
+    /**
+     * When the Maven pom server serving {@code file} was launched (epoch millis), or -1 when none serves it: a pom
+     * changed on disk after it may be worth a restart, one older is what it already built (review 4, E31).
+     */
+    public long mavenStartedMillis(@Nullable Path file) {
+        LanguageServerSession s = mavenSession(file);
+        return s == null ? -1 : s.startedMillis();
+    }
+
     /** Restarts {@code serverId} (dispose + drop its cached sessions) so the next {@code openDocument}
      *  re-initializes it — e.g. to reload jdtls with the java-debug bundle. The controller re-opens the
      *  affected buffers afterwards. */

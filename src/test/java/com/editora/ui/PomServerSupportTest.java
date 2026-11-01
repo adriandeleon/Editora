@@ -26,13 +26,6 @@ class PomServerSupportTest {
     }
 
     @Test
-    void anAnswerOfOnlyMarkupIsTheDegradedOne() {
-        assertTrue(PomServerSupport.onlyMarkup(List.of("<!--", "<![CDATA[")));
-        assertTrue(PomServerSupport.onlyMarkup(List.of()));
-        assertFalse(PomServerSupport.onlyMarkup(List.of("commons-lang3", "<!--")));
-    }
-
-    @Test
     void theFileIsNamedRelativeToTheProject() {
         Path root = Path.of("/w/reactor").toAbsolutePath();
         assertEquals(
@@ -57,16 +50,16 @@ class PomServerSupportTest {
     }
 
     @Test
-    void anHonestEmptyAnswerChangesNothing() {
+    void anAnswerWithoutALoggedFailureChangesNothing() {
         Path a = Path.of("/w/a/pom.xml");
         assertEquals(
                 PomServerSupport.Act.DELIVER,
-                PomServerSupport.decide(false, true, List.of(), Set.of(), List.of()),
-                "markup only, nothing malformed on disk, no failure logged: a real no-match (E21)");
+                PomServerSupport.decide(false, List.of(), Set.of(), List.of(), true),
+                "no failure logged: a real no-match (E21)");
         assertEquals(
                 PomServerSupport.Act.DELIVER,
-                PomServerSupport.decide(false, true, List.of(a), Set.of(a), List.of()),
-                "the malformed pom is already out: nothing to claim");
+                PomServerSupport.decide(false, List.of(a), Set.of(), List.of(), true),
+                "a pom malformed on disk the server never registered is no proof (review 4, E33)");
     }
 
     @Test
@@ -74,27 +67,64 @@ class PomServerSupportTest {
         Path a = Path.of("/w/a/pom.xml");
         Path b = Path.of("/w/b/pom.xml");
         assertEquals(
-                PomServerSupport.Act.LEAVE_OUT, PomServerSupport.decide(true, true, List.of(a), Set.of(), List.of()));
+                PomServerSupport.Act.LEAVE_OUT, PomServerSupport.decide(true, List.of(a), Set.of(), List.of(), false));
         assertEquals(
                 PomServerSupport.Act.LEAVE_OUT,
-                PomServerSupport.decide(false, true, List.of(a, b), Set.of(a), List.of()),
-                "markup only with a pom malformed on disk: it breaks the server at the next completion anyway");
-        assertEquals(
-                PomServerSupport.Act.DELIVER,
-                PomServerSupport.decide(false, false, List.of(a), Set.of(), List.of()),
-                "a real answer: nothing is left out");
+                PomServerSupport.decide(true, List.of(a, b), Set.of(a), List.of(), false));
     }
 
     @Test
-    void aFailureWithNothingMalformedOnDiskRestartsTheRoot() {
+    void aFailureWithNothingToLeaveOutRestartsOnlyWhenAPomChanged() {
         Path a = Path.of("/w/a/pom.xml");
         assertEquals(
                 PomServerSupport.Act.RESTART_STALE,
-                PomServerSupport.decide(true, true, List.of(), Set.of(), List.of()),
-                "fixed after the server cached its failure (E21)");
+                PomServerSupport.decide(true, List.of(), Set.of(), List.of(), true),
+                "fixed on disk after the server cached its failure (E21)");
         assertEquals(
-                PomServerSupport.Act.RESTART_STALE,
-                PomServerSupport.decide(true, true, List.of(a), Set.of(a), List.of()));
+                PomServerSupport.Act.COMPLETION_OFF,
+                PomServerSupport.decide(true, List.of(a), Set.of(a), List.of(), false),
+                "nothing changed: a restart builds the same null project (review 4, E31)");
+    }
+
+    @Test
+    void aRestartIsWorthItOnlyForPomsChangedSinceTheServerStartedAndNeverTwice() {
+        Path a = Path.of("/w/a/pom.xml");
+        var changed = new com.editora.maven.MalformedPoms.Scan(List.of(), List.of(), java.util.Map.of(a, 2_000L));
+        assertTrue(PomServerSupport.restartable(changed, 1_000, null));
+        assertFalse(PomServerSupport.restartable(changed, 2_000, null), "built after that change");
+        assertFalse(PomServerSupport.restartable(changed, -1, null), "no server");
+        assertFalse(PomServerSupport.restartable(changed, 1_000, java.util.Map.of(a, 2_000L)), "the same files again");
+        assertTrue(PomServerSupport.restartable(changed, 1_000, java.util.Map.of(a, 1_500L)));
+        var named = new com.editora.maven.MalformedPoms.Scan(
+                List.of(),
+                List.of(new com.editora.maven.MalformedPoms.Unbuildable(
+                        a, 3, com.editora.maven.MalformedPoms.Why.DUPLICATE, "dependencies", true)),
+                java.util.Map.of(a, 2_000L));
+        assertFalse(PomServerSupport.restartable(named, 1_000, null), "a pom it cannot build is still there");
+    }
+
+    @Test
+    void theCompletionOffStatusNamesTheLikelyPom() {
+        com.editora.i18n.Messages.init("en");
+        Path root = Path.of("/w/reactor").toAbsolutePath();
+        var unknown = new com.editora.maven.MalformedPoms.Unbuildable(
+                root.resolve("odd/pom.xml"), 12, com.editora.maven.MalformedPoms.Why.UNKNOWN, "dependencie", false);
+        var dup = new com.editora.maven.MalformedPoms.Unbuildable(
+                root.resolve("dup/pom.xml"), 13, com.editora.maven.MalformedPoms.Why.DUPLICATE, "dependencies", true);
+        var dt = new com.editora.maven.MalformedPoms.Unbuildable(
+                root.resolve("dt/pom.xml"), 2, com.editora.maven.MalformedPoms.Why.ENTITIES, "DOCTYPE", false);
+        assertEquals(dup, PomServerSupport.likelyCulprit(List.of(unknown, dup)), "a pom with a parent first");
+        assertEquals(dt, PomServerSupport.likelyCulprit(List.of(unknown, dup, dt)));
+        assertNull(PomServerSupport.likelyCulprit(List.of()));
+
+        assertEquals(
+                "Maven completion is off: lemminx-maven could not build a pom in reactor, probably "
+                        + Path.of("dup", "pom.xml") + " (<dependencies> appears twice, line 13). See the Debug Log.",
+                PomServerSupport.completionOffStatus(root, dup));
+        assertEquals(
+                "Maven completion is off: lemminx-maven could not build a pom in reactor (see the Debug Log).",
+                PomServerSupport.completionOffStatus(root, null));
+        assertFalse(PomServerSupport.completionOffStatus(root, dt).contains("malformed"));
     }
 
     @Test
@@ -102,7 +132,7 @@ class PomServerSupportTest {
         Path a = Path.of("/w/a/pom.xml");
         assertEquals(
                 PomServerSupport.Act.TAKE_BACK,
-                PomServerSupport.decide(false, false, List.of(), Set.of(a), List.of(a)),
+                PomServerSupport.decide(false, List.of(), Set.of(a), List.of(a), false),
                 "fixed outside Editora (E24)");
     }
 

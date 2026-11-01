@@ -489,7 +489,7 @@ final class LspCoordinator {
         };
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setOnSharedServerEnded(this::sharedServerEnded);
-        lspManager.setOnWatchedFiles(this::buildFilesChanged);
+        lspManager.setOnWatchedFiles(this::rootWatcherChanged);
         lspManager.setOnInstallHold(this::installHold);
         lspManager.setWindowFocused(() -> {
             javafx.stage.Window w = host.window();
@@ -9730,6 +9730,18 @@ final class LspCoordinator {
         pendingWatched.clear();
         lspManager.notifyWatchedFiles(batch);
         buildFilesChanged(batch);
+    }
+
+    /**
+     * A batch from the server roots' own watcher ({@link LspManager}), which sees every folder: build files, and a pom
+     * left out of a Maven server's workspace and fixed on disk in a folder the Project panel never expanded (E32).
+     */
+    private void rootWatcherChanged(List<LspManager.WatchedFile> changes) {
+        buildFilesChanged(changes);
+        pomCompletionNotice.filesChanged(changes.stream()
+                .filter(c -> c.kind() != LspManager.WatchedKind.DELETED)
+                .map(LspManager.WatchedFile::file)
+                .toList());
     }
 
     /**
