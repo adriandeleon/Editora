@@ -432,7 +432,11 @@ keep the show path free of work the user is not waiting for; measure against the
 - **The focus a window gains by being shown is not a regain.** `MainController.onWindowFocusGained` skips the
   regain fan-out (external-change check, `git status` + diff, build-tool detection, clipboard, Project tree
   re-listing, open diffs) for that first focus; it only computes the repository state when no tab switch did
-  (`StartupFocus`), so a window opening on Welcome still gets its Git status once.
+  (`StartupFocus`), so a window opening on Welcome still gets its Git status once. Nor is focus that moves
+  between Editora's own windows (a file opened from the Project Map raises its editor window, a dialog
+  closes): `StartupFocus` follows every stage's focus, and a gain within 250 ms of another stage's loss runs
+  nothing, unless Editora came back from another program through one of its other windows meanwhile. A real
+  regain asks the Project Map's cached folders for their modification time instead of re-listing them.
 - **No clipboard round trip without a buffer.** `refreshPasteState` asks the clipboard owner only when a
   buffer could take the paste; the editability flip of every restored shell goes through the coalesced
   `schedulePasteStateRefresh`.

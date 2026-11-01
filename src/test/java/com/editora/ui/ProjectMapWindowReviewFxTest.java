@@ -187,7 +187,9 @@ class ProjectMapWindowReviewFxTest {
                 assertFalse(running(mapView, "cardPoll"), "a closed Map does not poll its cards");
                 assertFalse(running(mapView, "cardRefresh"), "nor refresh them");
             });
-            Thread.sleep(1_300); // longer than the poll interval
+            // A positive sentinel instead of a fixed sleep: a timer of the poll's own interval, started after
+            // the close, has fired, so a poll that was still armed would have fired too (Map review 3 D11).
+            awaitPollInterval();
             assertEquals(
                     "class Live {}\n// one\n",
                     FxTestSupport.callOnFx(() -> card.editor().getText()),
@@ -258,6 +260,21 @@ class ProjectMapWindowReviewFxTest {
                 assertTrue(asked.get() <= 4, "two candidates, two questions each, not two per row: " + asked.get());
             });
         }
+    }
+
+    /** Waits for a timer of the card poll's interval, started now on the FX thread, to fire. */
+    private static void awaitPollInterval() throws Exception {
+        java.lang.reflect.Field interval = ProjectMapView.class.getDeclaredField("CARD_POLL_INTERVAL");
+        interval.setAccessible(true);
+        javafx.util.Duration poll = (javafx.util.Duration) interval.get(null);
+        java.util.concurrent.CountDownLatch fired = new java.util.concurrent.CountDownLatch(1);
+        FxTestSupport.runOnFx(() -> {
+            PauseTransition sentinel = new PauseTransition(poll.add(javafx.util.Duration.millis(100)));
+            sentinel.setOnFinished(event -> fired.countDown());
+            sentinel.play();
+        });
+        assertTrue(fired.await(30, TimeUnit.SECONDS), "the sentinel timer fired");
+        FxTestSupport.drainFx();
     }
 
     private static boolean running(ProjectMapView view, String timer) {
@@ -418,7 +435,10 @@ class ProjectMapWindowReviewFxTest {
             r.await("the active file selected on the map", () -> r.helper.equals(selection(r.panel)));
 
             FxTestSupport.runOnFx(() -> r.panel.setActiveFile(r.guide));
-            Thread.sleep(300);
+            // A reveal is a load: once the Map is idle again, one the tab switch started has been applied.
+            FxTestSupport.drainFx();
+            r.await("the map idle", () -> !FxTestSupport.<Boolean>field(map(r.panel), "loadInFlight"));
+            FxTestSupport.drainFx();
             assertEquals(r.helper, FxTestSupport.callOnFx(() -> selection(r.panel)), "off by default: no jumping");
 
             FxTestSupport.runOnFx(() -> {

@@ -264,6 +264,8 @@ final class ProjectMapView extends VBox {
     private boolean active = true;
     /** Row states changed while the window was hidden: the next show snapshots them once. */
     private boolean showingStatesStale;
+    /** Something asked for a paint while the window was hidden. */
+    private boolean dataRepaintWhileHidden;
     /** Whether {@link #setOpenFiles} and {@link #setMarkerCandidates} were given, so rows are looked up from them. */
     private boolean showingOpenFilesGiven;
 
@@ -789,7 +791,7 @@ final class ProjectMapView extends VBox {
             row = helpRow(pointer, row, tr("project.map.help." + id + ".gesture"), "project.map.help." + id);
         }
         row = helpHeading(pointer, row, "project.map.help.cards");
-        for (String id : List.of("cardTitle", "cardGrip", "cardNotes", "addNote", "sticky")) {
+        for (String id : List.of("cardTitle", "cardGrip", "cardStructure", "cardNotes", "addNote", "sticky")) {
             row = helpRow(pointer, row, tr("project.map.help." + id + ".gesture"), "project.map.help." + id);
         }
 
@@ -1036,6 +1038,11 @@ final class ProjectMapView extends VBox {
             showingStatesStale = false;
             surface.stateChanged();
         }
+        if (dataRepaintWhileHidden) {
+            dataRepaintWhileHidden = false;
+            surface.repaint(); // what changed while hidden (a Git status push) is drawn once now
+        }
+        surface.warmIcons(); // stopped while hidden
         scheduleCardRefresh();
     }
 
@@ -1417,17 +1424,23 @@ final class ProjectMapView extends VBox {
     }
 
     void setGitStatus(Map<Path, GitFileStatus> status) {
-        Map<Path, GitFileStatus> normalized = new HashMap<>();
-        if (status != null) {
-            status.forEach((path, value) -> normalized.put(ProjectMapModel.normalize(path), value));
+        Map<Path, GitFileStatus> given = status == null ? Map.of() : status;
+        if (given.equals(dataGitStatusGiven) && java.util.Objects.equals(root, dataGitStatusRoot)) {
+            return; // every Git refresh (a tab switch, a save, a focus regain) pushes the status, mostly unchanged
         }
+        dataGitStatusGiven = given;
+        dataGitStatusRoot = root;
+        Map<Path, GitFileStatus> normalized = new HashMap<>();
+        given.forEach((path, value) -> normalized.put(ProjectMapModel.normalize(path), value));
         gitStatus = Map.copyOf(normalized);
         Set<Path> directories = new HashSet<>();
         for (Path file : normalized.keySet()) {
             for (Path parent = file.getParent();
                     parent != null && root != null && parent.startsWith(root);
                     parent = parent.getParent()) {
-                directories.add(parent);
+                if (!directories.add(parent)) {
+                    break; // this folder, and every one above it, is recorded already
+                }
                 if (parent.equals(root)) {
                     break;
                 }
@@ -1437,6 +1450,11 @@ final class ProjectMapView extends VBox {
         surface.setGitState(gitStatus, gitChangedDirectories);
         updateFilters();
     }
+
+    /** The status last given to {@link #setGitStatus}, and the root it was given for. */
+    private Map<Path, GitFileStatus> dataGitStatusGiven = Map.of();
+
+    private @Nullable Path dataGitStatusRoot;
 
     void refreshStates() {
         if (!active) {
@@ -1462,9 +1480,20 @@ final class ProjectMapView extends VBox {
         previews.values().forEach(this::updateCardNotes);
     }
 
-    /** Anything on disk may have changed (a focus regain, an in-app file operation): every folder is listed again. */
+    /** Anything on disk may have changed (an in-app file operation): every folder is listed again. */
     void refresh() {
         listings.invalidateAll();
+        reload();
+        scheduleCardRefresh();
+    }
+
+    /**
+     * Editora came back from another program (a real focus regain): each watched folder's cached listing is
+     * kept when the folder's modification time did not move, which the loader reads off the FX thread; only
+     * the folders that changed, and the unwatched ones, are listed again (position 22 of Map review 3).
+     */
+    void revalidate() {
+        listings.revalidateAll();
         reload();
         scheduleCardRefresh();
     }
@@ -1964,7 +1993,8 @@ final class ProjectMapView extends VBox {
                 () -> requested != generation.get(),
                 surface.columnFilterQueries(),
                 // A search opens exactly the folders that lead to its matches: no chain opens on its own.
-                compactChainsOption.isSelected() && !searching());
+                compactChainsOption.isSelected() && !searching(),
+                dataPriorityFolders());
         loadStarted();
         try {
             loader.submit(() -> {
@@ -1989,6 +2019,38 @@ final class ProjectMapView extends VBox {
         } catch (java.util.concurrent.RejectedExecutionException shutDown) {
             loadFinished();
         }
+    }
+
+    /** The folder whose rows "+N more" raised last; the load pays it before the shallower folders (A10). */
+    private @Nullable Path dataLastRaised;
+
+    /**
+     * The open folders a load pays first when the overall limit is near: the one the selection is in, then
+     * the one whose rows were raised last. The folder being read keeps its rows when another column opens.
+     */
+    private List<Path> dataPriorityFolders() {
+        List<Path> first = new ArrayList<>(2);
+        Path selectedColumn = dataSelectedColumn();
+        if (selectedColumn != null) {
+            first.add(selectedColumn);
+        }
+        Path raised = dataLastRaised;
+        if (raised != null && directoryLimits.containsKey(raised) && !raised.equals(selectedColumn)) {
+            first.add(raised);
+        } else if (raised != null && !directoryLimits.containsKey(raised)) {
+            dataLastRaised = null; // its column closed, or its raise was undone
+        }
+        return first;
+    }
+
+    /** The folder whose column holds the selected row, or null without a selection there. */
+    private @Nullable Path dataSelectedColumn() {
+        Path selected = surface.selectedPath();
+        ProjectMapModel.Entry entry = selected == null ? null : surface.entryByPath.get(selected);
+        if (entry == null || entry.isSymbol()) {
+            return null;
+        }
+        return entry.parent();
     }
 
     private static String placeholderLabel(ProjectMapModel.PlaceholderKind kind, int remaining) {
@@ -2161,11 +2223,31 @@ final class ProjectMapView extends VBox {
                 }
             }
         } else if (loaded.capped() && (announceLimit || !wasCapped)) {
-            onStatus.accept(tr("project.map.status.limit", ProjectMapModel.MAX_VISIBLE_ITEMS));
+            Path reading = dataLastRaised != null ? dataLastRaised : dataSelectedColumn();
+            if (reading != null && dataOnlyAncestorsOpen(reading)) {
+                // Closing a column would close the folder itself: its filter reaches the rest (A10).
+                Path name = reading.getFileName();
+                onStatus.accept(tr(
+                        "project.map.status.limitUseFilter",
+                        ProjectMapModel.MAX_VISIBLE_ITEMS,
+                        name == null ? reading : name));
+            } else {
+                onStatus.accept(tr("project.map.status.limit", ProjectMapModel.MAX_VISIBLE_ITEMS));
+            }
         }
         announceMatches = false;
         announceLimit = false;
         wasCapped = loaded.capped();
+    }
+
+    /** Whether every open folder is {@code folder} or one of the folders that lead to it. */
+    private boolean dataOnlyAncestorsOpen(Path folder) {
+        for (Path open : expandedDirectories()) {
+            if (!folder.startsWith(open)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Removes a path that no longer resolves from the selection history, keeping the index on the selection. */
@@ -2269,6 +2351,7 @@ final class ProjectMapView extends VBox {
         loadMorePreviousLimit = directoryLimits.getOrDefault(path, ProjectMapModel.DIRECTORY_CHUNK);
         loadMorePreviousLoaded = facts == null ? 0 : facts.loaded();
         loadMoreDirectory = path;
+        dataLastRaised = path;
         directoryLimits.put(
                 path, Math.max(loadMorePreviousLimit, loadMorePreviousLoaded) + ProjectMapModel.DIRECTORY_CHUNK);
         reloadForUser();
@@ -4178,6 +4261,7 @@ final class ProjectMapView extends VBox {
                     structureProbe)) {
                 probe.fillProperty().addListener((obs, old, value) -> {
                     iconImages.clear();
+                    warmIcons(); // the new theme's icons, ahead of the rows that will need them
                     repaint();
                 });
             }
@@ -4204,6 +4288,7 @@ final class ProjectMapView extends VBox {
                 }
                 if (scene != null) {
                     scene.focusOwnerProperty().addListener(focusOwnerListener);
+                    warmIcons();
                 }
                 claimKeys(scene != null && scene.getFocusOwner() == this);
             });
@@ -4640,6 +4725,10 @@ final class ProjectMapView extends VBox {
          * once for any number of changes in between (Map review D5). {@link #paintNow} draws at once.
          */
         void repaint() {
+            if (!active) {
+                dataRepaintWhileHidden = true; // nobody sees it: setShowing(true) paints once (D9)
+                return;
+            }
             if (painting || getWidth() <= 0 || getHeight() <= 0) {
                 return;
             }
@@ -5150,75 +5239,122 @@ final class ProjectMapView extends VBox {
                 columnQueries.remove(id);
                 columnShowHidden.remove(id);
             }
-            for (ProjectMapModel.ColumnId id : ids) {
-                if (columnControls.containsKey(id)) {
+            // A column's controls are made when it is first laid out on screen at a zoom that shows them
+            // (dataEnsureColumnControls): a search that opens 300 columns no longer builds 1,200 native
+            // controls in one pulse for columns nobody can see (A8).
+        }
+
+        /**
+         * Makes the controls of the columns on screen, or within one viewport of it (a pan's worth: they are
+         * ready when it brings them in), that show them at this zoom and have none yet.
+         */
+        private void dataEnsureColumnControls() {
+            if (outputPaint) {
+                return;
+            }
+            double width = getWidth();
+            double height = getHeight();
+            for (ColumnBox box : columnBoxes) {
+                ProjectMapModel.ColumnId id = box.column().id();
+                if (id.depth() <= 0 || columnControls.containsKey(id)) {
                     continue;
                 }
-                TextField filter = new TextField();
-                filter.getStyleClass().add("project-map-column-filter");
-                filter.setPromptText(tr("project.map.column.filter"));
-                filter.setAccessibleHelp(tr("project.map.column.filterHelp"));
-                filter.textProperty().addListener((obs, old, value) -> {
-                    if (value == null || value.isBlank()) {
-                        columnQueries.remove(id);
-                    } else {
-                        columnQueries.put(id, value);
-                    }
-                    truncatedColumnFilterChanged(id.parent());
-                    repaint();
-                    updateAccessibleText(); // the column's count of drawn rows changed
-                    if (selected != null
-                            && boxes.stream()
-                                    .noneMatch(box -> box.entry().path().equals(selected))) {
-                        boxes.stream()
-                                .filter(box -> columnId(box.entry()).equals(id))
-                                .findFirst()
-                                .ifPresent(box -> select(box.entry().path()));
-                    }
-                });
-                filter.setOnAction(event -> leaveColumnFilter(id));
-
-                CheckBox showHidden = new CheckBox(tr("project.map.column.showHidden"));
-                showHidden.getStyleClass().add("project-map-column-hidden");
-                showHidden.setSelected(showHiddenDefault);
-                showHidden.setTooltip(new Tooltip(tr("project.map.column.showHiddenHelp")));
-                showHidden.setAccessibleText(tr("project.map.column.showHidden"));
-                showHidden.selectedProperty().addListener((obs, old, selected) -> {
-                    if (syncingHidden) {
-                        return;
-                    }
-                    columnShowHidden.put(id, selected);
-                    columnHiddenChanged(); // hidden rows are not loaded while off, so turning it on lists again
-                    repaint();
-                    if (this.selected != null
-                            && boxes.stream()
-                                    .noneMatch(box -> box.entry().path().equals(this.selected))) {
-                        boxes.stream()
-                                .filter(box -> columnId(box.entry()).equals(id))
-                                .findFirst()
-                                .ifPresent(box -> select(box.entry().path()));
-                    }
-                });
-
-                ToggleButton pin = new ToggleButton();
-                pin.getStyleClass().add("project-map-column-pin");
-                pin.setGraphic(Icons.pin());
-                pin.setTooltip(new Tooltip(tr("project.map.column.pin")));
-                pin.setAccessibleText(tr("project.map.column.pin"));
-                pin.selectedProperty().addListener((obs, old, selected) -> {
-                    columnLayouts.computeIfAbsent(id, ignored -> new ColumnLayout()).locked = selected;
-                    pin.setTooltip(new Tooltip(tr(selected ? "project.map.column.unpin" : "project.map.column.pin")));
-                });
-
-                Button close = new Button("×");
-                close.getStyleClass().add("project-map-column-close");
-                close.setTooltip(new Tooltip(tr("project.map.column.close")));
-                close.setAccessibleText(tr("project.map.column.close"));
-                close.setOnAction(event -> onCloseColumn.accept(closeTarget(id)));
-
-                columnControls.put(id, new ColumnControls(filter, showHidden, pin, close));
-                getChildren().addAll(filter, showHidden, pin, close);
+                boolean nearScreen = box.x() < 2 * width
+                        && box.x() + box.width() > -width
+                        && box.y() < 2 * height
+                        && box.y() + box.height() > -height;
+                if (nearScreen && (closeFits(box) || detailControlsFit(box.width()))) {
+                    dataColumnControls(id);
+                }
             }
+        }
+
+        /**
+         * The controls of column {@code id}, made now if it has none: they start from what the column holds
+         * already (its filter text, its "Show hidden", its lock), since a column can be filtered or locked
+         * before its controls exist ({@code /} on an off-screen column, a lock kept from before).
+         */
+        private ColumnControls dataColumnControls(ProjectMapModel.ColumnId id) {
+            ColumnControls existing = columnControls.get(id);
+            if (existing != null) {
+                return existing;
+            }
+            TextField filter = new TextField();
+            filter.getStyleClass().add("project-map-column-filter");
+            filter.setPromptText(tr("project.map.column.filter"));
+            filter.setAccessibleHelp(tr("project.map.column.filterHelp"));
+            String query = columnQueries.get(id);
+            if (query != null) {
+                filter.setText(query);
+            }
+            filter.textProperty().addListener((obs, old, value) -> {
+                if (value == null || value.isBlank()) {
+                    columnQueries.remove(id);
+                } else {
+                    columnQueries.put(id, value);
+                }
+                truncatedColumnFilterChanged(id.parent());
+                repaint();
+                updateAccessibleText(); // the column's count of drawn rows changed
+                if (selected != null
+                        && boxes.stream().noneMatch(box -> box.entry().path().equals(selected))) {
+                    boxes.stream()
+                            .filter(box -> columnId(box.entry()).equals(id))
+                            .findFirst()
+                            .ifPresent(box -> select(box.entry().path()));
+                }
+            });
+            filter.setOnAction(event -> leaveColumnFilter(id));
+
+            CheckBox showHidden = new CheckBox(tr("project.map.column.showHidden"));
+            showHidden.getStyleClass().add("project-map-column-hidden");
+            showHidden.setSelected(columnShowHidden.getOrDefault(id, showHiddenDefault));
+            showHidden.setTooltip(new Tooltip(tr("project.map.column.showHiddenHelp")));
+            showHidden.setAccessibleText(tr("project.map.column.showHidden"));
+            showHidden.selectedProperty().addListener((obs, old, selected) -> {
+                if (syncingHidden) {
+                    return;
+                }
+                columnShowHidden.put(id, selected);
+                columnHiddenChanged(); // hidden rows are not loaded while off, so turning it on lists again
+                repaint();
+                if (this.selected != null
+                        && boxes.stream().noneMatch(box -> box.entry().path().equals(this.selected))) {
+                    boxes.stream()
+                            .filter(box -> columnId(box.entry()).equals(id))
+                            .findFirst()
+                            .ifPresent(box -> select(box.entry().path()));
+                }
+            });
+
+            ToggleButton pin = new ToggleButton();
+            pin.getStyleClass().add("project-map-column-pin");
+            pin.setGraphic(Icons.pin());
+            ColumnLayout layout = columnLayouts.get(id);
+            boolean locked = layout != null && layout.locked;
+            pin.setSelected(locked);
+            pin.setTooltip(new Tooltip(tr(locked ? "project.map.column.unpin" : "project.map.column.pin")));
+            pin.setAccessibleText(tr("project.map.column.pin"));
+            pin.selectedProperty().addListener((obs, old, selected) -> {
+                columnLayouts.computeIfAbsent(id, ignored -> new ColumnLayout()).locked = selected;
+                pin.setTooltip(new Tooltip(tr(selected ? "project.map.column.unpin" : "project.map.column.pin")));
+            });
+
+            Button close = new Button("×");
+            close.getStyleClass().add("project-map-column-close");
+            close.setTooltip(new Tooltip(tr("project.map.column.close")));
+            close.setAccessibleText(tr("project.map.column.close"));
+            close.setOnAction(event -> onCloseColumn.accept(closeTarget(id)));
+
+            ColumnControls made = new ColumnControls(filter, showHidden, pin, close);
+            columnControls.put(id, made);
+            getChildren().addAll(filter, showHidden, pin, close);
+            if (getScene() != null) {
+                for (Control control : List.of(filter, showHidden, pin, close)) {
+                    control.applyCss(); // styled before it is first measured and laid out
+                }
+            }
+            return made;
         }
 
         /**
@@ -5433,6 +5569,7 @@ final class ProjectMapView extends VBox {
                 cachedFirstColumnsFor = world;
             }
             overviewBox = outputPaint ? null : overviewGeometry(canvas.getWidth(), canvas.getHeight());
+            dataEnsureColumnControls();
             layoutColumnControls();
             reportNoMatches(filters != null && filters.active() && emphasized.isEmpty());
             reportNarrowed(world.narrowed());
@@ -6714,7 +6851,7 @@ final class ProjectMapView extends VBox {
                 }
                 return cached;
             }
-            String kind = entry.directory() ? "folder" : FileIcons.iconKeyFor(entry.name());
+            String kind = entry.directory() ? FOLDER_ICON : fileIconKind(entry.name());
             // On the accent fill the glyph takes the on-accent ink whatever its status colour would be.
             String statusClass = onAccentFill ? ON_ACCENT_ICON_CLASS : iconStatusClass(entry);
             IconKey key = new IconKey(kind, statusClass);
@@ -6736,6 +6873,69 @@ final class ProjectMapView extends VBox {
             }
             GitFileStatus status = gitStatusOf(entry.path());
             return status == null ? "" : status.cssClass();
+        }
+
+        private static final String FOLDER_ICON = "folder";
+
+        /** A file's icon kind: its glyph, and whether it carries the lock of an encrypted file inside it. */
+        private static String fileIconKind(String fileName) {
+            String glyph = FileIcons.iconKeyFor(fileName);
+            return FileIcons.isEncryptedWithInnerType(fileName) ? glyph + "+lock" : glyph;
+        }
+
+        /** How many icons the warm-up rasterises per pulse: a few milliseconds, spread out. */
+        private static final int ICONS_PER_PULSE = 4;
+
+        /** The icons still to rasterise ahead of need (A8). */
+        private final java.util.Deque<IconKey> iconWarmup = new java.util.ArrayDeque<>();
+
+        private final AnimationTimer iconWarmupTimer = new AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                warmSomeIcons();
+            }
+        };
+
+        /**
+         * Rasterises the theme's icon set, a few per pulse, while the Map shows. A big search used to meet a
+         * hundred icon kinds it had not drawn yet in one paint and snapshot each of them on the spot, which
+         * froze every window for a visible moment (Map review 3 A8). Statuses other than plain (and the
+         * selection's on-accent ink) stay on demand: they are a few rows at a time.
+         */
+        private void warmIcons() {
+            iconWarmup.clear();
+            iconWarmup.add(new IconKey(FOLDER_ICON, ""));
+            iconWarmup.add(new IconKey(FOLDER_ICON, "git-status-dir-changed"));
+            for (String glyph : FileIcons.iconKeys()) {
+                iconWarmup.add(new IconKey(glyph, ""));
+            }
+            iconWarmupTimer.start();
+        }
+
+        private void warmSomeIcons() {
+            if (!active || getScene() == null || outputPaint) {
+                iconWarmupTimer.stop(); // shown again (setShowing, a new scene) starts it over
+                return;
+            }
+            for (int done = 0; done < ICONS_PER_PULSE && !iconWarmup.isEmpty(); ) {
+                IconKey key = iconWarmup.removeFirst();
+                if (iconImages.containsKey(key)) {
+                    continue;
+                }
+                iconImages.put(key, rasterizeKind(key.kind(), key.statusClass()));
+                done++;
+            }
+            if (iconWarmup.isEmpty()) {
+                iconWarmupTimer.stop();
+            }
+        }
+
+        /** The image for an icon kind, as {@link #rasterizeIcon} draws it for a file of that kind. */
+        private Image rasterizeKind(String kind, String statusClass) {
+            if (kind.equals(FOLDER_ICON)) {
+                return rasterize(FileIcons.forProjectItem("", true), "folder-cell", statusClass);
+            }
+            return rasterize(FileIcons.forIconKey(kind), "file-cell", statusClass);
         }
 
         /** Snapshots the shared Project-tree SVG once; subsequent Canvas paints only blit the cached image. */
@@ -7181,6 +7381,11 @@ final class ProjectMapView extends VBox {
         }
 
         private static String formatSize(long bytes) {
+            return formatSize(bytes, FileHistoryPanel.locale());
+        }
+
+        /** A size in binary units, its number written as {@code locale} writes numbers ("1,5 KiB" in German). */
+        private static String formatSize(long bytes, Locale locale) {
             if (bytes < 1024) {
                 return bytes + " B";
             }
@@ -7192,7 +7397,10 @@ final class ProjectMapView extends VBox {
                 value /= 1024.0;
                 unit++;
             } while (value >= 1024 && unit < units.length - 1);
-            return String.format(Locale.ROOT, "%.1f %s", value, units[unit]);
+            java.text.NumberFormat oneDecimal = java.text.NumberFormat.getNumberInstance(locale);
+            oneDecimal.setMinimumFractionDigits(1);
+            oneDecimal.setMaximumFractionDigits(1);
+            return oneDecimal.format(value) + " " + units[unit];
         }
 
         private void mouseClicked(MouseEvent event) {
@@ -7850,11 +8058,11 @@ final class ProjectMapView extends VBox {
             ProjectMapModel.ColumnId id = header != null
                     ? header.column().id()
                     : selectedEntry().map(MapSurface::columnId).orElse(null);
-            ColumnControls controls = id == null ? null : columnControls.get(id);
-            if (controls == null) {
+            if (id == null || id.depth() <= 0) {
                 onStatus.accept(tr("project.map.status.rootColumnNoFilter"));
                 return;
             }
+            ColumnControls controls = dataColumnControls(id); // an off-screen column has none yet
             TextField filter = controls.filter();
             repaint();
             for (double step : FILTER_ZOOM_STEPS) {

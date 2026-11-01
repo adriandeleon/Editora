@@ -406,6 +406,25 @@ public final class FileIcons {
         return boxed(path == null ? Icons.fileSheet() : Icons.of(path));
     }
 
+    /** Every glyph key {@link #iconKeyFor(String)} can give a file (the Project Map rasterises them ahead). */
+    static java.util.Set<String> iconKeys() {
+        java.util.Set<String> keys = new java.util.TreeSet<>(PATHS.keySet());
+        keys.add(iconKeyFor("")); // the fallback a name of no known type gets
+        return keys;
+    }
+
+    /**
+     * The glyph {@link #forFileName} gives every file whose {@link #iconKeyFor(String)} is {@code key}; with a
+     * {@code "+lock"} suffix, the encrypted-file badge on it too ({@link #forProjectItem}).
+     */
+    static Node forIconKey(String key) {
+        boolean lock = key.endsWith("+lock");
+        String glyphKey = lock ? key.substring(0, key.length() - "+lock".length()) : key;
+        String path = PATHS.get(glyphKey);
+        Node glyph = boxed(path == null ? Icons.fileSheet() : Icons.of(path));
+        return lock ? withLockBadge(glyph) : glyph;
+    }
+
     /**
      * The glyph used for an item in the Project navigator. Keeping this choice here ensures the Tree and
      * Canvas views cannot drift to different folder or file-type icon families.

@@ -159,7 +159,7 @@ class ProjectMapNavReviewFxTest {
         waitForFx(() -> contains(h.surface(), readme));
         FxTestSupport.runOnFx(() -> h.view().revealPath(h.file(0)));
         waitForFx(() -> contains(h.surface(), h.file(0)) && h.file(0).equals(selected(h.surface())));
-        settle();
+        settle(h.surface());
         FxTestSupport.runOnFx(() -> {
             FxTestSupport.invoke(h.surface(), "resetViewport");
             h.scene().getRoot().applyCss();
@@ -177,7 +177,7 @@ class ProjectMapNavReviewFxTest {
             // A reveal of a row whose folder is closed (Back/Forward and breadcrumb crumbs take this path too).
             FxTestSupport.runOnFx(() -> h.view().revealPath(h.item(140)));
             waitForFx(() -> h.item(140).equals(selected(h.surface())));
-            settle();
+            settle(h.surface());
             FxTestSupport.runOnFx(() -> {
                 FxTestSupport.invoke(h.surface(), "repaint");
                 assertInView(h.surface(), h.item(140), "a revealed row that had to be loaded");
@@ -194,7 +194,7 @@ class ProjectMapNavReviewFxTest {
                 h.view().setSearchMatches("m120", List.of(h.item(120)));
             });
             waitForFx(() -> h.item(120).equals(selected(h.surface())));
-            settle();
+            settle(h.surface());
             FxTestSupport.runOnFx(() -> {
                 FxTestSupport.invoke(h.surface(), "repaint");
                 assertInView(h.surface(), h.item(120), "a search's first match");
@@ -257,7 +257,7 @@ class ProjectMapNavReviewFxTest {
                 press(h.surface(), KeyCode.ENTER);
             });
             waitForFx(() -> contains(h.surface(), h.item(349)));
-            settle();
+            settle(h.surface());
             FxTestSupport.runOnFx(() -> {
                 assertEquals(h.item(300), selected(h.surface()), "the first row that arrived");
                 FxTestSupport.invoke(h.surface(), "repaint");
@@ -280,7 +280,7 @@ class ProjectMapNavReviewFxTest {
             waitForFx(() -> x.equals(selected(h.surface())));
             FxTestSupport.runOnFx(() -> h.view().setQuery(""));
             waitForFx(() -> !contains(h.surface(), x));
-            settle();
+            settle(h.surface());
             assertEquals(h.file(7), FxTestSupport.callOnFx(() -> selected(h.surface())), "back to where it was");
 
             // A row the user chose during the search, and that stays on the map, is kept.
@@ -294,7 +294,7 @@ class ProjectMapNavReviewFxTest {
                 h.view().setQuery("");
             });
             waitForFx(() -> !contains(h.surface(), x));
-            settle();
+            settle(h.surface());
             assertEquals(h.readme(), FxTestSupport.callOnFx(() -> selected(h.surface())));
         }
     }
@@ -306,7 +306,7 @@ class ProjectMapNavReviewFxTest {
         try (Harness h = open(150)) {
             FxTestSupport.runOnFx(() -> h.view().revealPath(h.item(10)));
             waitForFx(() -> h.item(10).equals(selected(h.surface())));
-            settle();
+            settle(h.surface());
             Canvas overview = FxTestSupport.callOnFx(() -> {
                 FxTestSupport.invoke(h.surface(), "repaint");
                 return FxTestSupport.field(h.surface(), "overviewCanvas");
@@ -326,7 +326,7 @@ class ProjectMapNavReviewFxTest {
                 robot.mousePress(MouseButton.PRIMARY);
                 robot.mouseRelease(MouseButton.PRIMARY);
             });
-            settle();
+            settle(h.surface());
             FxTestSupport.runOnFx(() -> {
                 FxTestSupport.invoke(h.surface(), "repaint");
                 assertTrue(anyColumnInView(h.surface()), "a press at the frame's corner keeps a column in view");
@@ -343,9 +343,9 @@ class ProjectMapNavReviewFxTest {
                 robot.mouseMove(cx, frame.getMinY() + frame.getHeight() / 2);
                 robot.mouseMove(cx, frame.getMaxY() - 4);
             });
-            settle();
+            settle(h.surface());
             FxTestSupport.runOnFx(() -> new Robot().mouseRelease(MouseButton.PRIMARY));
-            settle();
+            settle(h.surface());
             double after = FxTestSupport.callOnFx(() -> FxTestSupport.field(h.surface(), "offsetY"));
             assertTrue(
                     after < before - 100, "dragging down the overview scrolls down the map: " + before + " → " + after);
@@ -355,7 +355,7 @@ class ProjectMapNavReviewFxTest {
                 h.stage().setWidth(560);
                 h.stage().setHeight(380);
             });
-            settle();
+            settle(h.surface());
             FxTestSupport.runOnFx(() -> {
                 h.scene().getRoot().layout();
                 FxTestSupport.invoke(h.surface(), "repaint");
@@ -372,7 +372,7 @@ class ProjectMapNavReviewFxTest {
         try (Harness h = open(150)) {
             FxTestSupport.runOnFx(() -> h.view().revealPath(h.item(10)));
             waitForFx(() -> h.item(10).equals(selected(h.surface())));
-            settle();
+            settle(h.surface());
             Region card = FxTestSupport.callOnFx(() -> {
                 select(h.surface(), h.readme());
                 FxTestSupport.call(h.view(), "previewSelection", new Class<?>[] {Path.class}, h.readme());
@@ -383,7 +383,7 @@ class ProjectMapNavReviewFxTest {
                 preview.toFront();
                 return preview;
             });
-            settle();
+            settle(h.surface());
             Button zoomOut = FxTestSupport.callOnFx(() -> {
                 FxTestSupport.invoke(h.surface(), "repaint");
                 card.resize(h.surface().getWidth(), h.surface().getHeight());
@@ -392,10 +392,10 @@ class ProjectMapNavReviewFxTest {
                 assertFalse(bar.isPickOnBounds(), "only the buttons take clicks, not the gaps");
                 return (Button) bar.getChildren().getFirst();
             });
-            settle();
+            settle(h.surface());
             double zoomBefore = FxTestSupport.callOnFx(() -> FxTestSupport.field(h.surface(), "zoom"));
             FxTestSupport.runOnFx(() -> robotClick(zoomOut));
-            settle();
+            settle(h.surface());
             double zoomAfter = FxTestSupport.callOnFx(() -> FxTestSupport.field(h.surface(), "zoom"));
             assertEquals(zoomBefore * 0.9, zoomAfter, 0.001, "Zoom out was reached through the card over it");
 
@@ -411,7 +411,7 @@ class ProjectMapNavReviewFxTest {
                 robot.mouseMove(frame.getCenterX(), frame.getMaxY() - 3);
                 robot.mouseClick(MouseButton.PRIMARY);
             });
-            settle();
+            settle(h.surface());
             double offsetAfter = FxTestSupport.callOnFx(() -> FxTestSupport.field(h.surface(), "offsetY"));
             assertNotEquals(offsetBefore, offsetAfter, 0.5, "the overview took the click, not the card under it");
         }
@@ -424,7 +424,7 @@ class ProjectMapNavReviewFxTest {
         try (Harness h = open(0)) {
             FxTestSupport.runOnFx(() -> h.view().revealPath(h.b().resolve("x.txt")));
             waitForFx(() -> contains(h.surface(), h.b().resolve("x.txt")));
-            settle();
+            settle(h.surface());
             double startY = FxTestSupport.callOnFx(() -> {
                 FxTestSupport.invoke(h.surface(), "resetViewport");
                 FxTestSupport.invoke(h.surface(), "repaint");
@@ -457,7 +457,7 @@ class ProjectMapNavReviewFxTest {
                 robot.mouseMove(row.getX() + 100, row.getY() + 30);
                 robot.mouseRelease(MouseButton.PRIMARY);
             });
-            settle();
+            settle(h.surface());
             double after = FxTestSupport.callOnFx(() -> FxTestSupport.field(h.surface(), "offsetX"));
             assertEquals(before + 100, after, 1.0, "a primary drag from a row pans the map");
             assertTrue(h.opened().isEmpty(), "and its release is not a click");
@@ -471,7 +471,7 @@ class ProjectMapNavReviewFxTest {
                 robot.mouseMove(moved.getX() + 2, moved.getY() + 1);
                 robot.mouseRelease(MouseButton.PRIMARY);
             });
-            settle();
+            settle(h.surface());
             assertEquals(List.of(h.readme()), h.opened());
 
             // "Single-click opens files" off: a click selects, a double-click opens.
@@ -485,10 +485,10 @@ class ProjectMapNavReviewFxTest {
             // second (the wobble click above was on README a moment ago).
             Point2D other = FxTestSupport.callOnFx(() -> rowCenterOnScreen(h.surface(), h.file(0)));
             FxTestSupport.runOnFx(() -> robotClickAt(other));
-            settle();
+            settle(h.surface());
             Point2D readme = FxTestSupport.callOnFx(() -> rowCenterOnScreen(h.surface(), h.readme()));
             FxTestSupport.runOnFx(() -> robotClickAt(readme));
-            settle();
+            settle(h.surface());
             assertEquals(List.of(h.readme()), h.opened(), "a single click opens nothing more");
             assertEquals(h.readme(), FxTestSupport.callOnFx(() -> selected(h.surface())), "it selects the row");
             FxTestSupport.runOnFx(() -> {
@@ -557,7 +557,7 @@ class ProjectMapNavReviewFxTest {
         try (Harness h = open(0)) {
             FxTestSupport.runOnFx(() -> h.view().revealPath(h.b().resolve("x.txt")));
             waitForFx(() -> contains(h.surface(), h.b().resolve("x.txt")));
-            settle();
+            settle(h.surface());
             FxTestSupport.runOnFx(() -> {
                 FxTestSupport.invoke(h.surface(), "repaint");
                 List<Control> controls = columnControls(h.surface());
@@ -691,7 +691,7 @@ class ProjectMapNavReviewFxTest {
                 select(h.surface(), h.readme());
                 FxTestSupport.call(h.view(), "previewSelection", new Class<?>[] {Path.class}, h.readme());
             });
-            settle();
+            settle(h.surface());
             FxTestSupport.runOnFx(() -> {
                 ProjectMapPreview card = onlyCard(h.view());
                 card.focusContent();
@@ -706,7 +706,7 @@ class ProjectMapNavReviewFxTest {
                 select(h.surface(), h.readme());
                 FxTestSupport.call(h.view(), "previewSelection", new Class<?>[] {Path.class}, h.readme());
             });
-            settle();
+            settle(h.surface());
             FxTestSupport.runOnFx(() -> {
                 ProjectMapPreview card = onlyCard(h.view());
                 card.focusContent();
@@ -714,7 +714,7 @@ class ProjectMapNavReviewFxTest {
                 Event.fireEvent(
                         text, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.TAB, false, false, false, false));
             });
-            settle();
+            settle(h.surface());
             FxTestSupport.runOnFx(() -> assertSame(
                     h.surface(), h.scene().getFocusOwner(), "Tab out of the card returns to the map, not the toolbar"));
 
@@ -759,7 +759,7 @@ class ProjectMapNavReviewFxTest {
         waitForFx(() -> contains(surface, readme));
         FxTestSupport.runOnFx(() -> view.revealPath(a.resolve("f2.txt")));
         waitForFx(() -> a.resolve("f2.txt").equals(selected(surface)));
-        settle();
+        settle(surface);
         Scene scene = FxTestSupport.callOnFx(surface::getScene);
         FxTestSupport.runOnFx(() -> {
             surface.requestFocus();
@@ -797,11 +797,39 @@ class ProjectMapNavReviewFxTest {
 
     // --- helpers ---
 
-    private static void settle() throws Exception {
+    /**
+     * Waits until the Map holding {@code surface} has no load in flight and no paint pending, then for two
+     * pulses more: a condition rather than a fixed sleep, which passed or failed with the machine's load
+     * (Map review 3 D11).
+     */
+    private static void settle(Region surface) throws Exception {
         FxTestSupport.drainFx();
-        Thread.sleep(120);
+        waitForFx(() -> mapIdle(surface));
+        java.util.concurrent.CountDownLatch pulses = new java.util.concurrent.CountDownLatch(2);
+        javafx.animation.AnimationTimer counter = new javafx.animation.AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                pulses.countDown();
+            }
+        };
+        FxTestSupport.runOnFx(counter::start);
+        try {
+            assertTrue(pulses.await(10, TimeUnit.SECONDS), "two pulses ran");
+        } finally {
+            FxTestSupport.runOnFx(counter::stop);
+        }
+        waitForFx(() -> mapIdle(surface));
         FxTestSupport.drainFx();
-        FxTestSupport.drainFx();
+    }
+
+    private static boolean mapIdle(Region surface) {
+        for (javafx.scene.Node node = surface; node != null; node = node.getParent()) {
+            if (node instanceof ProjectMapView view) {
+                return !FxTestSupport.<Boolean>field(view, "loadInFlight")
+                        && !FxTestSupport.<Boolean>field(surface, "viewportRepaintPending");
+            }
+        }
+        return true; // not on a Map view (yet): nothing to wait for
     }
 
     private static void waitForFx(BooleanSupplier condition) throws Exception {
@@ -987,9 +1015,9 @@ class ProjectMapNavReviewFxTest {
                 robot.mouseMove(start.getX(), start.getY() + dy * step / 5);
             }
         });
-        settle();
+        settle(surface);
         FxTestSupport.runOnFx(() -> new Robot().mouseRelease(MouseButton.PRIMARY));
-        settle();
+        settle(surface);
         FxTestSupport.runOnFx(() -> FxTestSupport.invoke(surface, "repaint"));
     }
 
