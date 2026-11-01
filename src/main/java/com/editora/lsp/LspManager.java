@@ -4149,6 +4149,86 @@ public final class LspManager {
         });
     }
 
+    /** How long the Project Map waits for a running server's outline of a file with no tab. */
+    static final java.time.Duration CLOSED_FILE_OUTLINE_TIMEOUT = java.time.Duration.ofSeconds(8);
+
+    /**
+     * Whether a server that already runs in this window — for {@code file}'s language, on a root that holds it, past its
+     * handshake and with the document-symbol outline — would outline {@code file} (the Project Map's Structure columns
+     * for a file with no tab, Map explore round position 10). Never starts a server.
+     */
+    public boolean outlinesClosedFile(@Nullable Path file) {
+        return closedFileSession(file) != null;
+    }
+
+    /**
+     * The document-symbol outline of {@code text}, the content of {@code file}, from the running server {@link
+     * #outlinesClosedFile} names: a file no editor tab has open is opened on that session for this request alone,
+     * under an opener of its own, and closed when the answer is in — a tab that opens the file meanwhile keeps it open
+     * on the server. A file some window already has open is asked about as it is. {@code cb} gets the symbols on the
+     * FX thread, or null when no such server runs, it fails or it takes longer than {@link
+     * #CLOSED_FILE_OUTLINE_TIMEOUT}. Never starts a server. FX thread.
+     */
+    public void closedFileSymbols(Path file, String text, Consumer<@Nullable List<SymbolNode>> cb) {
+        LanguageServerSession s = closedFileSession(file);
+        Path name = file == null ? null : file.getFileName();
+        if (s == null || name == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        String uri = uri(file);
+        boolean borrowed = !s.isOpen(uri);
+        Object opener = new Object();
+        if (borrowed) {
+            String languageId = com.editora.text.LanguageRegistry.forFileName(name.toString());
+            s.didOpen(uri, LspServerRegistry.protocolLanguageId(languageId, file), text == null ? "" : text, opener);
+        }
+        s.documentSymbol(uri)
+                .orTimeout(CLOSED_FILE_OUTLINE_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)
+                .whenComplete((result, error) -> {
+                    List<SymbolNode> symbols =
+                            error == null && result != null ? DocumentSymbolMapper.map(result) : null;
+                    Platform.runLater(() -> {
+                        if (borrowed) {
+                            s.didClose(uri, opener); // the server hears of it only when no window has it open
+                        }
+                        cb.accept(symbols);
+                    });
+                });
+    }
+
+    /** The running, ready session that would outline {@code file} with no tab open (see {@link #outlinesClosedFile}). */
+    private @Nullable LanguageServerSession closedFileSession(@Nullable Path file) {
+        Path name = file == null ? null : file.getFileName();
+        if (closed || !enabled || file == null || name == null || !servable(file)) {
+            return null;
+        }
+        String languageId = com.editora.text.LanguageRegistry.forFileName(name.toString());
+        String serverId = languageId == null || !LspServerRegistry.isSupported(languageId)
+                ? null
+                : LspServerRegistry.serverIdFor(languageId);
+        if (serverId == null) {
+            return null;
+        }
+        Path target = file.toAbsolutePath().normalize();
+        LanguageServerSession best = null;
+        int depth = -1;
+        for (LanguageServerSession session : sessionsByRoot.values()) {
+            Path root = session.root();
+            if (session.isDisposed()
+                    || !session.isInitialized()
+                    || !serverId.equals(session.serverId())
+                    || root == null
+                    || !target.startsWith(root.toAbsolutePath().normalize())
+                    || root.getNameCount() <= depth) {
+                continue;
+            }
+            best = session;
+            depth = root.getNameCount();
+        }
+        return best != null && documentSymbolProvider(best.capabilities()) ? best : null;
+    }
+
     /**
      * The members of {@code libraryUri} (a {@code jdt://} class file), else of {@code file}, else of {@code anchor},
      * with their whole extents, asked on {@code anchor}'s session (Go to Super Method, eighth review BQ1).

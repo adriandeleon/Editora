@@ -130,6 +130,54 @@ final class ProjectMapStructure {
         serverSymbols = symbols == null ? path -> null : symbols;
     }
 
+    /**
+     * A language server's outline of a file no tab has open (Map explore round, position 10): asked only of a server
+     * that already runs in this window, never one started for it.
+     */
+    interface ClosedFileSymbols {
+        /** Whether a server running now would outline {@code file}. FX thread; never starts a server. */
+        boolean serves(Path file);
+
+        /** Asks that server for {@code file}'s outline of {@code text}; {@code found} on the FX thread, null for none. */
+        void symbols(Path file, String text, java.util.function.Consumer<@Nullable List<SymbolNode>> found);
+    }
+
+    private static final ClosedFileSymbols NO_CLOSED_SYMBOLS = new ClosedFileSymbols() {
+        @Override
+        public boolean serves(Path file) {
+            return false;
+        }
+
+        @Override
+        public void symbols(Path file, String text, java.util.function.Consumer<@Nullable List<SymbolNode>> found) {
+            found.accept(null);
+        }
+    };
+
+    private ClosedFileSymbols closedSymbols = NO_CLOSED_SYMBOLS;
+
+    /** How long a closed file's outline waits for a running server's before the heuristic one is shown. */
+    static final int SERVER_WAIT_MILLIS = 1500;
+
+    /** A closed file longer than this is outlined by the heuristic only: it is not sent to a server. */
+    static final int MAX_SERVER_OUTLINE_CHARS = 1_000_000;
+
+    /** The stamp on disk each closed file's server was last asked at: asked again only when the file changed. */
+    private final Map<Path, @Nullable Stamp> serverAsked = new HashMap<>();
+
+    /** The closed files whose outline came from a running server. For tests and the spec. */
+    private final Set<Path> serverOutlined = new HashSet<>();
+
+    /** Where the outlines of files with no tab come from when a server for their language runs (position 10). */
+    void setClosedFileSymbols(@Nullable ClosedFileSymbols symbols) {
+        closedSymbols = symbols == null ? NO_CLOSED_SYMBOLS : symbols;
+    }
+
+    /** Whether {@code file}'s outline, a file with no tab, came from a running language server. */
+    boolean outlinedByServer(Path file) {
+        return serverOutlined.contains(file);
+    }
+
     /** Told on the FX thread when an outline arrives or changes: the rows and cards need to follow. */
     void setOnChanged(Runnable callback) {
         onChanged = callback == null ? () -> {} : callback;
@@ -231,6 +279,8 @@ final class ProjectMapStructure {
         debounced.clear();
         debouncedVersion.clear();
         warmed = false;
+        serverAsked.clear();
+        serverOutlined.clear();
     }
 
     /** Carries open columns across an in-app rename or move; the moved file is outlined again. */
@@ -470,6 +520,13 @@ final class ProjectMapStructure {
         }
         List<SymbolNode> server = buffer ? serverSymbolsFor(file) : null;
         String charset = current == null ? null : current.editorConfigCharset();
+        // A closed file outlined before its language's server ran is read once more for that server (position 10).
+        Stamp unchangedSince = !buffer
+                        && knownStamp != null
+                        && !java.util.Objects.equals(serverAsked.get(file), knownStamp)
+                        && closedServes(file)
+                ? null
+                : knownStamp;
         long id = ++requestSequence;
         requests.put(file, id);
         if (!outlines.containsKey(file)) {
@@ -478,13 +535,104 @@ final class ProjectMapStructure {
         try {
             loader.submit(() -> {
                 boolean cut = current != null && current.truncated();
-                Outline outline = text != null
-                        ? outline(file, text, server, true, version, cut)
-                        : readAndOutline(file, charset, knownStamp);
-                Platform.runLater(() -> apply(file, id, outline));
+                if (text != null) {
+                    Outline outline = outline(file, text, server, true, version, cut);
+                    Platform.runLater(() -> apply(file, id, outline));
+                    return;
+                }
+                ClosedRead read = readForOutline(file, charset, unchangedSince);
+                Platform.runLater(() -> closedOutlineRead(file, id, read));
             });
         } catch (RejectedExecutionException shutDown) {
             // disposed meanwhile
+        }
+    }
+
+    /** Whether a running server would outline {@code file}; false when asking fails. */
+    private boolean closedServes(Path file) {
+        try {
+            return closedSymbols.serves(file);
+        } catch (RuntimeException failed) {
+            ProjectMapLog.unexpected("asking whether a server outlines a closed file", failed);
+            return false;
+        }
+    }
+
+    /**
+     * A closed file was read and outlined by the heuristic (FX thread). Without a running server for it the
+     * heuristic outline is the outline. With one, the server is asked for its outline of the same text: it replaces
+     * the heuristic one, which is shown only if the server has not answered within {@link #SERVER_WAIT_MILLIS} or
+     * answers with nothing (position 10).
+     */
+    private void closedOutlineRead(Path file, long id, @Nullable ClosedRead read) {
+        if (disposed || !java.util.Objects.equals(requests.get(file), id)) {
+            return;
+        }
+        if (read == null) {
+            return; // unchanged on disk
+        }
+        String text = read.text();
+        if (text == null
+                || read.cut()
+                || text.length() > MAX_SERVER_OUTLINE_CHARS
+                || read.outline().problem() != Problem.NONE
+                || !closedServes(file)) {
+            serverOutlined.remove(file);
+            apply(file, id, read.outline());
+            return;
+        }
+        serverAsked.put(file, read.outline().stamp());
+        boolean[] heuristicShown = {false};
+        boolean[] answered = {false};
+        javafx.animation.PauseTransition wait =
+                new javafx.animation.PauseTransition(javafx.util.Duration.millis(SERVER_WAIT_MILLIS));
+        wait.setOnFinished(event -> {
+            if (!answered[0] && !heuristicShown[0]) {
+                heuristicShown[0] = true;
+                serverOutlined.remove(file);
+                apply(file, id, read.outline());
+            }
+        });
+        wait.play();
+        java.util.function.Consumer<@Nullable List<SymbolNode>> found = symbols -> {
+            answered[0] = true;
+            wait.stop();
+            if (disposed || !java.util.Objects.equals(requests.get(file), id)) {
+                return;
+            }
+            if (symbols == null || symbols.isEmpty()) {
+                if (!heuristicShown[0]) {
+                    heuristicShown[0] = true;
+                    serverOutlined.remove(file);
+                    apply(file, id, read.outline());
+                }
+                return;
+            }
+            try {
+                loader.submit(() -> {
+                    Outline served = outline(file, text, symbols, false, -1, false);
+                    Outline stamped = new Outline(
+                            read.outline().stamp(),
+                            served.roots(),
+                            served.byPath(),
+                            served.problem(),
+                            served.partial());
+                    Platform.runLater(() -> {
+                        if (!disposed && java.util.Objects.equals(requests.get(file), id)) {
+                            serverOutlined.add(file);
+                            apply(file, id, stamped);
+                        }
+                    });
+                });
+            } catch (RejectedExecutionException shutDown) {
+                // disposed meanwhile
+            }
+        };
+        try {
+            closedSymbols.symbols(file, text, found);
+        } catch (RuntimeException failed) {
+            ProjectMapLog.unexpected("asking a server for a closed file's outline", failed);
+            found.accept(null);
         }
     }
 
@@ -718,18 +866,30 @@ final class ProjectMapStructure {
         clear();
     }
 
-    /** Off the FX thread: the file's outline, or null when its size and time are still {@code known}'s. */
-    private static @Nullable Outline readAndOutline(Path file, @Nullable String charset, @Nullable Stamp known) {
+    /**
+     * A closed file as read for its outline: the heuristic outline, and the text it came from (null when unreadable)
+     * for a running server to outline instead.
+     */
+    private record ClosedRead(Outline outline, @Nullable String text, boolean cut) {}
+
+    /**
+     * Off the FX thread: the file's heuristic outline and the text it read, or null when its size and time are still
+     * {@code known}'s.
+     */
+    private static @Nullable ClosedRead readForOutline(Path file, @Nullable String charset, @Nullable Stamp known) {
         Stamp stamp = stamp(file);
         if (stamp != null && stamp.equals(known)) {
             return null;
         }
         ProjectMapPreview.ReadText read = ProjectMapPreview.readOutlineText(file, charset); // past the card cap
         if (read == null) {
-            return new Outline(stamp, List.of(), Map.of(), Problem.UNREADABLE, false);
+            return new ClosedRead(new Outline(stamp, List.of(), Map.of(), Problem.UNREADABLE, false), null, false);
         }
         Outline outline = outline(file, read.text(), null, false, -1, read.truncated());
-        return new Outline(stamp, outline.roots(), outline.byPath(), outline.problem(), outline.partial());
+        return new ClosedRead(
+                new Outline(stamp, outline.roots(), outline.byPath(), outline.problem(), outline.partial()),
+                read.text(),
+                read.truncated());
     }
 
     private static @Nullable Stamp stamp(Path file) {
