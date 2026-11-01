@@ -479,7 +479,8 @@ The options (⋯) menu in the navigation row holds **Compact rows** (default off
 `setCompactRows`, review 3 B15: 26-unit rows 4 apart instead of 32 and 9, and a column shows its filter, Show hidden
 and lock only while it is hovered, holds the selection or the keyboard, or has a filter, a Show hidden of its own or a
 lock — such a card grows upward by the controls' band, into the gap before it, so its rows never move), **Hide
-ignored and generated** (default off, `isHideIgnored()` / `setHideIgnored`, see Filters), **Project overview**
+ignored and generated** (default off, `isHideIgnored()` / `setHideIgnored`, see Filters), **Show recent changes**
+(default off, `isShowRecentChanges()` / `setShowRecentChanges`, see Activity below), **Project overview**
 (the Overview card, see below), **Compact folder chains** (see the user model), the
 default-on **Keep current zoom** and **Focus new column** options (`isKeepZoom()` / `isFocusNewColumn()` and their
 setters on the view), and the default-on **Single-click opens files** (`isSingleClickOpens()` /
@@ -772,6 +773,42 @@ never opens it by itself), which marks it seen and tells `setOnOverviewSeen`; �
 again with the facts worked out afresh. Its first line is the one-time orientation subtitle: what a column is, where
 to search, and that ? lists every key.
 
+### Activity: recent changes and owners (Map explore positions 3, 4)
+
+`ProjectMapActivity` holds what the Map shows of a project's activity. **Recent changes**: the ⋯ option **Show
+recent changes** (default off) tints each row by the commits of the last 90 days that touched it. The history is one
+streamed `git log --since=90.days --no-merges --no-renames --name-only --relative -- .` run in the Map's root
+(`GitService.recentChanges`, on the service's own `git-activity` lane, so a long read delays neither status nor the
+Git Log; the panel passes the window's service with `ProjectPanel.setMapGit`). `GitRecentChanges.Parser` (pure) counts
+each file's commits, each folder's (a commit once per folder, however many of its files it touched) and each folder's
+own files' (`direct`), and keeps the newest commit's author and time. The read is capped at 10,000 commits, 150,000
+file lines and 20 s; past a cap the newest part is kept and flagged truncated. The answer is kept per repository and
+HEAD (the last three), and every Git status push asks again, which costs one `rev-parse` while HEAD has not moved.
+Merges are left out. In a shallow clone the grafted boundary commits are skipped: git lists their whole tree as
+added, so a `--depth 1` clone (the Kubernetes and Spring fixtures) would show every file as changed once; such a clone
+shows no heat, and the Overview card says where its history stops. `--since` walks commits by committer date and
+stops at the first older one, as `git log` always does, so a history with backdated commits on top is cut there.
+
+A row's heat step (`heatLevel`, 0–4) compares its count with the busiest file (a file) or the busiest folder at its
+depth (a folder) on a log scale. The fill mixes `-state-amber` (probe `project-map-probe-heat`) in by
+`HEAT_TINT` (5–18%), less where a theme needs it so the label keeps 4.5:1 and muted ink 3:1 (`tinted`; Editora's own
+themes get the full tint), on unselected rows only; a heat meter along the row's foot, a quarter of the row's width
+per step, carries the heat on selected rows too (in the on-accent ink on the focused selection) and stands 3:1 off its
+fill (`meterInk`). Faded and dimmed rows keep their heat under the dimming. The tooltip adds "N commits in 90 days ·
+last: author, when".
+
+**Owners** (`ProjectMapOwners`): a GitHub-style `CODEOWNERS` (the first of `.github/`, the root and `docs/`; the last
+matching line wins; gitignore-like patterns, a trailing `/*` owning that folder's own files only, a line without owners
+leaving the path unowned) and Kubernetes-style `OWNERS` files (`approvers` and `reviewers`, top-level or under the
+`".*"` filter; the nearest folder's file that names someone wins). A `CODEOWNERS` line comes first, then `OWNERS`.
+No network and no GitHub API: aliases and teams show as written. Each shown row's owners are worked out on the
+activity worker (each folder's `OWNERS` read once) and its tooltip says "Owners: … (file)", and "Reviewers: …" when an
+`OWNERS` file names others.
+
+**The Overview card** gains **Most changed (90 days)**: the six folders whose own files were changed by the most
+commits (vendored and dependency folders and the root's own files left out; the history is read for the card even
+with the option off), and **Owners**: the project's and those of the top-level folders someone else owns.
+
 ## Architecture and data flow
 
 ```mermaid
@@ -1010,6 +1047,10 @@ The focused coverage lives in:
   labelled blocks and Fit below 40%, compact rows and controls on demand, the Overview card, module badges and folder
   tooltips, dimmed and hidden ignored rows, crumbs with underscores, the help's search section, and the elision,
   ignore rules and project facts as pure functions;
+- `GitRecentChangesTest`, `GitServiceRecentChangesTest` (a small repository with real history, a subfolder root,
+  the cache per HEAD, shallow clones), `ProjectMapOwnersTest`, `ProjectMapActivityTest` and `ProjectMapActivityFxTest`
+  for recent changes and owners: counts, caps, heat steps, the tint and meter in Editora Light and Dark and on the
+  selection, tooltips and the Overview card's sections; `StyleContrastTest` holds the tint's floors in every theme;
 - `ProjectMapNoteCardFxTest`, `ProjectMapPreviewCardFxTest`, `ProjectMapPreviewMenuEscapeFxTest` and
   `ProjectMapStickyNotesTest` for note cards, code cards, a card menu's Escape, and sticky notes;
 - `ProjectMapWindowReviewFxTest` for the pinned root in the No Project window, the Map returning with its
