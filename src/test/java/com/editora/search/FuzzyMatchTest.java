@@ -309,6 +309,20 @@ class FuzzyMatchTest {
         void aPathWithNoSeparatorFallsBackCleanly() {
             assertNotNull(FuzzyMatch.ofPath("MainController.java", "main"));
         }
+
+        @Test
+        void aRootFileScoresAsWellAsTheSameNameNestedProjectMapReview3A6() {
+            for (String name : List.of("README.md", "go.mod", "Makefile", "OWNERS", "build.gradle")) {
+                int root = FuzzyMatch.scoreOfPath(name, name);
+                int nested = FuzzyMatch.scoreOfPath("buildSrc/" + name, name);
+                assertEquals(nested, root, name + ": a slash-less path is all basename");
+                Match rootMatch = FuzzyMatch.ofPath(name, name);
+                assertNotNull(rootMatch);
+                assertEquals(root, rootMatch.score());
+                assertEquals(
+                        name, name.substring(rootMatch.ranges()[0][0], rootMatch.ranges()[0][1]));
+            }
+        }
     }
 
     @Nested
