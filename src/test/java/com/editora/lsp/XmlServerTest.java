@@ -352,4 +352,22 @@ class XmlServerTest {
         assertNotNull(root);
         return XmlServer.rootInNamespace(text, root[0], root[1]);
     }
+
+    /** XML/pom review 4, B31: the watched changes that are an open grammar's, still on disk. */
+    @Test
+    void anOpenGrammarChangedOnDiskIsPickedOut() {
+        Path xsd = dir.resolve("note.xsd");
+        Path dtd = dir.resolve("gone.dtd");
+        Path xml = dir.resolve("note.xml");
+        Path closed = dir.resolve("closed.rng");
+        var open = java.util.Set.of(LspManager.uri(xsd), LspManager.uri(dtd), LspManager.uri(xml));
+        var picked = LspManager.openGrammarChanges(
+                List.of(
+                        new LspManager.WatchedFile(xsd, LspManager.WatchedKind.CHANGED),
+                        new LspManager.WatchedFile(dtd, LspManager.WatchedKind.DELETED),
+                        new LspManager.WatchedFile(xml, LspManager.WatchedKind.CHANGED),
+                        new LspManager.WatchedFile(closed, LspManager.WatchedKind.CREATED)),
+                open::contains);
+        assertEquals(List.of(new LspManager.WatchedFile(xsd, LspManager.WatchedKind.CHANGED)), picked);
+    }
 }

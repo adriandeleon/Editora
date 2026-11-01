@@ -355,4 +355,31 @@ class XmlServerFxTest {
         assertEquals(List.of(new LspManager.Target(xsd, 3, 4)), targets);
         assertEquals(1, fake.definitions.size(), "lemminx-maven's own answer is asked first");
     }
+
+    /**
+     * XML/pom review 4, B31: lemminx revalidates a grammar's dependents on its save, and takes a watched-file change
+     * as one only for a file not open in the client: a schema open in a tab and changed on disk is told as saved.
+     */
+    @Test
+    void anOpenSchemaChangedOnDiskIsToldAsSaved() throws Exception {
+        var fake = open();
+        String schema = Files.readString(xsd);
+        manager.openDocument(xsd, root, "xml", schema);
+        Path other = root.resolve("other.xml");
+
+        manager.notifyWatchedFiles(List.of(
+                new LspManager.WatchedFile(xsd, LspManager.WatchedKind.CHANGED),
+                new LspManager.WatchedFile(other, LspManager.WatchedKind.CHANGED)));
+
+        long until = System.currentTimeMillis() + 5000;
+        while (fake.saved.isEmpty() && System.currentTimeMillis() < until) {
+            Thread.sleep(20);
+        }
+        Thread.sleep(100);
+        assertEquals(1, fake.saved.size(), "the open schema only: not a document that is no grammar");
+        assertEquals(
+                xsd.toUri(),
+                java.net.URI.create(fake.saved.get(0).getTextDocument().getUri()));
+        assertEquals(1, fake.watchedFiles.size(), "the change itself still goes out");
+    }
 }
