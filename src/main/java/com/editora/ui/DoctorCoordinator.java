@@ -1082,11 +1082,13 @@ final class DoctorCoordinator {
      */
     private DoctorService.CheckSpec serverRow(String serverId, Needs needs) {
         List<String> argv = ops.lspServerArgv(serverId);
-        DoctorCheck row = DoctorCheck.checking("lsp." + serverId, "lsp", serverLabel(serverId), String.join(" ", argv))
+        Path config = host.configDir();
+        DoctorCheck row = DoctorCheck.checking(
+                        "lsp." + serverId, "lsp", serverLabel(serverId), shownCommand(argv, config))
                 .withSettings("lsp");
         DoctorCheck.Install install = installKindFor(serverId);
+        // a command other than the default (the default text is not the user's own, HTML review 2 A106)
         boolean configured = ops.lspServerCommandSet(serverId);
-        Path config = host.configDir();
         // The user's own command (not one Editora's install wrote, inside the config dir): Install changes nothing it
         // runs, so the row offers Settings… only (HTML review A10).
         boolean ownCommand = configured && !PinnedVersions.anyInside(argv, config);
@@ -1174,6 +1176,28 @@ final class DoctorCoordinator {
             }
             return withNewer(base.ok(detail), serverId, argv, path, latest);
         });
+    }
+
+    /**
+     * A server row's command line as its subtitle: a program inside Editora's config folder is named by its file name,
+     * "(Editora's copy)", since the subtitle is elided from the left and the long private path left only "...stdio"
+     * (HTML review 2 A110); the row's detail keeps the full path. Other commands are shown whole. Pure.
+     */
+    static String shownCommand(List<String> argv, @Nullable Path config) {
+        String whole = String.join(" ", argv);
+        if (argv.isEmpty() || config == null || !PinnedVersions.anyInside(argv.subList(0, 1), config)) {
+            return whole;
+        }
+        String program;
+        try {
+            Path name = Path.of(argv.get(0)).getFileName();
+            program = name == null ? argv.get(0) : name.toString();
+        } catch (RuntimeException e) {
+            return whole;
+        }
+        List<String> shown = new ArrayList<>(argv);
+        shown.set(0, program);
+        return tr("doctor.command.editorasCopy", String.join(" ", shown));
     }
 
     /**
@@ -1515,7 +1539,7 @@ final class DoctorCoordinator {
                 case MISSING ->
                     forScripts
                             ? base.missing("doctor.tip.nodeMissing", node.executable())
-                            : base.missing("doctor.tip.nodeMissingServers", node.executable(), servers);
+                            : base.missing(nodeServersTip(servers), node.executable(), servers);
                 default -> base.optional("doctor.tip.nodeOptional");
             };
         });
@@ -1532,6 +1556,11 @@ final class DoctorCoordinator {
                 .sorted()
                 .map(DoctorCoordinator::serverLabel)
                 .collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    /** The Node.js row's tip for {@link #nodeServers}: one server, or several ("…servers need it"). Pure (A109). */
+    static String nodeServersTip(String servers) {
+        return servers.contains(", ") ? "doctor.tip.nodeMissingServersMany" : "doctor.tip.nodeMissingServers";
     }
 
     /** A Run-section interpreter row: absent, it is only "not installed" (needed just for that file type). */

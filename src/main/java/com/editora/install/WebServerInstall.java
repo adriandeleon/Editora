@@ -179,6 +179,33 @@ public final class WebServerInstall {
     }
 
     /**
+     * Whether {@code argv} (a server's resolved launch command) runs a vscode-langservers-extracted that is not Editora's
+     * own copy under {@code configDir} and lacks TypeScript's libraries: one Update, which installs Editora's copy,
+     * gives its {@code <script>} the DOM and standard library (HTML review 2 A108). False when the program is not
+     * found. File reads only.
+     */
+    public static boolean foreignCopyWithoutLibs(List<String> argv, @Nullable Path configDir) {
+        if (argv == null || argv.isEmpty()) {
+            return false;
+        }
+        String exe = com.editora.process.ProcessRunner.resolveExecutable(argv).get(0);
+        if (exe.indexOf('/') < 0 && exe.indexOf('\\') < 0) {
+            return false; // not found on PATH
+        }
+        Path launcher;
+        try {
+            launcher = Path.of(exe).toAbsolutePath().normalize();
+        } catch (RuntimeException e) {
+            return false;
+        }
+        if (configDir != null
+                && launcher.startsWith(folder(configDir).toAbsolutePath().normalize())) {
+            return false; // Editora's own copy: a link that failed after npm is Doctor's to report
+        }
+        return Files.isRegularFile(launcher) && typeScriptLibsMissing(launcher);
+    }
+
+    /**
      * The vscode-langservers-extracted folder {@code launcher} belongs to: its real path's ancestors (npm links
      * {@code bin/vscode-html-language-server} into the package), or a {@code node_modules} beside one of them (npm's
      * Windows {@code .cmd} shims sit in the global prefix or in {@code .bin}); else null.

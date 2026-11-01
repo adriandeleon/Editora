@@ -30,6 +30,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Check a download with
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
 
+### Fixed
+
+- **HTML, CSS, JSON and the other npm language servers (install and Node.js).** A project's `.nvmrc` or
+  `.node-version` no longer picks the Node.js these servers run on, so an old pinned Node.js can no longer
+  crash them; they use the Node.js chosen in Settings → Debugging → JavaScript, else the one on PATH
+  (TypeScript still follows the project). Install finds npm beside that Node.js and runs with it.
+  "Not responding" is no longer said while a server is still importing or reports work in progress. An HTML
+  server from an earlier `npm install -g`, whose `<script>` gets no DOM completion, is offered Update once per
+  window. In Doctor, a command field that holds the default text counts as the default (Update is offered),
+  Editora's own copy is shown by its program name, and the Node.js tips read right for several servers and
+  name the Settings choice.
+
 ## [0.26.0] - 2026-10-29
 
 ### Added
