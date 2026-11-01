@@ -103,6 +103,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HTML editing (HTML review 3).**
+  - Angular component templates are no longer full of false warnings: in a `*.component.html`, a page below an
+    `angular.json`, or one that uses Angular syntax, `<app-header />` closes the element, and a component's
+    `assets/…` image is found in the app's `src/` (or `public/`) folder. A plain page still flags `<my-el />`.
+  - Template syntax a page only shows — in `<pre>`, `<code>`, `<textarea>`, a comment, or an Underscore
+    `<script type="text/template">` — no longer switches off the page's unclosed-element check and Format.
+  - The missing-file check no longer accepts any file under `assets/`, nor a page-relative link found under
+    `public/` or `static/` on a plain static site: those folders count for root-relative links, or when the project
+    has a build tool (`package.json`, `vite.config.*`, `angular.json`, Hugo's config…).
+  - Toggle Comment in a `.mustache` file makes the line an HTML comment with each tag a comment tag
+    (`{{name}}` → `{{!name}}`), since Mustache's `{{! }}` ends at the first `}}`; uncommenting restores it.
+  - Toggle Comment on an ERB/EJS block that holds a comment of your own (`<%# note %>`) round-trips: commenting
+    gives it a second `#`, so uncommenting gives your comment back instead of turning it into code.
+  - "Quotes after a typed or completed =" moved to Settings → Editor, beside Auto-close tags, where it can be
+    changed with language servers off; it says it also decides what a typed `=` brings.
+  - A typed `=` after Angular's `(click)`, `[value]`, `[(ngModel)]` or `*ngIf` brings its quotes, as Vue's
+    `@click` does.
+  - Tab and Enter keep the brace rules in an inline script of more than about 250 lines, and in a script whose
+    strings hold `'<style>'` or `'<pre>'`.
+  - With the HTML server on, Format Document on a Django/Jinja/Hugo page is refused too ("Not formatted: this page
+    uses template syntax"), as it is with the server off.
+  - The built-in formatter keeps an HTML template script (`text/x-template`) and its `<pre>` exactly as written, and
+    indents Angular `@if`/`@for`/`@defer` blocks instead of flattening them.
+
 - **Project Map: search said "No files match" for files that exist.** On a big repository the search stopped after
   20,000 entries, so deep files (Kubernetes' `staging/` modules) were never found and the notice went to the editor
   window's status bar. The search now covers the whole project, and "No files match" says when it did not.

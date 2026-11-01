@@ -2997,7 +2997,7 @@ public class SettingsWindow {
                 Settings.HTML_ATTRIBUTE_QUOTES,
                 Settings::getHtmlAttributeQuotes,
                 Settings::setHtmlAttributeQuotes,
-                "html attribute quotes double single empty none value equals typed completion auto create vs code");
+                "html attribute quotes double single empty none value equals typed completed completion auto create vs code");
         checkRow(
                 editing,
                 Category.EDITOR,
