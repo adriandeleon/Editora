@@ -147,6 +147,8 @@ final class MapCards {
     private final Host host;
     private final ProjectMapStructure structure;
     private final Pane canvasHost;
+    /** Linked reference cards: the result cards a card's question opened, and the edges to them (explore 5). */
+    final MapCardLinks links;
 
     final Canvas previewConnectorCanvas = new Canvas(1, 1);
     /** Each code card's connector as last drawn, by key. For tests. */
@@ -211,6 +213,104 @@ final class MapCards {
         cardRefresh.setOnFinished(event -> refreshCards(false));
         cardDiskRefresh.setOnFinished(event -> refreshCards(false));
         cardPoll.setOnFinished(event -> refreshCards(true));
+        links = new MapCardLinks(linksCards(), structure, canvasHost, previewConnectorCanvas);
+    }
+
+    /** What the linked reference cards need of the cards. */
+    private MapCardLinks.Cards linksCards() {
+        return new MapCardLinks.Cards() {
+            @Override
+            public @Nullable Path root() {
+                return host.root();
+            }
+
+            @Override
+            public @Nullable ProjectMapPreview openDeclaration(ProjectMapStructure.Node node) {
+                return previewSymbol(symbolEntry(node), null);
+            }
+
+            @Override
+            public ProjectMapPreview openFile(Path file) {
+                return previewFile(file.toAbsolutePath().normalize(), file);
+            }
+
+            @Override
+            public boolean isOpen(ProjectMapPreview card) {
+                return !disposed && cardTouches.containsKey(card);
+            }
+
+            @Override
+            public void touch(ProjectMapPreview card) {
+                touchCard(card, false);
+            }
+
+            @Override
+            public void status(String message) {
+                host.status(message);
+            }
+
+            @Override
+            public void connectorsMoved() {
+                MapCards.this.connectorsMoved();
+            }
+
+            @Override
+            public Color accent() {
+                return host.accent();
+            }
+
+            @Override
+            public List<double[]> columns() {
+                return host.columns();
+            }
+
+            @Override
+            public void openAt(Path file, int line) {
+                host.openAt(file, line);
+            }
+        };
+    }
+
+    // --- Linked reference cards (explore 5) ----------------------------------------------------------
+
+    /** Where Show References / Callers as Cards find their places; null takes the menu items away. */
+    void setLinkSource(MapCardLinks.@Nullable Source source) {
+        links.setSource(source);
+        previews.values().forEach(card -> card.setLinkActions(source == null ? null : this::showLinks));
+    }
+
+    /** Whether Show References / Callers as Cards are offered. */
+    boolean linksAvailable() {
+        return links.available();
+    }
+
+    /**
+     * Show References / Callers as Cards from {@code card}: of its declaration for a declaration card, else of what
+     * stands at the file's 0-based {@code line} and {@code column}.
+     */
+    void showLinks(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column) {
+        Path file = card.path();
+        if (file == null || !cardTouches.containsKey(card)) {
+            return;
+        }
+        ProjectMapPreview.Range shown = card.range();
+        ProjectMapPreview.Content content = host.content(file);
+        String text = content != null && content.open() ? content.text() : null;
+        MapCardLinks.Request request = shown != null
+                ? new MapCardLinks.Request(
+                        kind, file, shown.line(), -1, ProjectMapView.followName(shown.symbol()), text)
+                : new MapCardLinks.Request(kind, file, line, column, null, text);
+        touchCard(card, true);
+        links.show(card, request);
+    }
+
+    /** Show References / Callers as Cards from a declaration row: its card opens and asks. */
+    void showLinks(ProjectMapModel.Entry symbolRow, MapCardLinks.Kind kind) {
+        ProjectMapPreview card = previewSymbol(symbolRow, null);
+        ProjectMapPreview.Range shown = card == null ? null : card.range();
+        if (card != null && shown != null) {
+            showLinks(card, kind, shown.line(), -1);
+        }
     }
 
     // --- API ------------------------------------------------------------------------------------------------
@@ -581,6 +681,7 @@ final class MapCards {
             card.setRange(rangeOf(node.symbol()));
             updateCardNotes(card); // the declaration's lines may hold other notes now
         }
+        links.outlineChanged(file); // a question waiting to group its places by declaration
     }
 
     /** Preview and note cards of a renamed file, or of files under a renamed folder, follow it (C21). */
@@ -696,6 +797,7 @@ final class MapCards {
                 files.add(file);
             }
         }
+        files.addAll(links.outlineFiles());
         return files;
     }
 
@@ -852,6 +954,7 @@ final class MapCards {
         preview.setOnContentZoomed(zoom -> cardTextZoom = zoom);
         preview.setMarkerActions(previewMarkerActions);
         preview.setFollowActions(followActions);
+        preview.setLinkActions(links.available() ? this::showLinks : null);
         preview.setOnClose(() -> closePreview(preview));
         preview.setOnActivate(() -> touchCard(preview, true));
         preview.setOnTouch(() -> touchCard(preview, false));
@@ -873,6 +976,7 @@ final class MapCards {
         preview.setOnTextShown(() -> {
             updateCardNotes(preview); // stored notes are found again in the new text
             restyleCardStructure(preview);
+            links.textShown(preview); // a result card that opens at a place
         });
         preview.setOnStylesShown(() -> restyleCardStructure(preview)); // its Structure column borrows the colours
         // A sticky note's connector meets its line in the text, which scrolls under it.
@@ -924,6 +1028,7 @@ final class MapCards {
         if (notes != null) {
             stuck.add(notes);
         }
+        stuck.addAll(links.attachments(card)); // the edges of its questions' answers
         return stuck;
     }
 
@@ -931,6 +1036,7 @@ final class MapCards {
     private List<CardAttachment> allAttachments() {
         List<CardAttachment> all = new ArrayList<>(cardStructures.values());
         all.addAll(stickyNotes.values());
+        all.addAll(links.allAttachments());
         return all;
     }
 
@@ -1385,7 +1491,8 @@ final class MapCards {
                     || current instanceof ProjectMapNotePreview
                     || current instanceof ProjectMapOverviewCard
                     || current.getStyleClass().contains("project-map-sticky-note")
-                    || current.getStyleClass().contains("project-map-card-structure")) {
+                    || current.getStyleClass().contains("project-map-card-structure")
+                    || current.getStyleClass().contains("project-map-link-more")) {
                 return true;
             }
         }
@@ -1439,6 +1546,7 @@ final class MapCards {
         cardTouches.remove(preview);
         closeCardNotes(preview);
         closeCardStructure(preview);
+        links.cardClosed(preview); // its edges, and the edge to it from the card it was found from
         if (canvasHost != null) {
             canvasHost.getChildren().remove(preview);
         }
@@ -1457,6 +1565,7 @@ final class MapCards {
         List<CardAttachment> stuck = allAttachments();
         stickyNotes.clear();
         stuck.forEach(CardAttachment::dispose);
+        links.closeAll();
         cardStructures.clear();
         for (ProjectMapPreview preview : open) {
             if (canvasHost != null) {
@@ -1502,7 +1611,8 @@ final class MapCards {
             return;
         }
         List<ProjectMapPreview> closing = previews.entrySet().stream()
-                .filter(entry -> cardOrphaned(root, entry.getKey(), shown))
+                // A linked result card stays while the card it was found from does (explore 5).
+                .filter(entry -> cardOrphaned(root, entry.getKey(), shown) && !links.isResult(entry.getValue()))
                 .map(Map.Entry::getValue)
                 .toList();
         closing.forEach(this::closePreview);
@@ -1691,14 +1801,17 @@ final class MapCards {
             double parentWidth,
             double parentHeight) {
         Site site = host.site(path);
-        Site beside = site.row() == null ? cardStructureSite(path) : null;
+        Site linked = links.besideSource(path); // a result card goes beside the card it was found from
+        Site beside = linked != null ? linked : site.row() == null ? cardStructureSite(path) : null;
         if (beside != null) {
             site = beside;
         }
         double margin = ProjectMapPreview.EDGE_MARGIN;
         double roomWidth = parentWidth - margin * 2;
         double roomHeight = parentHeight - margin * 2;
-        double fullWidth = cardBounded(width, minimumWidth, roomWidth);
+        // A result card is narrower, so that six fit around the card they were found from.
+        double wanted = linked != null ? Math.min(width, MapCardLinks.CARD_WIDTH * cardScale(preview)) : width;
+        double fullWidth = cardBounded(wanted, Math.min(minimumWidth, wanted), roomWidth);
         double fullHeight = cardBounded(height, minimumHeight, roomHeight);
         List<double[]> chrome = host.chrome();
         if (site.row() == null) {

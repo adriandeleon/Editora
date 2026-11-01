@@ -253,6 +253,16 @@ final class ProjectMapPreview extends StackPane {
         };
     }
 
+    /**
+     * Show References / Callers as Cards from a card (Project Map explore, position 5): {@code kind} of what stands at
+     * the file's 0-based {@code line} and {@code column} — the menu's place in a file card; a declaration card asks
+     * about its declaration.
+     */
+    @FunctionalInterface
+    interface LinkActions {
+        void show(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column);
+    }
+
     /** The Go To Related File command: typed in a card, it reveals the card's file's counterpart on the Map. */
     static final String RELATED_COMMAND = "nav.relatedFile";
 
@@ -418,6 +428,11 @@ final class ProjectMapPreview extends StackPane {
     private @Nullable PlacementResolver placementResolver;
     private @Nullable MarkerActions markerActions;
     private @Nullable FollowActions followActions;
+    /** Where the card menu's Show References / Callers as Cards go; null hides them. */
+    private @Nullable LinkActions linkActions;
+    /** What joins this card to the card it was found from, said after its name; null when it was not. */
+    private @Nullable String linkDescription;
+
     private double preferredWidth = DEFAULT_WIDTH;
     private double preferredHeight = DEFAULT_HEIGHT;
     /** The map's zoom, applied from the card's top-left corner. */
@@ -727,6 +742,28 @@ final class ProjectMapPreview extends StackPane {
         followActions = actions;
     }
 
+    /** Where the card menu's Show References / Callers as Cards go (Project Map linked cards); null hides them. */
+    void setLinkActions(@Nullable LinkActions actions) {
+        linkActions = actions;
+    }
+
+    /**
+     * Says, after the card's accessible name and in its title's tooltip, what joins it to the card it was found
+     * from ("BookService.add calls save"); null when nothing does any more.
+     */
+    void setLinkDescription(@Nullable String description) {
+        if (!java.util.Objects.equals(linkDescription, description)) {
+            linkDescription = description;
+            updateRangeChrome();
+        }
+    }
+
+    /** {@code text}, then what joins the card to the card it was found from, if anything does. */
+    private String linked(String text) {
+        String link = linkDescription;
+        return link == null ? text : text + ". " + link;
+    }
+
     /** The file's 0-based line for a line of the card's text (a declaration card starts at its first line). */
     private int fileLine(int cardLine) {
         Range shown = range;
@@ -873,16 +910,17 @@ final class ProjectMapPreview extends StackPane {
         Range shown = range;
         if (shown == null) {
             title.setText(name);
-            title.setTooltip(new Tooltip(shownPath.toString()));
-            setAccessibleText(tr("project.map.preview.accessible", shownPath.toString()));
+            title.setTooltip(new Tooltip(linked(shownPath.toString())));
+            setAccessibleText(linked(tr("project.map.preview.accessible", shownPath.toString())));
             editor.setAccessibleText(tr("project.map.preview.editorAccessible", name));
             editor.getStyleClass().remove("narrowed");
             editor.setParagraphGraphicFactory(LineNumberFactory.get(editor));
             return;
         }
         title.setText(name + " › " + shown.symbol());
-        title.setTooltip(new Tooltip(shownPath + "\n" + rangeLabel(shown)));
-        setAccessibleText(tr("project.map.preview.symbolAccessible", shown.symbol(), shownPath.toString()));
+        String link = linkDescription;
+        title.setTooltip(new Tooltip(shownPath + "\n" + rangeLabel(shown) + (link == null ? "" : "\n" + link)));
+        setAccessibleText(linked(tr("project.map.preview.symbolAccessible", shown.symbol(), shownPath.toString())));
         editor.setAccessibleText(tr("project.map.preview.symbolEditorAccessible", shown.symbol(), name));
         if (!editor.getStyleClass().contains("narrowed")) {
             editor.getStyleClass().add("narrowed"); // the editor's narrowed gutter colour
@@ -1670,6 +1708,11 @@ final class ProjectMapPreview extends StackPane {
             items.add(new SeparatorMenuItem());
             items.addAll(follow);
         }
+        java.util.List<MenuItem> links = linkMenuItems();
+        if (!links.isEmpty()) {
+            items.add(new SeparatorMenuItem());
+            items.addAll(links);
+        }
         MarkerActions actions = markerActions;
         if (!empty && selected != null && actions != null) {
             int fileLine = clickedLine + (shown == null ? 0 : shown.startLine());
@@ -1771,6 +1814,24 @@ final class ProjectMapPreview extends StackPane {
         items.add(related);
         items.add(history);
         return items;
+    }
+
+    /** Show References as Cards and Show Callers as Cards, at {@link #followAt} (Project Map linked cards). */
+    private java.util.List<MenuItem> linkMenuItems() {
+        LinkActions actions = linkActions;
+        if (actions == null || path == null || missing) {
+            return java.util.List.of();
+        }
+        boolean text = !symbolMissing && frame.getCenter() == textPane && editor.getLength() > 0;
+        int line = fileLine(followAt[0]);
+        int column = followAt[1];
+        MenuItem references = new MenuItem(tr("project.map.links.showReferences"));
+        references.setDisable(!text);
+        references.setOnAction(ignored -> actions.show(this, MapCardLinks.Kind.REFERENCES, line, column));
+        MenuItem callers = new MenuItem(tr("project.map.links.showCallers"));
+        callers.setDisable(!text);
+        callers.setOnAction(ignored -> actions.show(this, MapCardLinks.Kind.CALLERS, line, column));
+        return java.util.List.of(references, callers);
     }
 
     private int clickLineAt(double x, double y) {
@@ -2809,6 +2870,14 @@ final class ProjectMapPreview extends StackPane {
     /** The card's text font: the editor's family at its size times the card's text zoom. */
     private Font textFont() {
         return Font.font(editorFont.getFamily(), editorFont.getSize() * contentZoom);
+    }
+
+    /**
+     * A result card of a linked question (Project Map explore 5) keeps the narrower width it was placed at: text that
+     * arrives later does not widen it, so the cards around the one they were found from stay clear of each other.
+     */
+    void keepPlacedWidth() {
+        userSized = true;
     }
 
     /** A card brought back where it was (B6): nothing moves or resizes it for the user, as after a drag. */

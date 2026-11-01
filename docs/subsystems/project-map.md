@@ -229,7 +229,38 @@ right-clicked) and run the command there (`FileActions.followCode` → `FileWork
 editor window comes forward; Go to Related File typed in a card, and the menu's **Related Test / Subject**, reveal
 the file's test or subject on the Map (`search.RelatedFiles` names, looked up beside it and in the Map's file list;
 several are offered in a menu under the breadcrumb), and Show Git History typed in a card, or its menu's item, is
-the card's file's. A declaration row's menu has the same items at the declaration, with the caret on its name. Cards share two `project-map-preview-loader` threads that time out when idle, each
+the card's file's. A declaration row's menu has the same items at the declaration, with the caret on its name.
+
+**Linked reference cards** (explore position 5, `MapCardLinks`, `ProjectMapLinkSearch`). A code card's menu and a
+declaration row's menu (the Map's Structure columns and a card's) have **Show References as Cards** and **Show
+Callers as Cards**. A declaration card (or row, whose card opens first) asks about its declaration, its name found on
+its line; a file card asks about the name under the menu's place. The answer:
+
+- **From a language server** when one already runs for the file's language in this window, at the deepest session
+  root that holds it (`LspManager.runsFor`). The file is *lent* to that session (`LspManager.lendDocument`: a
+  `didOpen` under an opener of its own, so an editor tab opening or closing the file meanwhile keeps its own hold,
+  and `didClose` only when nothing holds it) for `textDocument/references` (usages only, as Find Usages asks) or
+  `prepareCallHierarchy` + `callHierarchy/incomingCalls`, and given back with the answer. No editor tab is opened,
+  the editor window is not raised, and nothing starts a server.
+- **By name** otherwise, and when the server does not answer that request: the name as a whole word in the
+  project's files of the same language (the Map's `ProjectIndex` list), for callers only where `(` follows; at most
+  20,000 files, 1 MB each, 2,000 places, 2 s (then the status line says it stopped early). The declaration itself,
+  and other declarations of that name (by the outline), are left out. The status line says no server answered.
+
+The places are grouped by the deepest declaration of their file's outline that holds them (the outlines of the
+first 12 files are read, waiting at most 4 s; places past them, or outside every declaration, group by file), in
+path and line order. The first six groups open as declaration cards (a file group: a file card scrolled to the
+place) **beside the card asked from** (`MapCards.drawnPlacement` takes that card as the row), at most 460 px wide
+and kept at that width, each joined to it by an **edge**: a line from the result card to the card asked from with an
+arrow at that end, and a label at its middle — "calls", "references", or "by name" (the line dashed), with "· N"
+for more than one place. The rest are listed by a **"+N more"** chip on the card's top edge; picking one opens its
+card with its edge. The edges of one question are an `MapCardLinks.EdgeSet`, a `CardAttachment` of the card asked
+from: drawn with the other connectors once per pulse, closed with that card; a result card closed or evicted takes
+its edge away. Labels sit just above the connector canvas, under every card. Each result card's accessible name
+and title tooltip end with what joins it ("total(App) calls App.java › add(int) (2 call sites)"), cleared when the
+edge goes; the chip's accessible text names what it lists. Asking the same card the same question again replaces
+its edges (the cards stay); a result card is never closed by the orphan check while the card it was found from is
+open. Cards share two `project-map-preview-loader` threads that time out when idle, each
 card's reads still in order; a card created before its host has a size waits for the size, not on `runLater`.
 
 Context menus use JavaFX auto-hide plus a next-pulse owner-scene press filter. This mirrors the
@@ -995,6 +1026,10 @@ The focused coverage lives in:
   key ownership, content-sized columns, hidden toggles, directional layouts and arrow semantics,
   complete-map output snapshots and live viewport restoration,
   movable/locked columns, overview navigation, and wheel zoom;
+- `ProjectMapLinksTest` for linked reference cards' grouping, edge text, ends and accessible descriptions, and the
+  name match; `ProjectMapLinksFxTest` for callers and references from a fake language server with the file lent and
+  given back and no editor opened, the by-name answer with dashed "by name" edges, the "+N more" chip, result cards
+  outliving the orphan check, and an `@name` Map search through the real `IndexCoordinator`;
 - `ProjectMapStructureTest` for which files get a Structure icon, declaration path segments, a card's lines
   (block, doc comment, headings, field), and the order of a structure column;
 - `ProjectMapStructureFxTest` for the Structure icon, nested columns and the lone-class rule, declaration cards

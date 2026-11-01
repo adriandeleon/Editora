@@ -2222,7 +2222,28 @@ final class ProjectMapView extends VBox {
                         : new com.editora.text.FoldRegions.Region(symbol.line(), symbol.endLine())));
         menu.getItems().setAll(preview, openAt, openNarrowed);
         menu.getItems().addAll(followItems(symbol.file(), symbol.line(), followName(symbol.label())));
+        menu.getItems().addAll(linksItems(entry));
         return menu;
+    }
+
+    /**
+     * A declaration row's Show References as Cards and Show Callers as Cards (explore position 5): its card opens
+     * and the places found open as cards beside it, joined to it by labelled edges. Empty without a source.
+     */
+    private List<MenuItem> linksItems(ProjectMapModel.Entry entry) {
+        if (!cards.linksAvailable()) {
+            return List.of();
+        }
+        MenuItem references = new MenuItem(tr("project.map.links.showReferences"));
+        references.setOnAction(event -> cards.showLinks(entry, MapCardLinks.Kind.REFERENCES));
+        MenuItem callers = new MenuItem(tr("project.map.links.showCallers"));
+        callers.setOnAction(event -> cards.showLinks(entry, MapCardLinks.Kind.CALLERS));
+        return List.of(new SeparatorMenuItem(), references, callers);
+    }
+
+    /** Where Show References / Callers as Cards find their places (the panel's language servers and file list). */
+    void setLinkSource(MapCardLinks.@Nullable Source source) {
+        cards.setLinkSource(source);
     }
 
     /** How the Map follows the code out of a card or a declaration row (review 3 C12); the panel provides it. */

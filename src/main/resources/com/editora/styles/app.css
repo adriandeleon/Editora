@@ -1963,6 +1963,36 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 10px;
 }
+/* Linked reference cards: an edge's label, at the middle of the line from a result card to the card it was found
+   from, and the "+N more" chip under that card. A label found by name only is dashed, as its edge is. */
+.project-map-link-label {
+    -fx-padding: 1 6 1 6;
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-accent-fg;
+    -fx-background-color: -color-bg-default, -color-accent-subtle;
+    -fx-background-radius: 8;
+    -fx-border-color: -color-accent-muted;
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+}
+.project-map-link-label.by-name {
+    -fx-border-style: segments(4, 3);
+    -fx-font-style: italic;
+}
+.project-map-link-more {
+    -fx-padding: 2 8 2 8;
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-accent-fg;
+    -fx-background-color: -color-bg-default, -color-accent-subtle;
+    -fx-background-radius: 10;
+    -fx-border-color: -color-accent-muted;
+    -fx-border-radius: 10;
+    -fx-cursor: hand;
+}
+.project-map-link-more:hover,
+.project-map-link-more:focused {
+    -fx-background-color: -color-bg-default, -color-accent-muted;
+}
 /* A code card's Personal Notes, one sticky sheet per note beside it, in the note card's amber family. Some
    themes' warning tints are translucent: each sits on the opaque background so the map never shows through. */
 .project-map-sticky-note {

@@ -1113,10 +1113,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /**
      * Shares the window's indexes both ways: the Map's {@code @name} queries ask the symbol index and the language
-     * servers, and Search Everywhere's file results come from this panel's project index (Map refactor stage 2).
+     * servers, Show References / Callers as Cards ask the servers and the file list, and Search Everywhere's file
+     * results come from this panel's project index (Map refactor stage 2).
      */
     void shareIndexes(IndexCoordinator index, com.editora.lsp.@Nullable LspManager lsp) {
         setMapSymbolSearch(new ProjectMapSymbolSearch(index, lsp)::find);
+        mapView.setLinkSource(new ProjectMapLinkSearch(lsp, projectIndex)); // Show References / Callers as Cards
         index.setFileIndex(projectIndex);
     }
 
