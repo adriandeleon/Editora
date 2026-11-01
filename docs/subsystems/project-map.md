@@ -561,6 +561,18 @@ regain marks the list stale, and the next search answers from it and lists again
 the query when the list changed). On a 31,000-file repository the listing takes about 0.2 s and a query 6–15
 ms. A query that is still queued behind a newer keystroke is dropped unanswered.
 
+The list and the ranking below are the **project index** (`ProjectIndex`, refactor stage 2), implemented by
+`ProjectFileIndex` over `ProjectFileList`: it holds the lists of the roots in use (the Project's, and the Map's
+when it shows another folder; at most two) and is shared by three searches that keep their own UI. The Map
+search asks it for files and folders and answers from a stale list at once (`Freshness.AS_LISTED`). Search
+Everywhere's file rows (`IndexCoordinator.fileItems`, after `ensureSearchable` has the Project root listed) ask it
+for files only, from the list in hand on the FX thread, in the Map's order; a row's score only keeps that order
+and lets the file group compete with commands and symbols on its best path score as before (the symbol corpus
+is still the symbol index's own walk). The Project tree's filter asks it for the best 300 files and lists a stale
+list again first (`Freshness.CURRENT`), as its old per-keystroke walk always saw the disk; so it now finds files
+beyond the walk's 20,000 entries and 25 levels, ranks source before tests and project code before vendored code,
+and never lists `.git`.
+
 What a query asks for (`ProjectMapSearch.Query`): a name matches file and folder names (a folder only when
 the query is in its name as written, not scattered); a query with `/` is matched against the relative path
 (`core/v1/types.go`, `cmd/kube-scheduler`), a trailing `/` asks for folders only; several words must all
@@ -645,7 +657,7 @@ filesystem work.
 
 ## Layout and rendering
 
-`ProjectMapView.MapSurface` owns the canvas coordinate system. Node and column geometry is computed
+`MapSurface` owns the canvas coordinate system. Node and column geometry is computed
 in world coordinates (`computeWorldLayout`) and cached on everything it depends on (`LayoutKey`: the rows,
 column filters and Show hidden choices, what Hide unmatched keeps, flow, zoom, manual offsets, marker sets,
 font and the chain option), so a pan, a hover or a new selection only projects it through zoom and pan into
@@ -765,8 +777,13 @@ to search, and that ? lists every key.
 ```mermaid
 flowchart LR
     ProjectPanel[ProjectPanel] -->|root, query, Git and editor state| View[ProjectMapView]
-    View -->|background request plus generation| Model[ProjectMapModel]
-    Model -->|bounded entry snapshot| View
+    View --> Loader[MapLoader]
+    Loader -->|background request plus generation| Model[ProjectMapModel]
+    Model -->|listings| Listings[ListingService]
+    Model -->|bounded entry snapshot| Loader
+    Loader -->|snapshot still current| View
+    ProjectPanel -->|search| Index[ProjectIndex over ProjectFileList]
+    Index -->|ranked matches| View
     View --> Surface[MapSurface Canvas]
     View --> Preview[ProjectMapPreview]
     View -->|open files and declarations| Structure[ProjectMapStructure]
@@ -782,20 +799,25 @@ Responsibilities are split as follows:
   open state and its persistence, the filesystem watcher (watching the tree's and the map's open folders
   together), root, editor state, Git state, open-file action, and construction of the traditional context
   menu. It keeps the Map's own root (`mapRoot`, pinned in the No Project window), forwards the hidden-files
-  setting, reports in-app renames and moves (`pathRenamed`), and runs the Map's search over its file list
-  (`ProjectFileList`, `ProjectMapSearch`).
+  setting, reports in-app renames and moves (`pathRenamed`), and runs the Map's search over the project index
+  (`ProjectIndex`, below).
 - `ProjectMapWindow` owns only the stage: building it, mirroring the editor window's look, placement from
   the remembered bounds and maximized state (or large and centred on the editor window), telling the view
   when it starts and stops showing (`ProjectMapView.setShowing`), closing with the editor window, and
   telling a close by the user (remembered) from one by the editor window or the project (not).
-- `ProjectMapView` owns expansion (manual and per-search), row limits, selection history, breadcrumbs,
-  global controls, async reloads, the deferred print/PDF job, and the bounded collection of floating
-  cards: opening, placement, eviction, refresh scheduling, and closing the cards of a folder that is no
-  longer expanded.
+- `ProjectMapView` owns the search's landing and results, selection history, breadcrumbs, global controls, the
+  deferred print/PDF job, and the floating cards through `MapCards`; it is `MapLoader`'s host.
+- `MapLoader` (refactor stage 2) owns what is listed and the listing: expansion (manual and per-search), row
+  limits and "+N more", the reveal pins, the remembered roots, the request it builds from them, the background
+  load and its generation, and the pruning of a snapshot that lands. Its background and UI executors and the
+  listing clock are given, so `MapLoaderTest` drives superseded loads and renames during a load step by step.
+- `ListingService` owns the directory listings: the cache of watched folders, the timeout and the one listing
+  per folder, the remote reuse and the regain check (formerly `ProjectMapModel.Listings`).
 - `ProjectMapModel` is JavaFX-free. It loads bounded snapshots with per-directory facts, maintains
   independent branch expansions, groups entries by owning parent, applies ordering and filters,
   classifies file types, and determines emphasized ancestor paths.
-- `ProjectMapView.MapSurface` owns paint, layout, transforms, hit-testing, pointer/keyboard input,
+- `MapSurface` (the view's inner class until refactor stage 2; it reaches the view through its `view` field)
+  owns paint, layout, transforms, hit-testing, pointer/keyboard input,
   column controls, icon snapshots, and accessibility text. The surface has the `PARENT` role (a plain group, not
   a tree: it has no item nodes) and its accessible TEXT names the selection with its kind, open / unsaved / Git /
   bookmark / Personal Notes / Structure states, the folder that holds it (relative to the root) and its place
@@ -830,7 +852,8 @@ it is what opens the window.
 ## Threading, bounds, and lifecycle
 
 Filesystem listing runs on the single daemon `project-map-loader` executor, whose thread starts on the first
-load (the executor object exists with the view).
+load (the executor object exists with the view); `MapLoader` submits to it and hands results back on the FX
+thread.
 Each request captures the root, the expanded set, the hidden-files rules, the row limits and the pinned
 paths. An atomic generation is checked when a queued request starts and between directories, so a burst of
 requests lists the folders once, and obsolete results never reach the FX thread. A request made after
