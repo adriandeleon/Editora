@@ -24,9 +24,9 @@ import org.jspecify.annotations.Nullable;
  *       that already is a comment gets a second {@code #} ({@code <%## note %>}, still a comment), so uncommenting,
  *       which takes one {@code #} off every tag, gives the user's own comment back (HTML review 3 C203).
  *   <li>Handlebars ({@code .hbs .handlebars}): {@code {{!-- … --}}}.
- *   <li>Mustache ({@code .mustache}), whose {@code {{! … }}} ends at the first {@code }}} and has no
+ *   <li>Mustache ({@code .mustache}), whose {@code {{! … }}} ends at the first <code>}}</code> and has no
  *       {@code {{!-- --}}} form (HTML review 3 C202): each line is wrapped in {@code <!-- -->} and each tag on it
- *       becomes a comment tag, {@code {{name}}} → {@code {{!name}}}, {@code {{{raw}}}} → {@code {{!{raw}}}; a comment
+ *       becomes a comment tag, {@code {{name}}} → {@code {{!name}}}, {@code {{{raw}}}} → <code>{{!{raw}}</code>; a comment
  *       tag gets a second {@code !}. Uncommenting undoes both.
  *   <li>Go templates (Hugo) in a {@code .html} page: <code>{{/* … *&#47;}}</code>.
  * </ul>
@@ -241,9 +241,9 @@ final class TemplateComments {
 
     /**
      * Mustache: each non-blank line of {@code [a, effEnd]} wrapped in {@code <!-- -->} with each of its tags made a
-     * comment tag ({@code {{x}}} → {@code {{!x}}}, {@code {{{x}}}} → {@code {{!{x}}}, {@code {{! c }}} →
+     * comment tag ({@code {{x}}} → {@code {{!x}}}, {@code {{{x}}}} → <code>{{!{x}}</code>, {@code {{! c }}} →
      * {@code {{!! c }}}), or, when every non-blank line is such a comment, each unwrapped and its tags one {@code !}
-     * shorter. A Mustache comment ends at its first {@code }}}, so it cannot hold a line with a tag. Null when a line
+     * shorter. A Mustache comment ends at its first <code>}}</code>, so it cannot hold a line with a tag. Null when a line
      * holds an HTML comment of its own (they do not nest).
      */
     private static Commenter.@Nullable Edit toggleMustacheLines(String text, int a, int effEnd, boolean bare) {
@@ -301,7 +301,7 @@ final class TemplateComments {
 
     /**
      * {@code s} with each Mustache tag made a comment tag ({@code comment}) or, the other way, each comment tag one
-     * {@code !} shorter — a {@code {{!{x}}} becoming the triple-brace {@code {{{x}}}} it stood for.
+     * {@code !} shorter — a <code>{{!{x}}</code> becoming the triple-brace {@code {{{x}}}} it stood for.
      */
     static String mustacheTags(String s, boolean comment) {
         StringBuilder out = new StringBuilder(s.length() + 8);
