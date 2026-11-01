@@ -83,8 +83,15 @@ public class WorkspaceState {
      * restore size), {@code projectMapSingleClickOpens}, {@code projectMapCompactChains} and
      * {@code projectMapFollowActiveFile} (three ⋯ options of the Map). Additive; absent means a normal window,
      * a single click opening a file, compacted folder chains and no following of the active file.
+     *
+     * <p>v27 → v28 added {@code projectMapState} (what the Project Map keeps of an exploration across restarts: its
+     * open folders, selection, Back/Forward places, zoom and pan, and open cards — Project Map review 3 B6) and three
+     * ⋯ options of the Map: {@code projectMapCompactRows}, {@code projectMapHideIgnored} and
+     * {@code projectMapOverviewSeen} (the Overview card was shown once). Additive; absent means a Map that starts
+     * afresh, with normal rows, ignored and generated entries dimmed rather than hidden, and the Overview card not
+     * yet shown.
      */
-    public static final int SCHEMA_VERSION = 27;
+    public static final int SCHEMA_VERSION = 28;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -204,6 +211,14 @@ public class WorkspaceState {
     private boolean projectMapCompactChains = true;
     /** Project Map "Always select opened file". Additive in v27; off by default. */
     private boolean projectMapFollowActiveFile;
+    /** Project Map "Compact rows" (denser rows, review 3 B15). Additive in v28; off by default. */
+    private boolean projectMapCompactRows;
+    /** Project Map "Hide ignored and generated" (review 3 A11; dimmed otherwise). Additive in v28; off by default. */
+    private boolean projectMapHideIgnored;
+    /** The Project Map's Overview card was shown for this workspace (review 3 B4). Additive in v28. */
+    private boolean projectMapOverviewSeen;
+    /** What the Project Map keeps of the exploration across restarts (review 3 B6); null for none. v28. */
+    private @Nullable ProjectMapState projectMapState;
     /** Branch dropdown sections shown folded ("local", "remote", "remote:<name>", "actions"). Additive in v14. */
     private List<String> collapsedBranchSections = new ArrayList<>();
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
@@ -631,6 +646,38 @@ public class WorkspaceState {
 
     public void setProjectMapFollowActiveFile(boolean projectMapFollowActiveFile) {
         this.projectMapFollowActiveFile = projectMapFollowActiveFile;
+    }
+
+    public boolean isProjectMapCompactRows() {
+        return projectMapCompactRows;
+    }
+
+    public void setProjectMapCompactRows(boolean projectMapCompactRows) {
+        this.projectMapCompactRows = projectMapCompactRows;
+    }
+
+    public boolean isProjectMapHideIgnored() {
+        return projectMapHideIgnored;
+    }
+
+    public void setProjectMapHideIgnored(boolean projectMapHideIgnored) {
+        this.projectMapHideIgnored = projectMapHideIgnored;
+    }
+
+    public boolean isProjectMapOverviewSeen() {
+        return projectMapOverviewSeen;
+    }
+
+    public void setProjectMapOverviewSeen(boolean projectMapOverviewSeen) {
+        this.projectMapOverviewSeen = projectMapOverviewSeen;
+    }
+
+    public @Nullable ProjectMapState getProjectMapState() {
+        return projectMapState;
+    }
+
+    public void setProjectMapState(@Nullable ProjectMapState projectMapState) {
+        this.projectMapState = projectMapState;
     }
 
     public Map<String, String> getProgramArgs() {

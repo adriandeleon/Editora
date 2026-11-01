@@ -33,7 +33,7 @@ class WorkspaceStateV27Test {
         assertEquals(WorkspaceState.PROJECT_VIEW_MAP, state.getProjectViewMode());
         assertEquals(java.util.List.of(10.0, 20.0, 900.0, 600.0), state.getProjectMapWindowBounds());
         assertEquals(java.util.List.of("kept"), state.getDebugWatches());
-        assertEquals(27, state.getSchemaVersion());
+        assertEquals(WorkspaceState.SCHEMA_VERSION, state.getSchemaVersion());
     }
 
     @Test

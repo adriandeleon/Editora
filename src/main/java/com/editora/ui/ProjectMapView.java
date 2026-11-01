@@ -143,6 +143,11 @@ final class ProjectMapView extends VBox {
     private final Label narrowedBadge = new Label();
     private Consumer<Boolean> onHideUnmatchedChanged = hide -> {};
     private final ComboBox<FlowDirection> flowFilter = new ComboBox<>();
+    /** "Reveal active file", beside the breadcrumb and in the ⋯ menu (review 3 B13, E9). */
+    private final Button revealActiveButton = new Button();
+
+    private final MenuItem revealActiveItem = new MenuItem(tr("project.map.revealActiveFile"));
+    private Runnable onRevealActiveFile = () -> {};
     private final Button backButton = new Button("‹");
     private final Button forwardButton = new Button("›");
     private final MenuItem printButton = new MenuItem(tr("project.map.print"));
@@ -276,8 +281,27 @@ final class ProjectMapView extends VBox {
     private Runnable onExpandedChanged = () -> {};
     private int historyIndex = -1;
     private boolean navigatingHistory;
-    /** Whether the newest history entry came from a sibling move, so the next one replaces it. */
-    private boolean historyHeadFromSiblingMove;
+    /** What the newest history entry is: a place, or where a run of steps or of search landings has got to. */
+    private HistoryHead historyHead = HistoryHead.PLACE;
+    /** Set while the search lands on its first match by itself, so that landing is recorded as one. */
+    private boolean historySearchLanding;
+    /** Whether the search's current landing is its own (the first match of a typed query), not a step to a match. */
+    private boolean historySearchAuto;
+
+    /**
+     * How the newest Back/Forward entry got there (Project Map review 3 B5). History records places — a file
+     * opened or previewed, a search landing, a reveal, a breadcrumb jump, a row picked with the pointer — and a
+     * run of keyboard steps (sibling, parent and child moves, Home/End, type-ahead) is one entry, the row the run
+     * leads to. The landings the search makes as a query is typed are one entry too, its last.
+     */
+    enum HistoryHead {
+        /** A place: never replaced; the next entry goes after it. */
+        PLACE,
+        /** Where a run of keyboard steps has got to: the next step replaces it. */
+        STEP,
+        /** Where the search landed by itself: the next such landing replaces it. */
+        LANDING
+    }
 
     private Runnable onClearSearch = () -> {};
     private Runnable onLeaveMap = () -> {};
@@ -302,6 +326,7 @@ final class ProjectMapView extends VBox {
                     }
                 }
                 cards.flushConnectors();
+                bearingsChanged(); // a card moved, resized or came: remembered a moment later (B6)
             }
         }
     };
@@ -376,6 +401,9 @@ final class ProjectMapView extends VBox {
         forwardButton.setMinWidth(Region.USE_PREF_SIZE);
         backButton.setOnAction(event -> moveHistory(-1));
         forwardButton.setOnAction(event -> moveHistory(1));
+        // Right-click (or the Menu key) on either lists the places, so "five places back" is one pick (B5).
+        backButton.setOnContextMenuRequested(event -> historyShowMenu(backButton, event));
+        forwardButton.setOnContextMenuRequested(event -> historyShowMenu(forwardButton, event));
         breadcrumbs.getStyleClass().add("project-map-breadcrumbs");
         breadcrumbs.setMinWidth(0);
         breadcrumbs.widthProperty().addListener((obs, old, value) -> fitBreadcrumbs());
@@ -383,6 +411,15 @@ final class ProjectMapView extends VBox {
             label.getStyleClass().add("project-map-breadcrumb-separator");
             label.setMinWidth(Region.USE_PREF_SIZE);
         }
+
+        // Where am I? The file being edited, selected and brought into view (review 3 B13, E9).
+        revealActiveButton.setGraphic(Icons.locateFile());
+        revealActiveButton.getStyleClass().addAll("project-map-nav-button", "project-map-reveal-active");
+        revealActiveButton.setMinWidth(Region.USE_PREF_SIZE);
+        Icons.name(revealActiveButton, tr("project.map.revealActiveFile"));
+        revealActiveButton.setOnAction(event -> onRevealActiveFile.run());
+        revealActiveItem.setGraphic(Icons.locateFile());
+        revealActiveItem.setOnAction(event -> onRevealActiveFile.run());
 
         Button help = new Button("?");
         help.getStyleClass().addAll("project-map-nav-button", "project-map-help-button");
@@ -404,6 +441,7 @@ final class ProjectMapView extends VBox {
                         hideOpenNotes,
                         followActiveFile,
                         new SeparatorMenuItem(),
+                        revealActiveItem,
                         openCardsMenu,
                         new SeparatorMenuItem(),
                         printButton,
@@ -423,7 +461,7 @@ final class ProjectMapView extends VBox {
         singleClickOpens.selectedProperty().addListener((obs, old, selected) -> surface.singleClickOpens = selected);
         compactChainsOption.selectedProperty().addListener((obs, old, selected) -> layoutCompactChanged(selected));
 
-        HBox row = new HBox(3, backButton, forwardButton, breadcrumbs, help, options);
+        HBox row = new HBox(3, backButton, forwardButton, breadcrumbs, revealActiveButton, help, options);
         row.getStyleClass().add("project-map-navigation");
         row.setAlignment(Pos.CENTER_LEFT);
         HBox.setHgrow(breadcrumbs, Priority.ALWAYS);
@@ -502,6 +540,11 @@ final class ProjectMapView extends VBox {
 
     void setFollowActiveFile(boolean follow) {
         followActiveFile.setSelected(follow);
+    }
+
+    /** What the breadcrumb's crosshair and ⋯ Reveal Active File do: the panel selects the file being edited. */
+    void setOnRevealActiveFile(Runnable action) {
+        onRevealActiveFile = action == null ? () -> {} : action;
     }
 
     /** The selected row's path, or null (the Map window asks whether anything but the root is chosen). */
@@ -804,7 +847,8 @@ final class ProjectMapView extends VBox {
         row = helpRow(keys, row, helpKey("enter") + " / " + helpKey("space"), "project.map.help.activate");
         row = helpRow(keys, row, helpChord("shift", helpKey("enter")), "project.map.help.shiftEnter");
         row = helpRow(keys, row, helpKey("backspace"), "project.map.help.parent");
-        row = helpRow(keys, row, helpKey("home"), "project.map.help.home");
+        row = helpRow(keys, row, helpKey("home") + " / " + helpKey("end"), "project.map.help.home");
+        row = helpRow(keys, row, tr("project.map.help.typeAhead.gesture"), "project.map.help.typeAhead");
         row = helpRow(keys, row, helpKey("pageUp") + " / " + helpKey("pageDown"), "project.map.help.page");
         row = helpRow(keys, row, "/", "project.map.help.columnFilter");
         row = helpRow(keys, row, helpChord("alt", "←") + " / " + helpChord("alt", "→"), "project.map.help.history");
@@ -950,6 +994,8 @@ final class ProjectMapView extends VBox {
                 && normalized != null
                 && !com.editora.config.PathKeys.sameFileSystem(this.root, normalized);
         rememberRoot();
+        bearingsFlush(); // what the workspace keeps is the folder being left, as it was
+        bearingsReady = false;
         this.root = normalized;
         cards.closeAll();
         structure.clear();
@@ -974,6 +1020,9 @@ final class ProjectMapView extends VBox {
             expanded.add(normalized);
             recordSelection(normalized);
             restoreRoot(normalized);
+            if (active) {
+                bearingsRestore(); // shown already: the workspace's state for this folder applies now
+            }
         }
         surface.setSelected(normalized);
         updateNavigation();
@@ -1016,6 +1065,268 @@ final class ProjectMapView extends VBox {
         }
     }
 
+    // --- bearings: what the Map keeps of an exploration across restarts (Project Map review 3 B6) ------------
+
+    /** What the workspace remembered, waiting for the first show of its folder; null once applied or for none. */
+    private com.editora.config.@Nullable ProjectMapState bearingsStored;
+
+    private Consumer<com.editora.config.ProjectMapState> bearingsSink = state -> {};
+    /** Whether the current folder's state may be written: its first show has restored (or had nothing to restore). */
+    private boolean bearingsReady;
+    /** The last session's code cards, waiting for the first view of the map (declarations: for their outline). */
+    private final List<com.editora.config.ProjectMapState.Card> bearingsPendingCards = new ArrayList<>();
+
+    private final javafx.animation.PauseTransition bearingsDebounce =
+            new javafx.animation.PauseTransition(BEARINGS_QUIET);
+    private boolean bearingsDebounceArmed;
+    /** How soon after a change what the map shows is written to the workspace state (at most this often). */
+    private static final Duration BEARINGS_QUIET = Duration.millis(600);
+
+    /**
+     * Restores what the workspace remembered of the Map — {@code stored}, for its folder only — the first time the
+     * window shows that folder, and hands later states to {@code onChanged} (into the workspace state, which the
+     * window writes with its session). Local folders only: a remote folder's paths are not checked from here.
+     */
+    void setRememberedPlace(
+            com.editora.config.@Nullable ProjectMapState stored,
+            Consumer<com.editora.config.ProjectMapState> onChanged) {
+        bearingsStored = stored;
+        bearingsSink = onChanged == null ? state -> {} : onChanged;
+        bearingsDebounce.setOnFinished(event -> {
+            bearingsDebounceArmed = false;
+            bearingsFlush();
+        });
+    }
+
+    /** Something the workspace keeps changed: written {@link #BEARINGS_QUIET} later, with whatever else changed. */
+    private void bearingsChanged() {
+        if (!bearingsReady || disposed || bearingsDebounceArmed) {
+            return;
+        }
+        bearingsDebounceArmed = true;
+        bearingsDebounce.playFromStart();
+    }
+
+    /** Writes what the Map shows now to the workspace state (nothing before its folder was first shown). */
+    void bearingsFlush() {
+        bearingsDebounce.stop();
+        bearingsDebounceArmed = false;
+        com.editora.config.ProjectMapState state = bearingsReady ? bearingsState() : null;
+        if (state != null) {
+            bearingsSink.accept(state);
+        }
+    }
+
+    /**
+     * What the Map shows now, as the workspace keeps it: the folders opened by hand, the selection, the Back/Forward
+     * places, the zoom and pan and the open code cards (least recently used first). Null without a local folder.
+     */
+    com.editora.config.@Nullable ProjectMapState bearingsState() {
+        Path current = root;
+        if (current == null || !com.editora.vfs.Vfs.isLocal(current)) {
+            return null;
+        }
+        com.editora.config.ProjectMapState state = new com.editora.config.ProjectMapState();
+        state.setRoot(current.toString());
+        state.setExpanded(expanded.stream()
+                .map(path -> bearingsRelative(current, path))
+                .filter(java.util.Objects::nonNull)
+                .filter(relative -> !relative.isEmpty())
+                .sorted()
+                .toList());
+        Path selected = surface.selectedPath();
+        String selectedRelative = selected == null ? null : bearingsRelative(current, selected);
+        state.setSelected(selectedRelative == null ? "" : selectedRelative);
+        List<String> places = new ArrayList<>();
+        int index = -1;
+        for (int i = 0; i < selectionHistory.size(); i++) {
+            String relative = bearingsRelative(current, selectionHistory.get(i));
+            if (relative != null) {
+                places.add(relative);
+                if (i <= historyIndex) {
+                    index = places.size() - 1;
+                }
+            }
+        }
+        state.setHistory(places);
+        state.setHistoryIndex(index);
+        state.setZoom(surface.zoom);
+        state.setOffsetX(surface.offsetX);
+        state.setOffsetY(surface.offsetY);
+        List<com.editora.config.ProjectMapState.Card> open = new ArrayList<>();
+        for (MapCards.OpenCard card : cards.openCards().reversed()) {
+            String relative = bearingsRelative(current, card.key());
+            if (!card.note() && card.node() instanceof ProjectMapPreview code && relative != null) {
+                open.add(new com.editora.config.ProjectMapState.Card(
+                        relative,
+                        code.getLayoutX(),
+                        code.getLayoutY(),
+                        code.getWidth(),
+                        code.getHeight(),
+                        code.contentZoom(),
+                        code.structureShown()));
+            }
+        }
+        state.setCards(open);
+        return state;
+    }
+
+    /** {@code path} relative to {@code base} with {@code /} separators ("" for the base), or null outside it. */
+    static @Nullable String bearingsRelative(Path base, @Nullable Path path) {
+        if (path == null
+                || !com.editora.config.PathKeys.sameFileSystem(base, path)
+                || !path.normalize().startsWith(base)) {
+            return null;
+        }
+        return base.relativize(path.normalize()).toString().replace('\\', '/');
+    }
+
+    /** {@code relative} under {@code base}, or null when it would leave it ({@code ..}) or is not a path. */
+    static @Nullable Path bearingsResolve(Path base, @Nullable String relative) {
+        if (relative == null) {
+            return null;
+        }
+        try {
+            Path resolved = (relative.isEmpty() ? base : base.resolve(relative)).normalize();
+            return resolved.startsWith(base) ? resolved : null;
+        } catch (RuntimeException invalid) {
+            return null;
+        }
+    }
+
+    /** Whether {@code path} — a file, a folder, or a declaration below its file — still exists on disk. */
+    private static boolean bearingsExists(Path path) {
+        Path file = path;
+        while (ProjectMapStructure.isSymbolPath(file) && file.getParent() != null) {
+            file = file.getParent();
+        }
+        return java.nio.file.Files.exists(file);
+    }
+
+    /**
+     * The first show of the folder the workspace remembers: its open folders, selection and Back/Forward places
+     * come back now, pruned of what no longer exists; its zoom and pan replace the first view's fit, and its cards
+     * open once the map is laid out ({@link #bearingsRestoreCards}). Once per folder; any later state is written.
+     */
+    private void bearingsRestore() {
+        if (bearingsReady) {
+            return;
+        }
+        Path current = root;
+        if (current == null) {
+            return;
+        }
+        bearingsReady = true;
+        com.editora.config.ProjectMapState stored = bearingsStored;
+        if (stored == null
+                || !com.editora.vfs.Vfs.isLocal(current)
+                || !current.toString().equals(stored.getRoot())) {
+            return;
+        }
+        bearingsStored = null;
+        for (String relative : stored.getExpanded()) {
+            Path folder = bearingsResolve(current, relative);
+            if (folder != null) {
+                expanded.add(folder); // pruned against the disk by the load that follows
+            }
+        }
+        List<Path> places = new ArrayList<>();
+        int index = -1;
+        for (int i = 0; i < stored.getHistory().size(); i++) {
+            Path place = bearingsResolve(current, stored.getHistory().get(i));
+            if (place != null
+                    && bearingsExists(place)
+                    && (places.isEmpty() || !places.getLast().equals(place))) {
+                places.add(place);
+            }
+            if (i <= stored.getHistoryIndex()) {
+                index = places.size() - 1;
+            }
+        }
+        if (!places.isEmpty()) {
+            selectionHistory.clear();
+            selectionHistory.addAll(places.subList(Math.max(0, places.size() - MAX_SELECTION_HISTORY), places.size()));
+            historyIndex = Math.clamp(
+                    index - Math.max(0, places.size() - MAX_SELECTION_HISTORY), 0, selectionHistory.size() - 1);
+            historyHead = HistoryHead.PLACE;
+        }
+        Path selected = bearingsResolve(current, stored.getSelected());
+        if (selected != null && bearingsExists(selected)) {
+            pendingSelection = ProjectMapStructure.isSymbolPath(selected) ? bearingsFileOf(selected) : selected;
+        }
+        if (stored.getZoom() > 0) {
+            surface.bearingsViewport = new double[] {stored.getZoom(), stored.getOffsetX(), stored.getOffsetY()};
+        }
+        bearingsPendingCards.clear();
+        for (com.editora.config.ProjectMapState.Card card : stored.getCards()) {
+            Path key = bearingsResolve(current, card.getPath());
+            if (key != null && !key.equals(current) && bearingsExists(key)) {
+                bearingsPendingCards.add(card);
+            }
+        }
+        updateNavigation();
+    }
+
+    /** The file a declaration's path is below (the path itself for a file). */
+    private static Path bearingsFileOf(Path path) {
+        Path file = path;
+        while (ProjectMapStructure.isSymbolPath(file) && file.getParent() != null) {
+            file = file.getParent();
+        }
+        return file;
+    }
+
+    /**
+     * Opens the last session's code cards where they were, now that the map is laid out at its restored zoom and
+     * pan. A declaration card waits for its file's outline ({@link #bearingsRestoreDeclarations}).
+     */
+    private void bearingsRestoreCards() {
+        Path current = root;
+        if (disposed || current == null || bearingsPendingCards.isEmpty()) {
+            return;
+        }
+        for (com.editora.config.ProjectMapState.Card card : List.copyOf(bearingsPendingCards)) {
+            Path key = bearingsResolve(current, card.getPath());
+            if (key == null) {
+                bearingsPendingCards.remove(card);
+            } else if (ProjectMapStructure.isSymbolPath(key)) {
+                structure.ensure(bearingsFileOf(key)); // its card opens when the outline arrives
+                bearingsRestoreDeclarations(bearingsFileOf(key));
+            } else {
+                bearingsPendingCards.remove(card);
+                bearingsOpenCard(key, card);
+            }
+        }
+    }
+
+    /** The declaration cards of the last session in {@code file}, opened once its outline is in (or dropped). */
+    private void bearingsRestoreDeclarations(Path file) {
+        Path current = root;
+        if (disposed || current == null || bearingsPendingCards.isEmpty() || !structure.hasOutline(file)) {
+            return;
+        }
+        for (com.editora.config.ProjectMapState.Card card : List.copyOf(bearingsPendingCards)) {
+            Path key = bearingsResolve(current, card.getPath());
+            if (key != null
+                    && ProjectMapStructure.isSymbolPath(key)
+                    && bearingsFileOf(key).equals(file)) {
+                bearingsPendingCards.remove(card); // a declaration no longer in the outline is not brought back
+                bearingsOpenCard(key, card);
+            }
+        }
+    }
+
+    private void bearingsOpenCard(Path key, com.editora.config.ProjectMapState.Card card) {
+        cards.restoreCard(
+                key,
+                card.getX(),
+                card.getY(),
+                card.getWidth() > 0 ? card.getWidth() : ProjectMapPreview.DEFAULT_WIDTH,
+                card.getHeight() > 0 ? card.getHeight() : ProjectMapPreview.DEFAULT_HEIGHT,
+                card.getTextZoom() > 0 ? card.getTextZoom() : 1.0,
+                card.isStructure());
+    }
+
     /**
      * Whether the Map's window is showing; {@link ProjectMapWindow} drives it. While it is not, nothing is
      * listed, no card is refreshed or polled and row states wait: the first load waits until the window is
@@ -1030,8 +1341,10 @@ final class ProjectMapView extends VBox {
         this.active = showing;
         if (!showing) {
             cards.stopRefreshing();
+            bearingsFlush();
             return;
         }
+        bearingsRestore(); // the first show of the folder the workspace remembers brings it back (B6)
         reload();
         if (showingStatesStale) {
             showingStatesStale = false;
@@ -1250,6 +1563,7 @@ final class ProjectMapView extends VBox {
         if (newQuery) {
             pendingSelection = target;
             searchSelected = target;
+            historySearchAuto = true; // typed: the next query's landing replaces this one in the history
             searchPrepareLanding(first, false);
         }
         if (changed || newQuery && target != null && !surface.contains(target)) {
@@ -1258,7 +1572,7 @@ final class ProjectMapView extends VBox {
             onExpandedChanged.run();
         } else if (newQuery && target != null) {
             pendingSelection = null;
-            surface.select(target);
+            historySelectLanding(target);
             searchResolveSymbol();
         }
         resultsRefreshBanner();
@@ -1301,6 +1615,7 @@ final class ProjectMapView extends VBox {
             resultsCursor = index;
             resultsOnChanged.run();
         }
+        historySearchAuto = false; // a match the user stepped to is a place of its own
         searchPrepareLanding(match, open);
         if (refocus || !surface.contains(target)) {
             pendingSelection = target;
@@ -1596,7 +1911,7 @@ final class ProjectMapView extends VBox {
             return; // past the column's row limit: its file stays selected
         }
         searchSelected = declaration;
-        surface.select(declaration);
+        historySelectLanding(declaration);
         surface.revealAfterLoad(declaration);
         ProjectMapModel.Entry entry = surface.entryByPath.get(declaration);
         if (landing.openCard() && entry != null) {
@@ -1855,7 +2170,11 @@ final class ProjectMapView extends VBox {
     }
 
     void setOnExpandedChanged(Runnable callback) {
-        onExpandedChanged = callback == null ? () -> {} : callback;
+        Runnable then = callback == null ? () -> {} : callback;
+        onExpandedChanged = () -> {
+            then.run();
+            bearingsChanged();
+        };
     }
 
     void setRememberedFlow(String name, Consumer<FlowDirection> callback) {
@@ -1951,6 +2270,9 @@ final class ProjectMapView extends VBox {
         List<MenuItem> items = new ArrayList<>();
         if (entry.isFile()) {
             items.add(mapMenuItem("project.map.menu.preview", () -> previewFileEntry(entry)));
+            if (followCode != null) {
+                items.add(mapMenuItem("project.map.follow.related", () -> followRelated(entry.path())));
+            }
         }
         if (entry.isFile() && surface.hasStructure(entry) || entry.isSymbol() && surface.branches(entry)) {
             String key = structure.isOpen(entry.path())
@@ -2028,7 +2350,147 @@ final class ProjectMapView extends VBox {
                         ? symbol.block()
                         : new com.editora.text.FoldRegions.Region(symbol.line(), symbol.endLine())));
         menu.getItems().setAll(preview, openAt, openNarrowed);
+        menu.getItems().addAll(followItems(symbol.file(), symbol.line(), followName(symbol.label())));
         return menu;
+    }
+
+    /** How the Map follows the code out of a card or a declaration row (review 3 C12); the panel provides it. */
+    interface FollowCode {
+        /**
+         * Opens {@code file} in the editor at the 0-based {@code line} and {@code column} (or, with a negative
+         * column, on {@code name} in that line) and runs {@code commandId} there.
+         */
+        void follow(Path file, int line, int column, @Nullable String name, String commandId);
+
+        /** The files that exist among {@code file}'s related tests or subjects, best first, given on the FX thread. */
+        void relatedFiles(Path file, Consumer<List<Path>> found);
+
+        /** Shows {@code file}'s Git history. */
+        void fileHistory(Path file);
+    }
+
+    private @Nullable FollowCode followCode;
+
+    /** Where cards and declaration rows follow the code to; null takes their follow items away. */
+    void setFollowCode(@Nullable FollowCode code) {
+        followCode = code;
+        cards.setFollowActions(
+                code == null
+                        ? null
+                        : new ProjectMapPreview.FollowActions() {
+                            @Override
+                            public void follow(Path file, int line, int column, String commandId) {
+                                code.follow(file, line, column, null, commandId);
+                            }
+
+                            @Override
+                            public void related(Path file) {
+                                followRelated(file);
+                            }
+
+                            @Override
+                            public void fileHistory(Path file) {
+                                code.fileHistory(file);
+                            }
+                        });
+    }
+
+    /**
+     * A declaration row's follow items: Go to Definition, Find Usages, Go to Implementation, Type and Call
+     * Hierarchy at the declaration, then Related Test / Subject and File History of its file. Empty without a
+     * {@link FollowCode}.
+     */
+    private List<MenuItem> followItems(Path file, int line, String name) {
+        FollowCode code = followCode;
+        if (code == null) {
+            return List.of();
+        }
+        List<MenuItem> items = new ArrayList<>();
+        items.add(new SeparatorMenuItem());
+        for (String commandId : ProjectMapPreview.FOLLOW_COMMANDS) {
+            MenuItem item = new MenuItem(ProjectMapPreview.followLabel(commandId));
+            item.setOnAction(event -> code.follow(file, line, -1, name, commandId));
+            items.add(item);
+        }
+        items.add(new SeparatorMenuItem());
+        items.add(mapMenuItem("project.map.follow.related", () -> followRelated(file)));
+        MenuItem history = new MenuItem(tr("project.map.follow.fileHistory"), Icons.gitLog());
+        history.setOnAction(event -> code.fileHistory(file));
+        items.add(history);
+        return items;
+    }
+
+    /**
+     * The name a declaration's label declares, for the caret to land on: the label up to its parameters, past a
+     * Go receiver, its last word ({@code "func (s *Server) Start(ctx)"} → {@code Start}). Pure.
+     */
+    static String followName(@Nullable String label) {
+        String value = label == null ? "" : label.strip();
+        int receiver = value.indexOf('(');
+        int receiverEnd = receiver < 0 ? -1 : value.indexOf(')', receiver);
+        if (receiverEnd > 0 && value.indexOf('(', receiverEnd) > receiverEnd) {
+            value = value.substring(receiverEnd + 1).strip(); // past a receiver: "func (s *Server) Start(ctx)"
+        }
+        int open = value.indexOf('(');
+        if (open > 0) {
+            value = value.substring(0, open).strip();
+        }
+        int colon = value.indexOf(':');
+        if (colon > 0) {
+            value = value.substring(0, colon).strip(); // "name: Type"
+        }
+        String[] words = value.split("\\s+");
+        String last = words.length == 0 ? "" : words[words.length - 1];
+        int start = 0;
+        int end = last.length();
+        while (start < end && !Character.isJavaIdentifierPart(last.charAt(start))) {
+            start++;
+        }
+        while (end > start && !Character.isJavaIdentifierPart(last.charAt(end - 1))) {
+            end--;
+        }
+        return last.substring(start, end);
+    }
+
+    /**
+     * Related Test / Subject (review 3 C12): the file's test, or the subject a test tests, found by {@link
+     * com.editora.search.RelatedFiles} and revealed on the Map. When several exist the rest are offered in a menu
+     * under the breadcrumb.
+     */
+    private void followRelated(Path file) {
+        FollowCode code = followCode;
+        if (code == null) {
+            return;
+        }
+        code.relatedFiles(file, found -> {
+            Path currentRoot = root;
+            List<Path> shown = currentRoot == null
+                    ? List.of()
+                    : found.stream()
+                            .filter(path -> com.editora.config.PathKeys.sameFileSystem(path, currentRoot)
+                                    && path.startsWith(currentRoot))
+                            .toList();
+            if (disposed) {
+                return;
+            }
+            if (shown.isEmpty()) {
+                onStatus.accept(tr("status.related.none", com.editora.config.PathDisplay.fileName(file)));
+                return;
+            }
+            revealPath(shown.getFirst());
+            if (shown.size() > 1) {
+                ContextMenu menu = new ContextMenu();
+                for (Path candidate : shown) {
+                    MenuItem item = new MenuItem(historyLabel(candidate));
+                    item.setMnemonicParsing(false);
+                    item.setOnAction(event -> revealPath(candidate));
+                    menu.getItems().add(item);
+                }
+                if (breadcrumbs.getScene() != null) {
+                    menu.show(breadcrumbs, javafx.geometry.Side.BOTTOM, 0, 0);
+                }
+            }
+        });
     }
 
     void setOutputActions(Consumer<ProjectMapOutput> print, Consumer<ProjectMapOutput> exportPdf) {
@@ -2066,6 +2528,7 @@ final class ProjectMapView extends VBox {
     }
 
     void dispose() {
+        bearingsFlush(); // into the workspace state; the window's session write is what saves it
         disposed = true;
         cards.stopRefreshing();
         generation.incrementAndGet();
@@ -2291,6 +2754,10 @@ final class ProjectMapView extends VBox {
         if (pendingSelection != null) {
             if (loadedPaths.contains(pendingSelection) || surface.contains(pendingSelection)) {
                 surface.setSelected(pendingSelection);
+                if (searching() && pendingSelection.equals(searchSelected) && !navigatingHistory) {
+                    // The search's landing, loaded first: a place in the history like one that was loaded (B5).
+                    recordSelection(pendingSelection, historySearchAuto ? HistoryHead.LANDING : HistoryHead.PLACE);
+                }
                 // A search's first match, a reveal or a history step that had to be loaded is brought into
                 // view as one that was already loaded is (E1).
                 surface.revealAfterLoad(pendingSelection);
@@ -2451,6 +2918,7 @@ final class ProjectMapView extends VBox {
         if (entry.directory()) {
             toggleDirectory(entry.path());
         } else {
+            historyMarkPlace(entry.path()); // an opened file is a place the history keeps (review 3 B5)
             onOpenFile.accept(entry.path());
         }
     }
@@ -2591,6 +3059,7 @@ final class ProjectMapView extends VBox {
         }
         searchResolveSymbol(); // a search landing on a declaration waited for this outline
         cards.outlineChanged(file);
+        bearingsRestoreDeclarations(file); // a declaration card of the last session waited for this outline
     }
 
     /** Where the cards' editor font comes from: the editor window this Map belongs to. */
@@ -2600,6 +3069,7 @@ final class ProjectMapView extends VBox {
 
     /** A declaration row: opens (or focuses) the card of its lines (see {@link MapCards#openDeclarationCard}). */
     private void previewSymbol(ProjectMapModel.Entry entry) {
+        historyMarkPlace(entry.path());
         cards.openDeclarationCard(entry);
     }
 
@@ -2624,10 +3094,15 @@ final class ProjectMapView extends VBox {
             return;
         }
         if (!navigatingHistory) {
-            recordSelection(path, surface.movingSibling);
+            recordSelection(
+                    path,
+                    surface.movingSibling
+                            ? HistoryHead.STEP
+                            : historySearchLanding ? HistoryHead.LANDING : HistoryHead.PLACE);
         }
         updateNavigation();
         resultsFollowSelection(path);
+        bearingsChanged();
     }
 
     private void previewSelection(Path path) {
@@ -2635,6 +3110,7 @@ final class ProjectMapView extends VBox {
                 .filter(candidate -> candidate.path().equals(path))
                 .orElse(null);
         if (entry != null && entry.isFile()) {
+            historyMarkPlace(entry.path()); // a previewed file is a place too
             cards.openFileCard(entry.path());
         }
     }
@@ -2812,37 +3288,75 @@ final class ProjectMapView extends VBox {
         return Math.max(minimum, Math.min(maximum, value));
     }
 
+    /** How long a pause starts a new type-ahead prefix in a column (review 3 B14). */
+    static final long TYPE_AHEAD_RESET_MILLIS = 1000;
+
+    /**
+     * The row a column's type-ahead goes to: the first of {@code names}, from {@code current} on and wrapping,
+     * whose name starts with {@code prefix} (ignoring case). {@code advance} starts after {@code current} — a new
+     * initial steps on — while a longer prefix keeps a row that still matches. -1 when none does. Pure.
+     */
+    static int typeAheadTarget(List<String> names, int current, String prefix, boolean advance) {
+        if (names.isEmpty() || prefix.isEmpty()) {
+            return -1;
+        }
+        String wanted = prefix.toLowerCase(java.util.Locale.ROOT);
+        int start = current < 0 ? 0 : advance ? current + 1 : current;
+        for (int step = 0; step < names.size(); step++) {
+            int index = Math.floorMod(start + step, names.size());
+            if (names.get(index).toLowerCase(java.util.Locale.ROOT).startsWith(wanted)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    /** The name type-ahead matches a row by: a declaration's label, else the file or folder name. */
+    private static String keysRowName(ProjectMapModel.Entry entry) {
+        ProjectMapModel.Symbol symbol = entry.symbol();
+        if (symbol != null) {
+            return symbol.label();
+        }
+        Path name = entry.path().getFileName();
+        return name == null ? entry.path().toString() : name.toString();
+    }
+
     /** {@link MapCards#cardOverlapCost}, where the placement tests find it. Pure. */
     static double cardOverlapCost(double x, double y, double w, double h, List<double[]> obstacles) {
         return MapCards.cardOverlapCost(x, y, w, h, obstacles);
     }
 
     private void recordSelection(Path path) {
-        recordSelection(path, false);
+        recordSelection(path, HistoryHead.PLACE);
     }
 
     /**
-     * Appends a selection to the Back/Forward history. A run of sibling moves (arrows, Page Up/Down,
-     * Ctrl-N/Ctrl-P) is one entry — the row the run ended on — so Back does not retrace every keystroke, and
-     * the list is capped at {@link #MAX_SELECTION_HISTORY}.
+     * Appends a selection to the Back/Forward history, as a place or as the head of a run (see {@link
+     * HistoryHead}): a step replaces a step head and a landing a landing head, so Back does not retrace every
+     * keystroke; a run that comes back to the entry before it folds away. A place is never replaced, and the list
+     * is capped at {@link #MAX_SELECTION_HISTORY}.
      */
-    private void recordSelection(Path path, boolean siblingMove) {
+    private void recordSelection(Path path, HistoryHead kind) {
         Path normalized = ProjectMapModel.normalize(path);
-        if (normalized == null
-                || historyIndex >= 0
-                        && com.editora.config.PathKeys.samePath(selectionHistory.get(historyIndex), normalized)) {
+        if (normalized == null) {
+            return;
+        }
+        if (historyIndex >= 0 && com.editora.config.PathKeys.samePath(selectionHistory.get(historyIndex), normalized)) {
+            if (kind == HistoryHead.PLACE && historyIndex == selectionHistory.size() - 1) {
+                historyHead = HistoryHead.PLACE; // the run's row became a place: the next step goes after it
+            }
             return;
         }
         boolean atHead = historyIndex == selectionHistory.size() - 1;
         if (!atHead) {
             selectionHistory.subList(historyIndex + 1, selectionHistory.size()).clear();
         }
-        if (siblingMove && atHead && historyHeadFromSiblingMove && historyIndex >= 0) {
+        if (kind != HistoryHead.PLACE && atHead && historyHead == kind && historyIndex >= 0) {
             selectionHistory.set(historyIndex, normalized);
             if (historyIndex > 0
                     && com.editora.config.PathKeys.samePath(selectionHistory.get(historyIndex - 1), normalized)) {
                 selectionHistory.remove(historyIndex--); // the run came back to where it started
-                historyHeadFromSiblingMove = false;
+                historyHead = HistoryHead.PLACE;
             }
         } else {
             selectionHistory.add(normalized);
@@ -2850,18 +3364,91 @@ final class ProjectMapView extends VBox {
                 selectionHistory.removeFirst();
             }
             historyIndex = selectionHistory.size() - 1;
-            historyHeadFromSiblingMove = siblingMove;
+            historyHead = kind;
         }
         updateNavigation();
+        bearingsChanged();
+    }
+
+    /**
+     * {@code path} became a place — a file opened or a card opened on it: the history keeps it, so a later step
+     * goes after it instead of replacing it (review 3 B5: the file that was opened used to vanish from the trail).
+     */
+    private void historyMarkPlace(@Nullable Path path) {
+        if (path != null && !navigatingHistory) {
+            recordSelection(path, HistoryHead.PLACE);
+        }
+    }
+
+    /** Selects where the search landed; the history records it as a landing or, stepped to, a place. */
+    private void historySelectLanding(Path target) {
+        historySearchLanding = historySearchAuto;
+        try {
+            surface.select(target);
+        } finally {
+            historySearchLanding = false;
+        }
+    }
+
+    /** The Back/Forward menu: every place in the history, the newest first, the current one marked. */
+    private void historyShowMenu(Button owner, ContextMenuEvent event) {
+        ContextMenu menu = historyMenu();
+        if (menu.getItems().isEmpty()) {
+            return;
+        }
+        menu.show(owner, javafx.geometry.Side.BOTTOM, 0, 0);
+        event.consume();
+    }
+
+    /** The history as menu items (review 3 B5): each place's name and the folder it is in, the newest first. */
+    ContextMenu historyMenu() {
+        ContextMenu menu = new ContextMenu();
+        menu.getStyleClass().add("project-map-history-menu");
+        for (int index = selectionHistory.size() - 1; index >= 0; index--) {
+            Path place = selectionHistory.get(index);
+            int target = index;
+            CheckMenuItem item = new CheckMenuItem(historyLabel(place));
+            item.setMnemonicParsing(false);
+            item.setSelected(index == historyIndex);
+            item.setOnAction(event -> historyJumpTo(target));
+            menu.getItems().add(item);
+        }
+        return menu;
+    }
+
+    /** A history entry's label: its name, then the project-relative folder it is in ("name — folder"). */
+    String historyLabel(Path place) {
+        Path currentRoot = root;
+        Path file = place;
+        String name = crumbLabel(place);
+        while (ProjectMapStructure.isSymbolPath(file) && file.getParent() != null) {
+            file = file.getParent(); // a declaration: named by its label, placed by its file
+        }
+        if (file != place) {
+            name = name + " · " + crumbLabel(file);
+        }
+        if (currentRoot == null || file.equals(currentRoot)) {
+            return name;
+        }
+        Path folder = file.getParent();
+        if (folder == null || !folder.startsWith(currentRoot)) {
+            return name;
+        }
+        String relative = currentRoot.relativize(folder).toString().replace('\\', '/');
+        return relative.isEmpty() ? name : tr("project.map.history.entry", name, relative);
     }
 
     private void moveHistory(int delta) {
-        int target = historyIndex + delta;
-        if (target < 0 || target >= selectionHistory.size()) {
+        historyJumpTo(historyIndex + delta);
+    }
+
+    /** Goes to the history's entry {@code target}, as that many Back or Forward presses would. */
+    private void historyJumpTo(int target) {
+        if (target < 0 || target >= selectionHistory.size() || target == historyIndex) {
             return;
         }
         historyIndex = target;
-        historyHeadFromSiblingMove = false;
+        historyHead = HistoryHead.PLACE;
         navigatingHistory = true;
         try {
             revealPath(selectionHistory.get(target));
@@ -3999,6 +4586,7 @@ final class ProjectMapView extends VBox {
                 return;
             }
             cards.moveWithViewport(fromX, fromY, fromZoom, offsetX, offsetY, zoom);
+            bearingsChanged();
         }
 
         /** The zoom of the last paint, which the open cards are drawn at and a new card opens at. */
@@ -4410,9 +4998,24 @@ final class ProjectMapView extends VBox {
         private void fitIfPending() {
             if (initialFitPending && getWidth() > 1 && getHeight() > 1 && !columnBoxes.isEmpty()) {
                 initialFitPending = false;
-                showStart(true);
+                double[] restored = bearingsViewport;
+                bearingsViewport = null;
+                if (restored != null) {
+                    // The last session's zoom and pan, instead of the first view's fit (review 3 B6).
+                    zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, restored[0]));
+                    offsetX = restored[1];
+                    offsetY = restored[2];
+                    onZoomChanged.run();
+                    repaint();
+                } else {
+                    showStart(true);
+                }
+                Platform.runLater(ProjectMapView.this::bearingsRestoreCards); // placed on the map as it is now
             }
         }
+
+        /** The last session's {@code {zoom, offsetX, offsetY}}, applied by the first view in place of its fit. */
+        private double @Nullable [] bearingsViewport;
 
         private void syncColumnControls() {
             Set<ProjectMapModel.ColumnId> ids = entries.stream()
@@ -6930,10 +7533,10 @@ final class ProjectMapView extends VBox {
             }
             boolean onlyControl = event.isControlDown() && !event.isAltDown() && !event.isMetaDown();
             switch (event.getCode()) {
-                case UP, DOWN, LEFT, RIGHT -> navigateArrow(event.getCode());
+                case UP, DOWN, LEFT, RIGHT -> keysStep(() -> navigateArrow(event.getCode()));
                 case PAGE_UP -> moveSibling(-10);
                 case PAGE_DOWN -> moveSibling(10);
-                case BACK_SPACE -> selectParent();
+                case BACK_SPACE -> keysStep(this::selectParent);
                 case ENTER, SPACE -> {
                     if (event.getCode() == KeyCode.ENTER && event.isShiftDown() && plain) {
                         flushPendingRepaint();
@@ -6945,11 +7548,12 @@ final class ProjectMapView extends VBox {
                         activateSelection();
                     }
                 }
-                case HOME ->
-                    select(
-                            boxes.isEmpty()
-                                    ? entries.getFirst().path()
-                                    : boxes.getFirst().entry().path());
+                case HOME, END -> {
+                    if (!plain) {
+                        return;
+                    }
+                    keysStep(() -> keysHomeEnd(event.getCode() == KeyCode.END, event.isShiftDown()));
+                }
                 default -> {
                     if (onlyControl && event.getCode() == KeyCode.N) {
                         moveSibling(1);
@@ -6978,7 +7582,104 @@ final class ProjectMapView extends VBox {
             if (!shortcut && "/".equals(event.getCharacter())) {
                 focusSelectedColumnFilter();
                 event.consume();
+            } else if (!shortcut && keysTypeAhead(event.getCharacter())) {
+                event.consume();
             }
+        }
+
+        /** The typed prefix of the column's type-ahead, and when its last character came (review 3 B14). */
+        private final StringBuilder keysTyped = new StringBuilder();
+
+        private long keysTypedAt = Long.MIN_VALUE;
+        /** The type-ahead's clock, in milliseconds; replaced by tests. */
+        java.util.function.LongSupplier keysClock = System::currentTimeMillis;
+
+        /**
+         * Runs a keyboard move as one step of a run, which the Back/Forward history folds into the row the run
+         * ends on (review 3 B5): the arrows, Backspace, Home/End and type-ahead.
+         */
+        private void keysStep(Runnable move) {
+            boolean was = movingSibling;
+            movingSibling = true;
+            try {
+                move.run();
+            } finally {
+                movingSibling = was;
+            }
+        }
+
+        /**
+         * Home and End in the selected row's column: its first row and its last (review 3 B14). Shift+Home goes to
+         * the first column's first row, where Home used to go whatever the column.
+         */
+        private void keysHomeEnd(boolean end, boolean shift) {
+            if (shift && !end) {
+                select(
+                        boxes.isEmpty()
+                                ? entries.getFirst().path()
+                                : boxes.getFirst().entry().path());
+                return;
+            }
+            List<ProjectMapModel.Entry> rows = keysColumnRows();
+            if (!rows.isEmpty()) {
+                select((end ? rows.getLast() : rows.getFirst()).path());
+            }
+        }
+
+        /**
+         * The rows drawn in the selection's column, in order: the column it is a row of, or — for the root or a
+         * folder of a compacted chain, which stand as a column's header — the column it heads.
+         */
+        private List<ProjectMapModel.Entry> keysColumnRows() {
+            ColumnBox header = headerFor(selected);
+            ProjectMapModel.ColumnId id = header != null
+                    ? header.column().id()
+                    : selectedEntry().map(MapSurface::columnId).orElse(null);
+            if (id == null) {
+                return List.of();
+            }
+            return boxes.stream()
+                    .map(NodeBox::entry)
+                    .filter(entry -> columnId(entry).equals(id))
+                    .toList();
+        }
+
+        /**
+         * Type-ahead in the selected row's column (review 3 B14): the typed letters select the next row whose name
+         * starts with them; a pause of {@value #TYPE_AHEAD_RESET_MILLIS} ms starts a new prefix, and the same
+         * letter typed again steps to the next row with that initial. False for what is not a name's character.
+         */
+        private boolean keysTypeAhead(@Nullable String character) {
+            if (character == null
+                    || character.isEmpty()
+                    || Character.isISOControl(character.codePointAt(0))
+                    || keysTyped.isEmpty() && Character.isWhitespace(character.codePointAt(0))) {
+                return false;
+            }
+            long now = keysClock.getAsLong();
+            if (keysTypedAt == Long.MIN_VALUE || now - keysTypedAt > TYPE_AHEAD_RESET_MILLIS) {
+                keysTyped.setLength(0);
+            }
+            keysTypedAt = now;
+            boolean again = keysTyped.length() == 1 && keysTyped.toString().equalsIgnoreCase(character);
+            if (!again) {
+                keysTyped.append(character);
+            }
+            List<ProjectMapModel.Entry> rows = keysColumnRows().stream()
+                    .filter(entry -> !entry.isPlaceholder())
+                    .toList();
+            List<String> names = rows.stream().map(ProjectMapView::keysRowName).toList();
+            int current = -1;
+            for (int index = 0; index < rows.size(); index++) {
+                if (rows.get(index).path().equals(selected)) {
+                    current = index;
+                }
+            }
+            int target = typeAheadTarget(names, current, keysTyped.toString(), keysTyped.length() == 1);
+            if (target >= 0) {
+                keysStep(() -> select(rows.get(target).path()));
+            }
+            return true;
         }
 
         /** F2 renames and Delete deletes the selected entry, through the Project tree's own row actions. */

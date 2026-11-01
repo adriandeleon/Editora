@@ -877,6 +877,12 @@ final class Icons {
         return line("M8 1.8v3M8 11.2v3M1.8 8h3M11.2 8h3M6 8a2 2 0 1 0 4 0a2 2 0 1 0-4 0");
     }
 
+    /** A target: a ring with ticks round a dot — "Reveal active file" beside the Project Map's breadcrumb. */
+    static Node locateFile() {
+        return line("M8 1.4v2.4M8 12.2v2.4M1.4 8h2.4M12.2 8h2.4M3.8 8a4.2 4.2 0 1 0 8.4 0a4.2 4.2 0 1 0-8.4 0"
+                + "M7 8a1 1 0 1 0 2 0a1 1 0 1 0-2 0");
+    }
+
     /** A counter-clockwise arrow — "reset the view" on the Project Map's zoom bar. */
     static Node resetView() {
         return line("M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3.2 2.6v2.5h2.5");
