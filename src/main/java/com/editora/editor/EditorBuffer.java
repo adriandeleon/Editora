@@ -8470,9 +8470,9 @@ public class EditorBuffer implements TabContent {
         }
         int par = a.getCurrentParagraph();
         String line = a.getParagraph(par).getText();
-        // Formatters strip a blank line's whitespace, so they can't indent a fresh line you're about to
-        // type on — leave those to the local smart-Tab indent.
-        if (line.isBlank()) {
+        // Formatters strip a blank line's whitespace, so they can't indent a fresh line you're about to type on, and
+        // an HTML page's <pre> or <script> line is not theirs to indent (B102): leave those to the local smart Tab.
+        if (line.isBlank() || !IndentWindow.serverReindents(IndentKeys.doc(a), a.getCaretPosition(), language)) {
             return false;
         }
         int caret = a.getCaretPosition();
