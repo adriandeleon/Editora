@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -103,6 +104,81 @@ public final class InstallService {
         this.jdkHome = jdkHome == null ? () -> "" : jdkHome;
     }
 
+    /** The Node.js chosen in Settings → Debugging → JavaScript (blank = none): npm installs run with it (A105). */
+    private volatile java.util.function.Supplier<String> nodeSetting = () -> "";
+
+    /**
+     * Wires the Settings Node.js: npm is looked for beside it as well as on PATH, an npm install runs with its bin
+     * folder first on PATH (npm's own {@code #!/usr/bin/env node} needs that), and a Node.js floor is checked
+     * against it — the Node.js the installed servers then run on (HTML review 2 A105).
+     */
+    public void setNodeSettingSupplier(java.util.function.Supplier<String> nodeSetting) {
+        this.nodeSetting = nodeSetting == null ? () -> "" : nodeSetting;
+    }
+
+    /** The Settings Node.js, or null when none is chosen. */
+    private com.editora.run.NodeRuntimes.@Nullable NodeRuntime settingsNode() {
+        String setting;
+        try {
+            setting = nodeSetting.get();
+        } catch (RuntimeException e) {
+            return null;
+        }
+        return setting == null || setting.isBlank()
+                ? null
+                : com.editora.run.NodeRuntimes.resolveLocal(null, null, "", setting);
+    }
+
+    /** The bin folder of the Settings Node.js when it names one by its path, else null. */
+    @Nullable
+    Path settingsNodeBin() {
+        com.editora.run.NodeRuntimes.NodeRuntime node = settingsNode();
+        return node == null ? null : node.binDir().orElse(null);
+    }
+
+    /** npm beside the Node.js in {@code nodeBin} ({@code npm.cmd} first on Windows, as on PATH), or null. Pure. */
+    static @Nullable Path npmBeside(
+            @Nullable Path nodeBin, boolean windows, java.util.function.Predicate<Path> isFile) {
+        if (nodeBin == null) {
+            return null;
+        }
+        for (String name : windows ? List.of("npm.cmd", "npm.exe", "npm.bat") : List.of("npm")) {
+            Path npm = nodeBin.resolve(name);
+            if (isFile.test(npm)) {
+                return npm;
+            }
+        }
+        return null;
+    }
+
+    /** Whether npm is on PATH or beside the Settings Node.js (HTML review 2 A105). File lookups. */
+    boolean npmFound() {
+        return onPath("npm") || npmBeside(settingsNodeBin(), windows(), Files::isRegularFile) != null;
+    }
+
+    private static boolean windows() {
+        return System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("win");
+    }
+
+    /**
+     * An npm command line as it runs: with a Settings Node.js, npm beside it when there is one, and that Node.js's
+     * bin folder first on PATH; otherwise as given (npm from PATH). The PATH entry is empty when nothing is added.
+     */
+    static Map.Entry<List<String>, String> npmCommand(
+            List<String> argv, @Nullable Path nodeBin, boolean windows, java.util.function.Predicate<Path> isFile) {
+        if (nodeBin == null || argv.isEmpty() || !"npm".equals(argv.get(0))) {
+            return Map.entry(argv, "");
+        }
+        Path npm = npmBeside(nodeBin, windows, isFile);
+        List<String> out = new ArrayList<>(argv);
+        if (npm != null) {
+            out.set(0, npm.toString());
+        }
+        return Map.entry(List.copyOf(out), nodeBin.toString());
+    }
+
     /** The configured JDK's {@code java} executable, or {@code ""} when none is set or it has none. */
     private String jdkJava() {
         String home;
@@ -123,7 +199,7 @@ public final class InstallService {
                 return;
             }
             Set<Prereq> have = EnumSet.noneOf(Prereq.class);
-            if (onPath("npm")) {
+            if (npmFound()) {
                 have.add(Prereq.NPM);
             }
             if (onPath("python3") || onPath("python")) {
@@ -163,7 +239,7 @@ public final class InstallService {
     }
 
     /** What {@code node --version} prints on the augmented PATH ({@code v24.18.1}), or null; a test answers itself. */
-    private volatile java.util.function.Supplier<@Nullable String> nodeVersion = InstallService::probeNodeVersion;
+    private volatile java.util.function.Supplier<@Nullable String> nodeVersion = this::probeNodeVersion;
 
     void setNodeVersionForTest(java.util.function.Supplier<@Nullable String> version) {
         this.nodeVersion = Objects.requireNonNull(version, "version");
@@ -187,8 +263,11 @@ public final class InstallService {
         });
     }
 
-    private static @Nullable String probeNodeVersion() {
-        ProcessRunner.Result r = ProcessRunner.run(null, Duration.ofSeconds(10), List.of("node", "--version"));
+    @Nullable
+    String probeNodeVersion() {
+        com.editora.run.NodeRuntimes.NodeRuntime node = settingsNode(); // what the installed server runs on (A105)
+        List<String> argv = node == null ? List.of("node", "--version") : node.argv(List.of("--version"));
+        ProcessRunner.Result r = ProcessRunner.run(null, Duration.ofSeconds(10), argv);
         return r.ok() && r.out() != null && !r.out().isBlank() ? r.out().strip() : null;
     }
 
@@ -261,7 +340,7 @@ public final class InstallService {
     /** Runs one step; returns the resolved server command for an ARCHIVE step, else {@code null}. */
     private @Nullable String runStep(Step s, Path configDir) throws Exception {
         switch (s.kind()) {
-            case NPM_GLOBAL -> runCommand(InstallCatalog.npmInstallGlobalArgv(s.npmPackages()), s.id());
+            case NPM_GLOBAL -> runNpm(InstallCatalog.npmInstallGlobalArgv(s.npmPackages()), s.id());
             case NPM_PREFIX -> installNpmPrefix(s, configDir);
             case PIP_TARGET -> {
                 Path dest = configDir.resolve(s.destSubpath());
@@ -1066,12 +1145,34 @@ public final class InstallService {
         }
     }
 
-    /** Test seam: runs a package manager's command line ({@code npm install -g …}); a test records it instead. */
-    private volatile java.util.function.Function<List<String>, ProcessRunner.Result> commands =
-            argv -> ProcessRunner.runInUserLocale(null, CMD_TIMEOUT, argv);
+    /**
+     * Test seam: runs a package manager's command line ({@code npm install -g …}) with a folder to put first on PATH
+     * ({@code ""}: none); a test records it instead.
+     */
+    private volatile java.util.function.BiFunction<List<String>, String, ProcessRunner.Result> commands =
+            (argv, pathFirst) -> pathFirst.isEmpty()
+                    ? ProcessRunner.runInUserLocale(null, CMD_TIMEOUT, argv)
+                    : ProcessRunner.runInUserLocale(
+                            null,
+                            CMD_TIMEOUT,
+                            argv,
+                            Map.of("PATH", pathFirst + java.io.File.pathSeparator + ProcessRunner.augmentedPath()));
 
     void setCommandsForTest(java.util.function.Function<List<String>, ProcessRunner.Result> commands) {
+        Objects.requireNonNull(commands, "commands");
+        this.commands = (argv, pathFirst) -> commands.apply(argv);
+    }
+
+    /** As {@link #setCommandsForTest} with the folder put first on PATH ({@code ""}: none). */
+    void setCommandsWithPathForTest(
+            java.util.function.BiFunction<List<String>, String, ProcessRunner.Result> commands) {
         this.commands = Objects.requireNonNull(commands, "commands");
+    }
+
+    /** An npm command, run with the Settings Node.js when one is chosen ({@link #npmCommand}). */
+    private void runNpm(List<String> argv, String id) throws InstallException {
+        Map.Entry<List<String>, String> cmd = npmCommand(argv, settingsNodeBin(), windows(), Files::isRegularFile);
+        runCommand(cmd.getKey(), id, cmd.getValue());
     }
 
     /**
@@ -1080,10 +1181,14 @@ public final class InstallService {
      * fail on non-ASCII package metadata or install paths when forced to ASCII.
      */
     private void runCommand(@Nullable List<String> argv, String id) throws InstallException {
+        runCommand(argv, id, "");
+    }
+
+    private void runCommand(@Nullable List<String> argv, String id, String pathFirst) throws InstallException {
         if (argv == null || argv.isEmpty()) {
             throw new InstallException(id + ": no command");
         }
-        ProcessRunner.Result r = commands.apply(argv);
+        ProcessRunner.Result r = commands.apply(argv, pathFirst);
         if (!r.ok()) {
             throw new InstallException(id + ": " + (r.message().isBlank() ? "command failed" : r.message()));
         }
@@ -1097,7 +1202,7 @@ public final class InstallService {
     private void installNpmPrefix(Step s, Path configDir) throws Exception {
         Path dest = configDir.resolve(s.destSubpath());
         Files.createDirectories(dest);
-        runCommand(InstallCatalog.npmInstallPrefixArgv(dest, s.npmPackages()), s.id());
+        runNpm(InstallCatalog.npmInstallPrefixArgv(dest, s.npmPackages()), s.id());
         if (InstallCatalog.WEB_LS_PACKAGE.equals(s.id())) {
             try {
                 WebServerInstall.linkTypeScriptLibs(dest);

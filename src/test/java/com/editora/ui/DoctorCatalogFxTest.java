@@ -40,6 +40,12 @@ class DoctorCatalogFxTest {
         final Settings settings = new Settings();
         boolean simple;
         ProjectScope scope = ProjectScope.NONE;
+        Path config;
+
+        @Override
+        public Path configDir() {
+            return config;
+        }
 
         @Override
         public ProjectScope projectScope() {
@@ -891,5 +897,33 @@ class DoctorCatalogFxTest {
         assertEquals("doctor.tip.serverTroubleOwn", crashing.tipKey());
         assertFalse(crashing.reinstallable());
         assertTrue(crashing.restartable());
+    }
+
+    /** HTML review 2 A110: Editora's own copy is named by its program on the row, not cut down to "...stdio". */
+    @Test
+    void editorasOwnCopyIsNamedByItsProgram(@TempDir Path dir) throws Exception {
+        Host host = new Host();
+        host.config = dir.resolve("config");
+        Path prefix = com.editora.install.WebServerInstall.folder(host.config);
+        Path pkg = com.editora.install.InstallTestAccess.webServersLayout(prefix, true);
+        com.editora.install.WebServerInstall.linkTypeScriptLibs(prefix);
+        Path launcher = executable(pkg.resolve("bin/vscode-html-language-server"), "#!/bin/sh\nexit 0\n");
+        Ops ops = new Ops();
+        ops.servers = List.of("html");
+        ops.argv.put("html", List.of(launcher.toString(), "--stdio"));
+
+        String shown =
+                com.editora.i18n.Messages.tr("doctor.command.editorasCopy", "vscode-html-language-server --stdio");
+        assertEquals(shown, spec(specs(host, ops), "lsp.html").placeholder().command());
+        DoctorCheck probed = spec(specs(host, ops), "lsp.html").probe().get();
+        assertEquals(shown, probed.command());
+        assertTrue(probed.detail().contains(launcher.getParent().toString()), "the detail keeps the full path");
+
+        Path global = executable(dir.resolve("bin/vscode-html-language-server"), "#!/bin/sh\nexit 0\n");
+        ops.argv.put("html", List.of(global.toString(), "--stdio"));
+        assertEquals(
+                global + " --stdio",
+                spec(specs(host, ops), "lsp.html").placeholder().command(),
+                "as it is");
     }
 }

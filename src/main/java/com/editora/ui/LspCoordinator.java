@@ -2002,10 +2002,9 @@ final class LspCoordinator {
         return config == null ? null : config.getConfigDir();
     }
 
-    /** Whether the user (or a trusted project) set this server's command, rather than leaving the default (Doctor). */
+    /** Whether the user (or a trusted project) set a command other than the default, as launch reads it (A106). */
     boolean serverCommandSet(String serverId) {
-        String raw = serverCommand(serverId);
-        return raw != null && !raw.isBlank();
+        return customServerCommand(serverId) != null;
     }
 
     /**
