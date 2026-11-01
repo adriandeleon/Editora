@@ -85,7 +85,8 @@ at the same depth. This keeps parallel work visible without merging unrelated su
 column.
 
 The default flow is left to right (`ProjectMapView.DEFAULT_FLOW`), the direction the breadcrumb and
-the Tree read in. The flow selector also supports right to left, top to bottom, and bottom to top. It
+the Tree read in. The ⋯ menu's **Flow** submenu (it left the filter row in the Map explore round, position 17)
+also offers right to left, top to bottom, and bottom to top. It
 changes column placement, connector direction, and the meaning of the arrow keys together. Changing
 flow clears manual column offsets and locks, then auto-fits the new layout. The last selected flow is
 stored in workspace state and restored when the editor is reopened. Right-to-left was the default
@@ -116,11 +117,16 @@ right-to-left to left-to-right once (`ConfigMigrations.resetRightToLeftMapFlow`)
 | Shift + mouse wheel | Pan horizontally |
 | Alt + mouse wheel | Pan vertically |
 | Drag a column header | Move that column independently unless it is locked; it stops at its parent column |
-| Click a column lock | Prevent or allow accidental header dragging |
+| Click a column lock | Prevent or allow accidental header dragging. The lock shows only while its column is hovered, one of its controls has the keyboard, or it is locked (`MapSurface.canvasLockShown`; it keeps its place, so nothing moves when it appears) |
 | Click a column close button | Close that branch and all of its descendant columns |
+| Row menu → **Close Other Branches** | Close every column, folder or Structure, that is not on the way to that row; a folder row keeps its own column. Offered while such a column is open |
+| Options (⋯) menu → **Collapse All** | Close every column but the first and the ones on the way to the selection (`ProjectMapView.canvasCloseOthers`, `MapLoader.canvasCloseOthers`); cards opened from the closed columns close with them. "Nothing to collapse" when only those are open |
 | Options (⋯) menu → **Open cards** | List the open cards, the most recently used first; one brings its card into the middle of the map area with the keyboard in it |
 | Options (⋯) menu → **Print…** | Open the standard print preview for the complete map layout |
-| Options (⋯) menu → **PDF…** | Export the complete map layout using the configured PDF page size |
+| Options (⋯) menu → **PDF…** | Export the complete map layout using the configured PDF page size; its names are searchable text |
+| Options (⋯) menu → **Export ▸ PNG…** | Save the map as it is on screen at 2× (cards and connectors, not the zoom bar, overview or notices), at most 8,192 px a side |
+| Options (⋯) menu → **Export ▸ SVG…** | Save the whole map as Print/PDF lays it out, every row name and column title as SVG text |
+| Editor tab menu / Project tree menu → **Reveal in Map** | Open the Map window (or bring it forward) and select that file or folder, beside Reveal in File Manager |
 | Click **?** | Show what the Map is for and its pointer, cards and notes, keyboard, search ("where am I" included: Reveal Active File, Always select opened file, Project overview) and filter models in a popover (key names in the user's language, modifiers as the platform writes them) |
 | Click or drag in the overview | Centre the view on that point of the map, clamped to the map's bounds; a press on a card's mark brings that card into view |
 
@@ -488,8 +494,9 @@ folder therefore preserves the user's scale and brings the new column in from it
 when it fits beside the row that opened it, otherwise its header and first rows together with that row.
 Either effect can be disabled independently; disabling zoom preservation restores auto-fit on expansion.
 
-The filter row holds only filters and wraps instead of truncating; the selectors show their value alone
-("Source", "Left → Right") and carry the "Type:" / "Flow:" form as tooltip and accessible name. Breadcrumbs
+The filter row holds only filters and wraps instead of truncating; the type selector shows its value alone
+("Source") and carries the "Type:" form as tooltip and accessible name. The flow is in ⋯ → **Flow** (radio items,
+`canvasFlow()` / `canvasFlowItem(flow)`); the ⋯ menu also holds **Collapse All** and **Export ▸ PNG… / SVG…**. Breadcrumbs
 that do not fit collapse their middle into one "…" (whose tooltip lists the hidden folders) and keep the
 root and the last two crumbs. A crumb shows its name as written — mnemonic parsing is off, so `zz_generated.go`
 keeps its underscore (review 3 E4). A new selection replaces only the crumbs after the part its trail shares with
@@ -694,8 +701,22 @@ texture at 4,096 px by default, so a page is assembled from renders of at most 2
 denser screen). Output always uses a light palette (`outputPalette`, plus looked-up colour overrides
 for the rasterized row icons), whatever the live theme; it preserves the active flow, filters, open
 branches, compacted chains, the root as the first column's title and manual column positions, and omits the interactive column controls, the overview, focus and hover;
-`outputPaint` is set while it paints, which also collapses every header to its title line. Labels
-are bitmap, so the PDF is not searchable.
+`outputPaint` is set while it paints, which also collapses every header to its title line. The labels are
+pixels in the page images, so `renderOutput` also hands back, per page, each row's whole name and each column's
+title where the image draws it (`ProjectMapOutput.Label`, in image pixels); the PDF lays them over the picture as
+invisible text (text render mode 3, as an OCR'd scan carries its text: `ImagePdfWriter.writePages` with
+`TextBox`es, Inter embedded as a subset, the system fallback fonts for other scripts, each name stretched to the
+width the picture gives it). A viewer's Find, selection and copy reach the names; the page looks the same. Print
+does not need the text and leaves it out.
+
+**Export ▸ PNG…** snapshots the map area (`canvasViewImage`) at 2× with the zoom bar, overview, loading and
+no-match notices hidden for the shot. **Export ▸ SVG…** (`MapSurface.canvasSvg`, written by the pure
+`ProjectMapSvg`) lays the map out as output does and writes every column card with its title and count, every row
+(name cut as painted where it differs from its siblings, the whole name as its `<title>`, a mark for its kind,
+dimmed when ignored) and the connectors as cubic curves, in world units and the output's light palette. Both ask
+for the file with a Save dialog over the Map window (`canvasExportChooser`, named `<folder>-map.png|svg`, in the
+project folder) and write it off the FX thread through a temporary sibling (`canvasExportWriter`); the status line
+says where it went.
 
 Column cards are content-sized rather than uniform. For each branch column, the map measures every
 loaded entry name at the drawing font and reserves enough width for the full label, icon, status
@@ -818,12 +839,21 @@ Responsibilities are split as follows:
   classifies file types, and determines emphasized ancestor paths.
 - `MapSurface` (the view's inner class until refactor stage 2; it reaches the view through its `view` field)
   owns paint, layout, transforms, hit-testing, pointer/keyboard input,
-  column controls, icon snapshots, and accessibility text. The surface has the `PARENT` role (a plain group, not
-  a tree: it has no item nodes) and its accessible TEXT names the selection with its kind, open / unsaved / Git /
-  bookmark / Personal Notes / Structure states, the folder that holds it (relative to the root) and its place
-  among the rows its column draws (not those a filter took out, nor a "+N more" row); while a search stands, a
-  match also says "match k of N" (and "partial search"). Every change is announced with
-  `notifyAccessibleAttributeChanged`, as are the results strip's count and the status line (review 3 B11).
+  column controls, icon snapshots, and accessibility text. The surface has the `PARENT` role and its accessible
+  TEXT names the selection with its kind, open / unsaved / Git / bookmark / Personal Notes / Structure states,
+  the folder that holds it (relative to the root) and its place among the rows its column draws (not those a
+  filter took out, nor a "+N more" row); while a search stands, a match also says "match k of N" (and "partial
+  search"). Every change is announced with `notifyAccessibleAttributeChanged`, as are the results strip's count
+  and the status line (review 3 B11). Since the Map explore round (position 14, which reverses review 2's
+  position 7) one child, `MapAccessibleRows`, is a `TREE_VIEW` of the rows drawn in the viewport: one virtual
+  `TREE_ITEM` node per row on screen, named like the selection's summary without the folder ("README.md, file,
+  3 of 12, unsaved"), with SELECTED, EXPANDED, LEAF, DISCLOSURE_LEVEL, its parent and children among the rows on
+  screen, and its screen BOUNDS; REQUEST_FOCUS selects the row, FIRE does what a click does, EXPAND / COLLAPSE
+  open or close its folder or Structure column. The surface's FOCUS_ITEM is the selected row's node. The rows
+  are handed over once per paint while a screen reader listens (`Platform.isAccessibilityActive()`), and when one
+  asks for the children otherwise; columns off screen are skipped whole, so the work follows the screen (about
+  0.3 ms for a screen of rows over 1,200). A row keeps its node while it stays on screen; a node that leaves
+  the scene disposes its peer.
 - `ProjectMapPreview` owns one bounded read-only RichTextFX card, off-thread file loading and syntax
   highlighting, in-place refresh, drag/resize behavior, and promotion to an editor tab.
 - `ProjectMapStructure` owns the structure columns: which files and declarations have one open, the
@@ -887,11 +917,22 @@ invalidation joins a listing begun before it and lists again once that one has e
 
 `ProjectMapModel.load` reads only the root and the expanded directories, under two limits:
 
-- **per directory**, `DIRECTORY_CHUNK` (300) rows. A longer directory ends in a "+N more…" row; activating
-  it (click, Enter, or the arrow that expands) raises that directory's limit by another chunk, and a selection
-  on it moves to the first row that arrived. The breadcrumb never ends in a placeholder: its trail stops at the
-  folder.
-- **overall**, `MAX_VISIBLE_ITEMS` (1,200) real rows. Pinned paths — the search's matches and a revealed
+- **per directory**: on a local root a column lists its whole folder, up to `WHOLE_FOLDER_LIMIT` (50,000)
+  entries (`Request.wholeFolders`, set by `MapLoader.canvasWholeFolders`, Map explore position 15), so a
+  5,000-file folder scrolls end to end; a folder of files on a link-counting Linux file system is listed by name
+  only and its rows carry no size or time (`Entry.size() < 0`), which the tooltip reads for the one row it
+  describes. A remote root keeps `DIRECTORY_CHUNK` (300) rows: a longer directory ends in a "+N more…" row;
+  activating it (click, Enter, or the arrow that expands) raises that directory's limit by another chunk, and a
+  selection on it moves to the first row that arrived. The breadcrumb never ends in a placeholder: its trail
+  stops at the folder.
+- **overall**, `MAX_VISIBLE_ITEMS` (1,200) real rows. A folder listed whole is charged at most
+  `NEAR_VIEWPORT_ROWS` (300, a screen of rows at the smallest zoom that draws them) — the rows that can be near
+  the viewport, which is what the surface draws, names and hit-tests — and lists the rest free; one the budget
+  cut short before that keeps its first rows and "+N more", with no gap. A column of more than 512 rows takes
+  its width from its 96 longest names (`canvasWidestCandidates`), so its first layout measures a hundred labels.
+  Measured headless (software pipeline, a shared machine): the k8s fixture's 1,473-entry corpus folder is
+  revealed (listed, laid out, shown) in 0.25–0.5 s, a full paint takes 4–10 ms and a pan with its paint 0.8–1.4 ms
+  on average; a 5,000-file folder beside a 900-file one: 0.07–0.16 s, 3.5–6 ms and 2–3 ms. Pinned paths — the search's matches and a revealed
   file — are charged first, with the rows that lead to them, wherever they sort. Then the priority folders
   (`Request.priority`: the column the selection is in, and the folder whose rows "+N more" raised last)
   reserve their rows up to their row limit, so the folder being read keeps its rows when another column opens;
