@@ -251,6 +251,50 @@ class ProjectMapCardsReview3FxTest {
         });
     }
 
+    // --- D5 ---------------------------------------------------------------------------------------------
+
+    @Test
+    void aPanFrameOrADragDrawsTheCardConnectorsOnceHoweverManyCardsAndAttachmentsMoved() throws Exception {
+        Path big = writeBig();
+        List<Path> others = List.of(
+                Files.writeString(root.resolve("a.txt"), "a\n"),
+                Files.writeString(root.resolve("b.txt"), "b\n"),
+                Files.writeString(root.resolve("c.txt"), "c\n"));
+        map = openMap();
+        ProjectMapPreview card = openFileCard(big);
+        showStructure(card);
+        for (Path other : others) {
+            openFileCard(other);
+        }
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> {
+            MapCards cards = FxTestSupport.field(map.view(), "cards");
+            long before = cards.connectorDraws;
+            double offset = FxTestSupport.field(map.surface(), "offsetX");
+            setDouble(map.surface(), "offsetX", offset + 40); // a pan frame: four cards and a column move
+            FxTestSupport.invoke(map.surface(), "paintNow");
+            assertEquals(before + 1, cards.connectorDraws, "one connector draw for the frame");
+
+            long dragged = cards.connectorDraws;
+            for (int i = 1; i <= 5; i++) {
+                card.relocate(card.getLayoutX() + 3, card.getLayoutY()); // five drag events in one pulse
+            }
+            assertEquals(dragged, cards.connectorDraws, "nothing drawn per event");
+            map.view().layout(); // the pulse's layout pass
+            assertEquals(dragged + 1, cards.connectorDraws, "one draw for all of them");
+        });
+    }
+
+    private static void setDouble(Object target, String name, double value) {
+        try {
+            java.lang.reflect.Field field = target.getClass().getDeclaredField(name);
+            field.setAccessible(true);
+            field.setDouble(target, value);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
     // --- fixture ----------------------------------------------------------------------------------------
 
     private record Fixture(ProjectMapView view, Scene scene, Stage stage, Region surface) {}

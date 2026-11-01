@@ -352,6 +352,7 @@ final class MapCards {
     void dispose() {
         disposed = true;
         closeAllPreviews();
+        connectorPulse.stop();
     }
 
     /**
@@ -669,7 +670,7 @@ final class MapCards {
         // A sticky note's connector meets its line in the text, which scrolls under it.
         preview.editor().estimatedScrollYProperty().addListener((obs, old, value) -> {
             if (stickyNotes.containsKey(preview)) {
-                repaintPreviewConnectors();
+                connectorsMoved();
             }
         });
         installPreviewListeners(preview);
@@ -680,11 +681,14 @@ final class MapCards {
     }
 
     private void installPreviewListeners(Region preview) {
-        preview.layoutXProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
-        preview.layoutYProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
-        preview.widthProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
-        preview.heightProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
-        preview.visibleProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
+        // A card's place, size and visibility change many times a frame while it is dragged, panned or zoomed:
+        // they only mark the connectors, which are drawn once for the pulse (review 3, D5).
+        javafx.beans.InvalidationListener moved = observable -> connectorsMoved();
+        preview.layoutXProperty().addListener(moved);
+        preview.layoutYProperty().addListener(moved);
+        preview.widthProperty().addListener(moved);
+        preview.heightProperty().addListener(moved);
+        preview.visibleProperty().addListener(moved);
     }
 
     /** Records use of an open card for eviction, and optionally raises it above the others. */
@@ -774,7 +778,7 @@ final class MapCards {
                                 actions.updatePersonalNote(file, note, body);
                             }
                         },
-                        this::repaintPreviewConnectors,
+                        this::connectorsMoved,
                         () -> host.status(tr("status.projectMap.noteBlankRestored")),
                         () -> touchCard(card, false)));
         stuck.setOnAllClosed(() -> card.setNotesShown(false)); // every sheet closed: the Notes button goes off
@@ -825,7 +829,7 @@ final class MapCards {
                         },
                         node -> host.symbolMenu(symbolEntry(node)),
                         () -> touchCard(card, false),
-                        this::repaintPreviewConnectors,
+                        this::connectorsMoved,
                         () -> reserveBesideCard(card)));
         structure.ensure(file);
         column.show(cardRowAfter(card, file));
@@ -1544,7 +1548,44 @@ final class MapCards {
         return card instanceof ProjectMapNotePreview note ? note.mapScale() : 1;
     }
 
+    /**
+     * Something a connector meets moved: the connectors are drawn once, at the map area's next layout pass or the next
+     * pulse, whichever comes first, however many cards and attachments moved in between (review 3, D5).
+     */
+    private void connectorsMoved() {
+        if (connectorsPending || disposed) {
+            return;
+        }
+        connectorsPending = true;
+        connectorPulse.start();
+        canvasHost.requestLayout();
+    }
+
+    /** Draws the connectors now if something marked them (see {@link #connectorsMoved}). */
+    void flushConnectors() {
+        if (connectorsPending) {
+            repaintPreviewConnectors();
+        }
+    }
+
+    /** Whether the connectors wait for a draw. */
+    private boolean connectorsPending;
+
+    /** How many times the connector canvas was drawn. For tests. */
+    long connectorDraws;
+
+    private final javafx.animation.AnimationTimer connectorPulse = new javafx.animation.AnimationTimer() {
+        @Override
+        public void handle(long now) {
+            stop();
+            flushConnectors();
+        }
+    };
+
     private void repaintPreviewConnectors() {
+        connectorsPending = false;
+        connectorPulse.stop();
+        connectorDraws++;
         GraphicsContext g = previewConnectorCanvas.getGraphicsContext2D();
         g.clearRect(0, 0, previewConnectorCanvas.getWidth(), previewConnectorCanvas.getHeight());
         previewConnectors.clear();

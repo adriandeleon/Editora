@@ -257,7 +257,23 @@ final class ProjectMapView extends VBox {
     private Consumer<ProjectMapOutput> onPrint = ignored -> {};
     private Consumer<ProjectMapOutput> onExportPdf = ignored -> {};
     private ProjectMapPreview.@Nullable MarkerActions previewMarkerActions;
-    private final StackPane canvasHost = new StackPane();
+    /** The map area: the surface, the connector canvas, the overlays and the cards over them. */
+    private final StackPane canvasHost = new StackPane() {
+        @Override
+        protected void layoutChildren() {
+            super.layoutChildren();
+            if (cards != null) {
+                // The pass would lay the children out next: done here first — the surface may pan the cards (its
+                // first fit), a card may settle — so the connectors are drawn once, after all of it (review 3, D5).
+                for (Node child : List.copyOf(getChildren())) {
+                    if (child instanceof javafx.scene.Parent parent) {
+                        parent.layout();
+                    }
+                }
+                cards.flushConnectors();
+            }
+        }
+    };
     /** The open structure columns and the outlines behind them. */
     private final ProjectMapStructure structure;
 
