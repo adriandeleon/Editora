@@ -61,12 +61,15 @@ class GitErrorClosedWindowFxTest {
      * window open. Real git, a real remote, the window's real close.
      */
     @Test
-    void aPushThatFailsAfterItsWindowClosedIsSaidInAnotherWindow() throws Exception {
+    void aPushThatFailsAfterItsWindowClosedIsSaidInAnotherWindow(@org.junit.jupiter.api.io.TempDir Path dir)
+            throws Exception {
         try (AsyncTestScope async = new AsyncTestScope()) {
             GitFeatureFx w = GitFeatureFx.create(async);
             Path repo = w.fx.useProject();
-            Path bare = w.fx.configDir.resolve("remote.git");
-            git(w.fx.configDir, "init", "-q", "--bare", bare.toString());
+            // In a JUnit TempDir: its cleanup clears the read-only flag git puts on objects (Windows refuses
+            // otherwise).
+            Path bare = dir.resolve("remote.git");
+            git(dir, "init", "-q", "--bare", bare.toString());
             git(repo, "init", "-q", "-b", "main");
             Files.writeString(repo.resolve("plain.txt"), "one\n");
             git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A");
@@ -76,7 +79,7 @@ class GitErrorClosedWindowFxTest {
             Files.writeString(repo.resolve("plain.txt"), "two\n");
             git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "second");
             // The remote leaves a marker once git really runs, so the window closes mid-push, not before it starts.
-            Path started = w.fx.configDir.resolve("push-started");
+            Path started = dir.resolve("push-started");
             git(
                     repo,
                     "config",
