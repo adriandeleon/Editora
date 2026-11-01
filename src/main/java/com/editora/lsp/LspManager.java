@@ -620,11 +620,37 @@ public final class LspManager {
         Map<String, Object> xml =
                 new java.util.LinkedHashMap<>(xmlServerSettings.section(base, folderTrust.test(root), local));
         if (LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
-            xml.put("maven", Map.of("central", Map.of("skip", !mavenCentralIndex)));
+            xml.put("maven", mavenSection(mavenCentralIndex, local ? mavenRepoLocal() : null));
             // lemminx-maven says only in its log that a coordinate completion failed on its workspace (E21)
             xml.put("logs", Map.of("client", true));
         }
         return Map.copyOf(xml);
+    }
+
+    /**
+     * lemminx-maven's {@code xml.maven} object: whether it may search Maven Central, and the local repository Editora
+     * reads ({@code repo.local}, null = none sent), so the server keeps its {@code .lemminx-maven} store beside the
+     * repository Doctor shows rather than one it worked out differently (XML/pom review 4, A34). Pure.
+     */
+    static Map<String, Object> mavenSection(boolean centralIndex, @Nullable String repoLocal) {
+        Map<String, Object> maven = new java.util.LinkedHashMap<>();
+        maven.put("central", Map.of("skip", !centralIndex));
+        if (repoLocal != null && !repoLocal.isBlank()) {
+            maven.put("repo", Map.of("local", repoLocal));
+        }
+        return Map.copyOf(maven);
+    }
+
+    /** The local Maven repository as an absolute path, read from {@code settings.xml} under Editora's user.home. */
+    private static @Nullable String mavenRepoLocal() {
+        try {
+            return com.editora.maven.MavenPluginGoals.localRepository(Path.of(System.getProperty("user.home", "")))
+                    .toAbsolutePath()
+                    .normalize()
+                    .toString();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** Root → the HTML server's settings there (Settings → LSP → HTML, a project's {@code html} object). */
@@ -2216,6 +2242,9 @@ public final class LspManager {
                 // A Java lemminx (the pom server's, or XML's fallback) keeps lemminx-maven's artifact store under
                 // user.home: Editora's, not the passwd home the JVM would read (review D14).
                 startCommand = JvmServerCommand.withUserHome(startCommand, System.getProperty("user.home", ""));
+                // A bundle installed before review 4 still carries Eclipse's jar signatures, which kept lemminx's
+                // RELAX NG plugin from loading (A31): unsigned once, here, before a server runs on it.
+                com.editora.install.JarSignatures.repairBundleOf(startCommand);
             }
             if (XmlServerSettings.SERVER_ID.equals(serverId)
                     && LemminxMavenGuard.loadsLemminxMaven(startCommand, !remote)) {

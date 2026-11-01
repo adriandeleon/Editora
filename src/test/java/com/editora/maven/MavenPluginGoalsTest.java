@@ -125,8 +125,47 @@ class MavenPluginGoalsTest {
         assertNull(MavenPluginGoals.localRepositoryFromSettings(null, "/home/u"));
         assertNull(
                 MavenPluginGoals.localRepositoryFromSettings(
-                        "<settings><localRepository>${env.M2}/r</localRepository></settings>", "/home/u"),
+                        "<settings><localRepository>${env.M2}/r</localRepository></settings>",
+                        "/home/u",
+                        name -> null,
+                        name -> null),
                 "an unexpanded property must not become a literal path segment");
+    }
+
+    @Test
+    void environmentVariablesAndSystemPropertiesAreExpandedAsMavenDoes() {
+        java.util.Map<String, String> env = java.util.Map.of("EVREPO", "/ci/repo");
+        java.util.Map<String, String> props = java.util.Map.of("maven.repo.root", "/data");
+        assertEquals(
+                "/ci/repo/m2",
+                MavenPluginGoals.localRepositoryFromSettings(
+                        "<settings><localRepository>${env.EVREPO}/m2</localRepository></settings>",
+                        "/home/u",
+                        env::get,
+                        props::get),
+                "${env.X} is the environment's, as Maven's settings builder expands it (review 4, A34)");
+        assertEquals(
+                "/data/repo",
+                MavenPluginGoals.localRepositoryFromSettings(
+                        "<settings><localRepository>${maven.repo.root}/repo</localRepository></settings>",
+                        "/home/u",
+                        env::get,
+                        props::get));
+        assertEquals(
+                "/home/u/r",
+                MavenPluginGoals.localRepositoryFromSettings(
+                        "<settings><localRepository>${user.home}/r</localRepository></settings>",
+                        "/home/u",
+                        env::get,
+                        name -> "/elsewhere"),
+                "user.home is the home Editora gives the server, not the JVM's property");
+        assertNull(
+                MavenPluginGoals.localRepositoryFromSettings(
+                        "<settings><localRepository>${env.EVREPO}/${env.NOPE}</localRepository></settings>",
+                        "/home/u",
+                        env::get,
+                        props::get),
+                "one name set nowhere spoils the value");
     }
 
     @Test

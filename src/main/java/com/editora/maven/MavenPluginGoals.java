@@ -152,11 +152,21 @@ public final class MavenPluginGoals {
 
     /**
      * The {@code <localRepository>} declared in a {@code settings.xml}, or {@code null} when it declares
-     * none. {@code ${user.home}} — the one property Maven's own docs use in this element — is expanded;
-     * any other unexpanded property makes the value unusable, so it is rejected rather than turned into a
+     * none. Expanded as Maven's settings builder does: {@code ${env.NAME}} from the environment, {@code
+     * ${user.home}} as {@code userHome}, any other {@code ${name}} from the system properties (XML/pom review 4,
+     * A34). A property that is set nowhere makes the value unusable, so it is rejected rather than turned into a
      * path with a literal {@code ${...}} segment in it.
      */
     public static @Nullable String localRepositoryFromSettings(String settingsXml, String userHome) {
+        return localRepositoryFromSettings(settingsXml, userHome, System::getenv, System::getProperty);
+    }
+
+    /** As above, with the environment and the system properties given. Pure. */
+    static @Nullable String localRepositoryFromSettings(
+            String settingsXml,
+            String userHome,
+            java.util.function.Function<String, @Nullable String> env,
+            java.util.function.Function<String, @Nullable String> properties) {
         if (settingsXml == null || settingsXml.isBlank()) {
             return null;
         }
@@ -170,8 +180,37 @@ public final class MavenPluginGoals {
         if (value.isEmpty()) {
             return null;
         }
-        value = value.replace("${user.home}", userHome == null ? "" : userHome);
-        return value.contains("${") ? null : value;
+        return expandProperties(value, userHome == null ? "" : userHome, env, properties);
+    }
+
+    private static final java.util.regex.Pattern PROPERTY = java.util.regex.Pattern.compile("\\$\\{([^}]+)}");
+
+    /** {@code value} with each {@code ${…}} replaced, or null when one names nothing set. Pure. */
+    private static @Nullable String expandProperties(
+            String value,
+            String userHome,
+            java.util.function.Function<String, @Nullable String> env,
+            java.util.function.Function<String, @Nullable String> properties) {
+        java.util.regex.Matcher m = PROPERTY.matcher(value);
+        StringBuilder out = new StringBuilder();
+        while (m.find()) {
+            String name = m.group(1).strip();
+            String replacement;
+            if (name.equals("user.home")) {
+                replacement = userHome;
+            } else if (name.startsWith("env.")) {
+                replacement = env.apply(name.substring("env.".length()));
+            } else {
+                replacement = properties.apply(name);
+            }
+            if (replacement == null) {
+                return null;
+            }
+            m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(replacement));
+        }
+        m.appendTail(out);
+        String expanded = out.toString();
+        return expanded.contains("${") ? null : expanded;
     }
 
     /**

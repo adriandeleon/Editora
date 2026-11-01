@@ -1045,10 +1045,16 @@ final class LspCoordinator {
                         ? serverProgram(serverId)
                         : serverLabel(serverId),
                 refusal);
+        if (refusal.kind() == com.editora.lsp.StartRefusal.Kind.XML_LOADS_MAVEN) {
+            refusedServers.put(serverId, said); // Doctor and Settings say so too, not "found" and "OK" (review 4, A32)
+        }
         host.setError(said);
         Platform.runLater(() -> host.setError(said));
         updateStatusBar();
     }
+
+    /** Servers Editora would not start with their command (the lemminx-maven guard), by id → what the status said. */
+    private final Map<String, String> refusedServers = new java.util.HashMap<>();
 
     /** The status-line words for a {@link com.editora.lsp.StartRefusal}. */
     static String startRefusedMessage(String server, com.editora.lsp.StartRefusal refusal) {
@@ -1127,7 +1133,10 @@ final class LspCoordinator {
         return said == null || said.isEmpty() ? null : said;
     }
 
-    /** {@link #serverFailure} or {@link #serverCrash}, whichever says why {@code serverId} is given up on. */
+    /**
+     * {@link #serverFailure}, {@link #serverCrash} or a refused start, whichever says why {@code serverId} is given up
+     * on or not running.
+     */
     @Nullable
     ServerTrouble serverTrouble(String serverId) {
         String crash = crashedServers.get(serverId);
@@ -1135,11 +1144,22 @@ final class LspCoordinator {
             return new ServerTrouble(crash, true);
         }
         String failing = failingServers.get(serverId);
-        return failing == null ? null : new ServerTrouble(failing, false);
+        if (failing != null) {
+            return new ServerTrouble(failing, false);
+        }
+        String refused = refusedServers.get(serverId);
+        return refused == null ? null : new ServerTrouble(refused, false, true);
     }
 
-    /** Why a server is given up on: what it said, and whether it crashed at start rather than failed requests. */
-    record ServerTrouble(String detail, boolean crashed) {}
+    /**
+     * Why a server is given up on: what it said (or, {@code refused}, what Editora said when it would not start its
+     * command), and whether it crashed at start rather than failed requests.
+     */
+    record ServerTrouble(String detail, boolean crashed, boolean refused) {
+        ServerTrouble(String detail, boolean crashed) {
+            this(detail, crashed, false);
+        }
+    }
 
     /** The user-facing name of an LSP request, for the echo line ("internal error on hover"). */
     static String methodLabel(String method) {
@@ -1669,6 +1689,7 @@ final class LspCoordinator {
         startBlocked.clear(); // a settings change (an install, a trust decision) may be what the server lacked
         failingServers.clear();
         crashedServers.clear();
+        refusedServers.clear();
         boolean on = ops.lspFeatureEnabled(); // effective: off in Simple UI mode
         // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
         // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
@@ -3778,6 +3799,7 @@ final class LspCoordinator {
     void stopServer(String serverId) {
         failingServers.remove(serverId); // the new copy gets a fresh chance
         crashedServers.remove(serverId);
+        refusedServers.remove(serverId);
         clearDiagnosticsForServer(serverId); // before shutdown: after it, nothing would re-publish an empty list
         lspManager.shutdownServer(serverId);
     }
@@ -3787,6 +3809,7 @@ final class LspCoordinator {
         startBlocked.clear();
         failingServers.clear();
         crashedServers.clear();
+        refusedServers.clear();
         importFailed.clear();
         nonProjectFiles.clear();
         refreshImportNotes();

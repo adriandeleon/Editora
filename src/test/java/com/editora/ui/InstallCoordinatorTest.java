@@ -64,6 +64,33 @@ class InstallCoordinatorTest {
     }
 
     /**
+     * Replacing the pom server's bundle stops XML too while XML runs the bundle's Java lemminx (the fallback where the
+     * native build cannot run): it kept running deleted jars, or started from a half-swapped folder (review 4, A35).
+     */
+    @Test
+    void thePomBundleUpdateStopsXmlWhenXmlRunsOnTheBundle(@org.junit.jupiter.api.io.TempDir java.nio.file.Path config)
+            throws java.io.IOException {
+        java.nio.file.Path maven = java.nio.file.Files.createDirectories(
+                config.resolve(com.editora.install.InstallCatalog.LEMMINX_MAVEN_DIR));
+        for (String artifact : com.editora.install.XmlServerInstall.PLAIN_LEMMINX_ARTIFACTS) {
+            java.nio.file.Files.writeString(maven.resolve(artifact + "-1.0.jar"), "");
+        }
+        java.nio.file.Files.writeString(maven.resolve("lemminx-maven-0.12.0.jar"), "");
+        String step = com.editora.install.InstallCatalog.LEMMINX_MAVEN_STEP;
+
+        assertEquals(java.util.List.of("maven-pom"), InstallCoordinator.serversReplacedBy(step, "", config));
+
+        java.nio.file.Path xml = java.nio.file.Files.createDirectories(config.resolve("plugins/lsp/xml"));
+        java.nio.file.Files.writeString(xml.resolve("java-fallback.txt"), "GLIBC_2.34 not found");
+        assertEquals(java.util.List.of("maven-pom", "xml"), InstallCoordinator.serversReplacedBy(step, "", config));
+        assertEquals(
+                java.util.List.of("maven-pom"),
+                InstallCoordinator.serversReplacedBy(step, "/usr/bin/lemminx", config),
+                "the user's own XML server runs nothing of the bundle");
+        assertEquals(java.util.List.of("java"), InstallCoordinator.serversReplacedBy("jdtls", "", config));
+    }
+
+    /**
      * The installer's stored command is a command line, so the binary path must be quoted when the config dir
      * has a space in it ({@code C:\Users\Jane Doe\.editora}). Stored bare, the registry split it at the space
      * and the server that had just been installed was reported missing.
