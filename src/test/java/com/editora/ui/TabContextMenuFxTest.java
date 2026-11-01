@@ -138,8 +138,11 @@ class TabContextMenuFxTest {
                     ProjectPanel panel = fx.controller.projectPanel();
                     ProjectMapView map = FxTestSupport.field(panel, "mapView");
                     javafx.scene.layout.Region surface = FxTestSupport.field(map, "surface");
+                    Object selected = FxTestSupport.call(surface, "selectedPath", new Class<?>[0]);
+                    // Same file, not same spelling: macOS's temp folder is /var, a link to /private/var.
                     return panel.isMapShowing()
-                            && file.toRealPath().equals(FxTestSupport.call(surface, "selectedPath", new Class<?>[0]));
+                            && selected instanceof Path at
+                            && java.nio.file.Files.isSameFile(at, file);
                 });
                 if (!shown) {
                     Thread.sleep(25);

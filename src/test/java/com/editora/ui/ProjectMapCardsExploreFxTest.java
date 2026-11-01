@@ -466,7 +466,11 @@ class ProjectMapCardsExploreFxTest {
                 name.setFont(title.getFont());
                 double wanted = Math.min(name.getLayoutBounds().getWidth(), ProjectMapPreview.MIN_WIDTH * 0.5);
                 assertTrue(title.getWidth() >= wanted - 1, each.title() + " keeps its room: " + title.getWidth());
-                assertTrue(status.getWidth() < title.getWidth(), "the status gives way first");
+                // The status is what gets cut (its text is longer than the bar has room for), never the title,
+                // whose room is checked above; how wide each ends up depends on the platform's font.
+                assertTrue(
+                        status.getWidth() < status.prefWidth(-1) - 0.5,
+                        "the status gives way first: " + status.getWidth() + " of " + status.prefWidth(-1));
                 Button close = FxTestSupport.field(each, "close");
                 Button open = FxTestSupport.field(each, "open");
                 assertTrue(close.isVisible() && open.isVisible());

@@ -125,7 +125,7 @@ final class ProjectMapActivity {
     /** Forgets everything about the previous root; the history is read again when it is wanted. */
     void setRoot(@Nullable Path next) {
         generation++;
-        root = next;
+        root = ProjectMapModel.normalize(next); // as the rows' paths are (ProjectMapModel.Entry), on every platform
         derived = null;
         reading = false;
         readAgain = false;
@@ -314,7 +314,8 @@ final class ProjectMapActivity {
 
     /** Who owns the row at {@code path}, as far as known yet ({@link #classify} works it out). */
     ProjectMapOwners.@Nullable Owners owners(Path path) {
-        return owners.get(path);
+        Path key = ProjectMapModel.normalize(path);
+        return key == null ? null : owners.get(key);
     }
 
     /** Works out, on the worker, who owns each of these rows not looked at yet. */
@@ -511,11 +512,13 @@ final class ProjectMapActivity {
 
     /** {@code path} relative to {@code base}, {@code /}-separated; null when it is not under it. */
     static @Nullable String relative(@Nullable Path base, Path path) {
-        if (base == null || !path.startsWith(base)) {
+        Path at = ProjectMapModel.normalize(path); // the root is normalized the same way (setRoot)
+        Path from = ProjectMapModel.normalize(base);
+        if (from == null || at == null || !at.startsWith(from)) {
             return null;
         }
         StringBuilder rel = new StringBuilder();
-        for (Path part : base.relativize(path)) {
+        for (Path part : from.relativize(at)) {
             if (!rel.isEmpty()) {
                 rel.append('/');
             }

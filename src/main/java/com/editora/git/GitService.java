@@ -335,6 +335,24 @@ public final class GitService {
         return ExecTargets.runsHere(dir);
     }
 
+    /**
+     * Whether a local {@code dir} is in a git working tree, by looking for {@code .git} (a folder, or the file a
+     * worktree or submodule has) up the tree — no process. A folder that is in none needs no {@code git} at all: on
+     * Windows a process started in it keeps the folder from being deleted while it runs. Remote folders say true
+     * (their git answers for itself).
+     */
+    static boolean mayBeRepository(Path dir) {
+        if (!isLocal(dir)) {
+            return true;
+        }
+        for (Path at = dir.toAbsolutePath(); at != null; at = at.getParent()) {
+            if (Files.exists(at.resolve(".git"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Whether {@code p} is on this machine's own filesystem (so reading it is no network round trip). */
     private static boolean onThisFileSystem(Path p) {
         return p == null || p.getFileSystem() == java.nio.file.FileSystems.getDefault();
@@ -948,7 +966,7 @@ public final class GitService {
 
     /** {@link #recentChanges} on the calling thread (a lane). */
     GitRecentChanges.Result recentChangesNow(Path root) {
-        if (root == null || !gitAvailable(root)) {
+        if (root == null || !mayBeRepository(root) || !gitAvailable(root)) {
             return GitRecentChanges.Result.NONE;
         }
         ProcessRunner.Result rev = git(root, QUICK, "rev-parse", "HEAD", "--is-shallow-repository");
@@ -1040,7 +1058,8 @@ public final class GitService {
             return;
         }
         boolean queued = submit(historyExec, () -> {
-            LastChange found = gitAvailable(dir) ? readLastChange(dir, file, startLine, endLine) : null;
+            LastChange found =
+                    mayBeRepository(dir) && gitAvailable(dir) ? readLastChange(dir, file, startLine, endLine) : null;
             Platform.runLater(() -> onResult.accept(found));
         });
         if (!queued) {
