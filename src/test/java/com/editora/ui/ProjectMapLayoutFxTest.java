@@ -821,8 +821,8 @@ class ProjectMapLayoutFxTest {
                     }
                 }
             }
-            // The intro, four headings (pointer, cards and notes, keyboard, filters) and 42 gesture rows.
-            assertEquals(1 + 4 + 42 * 2, text.size());
+            // The intro, four headings (pointer, cards and notes, keyboard, filters) and 43 gesture rows.
+            assertEquals(1 + 4 + 43 * 2, text.size());
             assertTrue(text.contains(tr("project.map.help.chevron")));
             assertTrue(text.contains(tr("project.map.help.dragHeader.gesture")));
             assertTrue(text.contains(tr("project.map.help.escape")));
