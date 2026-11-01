@@ -927,6 +927,150 @@ public final class GitService {
     }
 
     /**
+     * The commit that last changed a file, or some of its lines: what a Project Map card's status line ends with
+     * (Map explore round, position 9).
+     *
+     * @param lines whether this is the last change of the lines asked for ({@code git log -L}) rather than the
+     *     file's, which is given when the line history did not answer in time
+     */
+    public record LastChange(String hash, String author, long epochSeconds, String subject, boolean lines) {}
+
+    /** How long {@code git log -L} may take for a card's lines before the file's last change is given instead. */
+    public static final Duration LINE_HISTORY_BUDGET = Duration.ofSeconds(2);
+
+    /** How long a folder's HEAD, as read for {@link #lastChange}, is trusted before it is read again. */
+    public static final long HEAD_TTL_NANOS = 3_000_000_000L;
+
+    /** {@link #lastChange} answers by HEAD, file and lines: a commit or checkout moves HEAD and asks again. */
+    private final Map<String, java.util.Optional<LastChange>> lastChanges = new LinkedHashMap<>(64, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, java.util.Optional<LastChange>> eldest) {
+            return size() > 512;
+        }
+    };
+
+    /** The HEAD last read in a folder, and when ({@link #nanoClock}). */
+    private record HeadRead(String head, long nanos) {}
+
+    private final Map<Path, HeadRead> heads = new ConcurrentHashMap<>();
+
+    /** How many {@code git log} runs {@link #lastChange} made. For tests. */
+    private final AtomicInteger lastChangeRuns = new AtomicInteger();
+
+    /**
+     * The last commit that changed {@code file} — with {@code startLine >= 0}, that changed its 0-based lines
+     * {@code startLine..endLine} ({@code git log -L}, given {@link #LINE_HISTORY_BUDGET}, else the file's) — or null
+     * when git is off, the file is not in a repository or has no commit yet. Read off the FX thread on the history
+     * lane and cached per HEAD; posted on the FX thread.
+     */
+    public void lastChange(Path file, int startLine, int endLine, Consumer<@Nullable LastChange> onResult) {
+        Path dir = file.toAbsolutePath().getParent();
+        if (dir == null) {
+            Platform.runLater(() -> onResult.accept(null));
+            return;
+        }
+        boolean queued = submit(historyExec, () -> {
+            LastChange found = gitAvailable(dir) ? readLastChange(dir, file, startLine, endLine) : null;
+            Platform.runLater(() -> onResult.accept(found));
+        });
+        if (!queued) {
+            Platform.runLater(() -> onResult.accept(null));
+        }
+    }
+
+    /** {@link #lastChange}'s read, on the history lane. */
+    private @Nullable LastChange readLastChange(Path dir, Path file, int startLine, int endLine) {
+        String head = headOf(dir);
+        if (head == null) {
+            return null; // not a repository, or no commit yet
+        }
+        Path fileName = file.getFileName();
+        String name = fileName == null ? "" : fileName.toString();
+        String key = head + "\0" + file.toAbsolutePath() + "\0" + startLine + "\0" + endLine;
+        synchronized (lastChanges) {
+            java.util.Optional<LastChange> known = lastChanges.get(key);
+            if (known != null) {
+                return known.orElse(null);
+            }
+        }
+        LastChange found = null;
+        if (startLine >= 0 && endLine >= startLine && !name.isEmpty()) {
+            lastChangeRuns.incrementAndGet();
+            ProcessRunner.Result r = git(
+                    dir,
+                    LINE_HISTORY_BUDGET,
+                    "log",
+                    "-1",
+                    "--no-patch",
+                    "--no-color",
+                    "--format=" + LAST_CHANGE_FORMAT,
+                    "-L" + (startLine + 1) + "," + (endLine + 1) + ":" + name);
+            found = r.ok() ? parseLastChange(r.out(), true) : null;
+        }
+        if (found == null) {
+            lastChangeRuns.incrementAndGet();
+            ProcessRunner.Result r = git(
+                    dir,
+                    QUICK,
+                    GitSafety.LITERAL_PATHSPECS,
+                    "log",
+                    "-1",
+                    "--no-color",
+                    "--format=" + LAST_CHANGE_FORMAT,
+                    "--",
+                    gitPath(file));
+            found = r.ok() ? parseLastChange(r.out(), false) : null;
+        }
+        synchronized (lastChanges) {
+            lastChanges.put(key, java.util.Optional.ofNullable(found));
+        }
+        return found;
+    }
+
+    /** {@code dir}'s HEAD commit, read at most once per {@link #HEAD_TTL_NANOS}; null when it has none. */
+    private @Nullable String headOf(Path dir) {
+        long now = nanoClock.getAsLong();
+        HeadRead known = heads.get(dir);
+        if (known == null || now - known.nanos() >= HEAD_TTL_NANOS) {
+            ProcessRunner.Result r = git(dir, QUICK, "rev-parse", "--verify", "--quiet", "HEAD");
+            if (heads.size() > 256) {
+                heads.clear();
+            }
+            known = new HeadRead(r.ok() ? r.out().strip() : "", now);
+            heads.put(dir, known);
+        }
+        return known.head().isEmpty() ? null : known.head();
+    }
+
+    /** How many {@code git log} runs {@link #lastChange} made so far. For tests. */
+    public int lastChangeRunsForTest() {
+        return lastChangeRuns.get();
+    }
+
+    /** Hash, author, author time (seconds) and subject, NUL-separated. */
+    static final String LAST_CHANGE_FORMAT = "%H%x00%an%x00%at%x00%s";
+
+    /** The first commit of a {@link #LAST_CHANGE_FORMAT} log, or null for none. Pure. */
+    static @Nullable LastChange parseLastChange(@Nullable String out, boolean lines) {
+        if (out == null) {
+            return null;
+        }
+        for (String line : out.split("\n")) {
+            String[] fields = line.split("\0", 4);
+            if (fields.length == 4 && fields[0].strip().length() >= 7) {
+                long when;
+                try {
+                    when = Long.parseLong(fields[2].strip());
+                } catch (NumberFormatException unreadable) {
+                    when = 0;
+                }
+                return new LastChange(fields[0].strip(), fields[1].strip(), when, fields[3].strip(), lines);
+            }
+        }
+        return null;
+    }
+
+    /**
      * One page of the Git Log ({@link GitLog.Request}): rows with parents, author time and ref decorations,
      * parsed by the pure {@link GitLog#parse} / {@link GitLog#parseFollow}. One extra commit is requested so
      * the page can say whether more history follows. Posts on the FX thread.
