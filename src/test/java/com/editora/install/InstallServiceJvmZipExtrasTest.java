@@ -75,7 +75,7 @@ class InstallServiceJvmZipExtrasTest {
     private List<String> installed() throws IOException {
         try (var list = Files.list(dest())) {
             return list.map(p -> p.getFileName().toString())
-                    .filter(n -> !n.equals(InstallReceipt.FILE_NAME))
+                    .filter(n -> !n.equals(InstallReceipt.FILE_NAME) && !n.equals(JarSignatures.MARKER))
                     .sorted()
                     .toList();
         }
@@ -90,7 +90,7 @@ class InstallServiceJvmZipExtrasTest {
                 List.of(
                         "commons-lang3-3.21.0.jar",
                         "guava-33.7.2-jre.jar",
-                        "jsoup-1.23.2.jar",
+                        "jsoup-1.14.3.jar",
                         "lemminx-maven-0.12.0.jar",
                         "org.eclipse.lemminx-0.30.1.jar"),
                 installed());
@@ -139,7 +139,7 @@ class InstallServiceJvmZipExtrasTest {
         InstallService.Result result = install();
 
         assertFalse(result.ok());
-        assertTrue(result.message().contains("jsoup-1.23.2.jar"), result.message());
+        assertTrue(result.message().contains("jsoup-1.14.3.jar"), result.message());
         assertTrue(result.message().contains("checksum"), result.message());
         assertFalse(Files.exists(dest()), "nothing of a refused install is left behind");
     }
@@ -164,6 +164,47 @@ class InstallServiceJvmZipExtrasTest {
                 Files.readString(dest().resolve("org.eclipse.lemminx-0.30.1.jar")),
                 "the working version is kept");
         assertTrue(MavenServerInstall.complete(dest()));
+    }
+
+    /**
+     * Eclipse's signature comes off the lemminx jar before the server is asked its request, so lemminx's RELAX NG
+     * plugin loads beside the unsigned Jing (XML/pom review 4, A31); the folder is marked as done.
+     */
+    @Test
+    void theBundlesSignedJarsAreUnsignedBeforeTheServerIsAsked() throws IOException {
+        byte[] signed = JarSignaturesTest.signedJar();
+        web.serve(
+                InstallCatalog.LEMMINX_MAVEN_ZIP_URL,
+                zipOf("org.eclipse.lemminx-0.30.1.jar", signed, "lemminx-maven-0.12.0.jar", signed));
+        AtomicReference<Boolean> signedWhenAsked = new AtomicReference<>();
+        service.setJvmLspSmokeForTest((argv, dir) -> {
+            try {
+                signedWhenAsked.set(JarSignatures.signed(dir.resolve("org.eclipse.lemminx-0.30.1.jar")));
+            } catch (IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+            return Optional.empty();
+        });
+
+        assertTrue(install().ok());
+
+        assertFalse(signedWhenAsked.get(), "the request runs on the unsigned jars");
+        assertFalse(JarSignatures.signed(dest().resolve("org.eclipse.lemminx-0.30.1.jar")));
+        assertFalse(JarSignatures.signed(dest().resolve("lemminx-maven-0.12.0.jar")));
+        assertTrue(Files.isRegularFile(dest().resolve(JarSignatures.MARKER)));
+    }
+
+    private static byte[] zipOf(String name1, byte[] data1, String name2, byte[] data2) throws IOException {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(bytes)) {
+            zip.putNextEntry(new java.util.zip.ZipEntry(name1));
+            zip.write(data1);
+            zip.closeEntry();
+            zip.putNextEntry(new java.util.zip.ZipEntry(name2));
+            zip.write(data2);
+            zip.closeEntry();
+        }
+        return bytes.toByteArray();
     }
 
     @Test

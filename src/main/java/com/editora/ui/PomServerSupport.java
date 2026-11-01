@@ -29,13 +29,18 @@ import static com.editora.i18n.Messages.tr;
  * and every coordinate completion throws on it (lemminx-maven 0.12.0, {@code getCurrentWorkspaceProjects}). Nothing
  * the server is told later (a didSave of the fix, a watched-file change) rebuilds it.
  *
- * <p>On a coordinate answer of markup only, or one the server logged that failure for, the root is walked as
- * lemminx-maven walks it ({@link MalformedPoms}, off the FX thread, at most once every few seconds per root): the
- * malformed poms are taken out of the server's workspace and the completion is asked again. A pom left out and
- * well-formed on disk again (saved here, or fixed by a checkout), or a failure with nothing malformed on disk any
- * more (a pom fixed after the server cached its failure), restarts that root's Maven server alone: lemminx-maven
- * cannot take a pom back in the same session. An honest empty answer, with no failure logged and nothing malformed
- * on disk, changes nothing.
+ * <p>The proof is the server's own log ({@code xml.logs.client}): a coordinate answer it logged that failure for
+ * has the root walked as lemminx-maven walks it ({@link MalformedPoms}, off the FX thread, at most once every few
+ * seconds per root), the malformed poms are taken out of the server's workspace and the completion is asked again.
+ * An empty answer with no failure logged is an honest no-match, delivered at once (review 4, E33). A pom left out
+ * and well-formed on disk again (saved here, or fixed by a checkout) restarts that root's Maven server alone:
+ * lemminx-maven cannot take a pom back in the same session.
+ *
+ * <p>lemminx-maven also keeps a null project for a well-formed pom whose effective model Maven cannot build (an
+ * unresolvable parent) and whose strict re-read fails (a duplicated or unknown tag, a DOCTYPE with entities). A
+ * failure with nothing malformed left to leave out restarts the root only when one of its poms changed on disk since
+ * that server started, and never twice for the same files; otherwise it is said once per root, naming the likely
+ * pom when {@link MalformedPoms#unbuildable} finds one (review 4, E31).
  */
 final class PomServerSupport {
 
@@ -53,6 +58,9 @@ final class PomServerSupport {
 
         /** How many coordinate completions that server failed on its workspace so far. */
         int completionFailures(Path file);
+
+        /** When that server was launched (epoch millis), or -1 when none serves {@code file}. */
+        long startedMillis(Path file);
 
         /** Stops the Maven server on {@code root} only. */
         void shutdown(Path root);
@@ -80,6 +88,11 @@ final class PomServerSupport {
                 }
 
                 @Override
+                public long startedMillis(Path file) {
+                    return lsp.mavenStartedMillis(file);
+                }
+
+                @Override
                 public void shutdown(Path root) {
                     lsp.shutdownServerAt(LspServerRegistry.MAVEN_POM_SERVER_ID, root);
                 }
@@ -96,9 +109,6 @@ final class PomServerSupport {
     /** How long one search's answer stands for a root before a completion searches again. */
     static final long RECHECK_MILLIS = 5_000;
 
-    /** How long after restarting a root for a stale failure it is not restarted for one again (no restart loop). */
-    static final long STALE_RESTART_MILLIS = 120_000;
-
     /** What a completion's search decided ({@link #decide}). */
     enum Act {
         /** Hand the answer over as it came. */
@@ -107,8 +117,13 @@ final class PomServerSupport {
         LEAVE_OUT,
         /** Restart the root's Maven server: a left-out pom is well-formed again. */
         TAKE_BACK,
-        /** Restart the root's Maven server: it failed with nothing malformed left to leave out (a stale failure). */
-        RESTART_STALE
+        /**
+         * Restart the root's Maven server: it failed with nothing malformed left to leave out, and a pom changed on
+         * disk since it started (a stale failure).
+         */
+        RESTART_STALE,
+        /** Say once that Maven completion is off: a pom it cannot build, which a restart would build no better. */
+        COMPLETION_OFF
     }
 
     private final Consumer<String> status;
@@ -120,8 +135,11 @@ final class PomServerSupport {
     /** When each root was last searched (per root: one window may hold several Maven roots). */
     private final Map<Path, Long> lastCheck = new HashMap<>();
 
-    /** When each root was last restarted for a stale failure. */
-    private final Map<Path, Long> staleRestart = new HashMap<>();
+    /** The workspace poms' modified times each root was last restarted for (a stale failure): never twice for one. */
+    private final Map<Path, Map<Path, Long>> restartedFor = new HashMap<>();
+
+    /** The roots told that Maven completion is off, until their server restarts. */
+    private final Set<Path> saidOff = new java.util.HashSet<>();
 
     PomServerSupport(
             Consumer<String> status,
@@ -149,33 +167,64 @@ final class PomServerSupport {
         return m.find() && COORDINATES.contains(m.group(1)) ? m.group(1) : null;
     }
 
-    /** Whether a completion at a coordinate offers nothing but XML markup ({@code <!--}, {@code <![CDATA[}). Pure. */
-    static boolean onlyMarkup(List<String> labels) {
-        for (String label : labels) {
-            if (label != null && !label.startsWith("<")) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     /**
      * What to do about one completion, given its search. {@code failed}: the server logged its workspace failure for
-     * it; {@code markupOnly}: it holds only markup; {@code malformed}: the poms malformed on disk now; {@code
-     * leftOut}: the poms already out; {@code backAgain}: left-out poms well-formed on disk again. A markup-only answer
-     * with a malformed pom on disk is proof enough to leave it out (lemminx-maven breaks on it at the next
-     * completion if not now); without either, nothing is done. Pure.
+     * it, the only proof that an answer is the broken one (an empty one alone is an honest no-match, E33); {@code
+     * malformed}: the poms malformed on disk now; {@code leftOut}: the poms already out; {@code backAgain}: left-out
+     * poms well-formed on disk again; {@code restartable}: a pom changed on disk since the server started, not into
+     * files a restart was already tried for, and none is left that it cannot build ({@link #restartable}). Pure.
      */
     static Act decide(
-            boolean failed, boolean markupOnly, List<Path> malformed, Set<Path> leftOut, List<Path> backAgain) {
+            boolean failed, List<Path> malformed, Set<Path> leftOut, List<Path> backAgain, boolean restartable) {
         if (!backAgain.isEmpty()) {
             return Act.TAKE_BACK;
         }
-        boolean more = malformed.stream().anyMatch(p -> !leftOut.contains(p));
-        if (more && (failed || markupOnly)) {
+        if (!failed) {
+            return Act.DELIVER;
+        }
+        if (malformed.stream().anyMatch(p -> !leftOut.contains(p))) {
             return Act.LEAVE_OUT;
         }
-        return failed && !more ? Act.RESTART_STALE : Act.DELIVER;
+        return restartable ? Act.RESTART_STALE : Act.COMPLETION_OFF;
+    }
+
+    /**
+     * Whether restarting a failing root's server may help (E31): {@code scan} saw a pom modified after the server
+     * started ({@code startedMillis}, -1 when unknown), the poms are not as they were at the last restart for a
+     * stale failure ({@code lastRestart}, null when none), and no pom is left that Maven's strict reader refuses (a
+     * new server would build it no better). Pure.
+     */
+    static boolean restartable(MalformedPoms.Scan scan, long startedMillis, @Nullable Map<Path, Long> lastRestart) {
+        return startedMillis >= 0
+                && scan.unbuildable().isEmpty()
+                && scan.changedAfter(startedMillis)
+                && !scan.modified().equals(lastRestart);
+    }
+
+    /**
+     * The pom to name when completion is off: one whose DOCTYPE declares entities first (Maven refuses it whatever
+     * else holds), then one with a parent (the unresolvable parent is what sends lemminx-maven to the strict
+     * reader), then any; null when none. Pure.
+     */
+    static MalformedPoms.@Nullable Unbuildable likelyCulprit(List<MalformedPoms.Unbuildable> unbuildable) {
+        return unbuildable.stream()
+                .min(java.util.Comparator.comparingInt(
+                        u -> u.why() == MalformedPoms.Why.ENTITIES ? 0 : u.hasParent() ? 1 : 2))
+                .orElse(null);
+    }
+
+    /** The status saying Maven completion is off on {@code root}, naming {@code culprit} when known. */
+    static String completionOffStatus(Path root, MalformedPoms.@Nullable Unbuildable culprit) {
+        if (culprit == null) {
+            return tr("status.maven.completionOff", folderName(root));
+        }
+        String line = String.valueOf(Math.max(1, culprit.line()));
+        String why = switch (culprit.why()) {
+            case ENTITIES -> tr("status.maven.whyEntities", line);
+            case DUPLICATE -> tr("status.maven.whyDuplicate", "<" + culprit.element() + ">", line);
+            case UNKNOWN -> tr("status.maven.whyUnknown", "<" + culprit.element() + ">", line);
+        };
+        return tr("status.maven.completionOffPom", folderName(root), displayPath(root, culprit.file()), why);
     }
 
     /** {@code file}'s server's failure count: read when the completion is sent, given back to {@link #onCompletion}. */
@@ -186,9 +235,9 @@ final class PomServerSupport {
     /**
      * Hears one Maven-server completion of {@code file} answered at a coordinate ({@code element} non-null, else
      * nothing is done). {@code failuresBefore} is {@link #failuresBefore} as the request was sent. Searches the root
-     * when the answer is suspect (markup only, or a failure logged) or the root has poms left out, then leaves out,
-     * restarts, or runs {@code askAgain} / {@code deliver} (the answer as it came). Returns whether it took the
-     * answer over; when false the caller delivers it.
+     * when the server logged its workspace failure for this answer, or the root has poms left out, then leaves out,
+     * restarts, says completion is off, or runs {@code askAgain} / {@code deliver} (the answer as it came). Returns
+     * whether it took the answer over; when false the caller delivers it.
      */
     boolean onCompletion(
             @Nullable String element,
@@ -201,12 +250,10 @@ final class PomServerSupport {
         if (root == null) {
             return false;
         }
-        boolean failed = maven.completionFailures(file) > failuresBefore;
-        boolean markupOnly = onlyMarkup(labels);
-        boolean suspect = failed || markupOnly;
+        boolean failed = maven.completionFailures(file) > failuresBefore; // the proof: an empty answer alone is not
         List<Path> out = maven.leftOut(file);
-        if (!suspect && out.isEmpty()) {
-            return false; // a real answer, nothing to take back: the common case costs nothing
+        if (!failed && out.isEmpty()) {
+            return false; // a real answer or an honest no-match, nothing to take back: delivered at once (E33)
         }
         long now = System.currentTimeMillis();
         Long last = lastCheck.get(root);
@@ -214,30 +261,36 @@ final class PomServerSupport {
             return false;
         }
         lastCheck.put(root, now);
+        long started = maven.startedMillis(file);
+        Map<Path, Long> lastRestart = restartedFor.get(root);
         Thread.ofVirtual().name("pom-wellformed").start(() -> {
-            List<MalformedPoms.Problem> problems = suspect ? MalformedPoms.allIn(root) : List.of();
+            MalformedPoms.Scan scan = failed ? MalformedPoms.scan(root) : null;
             List<Path> back = out.stream()
                     .filter(p -> java.nio.file.Files.isRegularFile(p) && MalformedPoms.check(p, null) == null)
                     .toList();
             Act act = decide(
                     failed,
-                    markupOnly,
-                    problems.stream().map(MalformedPoms.Problem::file).toList(),
+                    scan == null
+                            ? List.of()
+                            : scan.malformed().stream()
+                                    .map(MalformedPoms.Problem::file)
+                                    .toList(),
                     Set.copyOf(out),
-                    back);
+                    back,
+                    scan != null && restartable(scan, started, lastRestart));
             Runnable none = () -> {};
-            // a real answer goes out at once (below); only a suspect one waits for the search
+            // an answer without a logged failure went out at once (below); only a proven broken one waits for the walk
             Platform.runLater(
-                    () -> act(act, file, root, problems, back, suspect ? askAgain : none, suspect ? deliver : none));
+                    () -> act(act, file, root, scan, back, failed ? askAgain : none, failed ? deliver : none));
         });
-        return suspect; // a real answer is delivered now; the left-out poms are re-checked behind it (E24)
+        return failed; // otherwise the answer is delivered now; the left-out poms are re-checked behind it (E24)
     }
 
     private void act(
             Act act,
             Path file,
             Path root,
-            List<MalformedPoms.Problem> problems,
+            MalformedPoms.@Nullable Scan scan,
             List<Path> back,
             Runnable askAgain,
             Runnable deliver) {
@@ -248,11 +301,16 @@ final class PomServerSupport {
             }
             case LEAVE_OUT -> {
                 Set<Path> already = Set.copyOf(maven.leftOut(file));
-                List<MalformedPoms.Problem> fresh = problems.stream()
-                        .filter(p -> !already.contains(p.file()))
-                        .toList();
-                List<Path> out = maven.leaveOut(
-                        file, fresh.stream().map(MalformedPoms.Problem::file).toList());
+                List<MalformedPoms.Problem> fresh = scan == null
+                        ? List.of()
+                        : scan.malformed().stream()
+                                .filter(p -> !already.contains(p.file()))
+                                .toList();
+                List<Path> out = fresh.isEmpty()
+                        ? List.of()
+                        : maven.leaveOut(
+                                file,
+                                fresh.stream().map(MalformedPoms.Problem::file).toList());
                 if (out.isEmpty()) {
                     deliver.run(); // the server could not be told (not ready): say nothing it did not do
                     return;
@@ -267,15 +325,21 @@ final class PomServerSupport {
                         out.size() == 1
                                 ? tr("status.maven.completionLeftOut", where, line)
                                 : tr("status.maven.completionLeftOutMore", where, line, out.size() - 1));
+                // the retry is searched at once: a pom it cannot build may still break it (E31, broken + dup)
+                lastCheck.remove(root);
                 askAgain.run();
             }
             case RESTART_STALE -> {
                 deliver.run();
-                long now = System.currentTimeMillis();
-                Long last = staleRestart.get(root);
-                if (last == null || now - last >= STALE_RESTART_MILLIS) {
-                    staleRestart.put(root, now);
-                    restart(root, tr("status.maven.restartStale", folderName(root)));
+                if (scan != null) {
+                    restartedFor.put(root, scan.modified());
+                }
+                restart(root, tr("status.maven.restartStale", folderName(root)));
+            }
+            case COMPLETION_OFF -> {
+                deliver.run();
+                if (saidOff.add(root)) {
+                    status.accept(completionOffStatus(root, scan == null ? null : likelyCulprit(scan.unbuildable())));
                 }
             }
             case DELIVER -> deliver.run();
@@ -297,20 +361,41 @@ final class PomServerSupport {
     }
 
     /**
-     * Files changed on disk (the project watcher's batch): when one is a pom left out of a Maven server's workspace
-     * and well-formed now (a checkout, another editor), restarts that root's server (review 3, E24). FX thread; the
-     * files are read off it.
+     * Files changed on disk (the project watcher's or the server root's own watcher's batch): when one is a pom left
+     * out of a Maven server's workspace and well-formed now (a checkout, another editor), restarts that root's server
+     * (review 3, E24; review 4, E32). A pom changed under a root whose completion was said to be off restarts it when
+     * a restart may help ({@link #restartable}: the pom it could not build fixed), without waiting for a completion.
+     * FX thread; the files are read off it.
      */
     void filesChanged(List<Path> changed) {
         Map<Path, Path> leftOutByRoot = new HashMap<>();
+        Map<Path, Path> offByRoot = new HashMap<>();
         for (Path p : changed) {
             if (MalformedPoms.isWorkspacePom(p)) {
                 Path root = maven.root(p);
                 if (root != null && holds(maven.leftOut(p), p)) {
                     leftOutByRoot.putIfAbsent(root, p);
+                } else if (root != null && saidOff.contains(root)) {
+                    offByRoot.putIfAbsent(root, p);
                 }
             }
         }
+        offByRoot.keySet().removeAll(leftOutByRoot.keySet()); // taking a pom back restarts it anyway
+        offByRoot.forEach((root, pom) -> {
+            long started = maven.startedMillis(pom);
+            Map<Path, Long> lastRestart = restartedFor.get(root);
+            Thread.ofVirtual().name("pom-wellformed").start(() -> {
+                MalformedPoms.Scan scan = MalformedPoms.scan(root);
+                if (scan.malformed().isEmpty() && restartable(scan, started, lastRestart)) {
+                    Platform.runLater(() -> {
+                        if (saidOff.contains(root)) { // not restarted meanwhile
+                            restartedFor.put(root, scan.modified());
+                            restart(root, tr("status.maven.restartStale", folderName(root)));
+                        }
+                    });
+                }
+            });
+        });
         leftOutByRoot.forEach((root, pom) -> Thread.ofVirtual()
                 .name("pom-wellformed")
                 .start(() -> {
@@ -338,6 +423,7 @@ final class PomServerSupport {
         });
         maven.shutdown(root);
         lastCheck.remove(root); // the fresh server's first degraded answer is searched at once (E Gaps)
+        saidOff.remove(root); // and if it fails again, that is said again
         poms.forEach(sync);
         status.accept(message);
         Platform.runLater(() -> status.accept(message));

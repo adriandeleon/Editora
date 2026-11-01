@@ -25,13 +25,18 @@ import static com.editora.i18n.Messages.tr;
  * <p>One format at a time (XML/pom review 3, C29): a second Format Document while one runs says so, where it used to
  * start another that then reported the first one's edit as "the file changed". And in large-file mode, which has no
  * undo and redraws slowly, a format that more than doubles the line count (60,000 lines into 480,000) asks first.
+ *
+ * <p>One format at a time <em>per file</em> (XML/pom review 4, C35): switching tabs mid-format no longer discards it
+ * as "the file changed" — the result goes into its own tab when that text is unchanged, and Format Document in
+ * another tab runs at once instead of "Already formatting".
  */
 final class XmlFormatCoordinator {
 
     private final PythonFormatCoordinator.Host host;
 
-    /** The buffer being formatted off the FX thread, or null. */
-    private @Nullable EditorBuffer running;
+    /** The buffers being formatted off the FX thread (FX thread only). */
+    private final java.util.Set<EditorBuffer> running =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     /** Asks whether to format a large-file buffer from {@code lines[0]} lines into {@code lines[1]}; a test seam. */
     private java.util.function.BiPredicate<EditorBuffer, long[]> askGrowth = XmlFormatCoordinator::askGrowth;
@@ -59,7 +64,7 @@ final class XmlFormatCoordinator {
             host.setStatus(tr("status.lsp.formatUnavailable"));
             return true;
         }
-        if (running != null) {
+        if (running.contains(buffer)) {
             host.setStatus(tr("status.xml.formatRunning"));
             return true;
         }
@@ -71,7 +76,7 @@ final class XmlFormatCoordinator {
         }
         String indent = buffer.indentUnit();
         int caret = buffer.getArea().getCaretPosition();
-        running = buffer;
+        running.add(buffer);
         host.setStatus(tr("status.lsp.formatting"));
         Thread.ofVirtual().name("xml-format").start(() -> {
             String after = null;
@@ -83,7 +88,7 @@ final class XmlFormatCoordinator {
                 String formatted = after;
                 int at = newCaret;
                 Platform.runLater(() -> {
-                    running = null;
+                    running.remove(buffer);
                     apply(buffer, before, formatted, at, html);
                 });
             }
@@ -92,10 +97,14 @@ final class XmlFormatCoordinator {
     }
 
     private void apply(EditorBuffer buffer, String before, @Nullable String after, int caret, boolean html) {
-        if (buffer != host.activeBuffer() || !buffer.getArea().getText().equals(before)) {
-            host.setStatus(tr("status.lsp.formatStale")); // edited (or left) mid-format: a re-run formats cleanly
+        if (buffer.isDisposed()) {
+            return; // closed mid-format: nothing to apply to
+        }
+        if (!buffer.getArea().getText().equals(before)) {
+            host.setStatus(tr("status.lsp.formatStale")); // edited mid-format: a re-run formats cleanly
             return;
         }
+        boolean other = buffer != host.activeBuffer(); // the user switched tabs: it still goes into its own (C35)
         if (after == null) {
             host.setError(tr(html ? "status.html.formatOpenConstruct" : "status.xml.formatNotWellFormed"));
             return;
@@ -116,7 +125,10 @@ final class XmlFormatCoordinator {
         buffer.getArea().replaceText(span[0], span[1], after.substring(span[0], span[2]));
         buffer.getArea().moveTo(Math.min(caret, buffer.getArea().getLength()));
         buffer.getArea().requestFollowCaret();
-        host.setStatus(tr(html ? "status.html.formatted" : "status.xml.formatted"));
+        host.setStatus(
+                other
+                        ? tr("status.xml.formattedOther", buffer.getTitle())
+                        : tr(html ? "status.html.formatted" : "status.xml.formatted"));
     }
 
     private static long lines(String text) {
@@ -138,11 +150,18 @@ final class XmlFormatCoordinator {
             alert.initOwner(scene.getWindow());
         }
         alert.setTitle(tr("noUndo.op.format"));
-        alert.setHeaderText(tr(
-                "dialog.xml.formatGrowth.header", java.util.Objects.requireNonNullElse(buffer.getDisplayName(), "")));
+        alert.setHeaderText(growthHeader(buffer));
         ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(format)).setDefaultButton(false);
         ((javafx.scene.control.Button) alert.getDialogPane().lookupButton(cancel)).setDefaultButton(true);
         return alert.showAndWait().orElse(cancel) == format;
+    }
+
+    /**
+     * The large-file question's header, naming the file (XML/pom review 4, C34: it read "Format ?", from the Save-As
+     * name, which a saved file does not have).
+     */
+    static String growthHeader(EditorBuffer buffer) {
+        return tr("dialog.xml.formatGrowth.header", buffer.getTitle());
     }
 
     /**

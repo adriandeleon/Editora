@@ -75,4 +75,27 @@ class XmlSettingsRowsFxTest {
             assertFalse(tr("settings.lsp.xml." + key + ".desc").contains("XML server"), key);
         }
     }
+
+    /**
+     * XML/pom review 4, C36: the server-command field held a 111-character path cut off, with no tooltip and no
+     * accessible name, and "Schema associations" stayed 220 px wide.
+     */
+    @Test
+    void theServerCommandFieldShowsItsWholeValueAndHasAName() throws Exception {
+        java.util.Map<String, TextField> commands = FxTestSupport.field(window, "lspCommandFields");
+        TextField xml = commands.get("xml");
+        assertNotNull(xml);
+        String longCommand = "/home/someone/.editora/plugins/lsp/xml/lemminx-linux-x86_64 -Dsome.option=value -Xmx1g";
+        String was = FxTestSupport.callOnFx(xml::getText);
+        FxTestSupport.runOnFx(() -> {
+            assertNotNull(xml.getAccessibleText(), "named for a screen reader");
+            xml.setText(longCommand);
+            assertNotNull(xml.getTooltip(), "the whole command on hover");
+            assertEquals(longCommand, xml.getTooltip().getText());
+            xml.setText("");
+            assertEquals(null, xml.getTooltip());
+            xml.setText(was);
+        });
+        FxTestSupport.runOnFx(() -> assertTrue(field("lsp.xml.fileAssociations").getPrefWidth() > 220));
+    }
 }

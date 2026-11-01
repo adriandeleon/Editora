@@ -635,6 +635,7 @@ final class LanguageServerSession implements LanguageClient {
      * {@code synchronized} and a post-fork {@link #disposed} guard covers a dispose that races the fork.
      */
     boolean start() {
+        startedMillis = System.currentTimeMillis();
         try {
             com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(root);
             targetId = target.id();
@@ -1449,6 +1450,30 @@ final class LanguageServerSession implements LanguageClient {
     /** See {@link #workspaceCompletionFailures}. */
     int workspaceCompletionFailures() {
         return workspaceCompletionFailures.get();
+    }
+
+    /**
+     * When {@link #start} launched this session's server (epoch millis; 0 before): a pom changed on disk after it is
+     * one the server may not have built yet (review 4, E31).
+     */
+    private volatile long startedMillis;
+
+    /** See {@link #startedMillis}. */
+    long startedMillis() {
+        return startedMillis;
+    }
+
+    /**
+     * The line of a logged failure that says what went wrong: the first naming an exception (lemminx's log record
+     * starts with a timestamp and the logger's method), else its first line. Pure.
+     */
+    static String failureLine(@Nullable String message) {
+        String m = withoutStack(message);
+        return m.lines()
+                .map(String::strip)
+                .filter(l -> l.contains("Exception") || l.contains("Error:"))
+                .findFirst()
+                .orElseGet(() -> firstLine(m));
     }
 
     /** {@code message} up to its first stack frame ({@code "\tat …"}). Pure. */
@@ -3533,8 +3558,13 @@ final class LanguageServerSession implements LanguageClient {
         // a format failed, and the user otherwise saw a script with no diagnostics and no hint why.
         org.eclipse.lsp4j.MessageType type = message.getType();
         if (mavenWorkspaceCompletionFailed(message.getMessage())) {
-            workspaceCompletionFailures.incrementAndGet(); // seen by the completion's answer (E21); no stack logged
-            LOG.fine(() -> "[" + serverId + "] " + firstLine(message.getMessage()));
+            // seen by the completion's answer (E21); no stack logged. The first one per server reaches the Debug Log,
+            // which the "Maven completion is off" status points to (review 4, E31); the rest repeat it.
+            boolean first = workspaceCompletionFailures.incrementAndGet() == 1;
+            LOG.log(
+                    first ? Level.INFO : Level.FINE,
+                    () -> "[" + serverId + "] coordinate completion failed on a workspace pom lemminx-maven could not"
+                            + " build: " + failureLine(message.getMessage()));
             return;
         }
         if (com.editora.install.WebServerInstall.unableToLoadLibrary(message.getMessage()) && !saidNoTsLibs) {
