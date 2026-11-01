@@ -180,8 +180,6 @@ final class MapCardLinks {
     private final List<Pending> pending = new ArrayList<>();
     /** Result cards to place beside the card they were asked from, by key, until placed. */
     private final Map<Path, ProjectMapPreview> placeBeside = new HashMap<>();
-    /** File cards that open at a place once their text is shown, with the 0-based line. */
-    private final Map<ProjectMapPreview, Integer> reveals = new IdentityHashMap<>();
 
     MapCardLinks(Cards cards, ProjectMapStructure structure, Pane canvasHost, Node connectorLayer) {
         this.cards = cards;
@@ -463,7 +461,6 @@ final class MapCardLinks {
     /** {@code card} closed: its edge sets go, and any question it asked is forgotten. */
     void cardClosed(ProjectMapPreview card) {
         asked.remove(card);
-        reveals.remove(card);
         Map<Kind, EdgeSet> of = sets.remove(card);
         if (of != null) {
             of.values().forEach(EdgeSet::dispose);
@@ -483,7 +480,6 @@ final class MapCardLinks {
         sets.values().forEach(of -> of.values().forEach(EdgeSet::dispose));
         sets.clear();
         asked.clear();
-        reveals.clear();
         pending.forEach(waiting -> waiting.timeout.stop());
         pending.clear();
         placeBeside.clear();
@@ -515,14 +511,6 @@ final class MapCardLinks {
         }
         double[] drawn = MapCards.drawnBounds(from);
         return new MapCards.Site(drawn, drawn, drawn, cards.columns());
-    }
-
-    /** A file card's text was shown: one that opened for a place outside any declaration scrolls to it. */
-    void textShown(ProjectMapPreview card) {
-        Integer line = reveals.remove(card);
-        if (line != null) {
-            card.revealRange(new ProjectMapPreview.Range("", line, line, line));
-        }
     }
 
     /** One edge: a result card, what joins it to the card asked from, and its label. */
@@ -577,10 +565,10 @@ final class MapCardLinks {
                 card = cards.openDeclaration(node);
             } else {
                 card = cards.openFile(group.file());
-                if (card != null
-                        && !card.revealRange(
-                                new ProjectMapPreview.Range("", group.line(), group.line(), group.line()))) {
-                    reveals.put(card, group.line()); // its text is still on its way
+                if (card != null) {
+                    // At its place now, or — a new card — once its text is shown and its opening line applied,
+                    // which would otherwise move the caret off the place (as a trail stop's lines wait).
+                    card.viewsRevealLines(group.line(), group.line());
                 }
             }
             cards.touch(from); // used: never the card evicted to make room for the next result

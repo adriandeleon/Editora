@@ -1105,7 +1105,6 @@ final class MapCards {
         preview.setOnTextShown(() -> {
             updateCardNotes(preview); // stored notes are found again in the new text
             restyleCardStructure(preview);
-            links.textShown(preview); // a result card that opens at a place
         });
         preview.setOnStylesShown(() -> restyleCardStructure(preview)); // its Structure column borrows the colours
         // A sticky note's connector meets its line in the text, which scrolls under it.
