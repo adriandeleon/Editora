@@ -348,6 +348,11 @@ them. Activating a selection whose row a column filter has hidden does nothing; 
 where its row would be. If a focused column control is hidden (zooming out) or removed (closing its column),
 focus returns to the map surface. Tab stops only at column controls that lie inside the viewport
 (`MapSurface.syncControlTraversal`); `/` still reaches an off-screen column's filter and scrolls it into view.
+A column's native controls are made the first time it is laid out on screen (or within a viewport of it) at a
+zoom that shows them
+(`dataEnsureColumnControls`), starting from the filter text, Show hidden and lock the column already holds,
+so a search that opens hundreds of columns builds no controls for the ones nobody sees; `/` makes the
+selected column's controls if it has none yet.
 
 The scene-level `KeyDispatcher` sees every key before the map. While the surface itself is the focus
 owner it declares `Alt-Left`, `Alt-Right`, Shortcut + `0`, `Ctrl-N`, `Ctrl-P`, `F2`, `Delete`, and `Shift-Enter`
@@ -473,11 +478,16 @@ only then opens the folders that hold its matches. The viewport is not moved. A 
 matches nothing keeps one row of space for a "No matches" line.
 
 Rows use `ProjectPathOrder`: directories first, then names in natural order (runs of digits compared by
-value, so `note-2` sorts before `note-10`) without case bias, with a deterministic exact tie-break. This is
-the same ordering contract as the traditional Project explorer.
+value, so `note-2` sorts before `note-10`) without case bias, with a deterministic exact tie-break. A folder
+whose every name is hash-like (at least eight hexadecimal digits before any extension, with a letter among
+them somewhere: a fuzz corpus, an object store) sorts in plain character order instead, so `07c96f…` comes
+before `7c781c…` (`ProjectPathOrder.forFolder`). This is the same ordering contract as the traditional
+Project explorer.
 
 Canvas nodes reuse `FileIcons.forProjectItem`, rasterized and cached per file kind and status (plus an
-on-accent variant, style class `project-map-icon-on-accent`, for the focused selection). A file already
+on-accent variant, style class `project-map-icon-on-accent`, for the focused selection). The plain icon of
+every kind (`FileIcons.iconKeys`) is rasterized ahead of need, four per pulse, when the Map shows and after a
+theme change (`warmIcons`), so a big search does not snapshot a hundred new kinds in one paint. A file already
 open in an editor tab has an accent rail and an accent-coloured label. Unsaved changes are a filled dot
 and a Git state is the status letter the Project tree uses, so the two differ in shape as well as hue.
 Every folder row ends in a chevron that points along the flow; an expanded folder's sits in a filled
@@ -486,7 +496,8 @@ click, as `previewHit` does for the eye that opens a file's preview.
 
 The selected row is filled with the accent and ringed only while the surface has keyboard focus; without
 focus (and in Print/PDF output) it is a tinted row. Tooltips show the full normalized path, type, file
-size (binary units), modification time, and relevant open, unsaved, or Git status from the loaded
+size (binary units, the number written as the interface's locale writes it: "1,5 KiB" in German),
+modification time, and relevant open, unsaved, or Git status from the loaded
 snapshot — preceded, over the eye, a chevron or a note badge, by what a click there does. Hover does no
 filesystem work.
 
@@ -640,18 +651,31 @@ paths. An atomic generation is checked when a queued request starts and between 
 requests lists the folders once, and obsolete results never reach the FX thread. A request made after
 `dispose()` is ignored; so is a result that was listing when an in-app rename or move landed
 (`pathRenamed` supersedes it, so its old-tree snapshot cannot prune the renamed folder's expansion). Each
-child costs one attribute read (two for a symbolic link), which serves both the ordering and the row. A load
+child costs one attribute read (two for a symbolic link), which serves both the ordering and the row. In a
+folder longer than one chunk whose link count says it holds no subfolder (a local Linux ext2/3/4, xfs,
+tmpfs or f2fs folder with a link count of 2), the order needs only the names, and a child's attributes are
+read when its row is first loaded: the rows past the limit are never read (a symbolic link to a folder there
+sorts among the files). A load
 that outlasts 200 ms shows a "Loading…" label over the canvas, and an empty map reads "Loading…" rather than
 "No project items" while its first load is in flight.
 
 Listings go through `ProjectMapModel.Listings`. A folder the Project watcher follows (`ProjectPanel` hands
 the watched set to `setWatchedDirectories` after every watch sync) keeps its sorted listing between loads,
 so opening a folder lists only that folder. A watcher event for a folder (`refresh(directories)`), a file
-rewritten there or saved by Editora (`listingsChanged`), and a focus regain or in-app file operation
-(`refresh()`, everything) drop the listing; a folder that stops being watched is dropped too. A remote root
-has no local watcher and lists afresh every time. Each listing runs on a worker with a 10 s timeout: a folder
-that does not answer holds a "Not responding" stub (nothing below it is forgotten), its next loads do not wait
-for it again, and the Map reloads when it finally answers.
+rewritten there or saved by Editora (`listingsChanged`), and an in-app file operation (`refresh()`,
+everything) drop the listing; a folder that stops being watched is dropped too. A real focus regain
+(`ProjectPanel.refreshTreeOnRegain` → `revalidate()`) only checks: each cached folder's next load reads the
+folder's modification time on the loader and lists it again only when that moved (or when the listing was
+taken within 2 s of the folder's last change, which a coarse clock could hide). Focus that moves between
+Editora's own windows — a file opened from the Map raises its editor window, Escape leaves the Map, a dialog
+closes — is not a regain at all (`StartupFocus` follows every stage's focus: a gain within 250 ms of another
+stage's loss is a move), unless Editora came back from another program through another of its windows since
+that window last refreshed. A remote root has no local watcher and lists afresh every time. Each listing runs
+on a worker (at most `MAX_LISTING_THREADS`, 4, at once) with a 10 s timeout: a folder that does not answer
+holds a "Not responding" stub (nothing below it is forgotten). Its listing stays the folder's only one until
+it ends: through any number of invalidations its next loads say "Not responding" at once, without waiting
+and without a second blocked thread, and the Map reloads when it finally answers. A load that comes after an
+invalidation joins a listing begun before it and lists again once that one has ended.
 
 `ProjectMapModel.load` reads only the root and the expanded directories, under two limits:
 
@@ -660,15 +684,19 @@ for it again, and the Map reloads when it finally answers.
   on it moves to the first row that arrived. The breadcrumb never ends in a placeholder: its trail stops at the
   folder.
 - **overall**, `MAX_VISIBLE_ITEMS` (1,200) real rows. Pinned paths — the search's matches and a revealed
-  file — are charged first, with the rows that lead to them, wherever they sort; the rest is handed out
-  breadth-first.
+  file — are charged first, with the rows that lead to them, wherever they sort. Then the priority folders
+  (`Request.priority`: the column the selection is in, and the folder whose rows "+N more" raised last)
+  reserve their rows up to their row limit, so the folder being read keeps its rows when another column opens;
+  the rest is handed out breadth-first.
 
 Nothing is dropped silently. The snapshot carries `DirectoryFacts` (real child count, rows loaded,
 unreadable) for every listed directory, and a column header shows "shown/total" whenever a filter or a
 limit hides rows. A directory that got no rows at all is reported as skipped but stays open: its column holds
 one "Not loaded — over the 1,200-row limit" stub, it and the folders opened below it stay in the manual
 expansion set, and it fills again once a column is closed. The status bar says the overall limit was
-reached; the same message appears when "+N more…" cannot load anything. An expanded folder with nothing to list gets a column holding
+reached; the same message appears when "+N more…" cannot load anything. When the only open folders are the
+one being read and the folders that lead to it, closing a column would close it too, so the message says to
+type in that column's filter instead, which reaches the rest of a long folder. An expanded folder with nothing to list gets a column holding
 one stub row, "Empty folder" or "Cannot read this folder". A failure to read one directory does not
 discard the rest of the snapshot.
 
@@ -695,6 +723,9 @@ content-only disk changes and for following an open buffer) and stop while the M
 (`setShowing(false)`; the window's scene outlives `hide()`, so being in a scene is not being on screen).
 While it is closed, row-state changes (tabs, dirty flags, markers) are only noted: the next show snapshots
 them once, reloads, and refreshes every card, which re-arms the poll of a card that mirrors an open buffer.
+A repaint asked for while it is closed (a Git status push) is only noted too, and the next show paints once.
+A Git status push equal to the last one (most Git refreshes: a tab switch, a save) is not applied again,
+in the Project panel or the Map, and the Map's ancestor walk stops at the first folder already recorded.
 A state snapshot looks the open files and marker candidates up among the rows rather than asking each row.
 A folder that newly cannot be read is reported once in the status bar as well as by its column's stub.
 
