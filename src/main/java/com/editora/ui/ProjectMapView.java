@@ -2331,7 +2331,7 @@ final class ProjectMapView extends VBox {
         if (values.isEmpty()) {
             return;
         }
-        makeRoomForCard();
+        makeRoomForCard(null);
         ProjectMapNotePreview preview = new ProjectMapNotePreview((note, body) -> {
             ProjectPanel.MarkerActions actions = notePreviewActions;
             if (actions != null) {
@@ -2366,7 +2366,8 @@ final class ProjectMapView extends VBox {
     }
 
     private ProjectMapPreview createPreview(Path path) {
-        makeRoomForCard();
+        // A declaration card of a file whose card has its Structure column out belongs to that card's group.
+        makeRoomForCard(ProjectMapStructure.isSymbolPath(path) ? cardGroupOwner(structure.fileOf(path)) : null);
         ProjectMapPreview preview = new ProjectMapPreview(onOpenFile);
         preview.setMapScale(surface.cardZoom());
         preview.setEditorFont(cardEditorFont());
@@ -2528,7 +2529,11 @@ final class ProjectMapView extends VBox {
                 ignored -> new ProjectMapCardStructure(
                         card,
                         canvasHost,
-                        node -> previewSymbol(symbolEntry(node)),
+                        node -> cardRevealDeclaration(card, node),
+                        node -> {
+                            touchCard(card, false); // the column's card is in use: never the one evicted
+                            previewSymbol(symbolEntry(node));
+                        },
                         node -> symbolMenu(symbolEntry(node)),
                         () -> touchCard(card, false),
                         this::repaintPreviewConnectors,
@@ -2539,6 +2544,17 @@ final class ProjectMapView extends VBox {
         reserveBesideCard(card); // the sheets step past the column
         touchCard(card, true);
         scheduleCardRefresh(); // the outline follows the buffer from now on
+    }
+
+    /**
+     * A click or Enter on a declaration in a file card's Structure column: the card scrolls to the declaration and
+     * marks its lines (review 3, E8). A declaration past what the card shows opens its own card instead.
+     */
+    private void cardRevealDeclaration(ProjectMapPreview card, ProjectMapStructure.Node node) {
+        touchCard(card, false);
+        if (!card.revealRange(rangeOf(node.symbol()))) {
+            previewSymbol(symbolEntry(node));
+        }
     }
 
     /** Places a card's sticky notes again past what stands beside the card now. */
@@ -2613,15 +2629,20 @@ final class ProjectMapView extends VBox {
         }
     }
 
-    /** Closes the least recently used cards, of either kind, until one more fits under the shared limit. */
-    private void makeRoomForCard() {
+    /**
+     * Closes the least recently used cards, of either kind, until one more fits under the shared limit. Cards go
+     * by group: a file card with its Structure column out, and the declaration cards of its file, which the column
+     * keeps. A group's file card goes only after its declaration cards (the oldest of them first), and {@code
+     * keep} — the file card whose column a new declaration card comes from — never goes (review 3, C1).
+     */
+    private void makeRoomForCard(@Nullable ProjectMapPreview keep) {
         while (previews.size() + notePreviews.size() >= MAX_OPEN_PREVIEWS) {
-            Region oldest = null;
-            long oldestTouch = Long.MAX_VALUE;
-            for (Map.Entry<Region, Long> touch : cardTouches.entrySet()) {
-                if (touch.getValue() < oldestTouch) {
-                    oldestTouch = touch.getValue();
-                    oldest = touch.getKey();
+            Region oldest = oldestCard(card -> card != keep);
+            if (oldest instanceof ProjectMapPreview code && cardStructures.containsKey(code)) {
+                Set<ProjectMapPreview> members = cardGroupMembers(code);
+                Region member = oldestCard(members::contains);
+                if (member != null) {
+                    oldest = member; // its owner waits until the cards it keeps are gone
                 }
             }
             if (oldest instanceof ProjectMapPreview code) {
@@ -2632,6 +2653,47 @@ final class ProjectMapView extends VBox {
                 return;
             }
         }
+    }
+
+    /** The least recently used open card among those {@code wanted} accepts, or null. */
+    private @Nullable Region oldestCard(Predicate<Region> wanted) {
+        Region oldest = null;
+        long oldestTouch = Long.MAX_VALUE;
+        for (Map.Entry<Region, Long> touch : cardTouches.entrySet()) {
+            if (touch.getValue() < oldestTouch && wanted.test(touch.getKey())) {
+                oldestTouch = touch.getValue();
+                oldest = touch.getKey();
+            }
+        }
+        return oldest;
+    }
+
+    /** The declaration cards a file card's Structure column keeps: those of its file. */
+    private Set<ProjectMapPreview> cardGroupMembers(ProjectMapPreview owner) {
+        Path file = owner.path();
+        Set<ProjectMapPreview> members = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        if (file == null || !cardStructures.containsKey(owner)) {
+            return members;
+        }
+        previews.forEach((key, card) -> {
+            if (card != owner && ProjectMapStructure.isSymbolPath(key) && file.equals(structure.fileOf(key))) {
+                members.add(card);
+            }
+        });
+        return members;
+    }
+
+    /** The file card whose Structure column keeps a declaration card of {@code file}, if one is out. */
+    private @Nullable ProjectMapPreview cardGroupOwner(@Nullable Path file) {
+        if (file == null) {
+            return null;
+        }
+        for (ProjectMapPreview card : cardStructures.keySet()) {
+            if (file.equals(card.path())) {
+                return card;
+            }
+        }
+        return null;
     }
 
     private void closeNotePreview(ProjectMapNotePreview preview) {

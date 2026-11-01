@@ -40,7 +40,8 @@ import static com.editora.i18n.Messages.tr;
  * The Structure column of one Project Map file card: the file's declarations, as the Map's own Structure column
  * lists them, stuck beside the card. It belongs to the card — it moves, resizes and zooms with it and closes with
  * it — so it works wherever the file's row is, filtered or scrolled off the map included. A declaration clicked
- * (or Enter on it) opens its card, as a row of the Map's Structure column does. The outline is the Map's
+ * (or Enter on it) scrolls the card to its lines and marks them, as an outline beside a code view moves the view;
+ * Shift+click or Shift+Enter opens its own declaration card. The outline is the Map's
  * ({@link ProjectMapStructure}); nothing is read here.
  */
 final class ProjectMapCardStructure {
@@ -76,6 +77,7 @@ final class ProjectMapCardStructure {
     private final ProjectMapPreview card;
     private final Pane host;
     private final Consumer<ProjectMapStructure.Node> onPreview;
+    private final Consumer<ProjectMapStructure.Node> onReveal;
     private final Function<ProjectMapStructure.Node, @Nullable ContextMenu> menuFor;
     private final Runnable onActivate;
     private final Runnable onMoved;
@@ -105,7 +107,8 @@ final class ProjectMapCardStructure {
     private Side side = Side.RIGHT;
 
     /**
-     * @param onPreview opens (or brings up) the card of a declaration
+     * @param onReveal scrolls the card to a declaration and marks its lines (a click, Enter)
+     * @param onPreview opens (or brings up) the card of a declaration (Shift+click, Shift+Enter, the menu)
      * @param menuFor a declaration's menu, as its row's in the Map's Structure column
      * @param onActivate the column was used: it is use of the card
      * @param onMoved the column moved, showed or hid, or its list scrolled (connectors must follow)
@@ -114,6 +117,7 @@ final class ProjectMapCardStructure {
     ProjectMapCardStructure(
             ProjectMapPreview card,
             Pane host,
+            Consumer<ProjectMapStructure.Node> onReveal,
             Consumer<ProjectMapStructure.Node> onPreview,
             Function<ProjectMapStructure.Node, @Nullable ContextMenu> menuFor,
             Runnable onActivate,
@@ -121,6 +125,7 @@ final class ProjectMapCardStructure {
             Runnable onResized) {
         this.card = card;
         this.host = host;
+        this.onReveal = onReveal;
         this.onPreview = onPreview;
         this.menuFor = menuFor;
         this.onActivate = onActivate;
@@ -179,7 +184,15 @@ final class ProjectMapCardStructure {
             raise();
             onActivate.run();
         });
+        // Reading the column by keyboard is use of its card as much as a press is: the card must not be the one
+        // evicted when a declaration opened from here needs room (review 3, C1).
+        column.focusWithinProperty().addListener((obs, was, within) -> {
+            if (within) {
+                onActivate.run();
+            }
+        });
         column.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            onActivate.run();
             if (event.getCode() == KeyCode.ESCAPE) {
                 card.setStructureShown(false);
                 card.focusContent();
@@ -190,7 +203,9 @@ final class ProjectMapCardStructure {
             if (event.getCode() == KeyCode.ENTER && !event.isShortcutDown() && !event.isAltDown()) {
                 ProjectMapStructure.Node node = selectedNode();
                 if (node != null) {
-                    onPreview.accept(node);
+                    // The column is the card's outline: Enter moves the card; Shift+Enter opens the declaration's
+                    // own card, as Shift+Enter on a Map row opens a row's card (review 3, E8).
+                    (event.isShiftDown() ? onPreview : onReveal).accept(node);
                     event.consume();
                 }
             }
@@ -636,7 +651,7 @@ final class ProjectMapCardStructure {
                         || onDisclosure(event)) {
                     return;
                 }
-                onPreview.accept(node);
+                (event.isShiftDown() ? onPreview : onReveal).accept(node);
                 event.consume();
             });
         }

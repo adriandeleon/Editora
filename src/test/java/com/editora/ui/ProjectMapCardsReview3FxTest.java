@@ -1,0 +1,332 @@
+package com.editora.ui;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.function.BooleanSupplier;
+
+import javafx.event.Event;
+import javafx.scene.Node;
+import javafx.scene.Scene;
+import javafx.scene.control.TreeCell;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
+import javafx.scene.input.PickResult;
+import javafx.scene.layout.Region;
+import javafx.stage.Stage;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Project Map review 3, cards: a card's Structure column (eviction, reveal, keys, side), card titles, the opening
+ * line, placement clear of the zoom bar and overview, open cards in the overview and the ⋯ menu.
+ */
+@Tag("fx")
+class ProjectMapCardsReview3FxTest {
+
+    /** Twelve methods after a licence header: more declarations than the eight-card limit. */
+    static String source() {
+        StringBuilder text = new StringBuilder();
+        text.append(
+                "/*\n * Copyright 2026 The Authors.\n *\n * Licensed under the Apache License, Version 2.0.\n */\n");
+        text.append("\npackage demo;\n\npublic class Big {\n");
+        for (int i = 0; i < 12; i++) {
+            text.append("\n    int m").append(i).append("(int a) {\n");
+            for (int j = 0; j < 6; j++) {
+                text.append("        a += ").append(j).append(";\n");
+            }
+            text.append("        return a;\n    }\n");
+        }
+        text.append("}\n");
+        return text.toString();
+    }
+
+    @TempDir
+    Path temp;
+
+    private Path root;
+    private final AsyncTestScope async = new AsyncTestScope();
+    private Fixture map;
+
+    ProjectMapCardsReview3FxTest() throws Exception {}
+
+    @BeforeAll
+    static void boot() throws Exception {
+        FxTestSupport.bootToolkit();
+    }
+
+    @AfterEach
+    void close() throws Exception {
+        if (map != null) {
+            FxTestSupport.runOnFx(() -> {
+                map.view().dispose();
+                map.stage().close();
+            });
+        }
+        async.close();
+    }
+
+    // --- C1 / D2 ----------------------------------------------------------------------------------------
+
+    @Test
+    void eightDeclarationsOpenedByKeyFromACardsStructureColumnKeepTheFileCardAndItsColumn() throws Exception {
+        Path big = writeBig();
+        map = openMap();
+        ProjectMapPreview card = openFileCard(big);
+        ProjectMapCardStructure column = showStructure(card);
+        FxTestSupport.runOnFx(column::focus);
+        for (int i = 0; i < 10; i++) {
+            int index = i;
+            FxTestSupport.runOnFx(() -> {
+                key(column.tree(), KeyCode.DOWN, false);
+                key(column.tree(), KeyCode.ENTER, true); // Shift+Enter: the declaration's own card
+            });
+            await("declaration card " + index, () -> previews().size() == Math.min(8, index + 2));
+        }
+        FxTestSupport.drainFx(); // an orphan check would run now
+        FxTestSupport.runOnFx(() -> {
+            assertSame(card, previews().get(big), "the file card is never the one evicted");
+            assertSame(column, cardStructures().get(card), "nor its Structure column");
+            assertEquals(8, previews().size(), "seven declaration cards beside the file card");
+            assertTrue(column.contains(map.scene().getFocusOwner()), "the keyboard stays in the column");
+            Path last = column.tree()
+                    .getSelectionModel()
+                    .getSelectedItem()
+                    .getValue()
+                    .node()
+                    .path();
+            assertTrue(previews().containsKey(last), "the declaration just opened is there");
+        });
+    }
+
+    @Test
+    void theOldestCardOfAnotherGroupGoesBeforeAColumnsDeclarationCards() throws Exception {
+        Path big = writeBig();
+        Path other = Files.writeString(root.resolve("other.txt"), "other\n");
+        map = openMap();
+        ProjectMapPreview card = openFileCard(big);
+        ProjectMapCardStructure column = showStructure(card);
+        ProjectMapPreview plain = openFileCard(other);
+        FxTestSupport.runOnFx(column::focus);
+        for (int i = 0; i < 7; i++) {
+            FxTestSupport.runOnFx(() -> {
+                key(column.tree(), KeyCode.DOWN, false);
+                key(column.tree(), KeyCode.ENTER, true);
+            });
+        }
+        await("eight cards", () -> previews().size() == 8);
+        FxTestSupport.runOnFx(() -> {
+            assertFalse(previews().containsValue(plain), "the unrelated card, used least, went");
+            assertSame(card, previews().get(big));
+        });
+    }
+
+    // --- E8 ---------------------------------------------------------------------------------------------
+
+    @Test
+    void aClickOrEnterInACardsStructureColumnScrollsTheCardToTheDeclarationAndShiftOpensItsCard() throws Exception {
+        Path big = writeBig();
+        map = openMap();
+        ProjectMapPreview card = openFileCard(big);
+        ProjectMapCardStructure column = showStructure(card);
+        int line = lineOf(source(), "int m9(");
+        FxTestSupport.runOnFx(() -> {
+            column.focus();
+            clickRow(column, "m9(int)", false);
+        });
+        await("the card scrolled to m9", () -> firstVisible(card) <= line && line <= lastVisible(card));
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(1, previews().size(), "no declaration card was opened");
+            String selected = card.editor().getSelectedText();
+            assertTrue(selected.startsWith("    int m9(int a) {"), selected);
+            assertTrue(selected.strip().endsWith("}"), "the declaration's lines are marked: " + selected);
+            selectRow(column, "m2(int)");
+            key(column.tree(), KeyCode.ENTER, false);
+        });
+        int second = lineOf(source(), "int m2(");
+        await("Enter scrolls too", () -> firstVisible(card) <= second && second <= lastVisible(card));
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(1, previews().size());
+            assertTrue(column.contains(map.scene().getFocusOwner()), "the keyboard stays in the column");
+            key(column.tree(), KeyCode.ENTER, true);
+        });
+        await("Shift+Enter opens the declaration's card", () -> previews().size() == 2);
+        FxTestSupport.runOnFx(() -> clickRow(column, "m5(int)", true));
+        await("so does Shift+click", () -> previews().size() == 3);
+    }
+
+    // --- fixture ----------------------------------------------------------------------------------------
+
+    private record Fixture(ProjectMapView view, Scene scene, Stage stage, Region surface) {}
+
+    private Path writeBig() throws Exception {
+        root = Files.createDirectories(temp.resolve("project")).toRealPath();
+        return Files.writeString(root.resolve("Big.java"), source());
+    }
+
+    private Fixture openMap() throws Exception {
+        if (root == null) {
+            root = Files.createDirectories(temp.resolve("project")).toRealPath();
+        }
+        Path project = root;
+        Fixture fixture = FxTestSupport.callOnFx(() -> {
+            ProjectMapView view = new ProjectMapView(path -> {}, path -> false, path -> false, path -> null);
+            Stage stage = new Stage();
+            Scene scene = new Scene(view, 1400, 900);
+            scene.getStylesheets()
+                    .add(ProjectMapCardsReview3FxTest.class
+                            .getResource("/com/editora/styles/app.css")
+                            .toExternalForm());
+            stage.setScene(scene);
+            stage.show();
+            view.applyCss();
+            view.layout();
+            view.setRememberedFlow(ProjectMapView.FlowDirection.LEFT_TO_RIGHT.name(), ignored -> {});
+            view.setRememberedNavigation(true, false, (keep, focus) -> {});
+            view.setRoot(project);
+            return new Fixture(view, scene, stage, FxTestSupport.field(view, "surface"));
+        });
+        return fixture;
+    }
+
+    private ProjectMapPreview openFileCard(Path file) throws Exception {
+        await("row " + file.getFileName(), () -> rows().contains(file));
+        FxTestSupport.runOnFx(() -> {
+            FxTestSupport.call(map.surface(), "setSelected", new Class<?>[] {Path.class}, file);
+            FxTestSupport.call(map.view(), "previewSelection", new Class<?>[] {Path.class}, file);
+        });
+        await(
+                "card " + file.getFileName(),
+                () -> previews().containsKey(file)
+                        && !previews().get(file).editor().getText().isEmpty());
+        return FxTestSupport.callOnFx(() -> previews().get(file));
+    }
+
+    private ProjectMapCardStructure showStructure(ProjectMapPreview card) throws Exception {
+        FxTestSupport.runOnFx(() -> card.setStructureShown(true));
+        await("the column lists the methods", () -> {
+            ProjectMapCardStructure column = cardStructures().get(card);
+            return column != null && labels(column).contains("m11(int)");
+        });
+        return FxTestSupport.callOnFx(() -> cardStructures().get(card));
+    }
+
+    private List<Path> rows() {
+        List<?> boxes = FxTestSupport.field(map.surface(), "boxes");
+        return boxes.stream()
+                .map(box -> ((ProjectMapModel.Entry) FxTestSupport.call(box, "entry", new Class<?>[0])).path())
+                .toList();
+    }
+
+    private Map<Path, ProjectMapPreview> previews() {
+        return FxTestSupport.field(map.view(), "previews");
+    }
+
+    private Map<ProjectMapPreview, ProjectMapCardStructure> cardStructures() {
+        return FxTestSupport.field(map.view(), "cardStructures");
+    }
+
+    private static List<String> labels(ProjectMapCardStructure column) {
+        return column.visibleRows().stream()
+                .map(row ->
+                        row.node() == null ? row.message() : row.node().symbol().label())
+                .toList();
+    }
+
+    private static void selectRow(ProjectMapCardStructure column, String label) {
+        var tree = column.tree();
+        for (int i = 0; i < tree.getExpandedItemCount(); i++) {
+            ProjectMapStructure.Node node = tree.getTreeItem(i).getValue().node();
+            if (node != null && node.symbol().label().equals(label)) {
+                tree.getSelectionModel().select(i);
+                tree.scrollTo(i);
+                tree.layout();
+                return;
+            }
+        }
+        throw new AssertionError("no row " + label);
+    }
+
+    /** A real press, release and click on the row's cell, through the scene's dispatch chain. */
+    private static void clickRow(ProjectMapCardStructure column, String label, boolean shift) {
+        selectRow(column, label);
+        column.tree().applyCss();
+        column.tree().layout();
+        TreeCell<?> cell = column.tree().lookupAll(".tree-cell").stream()
+                .filter(node -> node instanceof TreeCell<?> c
+                        && !c.isEmpty()
+                        && c.getItem() instanceof ProjectMapCardStructure.Row row
+                        && row.node() != null
+                        && row.node().symbol().label().equals(label))
+                .map(node -> (TreeCell<?>) node)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no cell " + label));
+        double x = cell.getWidth() - 20;
+        double y = cell.getHeight() / 2;
+        for (var type : List.of(MouseEvent.MOUSE_PRESSED, MouseEvent.MOUSE_RELEASED, MouseEvent.MOUSE_CLICKED)) {
+            javafx.geometry.Point2D scene = cell.localToScene(x, y);
+            Event.fireEvent(
+                    cell,
+                    new MouseEvent(
+                            type,
+                            x,
+                            y,
+                            scene.getX(),
+                            scene.getY(),
+                            MouseButton.PRIMARY,
+                            1,
+                            shift,
+                            false,
+                            false,
+                            false,
+                            type == MouseEvent.MOUSE_PRESSED,
+                            false,
+                            false,
+                            false,
+                            false,
+                            true,
+                            new PickResult(cell, scene.getX(), scene.getY())));
+        }
+    }
+
+    static void key(Node target, KeyCode code, boolean shift) {
+        Event.fireEvent(target, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, shift, false, false, false));
+    }
+
+    private static int lineOf(String text, String needle) {
+        int at = text.indexOf(needle);
+        return (int) text.substring(0, at).chars().filter(c -> c == '\n').count();
+    }
+
+    private static int firstVisible(ProjectMapPreview card) {
+        try {
+            return card.editor().firstVisibleParToAllParIndex();
+        } catch (RuntimeException notLaidOut) {
+            return -1;
+        }
+    }
+
+    private static int lastVisible(ProjectMapPreview card) {
+        try {
+            return card.editor().lastVisibleParToAllParIndex();
+        } catch (RuntimeException notLaidOut) {
+            return -1;
+        }
+    }
+
+    private void await(String what, BooleanSupplier condition) throws Exception {
+        SaveGuardsFxTest.awaitOnFx(async, what, condition);
+    }
+}

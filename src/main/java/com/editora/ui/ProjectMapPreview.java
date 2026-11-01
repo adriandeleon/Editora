@@ -978,6 +978,28 @@ final class ProjectMapPreview extends StackPane {
         });
     }
 
+    /**
+     * Scrolls a whole-file card to {@code shown}'s lines and marks them as a selection, the declaration line first
+     * on screen, as an outline beside a code view moves the view (review 3, E8). False — nothing moved — for a
+     * declaration card, a card that shows no text, or lines past what the card holds (the preview's read cap).
+     */
+    boolean revealRange(Range shown) {
+        if (disposed || range != null || shown == null || frame.getCenter() != textPane) {
+            return false;
+        }
+        int paragraphs = editor.getParagraphs().size();
+        if (shown.line() >= paragraphs || shown.startLine() >= paragraphs || editor.getLength() == 0) {
+            return false;
+        }
+        int first = Math.max(0, shown.startLine());
+        int last = Math.max(first, Math.min(shown.endLine(), paragraphs - 1));
+        int start = editor.getAbsolutePosition(first, 0);
+        int end = editor.getAbsolutePosition(last, editor.getParagraph(last).length());
+        editor.selectRange(end, start); // the caret at the top: keyboard reading carries on from there
+        editor.showParagraphAtTop(first);
+        return true;
+    }
+
     /** True while the card mirrors an open buffer, whose edits arrive without any filesystem event. */
     boolean showsOpenBuffer() {
         return fromBuffer;

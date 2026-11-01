@@ -88,6 +88,12 @@ final class ProjectMapStickyNotes {
             zoom.xProperty().bind(card.mapScaleProperty());
             zoom.yProperty().bind(card.mapScaleProperty());
             getTransforms().add(zoom);
+            // Typing in a sheet is use of its card: the card is not evicted under the user's hands (review 3, C1).
+            focusWithinProperty().addListener((obs, was, within) -> {
+                if (within) {
+                    onActivate.run();
+                }
+            });
             addEventFilter(KeyEvent.KEY_PRESSED, event -> {
                 double[] step = ProjectMapPreview.geometryStep(event);
                 if (step != null && (step[0] != 0 || step[1] != 0)) {
