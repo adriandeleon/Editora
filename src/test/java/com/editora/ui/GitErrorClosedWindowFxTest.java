@@ -75,7 +75,13 @@ class GitErrorClosedWindowFxTest {
             git(repo, "push", "-q", "-u", "origin", "main");
             Files.writeString(repo.resolve("plain.txt"), "two\n");
             git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "second");
-            git(repo, "config", "remote.origin.receivepack", "sleep 2; echo 'remote: rejected by policy' >&2; false");
+            // The remote leaves a marker once git really runs, so the window closes mid-push, not before it starts.
+            Path started = w.fx.configDir.resolve("push-started");
+            git(
+                    repo,
+                    "config",
+                    "remote.origin.receivepack",
+                    "touch '" + started + "'; sleep 2; echo 'remote: rejected by policy' >&2; false");
             MainController other = FxTestSupport.callOnFx(() -> {
                 w.fx.windowManager.newWindow();
                 List<?> holders = FxTestSupport.field(w.fx.windowManager, "windows");
@@ -87,6 +93,7 @@ class GitErrorClosedWindowFxTest {
             FxTestSupport.runOnFx(w.git::gitPush);
             String pushing = tr("status.gitRunning", tr("gitlabel.push"));
             GitFeatureFx.await("the push to start", () -> w.messages().contains(pushing));
+            GitFeatureFx.await("git to reach the remote", () -> Files.exists(started));
             Stage stage = FxTestSupport.field(w.fx.controller, "stage");
             FxTestSupport.runOnFx(() -> {
                 stage.fireEvent(new WindowEvent(stage, WindowEvent.WINDOW_CLOSE_REQUEST));

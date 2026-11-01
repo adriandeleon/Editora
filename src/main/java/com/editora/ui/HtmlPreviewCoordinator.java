@@ -199,7 +199,10 @@ final class HtmlPreviewCoordinator {
         Path moved = target.toAbsolutePath().normalize();
         host.forEachBuffer(b -> {
             Path p = b.getPath();
-            if (p != null && p.toAbsolutePath().normalize().startsWith(moved)) {
+            // a remote tab's path is on another file system: its startsWith(a local path) throws
+            if (p != null
+                    && p.getFileSystem() == moved.getFileSystem()
+                    && p.toAbsolutePath().normalize().startsWith(moved)) {
                 ensureControl(b);
                 onBufferEdited(b);
             }

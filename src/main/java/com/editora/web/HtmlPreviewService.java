@@ -218,6 +218,9 @@ public final class HtmlPreviewService {
      * encrypted file's plaintext above all (E201). The site reloads: its file set changed.
      */
     public void moved(Path old) {
+        if (old.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
+            return; // a remote file is never served, and comparing it with local paths throws
+        }
         Path p = normalized(old);
         boolean dropped = live.keySet().removeIf(k -> k.startsWith(p));
         if (dropped || serves(p)) {
