@@ -755,6 +755,7 @@ class ProjectMapLayoutFxTest {
                             tr("project.map.layout.compactChains"),
                             tr("project.map.filter.hideOpenNotes"),
                             tr("project.map.navigation.followActiveFile"),
+                            tr("project.map.openCards"), // the open cards' list (review 3, C10)
                             tr("project.map.print"),
                             tr("project.map.exportPdf")),
                     items);

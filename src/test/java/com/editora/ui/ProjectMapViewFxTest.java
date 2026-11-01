@@ -1056,12 +1056,17 @@ class ProjectMapViewFxTest {
                         .getChildren()
                         .contains(editorScroll));
                 javafx.scene.control.Label readOnly = FxTestSupport.field(preview, "readOnly");
-                assertEquals(tr("project.map.preview.readOnly"), readOnly.getText());
+                // A lock, named for screen readers and in its tooltip (review 3, C11).
+                assertEquals(tr("project.map.preview.readOnly"), readOnly.getAccessibleText());
+                assertEquals(
+                        tr("project.map.preview.readOnly"),
+                        readOnly.getTooltip().getText());
                 Button zoomIn = FxTestSupport.field(preview, "zoomIn");
                 zoomIn.fire();
                 assertTrue((double) FxTestSupport.field(preview, "contentZoom") > 1.0);
 
                 preview.relocate(40, 40);
+                mapView.layout(); // connectors are drawn once per pulse, at its layout pass (review 3, D5)
                 Object movedConnector = connectors.get(file);
                 assertTrue(
                         Math.abs((double) FxTestSupport.call(movedConnector, "endX", new Class<?>[0]) - initialEndX)
