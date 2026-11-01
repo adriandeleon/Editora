@@ -1719,6 +1719,18 @@
     -fx-font-size: 10px;
     -fx-text-fill: -color-fg-muted;
 }
+.project-map-preview-cut {
+    /* The last line of a card cut at the display cap: the text stops here, Open shows the rest. */
+    -fx-font-size: 11px;
+    -fx-font-style: italic;
+    -fx-text-fill: -color-fg-muted;
+    -fx-alignment: center;
+    -fx-padding: 3 8 4 8;
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 0 0 8 8;
+    -fx-border-color: -color-border-default transparent transparent transparent;
+    -fx-cursor: hand;
+}
 .project-map-preview-readonly {
     -fx-background-color: -color-neutral-muted;
     -fx-background-radius: 4;

@@ -76,6 +76,16 @@ import static com.editora.i18n.Messages.tr;
 final class ProjectMapPreview extends StackPane {
 
     static final int MAX_PREVIEW_CHARS = 400_000;
+    /**
+     * What an outline reads of a file, and a declaration card its file: far more than a whole-file card shows, so
+     * the declarations past the card's cap (k8s's {@code core/v1/types.go}: Node, Namespace, Secret…) are listed and
+     * open (Project Map review 3, C2). Plain text only; read off the FX thread.
+     */
+    static final int MAX_OUTLINE_CHARS = 4_000_000;
+
+    private static final int MAX_OUTLINE_BYTES = 4_000_000;
+    /** Past this size a card does not stream the rest of a cut file to count its lines. */
+    private static final long MAX_LINE_COUNT_BYTES = 64_000_000;
 
     private static final int MAX_PREVIEW_BYTES = 1_000_000;
     private static final int MAX_IMAGE_BYTES = 20_000_000;
@@ -232,7 +242,12 @@ final class ProjectMapPreview extends StackPane {
             @Nullable Image image,
             boolean truncated,
             LoadProblem problem,
-            @Nullable Stamp stamp) {}
+            @Nullable Stamp stamp,
+            int fileLines) {
+        Loaded(String text, @Nullable Image image, boolean truncated, LoadProblem problem, @Nullable Stamp stamp) {
+            this(text, image, truncated, problem, stamp, -1);
+        }
+    }
 
     private final Consumer<Path> onOpenFile;
     private final BorderPane frame = new BorderPane();
@@ -318,6 +333,10 @@ final class ProjectMapPreview extends StackPane {
     private int fullLines;
     /** The text shown is cut short at the read or display cap. */
     private boolean truncatedShown;
+    /** Lines in the whole file when the text shown is cut short, or -1 when not known. */
+    private int fileLines = -1;
+    /** The last line of a cut card: the text stops here, and Open shows the rest (C2). */
+    private final Label cutFooter = new Label();
     /** The declaration this card shows is no longer in its file: the card keeps its last lines. */
     private boolean symbolMissing;
     /** A declaration card's declaration line as last shown: where to look for it in edited text. */
@@ -491,6 +510,16 @@ final class ProjectMapPreview extends StackPane {
         imageScroll.setFitToWidth(false);
         imageScroll.setFitToHeight(false);
         frame.setCenter(textPane);
+        cutFooter.setText(tr("project.map.preview.endsHere"));
+        cutFooter.getStyleClass().add("project-map-preview-cut");
+        cutFooter.setMaxWidth(Double.MAX_VALUE);
+        cutFooter.setOnMouseClicked(event -> {
+            if (event.getButton() == javafx.scene.input.MouseButton.PRIMARY && !open.isDisabled()) {
+                open.fire(); // "Open to read the rest"
+                event.consume();
+            }
+        });
+        frame.centerProperty().addListener((observable, before, now) -> updateCutFooter());
         noteMarks.setSpans(this::noteSpans, () -> !marked.isEmpty()); // inert until notes are stuck on the card
         noteMarks.setActive(true);
 
@@ -768,7 +797,13 @@ final class ProjectMapPreview extends StackPane {
     private String idleStatus(boolean truncated) {
         java.util.List<String> parts = new java.util.ArrayList<>(3);
         Range shown = range;
-        if (truncated) {
+        if (truncated && shown == null && fullLines > 0) {
+            // How much of the file the card holds, not only that it is cut (C2).
+            parts.add(
+                    fileLines > fullLines
+                            ? tr("project.map.preview.showingLines", fullLines, fileLines)
+                            : tr("project.map.preview.showingFirstLines", fullLines));
+        } else if (truncated) {
             parts.add(tr("project.map.preview.truncated"));
         } else if (shown != null && symbolMissing) {
             parts.add(tr("project.map.preview.symbolMissing"));
@@ -864,6 +899,7 @@ final class ProjectMapPreview extends StackPane {
         fullText = "";
         fullLines = 0;
         truncatedShown = false;
+        fileLines = -1;
         updateRangeChrome();
         open.setDisable(false);
         frame.setCenter(textPane);
@@ -875,13 +911,14 @@ final class ProjectMapPreview extends StackPane {
         toFront();
 
         if (openBuffer && content != null) {
-            String text = capText(content.text(), content.truncated());
+            String text = cutContent(content);
             boolean truncated =
                     content.truncated() || text.length() < content.text().length();
+            int lines = truncated && !content.truncated() ? lineCount(content.text()) : -1;
             // Known before the card is placed, so it is placed at this size.
             preferredWidth = fittedWidth(visible(text));
             ensurePlaced();
-            showLoaded(requested, path, new Loaded(text, null, truncated, LoadProblem.NONE, null));
+            showLoaded(requested, path, new Loaded(text, null, truncated, LoadProblem.NONE, null, lines));
             highlight(requested, path, text, truncated);
             return;
         }
@@ -891,9 +928,10 @@ final class ProjectMapPreview extends StackPane {
 
     private void loadFromDisk(long requested, Path requestedPath) {
         String charset = editorConfigCharset;
+        boolean whole = range != null; // a declaration card reads past the display cap: it shows only its lines
         loading = true;
         submitLatest(() -> {
-            Loaded loaded = load(requestedPath, charset);
+            Loaded loaded = load(requestedPath, charset, whole);
             Platform.runLater(() -> {
                 if (requested == generation.get()) {
                     loading = false;
@@ -923,9 +961,10 @@ final class ProjectMapPreview extends StackPane {
                     && frame.getCenter() == textPane) {
                 return; // the buffer was not edited: its text is not even read
             }
-            String text = capText(content.text(), content.truncated());
+            String text = cutContent(content);
             boolean truncated =
                     content.truncated() || text.length() < content.text().length();
+            int lines = truncated && !content.truncated() ? lineCount(content.text()) : -1;
             shownVersion = content.version();
             if (fromBuffer
                     && !missing
@@ -940,6 +979,7 @@ final class ProjectMapPreview extends StackPane {
             loading = false;
             fromBuffer = true;
             loadedStamp = null;
+            fileLines = lines;
             setMissing(false);
             if (showText(text, truncated)) {
                 highlight(requested, path, text, truncated);
@@ -1729,10 +1769,18 @@ final class ProjectMapPreview extends StackPane {
     }
 
     private static Loaded load(Path requestedPath, @Nullable String editorConfigCharset) {
+        return load(requestedPath, editorConfigCharset, false);
+    }
+
+    /**
+     * Reads a card's file. {@code whole}: up to {@link #MAX_OUTLINE_BYTES}, with no display cap — an outline's read
+     * and a declaration card's, which shows only its own lines of it.
+     */
+    private static Loaded load(Path requestedPath, @Nullable String editorConfigCharset, boolean whole) {
         Stamp stamp = stamp(requestedPath);
         try (InputStream in = Files.newInputStream(requestedPath)) {
             boolean imageFile = isImage(requestedPath);
-            int limit = imageFile ? MAX_IMAGE_BYTES : MAX_PREVIEW_BYTES;
+            int limit = imageFile ? MAX_IMAGE_BYTES : whole ? MAX_OUTLINE_BYTES : MAX_PREVIEW_BYTES;
             byte[] raw = in.readNBytes(limit + 1);
             boolean byteTruncated = raw.length > limit;
             byte[] bytes = byteTruncated ? Arrays.copyOf(raw, limit) : raw;
@@ -1749,9 +1797,13 @@ final class ProjectMapPreview extends StackPane {
                 return new Loaded(fileType(requestedPath), null, false, LoadProblem.BINARY, stamp);
             }
             String decoded = decode(bytes, byteTruncated, editorConfigCharset);
-            String text = capText(decoded, false);
+            String text = whole ? capOutlineText(decoded, false) : capText(decoded, false);
             boolean truncated = byteTruncated || text.length() < decoded.length();
-            return new Loaded(text, null, truncated, LoadProblem.NONE, stamp);
+            int lines = -1;
+            if (truncated && !whole) {
+                lines = byteTruncated ? countLines(bytes, in, stamp) : lineCount(decoded);
+            }
+            return new Loaded(text, null, truncated, LoadProblem.NONE, stamp, lines);
         } catch (NoSuchFileException gone) {
             return new Loaded("", null, false, LoadProblem.MISSING, null);
         } catch (IOException | RuntimeException error) {
@@ -1771,6 +1823,70 @@ final class ProjectMapPreview extends StackPane {
 
     /** A file's text as {@link #readText} reads it, and whether the read cap cut it short. */
     record ReadText(String text, boolean truncated) {}
+
+    /**
+     * {@code file}'s text as an outline reads it: decoded as a card reads it, but up to {@link #MAX_OUTLINE_BYTES}
+     * and not cut at the card's display cap, so the declarations past it are outlined too (C2). Off the FX thread.
+     */
+    static @Nullable ReadText readOutlineText(Path file, @Nullable String editorConfigCharset) {
+        if (isImage(file)) {
+            return null;
+        }
+        Loaded loaded = load(file, editorConfigCharset, true);
+        return loaded.problem() == LoadProblem.NONE && loaded.image() == null
+                ? new ReadText(loaded.text(), loaded.truncated())
+                : null;
+    }
+
+    /** {@code text} within the outline cap ({@link #MAX_OUTLINE_CHARS}), as {@link #capText} cuts. */
+    static String capOutlineText(String text, boolean alreadyCut) {
+        int end = Math.min(text.length(), MAX_OUTLINE_CHARS);
+        if ((end < text.length() || alreadyCut) && end > 0 && Character.isHighSurrogate(text.charAt(end - 1))) {
+            end--;
+        }
+        return end == text.length() ? text : text.substring(0, end);
+    }
+
+    /** What a card shows of an open buffer: a whole-file card its first part, a declaration card all it was given. */
+    private String cutContent(Content content) {
+        return range == null
+                ? capText(content.text(), content.truncated())
+                : capOutlineText(content.text(), content.truncated());
+    }
+
+    /** Lines in {@code text}. */
+    static int lineCount(String text) {
+        int lines = 1;
+        for (int i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) {
+            lines++;
+        }
+        return lines;
+    }
+
+    /**
+     * Lines in a file of which {@code read} are the first bytes, the rest still to come from {@code in}; -1 when the
+     * file is too big to count (or the count fails). Off the FX thread.
+     */
+    private static int countLines(byte[] read, InputStream in, @Nullable Stamp stamp) {
+        if (stamp == null || stamp.size() > MAX_LINE_COUNT_BYTES) {
+            return -1;
+        }
+        long lines = 1;
+        for (byte b : read) {
+            lines += b == '\n' ? 1 : 0;
+        }
+        try {
+            byte[] chunk = new byte[64 * 1024];
+            for (int got = in.read(chunk); got > 0; got = in.read(chunk)) {
+                for (int i = 0; i < got; i++) {
+                    lines += chunk[i] == '\n' ? 1 : 0;
+                }
+            }
+        } catch (IOException unreadable) {
+            return -1;
+        }
+        return (int) Math.min(Integer.MAX_VALUE, lines);
+    }
 
     /** As {@link #readText}, saying whether the text stops at the read cap. Off the FX thread. */
     static @Nullable ReadText readTextCut(Path file, @Nullable String editorConfigCharset) {
@@ -1974,6 +2090,7 @@ final class ProjectMapPreview extends StackPane {
             return false;
         }
         boolean first = shownText.isEmpty() && frame.getCenter() == textPane && editor.getLength() == 0;
+        fileLines = loaded.fileLines();
         if (!showText(loaded.text(), loaded.truncated())) {
             return false; // held until the outline says where the declaration went
         }
@@ -2136,10 +2253,25 @@ final class ProjectMapPreview extends StackPane {
         }
         Range shown = range;
         declarationText = shown == null ? "" : lineOf(fullText, shown.line());
+        updateCutFooter();
         status.setText(idleStatus(truncated));
         if (changed) {
             onTextShown.run();
         }
+    }
+
+    /** A whole-file card cut short ends in a last line saying so; any other card has none. */
+    private void updateCutFooter() {
+        boolean cut = truncatedShown && range == null && frame.getCenter() == textPane;
+        if (cut != (frame.getBottom() == cutFooter)) {
+            frame.setBottom(cut ? cutFooter : null);
+        }
+    }
+
+    /** The last line a cut card shows under its text, or null when the card's text is whole. For tests. */
+    @Nullable
+    Label cutFooter() {
+        return frame.getBottom() == cutFooter ? cutFooter : null;
     }
 
     /** The text the card cuts its lines from: the whole file as last shown (see {@link #applyText}). */

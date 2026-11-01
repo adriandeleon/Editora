@@ -162,7 +162,10 @@ copy the selection (**Copy All** with nothing selected), select all, add a
 bookmark at the clicked line, add a Personal Note for the selected or clicked lines, or **Move to Free Space**
 (the card is placed again, at its size, as a new card would be); opened from the
 keyboard (Menu key, `Shift-F10`) it opens at the caret and acts on the caret's line. The **Open**
-action promotes the previewed file to a normal editor tab.
+action promotes the previewed file to a normal editor tab. A file card cut at the display cap says how much of the
+file it holds ("Showing lines 1–7,515 of 9,135", or "Showing the first N lines" when the rest is not counted: past
+64 MB on disk, or an open buffer past 4,000,000 characters) and ends in a last line, "— Preview ends here; Open to
+read the rest —", which opens the file when clicked.
 
 An open preview is kept current without being moved or re-scrolled: a card that mirrors an open buffer
 looks for edits once a second while the Map is on screen and replaces only the range that changed (a buffer
@@ -240,16 +243,27 @@ bundled grammar, or Markdown, Typst, `.http` or Clojure; never an encrypted file
 The icon opens a **structure column**: the file's declarations, as the Structure window shows them, in the
 order they are written — one-line members included in every language (`StructureOutline.addFoldlessSymbols`,
 not a member call such as `x.run()`), a stylesheet's rules by selector or at-rule, a YAML file's keys read from
-its lines (`yamlKeyNodes`, so `on:` is a key, not a boolean). A callable is labelled with its parameter list:
+its lines (`yamlKeyNodes`, so `on:` is a key, not a boolean; a key whose value goes on below it — a block scalar,
+a list, even one at the key's own indent — spans that block). Some languages are read from their lines rather
+than from the grammar's symbols: Go (`GoOutline`, as gopls lists a file: functions; methods labelled by their
+receiver, `(*Kubelet).Run`, and listed under their type when the file declares it; types with their struct fields
+— embedded ones by their type — or interface methods; `const` and `var` names, a typed constant under its type;
+never the package clause), Java fields (`JavaFields`, `[modifiers] Type name =|;` lines at a class's member depth,
+which the grammar marks nothing on), a Dockerfile's build stages (one row per `FROM … [AS name]`) and a Makefile's
+targets with their recipes, a target defined in several `ifeq` branches labelled by line (`all (line 93)`). A class
+header wrapped before its brace (`extends …` / `implements … {`, Kotlin's `: Base {` under a wrapped constructor)
+takes its name from the line above (`StructureOutline.wrappedHeaderLine`); Kotlin annotations and shell `$…`
+expansions are not declarations; a `*.gradle.kts` script is outlined by its blocks' headers (`plugins {`,
+`tasks.register("hello") {`), as a Groovy build is. A callable is labelled with its parameter list:
 the outline's detail, else the parameter types read from its declaration line (`add(int, int)`; names where the
-language writes no types), else the bare name — never an invented `()`. A declaration that holds others (a class's members, a heading's subsections) ends in
+language writes no types; `(…)` in Go, which has no overloads), else the bare name — never an invented `()`. A declaration that holds others (a class's members, a heading's subsections) ends in
 a chevron and opens a further column, as a folder does; a file whose outline is one top-level declaration
 with members (most Java files) opens that declaration's column too. The icon sits in a filled disc while its
 column is open. A structure column has the usual title (`App.java · Structure`, or the declaration's
 label), count, filter, lock and close button, but no Show hidden checkbox. While its file is being outlined,
 when it cannot be read and when it has no declarations it holds one explanatory row; past 1,000 rows it ends
-in one that says how many were left out, and for a file past the read cap in one that says only its start was
-outlined.
+in one that says how many were left out, and for a file past the outline's 4,000,000-byte read in one that says
+only its start was outlined.
 
 **Clicking a declaration opens a declaration card**: the ordinary preview card showing only the declaration's
 lines — its block, from its declaration (or its fold region's first line, when that is above it) to the
@@ -258,7 +272,8 @@ directly above it (`ProjectMapStructure.range` / `leadingDocStart`) — and the 
 (`#` in Python, shell, YAML; not `#!`). A heading, and a `.http` request (its headers and body), runs to the line
 before the next one at its level; a declaration with no block of its own is its own line, unless the read cap cut
 the block it opens off, when it runs to the next declaration or the end of what was read. The card reads and
-highlights the whole file and shows that slice, so a line inside a comment or a string is coloured as in the
+highlights the whole file and shows that slice — read up to the outline's 4,000,000 bytes, not the whole-file
+card's display cap, so a declaration past that cap opens with its own lines — so a line inside a comment or a string is coloured as in the
 editor; its gutter keeps the file's numbers in the narrowed amber, its title reads `App.java › add(int, int)`, its
 status line says `Lines 9–19 of 29`, and it opens no taller than its lines need (but no smaller than the card
 minimum). **Open**, and **Open Narrowed** (the card's and the row's menu), open the file narrowed to the
@@ -281,11 +296,16 @@ column, collapsing the folder above its file or deleting the file closes the col
 `ProjectMapStructure` holds which files and declarations have a column open and the outline of each. Outlines
 are built on one daemon `project-map-outline` thread from the open buffer's text when the file is open —
 unsaved edits included, and the language server's document symbols when the Structure window has them for
-that buffer (`StructurePanel.serverSymbolsFor`) — or from the file read and decoded as a preview card reads
-it (`ProjectMapPreview.readText`, under the same 1,000,000-byte cap). Each result is checked against the newest
+that buffer (`StructurePanel.serverSymbolsFor`) — or from the file decoded as a preview card decodes it but read
+up to 4,000,000 bytes and not cut at the card's display cap (`ProjectMapPreview.readOutlineText`), so a file such
+as k8s's 480 KB `core/v1/types.go` is outlined whole. Each result is checked against the newest
 request for its file. They are brought up to date with the cards: an open buffer is compared by its text
-(once a second while one is on show), a closed file by its size and time on disk after every listing and
-watcher notification. When an outline changes, every declaration card is moved to its declaration's new lines
+(once a second while one is on show; a buffer past 200,000 characters that already has an outline is outlined
+again only once its text has not changed for 900 ms, so its rebuilds do not queue every other outline behind
+them), a closed file by its size and time on disk after every listing and
+watcher notification. The first listing of a root warms the grammar of the project's main language on the
+outline thread (the one a root build file names — `go.mod`, `pom.xml`, `Cargo.toml`, … — else the commonest
+outlined extension), so the first Structure column does not wait for it. When an outline changes, every declaration card is moved to its declaration's new lines
 (`setRange`); a card whose declaration is gone keeps its last lines and says "No longer in this file", with
 its bookmark and note actions off. Text that arrives before the outline is not cut by the old lines: the card
 follows its declaration line when lines were added or removed above it, and otherwise holds the new text,
@@ -686,8 +706,9 @@ that a reload does not contain is dropped, together with its selection-history e
 
 Each open preview owns a daemon `project-map-preview-loader`; the eight-card limit bounds their total
 number. Every loader queue is coalesced so stale work for that card does not accumulate. Closed text
-reads are capped at 1,000,000 bytes, image reads at 20,000,000 bytes, displayed text at 400,000
-characters, and syntax highlighting at 160,000 characters; neither cap splits a multi-byte sequence or
+reads are capped at 1,000,000 bytes (a declaration card's, and an outline's, at 4,000,000), image reads at
+20,000,000 bytes, a whole-file card's displayed text at 400,000 characters, and syntax highlighting at 160,000
+characters; neither cap splits a multi-byte sequence or
 a surrogate pair. Images are decoded on the loader thread. Per-card generation checks guard both
 loaded text and highlighting results. Binary, failed and missing reads produce explicit preview states.
 Card refreshes are debounced (250 ms after a state or listing notification, at most once a second for

@@ -107,6 +107,13 @@ final class ProjectMapStructure {
     private final Set<Path> autoExpand = new HashSet<>();
 
     private final Map<String, Boolean> supported = new HashMap<>();
+    /** Buffers past {@link #DEBOUNCE_CHARS} waiting for their text to settle before they are outlined again. */
+    private final Map<Path, javafx.animation.PauseTransition> debounced = new HashMap<>();
+    /** The text version each {@link #debounced} buffer waits with: a newer one starts the wait again. */
+    private final Map<Path, Long> debouncedVersion = new HashMap<>();
+    /** The project's main language was warmed for this root (see {@link #warmFor}). */
+    private boolean warmed;
+
     private final Function<Path, ProjectMapPreview.@Nullable Content> content;
     private Function<Path, @Nullable List<SymbolNode>> serverSymbols = path -> null;
     private Runnable onChanged = () -> {};
@@ -211,6 +218,10 @@ final class ProjectMapStructure {
         outlines.clear();
         requests.clear();
         autoExpand.clear();
+        debounced.values().forEach(javafx.animation.PauseTransition::stop);
+        debounced.clear();
+        debouncedVersion.clear();
+        warmed = false;
     }
 
     /** Carries open columns across an in-app rename or move; the moved file is outlined again. */
@@ -315,6 +326,7 @@ final class ProjectMapStructure {
      * {@code keep} are files a card still shows a declaration of.
      */
     void prune(Set<Path> loadedFiles, Set<Path> keep) {
+        warmFor(loadedFiles);
         open.removeIf(path -> {
             if (outlines.containsKey(path) || requests.containsKey(path)) {
                 return !loadedFiles.contains(path); // a file
@@ -402,9 +414,21 @@ final class ProjectMapStructure {
         request(file, known, this::contentFor);
     }
 
-    /** Asks for a file's outline (again); {@code known} is what is held, so an unchanged source costs a stat. */
     private void request(
             Path file, @Nullable Outline known, Function<Path, ProjectMapPreview.@Nullable Content> contents) {
+        request(file, known, contents, false);
+    }
+
+    /**
+     * Asks for a file's outline (again); {@code known} is what is held, so an unchanged source costs a stat. An open
+     * buffer past {@link #DEBOUNCE_CHARS} that already has an outline is outlined again only once its text has not
+     * changed for {@link #DEBOUNCE_MILLIS} ({@code settled}: that wait is over).
+     */
+    private void request(
+            Path file,
+            @Nullable Outline known,
+            Function<Path, ProjectMapPreview.@Nullable Content> contents,
+            boolean settled) {
         if (disposed) {
             return;
         }
@@ -431,6 +455,10 @@ final class ProjectMapStructure {
             }
             return; // the buffer has not changed since it was outlined
         }
+        if (text != null && known != null && !settled && debounces(text.length())) {
+            debounce(file, version >= 0 ? version : text.hashCode());
+            return;
+        }
         List<SymbolNode> server = buffer ? serverSymbolsFor(file) : null;
         String charset = current == null ? null : current.editorConfigCharset();
         long id = ++requestSequence;
@@ -449,6 +477,120 @@ final class ProjectMapStructure {
         } catch (RejectedExecutionException shutDown) {
             // disposed meanwhile
         }
+    }
+
+    /** Open buffers longer than this are outlined again only once their text settles (C16). */
+    static final int DEBOUNCE_CHARS = 200_000;
+    /** How long a big buffer's text must stay the same before it is outlined again. */
+    static final int DEBOUNCE_MILLIS = 900;
+
+    /**
+     * Whether a buffer of {@code length} characters waits for its text to settle before it is outlined again: a
+     * 480 KB file took about a second per outline on the single outline thread, once per edit, and every other
+     * card's outline queued behind it (review 3, C16).
+     */
+    static boolean debounces(int length) {
+        return length > DEBOUNCE_CHARS;
+    }
+
+    /** (Re)starts the wait of a big buffer whose text is now at {@code version}. FX thread. */
+    private void debounce(Path file, long version) {
+        javafx.animation.PauseTransition pending = debounced.get(file);
+        if (pending != null && java.util.Objects.equals(debouncedVersion.get(file), version)) {
+            return; // the same text as when the wait began: let it run out
+        }
+        if (pending != null) {
+            pending.stop();
+        }
+        javafx.animation.PauseTransition wait =
+                new javafx.animation.PauseTransition(javafx.util.Duration.millis(DEBOUNCE_MILLIS));
+        wait.setOnFinished(event -> {
+            if (debounced.get(file) != wait) {
+                return;
+            }
+            debounced.remove(file);
+            debouncedVersion.remove(file);
+            if (!disposed && (open.contains(file) || outlines.containsKey(file))) {
+                request(file, outlines.get(file), this::contentFor, true);
+            }
+        });
+        debounced.put(file, wait);
+        debouncedVersion.put(file, version);
+        wait.play();
+    }
+
+    /** Whether a big buffer's new outline is waiting for its text to settle. For tests. */
+    boolean isDebouncing(Path file) {
+        return debounced.containsKey(file);
+    }
+
+    /**
+     * Compiles the grammar of the project's main language on the outline thread, once per root, so the first
+     * Structure column in a Go or Java project does not wait for it: a cold Go grammar made the first outline of
+     * {@code kubelet.go} take 2.5 s (C16). The language is the one a build file at the root names ({@code go.mod},
+     * {@code pom.xml}, …), else the most common one among {@code files}.
+     */
+    void warmFor(Set<Path> files) {
+        if (warmed || disposed || files.isEmpty()) {
+            return;
+        }
+        warmed = true;
+        String sample = dominantOutlineFile(files);
+        if (sample == null) {
+            return;
+        }
+        try {
+            loader.submit(() -> {
+                try {
+                    StructureOutline.build(
+                            StructureOutline.Source.file(sample, "x\n").analyzed());
+                } catch (RuntimeException | LinkageError failed) {
+                    ProjectMapLog.unexpected("warming the outline of " + sample, failed);
+                }
+            });
+        } catch (RejectedExecutionException shutDown) {
+            // disposed meanwhile
+        }
+    }
+
+    /** A file name in the project's main outlined language, or null when none of {@code files} has an outline. */
+    static @Nullable String dominantOutlineFile(Set<Path> files) {
+        Map<String, Integer> byExtension = new HashMap<>();
+        String marked = null;
+        for (Path file : files) {
+            String name = PathDisplay.fileName(file).toLowerCase(Locale.ROOT);
+            String byMarker = switch (name) {
+                case "go.mod", "go.work" -> "main.go";
+                case "pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts" ->
+                    "Main.java";
+                case "cargo.toml" -> "main.rs";
+                case "pyproject.toml", "setup.py", "requirements.txt" -> "main.py";
+                case "package.json", "tsconfig.json" -> "index.ts";
+                default -> null;
+            };
+            if (byMarker != null && marked == null) {
+                marked = byMarker;
+            }
+            int dot = name.lastIndexOf('.');
+            if (dot > 0 && dot < name.length() - 1) {
+                byExtension.merge(name.substring(dot + 1), 1, Integer::sum);
+            }
+        }
+        if (marked != null) {
+            return marked;
+        }
+        String best = null;
+        int most = 0;
+        for (Map.Entry<String, Integer> e : byExtension.entrySet()) {
+            String sample = "x." + e.getKey();
+            if (e.getValue() > most
+                    && !"markdown".equals(com.editora.text.LanguageRegistry.forFileName(sample))
+                    && StructureOutline.supports(sample)) {
+                best = sample;
+                most = e.getValue();
+            }
+        }
+        return best;
     }
 
     /** Asks for the outline of {@code file} when it is not held: a card shows one of its declarations. */
@@ -572,7 +714,7 @@ final class ProjectMapStructure {
         if (stamp != null && stamp.equals(known)) {
             return null;
         }
-        ProjectMapPreview.ReadText read = ProjectMapPreview.readTextCut(file, charset);
+        ProjectMapPreview.ReadText read = ProjectMapPreview.readOutlineText(file, charset); // past the card cap
         if (read == null) {
             return new Outline(stamp, List.of(), Map.of(), Problem.UNREADABLE, false);
         }
@@ -677,10 +819,20 @@ final class ProjectMapStructure {
         String label = node.label() == null ? "" : node.label().strip().replaceAll("\\s+", " ");
         String kind = node.kind();
         boolean callable = "method".equals(kind) || "function".equals(kind) || "constructor".equals(kind);
+        String detail = node.detail() == null ? "" : node.detail().strip();
+        if (callable && "go".equals(language) && !label.endsWith(")")) {
+            // Go: the receiver in the name ((*Kubelet).Run, as gopls labels it) and "(…)" for the parameters — Go
+            // has no overloads, so their names only made the row too long to read (review 3, C15).
+            if (detail.equals(GoOutline.NO_PARAMETERS) || detail.equals(GoOutline.SOME_PARAMETERS)) {
+                return label + detail;
+            }
+            int dot = label.lastIndexOf('.');
+            String parameters = parameterTypes(declarationLine, dot >= 0 ? label.substring(dot + 1) : label, language);
+            return label + (parameters == null || !parameters.isEmpty() ? GoOutline.SOME_PARAMETERS : "()");
+        }
         if (!callable || label.indexOf('(') >= 0) {
             return label;
         }
-        String detail = node.detail() == null ? "" : node.detail().strip();
         if (detail.startsWith("[")) {
             return label + " " + detail; // a Clojure parameter vector
         }
@@ -745,10 +897,12 @@ final class ProjectMapStructure {
         if (inside.isEmpty()) {
             return "";
         }
-        boolean go = "go".equals(language);
+        if ("go".equals(language)) {
+            return "…"; // no overloads to tell apart: the list's names and types are only width (C15)
+        }
         List<String> types = new ArrayList<>();
         for (String parameter : splitTopLevel(inside)) {
-            String shown = go ? parameter.strip().replaceAll("\\s+", " ") : parameterType(parameter);
+            String shown = parameterType(parameter);
             if (!shown.isEmpty()) {
                 types.add(shown);
             }

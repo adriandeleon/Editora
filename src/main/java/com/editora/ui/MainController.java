@@ -9001,7 +9001,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         var area = buffer.getArea();
         int length = area.getLength();
-        int end = Math.min(length, ProjectMapPreview.MAX_PREVIEW_CHARS);
+        int end = Math.min(length, ProjectMapPreview.MAX_OUTLINE_CHARS); // a card cuts its own (C2)
         return ProjectMapPreview.Content.buffer(() -> area.getText(0, end), end < length, buffer.docVersion());
     }
 
