@@ -84,7 +84,13 @@ class InstallServiceNodeSettingTest {
                     service.installSync(InstallCatalog.serverInstall("html").orElseThrow(), config, id -> {});
             assertTrue(result.ok(), result.message());
             assertEquals(1, ran.size(), ran.toString());
-            assertEquals(bin.resolve("npm").toString(), ran.get(0).get(0));
+            // npm.cmd on Windows, as on PATH (nodeBin writes both)
+            boolean windows = System.getProperty("os.name", "")
+                    .toLowerCase(java.util.Locale.ROOT)
+                    .contains("win");
+            assertEquals(
+                    bin.resolve(windows ? "npm.cmd" : "npm").toString(),
+                    ran.get(0).get(0));
             assertEquals(List.of(bin.toString()), paths);
             assertTrue(Files.exists(WebServerInstall.folder(config).resolve("node_modules/node_modules/typescript")));
         } finally {
