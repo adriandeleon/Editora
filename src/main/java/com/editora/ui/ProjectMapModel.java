@@ -503,6 +503,18 @@ final class ProjectMapModel {
         private final long timeoutMillis;
         private final java.util.function.@Nullable Consumer<Path> beforeListForTest;
         private final Map<Key, List<Item>> cache = new java.util.concurrent.ConcurrentHashMap<>();
+        /**
+         * When a remote folder's cached listing was made. No watcher on this machine follows a remote folder, so
+         * its listing is reused for {@link #REMOTE_TTL_MILLIS} only, and dropped with every invalidation (an
+         * in-app change, a focus regain): one SFTP round trip per open folder per click was the alternative
+         * (Project Map review 3 A4).
+         */
+        private final Map<Key, Long> remoteListedAt = new java.util.concurrent.ConcurrentHashMap<>();
+        /** How long a remote folder's listing is reused. */
+        static final long REMOTE_TTL_MILLIS = 30_000;
+        /** The clock remote listings age by (tests move it). */
+        java.util.function.LongSupplier remoteClockMillisForTest = System::currentTimeMillis;
+
         private final Map<Key, InFlight> inFlight = new java.util.concurrent.ConcurrentHashMap<>();
         private final Map<Path, Long> versions = new java.util.concurrent.ConcurrentHashMap<>();
         private final java.util.concurrent.atomic.AtomicLong epoch = new java.util.concurrent.atomic.AtomicLong();
@@ -534,7 +546,18 @@ final class ProjectMapModel {
                 }
             }
             watched = Set.copyOf(next);
-            cache.keySet().removeIf(key -> !next.contains(key.directory()));
+            cache.keySet().removeIf(key -> !next.contains(key.directory()) && !remoteCached(key.directory()));
+        }
+
+        /** Whether {@code directory} is on a remote file system, whose listings are kept for a while. */
+        private static boolean remoteCached(Path directory) {
+            return !com.editora.vfs.Vfs.isLocal(directory);
+        }
+
+        /** Whether a remote folder's cached listing is young enough to reuse. */
+        private boolean remoteFresh(Key key) {
+            Long at = remoteListedAt.get(key);
+            return at != null && remoteClockMillisForTest.getAsLong() - at < REMOTE_TTL_MILLIS;
         }
 
         /** Runs (on a worker thread) when a listing that had been reported as not responding finishes. */
@@ -559,6 +582,7 @@ final class ProjectMapModel {
         void invalidateAll() {
             epoch.incrementAndGet();
             cache.clear();
+            remoteListedAt.clear();
         }
 
         boolean cached(Path directory, boolean showHidden) {
@@ -568,10 +592,11 @@ final class ProjectMapModel {
 
         private Listed list(Path directory, boolean showHidden, BooleanSupplier cancelled) {
             Key key = new Key(directory, showHidden);
-            boolean cacheable = !closed && watched.contains(directory);
+            boolean remote = remoteCached(directory) && !watched.contains(directory);
+            boolean cacheable = !closed && (watched.contains(directory) || remote);
             if (cacheable) {
                 List<Item> known = cache.get(key);
-                if (known != null) {
+                if (known != null && (!remote || remoteFresh(key))) {
                     return new Listed(known, false, false, true);
                 }
             }
@@ -593,8 +618,11 @@ final class ProjectMapModel {
                     && items != null
                     && epoch.get() == epochBefore
                     && versions.getOrDefault(directory, 0L) == versionBefore
-                    && watched.contains(directory)) {
+                    && (watched.contains(directory) || remote)) {
                 cache.put(key, items);
+                if (remote) {
+                    remoteListedAt.put(key, remoteClockMillisForTest.getAsLong());
+                }
             }
             return new Listed(items, false, false);
         }
