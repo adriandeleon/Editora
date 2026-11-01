@@ -1882,6 +1882,19 @@
     -fx-font-weight: bold;
     -fx-text-fill: -color-fg-default;
 }
+/* A sticky note's ×: closes that note on the card; the note itself stays saved. */
+.project-map-sticky-note-close {
+    -fx-padding: 0 3 0 3;
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-default;
+    -fx-background-color: transparent;
+    -fx-cursor: hand;
+}
+.project-map-sticky-note-close:hover {
+    -fx-background-color: -color-warning-emphasis;
+    -fx-text-fill: -color-fg-emphasis;
+    -fx-background-radius: 3;
+}
 .project-map-sticky-note-where .toolbar-icon {
     -fx-fill: -color-fg-default;
 }

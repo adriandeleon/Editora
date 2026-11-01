@@ -214,7 +214,9 @@ does not look pressed, says why, and a press turns that option off. A stored not
 card's text as an editor tab finds it (`ProjectMapStickyNotes.reanchored`, `NoteAnchors.relocate`), so a file
 changed outside Editora does not mark the wrong line; one whose text is gone is headed "Text not found in the file"
 and not marked. It sticks them on the card as **sticky
-notes** (`ProjectMapStickyNotes`): one small editable amber sheet per note, headed by its line, each tied by a
+notes** (`ProjectMapStickyNotes`): one small editable amber sheet per note, headed by its line and a × that
+closes that one note on the card (`closeNote`: it stays in the store and comes back when the card's notes are shown
+again; closing the last turns the Notes button off), each tied by a
 note-coloured connector from a dot on the card's edge at its line (the text's top or bottom when scrolled past)
 to the sheet. While the sheets are in sight, each note's text in the card is marked as an editor tab marks it —
 the editor's `NoteHighlightOverlay` over the card's text, an amber wash with a marker at the note's start, the whole
@@ -259,8 +261,8 @@ the block it opens off, when it runs to the next declaration or the end of what 
 highlights the whole file and shows that slice, so a line inside a comment or a string is coloured as in the
 editor; its gutter keeps the file's numbers in the narrowed amber, its title reads `App.java › add(int, int)`, its
 status line says `Lines 9–19 of 29`, and it opens no taller than its lines need (but no smaller than the card
-minimum). **Open** opens the file at the declaration; **Open Narrowed** (the card's and the row's menu) opens
-it narrowed to the declaration's fold block through `EditingCoordinator.narrowToFoldRegionAt`, as the Structure
+minimum). **Open**, and **Open Narrowed** (the card's and the row's menu), open the file narrowed to the
+declaration's fold block (a card whose declaration is gone from the file opens it at its last line instead) through `EditingCoordinator.narrowToFoldRegionAt`, as the Structure
 window's Narrow to fold region does. Bookmarks and Personal Notes added from a declaration card land on the
 file's own lines. Declaration cards are keyed by the declaration's row, so several of one file can be open,
 under the shared eight-card limit.

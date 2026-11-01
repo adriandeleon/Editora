@@ -171,19 +171,33 @@ class ProjectMapStructureFxTest {
                 Label status = FxTestSupport.field(card, "status");
                 assertEquals(tr("project.map.preview.lines", 6, 11, 17), status.getText());
 
-                // Open goes to the declaration's line; Open Narrowed to its block.
-                FxTestSupport.<javafx.scene.control.Button>field(card, "open").fire();
+                // Open, and the menu's Open Narrowed, open the file narrowed to the declaration's block.
+                javafx.scene.control.Button open = FxTestSupport.field(card, "open");
+                assertEquals(
+                        tr("project.map.preview.openNarrowedHelp"),
+                        open.getTooltip().getText());
+                open.fire();
                 FxTestSupport.call(card, "rebuildEditorContextMenu", new Class<?>[] {int.class}, 0);
                 ContextMenu menu = FxTestSupport.field(card, "editorContextMenu");
                 MenuItem openNarrowed = menu.getItems().getFirst();
                 assertEquals(tr("project.map.preview.openNarrowed"), openNarrowed.getText());
                 openNarrowed.fire();
             });
+            assertEquals(List.of(), openedAt, "not merely at its line");
+            assertEquals(2, narrowed.size());
+            for (Object[] opened : narrowed) {
+                assertEquals(app, opened[0]);
+                assertEquals(new FoldRegions.Region(8, 10), opened[1], "the fold block, without the doc");
+            }
+
+            // A declaration that is gone from its file has no block to narrow to: Open goes to its last line.
+            FxTestSupport.runOnFx(() -> {
+                card.setSymbolMissing(true);
+                FxTestSupport.<javafx.scene.control.Button>field(card, "open").fire();
+                card.setSymbolMissing(false);
+            });
             assertEquals(1, openedAt.size());
-            assertEquals(app, openedAt.getFirst()[0]);
             assertEquals(8, openedAt.getFirst()[1]);
-            assertEquals(1, narrowed.size());
-            assertEquals(new FoldRegions.Region(8, 10), narrowed.getFirst()[1], "the fold block, without the doc");
 
             // A second declaration of the same file gets a card of its own.
             FxTestSupport.runOnFx(() -> clickRow(map.surface(), reset));

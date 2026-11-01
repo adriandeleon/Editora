@@ -749,6 +749,26 @@ class ProjectMapCardsFxTest {
                 card.setNotesShown(true);
                 assertEquals(3, stickies(map).size());
 
+                // A sheet's × closes that one note on the card; the note stays in the store.
+                List<Region> three = stickies(map);
+                javafx.scene.control.Button close =
+                        (javafx.scene.control.Button) three.get(0).lookup(".project-map-sticky-note-close");
+                assertNotNull(close, "each sheet has a ×");
+                assertEquals(tr("project.map.sticky.close"), close.getAccessibleText());
+                close.fire();
+                assertEquals(2, stickies(map).size(), "only that note goes");
+                assertEquals(3, card.noteCount(), "it is still a note of the file");
+                assertTrue(card.notesShown());
+                map.view.refreshStates(); // a refresh from the store does not bring it back
+                assertEquals(2, stickies(map).size());
+                for (Region sheet : List.copyOf(stickies(map))) {
+                    ((javafx.scene.control.Button) sheet.lookup(".project-map-sticky-note-close")).fire();
+                }
+                assertTrue(stickies(map).isEmpty(), "the last one closed takes them all off");
+                assertFalse(card.notesShown(), "and turns the Notes button off");
+                card.setNotesShown(true);
+                assertEquals(3, stickies(map).size(), "showing the notes again brings every one back");
+
                 FxTestSupport.call(map.view, "closePreview", new Class<?>[] {ProjectMapPreview.class}, card);
                 assertTrue(stickies(map).isEmpty(), "they close with their card");
             });
