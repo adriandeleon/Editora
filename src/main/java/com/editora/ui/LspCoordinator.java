@@ -3113,8 +3113,9 @@ final class LspCoordinator {
         String coordinate = PomServerSupport.coordinateElement(lineText, column);
         int failuresBefore = pomCompletionNotice.failuresBefore(p); // read as the request goes out (E21)
         return result -> {
-            var items = com.editora.lsp.MavenPomServer.filterCompletion(
-                    prefix, result.items(), com.editora.completion.Completion::label);
+            var items = com.editora.lsp.MavenPomServer.hideEnvironmentValues( // no env values on screen (D31)
+                    com.editora.lsp.MavenPomServer.filterCompletion(
+                            prefix, result.items(), com.editora.completion.Completion::label));
             var filtered = items == result.items()
                     ? result
                     : new com.editora.completion.CompletionResult(items, result.incomplete());
@@ -3418,7 +3419,7 @@ final class LspCoordinator {
         if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
             // lemminx-maven answers initialize long before it can answer a request: its ready line waits for
             // the "Maven initialization done" progress end (Maven review C18).
-            for (var status : mavenReadyGate.onStatus(type, message)) {
+            for (var status : mavenReadyGates.onStatus(source, type, message)) { // one per root (E34)
                 narrateServerStatus(source, status.type(), status.message());
             }
             return;
@@ -3486,9 +3487,9 @@ final class LspCoordinator {
         return false;
     }
 
-    /** Holds the Maven server's ready status until its own initialization progress ends (C18). */
-    private final com.editora.lsp.MavenPomServer.ReadyGate mavenReadyGate =
-            new com.editora.lsp.MavenPomServer.ReadyGate();
+    /** Holds each Maven server's ready status until its own initialization progress ends (C18; per root, E34). */
+    private final com.editora.lsp.MavenPomServer.ReadyGates mavenReadyGates =
+            new com.editora.lsp.MavenPomServer.ReadyGates();
 
     private void narrateServerStatus(@Nullable String serverId, String type, @Nullable String message) {
         showStatusLine(statusNarrator.onStatus(serverId, type, message, System.currentTimeMillis()));
