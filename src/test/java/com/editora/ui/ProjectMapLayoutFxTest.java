@@ -152,7 +152,8 @@ class ProjectMapLayoutFxTest {
         List<ProjectMapModel.Entry> entries = new ArrayList<>(List.of(directory(project, null, 0)));
         Set<Path> expanded = new HashSet<>(Set.of(project));
         Path parent = project;
-        for (int depth = 1; depth <= 12; depth++) {
+        // Deep enough that even the 15% floor cannot fit it, whatever the platform's font makes a column's width.
+        for (int depth = 1; depth <= 40; depth++) {
             Path child = parent.resolve("level" + depth);
             entries.add(directory(child, parent, depth));
             entries.add(file(parent.resolve("Sibling" + depth + ".java"), parent, depth));
@@ -168,7 +169,7 @@ class ProjectMapLayoutFxTest {
             FxTestSupport.invoke(surface, "fitContent");
         });
         FxTestSupport.runOnFx(() -> {
-            assertEquals(0.15, zoom(surface), 0.0001, "twelve columns cannot fit: the floor is hit");
+            assertEquals(0.15, zoom(surface), 0.0001, "forty columns cannot fit: the floor is hit");
             assertInView(surface, boxFor(surface, deepest), "the selected row");
             Object column = columnBoxForParent(surface, deepest.getParent());
             assertTrue(origin(column, "y") >= 0, "its column header is in view");

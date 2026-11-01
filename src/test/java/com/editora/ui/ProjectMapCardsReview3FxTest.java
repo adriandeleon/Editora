@@ -247,7 +247,10 @@ class ProjectMapCardsReview3FxTest {
             assertTrue(status.getWidth() < title.getWidth(), "the status gives way first");
             assertNotNull(status.getTooltip(), "and is read in full from its tooltip");
             javafx.scene.control.Button open = FxTestSupport.field(card, "open");
-            assertEquals(open.prefWidth(-1), open.getWidth(), 0.5, "Open is never cut to O…");
+            // At least its preferred width (macOS snaps the laid-out width up to whole pixels).
+            assertTrue(
+                    open.getWidth() >= open.prefWidth(-1) - 0.5,
+                    "Open is never cut to O…: " + open.getWidth() + " < " + open.prefWidth(-1));
         });
     }
 
