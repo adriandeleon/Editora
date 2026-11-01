@@ -30,6 +30,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Check a download with
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
 
+### Fixed
+
+- **HTML typing (HTML review 2).**
+  - Accepting a CSS property now really opens the list of its values, and a folder in `href`/`src` its files: the
+    second list no longer flashes and closes, or never opens, with the real language server.
+  - A typed `=` brings the quotes Settings → LSP → HTML "Quotes for completed attributes" names (double, single or
+    none). Typing your own `'` replaces the pair (`class='x'` no longer becomes `class="'x'"`), a space or `>`
+    typed straight after takes the empty pair back, and no quotes go into `{% %}`, `{{ }}` or `<% %>` in a tag or
+    into code in the middle of a long inline script.
+  - Enter between `<style>|</style>` or `<script>|</script>` puts the end tag on its own line again.
+  - Tab in an inline `<script>` or `<style>` re-indents by its braces, as Enter does; Tab on a line in `<pre>` or
+    `<textarea>` keeps its whitespace and is never sent to the language server.
+  - Colour swatches move with the text typed before them instead of landing inside the words.
+  - The documentation panel beside the completion list is tall enough for its text (up to its maximum) instead of
+    showing two or three lines.
+
 ## [0.26.0] - 2026-10-29
 
 ### Added

@@ -808,7 +808,19 @@ targets) is added to its pulled or pushed diagnostics off the FX thread (`LspMan
 `editora`); a page no server serves shows the same check on the `.http` variable marks' squiggle overlay
 (`HttpVariableMarks.MarkupCheck`, gated on `!isLspActive()`). `textDocument/documentColor` (any server with a
 `colorProvider`: html, css) rides `requestFoldingRanges`' pulses; `EditorBuffer.setColorSwatches` draws an inlay per
-colour, painted by a per-buffer `data:` stylesheet with one class per colour (`ColorSwatchInlays`).
+colour, painted by a per-buffer `data:` stylesheet with one class per colour (`ColorSwatchInlays`). Between answers
+the cached colours move with each edit (`ColorSwatch.shifted`, on the area's `plainTextChanges`), so a swatch stays
+before its literal while the user types.
+
+**HTML typing aids.** A completion item whose command is `editor.action.triggerSuggest` (a CSS property, a folder in
+`href`) re-opens the list manually after the accept; the accept's own automatic passes at that version and caret
+(the queued one and the 90 ms settled-edit one) leave it alone (`BufferCompletion.twoStepVersion`) — they used to
+hide it or drop the server's answer in flight. Tab never asks the server to re-indent a line inside a verbatim
+element (`IndentWindow.serverReindents`): the server formats a two-line fragment without the element around it.
+Inside a page's `<script>`/`<style>` Tab and Enter use the embedded language's brace rules; a `<pre>`/`<textarea>`
+line keeps its whitespace. Auto-quote (`TagTyping`) follows `htmlAttributeQuotes` (an application-wide static set
+by `EditorSettingsCoordinator`), and `HtmlCaretRegion.before` heads its 20,000-char window with the start tag of
+the script or style the window begins inside, read backwards.
 
 **A refused `initialize` is not a crash.** A server that answers `initialize` with an error (its message kept as
 `LanguageServerSession.initializeRefusal`; the exit is reported only after LSP4J has read the server's last
