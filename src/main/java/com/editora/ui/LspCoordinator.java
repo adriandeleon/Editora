@@ -489,7 +489,7 @@ final class LspCoordinator {
         };
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setOnSharedServerEnded(this::sharedServerEnded);
-        lspManager.setOnWatchedFiles(this::buildFilesChanged);
+        lspManager.setOnWatchedFiles(this::rootWatcherChanged);
         lspManager.setOnInstallHold(this::installHold);
         lspManager.setWindowFocused(() -> {
             javafx.stage.Window w = host.window();
@@ -1045,10 +1045,16 @@ final class LspCoordinator {
                         ? serverProgram(serverId)
                         : serverLabel(serverId),
                 refusal);
+        if (refusal.kind() == com.editora.lsp.StartRefusal.Kind.XML_LOADS_MAVEN) {
+            refusedServers.put(serverId, said); // Doctor and Settings say so too, not "found" and "OK" (review 4, A32)
+        }
         host.setError(said);
         Platform.runLater(() -> host.setError(said));
         updateStatusBar();
     }
+
+    /** Servers Editora would not start with their command (the lemminx-maven guard), by id → what the status said. */
+    private final Map<String, String> refusedServers = new java.util.HashMap<>();
 
     /** The status-line words for a {@link com.editora.lsp.StartRefusal}. */
     static String startRefusedMessage(String server, com.editora.lsp.StartRefusal refusal) {
@@ -1127,7 +1133,10 @@ final class LspCoordinator {
         return said == null || said.isEmpty() ? null : said;
     }
 
-    /** {@link #serverFailure} or {@link #serverCrash}, whichever says why {@code serverId} is given up on. */
+    /**
+     * {@link #serverFailure}, {@link #serverCrash} or a refused start, whichever says why {@code serverId} is given up
+     * on or not running.
+     */
     @Nullable
     ServerTrouble serverTrouble(String serverId) {
         String crash = crashedServers.get(serverId);
@@ -1135,11 +1144,22 @@ final class LspCoordinator {
             return new ServerTrouble(crash, true);
         }
         String failing = failingServers.get(serverId);
-        return failing == null ? null : new ServerTrouble(failing, false);
+        if (failing != null) {
+            return new ServerTrouble(failing, false);
+        }
+        String refused = refusedServers.get(serverId);
+        return refused == null ? null : new ServerTrouble(refused, false, true);
     }
 
-    /** Why a server is given up on: what it said, and whether it crashed at start rather than failed requests. */
-    record ServerTrouble(String detail, boolean crashed) {}
+    /**
+     * Why a server is given up on: what it said (or, {@code refused}, what Editora said when it would not start its
+     * command), and whether it crashed at start rather than failed requests.
+     */
+    record ServerTrouble(String detail, boolean crashed, boolean refused) {
+        ServerTrouble(String detail, boolean crashed) {
+            this(detail, crashed, false);
+        }
+    }
 
     /** The user-facing name of an LSP request, for the echo line ("internal error on hover"). */
     static String methodLabel(String method) {
@@ -1668,6 +1688,7 @@ final class LspCoordinator {
         startBlocked.clear(); // a settings change (an install, a trust decision) may be what the server lacked
         failingServers.clear();
         crashedServers.clear();
+        refusedServers.clear();
         boolean on = ops.lspFeatureEnabled(); // effective: off in Simple UI mode
         // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
         // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
@@ -3110,8 +3131,9 @@ final class LspCoordinator {
         String coordinate = PomServerSupport.coordinateElement(lineText, column);
         int failuresBefore = pomCompletionNotice.failuresBefore(p); // read as the request goes out (E21)
         return result -> {
-            var items = com.editora.lsp.MavenPomServer.filterCompletion(
-                    prefix, result.items(), com.editora.completion.Completion::label);
+            var items = com.editora.lsp.MavenPomServer.hideEnvironmentValues( // no env values on screen (D31)
+                    com.editora.lsp.MavenPomServer.filterCompletion(
+                            prefix, result.items(), com.editora.completion.Completion::label));
             var filtered = items == result.items()
                     ? result
                     : new com.editora.completion.CompletionResult(items, result.incomplete());
@@ -3415,7 +3437,7 @@ final class LspCoordinator {
         if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
             // lemminx-maven answers initialize long before it can answer a request: its ready line waits for
             // the "Maven initialization done" progress end (Maven review C18).
-            for (var status : mavenReadyGate.onStatus(type, message)) {
+            for (var status : mavenReadyGates.onStatus(source, type, message)) { // one per root (E34)
                 narrateServerStatus(source, status.type(), status.message());
             }
             return;
@@ -3483,9 +3505,9 @@ final class LspCoordinator {
         return false;
     }
 
-    /** Holds the Maven server's ready status until its own initialization progress ends (C18). */
-    private final com.editora.lsp.MavenPomServer.ReadyGate mavenReadyGate =
-            new com.editora.lsp.MavenPomServer.ReadyGate();
+    /** Holds each Maven server's ready status until its own initialization progress ends (C18; per root, E34). */
+    private final com.editora.lsp.MavenPomServer.ReadyGates mavenReadyGates =
+            new com.editora.lsp.MavenPomServer.ReadyGates();
 
     private void narrateServerStatus(@Nullable String serverId, String type, @Nullable String message) {
         showStatusLine(statusNarrator.onStatus(serverId, type, message, System.currentTimeMillis()));
@@ -3749,9 +3771,7 @@ final class LspCoordinator {
                     if (JavaImportCheck.projectReason(problems, root) != null) {
                         say.run();
                     } else {
-                        var wait = new javafx.animation.PauseTransition(javafx.util.Duration.millis(600));
-                        wait.setOnFinished(e -> say.run());
-                        wait.play();
+                        sayOnceReasoned(root, 0, say);
                     }
                 }
             } else if (line.ready() && (root != null ? importFailedUnder(root) : importFailed.contains(key))) {
@@ -3767,6 +3787,23 @@ final class LspCoordinator {
     }
 
     /**
+     * Runs {@code say} once a project diagnostic names the failed import's cause, its folder with it, or after six
+     * seconds: Gradle's names it seconds after its WARNING, and the generic wrapper said first left the folder out
+     * (thirteenth review CK5).
+     */
+    private void sayOnceReasoned(@Nullable Path root, int tries, Runnable say) {
+        var wait = new javafx.animation.PauseTransition(javafx.util.Duration.millis(tries == 0 ? 600 : 500));
+        wait.setOnFinished(e -> {
+            if (tries >= 11 || JavaImportCheck.projectReason(problems, root) != null) {
+                say.run();
+            } else {
+                sayOnceReasoned(root, tries + 1, say);
+            }
+        });
+        wait.play();
+    }
+
+    /**
      * Stops {@code serverId} while its install is replaced (Doctor's Update), so it does not run on — or, on
      * Windows, hold open — the files being swapped out. The settings apply after the install starts it again, on
      * the new copy, as the files it serves are re-gated.
@@ -3774,6 +3811,7 @@ final class LspCoordinator {
     void stopServer(String serverId) {
         failingServers.remove(serverId); // the new copy gets a fresh chance
         crashedServers.remove(serverId);
+        refusedServers.remove(serverId);
         clearDiagnosticsForServer(serverId); // before shutdown: after it, nothing would re-publish an empty list
         lspManager.shutdownServer(serverId);
     }
@@ -3783,6 +3821,7 @@ final class LspCoordinator {
         startBlocked.clear();
         failingServers.clear();
         crashedServers.clear();
+        refusedServers.clear();
         importFailed.clear();
         nonProjectFiles.clear();
         refreshImportNotes();
@@ -5920,6 +5959,11 @@ final class LspCoordinator {
                 : com.editora.lsp.JavaMembers.lambdaArrow(text, offsetOf(text, scope.startLine()), caret);
         if (arrow >= 0) { // a lambda's super method is its functional interface's method, as in IntelliJ
             definitionAsSuper(ask, text, arrow);
+            return;
+        }
+        int header = com.editora.lsp.JavaMembers.anonymousHeaderAt(text, caret);
+        if (header >= 0) { // an anonymous class's header anywhere: outlined, a call's argument, any segment of its name
+            anonymousSuper(ask, text, new int[] {header, -1});
             return;
         }
         if (member.isType() && scope == null) {
@@ -9704,6 +9748,18 @@ final class LspCoordinator {
         watchedFlush.playFromStart();
     }
 
+    /**
+     * A tab was reloaded from disk: on lemminx its new text is also the saved one, and only a save makes lemminx
+     * revalidate the documents that use it when it is a schema or DTD (XML/pom review 4, B31). FX thread.
+     */
+    void reloadedFromDisk(EditorBuffer buffer) {
+        Path path = lspPath(buffer);
+        if (path != null && com.editora.lsp.XmlServerSettings.isLemminx(lspManager.managedServerId(path))) {
+            lspManager.changeDocument(path, buffer.getContent()); // the reloaded text first, then its save
+            lspManager.saveDocument(path, buffer.getContent());
+        }
+    }
+
     /** Convenience for the reload paths: a batch of files that changed on disk (kind CHANGED). */
     void watchedFilesReloaded(List<Path> files) {
         if (files == null || files.isEmpty()) {
@@ -9728,6 +9784,18 @@ final class LspCoordinator {
         pendingWatched.clear();
         lspManager.notifyWatchedFiles(batch);
         buildFilesChanged(batch);
+    }
+
+    /**
+     * A batch from the server roots' own watcher ({@link LspManager}), which sees every folder: build files, and a pom
+     * left out of a Maven server's workspace and fixed on disk in a folder the Project panel never expanded (E32).
+     */
+    private void rootWatcherChanged(List<LspManager.WatchedFile> changes) {
+        buildFilesChanged(changes);
+        pomCompletionNotice.filesChanged(changes.stream()
+                .filter(c -> c.kind() != LspManager.WatchedKind.DELETED)
+                .map(LspManager.WatchedFile::file)
+                .toList());
     }
 
     /**

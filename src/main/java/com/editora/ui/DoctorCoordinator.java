@@ -1147,6 +1147,12 @@ final class DoctorCoordinator {
                     return base.missing("doctor.tip.mavenIncomplete", String.join(", ", missingJars));
                 }
             }
+            if ("xml".equals(serverId)
+                    && ((failing != null && failing.refused())
+                            || com.editora.lsp.LemminxMavenGuard.loadsLemminxMaven(argv, true))) {
+                // Editora does not start an XML command that loads lemminx-maven: not "OK" (review 4, A32)
+                return base.missing("doctor.tip.xmlLoadsMaven").withDetail(path);
+            }
             if (failing != null && failing.crashed() && failing.detail().isEmpty()) {
                 // given up after crashing, with nothing on stderr: not OK while this window runs none (Bash A7)
                 return base.warn(path, "doctor.tip.serverCrashLoop");
@@ -1154,6 +1160,13 @@ final class DoctorCoordinator {
             if (failing != null) {
                 // it starts, then fails every request (C2); or it exits before it is ready, saying why (XML A4)
                 return base.warn(failing.detail(), troubleTip(serverId, failing.crashed(), base.install()));
+            }
+            String javaFallback = "xml".equals(serverId)
+                    ? com.editora.install.XmlServerInstall.javaFallbackVersion(argv, config)
+                    : null;
+            if (javaFallback != null) {
+                // the pom bundle's lemminx, not the pinned native build: named as such (review 4, A32)
+                return base.ok(tr("lsp.xml.javaFallback", javaFallback) + " — " + path);
             }
             if (pin != null) {
                 // Which release, and whether it is older than the one Editora installs and is tested with (D8).
@@ -1690,8 +1703,9 @@ final class DoctorCoordinator {
      * Where lemminx-maven keeps what it resolves: {@code .lemminx-maven} beside the local repository — settings.xml's
      * {@code <localRepository>}, else {@code ~/.m2/repository} — under the home Editora runs with (the server is
      * started with that {@code user.home}). lemminx-maven's {@code LocalRepositoryUtils} puts it in the local
-     * repository's parent folder, so a moved repository moves the store too (XML/pom review 3, A22/D21). Reads
-     * settings.xml: call it off the FX thread.
+     * repository's parent folder, so a moved repository moves the store too (XML/pom review 3, A22/D21). The server is
+     * sent this same absolute repository ({@code xml.maven.repo.local}), so {@code ${env.…}} and relative values
+     * cannot make the two disagree (review 4, A34). Reads settings.xml: call it off the FX thread.
      */
     static Path mavenStoreDir() {
         return mavenStoreDir(Path.of(System.getProperty("user.home", "")));

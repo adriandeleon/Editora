@@ -32,10 +32,14 @@ class XmlFormatCoordinatorFxTest {
     }
 
     private XmlFormatCoordinator coordinator(EditorBuffer buffer) {
+        return coordinator(() -> buffer);
+    }
+
+    private XmlFormatCoordinator coordinator(java.util.function.Supplier<EditorBuffer> active) {
         return new XmlFormatCoordinator(new PythonFormatCoordinator.Host() {
             @Override
             public @Nullable EditorBuffer activeBuffer() {
-                return buffer;
+                return active.get();
             }
 
             @Override
@@ -216,5 +220,39 @@ class XmlFormatCoordinatorFxTest {
         assertEquals(1, asked.size());
         assertArrayEquals(new long[] {1, 5}, asked.get(0));
         assertEquals(text, FxTestSupport.callOnFx(b::getContent));
+    }
+
+    /**
+     * XML/pom review 4, C35: switching tabs mid-format discarded it as "the file changed", and Format Document in the
+     * other tab said "Already formatting". Each tab now formats on its own, and the first goes into its own tab.
+     */
+    @Test
+    void switchingTabsMidFormatStillFormatsBothFiles() throws Exception {
+        status.clear();
+        EditorBuffer first = xml("<a><b>x</b></a>");
+        EditorBuffer second = xml("<c><d>y</d></c>");
+        EditorBuffer[] active = {first};
+        XmlFormatCoordinator f = coordinator(() -> active[0]);
+        FxTestSupport.runOnFx(() -> {
+            f.formatActive();
+            active[0] = second; // the user switches tabs while the first one formats
+            f.formatActive();
+        });
+        waitForStatus(tr("status.xml.formatted"));
+        waitForStatus(tr("status.xml.formattedOther", FxTestSupport.callOnFx(first::getTitle)));
+        assertTrue(!status.contains(tr("status.xml.formatRunning")), String.valueOf(status));
+        assertTrue(!status.contains(tr("status.lsp.formatStale")), String.valueOf(status));
+        assertEquals("<a>\n    <b>x</b>\n</a>", FxTestSupport.callOnFx(first::getContent));
+        assertEquals("<c>\n    <d>y</d>\n</c>", FxTestSupport.callOnFx(second::getContent));
+    }
+
+    /** XML/pom review 4, C34: the large-file question read "Format ?" for every saved file. */
+    @Test
+    void theLargeFileQuestionNamesTheFile() throws Exception {
+        EditorBuffer b = xml("<a/>");
+        FxTestSupport.runOnFx(() -> b.setPath(Path.of("data", "big.xml")));
+        assertEquals(
+                tr("dialog.xml.formatGrowth.header", "big.xml"),
+                FxTestSupport.callOnFx(() -> XmlFormatCoordinator.growthHeader(b)));
     }
 }

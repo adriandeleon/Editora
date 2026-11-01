@@ -50,6 +50,12 @@ class PomCompletionLeaveOutFxTest {
         final Map<Path, List<Path>> out = new ConcurrentHashMap<>();
         final AtomicInteger failures = new AtomicInteger();
         final List<Path> roots = new CopyOnWriteArrayList<>();
+        volatile long started = 0; // the server's launch: by default before every pom was written
+
+        @Override
+        public long startedMillis(Path file) {
+            return root(file) == null ? -1 : started;
+        }
 
         @Override
         public @Nullable Path root(Path file) {
@@ -157,11 +163,13 @@ class PomCompletionLeaveOutFxTest {
     }
 
     @Test
-    void anHonestEmptyAnswerLeavesNothingOutAndSaysNothing() throws Exception {
+    void anHonestEmptyAnswerIsDeliveredAtOnceAndLeavesNothingOut() throws Exception {
         Path r = root("reactor");
         pom(r, "app", GOOD); // an open tab may hold half-typed text: the disk is what counts (E21 falsepos)
+        pom(r, "nogav", "<project>\n<dependencies>\n"); // malformed, but the server never registered it (E33)
 
-        assertEquals("deliver", complete(support(), r.resolve("pom.xml"), MARKUP, false));
+        assertEquals("none", complete(support(), r.resolve("pom.xml"), MARKUP, false), "not held for a walk");
+        settle();
 
         assertTrue(maven.out.isEmpty());
         assertTrue(statuses.isEmpty(), statuses.toString());
@@ -169,7 +177,7 @@ class PomCompletionLeaveOutFxTest {
     }
 
     @Test
-    void aFailureWithNothingMalformedOnDiskRestartsThatRootOnce() throws Exception {
+    void aFailureAfterAPomChangedOnDiskRestartsThatRootOnceThenSaysCompletionIsOff() throws Exception {
         Path r = root("reactor");
         root("other");
         PomServerSupport support = support();
@@ -180,10 +188,55 @@ class PomCompletionLeaveOutFxTest {
         assertEquals(List.of(r), shutDown, "only that root (E23)");
         assertEquals(tr("status.maven.restartStale", "reactor"), statuses.get(statuses.size() - 1));
 
-        // the restart cleared the root's throttle: the next failure is searched at once, and not restarted again
+        // the restart cleared the root's throttle: the next failure is searched at once; the files are as they were
+        // at that restart, so it is not restarted again but said (review 4, E31: it restarted every two minutes)
         assertEquals("deliver", complete(support, r.resolve("pom.xml"), MARKUP, true));
         settle();
-        assertEquals(List.of(r), shutDown, "not again within the guard: no restart loop");
+        assertEquals(List.of(r), shutDown, "never twice for the same files");
+        assertEquals(PomServerSupport.completionOffStatus(r, null), statuses.get(statuses.size() - 1));
+    }
+
+    @Test
+    void aWellFormedPomItCannotBuildIsNamedAndNeverRestartedFor() throws Exception {
+        Path r = root("reactor");
+        pom(
+                r,
+                "dup",
+                "<project>\n<parent><artifactId>corp</artifactId></parent>\n<dependencies/>\n"
+                        + "<dependencies/>\n</project>");
+        maven.started = System.currentTimeMillis() + 60_000; // nothing changed since the server started
+
+        assertEquals("deliver", complete(support(), r.resolve("pom.xml"), MARKUP, true));
+        settle();
+
+        assertTrue(shutDown.isEmpty(), "a restart would build the same null project");
+        assertTrue(maven.out.isEmpty(), "a well-formed pom is never left out (decision 1)");
+        assertEquals(1, statuses.size(), statuses.toString());
+        assertTrue(statuses.get(0).startsWith("Maven completion is off"), statuses.get(0));
+        assertTrue(
+                statuses.get(0).contains(Path.of("dup", "pom.xml") + " (<dependencies> appears twice, line 4)"),
+                statuses.get(0));
+        assertFalse(statuses.get(0).contains("malformed"));
+    }
+
+    @Test
+    void aRetryAfterALeaveOutThatStillFailsSaysSo() throws Exception {
+        Path r = root("reactor");
+        Path broken = pom(r, "broken", "<project>");
+        pom(r, "dt", "<!DOCTYPE project [ <!ENTITY v \"1\"> ]>\n<project><version>&v;</version></project>");
+        maven.started = System.currentTimeMillis() + 60_000;
+        PomServerSupport support = support();
+
+        assertEquals("again", complete(support, r.resolve("pom.xml"), MARKUP, true));
+        assertEquals(List.of(broken), maven.out.get(r));
+        // the retry fails too (the DOCTYPE pom): searched at once, not hidden by the throttle behind a false claim
+        assertEquals("deliver", complete(support, r.resolve("pom.xml"), MARKUP, true));
+        settle();
+
+        assertTrue(statuses.get(0).startsWith("Left out " + PomServerSupport.displayPath(r, broken)), statuses.get(0));
+        assertTrue(statuses.get(1).contains("its DOCTYPE declares entities, line 1"), statuses.get(1));
+        assertTrue(shutDown.isEmpty());
+        assertEquals("none", complete(support, r.resolve("pom.xml"), MARKUP, true), "then throttled as before");
     }
 
     @Test
@@ -192,11 +245,14 @@ class PomCompletionLeaveOutFxTest {
         Path r2 = root("two");
         pom(r1, "x", "<project>");
         pom(r2, "y", "<project>");
+        maven.started = System.currentTimeMillis() + 60_000; // nothing changed since: no restart clears the throttle
         PomServerSupport support = support();
 
         assertEquals("again", complete(support, r1.resolve("pom.xml"), MARKUP, true));
         assertEquals("again", complete(support, r2.resolve("pom.xml"), MARKUP, true), "another root: searched too");
+        assertEquals("deliver", complete(support, r1.resolve("pom.xml"), MARKUP, true), "the retry: searched (E31)");
         assertEquals("none", complete(support, r1.resolve("pom.xml"), MARKUP, true), "the same root: throttled");
+        assertEquals("none", complete(support, r2.resolve("pom.xml"), List.of("commons-lang3"), false));
     }
 
     @Test
@@ -256,5 +312,27 @@ class PomCompletionLeaveOutFxTest {
         FxTestSupport.runOnFx(() -> support.filesChanged(new ArrayList<>(List.of(a))));
         settle();
         assertEquals(List.of(r), shutDown, "E24");
+    }
+
+    @Test
+    void thePomItCouldNotBuildFixedOnDiskRestartsItsRootWithoutACompletion() throws Exception {
+        Path r = root("reactor");
+        Path dup = pom(r, "dup", "<project>\n<artifactId>d</artifactId>\n<artifactId>d</artifactId>\n</project>");
+        maven.started = System.currentTimeMillis() + 60_000;
+        PomServerSupport support = support();
+        assertEquals("deliver", complete(support, r.resolve("pom.xml"), MARKUP, true));
+        settle();
+        assertTrue(statuses.get(0).startsWith("Maven completion is off"), statuses.toString());
+
+        FxTestSupport.runOnFx(() -> support.filesChanged(List.of(r.resolve("pom.xml"))));
+        settle();
+        assertTrue(shutDown.isEmpty(), "the pom it cannot build is still there: a restart would not help");
+
+        maven.started = 0; // the fix below is newer than the server
+        Files.writeString(dup, GOOD);
+        FxTestSupport.runOnFx(() -> support.filesChanged(List.of(dup)));
+        settle();
+        assertEquals(List.of(r), shutDown, "E32: noticed by the watcher, not at the next completion");
+        assertEquals(tr("status.maven.restartStale", "reactor"), statuses.get(statuses.size() - 1));
     }
 }

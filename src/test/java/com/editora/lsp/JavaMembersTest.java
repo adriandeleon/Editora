@@ -565,4 +565,17 @@ class JavaMembersTest {
         MemberSpan a = new MemberSpan("A", "class", 0, 4, 0, 6, List.of(ctor));
         assertEquals(a, JavaMembers.typeAt(List.of(a), 2, 4), "a constructor's line: its class (BK3)");
     }
+
+    /** An anonymous class's header from any segment of its name, also as a call's argument (fifteenth lows). */
+    @Test
+    void anAnonymousHeaderIsFoundWhereverTheClassIsWritten() {
+        String text = "void f() {\n    sort(new Comparator<>() {\n        public int compare(A a, A b) { return 0; }\n"
+                + "    });\n    Object e = new java.util.Map.Entry<>() { };\n}\n";
+        assertEquals(text.indexOf("Comparator<>"), JavaMembers.anonymousHeaderAt(text, text.indexOf("Comparator") + 2));
+        int entry = text.indexOf("Entry<>");
+        assertEquals(entry, JavaMembers.anonymousHeaderAt(text, text.indexOf("java.util") + 1), "the package segment");
+        assertEquals(entry, JavaMembers.anonymousHeaderAt(text, text.indexOf("Map.Entry") + 1), "the outer type");
+        assertEquals(-1, JavaMembers.anonymousHeaderAt(text, text.indexOf("sort")), "the call, not the class");
+        assertEquals(-1, JavaMembers.anonymousHeaderAt(text, text.indexOf("return")), "a method's body");
+    }
 }

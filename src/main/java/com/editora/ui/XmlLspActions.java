@@ -170,7 +170,8 @@ final class XmlLspActions {
     /**
      * XML: Generate Grammar… (XML review 2 C8): lemminx's "Generate … and bind" fixes for the active document, which
      * it offers only on its no-grammar diagnostic — never reported while "Files without a grammar" is Nothing, the
-     * default. Asks for them with that diagnostic at the root element, lists them and applies the one picked.
+     * default. Asks for them with that diagnostic at the root element, lists them (not the XSD ones for a namespaced
+     * root, XML/pom review 4, C33) and applies the one picked.
      */
     void generateGrammar() {
         Active active = activeXml();
@@ -196,10 +197,13 @@ final class XmlLspActions {
                 new org.eclipse.lsp4j.Position(start[0], start[1]), new org.eclipse.lsp4j.Position(end[0], end[1]));
         // A DOCTYPE with only an internal subset is no binding, but a second DOCTYPE is not well-formed (C24)
         boolean doctype = XmlGrammarBinding.hasDoctype(active.text());
+        // lemminx's XSD generator knows no namespaces: its schema would fail a namespaced document at once (C33)
+        boolean namespaced = XmlServer.rootInNamespace(active.text(), root[0], root[1]);
         lsp.codeActionsFor(path, XmlServer.noGrammarDiagnostic(range), items -> {
             List<LspManager.CodeActionItem> fixes = items.stream()
                     .filter(item -> XmlServer.generatesGrammar(item.raw()))
                     .filter(item -> !doctype || !XmlServer.bindsWithDoctype(item.raw()))
+                    .filter(item -> !namespaced || !XmlServer.generatesXsd(item.raw()))
                     .toList();
             if (fixes.isEmpty()) {
                 host.setStatus(tr("status.xml.generateNone"));

@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -151,12 +152,18 @@ class DoctorCatalogFxTest {
         /** Servers that exit before they are ready, by id → what they said (XML review A4). */
         final Map<String, String> crashes = new HashMap<>();
 
+        /** Servers Editora would not start, by id → what the status line said (review 4, A32). */
+        final Map<String, String> refused = new HashMap<>();
+
         @Override
         public LspCoordinator.ServerTrouble lspServerFailure(String serverId) {
             if (crashes.containsKey(serverId)) {
                 return new LspCoordinator.ServerTrouble(crashes.get(serverId), true);
             }
             String failing = failures.get(serverId);
+            if (failing == null && refused.containsKey(serverId)) {
+                return new LspCoordinator.ServerTrouble(refused.get(serverId), false, true);
+            }
             return failing == null ? null : new LspCoordinator.ServerTrouble(failing, false);
         }
 
@@ -880,7 +887,7 @@ class DoctorCatalogFxTest {
         DoctorCheck incomplete = spec(specs(host, ops), "lsp.maven-pom").probe().get();
         assertEquals(DoctorStatus.MISSING, incomplete.status());
         assertEquals("doctor.tip.mavenIncomplete", incomplete.tipKey());
-        assertEquals(List.of("guava-*.jar, commons-lang3-*.jar, jsoup-*.jar"), incomplete.tipArgs());
+        assertEquals(List.of("guava-*.jar, commons-lang3-*.jar, jsoup-1.14.*.jar"), incomplete.tipArgs());
         assertEquals(DoctorCheck.Install.SERVER, incomplete.install(), "Install… repairs it");
 
         for (var jar : InstallCatalog.LEMMINX_MAVEN_EXTRA_JARS) {
@@ -901,6 +908,62 @@ class DoctorCatalogFxTest {
         assertEquals(DoctorStatus.WARN, crashing.status());
         assertEquals("doctor.tip.serverCrashing", crashing.tipKey());
         assertEquals("version `GLIBC_2.34' not found", crashing.detail());
+    }
+
+    /**
+     * An XML command that loads lemminx-maven is not started, so its row is not "OK" (it was, while only the status
+     * line said so); the Java lemminx XML falls back to is named as such, with its release (review 4, A32).
+     */
+    @Test
+    void theXmlRowSaysARefusedCommandAndNamesTheJavaFallback(@TempDir Path dir) throws Exception {
+        Host host = new Host();
+        host.config = dir.resolve("config");
+        Ops ops = new Ops();
+        ops.servers = List.of("xml");
+        String javaExe = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+        Path copy = Files.createDirectories(dir.resolve("copy"));
+        Files.writeString(copy.resolve("lemminx-maven-0.12.0.jar"), "");
+        ops.configured = Set.of("xml");
+        ops.argv.put(
+                "xml",
+                List.of(
+                        javaExe,
+                        "-cp",
+                        copy + java.io.File.separator + "*",
+                        com.editora.install.InstallCatalog.LEMMINX_MAIN_CLASS));
+
+        DoctorCheck refused = spec(specs(host, ops), "lsp.xml").probe().get();
+        assertEquals(DoctorStatus.MISSING, refused.status(), refused.detail());
+        assertEquals("doctor.tip.xmlLoadsMaven", refused.tipKey());
+        assertEquals(DoctorCheck.Install.NONE, refused.install(), "the user's own command: Settings, not Install");
+
+        ops.refused.put("xml", "XML was not started: its command loads lemminx-maven");
+        ops.argv.put("xml", List.of(javaExe, "-version"));
+        DoctorCheck recorded = spec(specs(host, ops), "lsp.xml").probe().get();
+        assertEquals(DoctorStatus.MISSING, recorded.status(), "a project's command this window refused");
+        assertEquals("doctor.tip.xmlLoadsMaven", recorded.tipKey());
+
+        ops.refused.clear();
+        ops.configured = Set.of();
+        Path maven = Files.createDirectories(host.config.resolve(com.editora.install.InstallCatalog.LEMMINX_MAVEN_DIR));
+        List<String> jars = new java.util.ArrayList<>();
+        for (String artifact : com.editora.install.XmlServerInstall.PLAIN_LEMMINX_ARTIFACTS) {
+            String version = artifact.equals("org.eclipse.lemminx")
+                    ? "0.30.1"
+                    : artifact.equals("jsoup") ? com.editora.install.InstallCatalog.JSOUP_VERSION : "1.0";
+            jars.add(Files.writeString(maven.resolve(artifact + "-" + version + ".jar"), "")
+                    .toString());
+        }
+        ops.argv.put(
+                "xml",
+                List.of(
+                        javaExe,
+                        "-cp",
+                        String.join(java.io.File.pathSeparator, jars),
+                        com.editora.install.InstallCatalog.LEMMINX_MAIN_CLASS));
+        DoctorCheck fallback = spec(specs(host, ops), "lsp.xml").probe().get();
+        assertEquals(DoctorStatus.OK, fallback.status(), fallback.tipKey());
+        assertTrue(fallback.detail().startsWith(tr("lsp.xml.javaFallback", "0.30.1") + " — "), fallback.detail());
     }
 
     /**

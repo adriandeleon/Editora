@@ -292,4 +292,94 @@ class XmlServerFxTest {
                 List.of("xml:" + XmlServer.OPEN_URI + ":1", "choose:Bind…", "xml:" + XmlServer.BINDING_WIZARD + ":1"),
                 asked);
     }
+
+    /**
+     * XML/pom review 4, B32: in an XSD every attribute has a declaration in the meta-schema, so typeDefinition on a
+     * {@code schemaLocation} value answered with lemminx's cached {@code XMLSchema.xsd}. In a value, the link first.
+     */
+    @Test
+    void inAValueTheDocumentLinkComesBeforeTheGrammarDeclaration() throws Exception {
+        var fake = open();
+        fake.documentLinkResponse =
+                List.of(new DocumentLink(range(1, 91, 99), xsd.toUri().toString()));
+        fake.typeDefinitionResponse =
+                List.of(new Location(root.resolve("XMLSchema.xsd").toUri().toString(), range(1224, 2, 9)));
+
+        List<LspManager.Target> inValue = await(cb -> manager.definition(file, 1, 94, cb));
+        assertEquals(List.of(new LspManager.Target(xsd, 0, 0)), inValue);
+        assertEquals(0, fake.typeDefinitions.size(), "the link answered: no declaration asked for");
+
+        List<LspManager.Target> onName = await(cb -> manager.definition(file, 1, 70, cb)); // the attribute's name
+        assertEquals(root.resolve("XMLSchema.xsd"), onName.get(0).file(), "a name still goes to its declaration");
+    }
+
+    /** XML/pom review 4, B33: a link to a local file that is not there says its name, and opens nothing. */
+    @Test
+    void aLinkToAMissingFileNamesIt() throws Exception {
+        var fake = open();
+        fake.documentLinkResponse = List.of(new DocumentLink(
+                range(1, 91, 99), root.resolve("missing.xsd").toUri().toString()));
+        fake.typeDefinitionResponse = List.of(new Location(xsd.toUri().toString(), range(0, 1, 3)));
+
+        List<LspManager.Target> targets = await(cb -> manager.definition(file, 1, 94, cb));
+
+        assertEquals(List.of(), targets);
+        assertEquals("missing.xsd", manager.lastMissingInclude());
+        assertEquals(0, fake.typeDefinitions.size(), "not the declaration of the attribute instead");
+    }
+
+    /** XML/pom review 4, B34: a pom on the Maven server is lemminx too: the same fallbacks, its own answer first. */
+    @Test
+    void aPomOnTheMavenServerGetsTheXmlFallbacks() throws Exception {
+        manager.shutdownAll();
+        fakes.clear();
+        manager = new LspManager((f, d) -> {}, (t, m) -> {});
+        manager.setSessionStarterForTest(session -> {
+            FakeLanguageServer fake = new FakeLanguageServer();
+            fakes.add(fake);
+            ServerCapabilities caps = new ServerCapabilities();
+            caps.setDocumentLinkProvider(new DocumentLinkOptions(true));
+            session.attachForTest(fake, caps);
+        });
+        manager.setFolderTrust(folder -> true);
+        manager.configure(true, Map.of(LspServerRegistry.MAVEN_POM_SERVER_ID, "lemminx-maven"));
+        Path pom = root.resolve("pom.xml");
+        String text = "<project>\n  <modelVersion>4.0.0</modelVersion>\n</project>\n";
+        Files.writeString(pom, text);
+        manager.openDocument(pom, root, LspServerRegistry.MAVEN_POM_LANGUAGE_ID, text);
+        var fake = fakes.get(0);
+        fake.typeDefinitionResponse = List.of(new Location(xsd.toUri().toString(), range(3, 4, 9)));
+
+        List<LspManager.Target> targets = await(cb -> manager.definition(pom, 1, 5, cb));
+
+        assertEquals(List.of(new LspManager.Target(xsd, 3, 4)), targets);
+        assertEquals(1, fake.definitions.size(), "lemminx-maven's own answer is asked first");
+    }
+
+    /**
+     * XML/pom review 4, B31: lemminx revalidates a grammar's dependents on its save, and takes a watched-file change
+     * as one only for a file not open in the client: a schema open in a tab and changed on disk is told as saved.
+     */
+    @Test
+    void anOpenSchemaChangedOnDiskIsToldAsSaved() throws Exception {
+        var fake = open();
+        String schema = Files.readString(xsd);
+        manager.openDocument(xsd, root, "xml", schema);
+        Path other = root.resolve("other.xml");
+
+        manager.notifyWatchedFiles(List.of(
+                new LspManager.WatchedFile(xsd, LspManager.WatchedKind.CHANGED),
+                new LspManager.WatchedFile(other, LspManager.WatchedKind.CHANGED)));
+
+        long until = System.currentTimeMillis() + 5000;
+        while (fake.saved.isEmpty() && System.currentTimeMillis() < until) {
+            Thread.sleep(20);
+        }
+        Thread.sleep(100);
+        assertEquals(1, fake.saved.size(), "the open schema only: not a document that is no grammar");
+        assertEquals(
+                xsd.toUri(),
+                java.net.URI.create(fake.saved.get(0).getTextDocument().getUri()));
+        assertEquals(1, fake.watchedFiles.size(), "the change itself still goes out");
+    }
 }

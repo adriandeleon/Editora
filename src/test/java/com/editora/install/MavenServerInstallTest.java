@@ -73,14 +73,15 @@ class MavenServerInstallTest {
                         "lemminx-maven-*.jar",
                         "guava-*.jar",
                         "commons-lang3-*.jar",
-                        "jsoup-*.jar"),
+                        "jsoup-1.14.*.jar"),
                 MavenServerInstall.missingJars(dir));
 
         // The upstream bundle as shipped: core + extension + 49 others, none of the `provided` three.
         Files.writeString(dir.resolve("org.eclipse.lemminx-0.30.1.jar"), "");
         Files.writeString(dir.resolve("lemminx-maven-0.12.0.jar"), "");
         Files.writeString(dir.resolve("maven-core-3.9.9.jar"), "");
-        assertEquals(List.of("guava-*.jar", "commons-lang3-*.jar", "jsoup-*.jar"), MavenServerInstall.missingJars(dir));
+        assertEquals(
+                List.of("guava-*.jar", "commons-lang3-*.jar", "jsoup-1.14.*.jar"), MavenServerInstall.missingJars(dir));
         assertFalse(MavenServerInstall.complete(dir));
 
         for (InstallCatalog.JvmLspJar jar : InstallCatalog.LEMMINX_MAVEN_EXTRA_JARS) {
@@ -112,6 +113,15 @@ class MavenServerInstallTest {
                 MavenServerInstall.missingJars(argv).size());
     }
 
+    /** An install made with a jsoup newer than 1.14 failed every XSD hover inside the server: Install… repairs it. */
+    @Test
+    void aBundleWithANewerJsoupIsIncomplete() throws IOException {
+        Path dir = ownBundle(tmp.resolve("cfg-old"));
+        Files.move(dir.resolve("jsoup-1.14.3.jar"), dir.resolve("jsoup-1.23.2.jar"));
+        assertEquals(List.of("jsoup-1.14.*.jar"), MavenServerInstall.missingJars(dir));
+        assertFalse(MavenServerInstall.complete(dir));
+    }
+
     /** A complete bundle under {@code config}'s own folder. */
     private Path ownBundle(Path config) throws IOException {
         Path dir = Files.createDirectories(MavenServerInstall.folder(config));
@@ -120,7 +130,7 @@ class MavenServerInstallTest {
                 "lemminx-maven-0.12.0.jar",
                 "guava-33.7.2-jre.jar",
                 "commons-lang3-3.21.0.jar",
-                "jsoup-1.23.2.jar")) {
+                "jsoup-1.14.3.jar")) {
             Files.createFile(dir.resolve(name));
         }
         return dir;

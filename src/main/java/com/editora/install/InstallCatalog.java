@@ -207,6 +207,12 @@ public final class InstallCatalog {
     /** lemminx's stdio launcher main class (inside the bundle's lemminx-core jar). */
     public static final String LEMMINX_MAIN_CLASS = "org.eclipse.lemminx.XMLServerLauncher";
 
+    /**
+     * The jsoup the pom bundle runs with: a 1.14 release, the only line with both the {@code Safelist} lemminx uses
+     * and the {@code Whitelist} its remark library uses ({@link MavenServerInstall#REQUIRED_JAR_PREFIXES}).
+     */
+    public static final String JSOUP_VERSION = "1.14.3";
+
     /** Maven Central, where {@link #LEMMINX_MAVEN_EXTRA_JARS} come from. */
     public static final String MAVEN_CENTRAL = "https://repo1.maven.org/maven2/";
 
@@ -232,11 +238,15 @@ public final class InstallCatalog {
                     "commons-lang3",
                     "3.21.0",
                     "a2af247ec4db6eb8947e18e23e0433e4871a7c5d0a40e1f92e46ede54ae1defe"),
+            // 1.14.x only: lemminx uses jsoup's Safelist (1.14.1+), and the bundle's remark-1.0.0 still uses
+            // Whitelist (removed in 1.15): with a newer jsoup every hover on an XSD-backed element failed inside the
+            // server with NoClassDefFoundError: org/jsoup/safety/Whitelist. 1.14.3 has CVE-2022-36033 (its HTML
+            // cleaner can let a javascript: URL through); here jsoup only turns schema documentation into Markdown.
             mavenCentralJar(
                     "org.jsoup",
                     "jsoup",
-                    "1.23.2",
-                    "e9d8c856856680427f096d156f02a414289985c930998fcb519ce5be39b42003"));
+                    JSOUP_VERSION,
+                    "92af19ec57cc77637db4490f0f5011f0444d353209ce36083bac428f9b81a39c"));
 
     /**
      * Lombok, downloaded on request for a project that declares it when no build has cached a jar yet

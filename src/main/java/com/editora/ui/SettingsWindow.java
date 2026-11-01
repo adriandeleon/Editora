@@ -3687,7 +3687,6 @@ public class SettingsWindow {
         TextField field = new TextField();
         field.setPromptText(prompt);
         field.setPrefWidth(220);
-        field.setAccessibleText(tr("settings." + key));
         settingControls.put(key, field);
         commitOnEnterOrBlur(field, () -> get.apply(config.getSettings()), now -> {
             String why = problem == null ? null : problem.apply(now);
@@ -3704,8 +3703,20 @@ public class SettingsWindow {
             field.setText(get.apply(st));
             showProblem(field, null);
         });
-        field.textProperty().addListener((o, was, now) -> { // the whole value as its tooltip (C28)
-            if (!field.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER)) {
+        fullValueTip(field, tr("settings." + key));
+    }
+
+    /**
+     * Names {@code field} for a screen reader, unless it has a name, and makes its whole value its tooltip while it
+     * is too long to read in the field and holds no problem (XML/pom review 3, C28; review 4, C36).
+     */
+    private static void fullValueTip(TextField field, String name) {
+        if (field.getAccessibleText() == null) {
+            field.setAccessibleText(name);
+        }
+        field.textProperty().addListener((o, was, now) -> {
+            if (!(field instanceof javafx.scene.control.PasswordField) // a secret is never shown
+                    && !field.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER)) {
                 showProblem(field, null);
             }
         });
@@ -5299,6 +5310,7 @@ public class SettingsWindow {
             return; // the callers' maps hold a field for every row they build
         }
         field.setPrefWidth(PATH_FIELD_WIDTH);
+        fullValueTip(field, title); // a 111-character server command was cut off, unnamed (XML/pom review 4, C36)
         HBox path = new HBox(6, field, browseButton(title, field));
         controlRow(c, cat, title, description, master == null ? path : dependent(master, path), keywords + " path");
         controlRow(c, cat, tr("settings.git.detected"), null, status.node(), keywords + " found not found install");
@@ -7991,6 +8003,12 @@ public class SettingsWindow {
                                     tr("settings.lsp.pinUnknown", name, unknown));
                             return;
                         }
+                        if (found && xmlRefused(srv.id(), argv)) { // not started at all: not "found" (review 4, A32)
+                            status.showProblem(
+                                    tr("settings.lsp.xmlLoadsMaven", lspToolName(srv.id(), argv)),
+                                    lspCheck.isSelected());
+                            return;
+                        }
                         String crash = found && projectLsp != null ? projectLsp.serverCrash(srv.id()) : null;
                         if (crash != null) { // found, but it exits before it is ready: not "Installed" (XML A4)
                             String name = lspToolName(srv.id(), argv);
@@ -8000,6 +8018,12 @@ public class SettingsWindow {
                         String where = found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "";
                         where = com.editora.install.PinnedVersions.withVersion(
                                 srv.id(), argv, config.getConfigDir(), where);
+                        String fallback = found && "xml".equals(srv.id())
+                                ? com.editora.install.XmlServerInstall.javaFallbackVersion(argv, config.getConfigDir())
+                                : null;
+                        if (fallback != null) { // the pom bundle's Java lemminx, not the pinned native build (A32)
+                            where = tr("lsp.xml.javaFallback", fallback) + " — " + where;
+                        }
                         status.show(found, where, lspCheck.isSelected());
                     });
         }
@@ -8037,6 +8061,19 @@ public class SettingsWindow {
         return editoras && com.editora.install.PinnedVersions.installedFreshness(pin, configDir) == freshness
                 ? pin.label()
                 : null;
+    }
+
+    /**
+     * Whether Editora will not start the XML command {@code argv} — it loads lemminx-maven — or this window's project
+     * command was refused for that (review 4, A32). File lookups only.
+     */
+    private boolean xmlRefused(String serverId, List<String> argv) {
+        if (!"xml".equals(serverId)) {
+            return false;
+        }
+        LspCoordinator.ServerTrouble trouble = projectLsp == null ? null : projectLsp.serverTrouble(serverId);
+        return (trouble != null && trouble.refused())
+                || com.editora.lsp.LemminxMavenGuard.loadsLemminxMaven(argv, true);
     }
 
     /** Whether the Maven server's {@code java -cp "<dir>/*"} folder exists but lacks required jars. Pure (file lookups). */

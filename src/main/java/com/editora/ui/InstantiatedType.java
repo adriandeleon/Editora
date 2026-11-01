@@ -143,13 +143,97 @@ final class InstantiatedType {
                 firsts.add(at);
             }
         }
+        // last: a member type the enclosing class inherits (SimpleEntry in a subclass of AbstractMap), then a
+        // package-qualified name looked up by its package (java.util.Comparator)
+        Runnable rest = () -> inherited(() -> byPackage(() -> done.accept(null)));
         if (segments.size() > 1) {
             // a nested type: from its first segment's type, which jdtls resolves (BL1); a package-qualified name
             // (java.util.Comparator) has none, and is asked at its last segment, here and then at the declaration
-            structural(firsts, () -> prepareChecked(last, () -> prepareChecked(declaredLast, () -> done.accept(null))));
+            structural(firsts, () -> prepareChecked(last, () -> prepareChecked(declaredLast, rest)));
         } else {
-            prepareChecked(last, () -> prepareChecked(declaredLast, () -> structural(firsts, () -> done.accept(null))));
+            prepareChecked(last, () -> prepareChecked(declaredLast, () -> structural(firsts, rest)));
         }
+    }
+
+    /**
+     * The written name as a member type of a class around the anonymous one, declared or inherited: jdtls resolves
+     * neither {@code new SimpleEntry<>(…) {}} in a subclass of {@code AbstractMap} nor its Go to Definition.
+     */
+    private void inherited(Runnable otherwise) {
+        Path file = libraryUri == null ? anchor : null;
+        lspManager.memberSpans(anchor, file, libraryUri, members -> {
+            int[] at = lineColumn(first);
+            List<MemberSpan> types = new ArrayList<>(JavaMembers.enclosing(members, at[0], at[1], text).stream()
+                    .filter(m -> m.isType() && !m.isAnonymous())
+                    .toList());
+            java.util.Collections.reverse(types); // the innermost first
+            inTypes(file, members, types, 0, otherwise);
+        });
+    }
+
+    private void inTypes(
+            @Nullable Path file, List<MemberSpan> members, List<MemberSpan> types, int i, Runnable otherwise) {
+        if (i >= types.size()) {
+            otherwise.run();
+            return;
+        }
+        member(file, libraryUri, members, types.get(i), segments, 0, r -> {
+            if (r != null) {
+                done.accept(r);
+            } else {
+                inTypes(file, members, types, i + 1, otherwise);
+            }
+        });
+    }
+
+    /**
+     * A package-qualified name ({@code java.util.Comparator}, {@code java.util.Map.Entry}) found by its package among
+     * the server's type symbols, project or library: at such a name jdtls answers the enclosing class.
+     */
+    private void byPackage(Runnable otherwise) {
+        int type = 0;
+        while (type < segments.size()
+                && !Character.isUpperCase(segments.get(type).charAt(0))) {
+            type++;
+        }
+        if (type == 0 || type >= segments.size()) {
+            otherwise.run();
+            return;
+        }
+        String pkg = String.join(".", segments.subList(0, type));
+        String name = segments.get(type);
+        List<String> path = segments.subList(type + 1, segments.size());
+        Consumer<List<LspManager.WorkspaceSymbolMatch>> pick = matches -> {
+            LspManager.WorkspaceSymbolMatch m = matches.stream()
+                    .filter(x -> simple(x.name()).equals(name) && pkg.equals(x.container()))
+                    .findFirst()
+                    .orElse(null);
+            if (m == null) {
+                otherwise.run();
+                return;
+            }
+            lspManager.memberSpans(anchor, m.file(), m.libraryUri(), members -> {
+                MemberSpan found = JavaMembers.typeAt(members, m.line(), name);
+                if (found == null) {
+                    otherwise.run();
+                    return;
+                }
+                member(m.file(), m.libraryUri(), members, found, path, 0, r -> {
+                    if (r != null) {
+                        done.accept(r);
+                    } else {
+                        otherwise.run();
+                    }
+                });
+            });
+        };
+        lspManager.workspaceSymbols(anchor, name, project -> {
+            if (project.stream().anyMatch(x -> simple(x.name()).equals(name) && pkg.equals(x.container()))) {
+                pick.accept(project);
+            } else {
+                lspManager.javaLibraryTypes(anchor, name, pick);
+            }
+        });
     }
 
     /** The item jdtls prepares at {@code offset}, when it is the written type; else {@code otherwise}. */
