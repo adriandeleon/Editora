@@ -30,6 +30,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Check a download with
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
 
+### Fixed
+
+- **HTML Live Preview (review 2).** Encrypted files are never served: an encrypted page gets no globe, an
+  unlocked encrypted buffer's text never reaches the preview server, and `*.gpg`/`*.asc`/`*.pgp` names answer
+  404. Each previewed site now has its own origin (its own port and random address), so a page previewed later
+  cannot read another site's files or unsaved edits; certificate and password stores, Terraform state, databases,
+  `credentials*.json` and `secrets.*` are not served either. Opening a file of the site no longer reloads the
+  page — only an edit does. `href="/"` and folder links (`blog/`) open that folder's `index.html`. Big files are
+  streamed and at most four pages are built in memory at a time, so parallel requests cannot exhaust memory; a
+  large-file buffer is served from disk instead of being copied on every pause. A browser you picked that is no
+  longer installed is named in the status ("Brave wasn't found…") and stays your choice. On Linux only real web
+  browsers are offered (not every app that opens links). Typing in a stylesheet no longer re-downloads CDN
+  stylesheets. `/var/tmp`, `/dev/shm`, macOS `/tmp` and OneDrive's Desktop and Documents are refused as site
+  roots like Downloads, and a page in a hidden folder (`.github/`) loads its own assets. The HTML language server
+  and the preview now root a loose site at the same folder (the highest folder of a contiguous chain of
+  `index.html` pages, never Downloads or the home folder), even with a dotfiles `~/.git` or a stray
+  `~/package.json`.
+
 ## [0.26.0] - 2026-10-29
 
 ### Added
