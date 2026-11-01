@@ -136,6 +136,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     uses template syntax"), as it is with the server off.
   - The built-in formatter keeps an HTML template script (`text/x-template`) and its `<pre>` exactly as written, and
     indents Angular `@if`/`@for`/`@defer` blocks instead of flattening them.
+- **GNOME Software's page for the installed Editora shows its version and can remove it.** The
+  AppStream listing did not name its package, so Software had no way to tie the two together.
 
 - **Java: the last Go to Super Method and import edges.** On any segment of an anonymous class's name
   (`new java.util.Comparator<>() {`, `Map` of `new Map.Entry<>() {`), and on the header of one passed as a call's
