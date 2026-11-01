@@ -227,6 +227,9 @@ final class ProjectMapView extends VBox {
      */
     static final int SEARCH_OPEN_LIMIT = 30;
 
+    /** {@link #SEARCH_OPEN_LIMIT}, which a layout test raises to open many branches with one search. */
+    private int searchOpenLimit = SEARCH_OPEN_LIMIT;
+
     /** The current query's whole answer: its files, folders and declarations, best first (review 3 A5, E2). */
     private ProjectMapSearchResult searchResult = ProjectMapSearchResult.EMPTY;
     /** The folder match the search landed on: opened, on top of the ancestors of every match. */
@@ -1733,9 +1736,9 @@ final class ProjectMapView extends VBox {
         searchMatchesTotal = searchResult.total();
         searchMatchesPartial = searchResult.partial();
         List<Path> allPaths = searchResult.paths();
-        // The map opens the folders of the best few hundred; the result keeps every match for a results list.
+        // The map opens the folders of the best few; the result keeps every match for the results list.
         List<Path> nextMatches =
-                allPaths.size() > SEARCH_OPEN_LIMIT ? List.copyOf(allPaths.subList(0, SEARCH_OPEN_LIMIT)) : allPaths;
+                allPaths.size() > searchOpenLimit ? List.copyOf(allPaths.subList(0, searchOpenLimit)) : allPaths;
         ProjectMapSearchResult.Match first = searchResult.first();
         // The same query runs again after every in-app file change; only a new query moves the selection.
         boolean newQuery = !value.equals(searchSelectionQuery);
@@ -1777,6 +1780,10 @@ final class ProjectMapView extends VBox {
     }
 
     /** The current query's answer as the map holds it (only matches under its root); empty without one. */
+    void setSearchOpenLimitForTest(int limit) {
+        searchOpenLimit = limit;
+    }
+
     ProjectMapSearchResult searchResult() {
         return searching() ? searchResult : ProjectMapSearchResult.EMPTY;
     }
@@ -2000,8 +2007,8 @@ final class ProjectMapView extends VBox {
         if (searchMatchesTotal > kept) {
             parts.add(tr("project.map.status.search.listed", searchMatchesTotal, kept));
         }
-        if (kept > SEARCH_OPEN_LIMIT) {
-            parts.add(tr("project.map.status.search.opened", SEARCH_OPEN_LIMIT));
+        if (kept > searchOpenLimit) {
+            parts.add(tr("project.map.status.search.opened", searchOpenLimit));
         }
         if (shown < searchMatches.size()) {
             parts.add(tr("project.map.status.search.rowLimit", shown, searchMatches.size()));

@@ -377,7 +377,7 @@ out; taking the column off closes those cards, as closing the Map's column close
 is held for as long as the column is out (`cardOutlineFiles`, kept by `ProjectMapStructure.prune`), follows the
 buffer or the file on disk, and an edit keeps what was expanded and selected. An outline change rebuilds the map's
 rows only when its file has a Structure column of the Map's own open (`ProjectMapStructure.setOnFileChanged`);
-otherwise only that file's card column and declaration cards follow it. Nothing about it is remembered.
+otherwise only that file's card column and declaration cards follow it. A restart brings the column back with its card (the card remembers that it was out), placed afresh.
 
 The Map's global search matches the names of files and folders (and, with `@`, declarations; see "Filters,
 ordering, and state"), and the query is also matched against the declaration rows of

@@ -173,7 +173,9 @@ class ProjectMapResultsReview3FxTest {
         // No match: the banner names the query typed, and says the search was partial when it was.
         search(panel, "zzqq");
         waitFor(() -> banner.isVisible(), "the no-match banner shows");
-        FxTestSupport.runOnFx(() -> assertEquals(tr("project.map.noMatches.query", "zzqq"), banner.getText()));
+        // (The rig respects .gitignore, so the banner goes on to say ignored files are not searched, review 3 A11.)
+        FxTestSupport.runOnFx(() ->
+                assertTrue(banner.getText().startsWith(tr("project.map.noMatches.query", "zzqq")), banner.getText()));
         typeOnly(panel, "zzqqx");
         FxTestSupport.runOnFx(() -> {
             view.setQuery("zzqqx");

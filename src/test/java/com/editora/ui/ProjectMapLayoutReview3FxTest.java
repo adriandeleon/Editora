@@ -113,6 +113,8 @@ class ProjectMapLayoutReview3FxTest {
         ProjectMapView view = FxTestSupport.field(panel, "mapView");
         Region surface = FxTestSupport.field(view, "surface");
 
+        // The map opens the folders of the best 30 matches only (B1); this layout case needs every branch open.
+        FxTestSupport.runOnFx(() -> view.setSearchOpenLimitForTest(300));
         search(panel, "Transactional");
         waitFor(() -> view.searchResult().matches().size() > 20, "the search finds every branch");
         waitFor(() -> columnBoxes(surface).size() > 40, "the map opens the branches of the matches");
