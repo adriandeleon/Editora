@@ -109,6 +109,9 @@ final class DoctorPane extends Region implements TabContent {
     /** Text longer than this gets a hover tooltip, since it may be ellipsized on a narrow window. */
     private static final int TOOLTIP_THRESHOLD = 36;
 
+    /** A row's command up to this long, and not a path, is never cut: it names the program. */
+    private static final int WHOLE_COMMAND = 64;
+
     /** The pseudo section the amber and red rows are gathered in, above every real section. */
     static final String ATTENTION = "attention";
 
@@ -1041,6 +1044,10 @@ final class DoctorPane extends Region implements TabContent {
         label.setMinWidth(0);
         if (DoctorText.isPathLike(text)) {
             label.setTextOverrun(OverrunStyle.LEADING_ELLIPSIS);
+        } else if ("doctor-command".equals(styleClass) && text.length() <= WHOLE_COMMAND) {
+            // a program and its flags ("… --stdio (Editora's copy)") stay whole beside a long detail, which is the one
+            // to shrink: the command column used to narrow to the title's width (HTML review 2 A110)
+            label.setMinWidth(Region.USE_PREF_SIZE);
         }
         if (text.length() > TOOLTIP_THRESHOLD) {
             label.setTooltip(new Tooltip(text));
