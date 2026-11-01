@@ -167,6 +167,58 @@ class ProjectMapCardsReview3FxTest {
         await("so does Shift+click", () -> previews().size() == 3);
     }
 
+    // --- D7 ---------------------------------------------------------------------------------------------
+
+    @Test
+    void theStructureCommandAndTheCardMenuReachACardsColumnAndItsEmacsMovesWork() throws Exception {
+        Path big = writeBig();
+        map = openMap();
+        ProjectMapPreview card = openFileCard(big);
+        FxTestSupport.runOnFx(() -> {
+            card.focusContent();
+            // The Structure command typed in a card (Alt+7 in the Emacs and IntelliJ keymaps) is the card's own.
+            assertTrue(card.runMarkerCommand(ProjectMapPreview.STRUCTURE_COMMAND));
+            assertTrue(card.structureShown());
+        });
+        ProjectMapCardStructure column = showStructure(card);
+        await(
+                "the keyboard is in the column",
+                () -> column.contains(map.scene().getFocusOwner())
+                        && !column.tree().getSelectionModel().isEmpty());
+        FxTestSupport.runOnFx(() -> {
+            int before = column.tree().getSelectionModel().getSelectedIndex();
+            Event.fireEvent(
+                    column.tree(), new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.N, false, true, false, false));
+            assertEquals(before + 1, column.tree().getSelectionModel().getSelectedIndex(), "C-n moves down");
+            Event.fireEvent(
+                    column.tree(), new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.P, false, true, false, false));
+            assertEquals(before, column.tree().getSelectionModel().getSelectedIndex(), "C-p moves up");
+            @SuppressWarnings("unchecked")
+            var back = (java.util.function.Predicate<String>)
+                    column.node().getProperties().get(com.editora.command.KeyDispatcher.HANDLED_COMMANDS);
+            assertTrue(back.test(ProjectMapPreview.STRUCTURE_COMMAND), "typed in the column it goes back");
+            assertSame(card.editor(), map.scene().getFocusOwner());
+
+            FxTestSupport.call(card, "rebuildEditorContextMenu", new Class<?>[] {int.class}, 0);
+            javafx.scene.control.ContextMenu menu = FxTestSupport.field(card, "editorContextMenu");
+            javafx.scene.control.MenuItem hide = menu.getItems().stream()
+                    .filter(item -> com.editora.i18n.Messages.tr("project.map.preview.hideStructure")
+                            .equals(item.getText()))
+                    .findFirst()
+                    .orElseThrow();
+            hide.fire();
+            assertFalse(card.structureShown(), "the card menu takes it off");
+            FxTestSupport.call(card, "rebuildEditorContextMenu", new Class<?>[] {int.class}, 0);
+            menu.getItems().stream()
+                    .filter(item -> com.editora.i18n.Messages.tr("project.map.preview.showStructure")
+                            .equals(item.getText()))
+                    .findFirst()
+                    .orElseThrow()
+                    .fire();
+            assertTrue(card.structureShown(), "and puts it back");
+        });
+    }
+
     // --- fixture ----------------------------------------------------------------------------------------
 
     private record Fixture(ProjectMapView view, Scene scene, Stage stage, Region surface) {}

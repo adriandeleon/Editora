@@ -2383,6 +2383,12 @@ final class ProjectMapView extends VBox {
         });
         preview.setOnNotesToggled(shown -> showCardNotes(preview, shown));
         preview.setOnStructureToggled(shown -> showCardStructure(preview, shown));
+        preview.setOnFocusStructure(() -> {
+            ProjectMapCardStructure column = cardStructures.get(preview);
+            if (column != null) {
+                column.focus();
+            }
+        });
         preview.setNotesSuppressed(hideOpenNotes.isSelected());
         preview.setOnShowSuppressedNotes(() -> hideOpenNotes.setSelected(false)); // the Notes button asks for them
         preview.setOnMoveToFreeSpace(() -> cardMoveToFreeSpace(preview, path));

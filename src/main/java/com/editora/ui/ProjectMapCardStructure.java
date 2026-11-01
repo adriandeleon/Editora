@@ -134,6 +134,16 @@ final class ProjectMapCardStructure {
 
         column.getStyleClass().add("project-map-card-structure");
         column.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+        // The Structure command typed here goes back to the card's text, as typed in the card it came here.
+        column.getProperties()
+                .put(com.editora.command.KeyDispatcher.HANDLED_COMMANDS, (java.util.function.Predicate<String>)
+                        command -> {
+                            if (!ProjectMapPreview.STRUCTURE_COMMAND.equals(command)) {
+                                return false;
+                            }
+                            card.focusContent();
+                            return true;
+                        });
         column.setManaged(false);
         zoom.xProperty().bind(card.mapScaleProperty());
         zoom.yProperty().bind(card.mapScaleProperty());
@@ -199,6 +209,7 @@ final class ProjectMapCardStructure {
                 event.consume();
             }
         });
+        tree.addEventFilter(KeyEvent.KEY_PRESSED, this::emacsKeys);
         tree.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
             if (event.getCode() == KeyCode.ENTER && !event.isShortcutDown() && !event.isAltDown()) {
                 ProjectMapStructure.Node node = selectedNode();
@@ -219,6 +230,49 @@ final class ProjectMapCardStructure {
             }
             event.consume();
         });
+    }
+
+    /**
+     * The Structure window's Emacs moves, which the column owns as that window does ({@code editora.ownsKeys} leaves
+     * them to it): Ctrl+N / Ctrl+P down and up, Ctrl+F opens a declaration or steps into it, Ctrl+B closes it or
+     * steps out (review 3, D7). The arrows are the list's own.
+     */
+    private void emacsKeys(KeyEvent event) {
+        if (!event.isControlDown() || event.isAltDown() || event.isMetaDown() || event.isShiftDown()) {
+            return;
+        }
+        var selection = tree.getSelectionModel();
+        int rows = tree.getExpandedItemCount();
+        int index = selection.getSelectedIndex();
+        TreeItem<Row> item = selection.getSelectedItem();
+        switch (event.getCode()) {
+            case N, P -> {
+                if (rows > 0) {
+                    int step = event.getCode() == KeyCode.N ? 1 : -1;
+                    int next = index < 0 ? 0 : Math.max(0, Math.min(rows - 1, index + step));
+                    selection.select(next);
+                    tree.scrollTo(Math.max(0, next - 2));
+                }
+            }
+            case F -> {
+                if (item != null && !item.isLeaf() && !item.isExpanded()) {
+                    item.setExpanded(true);
+                } else if (item != null && !item.isLeaf()) {
+                    selection.select(index + 1);
+                }
+            }
+            case B -> {
+                if (item != null && item.isExpanded()) {
+                    item.setExpanded(false);
+                } else if (item != null && item.getParent() != null && item.getParent() != tree.getRoot()) {
+                    selection.select(item.getParent());
+                }
+            }
+            default -> {
+                return;
+            }
+        }
+        event.consume();
     }
 
     /** Names the card's file again (it was renamed): the title's tooltip and the list's spoken name. */
@@ -412,6 +466,9 @@ final class ProjectMapCardStructure {
         ProjectMapStructure.Node was = selectedNode();
         Path selected = was == null ? null : was.path();
         sync(tree.getRoot(), view, view.roots());
+        if (selected == null && tree.isFocused() && tree.getSelectionModel().isEmpty()) {
+            focus(); // put there by key before the outline arrived: the first row is where reading starts
+        }
         if (selected != null) {
             TreeItem<Row> item = find(tree.getRoot(), selected);
             if (item != null && tree.getSelectionModel().getSelectedItem() != item) {

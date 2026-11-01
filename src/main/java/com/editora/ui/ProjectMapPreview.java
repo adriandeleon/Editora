@@ -376,6 +376,7 @@ final class ProjectMapPreview extends StackPane {
     private Runnable onEscape = () -> onClose.run();
     private Consumer<Boolean> onNotesToggled = shown -> {};
     private Consumer<Boolean> onStructureToggled = shown -> {};
+    private Runnable onFocusStructure = () -> {};
     /** How many of the store's notes this card shows (see {@link #setNoteCount}). */
     private int noteCount;
     /** A note was asked for here: the notes come up when the store has one more. */
@@ -565,12 +566,21 @@ final class ProjectMapPreview extends StackPane {
             java.util.Set.of("notes.add", "notes.editNote", "bookmarks.toggle");
 
     /**
+     * The Structure tool window's command: typed in a card that has a Structure button, it shows the card's own
+     * Structure column and puts the keyboard there (review 3, D7), whatever key the keymap gives it.
+     */
+    static final String STRUCTURE_COMMAND = "tool.structure";
+
+    /**
      * Runs a note or bookmark command typed in the card on the card's file: a note on the selection or the caret
      * line, a bookmark on the caret line, and Edit Note brings up the notes stuck on the card. Every other command
      * is left to the keymap. A marker command is taken even when there is nothing to mark here, so it can never
      * fall through to the active editor tab's file.
      */
     boolean runMarkerCommand(String commandId) {
+        if (STRUCTURE_COMMAND.equals(commandId)) {
+            return focusStructure();
+        }
         if (!MARKER_COMMANDS.contains(commandId)) {
             return false;
         }
@@ -1121,6 +1131,24 @@ final class ProjectMapPreview extends StackPane {
         return structure.isSelected();
     }
 
+    /**
+     * Shows the card's Structure column, if it has one, and puts the keyboard on it: the card menu's Show Structure
+     * and the Structure command typed in the card. False when the card's file has no outline.
+     */
+    boolean focusStructure() {
+        if (disposed || !structure.isVisible()) {
+            return false;
+        }
+        setStructureShown(true);
+        onFocusStructure.run();
+        return true;
+    }
+
+    /** Puts the keyboard on the card's Structure column once it is out (see {@link #focusStructure}). */
+    void setOnFocusStructure(Runnable callback) {
+        onFocusStructure = callback == null ? () -> {} : callback;
+    }
+
     /** Shows or hides the card's Structure column as the Structure button does. */
     void setStructureShown(boolean shown) {
         boolean wanted = shown && structure.isVisible();
@@ -1514,6 +1542,22 @@ final class ProjectMapPreview extends StackPane {
             items.add(note);
         }
         items.add(new SeparatorMenuItem());
+        if (structure.isVisible()) {
+            // The keyboard way to the card's Structure column (review 3, D7); Hide takes it off again.
+            boolean out = structure.isSelected();
+            MenuItem column = new MenuItem(
+                    tr(out ? "project.map.preview.hideStructure" : "project.map.preview.showStructure"),
+                    Icons.structure());
+            column.setOnAction(ignored -> {
+                if (out) {
+                    setStructureShown(false);
+                    editor.requestFocus();
+                } else {
+                    focusStructure();
+                }
+            });
+            items.add(column);
+        }
         MenuItem freeSpace = new MenuItem(tr("project.map.preview.moveToFreeSpace"));
         freeSpace.setOnAction(ignored -> onMoveToFreeSpace.run());
         items.add(freeSpace);
