@@ -188,7 +188,6 @@ public record XmlServerSettings(
         format.put("enforceQuoteStyle", "ignore");
         format.put("xsiSchemaLocationSplit", "onPair");
         format.put("grammarAwareFormatting", true);
-        format.put("trimFinalNewlines", true);
         return format;
     }
 
