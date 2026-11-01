@@ -76,4 +76,61 @@ class LanguageServerLogTest {
         assertEquals(false, LanguageServerSession.mavenWorkspaceCompletionFailed("Local repo updater started"));
         assertEquals(false, LanguageServerSession.mavenWorkspaceCompletionFailed(null));
     }
+
+    @Test
+    void theFirstWorkspaceFailureReachesTheDebugLogByItsExceptionLine() {
+        Logger log = Logger.getLogger(LanguageServerSession.class.getName());
+        List<LogRecord> records = new ArrayList<>();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                records.add(record);
+            }
+
+            @Override
+            public void flush() {}
+
+            @Override
+            public void close() {}
+        };
+        log.addHandler(handler);
+        try {
+            var spec =
+                    new LspServerRegistry.ServerSpec(LspServerRegistry.MAVEN_POM_SERVER_ID, List.of("java"), List.of());
+            var session = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (t, m) -> {});
+            String failure =
+                    "Oct 31, 2026 11:23:41 org.eclipse.lemminx.services.XMLCompletions collectInsideContent()\n"
+                            + "Message: While performing ICompletionParticipant#onXMLContent for participant "
+                            + "'org.eclipse.lemminx.extensions.maven.participants.completion.MavenCompletionParticipant'.\n"
+                            + "java.lang.NullPointerException: Cannot invoke \"MavenProject.getGroupId()\" because \"a\" is null\n"
+                            + "\tat org.eclipse.lemminx.extensions.maven.participants.completion.MavenCompletionParticipant"
+                            + ".lambda$internalCollectWorkspaceArtifacts$88(MavenCompletionParticipant.java:1398)\n\tat y";
+            session.logMessage(new MessageParams(MessageType.Error, failure));
+            session.logMessage(new MessageParams(MessageType.Error, failure));
+
+            assertEquals(2, session.workspaceCompletionFailures());
+            List<String> info = records.stream()
+                    .filter(r -> r.getLevel().intValue() >= java.util.logging.Level.INFO.intValue())
+                    .map(LogRecord::getMessage)
+                    .toList();
+            assertEquals(
+                    List.of("[maven-pom] coordinate completion failed on a workspace pom lemminx-maven could not build:"
+                            + " java.lang.NullPointerException: Cannot invoke \"MavenProject.getGroupId()\" because"
+                            + " \"a\" is null"),
+                    info,
+                    "once per server, at INFO (review 4, E31); the stack never");
+        } finally {
+            log.removeHandler(handler);
+        }
+    }
+
+    @Test
+    void aFailuresLineIsTheOneNamingItsException() {
+        assertEquals(
+                "java.lang.IllegalStateException: x",
+                LanguageServerSession.failureLine(
+                        "Oct 31 a()\nMessage: b\n" + "java.lang.IllegalStateException: x\n\tat c"));
+        assertEquals("plain", LanguageServerSession.failureLine("plain\nsecond"));
+        assertEquals("", LanguageServerSession.failureLine(null));
+    }
 }

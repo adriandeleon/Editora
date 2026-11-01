@@ -66,14 +66,17 @@ class InstallServiceFailedInstallTest {
         return mavenDir();
     }
 
-    /** The install's files, without the version receipt every pinned install leaves (InstallReceiptTest). */
+    /**
+     * The install's files, without the version receipt every pinned install leaves (InstallReceiptTest) and the
+     * jar-signature marker ({@link JarSignatures#MARKER}).
+     */
     private static List<String> children(Path dir) throws IOException {
         if (!Files.isDirectory(dir)) {
             return List.of();
         }
         try (Stream<Path> list = Files.list(dir)) {
             return list.map(p -> p.getFileName().toString())
-                    .filter(n -> !n.equals(InstallReceipt.FILE_NAME))
+                    .filter(n -> !n.equals(InstallReceipt.FILE_NAME) && !n.equals(JarSignatures.MARKER))
                     .sorted()
                     .toList();
         }

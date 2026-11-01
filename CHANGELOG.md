@@ -142,6 +142,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Project Map: a declaration card from the last session was dropped on restart** while its file's outline was still
   loading; it now waits for the outline.
 
+- **Java: the last Go to Super Method and import edges.** On any segment of an anonymous class's name
+  (`new java.util.Comparator<>() {`, `Map` of `new Map.Entry<>() {`), and on the header of one passed as a call's
+  argument, Go to Super Method opens the type it instantiates; so it does for a member type the enclosing class
+  inherits (`new SimpleEntry<>("a", "b") {…}` in a subclass of `AbstractMap`), and for a package-qualified one found
+  by its package. A Gradle import that fails is named with the folder that failed in its first message, not only in
+  a later one. A library's sources attached later reload its tabs in every window sharing the Java server.
+
+- **pom.xml hover works on the Maven server.** Hovering an element the POM schema documents (and any XSD-backed
+  element on the Java XML fallback) failed inside the server with `NoClassDefFoundError: org/jsoup/safety/Whitelist`:
+  the bundle's remark library needs jsoup 1.14, and Editora installed 1.23.2. The pom.xml server now installs jsoup
+  1.14.3, pinned by version and SHA-256; an install made with the newer jsoup reads as incomplete, and Install…
+  repairs it.
+
+- **XML and HTML: Emacs word kills on a tag name keep the caret in that tag.** M-DEL or M-d in a closing tag left
+  the caret where it was before auto-rename shortened the start tag, so the next word renamed the following element,
+  and at the end of the file the next key threw.
+- **XML and HTML: a hand-typed close tag survives every key.** While `</it` steps into the existing `</item>`,
+  Ctrl/Shift/Alt+Backspace, Delete, Enter, Tab, a paste and the Emacs kills now act on what you typed, as Backspace
+  already did; they used to edit the real end tag, and auto-rename carried the change to the start tag.
+- **Built-in XML/HTML format: switching tabs no longer discards it.** The result goes into its own tab when that
+  file is unchanged, and Format Document in another tab runs at once instead of saying "Already formatting". The
+  large-file question names the file ("Format big.xml?", not "Format ?").
+- **Settings: long server and tool commands are readable.** The LSP, build, debug and tool path fields show their
+  whole value as a tooltip and have a screen-reader name; Schema associations is as wide as XML catalogs.
+- **XML: Go to Definition and schema changes (XML/pom review 4).**
+  - A schema or DTD open in a tab and changed on disk (a pull, a checkout, a build) revalidates the files that use
+    it, in the background and after Reload; their old errors stayed until the schema was saved in Editora.
+  - F12 on `schemaLocation` inside an XSD (`xs:include`, `xs:import`) opens the included schema, not the cached
+    `XMLSchema.xsd`.
+  - F12 on a link to a missing file (`xi:include`, `xsi:noNamespaceSchemaLocation`, a DOCTYPE) says
+    "<name> does not exist" instead of "Failed to open" with the full path.
+  - In a `pom.xml` on the Maven server, F12 on the schema location or an element the Maven extension does not
+    handle goes to the POM schema, as on the plain XML server.
+  - Include hrefs written `file://localhost/…` or with a `?query` open their file, and a `>` inside another
+    attribute of the include tag no longer hides its `href`.
+  - XML: Generate Grammar… no longer offers the two XSD choices for a document whose root element is in a
+    namespace: lemminx's generated schema had no namespace and failed the document at once.
+- **XML and pom.xml servers: install and status (XML/pom review 4).**
+  - RELAX NG completion works on the Java lemminx (the pom.xml server, and XML's fallback on older Linux): Eclipse's
+    signature on the lemminx jar kept its RELAX NG plugin from loading. Install now removes the bundle's jar
+    signatures, and a bundle installed earlier is fixed the next time a server starts from it.
+  - An XML command Editora refuses to start (it loads lemminx-maven) shows as a problem in Settings → LSP and as an
+    error in Doctor, not "found" and "OK". XML's Java fallback is named "Java lemminx <version> (fallback)".
+  - The XML command an earlier fallback install stored is treated as Editora's own: Doctor offers Install, and a
+    native build is installed when it can run.
+  - The pom.xml server is told the local Maven repository Editora reads, so Doctor's lemminx-maven store row is
+    right for a `${env.…}` or relative `<localRepository>`; `${env.…}` and system properties are expanded.
+  - Updating the pom.xml server also stops XML while XML runs on its Java lemminx.
 - **Project Map: search said "No files match" for files that exist.** On a big repository the search stopped after
   20,000 entries, so deep files (Kubernetes' `staging/` modules) were never found and the notice went to the editor
   window's status bar. The search now covers the whole project, and "No files match" says when it did not.
@@ -348,6 +396,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   push it into the overflow menu. A saved toolbar layout that lists it drops it on load.
 
 ### Fixed
+
+- **pom.xml completion (XML/pom review 4).**
+  - A well-formed pom lemminx-maven cannot build (a duplicated or unknown tag, or a DOCTYPE with entities, under a
+    parent it cannot resolve) no longer restarts the Maven server every two minutes or blames a "malformed" pom. The
+    status says once that Maven completion is off and names the likely pom and line; fixing it restarts the server.
+  - A left-out pom fixed on disk restarts its project's Maven server within a second, in any folder, not only in
+    folders expanded in the Project panel.
+  - An empty completion with no failure from the server is delivered at once and never leaves a pom out.
+  - With two Maven projects open, each one's "Loaded and ready" is shown.
+  - `${env.*}` completion items in a pom no longer show the environment variable's value.
 
 - **Project Map window (Map review).**
   - In the No Project window the Map keeps the folder it was opened on: opening a file from it, or switching to a

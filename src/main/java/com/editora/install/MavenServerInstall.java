@@ -25,10 +25,16 @@ public final class MavenServerInstall {
 
     /**
      * The jars a complete install holds, as file-name prefixes so a version bump of any of them still counts:
-     * lemminx core, lemminx-maven, and the three jars the upstream bundle omits.
+     * lemminx core, lemminx-maven, and the three jars the upstream bundle omits. jsoup must be a 1.14 release
+     * ({@link InstallCatalog#JSOUP_VERSION}): an install made with a newer one answered every hover on an
+     * XSD-backed element with a NoClassDefFoundError, so it counts as incomplete and Install… repairs it.
      */
-    public static final List<String> REQUIRED_JAR_PREFIXES =
-            List.of("org.eclipse.lemminx-", "lemminx-maven-", "guava-", "commons-lang3-", "jsoup-");
+    public static final List<String> REQUIRED_JAR_PREFIXES = List.of(
+            "org.eclipse.lemminx-",
+            "lemminx-maven-",
+            "guava-",
+            "commons-lang3-",
+            "jsoup-" + InstallCatalog.JSOUP_VERSION.substring(0, InstallCatalog.JSOUP_VERSION.lastIndexOf('.') + 1));
 
     /**
      * The folder a {@code java -cp "<dir>/*" …} argv loads its jars from, or empty when {@code argv} is not that

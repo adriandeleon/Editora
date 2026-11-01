@@ -664,7 +664,7 @@ class InstallCatalogTest {
     void theLemminxMavenExtraJarsArePinnedOnCentral() {
         List<InstallCatalog.JvmLspJar> jars = InstallCatalog.LEMMINX_MAVEN_EXTRA_JARS;
         assertEquals(
-                List.of("guava-33.7.2-jre.jar", "commons-lang3-3.21.0.jar", "jsoup-1.23.2.jar"),
+                List.of("guava-33.7.2-jre.jar", "commons-lang3-3.21.0.jar", "jsoup-1.14.3.jar"),
                 jars.stream().map(InstallCatalog.JvmLspJar::fileName).toList());
         for (InstallCatalog.JvmLspJar jar : jars) {
             assertTrue(InstallCatalog.isTrustedDownloadUrl(jar.url()), jar.url());

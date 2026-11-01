@@ -201,7 +201,7 @@ class SettingsLangsPagesFxTest {
                 "lemminx-maven-0.12.0.jar",
                 "guava-33.7.2-jre.jar",
                 "commons-lang3-3.21.0.jar",
-                "jsoup-1.23.2.jar")) {
+                "jsoup-1.14.3.jar")) {
             java.nio.file.Files.writeString(maven.resolve(name), "");
         }
         assertFalse(SettingsWindow.mavenInstallIncomplete(argv), "complete");

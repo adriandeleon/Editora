@@ -1035,13 +1035,35 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        com.editora.editops.Transposer.Edit edit = op.apply(linesAsUnits(buffer, area), area.getCaretPosition());
+        com.editora.editops.Transposer.Edit edit =
+                settled(area, () -> op.apply(linesAsUnits(buffer, area), area.getCaretPosition()));
         if (edit == null) {
             return;
         }
-        area.replaceText(edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()));
-        area.moveTo(edit.caret());
+        replaceAndPlace(
+                area, edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()), edit.caret());
         area.requestFocus();
+    }
+
+    /**
+     * The edit {@code compute} makes at the caret, computed again once a pending close-tag join is put back as the
+     * user's own text (XML/pom review 4, C32): computed on the joined closer, it would edit the closer's name, which
+     * auto-rename carries to the start tag.
+     */
+    private static <E> @Nullable E settled(CodeArea area, java.util.function.Supplier<@Nullable E> compute) {
+        E edit = compute.get();
+        return edit != null && com.editora.editor.PendingTagJoin.settle(area) ? compute.get() : edit;
+    }
+
+    /**
+     * Replaces {@code [from, to)} with {@code text} and puts the caret at {@code caret} as the edit sees it, carried
+     * across what moved it meanwhile (XML/pom review 4, C31): auto-rename mirrors a tag-name edit onto the paired tag
+     * at once and shifts the caret when that tag is above, so a caret placed at the offset computed before the edit
+     * landed in the next element's name (or past the end of the document).
+     */
+    private static void replaceAndPlace(CodeArea area, int from, int to, String text, int caret) {
+        area.replaceText(from, to, text);
+        area.moveTo(Math.clamp(area.getCaretPosition() - (from + text.length() - caret), 0, area.getLength()));
     }
 
     /**
@@ -1144,8 +1166,8 @@ final class EditingCoordinator {
         // The duplicate/moved block ends up expanded: its copy would otherwise be inserted into the hidden
         // run (and the caret with it).
         buffer.getFoldManager().expandHeaderAt(area.getCaretPosition());
-        area.replaceText(edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()));
-        area.moveTo(edit.caret());
+        replaceAndPlace(
+                area, edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()), edit.caret());
         area.requestFocus();
     }
 
@@ -1163,12 +1185,12 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        com.editora.editops.EmacsEdits.Edit edit = op.apply(area.getText(), area.getCaretPosition());
+        com.editora.editops.EmacsEdits.Edit edit =
+                settled(area, () -> op.apply(area.getText(), area.getCaretPosition()));
         if (edit == null) {
             return;
         }
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
-        area.moveTo(edit.caret());
+        replaceAndPlace(area, edit.from(), edit.to(), edit.replacement(), edit.caret());
         deactivateMark();
         area.requestFocus();
     }
@@ -1304,14 +1326,15 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        com.editora.editops.EmacsEdits.Edit edit = op.apply(linesAsUnits(buffer, area), area.getCaretPosition());
+        com.editora.editops.EmacsEdits.Edit edit =
+                settled(area, () -> op.apply(linesAsUnits(buffer, area), area.getCaretPosition()));
         if (edit == null) {
             return;
         }
         boolean merge = continuesPreviousKill(buffer, area.getCaretPosition()); // decide before the edit
         String killed = area.getText(edit.from(), edit.to());
-        area.replaceText(edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()));
-        area.moveTo(edit.caret());
+        replaceAndPlace(
+                area, edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()), edit.caret());
         pushKill(buffer, area, killed, dir, merge);
         deactivateMark();
         area.requestFocus();
@@ -1989,8 +2012,7 @@ final class EditingCoordinator {
         if (edit == null) {
             return; // no selection / already the target case
         }
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
-        area.moveTo(edit.caret());
+        replaceAndPlace(area, edit.from(), edit.to(), edit.replacement(), edit.caret());
         deactivateMark();
         area.requestFocus();
     }
@@ -2159,16 +2181,15 @@ final class EditingCoordinator {
 
     /** The second half of {@code zap-to-char}: kill up to and including the next {@code ch}. */
     private void zapTo(EditorBuffer buffer, CodeArea area, char ch) {
-        com.editora.editops.EmacsEdits.Edit edit =
-                com.editora.editops.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch);
+        com.editora.editops.EmacsEdits.Edit edit = settled(
+                area, () -> com.editora.editops.EmacsEdits.zapToChar(area.getText(), area.getCaretPosition(), ch));
         if (edit == null) {
             host.setStatus(tr("status.zapNotFound", String.valueOf(ch)));
             return;
         }
         boolean merge = continuesPreviousKill(buffer, area.getCaretPosition());
         String killed = area.getText(edit.from(), edit.to());
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
-        area.moveTo(edit.caret());
+        replaceAndPlace(area, edit.from(), edit.to(), edit.replacement(), edit.caret());
         pushKill(buffer, area, killed, KillRing.Direction.FORWARD, merge);
         deactivateMark();
     }
@@ -2240,8 +2261,7 @@ final class EditingCoordinator {
         if (edit == null) {
             return; // nothing to fill / already filled
         }
-        area.replaceText(edit.from(), edit.to(), edit.replacement());
-        area.moveTo(edit.caret());
+        replaceAndPlace(area, edit.from(), edit.to(), edit.replacement(), edit.caret());
         area.requestFocus();
     }
 

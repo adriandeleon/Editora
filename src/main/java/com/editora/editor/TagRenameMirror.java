@@ -144,6 +144,10 @@ final class TagRenameMirror {
         private int depth;
         private boolean nested;
 
+        /** The buffer's tag typing, once a close-tag join started in this area: asked before each edit (C32). */
+        @Nullable
+        TagTyping joins;
+
         Area() {
             track();
         }
@@ -196,6 +200,10 @@ final class TagRenameMirror {
         @Override
         public void replace(
                 int start, int end, StyledDocument<Collection<String>, String, Collection<String>> replacement) {
+            TagTyping typing = joins;
+            if (depth == 0 && typing != null) {
+                typing.beforeEdit(this, start, end); // a pending close-tag join goes back to the user's text first
+            }
             if (depth == 0) {
                 inFlight = null;
                 nested = false;
