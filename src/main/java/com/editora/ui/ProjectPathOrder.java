@@ -10,7 +10,7 @@ import java.util.function.Predicate;
 
 /**
  * Shared ordering contract for project navigation (the Project tree and the Project Map): folders first, then
- * names in natural order without case bias.
+ * names in natural order without case bias, except in a folder of hash-named entries ({@link #forFolder}).
  */
 final class ProjectPathOrder {
 
@@ -25,6 +25,64 @@ final class ProjectPathOrder {
         return Comparator.<T, Boolean>comparing(item -> !isDirectory.test(item))
                 .thenComparing(name, NATURAL)
                 .thenComparing(name);
+    }
+
+    /**
+     * The order for the children of one folder: {@link #directoriesFirst}, or, in a folder whose every name is
+     * hash-like (a fuzz corpus, an object store, a cache), folders first and then plain character order, so
+     * {@code 07c96f…} sorts before {@code 7c781c…} as a reader scanning for a hash prefix expects, instead of
+     * among the names whose leading digits make the same number. A name is hash-like with at least {@value
+     * #MIN_HASH_LENGTH} hexadecimal digits before any extension ({@code 07c96f6b389dc56c}, {@code
+     * 3f2a9e01.json}); the folder needs a letter among them somewhere, so a folder of plain numbers ({@code
+     * 20240101}, {@code 123456789}) keeps natural order, which sorts numbers of different lengths by value.
+     */
+    static <T> Comparator<T> forFolder(
+            Collection<? extends T> children, Predicate<T> isDirectory, Function<T, String> name) {
+        boolean hashes = !children.isEmpty();
+        boolean letter = false;
+        for (T child : children) {
+            String text = name.apply(child);
+            if (!hexLike(text)) {
+                hashes = false;
+                break;
+            }
+            letter |= hasHexLetter(text);
+        }
+        if (!hashes || !letter) {
+            return directoriesFirst(isDirectory, name);
+        }
+        return Comparator.<T, Boolean>comparing(item -> !isDirectory.test(item))
+                .thenComparing(name, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(name);
+    }
+
+    /** The fewest hexadecimal digits a name needs to count as a hash. */
+    static final int MIN_HASH_LENGTH = 8;
+
+    private static boolean hexLike(String name) {
+        int dot = name.indexOf('.');
+        int end = dot < 0 ? name.length() : dot;
+        if (end < MIN_HASH_LENGTH) {
+            return false;
+        }
+        for (int index = 0; index < end; index++) {
+            if (Character.digit(name.charAt(index), 16) < 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasHexLetter(String name) {
+        int dot = name.indexOf('.');
+        int end = dot < 0 ? name.length() : dot;
+        for (int index = 0; index < end; index++) {
+            char c = name.charAt(index);
+            if (!isDigit(c)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -108,7 +166,7 @@ final class ProjectPathOrder {
             Path name = path.getFileName();
             keyed.add(new Keyed(path, isDirectory.test(path), name == null ? path.toString() : name.toString()));
         }
-        keyed.sort(directoriesFirst(Keyed::directory, Keyed::name));
+        keyed.sort(forFolder(keyed, Keyed::directory, Keyed::name));
         List<Path> out = new ArrayList<>(keyed.size());
         for (Keyed k : keyed) {
             out.add(k.path());

@@ -245,5 +245,7 @@
   "M-g M-p": "lsp.previousProblem",
   "M-g s": "lsp.gotoSymbol",
   "M-,": "nav.back",
-  "C-M-,": "nav.forward"
+  "C-M-,": "nav.forward",
+  "C-c o m": "project.toggleMapView",
+  "C-c o r": "projectMap.revealActiveFile"
 }

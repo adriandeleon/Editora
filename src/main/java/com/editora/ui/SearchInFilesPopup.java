@@ -183,8 +183,16 @@ final class SearchInFilesPopup {
      * focuses + selects the query field, and runs the search if a query is present.
      */
     void show(@Nullable String selection) {
+        show(selection, null);
+    }
+
+    /**
+     * As {@link #show(String)}, with the search-root field set to {@code folder} instead of the default when it is
+     * given: a folder's Find in Folder… (Project Map review 3 E10).
+     */
+    void show(@Nullable String selection, @Nullable Path folder) {
         hint.setText(PickerKeys.legend(PickerKeys.hint("open", "↵")));
-        Path root = ops.defaultRoot();
+        Path root = folder != null ? folder : ops.defaultRoot();
         rootField.setText(root == null ? "" : root.toString());
         if (selection != null && !selection.isEmpty()) {
             query.setText(selection);

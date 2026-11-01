@@ -119,5 +119,7 @@
   "C-M-f7": "lsp.findReferences",
   "C-u": "lsp.gotoSuperMethod",
   "C-S-subtract": "view.foldAll",
-  "C-S-add": "view.unfoldAll"
+  "C-S-add": "view.unfoldAll",
+  "M-S-1": "project.toggleMapView",
+  "M-f1": "projectMap.revealActiveFile"
 }

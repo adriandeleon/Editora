@@ -1444,6 +1444,50 @@
     -fx-padding: 6;
     -fx-spacing: 4;
 }
+/* Under the search row while a query searches: "3 of 49", previous / next, the list of matches (Map review 3 B1). */
+.project-map-results {
+    -fx-spacing: 4;
+    -fx-padding: 0 2 0 2;
+}
+.project-map-results-step {
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-padding: 2 5 2 5;
+    -fx-min-width: 24px;
+    -fx-min-height: 24px;
+}
+.project-map-results-step:hover {
+    -fx-background-color: -color-neutral-muted;
+}
+.project-map-results-count {
+    -fx-font-size: 0.85em;
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 0 4 0 2;
+}
+.project-map-results-partial {
+    -fx-font-size: 0.8em;
+    -fx-text-fill: -color-warning-fg;
+    -fx-border-color: -color-warning-fg;
+    -fx-border-radius: 8;
+    -fx-padding: 0 6 0 6;
+}
+.project-map-results-list {
+    -fx-font-size: 0.85em;
+}
+/* The Map window's own status line, under the Map: every Map message lands here (Map review 3 A2). */
+.project-map-status-line {
+    -fx-padding: 1 4 0 4;
+}
+.project-map-status-text {
+    -fx-font-size: 0.85em;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-status-text.project-map-status-warn {
+    -fx-text-fill: -color-warning-fg;
+}
+.project-map-status-text.project-map-status-error {
+    -fx-text-fill: -color-danger-fg;
+}
 
 /* Canvas project map. Filters are native controls for focus/accessibility; only the hierarchy is painted. */
 .project-map-view {
@@ -1719,13 +1763,29 @@
     -fx-font-size: 10px;
     -fx-text-fill: -color-fg-muted;
 }
+.project-map-preview-cut {
+    /* The last line of a card cut at the display cap: the text stops here, Open shows the rest. */
+    -fx-font-size: 11px;
+    -fx-font-style: italic;
+    -fx-text-fill: -color-fg-muted;
+    -fx-alignment: center;
+    -fx-padding: 3 8 4 8;
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 0 0 8 8;
+    -fx-border-color: -color-border-default transparent transparent transparent;
+    -fx-cursor: hand;
+}
 .project-map-preview-readonly {
     -fx-background-color: -color-neutral-muted;
     -fx-background-radius: 4;
-    -fx-padding: 1 5 1 5;
+    -fx-padding: 1 4 1 4;
     -fx-font-size: 10px; /* the status line's size: 8 px was barely legible */
     -fx-font-weight: bold;
     -fx-text-fill: -color-fg-muted;
+}
+/* Read-only is a muted lock (review 3, C11): not the accent lock of an encrypted file. */
+.project-map-preview-readonly .toolbar-icon {
+    -fx-fill: -color-fg-muted;
 }
 .project-map-preview-button {
     -fx-background-color: transparent;
@@ -1796,6 +1856,48 @@
 }
 .project-map-note-preview-empty {
     -fx-text-fill: -color-fg-muted;
+}
+/* The Project Map's Overview card (review 3 B4): a code card's frame, with headed sections of short text and links. */
+.project-map-overview-scroll,
+.project-map-overview-scroll > .viewport,
+.project-map-overview-sections {
+    -fx-background-color: -color-bg-default;
+}
+.project-map-overview-card .label {
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-overview-card .label.project-map-overview-heading {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 4 0 0 0;
+}
+.project-map-overview-card .label.project-map-overview-hint,
+.project-map-overview-card .label.project-map-overview-muted,
+.project-map-overview-card .label.project-map-overview-footer {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-overview-card .label.project-map-overview-readme {
+    -fx-padding: 0 0 0 8;
+    -fx-border-color: transparent transparent transparent -color-border-default;
+    -fx-border-width: 0 0 0 2;
+}
+.project-map-overview-link,
+.project-map-overview-open {
+    -fx-padding: 1 5 1 5;
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-accent-fg;
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-cursor: hand;
+}
+.project-map-overview-link:hover,
+.project-map-overview-open:hover,
+.project-map-overview-link:focused,
+.project-map-overview-open:focused {
+    -fx-background-color: -color-accent-subtle;
 }
 /* A code card's Notes button, lit while its notes are stuck on it. */
 .project-map-preview-notes:selected {
