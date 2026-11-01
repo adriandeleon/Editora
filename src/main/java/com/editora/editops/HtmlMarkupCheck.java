@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.Predicate;
 
 import com.editora.text.HtmlElements;
@@ -19,6 +20,11 @@ import org.jspecify.annotations.Nullable;
  * out ({@code <li>}, {@code <p>}, {@code <td>} …), raw-text content ({@code <script>}, {@code <style>}),
  * comments and self-closing tags ({@code <path/>} in SVG) never count as unclosed. A link built by a template
  * expression, a web address, and an extension-less route ({@code /about}) are not checked.
+ *
+ * <p>A page that uses template syntax ({@link HtmlElements#hasTemplateSyntax}: Django, Jinja, Jekyll, Hugo,
+ * Handlebars, ERB), or that lives in a template folder ({@code templates/}, {@code _layouts/}, {@code partials/} …,
+ * where a header and a footer partial each hold one half of an element), is not checked for unclosed elements: its
+ * branches and partials are unbalanced as written (HTML review 2 C101). Its links still are.
  */
 public final class HtmlMarkupCheck {
 
@@ -51,7 +57,9 @@ public final class HtmlMarkupCheck {
     public static List<Problem> check(
             String text, @Nullable Path document, @Nullable Path root, @Nullable Predicate<Path> exists) {
         List<Problem> out = new ArrayList<>();
-        tags(text, out);
+        if (!HtmlElements.hasTemplateSyntax(text) && !inTemplateFolder(document, root)) {
+            tags(text, out);
+        }
         if (document != null && exists != null) {
             links(text, document, root, exists, out);
         }
@@ -59,8 +67,44 @@ public final class HtmlMarkupCheck {
         return out.size() > MAX_PROBLEMS ? List.copyOf(out.subList(0, MAX_PROBLEMS)) : List.copyOf(out);
     }
 
+    /** Folders whose pages are template partials and layouts (Django, Flask, Jekyll, Hugo, Rails …). */
+    static final Set<String> TEMPLATE_FOLDERS =
+            Set.of("templates", "_includes", "_layouts", "layouts", "partials", "_partials", "includes");
+
+    /**
+     * Whether {@code document} is in a {@link #TEMPLATE_FOLDERS} folder: one between {@code root} and the page, or
+     * the page's own folder when there is no root (or the page is outside it).
+     */
+    static boolean inTemplateFolder(@Nullable Path document, @Nullable Path root) {
+        Path dir = document == null ? null : document.toAbsolutePath().getParent();
+        if (dir == null) {
+            return false;
+        }
+        Path top = root == null ? null : root.toAbsolutePath();
+        if (top == null || !dir.startsWith(top) || dir.equals(top)) {
+            Path name = dir.getFileName();
+            return name != null && TEMPLATE_FOLDERS.contains(name.toString().toLowerCase(Locale.ROOT));
+        }
+        for (Path part : top.relativize(dir)) {
+            if (TEMPLATE_FOLDERS.contains(part.toString().toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** An open element: its name and the span of the name in its start tag. */
     private record Open(String name, int nameStart, int nameEnd) {}
+
+    /** Whether an element of {@link #stack} is SVG or MathML, whose elements may close themselves with {@code />}. */
+    private static boolean inForeign(List<Open> stack) {
+        for (Open o : stack) {
+            if (o.name().equals("svg") || o.name().equals("math")) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     private static void tags(String text, List<Problem> out) {
         List<Open> stack = new ArrayList<>();
@@ -68,7 +112,13 @@ public final class HtmlMarkupCheck {
             @Override
             public void start(String name, int start, int nameEnd, int end, boolean selfClosing, boolean closed) {
                 String lower = name.toLowerCase(Locale.ROOT);
-                if (!closed || selfClosing || HtmlElements.isVoid(lower)) {
+                if (!closed) {
+                    return;
+                }
+                // "/>" closes only a void or a foreign (SVG, MathML) element; on <a href=/about/> it ends the
+                // unquoted value, and on <div/> HTML ignores it (HTML review 2 C103). <image> is <img> in HTML.
+                boolean foreign = inForeign(stack) || lower.equals("svg") || lower.equals("math");
+                if (foreign ? selfClosing || HtmlElements.isVoid(lower) : HtmlElements.isVoidInHtml(lower)) {
                     return;
                 }
                 stack.add(new Open(lower, start + 1, nameEnd));
@@ -122,7 +172,7 @@ public final class HtmlMarkupCheck {
             if (target.kind() != HtmlLinks.Kind.FILE || file == null || !namesAFile(link.value())) {
                 continue;
             }
-            if (!exists.test(file)) {
+            if (!exists.test(file) && !servedElsewhere(file, link.value(), document, root, exists)) {
                 out.add(new Problem(
                         link.start(),
                         link.end(),
@@ -130,6 +180,57 @@ public final class HtmlMarkupCheck {
                         link.value().trim()));
             }
         }
+    }
+
+    /**
+     * Folders a build tool or site generator serves at the site's root: Vite, Create React App, Angular and
+     * SvelteKit's {@code public/}, Hugo's {@code static/}, and {@code assets/} (HTML review 2 C102).
+     */
+    static final List<String> STATIC_FOLDERS = List.of("public", "static", "assets");
+
+    /** Stylesheet sources a site generator compiles to a {@code .css} of the same name (Jekyll's Sass). */
+    private static final List<String> STYLE_SOURCES = List.of(".scss", ".sass", ".less");
+
+    /**
+     * Whether a link whose file is not where it points is there all the same once the site is built: under one of
+     * the {@link #STATIC_FOLDERS} of the project (the page's folder when there is no project), or as the Sass or
+     * Less source of a missing {@code .css}.
+     */
+    static boolean servedElsewhere(
+            Path file, String value, Path document, @Nullable Path root, Predicate<Path> exists) {
+        String name = file.getFileName() == null ? "" : file.getFileName().toString();
+        if (name.toLowerCase(Locale.ROOT).endsWith(".css")) {
+            String stem = name.substring(0, name.length() - 4);
+            for (String ext : STYLE_SOURCES) {
+                if (exists.test(file.resolveSibling(stem + ext))) {
+                    return true;
+                }
+            }
+        }
+        Path top =
+                root != null ? root.toAbsolutePath() : document.toAbsolutePath().getParent();
+        if (top == null) {
+            return false;
+        }
+        List<String> paths = new ArrayList<>(2);
+        if (file.startsWith(top)) {
+            paths.add(top.relativize(file).toString());
+        }
+        paths.add(HtmlLinks.pathPart(value).replaceFirst("^(\\./|/)+", ""));
+        for (String folder : STATIC_FOLDERS) {
+            Path dir = top.resolve(folder);
+            for (String path : paths) {
+                try {
+                    Path candidate = dir.resolve(path).normalize();
+                    if (!path.isEmpty() && candidate.startsWith(dir) && exists.test(candidate)) {
+                        return true;
+                    }
+                } catch (java.nio.file.InvalidPathException e) {
+                    // not a path on this system: not served from there either
+                }
+            }
+        }
+        return false;
     }
 
     /** Whether a link's last path segment has an extension: {@code /about} or {@code docs/} may be a server route. */

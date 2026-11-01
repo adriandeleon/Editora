@@ -133,6 +133,27 @@ class XmlFormatCoordinatorFxTest {
         waitForStatus("error:" + tr("status.html.formatOpenConstruct"));
     }
 
+    /**
+     * A Django template saved as {@code .html} is not reflowed: the formatter would split its <code>{# #}</code>
+     * comment and nest its {@code {% if %}} branches (HTML review 2 C108). The text stays as it was.
+     */
+    @Test
+    void anHtmlTemplateIsNotFormatted() throws Exception {
+        status.clear();
+        String django = "<body>\n  {# <div> a commented-out wrapper #}\n  {% if user %}\n<div class=\"a\">\n"
+                + "  {% else %}\n<div class=\"b\">\n  {% endif %}\n</div></body>\n";
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            EditorBuffer h = new EditorBuffer();
+            h.setLanguageOverride("html");
+            h.setContent(django);
+            h.getNode();
+            return h;
+        });
+        FxTestSupport.runOnFx(() -> coordinator(b).formatActive());
+        waitForStatus("error:" + tr("status.html.formatTemplate"));
+        assertEquals(django, FxTestSupport.callOnFx(b::getContent));
+    }
+
     /** In large-file mode a format that multiplies the line count asks first; Cancel leaves the file as it was. */
     @Test
     void aLargeFileFormatThatMultipliesTheLinesAsksFirst() throws Exception {

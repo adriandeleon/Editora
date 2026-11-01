@@ -73,7 +73,7 @@ class HttpHtmlIndentTest {
         assertEquals(
                 "<!DOCTYPE html>\n<head>\n  <meta a=1>\n  <link rel=x>\n  <base href=/>\n</head>\n<body>\n"
                         + "  <p><img src=a.png> caption</p>\n  <hr>\n  <form><input name=q><input type=submit></form>\n"
-                        + "  <svg>\n    <path d=\"M0\"/>\n  </svg>\n</body>",
+                        + "  <svg><path d=\"M0\"/></svg>\n</body>", // an <svg> is inline (HTML review 2 E106)
                 HttpHtmlIndent.indent("<!DOCTYPE html><head><meta a=1><link rel=x><base href=/></head><body>"
                         + "<p><img src=a.png> caption</p><hr><form><input name=q><input type=submit></form>"
                         + "<svg><path d=\"M0\"/></svg></body>"));

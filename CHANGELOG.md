@@ -30,6 +30,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Check a download with
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
 
+### Fixed
+
+- **HTML templates (HTML review 2: templates).**
+  - The markup check no longer flags Django, Jinja, Jekyll, Hugo, Handlebars or ERB pages saved as `.html`, nor
+    header/footer partials in `templates/`, `_layouts/`, `partials/` and similar folders: their branches are not
+    checked for unclosed tags (links still are). A link to a file in `public/`, `static/` or `assets/` (Vite, Create
+    React App, Angular, Hugo), a `%PUBLIC_URL%` placeholder and a `.css` built from `.scss` are no longer "File not
+    found". `<a href=/about/>` no longer reads as self-closing, and `<image>` counts as `<img>`.
+  - Format without a language server refuses a page with template syntax ("Not formatted: this page uses template
+    syntax") instead of splitting `{# #}` comments and nesting `{% if %}` branches. On other pages it keeps
+    `<select>`, `<textarea>`, `<svg>`, `<video>`, custom elements and a comment inside a word on their line, and moves
+    a `<style>`'s or `<script>`'s code and end tag along with the start tag.
+  - Toggle Comment on a template line writes the engine's own comment, which stops the code: `{# #}` (Jinja, Twig,
+    Nunjucks, Django), `{% comment %}` (Liquid), `<%#` (ERB, EJS), `{{!-- --}}` (Handlebars, Mustache), `{{/* */}}`
+    (Hugo). On a PHP file's `<?php` line it comments the code after the opener, never the opener itself.
+  - Spell check skips `{{ … }}`, `{% … %}` and `<% … %>` in `title`/`alt` values and text, and tag names mentioned in
+    comments.
+
 ## [0.26.0] - 2026-10-29
 
 ### Added

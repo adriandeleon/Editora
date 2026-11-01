@@ -805,8 +805,11 @@ against the page, root-relative against the project; the file opens at the eleme
 a missing one says "File not found", a web address goes to the browser after a confirm. The same fallback runs with
 LSP off. The server validates no markup, so `editops.HtmlMarkupCheck` (unclosed and stray tags, missing local link
 targets) is added to its pulled or pushed diagnostics off the FX thread (`LspManager.withMarkupChecks`, source
-`editora`); a page no server serves shows the same check on the `.http` variable marks' squiggle overlay
-(`HttpVariableMarks.MarkupCheck`, gated on `!isLspActive()`). `textDocument/documentColor` (any server with a
+`editora`). A page with template syntax (`HtmlElements.hasTemplateSyntax`: `{% %}`, `{# #}`, `<% %>`, a `{{ }}` block
+form) or in a template folder (`templates/`, `_layouts/`, `partials/` …) is not checked for balance, only for links;
+a link missing where it points is accepted under the project's `public/`, `static/` or `assets/`
+(`HtmlMarkupCheck.servedElsewhere`). A page no server serves shows the same check on the `.http` variable marks'
+squiggle overlay (`HttpVariableMarks.MarkupCheck`, gated on `!isLspActive()`). `textDocument/documentColor` (any server with a
 `colorProvider`: html, css) rides `requestFoldingRanges`' pulses; `EditorBuffer.setColorSwatches` draws an inlay per
 colour, painted by a per-buffer `data:` stylesheet with one class per colour (`ColorSwatchInlays`).
 
