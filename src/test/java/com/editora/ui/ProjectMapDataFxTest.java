@@ -502,7 +502,12 @@ class ProjectMapDataFxTest {
             waitForFx(() -> contains(surface, matches.getFirst()) && !statuses.isEmpty());
 
             FxTestSupport.runOnFx(() -> assertEquals(matches.getFirst(), FxTestSupport.field(surface, "selected")));
-            assertEquals(List.of(tr("project.map.status.matchesShown", 239, 300)), statuses);
+            // Review 3 B1/A9: the map opens the folders of the best 30 only; the results strip reaches the rest.
+            assertEquals(
+                    List.of(tr(
+                            "project.map.status.search.notice",
+                            tr("project.map.status.search.opened", ProjectMapView.SEARCH_OPEN_LIMIT))),
+                    statuses);
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
         }
@@ -553,11 +558,15 @@ class ProjectMapDataFxTest {
                 assertEquals(guide, FxTestSupport.field(surface, "selected"));
             });
 
+            // Review 3 B2: clearing keeps the place. The selection stays (guide, already in the manual set), and
+            // src, reopened by hand during the search, stays open; main, which the user closed, does not.
             FxTestSupport.runOnFx(() -> mapView.setQuery(""));
-            waitForFx(() -> !contains(surface, main) && contains(surface, guide));
+            waitForFx(() ->
+                    contains(surface, guide) && !mapView.expandedDirectories().contains(main));
             FxTestSupport.runOnFx(() -> {
-                assertEquals(Set.of(root, docs), mapView.expandedDirectories());
-                assertEquals(Set.of(root, docs), manual, "clearing the query restores exactly the manual set");
+                assertEquals(Set.of(root, docs, src), mapView.expandedDirectories());
+                assertEquals(Set.of(root, docs, src), manual, "only folders the user opened join the manual set");
+                assertEquals(guide, FxTestSupport.field(surface, "selected"));
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
