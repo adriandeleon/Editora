@@ -146,6 +146,9 @@ final class ProjectMapView extends VBox {
     private final Button backButton = new Button("‹");
     private final Button forwardButton = new Button("›");
     private final MenuItem printButton = new MenuItem(tr("project.map.print"));
+    /** The options menu's list of the open cards (review 3, C10). */
+    private final javafx.scene.control.Menu openCardsMenu = new javafx.scene.control.Menu(tr("project.map.openCards"));
+
     private final MenuItem exportPdfButton = new MenuItem(tr("project.map.exportPdf"));
     private final HBox breadcrumbs = new HBox(2);
     private final Label breadcrumbEllipsis = new Label("…");
@@ -319,6 +322,8 @@ final class ProjectMapView extends VBox {
         surface.setOnNotesPreview(this::previewNotes);
         surface.onTogglePreview = this::togglePreview;
         surface.setOnSelectionChanged(this::selectionChanged);
+        surface.overviewCards = cards::visibleCards;
+        surface.onOverviewCard = cards::bringIntoView;
         surface.setStatusSuppliers(this.isOpen, this.isModified);
         loadingLabel.getStyleClass().addAll("project-map-zoom-control", "project-map-loading");
         // The zoom-control class makes it transparent; over map rows it needs the overlay fill to be read.
@@ -371,8 +376,12 @@ final class ProjectMapView extends VBox {
                         hideOpenNotes,
                         followActiveFile,
                         new SeparatorMenuItem(),
+                        openCardsMenu,
+                        new SeparatorMenuItem(),
                         printButton,
                         exportPdfButton);
+        openCardsMenu.setOnShowing(event -> fillOpenCardsMenu());
+        fillOpenCardsMenu(); // never empty: a submenu with no items does not open
         printButton.setDisable(true);
         exportPdfButton.setDisable(true);
         printButton.setOnAction(event -> onPrint.accept(mapOutput()));
@@ -392,6 +401,28 @@ final class ProjectMapView extends VBox {
         HBox.setHgrow(breadcrumbs, Priority.ALWAYS);
         updateNavigation();
         return row;
+    }
+
+    /**
+     * The options menu's Open cards: one item per open card, the most recently used first, that brings the card into
+     * view (review 3, C10) — cards stay where they were opened, and the map may have moved far from them.
+     */
+    private void fillOpenCardsMenu() {
+        List<MenuItem> items = new ArrayList<>();
+        for (MapCards.OpenCard card : cards.openCards()) {
+            String label = card.note() ? tr("project.map.openCards.notes", card.label()) : card.label();
+            MenuItem item = new MenuItem(label, card.note() ? Icons.notes() : null);
+            item.setMnemonicParsing(false);
+            item.setDisable(!card.node().isVisible()); // hidden by "Hide unmatched" or "Hide all open Personal Notes"
+            item.setOnAction(event -> cards.bringIntoView(card.node()));
+            items.add(item);
+        }
+        if (items.isEmpty()) {
+            MenuItem none = new MenuItem(tr("project.map.openCards.none"));
+            none.setDisable(true);
+            items.add(none);
+        }
+        openCardsMenu.getItems().setAll(items);
     }
 
     /** Whether a run of single-child folders opens, and is drawn, as one column ("Compact folder chains"). */
@@ -2210,6 +2241,11 @@ final class ProjectMapView extends VBox {
             @Override
             public void openNarrowed(Path file, com.editora.text.FoldRegions.Region block) {
                 onOpenNarrowed.accept(file, block);
+            }
+
+            @Override
+            public void panBy(double dx, double dy) {
+                surface.panBy(dx, dy);
             }
         };
     }
@@ -4686,6 +4722,15 @@ final class ProjectMapView extends VBox {
             double minY = contentMinY();
             double maxX = contentMaxX();
             double maxY = contentMaxY();
+            // The open cards are part of the picture: their marks stand where they are, and a card left out of view
+            // brings the overview up as a column out of view does (review 3, C10).
+            for (MapCards.OpenCard card : overviewCards.get()) {
+                double[] drawn = card.bounds();
+                minX = Math.min(minX, drawn[0]);
+                minY = Math.min(minY, drawn[1]);
+                maxX = Math.max(maxX, drawn[0] + drawn[2]);
+                maxY = Math.max(maxY, drawn[1] + drawn[3]);
+            }
             if (minX >= 0 && minY >= 0 && maxX <= viewportWidth && maxY <= viewportHeight) {
                 return null; // everything is on screen: nothing to navigate to
             }
@@ -4767,6 +4812,7 @@ final class ProjectMapView extends VBox {
                         2,
                         2);
             }
+            drawOverviewCards(g, overview);
             // The viewport rectangle is clipped to the frame: panned far from the content it used to be
             // drawn outside the overview altogether.
             double frameRight = overviewWidth - 3;
@@ -4779,6 +4825,64 @@ final class ProjectMapView extends VBox {
             g.setLineWidth(1.5);
             g.strokeRect(left, top, Math.max(2, right - left), Math.max(2, bottom - top));
             g.setGlobalAlpha(1);
+        }
+
+        /** The open cards the overview marks, and what a press on one of its marks does (the view's cards). */
+        private java.util.function.Supplier<List<MapCards.OpenCard>> overviewCards = List::of;
+
+        private Consumer<Region> onOverviewCard = card -> {};
+
+        /**
+         * The open cards as small accent marks in the overview, kept inside its frame: the cards built up in one place
+         * still show, and a press on a mark brings its card back (review 3, C10).
+         */
+        private void drawOverviewCards(GraphicsContext g, OverviewBox overview) {
+            List<MapCards.OpenCard> cards = overviewCards.get();
+            if (cards.isEmpty()) {
+                return;
+            }
+            Color accent = color(accentProbe, Color.web("#58a6ff"));
+            g.setStroke(accent);
+            g.setLineWidth(1);
+            for (MapCards.OpenCard card : cards) {
+                double[] mark = overviewMark(overview, card.bounds());
+                g.setFill(card.note() ? noteColor() : accent);
+                g.setGlobalAlpha(0.55);
+                g.fillRect(mark[0], mark[1], mark[2], mark[3]);
+                g.setGlobalAlpha(0.94);
+                g.strokeRect(mark[0], mark[1], mark[2], mark[3]);
+            }
+        }
+
+        /** Where a card drawn at {@code bounds} is marked in the overview, in its own pixels, inside its frame. */
+        private static double[] overviewMark(OverviewBox overview, double[] bounds) {
+            double w = Math.max(4, bounds[2] * overview.scale());
+            double h = Math.max(4, bounds[3] * overview.scale());
+            double x = clampInto(
+                    overview.insetX() + (bounds[0] - overview.minX()) * overview.scale(), 3, overview.width() - 3 - w);
+            double y = clampInto(
+                    overview.insetY() + (bounds[1] - overview.minY()) * overview.scale(), 3, overview.height() - 3 - h);
+            return new double[] {x, y, w, h};
+        }
+
+        /** The open card whose overview mark is under {@code x, y} (the surface's pixels), the newest first; or null. */
+        private @Nullable Region overviewCardAt(OverviewBox overview, double x, double y) {
+            for (MapCards.OpenCard card : overviewCards.get()) {
+                double[] mark = overviewMark(overview, card.bounds());
+                double left = overview.x() + mark[0] - 2;
+                double top = overview.y() + mark[1] - 2;
+                if (x >= left && x <= left + mark[2] + 4 && y >= top && y <= top + mark[3] + 4) {
+                    return card.node();
+                }
+            }
+            return null;
+        }
+
+        /** Pans the map, and the cards on it, by {@code dx, dy} pixels. */
+        void panBy(double dx, double dy) {
+            offsetX += dx;
+            offsetY += dy;
+            repaint();
         }
 
         /** The overview's own canvas, a child of the map area above the cards (see {@link #drawOverview}). */
@@ -6681,6 +6785,11 @@ final class ProjectMapView extends VBox {
             OverviewBox overview = overviewBox;
             if (overview == null || !overview.contains(x, y)) {
                 return false;
+            }
+            Region card = overviewDragging ? null : overviewCardAt(overview, x, y);
+            if (card != null) {
+                onOverviewCard.accept(card); // a card's mark: the card itself comes into view (review 3, C10)
+                return true;
             }
             double mapX =
                     clampInto((x - overview.x() - overview.insetX()) / overview.scale(), 0, overview.contentWidth());

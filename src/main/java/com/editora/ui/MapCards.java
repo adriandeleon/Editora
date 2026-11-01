@@ -120,6 +120,20 @@ final class MapCards {
         void openAt(Path file, int line);
 
         void openNarrowed(Path file, FoldRegions.Region block);
+
+        /** Pans the map (and the cards on it) by {@code dx, dy} pixels. */
+        void panBy(double dx, double dy);
+    }
+
+    /**
+     * An open card, for the lists of them (the options menu's Open cards, the overview's marks): its key, the card, a
+     * name for it and whether it is a note card.
+     */
+    record OpenCard(Path key, Region node, String label, boolean note) {
+        /** The card as drawn now, {@code {x, y, w, h}} in the map area's pixels. */
+        double[] bounds() {
+            return drawnBounds(node);
+        }
     }
 
     /**
@@ -223,6 +237,53 @@ final class MapCards {
     @Nullable
     ProjectMapNotePreview noteCard(Path path) {
         return notePreviews.get(path);
+    }
+
+    /** Every open card, the most recently used first. */
+    List<OpenCard> openCards() {
+        List<OpenCard> open = new ArrayList<>();
+        previews.forEach((key, card) -> open.add(new OpenCard(key, card, card.title(), false)));
+        notePreviews.forEach((key, card) -> open.add(new OpenCard(key, card, card.title(), true)));
+        open.sort(java.util.Comparator.comparingLong((OpenCard card) -> cardTouches.getOrDefault(card.node(), 0L))
+                .reversed());
+        return open;
+    }
+
+    /** The cards in sight of the map — not hidden by a filter or an option — as marks for the overview. */
+    List<OpenCard> visibleCards() {
+        return openCards().stream().filter(card -> card.node().isVisible()).toList();
+    }
+
+    /** A card as drawn, {@code {x, y, w, h}} in the map area's pixels. */
+    static double[] drawnBounds(Region card) {
+        double scale = cardScale(card);
+        return new double[] {card.getLayoutX(), card.getLayoutY(), card.getWidth() * scale, card.getHeight() * scale};
+    }
+
+    /**
+     * Brings an open card into view and to the front, with the keyboard in it: the map is panned (and the cards with
+     * it) so the card stands in the middle of the map area — or its top-left corner does, for one larger than the area
+     * (review 3, C10). Nothing for a card that is closed or hidden by a filter.
+     */
+    void bringIntoView(Region card) {
+        if (disposed || !cardTouches.containsKey(card) || !card.isVisible()) {
+            return;
+        }
+        double[] drawn = drawnBounds(card);
+        double width = canvasHost.getWidth();
+        double height = canvasHost.getHeight();
+        double margin = ProjectMapPreview.EDGE_MARGIN;
+        double dx = drawn[2] + margin * 2 <= width ? width / 2 - (drawn[0] + drawn[2] / 2) : margin - drawn[0];
+        double dy = drawn[3] + margin * 2 <= height ? height / 2 - (drawn[1] + drawn[3] / 2) : margin - drawn[1];
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+            host.panBy(dx, dy);
+        }
+        touchCard(card, true);
+        if (card instanceof ProjectMapPreview code) {
+            code.focusContent();
+        } else if (card instanceof ProjectMapNotePreview note) {
+            note.focusContent();
+        }
     }
 
     /** Whether any card is open. */

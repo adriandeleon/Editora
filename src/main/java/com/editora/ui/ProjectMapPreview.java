@@ -1096,6 +1096,11 @@ final class ProjectMapPreview extends StackPane {
         return editor;
     }
 
+    /** The card's title: its file's name, or {@code file › declaration}. */
+    String title() {
+        return title.getText();
+    }
+
     void setMarkerActions(@Nullable MarkerActions actions) {
         markerActions = actions;
     }

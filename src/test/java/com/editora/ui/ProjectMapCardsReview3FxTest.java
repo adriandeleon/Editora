@@ -367,6 +367,85 @@ class ProjectMapCardsReview3FxTest {
         });
     }
 
+    // --- C10 --------------------------------------------------------------------------------------------
+
+    @Test
+    void openCardsShowInTheOverviewAndTheOptionsMenuAndEitherBringsOneBack() throws Exception {
+        Path big = writeBig();
+        Path other = Files.writeString(root.resolve("other.txt"), "other\n");
+        map = openMap();
+        ProjectMapPreview card = openFileCard(big);
+        ProjectMapPreview second = openFileCard(other);
+        FxTestSupport.runOnFx(() -> {
+            FxTestSupport.call(map.surface(), "panBy", new Class<?>[] {double.class, double.class}, -4000.0, -3000.0);
+            FxTestSupport.invoke(map.surface(), "paintNow");
+            Region host = (Region) card.getParent();
+            assertTrue(card.getLayoutX() + card.getWidth() < 0, "the map moved on: the cards went with it");
+
+            // The options menu lists them, the most recently used first, and brings one back.
+            FxTestSupport.call(map.view(), "fillOpenCardsMenu", new Class<?>[0]);
+            javafx.scene.control.Menu menu = FxTestSupport.field(map.view(), "openCardsMenu");
+            List<String> labels = menu.getItems().stream()
+                    .map(javafx.scene.control.MenuItem::getText)
+                    .toList();
+            assertEquals(List.of("other.txt", "Big.java"), labels);
+            menu.getItems().get(1).fire();
+            assertInside(card, host);
+            assertSame(card.editor(), map.scene().getFocusOwner(), "with the keyboard in it");
+
+            // The overview marks each card; a press on a mark brings that card back.
+            FxTestSupport.call(map.surface(), "panBy", new Class<?>[] {double.class, double.class}, 3000.0, 2500.0);
+            FxTestSupport.invoke(map.surface(), "paintNow");
+            Object overview = FxTestSupport.field(map.surface(), "overviewBox");
+            assertNotNull(overview, "the map is off screen: the overview shows");
+            double[] mark = (double[]) FxTestSupport.call(
+                    map.surface(),
+                    "overviewMark",
+                    new Class<?>[] {overview.getClass(), double[].class},
+                    overview,
+                    MapCards.drawnBounds(second));
+            double ox = (double) FxTestSupport.call(overview, "x", new Class<?>[0]);
+            double oy = (double) FxTestSupport.call(overview, "y", new Class<?>[0]);
+            javafx.scene.Node canvas = FxTestSupport.field(map.surface(), "overviewCanvas");
+            double x = mark[0] + mark[2] / 2;
+            double y = mark[1] + mark[3] / 2;
+            javafx.geometry.Point2D scene = canvas.localToScene(x, y);
+            Event.fireEvent(
+                    canvas,
+                    new MouseEvent(
+                            MouseEvent.MOUSE_PRESSED,
+                            x,
+                            y,
+                            scene.getX(),
+                            scene.getY(),
+                            MouseButton.PRIMARY,
+                            1,
+                            false,
+                            false,
+                            false,
+                            false,
+                            true,
+                            false,
+                            false,
+                            false,
+                            false,
+                            true,
+                            new PickResult(canvas, scene.getX(), scene.getY())));
+            assertTrue(ox >= 0 && oy >= 0);
+            assertInside(second, host);
+        });
+    }
+
+    private static void assertInside(Region card, Region host) {
+        double[] drawn = MapCards.drawnBounds(card);
+        assertTrue(
+                drawn[0] >= 0
+                        && drawn[1] >= 0
+                        && drawn[0] + drawn[2] <= host.getWidth()
+                        && drawn[1] + drawn[3] <= host.getHeight(),
+                "the card is back in view: " + java.util.Arrays.toString(drawn));
+    }
+
     /** A map with one row's site and the chrome given, for placement alone. */
     private record StubHost(MapCards.Site site, List<double[]> chrome) implements MapCards.Host {
         @Override
@@ -466,6 +545,9 @@ class ProjectMapCardsReview3FxTest {
 
         @Override
         public void openNarrowed(Path file, com.editora.text.FoldRegions.Region block) {}
+
+        @Override
+        public void panBy(double dx, double dy) {}
     }
 
     private static void setDouble(Object target, String name, double value) {
