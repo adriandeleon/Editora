@@ -153,6 +153,17 @@ final class MapLoader {
         listings.setOnRecovered(() -> ui.execute(this::reload));
     }
 
+    /**
+     * Whether a root's columns list their whole folders (Map explore, position 15): local ones do, where a
+     * listing is cheap and names are read without attributes; a remote root keeps its rows behind "+N more",
+     * each costing a round trip. Tests of "+N more" on a local folder turn it off.
+     */
+    java.util.function.Predicate<Path> canvasWholeFolders = com.editora.vfs.Vfs::isLocal;
+
+    private boolean canvasWholeFolders(Path root) {
+        return canvasWholeFolders.test(root);
+    }
+
     // --- the root ------------------------------------------------------------------------------------------
 
     @Nullable
@@ -252,7 +263,8 @@ final class MapLoader {
                 host.columnFilterQueries(),
                 // A search opens exactly the folders that lead to its matches: no chain opens on its own.
                 host.compactChains() && !searching,
-                priorityFolders());
+                priorityFolders(),
+                canvasWholeFolders(requestedRoot));
         host.loadStarted();
         try {
             background.execute(() -> {
@@ -442,6 +454,41 @@ final class MapLoader {
     }
 
     /**
+     * Collapse All and Close Other Branches (Map explore, position 13): closes every open folder that is not on
+     * the way to {@code row}, so only the columns that lead to it stay. With {@code keepOwn} a folder row's own
+     * column stays open too. The root's column always stays. Returns the topmost folder of each branch that
+     * closed, so the caller can close what hangs from them (cards); empty: nothing changed.
+     */
+    List<Path> canvasCloseOthers(@Nullable Path row, boolean keepOwn) {
+        Path current = root;
+        if (current == null) {
+            return List.of();
+        }
+        Path target = row != null && row.startsWith(current) ? row : current;
+        Set<Path> off = new HashSet<>();
+        for (Path open : expandedDirectories()) {
+            boolean onPath = open.equals(current) || target.startsWith(open) && (keepOwn || !open.equals(target));
+            if (!onPath) {
+                off.add(open);
+            }
+        }
+        List<Path> topmost = new ArrayList<>();
+        for (Path folder : off) {
+            Path parent = folder.getParent();
+            boolean under = false;
+            for (Path above = parent; above != null && !under; above = above.getParent()) {
+                under = off.contains(above);
+            }
+            if (!under) {
+                topmost.add(folder);
+            }
+        }
+        topmost.sort(null);
+        topmost.forEach(this::close);
+        return List.copyOf(topmost);
+    }
+
+    /**
      * Opens the way to {@code target} ({@code chain}: its folders) and keeps it loaded past its folder's row
      * limit; every other open branch stays as it is.
      */
@@ -544,7 +591,10 @@ final class MapLoader {
         }
         int limit = Math.max(
                 ProjectMapModel.DIRECTORY_CHUNK, directoryLimits.getOrDefault(path, ProjectMapModel.DIRECTORY_CHUNK));
-        if (facts.truncated() || facts.loaded() > limit) {
+        Path current = root;
+        boolean whole = current != null && canvasWholeFolders(current);
+        // A folder that loaded whole is filtered where it is, however long (position 15).
+        if (facts.truncated() || facts.loaded() > limit && !whole) {
             reload();
         }
     }

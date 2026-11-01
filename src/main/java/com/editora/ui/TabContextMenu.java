@@ -137,6 +137,13 @@ final class TabContextMenu {
                 tr("menu.revealInFileManager"),
                 Icons.revealInFiles(),
                 () -> c.revealInFileManager(buffer.getPath(), false, c.isLocalBuffer(buffer)));
+        // Beside Reveal in File Manager: the file's place on the Project Map (Map explore, position 18).
+        MenuItem revealInMap = LazyContextMenu.item(tr("project.map.menu.revealInMap"), Icons.locateFile(), () -> {
+            java.nio.file.Path file = buffer.getPath();
+            if (file != null && c.projectsEnabled()) {
+                c.projectPanel().showInMap(file);
+            }
+        });
         MenuItem terminal = LazyContextMenu.item(
                 tr("menu.openTerminal"),
                 Icons.terminal(),
@@ -164,6 +171,7 @@ final class TabContextMenu {
                         compareWith,
                         openPatch,
                         new SeparatorMenuItem(),
+                        revealInMap,
                         reveal,
                         terminal,
                         copyPath,
@@ -188,6 +196,8 @@ final class TabContextMenu {
             // Reveal only makes sense for a saved, local file; a terminal also opens on a remote file's host.
             boolean localPath = hasPath && c.isLocalBuffer(buffer);
             reveal.setDisable(!localPath);
+            revealInMap.setVisible(c.projectsEnabled());
+            revealInMap.setDisable(!hasPath);
             terminal.setDisable(!hasPath);
             copyPath.setDisable(!hasPath);
             rename.setDisable(!hasPath);

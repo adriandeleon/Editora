@@ -416,6 +416,36 @@ final class MapSurface extends Region {
 
     private final Map<List<Color>, Color> fadedInks = new HashMap<>();
 
+    /** The rows on screen as accessible tree items (Map explore, position 14). */
+    private final MapAccessibleRows canvasA11y = new MapAccessibleRows(new MapAccessibleRows.Actions() {
+        @Override
+        public void select(Path path) {
+            MapSurface.this.select(path);
+            requestFocus();
+        }
+
+        @Override
+        public void activate(Path path) {
+            ProjectMapModel.Entry entry = entryByPath.get(path);
+            if (entry != null) {
+                MapSurface.this.select(path);
+                onActivate.accept(entry);
+            }
+        }
+
+        @Override
+        public void expand(Path path, boolean expand) {
+            canvasExpand(path, expand);
+        }
+
+        @Override
+        public javafx.geometry.@Nullable Bounds toScreen(double x, double y, double width, double height) {
+            return localToScreen(new javafx.geometry.BoundingBox(x, y, width, height));
+        }
+    });
+    /** The rows on screen changed since {@link #canvasA11y} was last told (a paint). */
+    private boolean canvasA11yStale = true;
+
     MapSurface(ProjectMapView view) {
         this.view = view;
         // The project-tree class supplies the same per-editor-theme folder/file looked-up colors used
@@ -439,6 +469,7 @@ final class MapSurface extends Region {
         getChildren()
                 .addAll(
                         canvas,
+                        canvasA11y,
                         iconRasterizer,
                         fontProbe,
                         bgProbe,
@@ -465,7 +496,8 @@ final class MapSurface extends Region {
         // PARENT, not TREE_VIEW: the canvas has no item nodes, and a tree role made screen readers look for
         // rows, find none and announce an empty tree. PARENT is a plain group (AXGroup on macOS, a pane in
         // UI Automation) that promises no items; its TEXT names the selection and its states and changes
-        // with it (updateAccessibleText), and its children are the real column controls (B5).
+        // with it (updateAccessibleText), and its children are the real column controls (B5). Since Map explore
+        // position 14 one more child, canvasA11y, is a tree of the rows on screen, each a tree item.
         setAccessibleRole(AccessibleRole.PARENT);
         setAccessibleHelp(tr("project.map.accessibleHelp"));
         nodeTooltip.setShowDelay(Duration.millis(350));
@@ -1270,6 +1302,7 @@ final class MapSurface extends Region {
             syncHover(); // the row under a resting pointer changed with the viewport
             drawCanvas();
             completedPaints++;
+            canvasA11yPainted();
             moveCardsWithViewport();
             view.updateCardVisibility(); // repaints the connectors
         } finally {
@@ -1402,6 +1435,8 @@ final class MapSurface extends Region {
             return null;
         }
 
+        List<List<ProjectMapOutput.Label>> labels = canvasOutputLabels(plan); // before the pages move the offsets
+        List<List<ProjectMapOutput.Label>> outputLabels = List.of();
         double liveZoom = zoom;
         double liveOffsetX = offsetX;
         double liveOffsetY = offsetY;
@@ -1420,6 +1455,7 @@ final class MapSurface extends Region {
             for (ProjectMapOutputPlan.Cell cell : plan.pages()) {
                 pages.add(renderOutputPage(cell));
             }
+            outputLabels = labels;
         } finally {
             canvas = liveCanvas;
             outputPalette = null;
@@ -1438,7 +1474,187 @@ final class MapSurface extends Region {
             }
             requestLayout();
         }
-        return new ProjectMapOutput.Rendered(List.copyOf(pages), plan.pointsPerPixel(), plan);
+        return new ProjectMapOutput.Rendered(List.copyOf(pages), plan.pointsPerPixel(), plan, outputLabels);
+    }
+
+    /**
+     * The searchable text of the PDF pages (Map explore, position 16): each row's whole name and each column's
+     * title, where the page image draws it, in that page's image pixels. The PDF lays it over the picture as
+     * invisible text, so a reader finds, selects and copies the names the picture shows. Uses the layout of the
+     * output (headers collapsed), before the pages are painted.
+     */
+    private List<List<ProjectMapOutput.Label>> canvasOutputLabels(ProjectMapOutputPlan.Plan plan) {
+        List<ProjectMapOutputPlan.Cell> cells = plan.pages();
+        List<List<ProjectMapOutput.Label>> pages = new ArrayList<>(cells.size());
+        for (int i = 0; i < cells.size(); i++) {
+            pages.add(new ArrayList<>());
+        }
+        double scale = plan.renderScale();
+        for (NodeBox screen : boxes) {
+            ProjectMapModel.Entry entry = screen.entry();
+            if (entry.isPlaceholder()) {
+                continue;
+            }
+            NodeBox content = layoutRowContent(screen);
+            double left = (content.x() - offsetX) / zoom + 31;
+            double top = (content.y() - offsetY) / zoom + 20.5 - ProjectMapOutputPlan.LABEL_SIZE;
+            double room = content.width() / zoom - rowExtraWidth(entry);
+            double width = Math.max(1, Math.min(measuredLabelWidth(entry.name()), room));
+            canvasPlaceLabel(pages, cells, scale, entry.name(), left, top, width, ProjectMapOutputPlan.LABEL_SIZE);
+        }
+        for (ColumnBox column : columnBoxes) {
+            String title = columnTitle(column.column());
+            double left = (column.x() - offsetX) / zoom + 10;
+            double top = (column.y() - offsetY) / zoom + 16.5 - 11;
+            double width = Math.max(1, Math.min(measuredLabelWidth(title) * 11 / 12, column.width() / zoom - 20));
+            canvasPlaceLabel(pages, cells, scale, title, left, top, width, 11);
+        }
+        return pages;
+    }
+
+    /** Puts one label on the page its middle falls on, in that page's image pixels. */
+    private static void canvasPlaceLabel(
+            List<List<ProjectMapOutput.Label>> pages,
+            List<ProjectMapOutputPlan.Cell> cells,
+            double scale,
+            String text,
+            double left,
+            double top,
+            double width,
+            double height) {
+        double middleX = left + Math.min(width, 40) / 2;
+        double middleY = top + height / 2;
+        for (int i = 0; i < cells.size(); i++) {
+            ProjectMapOutputPlan.Cell cell = cells.get(i);
+            if (middleX >= cell.x()
+                    && middleX < cell.x() + cell.width()
+                    && middleY >= cell.y()
+                    && middleY < cell.y() + cell.height()) {
+                double right = Math.min(left + width, cell.x() + cell.width());
+                pages.get(i)
+                        .add(new ProjectMapOutput.Label(
+                                text,
+                                (left - cell.x()) * scale,
+                                (top - cell.y()) * scale,
+                                Math.max(1, (right - left) * scale),
+                                height * scale));
+                return;
+            }
+        }
+    }
+
+    /**
+     * ⋯ → Export ▸ SVG… (Map explore, position 16): the whole map, as Print/PDF lays it out (every laid-out
+     * column, headers collapsed, the light palette), with each row's name and each column's title as text.
+     * Null for an empty map.
+     */
+    @Nullable
+    String canvasSvg(String title) {
+        outputPaint = true;
+        Map<Rectangle, Color> livePalette = outputPalette;
+        outputPalette = outputPalette();
+        try {
+            repaint();
+            ProjectMapOutputPlan.Box bounds = outputBounds();
+            WorldLayout world = projected;
+            if (bounds == null || world == null) {
+                return null;
+            }
+            List<ProjectMapSvg.Column> columns = new ArrayList<>(world.columns().size());
+            for (ColumnBox box : world.columns()) {
+                ProjectMapModel.Column column = box.column();
+                columns.add(new ProjectMapSvg.Column(
+                        columnTitle(column),
+                        column.countLabel(),
+                        isStructureColumn(column.id()),
+                        box.x(),
+                        box.y(),
+                        box.width(),
+                        box.height()));
+            }
+            List<ProjectMapSvg.Row> rows = new ArrayList<>(world.rows().size());
+            for (NodeBox box : world.rows()) {
+                ProjectMapModel.Entry entry = box.entry();
+                double top = box.y() + (box.height() - NODE_HEIGHT) / 2; // a compact row's centred band
+                String label = entry.name(); // a "+N more" or stub row's text is its name
+                double room = box.width() - (entry.isPlaceholder() ? 20 : rowExtraWidth(entry));
+                String shown = measuredLabelWidth(label) > room && room > 12
+                        ? (entry.isPlaceholder() ? elide(label, 12, room) : layoutElide(entry, label, 12, room))
+                        : label;
+                rows.add(new ProjectMapSvg.Row(
+                        label,
+                        shown,
+                        entry.directory(),
+                        entry.isSymbol(),
+                        entry.isPlaceholder(),
+                        entry.path().equals(selected),
+                        !entry.isPlaceholder() && layoutIgnoredReason(entry) != null,
+                        box.x(),
+                        box.y(),
+                        box.width(),
+                        box.height(),
+                        box.x() + (entry.isPlaceholder() ? 10 : 31),
+                        top + 20.5));
+            }
+            List<ProjectMapSvg.Link> links = canvasSvgLinks(world);
+            return ProjectMapSvg.write(
+                    new double[] {bounds.x(), bounds.y(), bounds.width(), bounds.height()},
+                    columns,
+                    rows,
+                    links,
+                    new ProjectMapSvg.Palette(
+                            ProjectMapSvg.hex(color(bgProbe, Color.WHITE)),
+                            ProjectMapSvg.hex(color(surfaceProbe, Color.web("#f6f8fa"))),
+                            ProjectMapSvg.hex(color(borderProbe, Color.web("#d0d7de"))),
+                            ProjectMapSvg.hex(mix(color(surfaceProbe, Color.web("#f6f8fa")), structureTint(), 0.16)),
+                            "#ffffff",
+                            ProjectMapSvg.hex(color(borderProbe, Color.web("#d0d7de"))),
+                            ProjectMapSvg.hex(color(textProbe, Color.web("#1f2328"))),
+                            ProjectMapSvg.hex(color(mutedProbe, Color.web("#59636e"))),
+                            ProjectMapSvg.hex(color(accentProbe, Color.web("#0969da"))),
+                            ProjectMapSvg.hex(color(folderProbe, Color.web("#0969da"))),
+                            ProjectMapSvg.hex(color(fileProbe, Color.web("#59636e"))),
+                            ProjectMapSvg.hex(structureTint())),
+                    title);
+        } finally {
+            outputPalette = livePalette;
+            outputPaint = false;
+            repaint();
+        }
+    }
+
+    /** One link per row of a column, from the row that opened it (one per column across a vertical flow). */
+    private List<ProjectMapSvg.Link> canvasSvgLinks(WorldLayout world) {
+        List<ProjectMapSvg.Link> links = new ArrayList<>();
+        boolean vertical = isVerticalFlow();
+        boolean reverse = isReverseFlow();
+        int next = 0;
+        for (int index = 0; index < world.columns().size(); index++) {
+            ColumnBox column = world.columns().get(index);
+            int count = column.column().entries().size();
+            int first = next;
+            next += count;
+            int anchor = world.anchorRows().get(index);
+            if (anchor < 0 || anchor >= world.rows().size() || count == 0) {
+                continue;
+            }
+            NodeBox parent = world.rows().get(anchor);
+            if (vertical) {
+                double fromY = reverse ? parent.y() : parent.y() + parent.height();
+                double toY = reverse ? column.y() + column.height() : column.y();
+                links.add(new ProjectMapSvg.Link(
+                        parent.x() + parent.width() / 2, fromY, column.x() + column.width() / 2, toY, true));
+                continue;
+            }
+            for (int row = first; row < next && row < world.rows().size(); row++) {
+                NodeBox child = world.rows().get(row);
+                double fromX = reverse ? parent.x() : parent.x() + parent.width();
+                double toX = reverse ? child.x() + child.width() : child.x();
+                links.add(new ProjectMapSvg.Link(
+                        fromX, parent.y() + parent.height() / 2, toX, child.y() + child.height() / 2, false));
+            }
+        }
+        return links;
     }
 
     private static int outputTileSize() {
@@ -2485,7 +2701,7 @@ final class MapSurface extends Region {
      */
     private double nodeWidthFor(ProjectMapModel.Column column, List<ProjectMapModel.Entry> rows) {
         double required = measuredLabelWidth(columnTitle(column)) + 52;
-        for (ProjectMapModel.Entry entry : rows) {
+        for (ProjectMapModel.Entry entry : canvasWidestCandidates(rows)) {
             required = Math.max(required, measuredLabelWidth(entry.name()) + rowExtraWidth(entry));
         }
         if (column.depth() > 0 && showHiddenLabelWidth > 0 && !isStructureColumn(column.id())) {
@@ -2510,6 +2726,34 @@ final class MapSurface extends Region {
                 + (notedPaths.contains(entry.path()) ? MARKER_WIDTH : 0)
                 + (layoutModuleFolders.contains(entry.path()) ? MODULE_BADGE_WIDTH : 0);
         return 31 + 2 + CHEVRON_ZONE + markers;
+    }
+
+    /** Rows past which a column's width is measured on its longest names only (position 15). */
+    private static final int CANVAS_MEASURE_ALL_ROWS = 512;
+
+    /** How many of a long column's longest names are measured for its width. */
+    private static final int CANVAS_MEASURED_NAMES = 96;
+
+    /**
+     * The rows whose labels decide a column's width: all of them in an ordinary column; in a long folder listed
+     * whole (thousands of rows, position 15) the ones with the longest names, so its first layout measures a
+     * hundred labels, not every one. The width is capped at {@link #MAX_NODE_WIDTH} and a longer label is cut
+     * where it differs, so a name a few characters shorter never decides it.
+     */
+    private static List<ProjectMapModel.Entry> canvasWidestCandidates(List<ProjectMapModel.Entry> rows) {
+        if (rows.size() <= CANVAS_MEASURE_ALL_ROWS) {
+            return rows;
+        }
+        java.util.PriorityQueue<ProjectMapModel.Entry> longest = new java.util.PriorityQueue<>(
+                CANVAS_MEASURED_NAMES + 1,
+                java.util.Comparator.comparingInt(entry -> entry.name().length()));
+        for (ProjectMapModel.Entry entry : rows) {
+            longest.add(entry);
+            if (longest.size() > CANVAS_MEASURED_NAMES) {
+                longest.poll();
+            }
+        }
+        return List.copyOf(longest);
     }
 
     private double measuredLabelWidth(String value) {
@@ -2767,6 +3011,7 @@ final class MapSurface extends Region {
             controls.showHidden().relocate(hiddenX, controlY);
             controls.pin().resize(pinWidth, controlHeight);
             controls.pin().relocate(Math.min(right - pinWidth, hiddenX + hiddenWidth + COLUMN_CONTROL_GAP), controlY);
+            controls.pin().setVisible(canvasLockShown(id, controls));
         }
         columnControls.forEach((id, controls) -> {
             if (!visibleIds.contains(id)) {
@@ -4226,6 +4471,37 @@ final class MapSurface extends Region {
             layoutHoverColumn = column;
             if (layoutCompactRows) {
                 repaint();
+            } else {
+                canvasSyncLocks(); // the lock comes and goes with the pointer in every mode (position 17)
+            }
+        }
+    }
+
+    /**
+     * Whether a column's lock shows (Map explore, position 17): only while the column is hovered, one of its
+     * controls has the focus, or it is locked; the rest of the time the header shows its filter alone. The
+     * lock keeps its place, so nothing moves when it appears.
+     */
+    private boolean canvasLockShown(ProjectMapModel.ColumnId id, ColumnControls controls) {
+        ColumnLayout layout = columnLayouts.get(id);
+        return layout != null && layout.locked
+                || id.equals(layoutHoverColumn)
+                || controls.filter().isFocused()
+                || controls.showHidden().isFocused()
+                || controls.pin().isFocused();
+    }
+
+    /** Shows or hides each laid-out column's lock for the hover and focus now, without laying anything out. */
+    private void canvasSyncLocks() {
+        for (ColumnBox box : columnBoxes) {
+            ColumnControls controls = columnControls.get(box.column().id());
+            if (controls == null || !controls.filter().isVisible()) {
+                continue; // no detail controls on this column now: no lock either
+            }
+            boolean shown = canvasLockShown(box.column().id(), controls);
+            if (controls.pin().isVisible() != shown) {
+                controls.pin().setVisible(shown);
+                syncControlTraversal(controls);
             }
         }
     }
@@ -4301,6 +4577,7 @@ final class MapSurface extends Region {
                                 && !entry.path().equals(base)
                         ? layoutRelative(base, entry.path()) + "/"
                         : entry.path().toString());
+        entry = canvasWithAttributes(entry);
         String type = entry.symbolicLink()
                 ? tr("project.map.tooltip.symbolicLink")
                 : tr(entry.directory() ? "project.map.tooltip.folder" : "project.map.tooltip.file");
@@ -4373,6 +4650,37 @@ final class MapSurface extends Region {
             rel.append(part);
         }
         return rel.toString();
+    }
+
+    /**
+     * A row of a long folder listed by name only (position 15) carries no size or time: the tooltip reads them
+     * for the one row it describes, from a local disk only. Any other row is returned as it is.
+     */
+    private static ProjectMapModel.Entry canvasWithAttributes(ProjectMapModel.Entry entry) {
+        if (entry.directory()
+                || entry.isPlaceholder()
+                || entry.isSymbol()
+                || entry.size() >= 0
+                || entry.modifiedMillis() >= 0
+                || !com.editora.vfs.Vfs.isLocal(entry.path())) {
+            return entry;
+        }
+        try {
+            java.nio.file.attribute.BasicFileAttributes read = java.nio.file.Files.readAttributes(
+                    entry.path(),
+                    java.nio.file.attribute.BasicFileAttributes.class,
+                    java.nio.file.LinkOption.NOFOLLOW_LINKS);
+            return new ProjectMapModel.Entry(
+                    entry.path(),
+                    entry.parent(),
+                    entry.depth(),
+                    read.isDirectory(),
+                    read.size(),
+                    read.lastModifiedTime().toMillis(),
+                    read.isSymbolicLink());
+        } catch (java.io.IOException | RuntimeException gone) {
+            return entry;
+        }
     }
 
     private static String formatSize(long bytes) {
@@ -4847,6 +5155,7 @@ final class MapSurface extends Region {
 
     private void focusOwnerChanged(javafx.beans.value.ObservableValue<? extends Node> property, Node old, Node owner) {
         claimKeys(owner == this);
+        canvasSyncLocks(); // a column whose control took or lost the focus shows or hides its lock
         // A column control that held the focus was hidden (zoomed out) or removed (column closed): the
         // scene then picks the next focusable node, a zoom-bar button, and the arrow keys stop
         // navigating. Keep the keyboard on the map instead.
@@ -5459,6 +5768,128 @@ final class MapSurface extends Region {
         return offsetY + worldY * zoom;
     }
 
+    /**
+     * Hands the rows drawn in the viewport to {@link #canvasA11y}, as tree items named like the selection's
+     * summary. Columns off screen are skipped whole and only on-screen rows get a node, so the cost follows the
+     * screen, not the map (1,200 rows or a 50,000-row folder alike). The selected row is the focus item.
+     */
+    private void canvasA11yRebuild() {
+        canvasA11yStale = false;
+        List<MapAccessibleRows.Spec> specs = new ArrayList<>();
+        double width = getWidth();
+        double height = getHeight();
+        int next = 0;
+        if (!outputPaint && !boxes.isEmpty()) {
+            for (ColumnBox column : columnBoxes) {
+                List<ProjectMapModel.Entry> rows = column.column().entries();
+                int first = next;
+                next += rows.size();
+                if (column.x() > width
+                        || column.y() > height
+                        || column.x() + column.width() < 0
+                        || column.y() + column.height() < 0
+                        || next > boxes.size()) {
+                    continue;
+                }
+                int count = 0;
+                for (ProjectMapModel.Entry row : rows) {
+                    if (!row.isPlaceholder()) {
+                        count++;
+                    }
+                }
+                int position = 0;
+                for (int index = first; index < next; index++) {
+                    NodeBox box = boxes.get(index);
+                    ProjectMapModel.Entry entry = box.entry();
+                    if (entry.isPlaceholder()) {
+                        continue;
+                    }
+                    position++;
+                    if (!inViewport(box, width, height)) {
+                        continue;
+                    }
+                    Path path = entry.path();
+                    boolean folder = entry.directory() || entry.isSymbol() && branches(entry);
+                    boolean opens = folder || entry.isFile() && hasStructure(entry);
+                    boolean expanded =
+                            entry.directory() ? expandedSnapshot.contains(path) : opens && view.structure.isOpen(path);
+                    specs.add(new MapAccessibleRows.Spec(
+                            path,
+                            entry.parent(),
+                            canvasRowText(entry, position, count, false, true),
+                            Math.max(0, entry.depth() - 1),
+                            path.equals(selected),
+                            expanded,
+                            !opens,
+                            box.x(),
+                            box.y(),
+                            box.width(),
+                            box.height()));
+                }
+            }
+        }
+        MapAccessibleRows.Row focus = canvasA11y.update(specs);
+        if (focus != canvasA11yFocus) {
+            canvasA11yFocus = focus;
+            notifyAccessibleAttributeChanged(AccessibleAttribute.FOCUS_ITEM);
+        }
+    }
+
+    private MapAccessibleRows.@Nullable Row canvasA11yFocus;
+
+    /** A paint changed what is on screen: the rows are handed over now if a screen reader listens, else on ask. */
+    private void canvasA11yPainted() {
+        canvasA11yStale = true;
+        if (Platform.isAccessibilityActive()) {
+            canvasA11yRebuild();
+        }
+    }
+
+    /** The accessible rows as a reader would get them now (tests). */
+    MapAccessibleRows canvasAccessibleRows() {
+        if (canvasA11yStale) {
+            canvasA11yRebuild();
+        }
+        return canvasA11y;
+    }
+
+    /** A tree item's Expand / Collapse: opens or closes the folder or Structure column the row opens. */
+    private void canvasExpand(Path path, boolean expand) {
+        ProjectMapModel.Entry entry = entryByPath.get(path);
+        if (entry == null || entry.isPlaceholder()) {
+            return;
+        }
+        boolean open = entry.directory() ? expandedSnapshot.contains(path) : view.structure.isOpen(path);
+        if (open == expand) {
+            return;
+        }
+        select(path);
+        if (entry.directory()) {
+            onActivate.accept(entry); // a folder row's click opens or closes its column
+        } else if (entry.isFile() && hasStructure(entry) || entry.isSymbol() && branches(entry)) {
+            onStructure.accept(entry);
+        }
+    }
+
+    @Override
+    public @Nullable Object queryAccessibleAttribute(AccessibleAttribute attribute, Object... parameters) {
+        switch (attribute) {
+            case CHILDREN, FOCUS_ITEM -> {
+                if (canvasA11yStale) {
+                    canvasA11yRebuild(); // asked before the next pulse would hand them over
+                }
+                if (attribute == AccessibleAttribute.FOCUS_ITEM) {
+                    MapAccessibleRows.Row row = canvasA11y.row(selected);
+                    return row != null ? row : this;
+                }
+                return super.queryAccessibleAttribute(attribute, parameters);
+            }
+            default -> {
+                return super.queryAccessibleAttribute(attribute, parameters);
+            }
+        }
+    }
+
     void updateAccessibleText() {
         String text = accessibleSelectionText();
         if (!text.equals(getAccessibleText())) {
@@ -5491,9 +5922,9 @@ final class MapSurface extends Region {
             }
         }
         int index = drawn.indexOf(current);
-        List<String> states = new ArrayList<>();
         int position;
-        if (index >= 0) {
+        boolean filtered = index < 0;
+        if (!filtered) {
             position = index + 1;
         } else {
             // Hidden by its column's filter: say so, and where it would stand.
@@ -5501,14 +5932,26 @@ final class MapSurface extends Region {
             int at = all.indexOf(current);
             position = 1
                     + (int) drawn.stream().filter(row -> all.indexOf(row) < at).count();
+        }
+        return canvasRowText(current, position, drawn.size(), filtered, false);
+    }
+
+    /**
+     * What a row says to a screen reader: its name, kind and place among its column's {@code count} rows, then
+     * its states (unsaved, Git, bookmarked, notes, Structure open; {@code filtered}: a column filter hides it).
+     * The surface's own summary of the selection and each row on screen (position 14) say it the same way.
+     */
+    private String canvasRowText(
+            ProjectMapModel.Entry current, int position, int count, boolean filtered, boolean row) {
+        List<String> states = new ArrayList<>();
+        if (filtered) {
             states.add(tr("project.map.accessible.state.filtered"));
         }
-        int count = drawn.size();
         ProjectMapModel.Symbol symbol = current.symbol();
         String base;
         if (symbol != null) {
             base = tr(
-                    "project.map.accessible.symbol",
+                    row ? "project.map.accessible.row.symbol" : "project.map.accessible.symbol",
                     current.name(),
                     symbol.kind() == null ? "" : symbol.kind(),
                     symbol.line() + 1,
@@ -5517,13 +5960,17 @@ final class MapSurface extends Region {
         } else {
             String key;
             if (current.directory()) {
-                key = expandedSnapshot.contains(current.path())
-                        ? "project.map.accessible.folderExpanded"
-                        : "project.map.accessible.folderCollapsed";
+                boolean expanded = expandedSnapshot.contains(current.path());
+                key = row
+                        ? expanded
+                                ? "project.map.accessible.row.folderExpanded"
+                                : "project.map.accessible.row.folderCollapsed"
+                        : expanded ? "project.map.accessible.folderExpanded" : "project.map.accessible.folderCollapsed";
             } else {
-                key = openPaths.contains(current.path())
-                        ? "project.map.accessible.fileOpen"
-                        : "project.map.accessible.file";
+                boolean open = openPaths.contains(current.path());
+                key = row
+                        ? open ? "project.map.accessible.row.fileOpen" : "project.map.accessible.row.file"
+                        : open ? "project.map.accessible.fileOpen" : "project.map.accessible.file";
             }
             base = tr(key, current.name(), position, count);
             Path path = current.path();
@@ -5544,7 +5991,8 @@ final class MapSurface extends Region {
                 states.add(tr("project.map.accessible.state.structureOpen"));
             }
         }
-        String folder = view.resultsAccessibleFolder(current.path());
+        // A row in the tree of rows is in its column's folder already: only the selection's summary names it.
+        String folder = row ? "" : view.resultsAccessibleFolder(current.path());
         if (!folder.isEmpty()) {
             base = tr("project.map.accessible.inFolder", base, folder); // which of four proxier.go (B11)
         }

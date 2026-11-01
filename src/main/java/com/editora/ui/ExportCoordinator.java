@@ -454,7 +454,13 @@ final class ExportCoordinator {
         this.<com.editora.pdf.PdfExportService.Result>staged(
                 file,
                 (out, report) -> pdfService.exportFxPages(
-                        rendered.pages(), rendered.pointsPerPixel(), pageSize, landscape, out, report),
+                        rendered.pages(),
+                        rendered.pointsPerPixel(),
+                        pageSize,
+                        landscape,
+                        projectMapTexts(rendered),
+                        out,
+                        report),
                 com.editora.pdf.PdfExportService.Result::ok,
                 message -> new com.editora.pdf.PdfExportService.Result(false, message),
                 result -> {
@@ -535,6 +541,19 @@ final class ExportCoordinator {
             }
             return com.editora.print.PrintService.pagedImages(rendered.pages(), rendered.pointsPerPixel(), layout);
         };
+    }
+
+    /** The map's names per page, for the PDF's invisible text layer: a viewer's Find reaches them (position 16). */
+    static java.util.List<java.util.List<com.editora.pdf.ImagePdfWriter.TextBox>> projectMapTexts(
+            ProjectMapOutput.Rendered rendered) {
+        java.util.List<java.util.List<com.editora.pdf.ImagePdfWriter.TextBox>> texts = new java.util.ArrayList<>();
+        for (java.util.List<ProjectMapOutput.Label> page : rendered.labels()) {
+            texts.add(page.stream()
+                    .map(label -> new com.editora.pdf.ImagePdfWriter.TextBox(
+                            label.text(), label.x(), label.y(), label.width(), label.height()))
+                    .toList());
+        }
+        return texts;
     }
 
     /** What the user should know about how the map met the page, or null when it simply fitted. Pure. */
