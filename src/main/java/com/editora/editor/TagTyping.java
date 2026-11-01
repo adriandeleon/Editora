@@ -6,6 +6,9 @@ import java.util.WeakHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+
 import com.editora.editops.HtmlCaretRegion;
 import com.editora.editops.TagAutoClose;
 import com.editora.editops.TagJoin;
@@ -42,6 +45,13 @@ import org.jspecify.annotations.Nullable;
  * {@code <em>text</em>}). A space before the {@code >} keeps the {@code >} stepping over ({@code </item >} no
  * longer leaves {@code >>}); HTML names step over case-insensitively; and the pending join is dropped when the caret
  * moves, so typing after the caret comes back edits the closer as text.
+ *
+ * <p>Every other edit while a join is pending (XML/pom review 4, C32) — Ctrl/Shift/Alt+Backspace, Delete, Enter,
+ * Tab, a paste, an Emacs kill — first puts the join back as Backspace does ({@code </} and the name typed so far
+ * before the closer, which is left whole), then acts on that text. Before, those keys edited the closer's own name
+ * and auto-rename carried the change to the start tag: {@code </it} and Ctrl+Backspace gave {@code <em>t</em>}.
+ * {@link TagRenameMirror.Area} asks {@link #beforeEdit} before each replace; a command that reads the text first
+ * settles the join through {@link PendingTagJoin#settle}.
  */
 final class TagTyping {
 
@@ -62,6 +72,12 @@ final class TagTyping {
 
     /** Spaces typed before the closer's {@code >} ({@code </item >}): the {@code >} still steps over. */
     private int spaces;
+
+    /** Where a space typed before the {@code >} goes in as usual: that insertion is the join's own (C32). */
+    private int passAt = -1;
+
+    /** True while this class edits the joined text itself. */
+    private boolean self;
 
     /** The area the pending join is in (a split view shares this buffer's state), and those watched for moves. */
     private @Nullable CodeArea joinArea;
@@ -105,6 +121,7 @@ final class TagTyping {
             if (pending.length() == 1 && Character.isWhitespace(c)) {
                 spaces++;
                 at = caret + 1; // where the space typed as usual leaves the caret
+                passAt = caret;
                 return false;
             }
             return unjoin(a, caret, c);
@@ -145,7 +162,12 @@ final class TagTyping {
         if (spaces > 0) {
             spaces--;
             at = caret - 1; // first, so the caret listener keeps the join
-            a.deleteText(caret - 1, caret);
+            self = true;
+            try {
+                a.deleteText(caret - 1, caret);
+            } finally {
+                self = false;
+            }
             return true;
         }
         if (!closerIntact(a, caret)) {
@@ -153,12 +175,59 @@ final class TagTyping {
             return false;
         }
         String own = "</" + typedName;
-        own = own.substring(0, own.length() - 1);
+        putBack(a, own.substring(0, own.length() - 1));
+        return true;
+    }
+
+    /**
+     * An edit of {@code [start, end)} is about to be made in {@code a} by anything but this class or a typed
+     * character (C32): when it touches a pending join's closer, the join is first put back — {@code </} and the name
+     * typed so far before the closer, the caret after them, where the text before the caret reads as it did — so the
+     * edit acts on the user's own text and never on the closer's name. An edit elsewhere leaves the join to the caret;
+     * one that spans the closer and more (a moved line) drops it, the closer as it reads.
+     */
+    void beforeEdit(CodeArea a, int start, int end) {
+        if (rest == null || a != joinArea || self) {
+            return;
+        }
+        if (start == passAt && end == passAt) {
+            passAt = -1; // the space typed before '>' going in
+            return;
+        }
+        int closerEnd = joinStart + joined.length();
+        if (end < joinStart || start >= closerEnd) {
+            return;
+        }
+        if (start > at || (end > at && (start < joinStart || end > closerEnd))) {
+            clear(); // not a key at the caret (a line moved, the closer replaced whole): the text is the closer's
+            return;
+        }
+        settle(a);
+    }
+
+    /** Puts a pending join in {@code a} back as the user's own text; true when there was one to put back. */
+    boolean settle(CodeArea a) {
+        int caret = a.getCaretPosition();
+        if (rest == null || a != joinArea || self) {
+            return false;
+        }
+        if (spaces > 0
+                || caret != at
+                || !closerIntact(a, caret)
+                || a.getUndoManager().isPerformingAction()) {
+            clear(); // the closer already holds the whole name typed, or is no longer what the join left
+            return false;
+        }
+        putBack(a, "</" + typedName);
+        return true;
+    }
+
+    /** Clears the join, then inserts {@code own} (the user's typing) before the closer, the caret after it. */
+    private void putBack(CodeArea a, String own) {
         int start = joinStart;
         clear();
         a.replaceText(start, start, own); // holds '<' (and '/'), so auto-rename leaves it alone
         a.moveTo(start + own.length());
-        return true;
     }
 
     private static boolean same(char tag, char typed, boolean html) {
@@ -180,6 +249,7 @@ final class TagTyping {
         joined = "";
         typedName.setLength(0);
         spaces = 0;
+        passAt = -1;
         joinArea = null;
     }
 
@@ -271,6 +341,19 @@ final class TagTyping {
                     clear();
                 }
             });
+            if (a instanceof TagRenameMirror.Area area) {
+                area.joins = this; // every other edit in this area asks first (C32)
+            }
+            // Ctrl/Alt+Backspace and Ctrl+Delete select the word before they delete it, and that move would drop
+            // the join: settle it first, so the word is the user's own (C32).
+            a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                if (a == joinArea
+                        && !e.isConsumed()
+                        && (e.getCode() == KeyCode.BACK_SPACE || e.getCode() == KeyCode.DELETE)
+                        && (e.isShortcutDown() || e.isControlDown() || e.isAltDown() || e.isMetaDown())) {
+                    settle(a);
+                }
+            });
         }
         joinStart = start;
         joined = tag;
@@ -288,14 +371,11 @@ final class TagTyping {
      */
     private boolean unjoin(CodeArea a, int caret, char c) {
         boolean intact = spaces == 0 && closerIntact(a, caret);
-        String own = "</" + typedName + c;
-        int start = joinStart;
-        clear();
         if (!intact) {
+            clear();
             return false;
         }
-        a.replaceText(start, start, own); // holds '<' and '/', so auto-rename leaves it alone
-        a.moveTo(start + own.length());
+        putBack(a, "</" + typedName + c);
         return true;
     }
 }
