@@ -222,6 +222,79 @@ public final class HtmlRegions {
         return null;
     }
 
+    /**
+     * The {@code <script>} or {@code <style>} the end of {@code text} is inside: the {@code <} of its start tag, its
+     * name, where its content starts, and its language ({@code "javascript"}, {@code "css"}, or null for a script that
+     * is not JavaScript: a template or data). Null when the end of {@code text} is in neither.
+     */
+    public record RawOpen(
+            String name, int lt, int contentStart, @Nullable String language) {}
+
+    /**
+     * The script or style whose content the end of {@code text} is in, read backwards as an HTML parser would read
+     * forwards (HTML review 3 C205): inside a script only {@code </script} ends it, so a {@code '<style>'} or
+     * {@code '</pre>'} in one of its strings is text; and a style is looked for only after the last script tag.
+     * Null when there is none, or when the end of {@code text} is still in the start tag.
+     */
+    public static @Nullable RawOpen scriptOrStyleBefore(CharSequence text) {
+        int script = lastTag(text, "script", 0);
+        if (script >= 0 && text.charAt(script + 1) != '/') {
+            return opened(text, script, "script");
+        }
+        int style = lastTag(text, "style", script < 0 ? 0 : script + 2);
+        if (style >= 0 && text.charAt(style + 1) != '/') {
+            return opened(text, style, "style");
+        }
+        return null;
+    }
+
+    /**
+     * Where the last {@code <script>}, {@code </script>}, {@code <style>} or {@code </style>} tag of {@code text}
+     * ends (0 when there is none): what comes before it is no element's content the end of {@code text} could be in,
+     * as a {@code '<pre>'} in a closed script's string.
+     */
+    public static int afterScriptsAndStyles(CharSequence text) {
+        int script = lastTag(text, "script", 0);
+        int style = lastTag(text, "style", script < 0 ? 0 : script + 2);
+        int last = Math.max(script, style);
+        if (last < 0) {
+            return 0;
+        }
+        int end = tagEnd(text, nameEnd(text, last + (text.charAt(last + 1) == '/' ? 2 : 1)), false, null, null, null);
+        return Math.min(end, text.length());
+    }
+
+    private static @Nullable RawOpen opened(CharSequence text, int lt, String name) {
+        String[] type = name.equals("script") ? new String[1] : null;
+        int end = tagEnd(text, nameEnd(text, lt + 1), false, null, type, null);
+        if (end > text.length() || end <= lt || text.charAt(end - 1) != '>' || text.charAt(end - 2) == '/') {
+            return null; // still in the start tag, or <script … /> (which opens nothing here)
+        }
+        String language = name.equals("style")
+                ? "css"
+                : scriptKind(type == null ? null : type[0]) == Kind.SCRIPT ? "javascript" : null;
+        return new RawOpen(name, lt, end, language);
+    }
+
+    /** The {@code <} of the last start or end tag named {@code name} at or after {@code from}, outside comments; -1. */
+    private static int lastTag(CharSequence text, String name, int from) {
+        for (int k = text.length(); k > from; ) {
+            int lt = lastIndexOf(text, '<', k - 1);
+            if (lt < from) {
+                return -1;
+            }
+            k = lt;
+            int nameStart = lt + (lt + 1 < text.length() && text.charAt(lt + 1) == '/' ? 2 : 1);
+            if (nameStart + name.length() <= text.length()
+                    && regionMatchesIgnoreCase(text, nameStart, name)
+                    && nameEnd(text, nameStart) == nameStart + name.length()
+                    && !insideComment(text, lt)) {
+                return lt;
+            }
+        }
+        return -1;
+    }
+
     /** Whether {@code at} lies inside a {@code <!-- … -->} comment (the last opener before it is not closed). */
     private static boolean insideComment(CharSequence text, int at) {
         int open = lastIndexOf(text, "<!--", at);
@@ -238,6 +311,16 @@ public final class HtmlRegions {
             return k + 3;
         }
         return k;
+    }
+
+    /**
+     * The kind of the script whose start tag is {@code startTag} ({@code <script type="module">}): {@link
+     * Kind#SCRIPT}, {@link Kind#DATA} or {@link Kind#OTHER_SCRIPT}, by its {@code type} attribute.
+     */
+    public static Kind scriptKindOf(CharSequence startTag) {
+        String[] type = new String[1];
+        tagEnd(startTag, nameEnd(startTag, 1), false, null, type, null);
+        return scriptKind(type[0]);
     }
 
     /** The kind of a {@code <script>} by its {@code type} attribute (null: absent). */

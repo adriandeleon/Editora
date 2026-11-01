@@ -23,6 +23,9 @@ class XmlFormatCoordinatorFxTest {
 
     private final List<String> status = new CopyOnWriteArrayList<>();
 
+    /** Whether the host says a language server formats the file. */
+    private volatile boolean serverFormats;
+
     @BeforeAll
     void setUp() throws Exception {
         FxTestSupport.bootToolkit();
@@ -42,7 +45,7 @@ class XmlFormatCoordinatorFxTest {
 
             @Override
             public boolean serverFormats(Path file) {
-                return false;
+                return serverFormats;
             }
 
             @Override
@@ -152,6 +155,47 @@ class XmlFormatCoordinatorFxTest {
         FxTestSupport.runOnFx(() -> coordinator(b).formatActive());
         waitForStatus("error:" + tr("status.html.formatTemplate"));
         assertEquals(django, FxTestSupport.callOnFx(b::getContent));
+    }
+
+    /**
+     * With the HTML server on, Format Document on a Django page is refused all the same, with the same status, where
+     * the server re-indented it by branch (HTML review 3 C206); a plain page still goes to the server.
+     */
+    @Test
+    void anHtmlTemplateIsRefusedWhenTheServerWouldFormatItToo() throws Exception {
+        status.clear();
+        serverFormats = true;
+        try {
+            String django = "<body>\n  {% if user %}\n<div class=\"a\">\n  {% else %}\n<div class=\"b\">\n"
+                    + "  {% endif %}\n</div></body>\n";
+            EditorBuffer b = FxTestSupport.callOnFx(() -> {
+                EditorBuffer h = new EditorBuffer();
+                h.setLanguageOverride("html");
+                h.setContent(django);
+                h.setPath(Path.of("templates", "base.html").toAbsolutePath());
+                h.getNode();
+                return h;
+            });
+            assertTrue(FxTestSupport.callOnFx(() -> coordinator(b).formatActive()), "taken, not handed to the server");
+            assertEquals(List.of("error:" + tr("status.html.formatTemplate")), status);
+            assertEquals(django, FxTestSupport.callOnFx(b::getContent));
+
+            status.clear();
+            EditorBuffer plain = FxTestSupport.callOnFx(() -> {
+                EditorBuffer h = new EditorBuffer();
+                h.setLanguageOverride("html");
+                h.setContent("<pre><code>{% if a %}{% endif %}</code></pre>\n<div><p>x</p></div>\n");
+                h.setPath(Path.of("docs", "jinja-guide.html").toAbsolutePath());
+                h.getNode();
+                return h;
+            });
+            assertTrue(
+                    !FxTestSupport.callOnFx(() -> coordinator(plain).formatActive()),
+                    "a page that only shows template code goes to the server (C207)");
+            assertEquals(List.of(), status);
+        } finally {
+            serverFormats = false;
+        }
     }
 
     /** In large-file mode a format that multiplies the line count asks first; Cancel leaves the file as it was. */

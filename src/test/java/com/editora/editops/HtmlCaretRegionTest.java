@@ -58,6 +58,11 @@ class HtmlCaretRegionTest {
     void anEqualsWantsQuotesOnlyAfterAnAttributeNameInAStartTag() {
         assertTrue(HtmlCaretRegion.quotesAfterEquals("<a class", ">"));
         assertTrue(HtmlCaretRegion.quotesAfterEquals("<button @click", ""));
+        for (String angular : new String[] {"<button (click)", "<input [(ngModel)]", "<li *ngIf", "<input [value]"}) {
+            assertTrue(HtmlCaretRegion.quotesAfterEquals(angular, ">"), angular + ": an Angular binding (C209)");
+        }
+        assertFalse(HtmlCaretRegion.quotesAfterEquals("<p {{#if a}}class", ">"), "after a template tag");
+        assertFalse(HtmlCaretRegion.quotesAfterEquals("<a href=page#top", ">"), "inside an unquoted value");
         assertTrue(HtmlCaretRegion.quotesAfterEquals("<a href=\"x\" title", " >"));
         assertFalse(HtmlCaretRegion.quotesAfterEquals("<a href=\"x title", "\">"), "inside a value");
         assertFalse(HtmlCaretRegion.quotesAfterEquals("<a class", "\"x\">"), "the quote is there");
