@@ -470,6 +470,8 @@ final class LanguageServerSession implements LanguageClient {
         volatile @Nullable LspClientUi ui;
         volatile java.util.function.Function<String, @Nullable FormattingIndent> indentForUri = uri -> null;
         volatile java.util.function.BooleanSupplier focused = () -> false;
+        /** Told (on the reader's thread) of the libraries whose sources jdtls attached: every window's tabs reload. */
+        volatile Consumer<java.util.Set<String>> onSourceInvalidated = roots -> {};
 
         Client(
                 @Nullable Consumer<PublishDiagnosticsParams> diagnostics,
@@ -3732,15 +3734,10 @@ final class LanguageServerSession implements LanguageClient {
         java.util.Set<String> roots =
                 event == null ? java.util.Set.of() : JavaLibrarySources.invalidatedRoots(event.eventType, event.data);
         if (!roots.isEmpty()) {
-            onSourceInvalidated.accept(roots);
+            for (Client c : clients) { // every window sharing the server has the library's tabs (fifteenth lows)
+                c.onSourceInvalidated.accept(roots);
+            }
         }
-    }
-
-    /** Told (on the reader's thread) of the libraries whose sources jdtls attached. */
-    private volatile java.util.function.Consumer<java.util.Set<String>> onSourceInvalidated = roots -> {};
-
-    void setOnSourceInvalidated(java.util.function.Consumer<java.util.Set<String>> handler) {
-        onSourceInvalidated = handler;
     }
 
     /**

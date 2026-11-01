@@ -1119,4 +1119,71 @@ class LspSuperMethodFxTest {
 
         assertEquals(List.of(new LspCoordinatorFixture.Jump(holder, 2, 13)), fx.ops.jumps);
     }
+
+    /**
+     * On the header of an anonymous class passed as a call's argument, in a method the outline holds: the type it
+     * instantiates. Only the header of one in an initializer or a field was (fifteenth lows, U14).
+     */
+    @Test
+    void aCallArgumentsAnonymousHeaderGoesToTheTypeItMakes() throws Exception {
+        Path comparator = Files.writeString(
+                root.resolve("Comparator.java"), "interface Comparator<T> {\n    int compare(T a, T b);\n}\n");
+        String source = "class A {\n    void f() {\n        sort(new Comparator<>() {\n"
+                + "            public int compare(String a, String b) {\n                return 0;\n            }\n"
+                + "        });\n    }\n}\n";
+        EditorBuffer b = fx.open("A.java", source);
+        DocumentSymbol a = member("A", SymbolKind.Class, 0, 8, 0, 6);
+        DocumentSymbol f = member("f()", SymbolKind.Method, 1, 7, 1, 9);
+        DocumentSymbol anonymous = member("new Comparator<>() {...}", SymbolKind.Class, 2, 6, 2, 30);
+        f.getChildren().add(anonymous);
+        a.getChildren().add(f);
+        fx.server().documentSymbolResponse = List.of(Either.forRight(a));
+        fx.server().typeHierarchyResponse = List.of(new TypeHierarchyItem(
+                "Comparator", SymbolKind.Interface, comparator.toUri().toString(), range(0, 0, 1), range(0, 10, 20)));
+        fx.caret(b, 2, 21);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(comparator, 0, 10)), fx.ops.jumps);
+    }
+
+    /**
+     * A member type the enclosing class inherits, written by its simple name ({@code new Entry<>()} in a subclass of
+     * the class declaring it), which jdtls resolves neither by prepare nor by definition: found in the enclosing
+     * class's supertype (fifteenth lows, U8).
+     */
+    @Test
+    void anInheritedMemberTypesAnonymousClassIsWalked() throws Exception {
+        Path base = Files.writeString(
+                root.resolve("Base.java"),
+                "class Base {\n    interface Entry<T> {\n        void take(T t);\n    }\n}\n");
+        String source = "class B extends Base {\n    static {\n        Object e = new Entry<>() {\n"
+                + "            public void take(String s) {\n            }\n        };\n    }\n}\n";
+        EditorBuffer b = fx.open("B.java", source);
+        fx.server().documentSymbolResponse = List.of(Either.forRight(member("B", SymbolKind.Class, 0, 7, 0, 6)));
+        DocumentSymbol entry = member("Entry<T>", SymbolKind.Interface, 1, 3, 1, 14);
+        entry.getChildren().add(member("take(T)", SymbolKind.Method, 2, 2, 2, 13));
+        DocumentSymbol baseType = member("Base", SymbolKind.Class, 0, 4, 0, 6);
+        baseType.getChildren().add(entry);
+        fx.server().documentSymbolByUri.put(com.editora.lsp.LspTestHooks.uri(base), List.of(Either.forRight(baseType)));
+        String bUri = root.resolve("B.java").toUri().toString();
+        TypeHierarchyItem bItem = new TypeHierarchyItem("B", SymbolKind.Class, bUri, range(0, 0, 1), range(0, 6, 7));
+        TypeHierarchyItem baseItem = new TypeHierarchyItem(
+                "Base", SymbolKind.Class, base.toUri().toString(), range(0, 0, 1), range(0, 6, 10));
+        TypeHierarchyItem entryItem = new TypeHierarchyItem(
+                "Base$Entry", SymbolKind.Interface, base.toUri().toString(), range(1, 4, 5), range(1, 14, 19));
+        fx.server().typeHierarchyHandler = p -> {
+            boolean inB = p.getTextDocument().getUri().endsWith("B.java");
+            int line = p.getPosition().getLine();
+            return inB && line == 0 ? List.of(bItem) : !inB && line == 1 ? List.of(entryItem) : List.of();
+        };
+        fx.server().supertypesByName.put("B", List.of(baseItem));
+        fx.server().supertypesByName.put("Base$Entry", List.of());
+        fx.server().rawHandler = raw -> com.google.gson.JsonParser.parseString("[]"); // findLinks: nothing
+        fx.caret(b, 3, 25);
+        fx.run(() -> fx.coordinator.gotoSuperMethod());
+        fx.settle();
+
+        assertEquals(List.of(new LspCoordinatorFixture.Jump(base, 2, 13)), fx.ops.jumps);
+    }
 }

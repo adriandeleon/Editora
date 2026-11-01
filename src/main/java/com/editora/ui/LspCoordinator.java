@@ -3749,9 +3749,7 @@ final class LspCoordinator {
                     if (JavaImportCheck.projectReason(problems, root) != null) {
                         say.run();
                     } else {
-                        var wait = new javafx.animation.PauseTransition(javafx.util.Duration.millis(600));
-                        wait.setOnFinished(e -> say.run());
-                        wait.play();
+                        sayOnceReasoned(root, 0, say);
                     }
                 }
             } else if (line.ready() && (root != null ? importFailedUnder(root) : importFailed.contains(key))) {
@@ -3764,6 +3762,23 @@ final class LspCoordinator {
                         line.ready() ? tr("status.lsp.ready", server) : tr("status.lsp.server", server, line.text()));
             }
         }
+    }
+
+    /**
+     * Runs {@code say} once a project diagnostic names the failed import's cause, its folder with it, or after six
+     * seconds: Gradle's names it seconds after its WARNING, and the generic wrapper said first left the folder out
+     * (thirteenth review CK5).
+     */
+    private void sayOnceReasoned(@Nullable Path root, int tries, Runnable say) {
+        var wait = new javafx.animation.PauseTransition(javafx.util.Duration.millis(tries == 0 ? 600 : 500));
+        wait.setOnFinished(e -> {
+            if (tries >= 11 || JavaImportCheck.projectReason(problems, root) != null) {
+                say.run();
+            } else {
+                sayOnceReasoned(root, tries + 1, say);
+            }
+        });
+        wait.play();
     }
 
     /**
@@ -5920,6 +5935,11 @@ final class LspCoordinator {
                 : com.editora.lsp.JavaMembers.lambdaArrow(text, offsetOf(text, scope.startLine()), caret);
         if (arrow >= 0) { // a lambda's super method is its functional interface's method, as in IntelliJ
             definitionAsSuper(ask, text, arrow);
+            return;
+        }
+        int header = com.editora.lsp.JavaMembers.anonymousHeaderAt(text, caret);
+        if (header >= 0) { // an anonymous class's header anywhere: outlined, a call's argument, any segment of its name
+            anonymousSuper(ask, text, new int[] {header, -1});
             return;
         }
         if (member.isType() && scope == null) {

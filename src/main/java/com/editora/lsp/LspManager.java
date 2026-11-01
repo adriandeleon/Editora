@@ -1974,6 +1974,7 @@ public final class LspManager {
         client.onApplyEdit = (edit, respond) -> onServerApplyEdit(session, edit, respond); // server-side fix (#670)
         client.ui = fxClientUi; // showMessageRequest and Metals' prompts, answered on the FX thread
         client.focused = () -> windowFocused.getAsBoolean();
+        client.onSourceInvalidated = roots -> Platform.runLater(() -> onSourceInvalidated.accept(roots));
     }
 
     /**
@@ -2094,7 +2095,6 @@ public final class LspManager {
         configureClient(session.primaryClient(), key, session);
         session.setJavaOnTypeFormatting(javaOnTypeFormatting);
         session.setJavaDownloadSources(javaDownloadSources);
-        session.setOnSourceInvalidated(roots -> Platform.runLater(() -> onSourceInvalidated.accept(roots)));
         session.setJavaCleanups(javaCleanups);
         session.setJavaFilteredTypes(javaFilteredTypes);
         session.setBashIde(bashIdeFor(root));

@@ -37,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Java: the last Go to Super Method and import edges.** On any segment of an anonymous class's name
+  (`new java.util.Comparator<>() {`, `Map` of `new Map.Entry<>() {`), and on the header of one passed as a call's
+  argument, Go to Super Method opens the type it instantiates; so it does for a member type the enclosing class
+  inherits (`new SimpleEntry<>("a", "b") {…}` in a subclass of `AbstractMap`), and for a package-qualified one found
+  by its package. A Gradle import that fails is named with the folder that failed in its first message, not only in
+  a later one. A library's sources attached later reload its tabs in every window sharing the Java server.
+
 - **HTML templates (HTML review 2: templates).**
   - The markup check no longer flags Django, Jinja, Jekyll, Hugo, Handlebars or ERB pages saved as `.html`, nor
     header/footer partials in `templates/`, `_layouts/`, `partials/` and similar folders: their branches are not
