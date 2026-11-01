@@ -90,6 +90,15 @@ public final class ProjectFileList {
      * {@code cancelled} said so before the listing finished (a newer search or another root replaced it).
      */
     public static @Nullable ProjectFileList build(Path root, Settings settings, BooleanSupplier cancelled) {
+        return build(root, settings, null, cancelled);
+    }
+
+    /**
+     * As above, a local root leaving out what {@code gitignore} ignores instead of the rules the settings would
+     * load ({@code null}: those). A remote root is listed as above.
+     */
+    public static @Nullable ProjectFileList build(
+            Path root, Settings settings, @Nullable GitignoreFilter gitignore, BooleanSupplier cancelled) {
         Path normalized = root.toAbsolutePath().normalize();
         BooleanSupplier stop = cancelled == null ? () -> false : cancelled;
         if (!Vfs.isLocal(normalized)) {
@@ -98,7 +107,9 @@ public final class ProjectFileList {
                 return stop.getAsBoolean() ? null : listed;
             }
         }
-        GitignoreFilter ignore = settings.respectGitignore() ? GitignoreFilter.load(normalized) : GitignoreFilter.NONE;
+        GitignoreFilter ignore = gitignore != null
+                ? gitignore
+                : settings.respectGitignore() ? GitignoreFilter.load(normalized) : GitignoreFilter.NONE;
         Set<String> files = new LinkedHashSet<>();
         Set<String> folders = new LinkedHashSet<>();
         ProjectWalk.Outcome outcome = ProjectWalk.walk(

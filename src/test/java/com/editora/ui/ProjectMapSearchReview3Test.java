@@ -57,10 +57,12 @@ class ProjectMapSearchReview3Test {
                 wanted.add(Files.createFile(deep.resolve("types.go")));
             }
         }
-        ProjectPanel.SearchResult old =
+        // The tree's filter searches the same complete list since the refactor's stage 2 (its old walk stopped at
+        // 20,000 entries visited and found none of these).
+        ProjectPanel.SearchResult tree =
                 ProjectPanel.searchRanked(root, "types.go", false, GitignoreFilter.NONE, () -> false);
-        assertTrue(old.partial(), "the tree filter's bounded walk still stops short (it is the tree's, not the Map's)");
-        assertTrue(old.matches().isEmpty(), "and it saw none of the deep files: " + old.matches());
+        assertFalse(tree.partial(), "the tree filter sees the whole project too");
+        assertEquals(Set.copyOf(wanted), Set.copyOf(tree.matches()), "and finds every deep types.go");
 
         ProjectFileList list = ProjectFileList.build(root, DEFAULT, () -> false);
         assertNotNull(list);

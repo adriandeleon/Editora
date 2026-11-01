@@ -79,4 +79,34 @@ class ProjectPanelFilterEnterFxTest {
             });
         }
     }
+
+    /**
+     * The filter searches the panel's project index (Map refactor stage 2): the list the Map and Search Everywhere
+     * search, ranked their way — a file deeper than the old walk's 25 levels is found, and an in-app change reaches
+     * the next filter without a walk.
+     */
+    @Test
+    void theFilterSearchesTheProjectIndexDeepFilesIncluded(@TempDir Path dir) throws Exception {
+        try (ProjectPanelRig r = new ProjectPanelRig(dir)) {
+            Path deep = r.root;
+            for (int level = 0; level < 30; level++) {
+                deep = deep.resolve("d" + level);
+            }
+            java.nio.file.Files.createDirectories(deep);
+            Path bottom = java.nio.file.Files.writeString(deep.resolve("Bottom.java"), "class Bottom {}");
+            FxTestSupport.runOnFx(() -> r.filter.setText("Bottom"));
+            r.await("the deep file", () -> r.item(bottom) != null);
+            ProjectIndex index = FxTestSupport.callOnFx(r.panel::projectIndex);
+            assertTrue(
+                    index.searchListed(r.root, "Bottom", ProjectIndex.Kinds.FILES, 10)
+                            .paths()
+                            .contains(bottom),
+                    "the filter listed the index's list");
+
+            Path added = java.nio.file.Files.writeString(r.root.resolve("Added.java"), "class Added {}");
+            FxTestSupport.runOnFx(() -> r.panel.noteLocalWrite(added)); // what a first save tells the panel
+            FxTestSupport.runOnFx(() -> r.filter.setText("Added"));
+            r.await("the saved file", () -> r.item(added) != null);
+        }
+    }
 }

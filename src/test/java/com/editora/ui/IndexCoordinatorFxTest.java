@@ -276,4 +276,54 @@ class IndexCoordinatorFxTest {
                 .map(H::rel)
                 .toList();
     }
+
+    /**
+     * Search Everywhere's file rows come from the Project panel's project index once it is wired (Map refactor
+     * stage 2): the Map's list and order — source, then vendored source, then tests — with scores that keep that order
+     * through {@link com.editora.search.SearchEverywhere#merge}; {@code ensureSearchable} has the list there first.
+     */
+    @Test
+    void withAProjectIndexTheFileRowsAreTheMapsListInItsOrder() throws Exception {
+        Path root = project.resolve("shared");
+        Files.createDirectories(root.resolve("src/test/app"));
+        Files.createDirectories(root.resolve("src/main/app"));
+        Files.createDirectories(root.resolve("vendor/app"));
+        Files.writeString(root.resolve("vendor/app/Widget.java"), "class Widget {}\n");
+        Files.writeString(root.resolve("src/test/app/Widget.java"), "class Widget {}\n");
+        Files.writeString(root.resolve("src/main/app/Widget.java"), "class Widget {}\n");
+        Harness h = harness(root);
+        java.util.concurrent.ExecutorService thread = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            ProjectFileIndex index = new ProjectFileIndex(
+                    thread,
+                    javafx.application.Platform::runLater,
+                    () -> new com.editora.search.ProjectFileList.Settings(false, false),
+                    () -> false,
+                    relisted -> {});
+            java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(1);
+            FxTestSupport.runOnFx(() -> {
+                h.coordinator().setFileIndex(index);
+                h.coordinator().ensureSearchable(ready::countDown);
+            });
+            assertTrue(ready.await(10, java.util.concurrent.TimeUnit.SECONDS), "ensureSearchable ran its callback");
+            List<com.editora.search.SearchEverywhere.Item> rows =
+                    FxTestSupport.callOnFx(() -> h.coordinator().fileItems("Widget.java"));
+            assertEquals(
+                    List.of("src/main/app", "vendor/app", "src/test/app"),
+                    rows.stream()
+                            .map(com.editora.search.SearchEverywhere.Item::detail)
+                            .toList());
+            for (int i = 1; i < rows.size(); i++) {
+                assertTrue(rows.get(i - 1).score() > rows.get(i).score(), "scores keep the order: " + rows);
+            }
+            List<com.editora.search.SearchEverywhere.Item> merged =
+                    com.editora.search.SearchEverywhere.flatten(com.editora.search.SearchEverywhere.merge(rows));
+            assertEquals(rows, merged, "the merge keeps the index's order");
+            assertEquals(
+                    root.resolve("src/main/app/Widget.java").toAbsolutePath().normalize(),
+                    rows.getFirst().payload());
+        } finally {
+            thread.shutdownNow();
+        }
+    }
 }
