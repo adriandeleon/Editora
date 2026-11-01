@@ -389,9 +389,10 @@ for a closed file; a declaration card the workspace brought back (below) waits f
 
 **Outlines of files with no tab from a running server** (explore round, position 10). When a server for a closed
 file's language already runs in this window, on a root that holds the file, past its handshake and with document
-symbols (`LspManager.outlinesClosedFile`), the file is read as above and its text is opened on that session for one
-`documentSymbol` request under an opener of its own, then closed (`LspManager.closedFileSymbols`; a file some window
-has open is asked about as it is, so a tab opened meanwhile keeps it open). The server's outline replaces the
+symbols (`LspManager.outlinesClosedFile`), the file is read as above and lent to that session for one
+`documentSymbol` request (`LspManager.closedFileSymbols` over `lendDocument`, the loan the linked cards use too),
+the loan ending when the answer is in; a file some window has open is asked about as it is, so its unsaved text is
+never replaced, and a tab opened meanwhile keeps it open. The server's outline replaces the
 heuristic one; the heuristic one is shown if the server has not answered within 1.5 s (and replaced when it does),
 answers with nothing, fails, or takes over 8 s. A file past 1,000,000 characters or cut at the read cap is outlined
 by the heuristic only. The server is asked again only when the file changed on disk (or once, when a server starts
