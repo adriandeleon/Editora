@@ -4992,7 +4992,9 @@ public final class LspManager {
                     if (target.startsWith("http://") || target.startsWith("https://")) {
                         return com.editora.editops.HtmlLinks.fromUri(target);
                     }
-                    Path to = s.uris().toPath(com.editora.editops.HtmlLinks.withoutFragment(target));
+                    Path to = s.uris()
+                            .toPath(com.editora.editops.HtmlLinks.withoutQuery(
+                                    com.editora.editops.HtmlLinks.withoutFragment(target)));
                     return to == null
                             ? null
                             : new com.editora.editops.HtmlLinks.Target(

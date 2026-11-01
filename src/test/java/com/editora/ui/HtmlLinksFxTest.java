@@ -179,6 +179,63 @@ class HtmlLinksFxTest {
         }
     }
 
+    /**
+     * HTML review 2 B106: a page no server serves checks its "File not found" marks again when a file it links is
+     * created (the Project panel's event), without being edited.
+     */
+    @Test
+    void creatingTheMissingFileClearsItsMarkWithoutAnEdit(@TempDir Path dir) throws Exception {
+        Path index = site(dir);
+        try (WindowRig w = new WindowRig()) {
+            EditorBuffer b = w.open(index);
+            w.await("the page's marks", () -> marks(b).size() == 2);
+            Thread.sleep(1500); // every check the opening queued has run: what follows is the file event's
+            w.async.awaitFx();
+            FxTestSupport.runOnFx(() -> assertEquals(2, marks(b).size()));
+            Path created = Files.writeString(dir.resolve("missing.html"), "<p>here</p>\n");
+            Thread.sleep(1500);
+            w.async.awaitFx();
+            FxTestSupport.runOnFx(() -> assertEquals(2, marks(b).size(), "nothing re-checks without the event"));
+            FxTestSupport.runOnFx(() -> {
+                LspCoordinator lsp = w.field("lspCoordinator");
+                lsp.watchedFilesChanged(List.of(new ProjectPanel.FsChange(created, ProjectPanel.FsKind.CREATED)));
+            });
+            w.await("only the unclosed div is left", () -> marks(b).size() == 1);
+            FxTestSupport.runOnFx(() -> assertEquals(
+                    tr("html.check.unclosed", "div"),
+                    b.httpVariableDiagnostics().get(0).message()));
+        }
+    }
+
+    /**
+     * C110: with LSP support off (the default), a link that was followed leaves no "LSP support is disabled"; a caret
+     * on no link still says it. Format Document on a template file says there is no formatter, which is true with
+     * LSP on as well.
+     */
+    @Test
+    void withLspOffAFollowedLinkDoesNotSayLspIsOff(@TempDir Path dir) throws Exception {
+        Path index = site(dir);
+        Path jinja = Files.writeString(dir.resolve("base.jinja"), "<p>{{ title }}</p>\n");
+        try (WindowRig w = new WindowRig()) {
+            w.open(index);
+            String off = tr("statusbar.tip.lspDisabled");
+            caretIn(w, "#bottom");
+            w.run("lsp.gotoDefinition");
+            int bottom = (int)
+                    INDEX.lines().takeWhile(l -> !l.contains("id=\"bottom\"")).count();
+            w.await("the element with that id", () -> caretLineIs(w, bottom));
+            assertTrue(!off.equals(w.status()), "followed: " + w.status());
+
+            FxTestSupport.runOnFx(() -> w.active().getFocusedArea().moveTo(INDEX.indexOf("Team</a>") + 1));
+            w.run("lsp.gotoDefinition");
+            assertEquals(off, w.status(), "no link at the caret: LSP is off");
+
+            w.open(jinja);
+            w.run("lsp.formatDocument");
+            assertEquals(tr("status.lsp.formatUnavailable"), w.status());
+        }
+    }
+
     @Test
     void relatedFileFromAPageReachesItsLinkedStylesheet(@TempDir Path dir) throws Exception {
         Path index = site(dir);

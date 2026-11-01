@@ -7306,7 +7306,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     // --- LSP (Language Server Protocol) integration --------------------------------------------
 
-    private boolean lspEnabled() {
+    boolean lspEnabled() {
         // Simple UI mode disables LSP (servers, diagnostics, completion, navigation); saved setting unchanged.
         return config.getSettings().isLspSupport() && !chrome.simpleModeActive();
     }
