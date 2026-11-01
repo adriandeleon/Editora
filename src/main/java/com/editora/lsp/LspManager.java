@@ -2289,8 +2289,9 @@ public final class LspManager {
                 tsserver = choice.tsserver();
             }
             if (!remote && (TypeScriptServer.SERVER_ID.equals(serverId) || nodeScriptServer(serverId))) {
-                // the Node.js chosen in Settings runs every npm server's "#!/usr/bin/env node", not only tsserver (A8)
-                session.setPathPrepend(nodeBinDir(root, nodeSetting));
+                // the Node.js chosen in Settings runs every npm server's "#!/usr/bin/env node", not only tsserver (A8);
+                // a project's .nvmrc picks only tsserver's, since the others are Editora's tools (HTML review 2 A103)
+                session.setPathPrepend(nodeBinDir(root, nodeSetting, TypeScriptServer.SERVER_ID.equals(serverId)));
             }
             Path tsserverPath = tsserver;
             List<JavaRuntimes.Jdk> jdks = hostJdks;
@@ -5986,10 +5987,16 @@ public final class LspManager {
         return com.editora.install.InstallCatalog.npmPackage(serverId) != null;
     }
 
-    /** The bin folder of the Node.js a root's Node tools run with (Settings, .nvmrc, PATH), or null. */
-    private static @Nullable Path nodeBinDir(Path root, String nodeSetting) {
+    /**
+     * The bin folder of the Node.js a server under {@code root} runs with, or null: the Settings Node.js, then —
+     * only when {@code projectVersionFile} (tsserver, which runs the project's own TypeScript) — the project's
+     * {@code .nvmrc}/{@code .node-version}, then PATH. Editora's own npm servers never follow a project's pin: an
+     * old pinned Node.js cannot run them (HTML review 2 A103).
+     */
+    static @Nullable Path nodeBinDir(Path root, String nodeSetting, boolean projectVersionFile) {
         try {
-            return com.editora.run.NodeRuntimes.resolveLocal(root.resolve("package.json"), null, "", nodeSetting)
+            Path file = projectVersionFile ? root.resolve("package.json") : null;
+            return com.editora.run.NodeRuntimes.resolveLocal(file, null, "", nodeSetting)
                     .binDir()
                     .orElse(null);
         } catch (RuntimeException e) {
