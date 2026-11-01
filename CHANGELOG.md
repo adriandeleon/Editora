@@ -25,7 +25,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Project Map: close one sticky note.** Each Personal Note stuck on a preview card has a × that closes just that
   note on the card; the note stays saved and comes back when the card's notes are shown again.
 
+- **Project Map: find anything in a big project (Map review 3).**
+  - The Map's search covers the whole project, however large or deep: it filters a list of the project's files built
+    once and kept current, instead of walking the disk on every keystroke (Kubernetes: every `types.go`, 6–15 ms a
+    query). On an SSH project the list comes from one command on the host, with `.gitignore` applied.
+  - Folders match the search, and a folder match is selected and opened. A query with `/` matches the path
+    (`core/v1/types.go`, `cmd/kube-scheduler`); a trailing `/` finds folders only; `#name` finds files only;
+    `@name` finds declarations (symbol index, plus the language server where one runs) and shows the hit in its file's
+    Structure column.
+  - A results strip under the search field counts the matches ("3 of 49", "partial" when the search did not reach
+    the whole project), with previous/next buttons and a list of every match. Enter / Shift+Enter in the field and
+    F3 / Shift+F3 step through them, and Ctrl+Enter (Cmd+Enter on macOS) opens the current one. A broad search opens
+    the folders of the best 30 matches; the rest stay in the list.
+  - The Map window has its own status line: everything the Map has to say appears there, not in the editor window.
+    Ctrl+F (Cmd+F; C-s in Emacs) in the Map window focuses "Search the map…".
+- **Project Map: orientation (Map review 3).**
+  - A **Project overview** card opens on a project's first Map open and from ⋯ → Project overview: the README, build
+    system and modules, languages, top-level folders with file counts, likely entry points, and the test and docs
+    folders. Module folders carry a badge, and folder tooltips give the project-relative path and what they hold.
+  - Gitignored, dependency, vendored and generated (`linguist-generated`) files and folders are dimmed, with the
+    reason in their tooltip; ⋯ → **Hide ignored and generated** takes them off the map.
+  - Zoomed below 60%, columns become labelled blocks (title, item count, matches); Fit and zoom go down to 15%, and the
+    overview is never narrower than 90 px. ⋯ → **Compact rows** gives denser rows, and each column then shows its
+    filter, Show hidden and lock only while it is in use.
+- **Project Map: keep your bearings (Map review 3).**
+  - Back and Forward go through the places you visited (files opened or previewed, search landings, reveals,
+    breadcrumb jumps) instead of every keystroke; right-click either button for the list.
+  - The Map remembers your exploration per workspace: open folders, the selected row, Back/Forward, zoom and pan, and
+    open code cards come back after a restart (workspace schema 27 → 28).
+  - Type a name to jump to a row in the current column; End and Home go to its last and first rows (Shift+Home to the
+    first column's first row).
+  - Default keys open the Map (Alt+Shift+1, ⌘⇧1 on macOS, C-c o m in Emacs) and reveal the active file (Alt+F1, C-c o
+    r); a crosshair after the breadcrumb and a ⋯ item do the same, and Search Everywhere's **Show in Map** (Alt+Enter)
+    selects a file on the Map. Open cards show as marks in the overview and in ⋯ → **Open cards**.
+- **Project Map: follow the code from a card (Map review 3).** A card's and a declaration row's menu have Go to
+  Definition, Find Usages, Go to Implementation, Type and Call Hierarchy (opening the file in the editor at that
+  spot; F12 and Shift+F12 work in a card), Related Test / Subject (revealed on the Map) and Show Git History. A
+  folder's menu, in the tree and the Map, has **Find in Folder…** and Git ▸ **Show Git History**.
+
 ### Changed
+
+- **Project Map: search ranking.** The name in the case you typed comes first, then source before tests, fixtures,
+  resources and docs, then project code before vendored code. A top-level `README.md`, `go.mod` or `Makefile` now
+  ranks above nested files of the same name, in the Map and in Go to File.
+- **Project Map: clearing the search keeps your place.** The selected file and the folders that lead to it stay open,
+  and Back returns to where you were before the search. During a search, "+N more" reads "+N not matching" and never
+  hides a match.
+- **Project Map: a card's Structure column.** A click or Enter on a declaration scrolls the card to it and marks its
+  lines; Shift+click or Shift+Enter opens the declaration's own card. The Structure command (Alt+7 in the Emacs and
+  IntelliJ keymaps) and a card menu item open the column from the keyboard. The column goes on whichever side of its
+  card hides least of the map and moves when the card is dragged.
+- **Project Map: reveals and names.** Revealing a file puts it a third of the way down with the folders that lead to
+  it in view and flashes the row; the zoom bar and overview fade while the pointer is on a row they cover. Long
+  sibling names are cut where they differ, card titles keep the file and declaration name, read-only is a lock icon,
+  and a code card opens past a leading licence header.
+- **Structure outlines (window and Map).** Go outlines list methods by receiver (`(*Kubelet).Run`) under their type,
+  plus struct fields, interface methods and constants, and no longer list the package or embedded fields as types.
+  Java fields are listed, and a Java or Kotlin class whose header wraps before its `{` holds its members. Kotlin
+  annotations are no longer types, `*.gradle.kts` scripts are outlined by their blocks, a YAML key covers its block
+  or list, Dockerfiles are outlined by build stage, Makefile targets defined twice are labelled by line, and shell
+  outlines lose their `$` rows. The Map's Structure columns read files up to 4 MB, and a card cut at its display
+  limit says "Showing lines 1–7,515 of 9,135" and ends with a line that opens the file.
+- **Project Map: speed on big and slow projects.** Opening a file from the Map or moving between Editora's windows no
+  longer re-lists every open folder; coming back from another program only checks which folders changed. Big folders
+  of files list faster on Linux, the folder you are reading keeps its rows at the 1,200-row limit, an unchanged Git
+  status is not re-applied, a hidden Map does not redraw, icons and column controls are built ahead of a big search,
+  and card connectors are drawn once per frame. On an SSH project a folder's listing is reused for 30 s.
+- **Project tree and Map: folders of hash-named files sort in plain order** (`07c96f…` before `7c781c…`).
 
 - **The macOS DMGs are signed and notarized.** Editora for macOS (Apple silicon and Intel) is now signed
   with a Developer ID certificate and notarized by Apple, so it opens on first launch with no Gatekeeper
@@ -34,6 +100,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   statement for each installer, archive and jar, naming the repository, commit and tag that built it.
   Check a download with
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
+
+### Fixed
+
+- **Project Map: search said "No files match" for files that exist.** On a big repository the search stopped after
+  20,000 entries, so deep files (Kubernetes' `staging/` modules) were never found and the notice went to the editor
+  window's status bar. The search now covers the whole project, and "No files match" says when it did not.
+- **Project Map: reading a file's declarations from its card's Structure column by keyboard closed every card** at
+  the eighth: the file card was evicted as least recently used, taking its column and declaration cards with it.
+- **Project Map: a folder that stops answering** (a hung network mount) got another stuck thread and a fresh 10-second
+  wait on every refresh; it now shows "Not responding" at once.
+- **Project Map: columns overlapped in big searches** in Spring-like trees, hiding matches under another branch's
+  column with a stray × and lock over them.
+- **Project Map: "No files match" kept naming an earlier query**, and breadcrumbs dropped the first underscore of a
+  name (`zz_generated.openapi.go` read `zzgenerated.openapi.go`).
+- **Structure: Kubernetes' `core/v1/types.go` outline stopped at `NodeAddress`**; files past the card's 400,000-character
+  display limit are now outlined whole.
 
 ## [0.26.0] - 2026-10-29
 
