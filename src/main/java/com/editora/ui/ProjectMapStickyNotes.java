@@ -39,7 +39,7 @@ import static com.editora.i18n.Messages.tr;
  * to the card — they move, resize and zoom with it, close with it, and do not count against the open-card limit
  * — and each can be dragged to another spot beside it, which it then keeps while the card is open.
  */
-final class ProjectMapStickyNotes {
+final class ProjectMapStickyNotes implements CardAttachment {
 
     static final double WIDTH = 220;
     static final double HEIGHT = 132;
@@ -57,16 +57,6 @@ final class ProjectMapStickyNotes {
     private static final UUID MORE_KEY = new UUID(0, 0);
     /** Where on a sheet its connector lands: the middle of its header. */
     private static final double HEADER_MIDDLE = 12;
-
-    /** Which side of the card the sheets go on. */
-    enum Side {
-        /** Beside the card's right edge, outside it. */
-        RIGHT,
-        /** Beside its left edge, outside it. */
-        LEFT,
-        /** Neither side has room in the panel: on the card itself, against its right edge. */
-        OVER
-    }
 
     /** A sheet beside the card, and where it sits, in unzoomed units from the card's left or right edge. */
     private abstract class Sheet extends VBox {
@@ -460,13 +450,50 @@ final class ProjectMapStickyNotes {
      * has room for a sheet {@code width} wide: the right first, then the left, else on the card. Pure.
      */
     static Side side(double cardLeft, double cardRight, double width, double panelWidth) {
-        if (panelWidth - cardRight >= width + OFFSET + GAP) {
-            return Side.RIGHT;
+        return CardAttachment.side(cardLeft, cardRight, width + OFFSET + GAP, panelWidth, false);
+    }
+
+    @Override
+    public ProjectMapPreview card() {
+        return card;
+    }
+
+    /** The sheets stand past whatever else is beside the card: nothing goes past them. */
+    @Override
+    public double reserved(Side side) {
+        return 0;
+    }
+
+    /** Whether {@code node} is on one of the sheets. */
+    @Override
+    public boolean contains(javafx.scene.@Nullable Node node) {
+        List<Sheet> sheets = sheets();
+        for (javafx.scene.Node current = node; current != null; current = current.getParent()) {
+            if (current instanceof Sheet sheet && sheets.contains(sheet)) {
+                return true;
+            }
         }
-        if (cardLeft >= width + OFFSET + GAP) {
-            return Side.LEFT;
+        return false;
+    }
+
+    /** What the sheets in sight cover together, as drawn; null when none is. */
+    @Override
+    public double @Nullable [] bounds() {
+        if (!visible()) {
+            return null;
         }
-        return Side.OVER;
+        double scale = card.mapScale();
+        double left = Double.MAX_VALUE;
+        double top = Double.MAX_VALUE;
+        double right = -Double.MAX_VALUE;
+        double bottom = -Double.MAX_VALUE;
+        for (Sheet sheet : sheets()) {
+            left = Math.min(left, sheet.getLayoutX());
+            top = Math.min(top, sheet.getLayoutY());
+            right = Math.max(right, sheet.getLayoutX() + sheet.getWidth() * scale);
+            bottom = Math.max(bottom, sheet.getLayoutY() + sheet.getHeight() * scale);
+        }
+        return left > right ? null : new double[] {left, top, right - left, bottom - top};
     }
 
     /**
@@ -600,7 +627,8 @@ final class ProjectMapStickyNotes {
     }
 
     /** Puts the sheets above their card, which was just raised above the others. */
-    void raise() {
+    @Override
+    public void raise() {
         stickies.forEach(javafx.scene.Node::toFront);
         if (more != null) {
             more.toFront();
@@ -616,14 +644,16 @@ final class ProjectMapStickyNotes {
         return more == null ? 0 : total - stickies.size();
     }
 
-    void dispose() {
+    @Override
+    public void dispose() {
         hide();
         moved.clear();
         closed.clear();
     }
 
     /** The sheets' connectors, each from its note's line on the card's edge to the sheet's header. */
-    void drawConnectors(GraphicsContext g) {
+    @Override
+    public void drawConnectors(GraphicsContext g) {
         if (!shown || !visible()) {
             return;
         }

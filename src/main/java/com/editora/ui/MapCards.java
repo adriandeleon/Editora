@@ -695,15 +695,31 @@ final class MapCards {
         cardTouches.put(card, ++cardTouchSequence);
         if (raise) {
             card.toFront();
-            ProjectMapCardStructure column = card instanceof ProjectMapPreview code ? cardStructures.get(code) : null;
-            if (column != null) {
-                column.raise(); // so does its Structure column
-            }
-            ProjectMapStickyNotes notes = card instanceof ProjectMapPreview code ? stickyNotes.get(code) : null;
-            if (notes != null) {
-                notes.raise(); // a card's sticky notes stay on it
+            if (card instanceof ProjectMapPreview code) {
+                attachments(code).forEach(CardAttachment::raise); // what is stuck on it stays on it
             }
         }
+    }
+
+    /** What is stuck on {@code card}: its Structure column and its sticky notes, when out. */
+    List<CardAttachment> attachments(ProjectMapPreview card) {
+        List<CardAttachment> stuck = new ArrayList<>(2);
+        ProjectMapCardStructure column = cardStructures.get(card);
+        if (column != null) {
+            stuck.add(column);
+        }
+        ProjectMapStickyNotes notes = stickyNotes.get(card);
+        if (notes != null) {
+            stuck.add(notes);
+        }
+        return stuck;
+    }
+
+    /** Every attachment of every open code card. */
+    private List<CardAttachment> allAttachments() {
+        List<CardAttachment> all = new ArrayList<>(cardStructures.values());
+        all.addAll(stickyNotes.values());
+        return all;
     }
 
     /**
@@ -774,17 +790,15 @@ final class MapCards {
         touchCard(card, true);
     }
 
-    /** What the card's Structure column takes beside it on a sticky-note side, in unzoomed units. */
-    private double besideCard(ProjectMapPreview card, ProjectMapStickyNotes.Side which) {
-        ProjectMapCardStructure column = cardStructures.get(card);
-        if (column == null) {
-            return 0;
+    /** What the card's other attachments take beside it on a side, in unzoomed units: its sticky notes go past. */
+    private double besideCard(ProjectMapPreview card, CardAttachment.Side which) {
+        double taken = 0;
+        for (CardAttachment stuck : attachments(card)) {
+            if (!(stuck instanceof ProjectMapStickyNotes)) {
+                taken += stuck.reserved(which);
+            }
         }
-        return switch (which) {
-            case RIGHT -> column.reserved(ProjectMapCardStructure.Side.RIGHT);
-            case LEFT -> column.reserved(ProjectMapCardStructure.Side.LEFT);
-            case OVER -> 0;
-        };
+        return taken;
     }
 
     /**
@@ -998,14 +1012,13 @@ final class MapCards {
         if (owner == null) {
             return false;
         }
-        boolean hasSheets = card instanceof ProjectMapPreview code && stickyNotes.containsKey(code);
-        ProjectMapCardStructure column = card instanceof ProjectMapPreview code ? cardStructures.get(code) : null;
-        if (column != null && column.contains(owner)) {
-            return true; // its Structure column is the card's own too
+        if (card instanceof ProjectMapPreview code
+                && attachments(code).stream().anyMatch(stuck -> stuck.contains(owner))) {
+            return true; // its Structure column and its sheets are the card's own: they close with it
         }
         for (Node current = owner; current != null; current = current.getParent()) {
-            if (current == card || hasSheets && current.getStyleClass().contains("project-map-sticky-note")) {
-                return true; // a sheet is the card's own: it closes with it
+            if (current == card) {
+                return true;
             }
         }
         return false;
@@ -1086,9 +1099,9 @@ final class MapCards {
         cardTouches.clear();
         List<ProjectMapPreview> open = List.copyOf(previews.values());
         previews.clear();
-        List.copyOf(stickyNotes.values()).forEach(ProjectMapStickyNotes::dispose);
+        List<CardAttachment> stuck = allAttachments();
         stickyNotes.clear();
-        List.copyOf(cardStructures.values()).forEach(ProjectMapCardStructure::dispose);
+        stuck.forEach(CardAttachment::dispose);
         cardStructures.clear();
         for (ProjectMapPreview preview : open) {
             if (canvasHost != null) {
@@ -1336,9 +1349,9 @@ final class MapCards {
         List<double[]> obstacles = new ArrayList<>(site.obstacles());
         List<Region> cards = new ArrayList<>(previews.values());
         cards.addAll(notePreviews.values());
-        for (ProjectMapCardStructure column : cardStructures.values()) {
-            double[] drawn = column.bounds();
-            if (drawn != null) { // a card's Structure column weighs as a card does
+        for (CardAttachment stuck : allAttachments()) {
+            double[] drawn = stuck.bounds();
+            if (drawn != null) { // what is stuck on a card weighs as a card does
                 obstacles.add(new double[] {
                     drawn[0] - PREVIEW_CASCADE / 2,
                     drawn[1] - PREVIEW_CASCADE / 2,
@@ -1575,7 +1588,7 @@ final class MapCards {
             drawPreviewConnector(g, anchor, preview);
         }
         g.setFill(host.note());
-        stickyNotes.values().forEach(notes -> notes.drawConnectors(g));
+        allAttachments().forEach(stuck -> stuck.drawConnectors(g));
         g.setGlobalAlpha(1);
     }
 

@@ -44,7 +44,7 @@ import static com.editora.i18n.Messages.tr;
  * Shift+click or Shift+Enter opens its own declaration card. The outline is the Map's
  * ({@link ProjectMapStructure}); nothing is read here.
  */
-final class ProjectMapCardStructure {
+final class ProjectMapCardStructure implements CardAttachment {
 
     /** The column fits its longest row between these widths; a longer one is cut at the far edge. */
     static final double MIN_WIDTH = 240;
@@ -52,16 +52,6 @@ final class ProjectMapCardStructure {
     static final double MAX_WIDTH = 560;
     /** Between the card's edge and the column. */
     static final double GAP = 8;
-
-    /** Which side of the card the column goes on. */
-    enum Side {
-        /** Beside the card's right edge, outside it. */
-        RIGHT,
-        /** Beside its left edge, outside it. */
-        LEFT,
-        /** Neither side has room in the panel: on the card itself, against its right edge. */
-        OVER
-    }
 
     /** A row of the column: a declaration, or a line that says why there are none or how many were left out. */
     record Row(ProjectMapStructure.@Nullable Node node, String message) {
@@ -290,16 +280,17 @@ final class ProjectMapCardStructure {
      * neither has room. Pure.
      */
     static Side side(double cardLeft, double cardRight, double width, double panelWidth, boolean preferLeft) {
-        boolean right = panelWidth - cardRight >= width;
-        boolean left = cardLeft >= width;
-        if (preferLeft ? left : right) {
-            return preferLeft ? Side.LEFT : Side.RIGHT;
-        }
-        if (preferLeft ? right : left) {
-            return preferLeft ? Side.RIGHT : Side.LEFT;
-        }
-        return Side.OVER;
+        return CardAttachment.side(cardLeft, cardRight, width, panelWidth, preferLeft);
     }
+
+    @Override
+    public ProjectMapPreview card() {
+        return card;
+    }
+
+    /** The column's rows tie to their declaration cards from MapCards; the column itself draws no connector. */
+    @Override
+    public void drawConnectors(javafx.scene.canvas.GraphicsContext g) {}
 
     /**
      * The rows for {@code nodes}, the top level of {@code view} or a declaration's members: one per declaration, at
@@ -345,7 +336,8 @@ final class ProjectMapCardStructure {
      * What the column takes beside the card on {@code which} side, in unzoomed units: its width and gap there,
      * nothing on the other side or while it stands over the card. Sticky notes go past it.
      */
-    double reserved(Side which) {
+    @Override
+    public double reserved(Side which) {
         return shown && side == which && which != Side.OVER ? width + GAP : 0;
     }
 
@@ -560,12 +552,14 @@ final class ProjectMapCardStructure {
     }
 
     /** Puts the column above its card, which was just raised above the others. */
-    void raise() {
+    @Override
+    public void raise() {
         column.toFront();
     }
 
     /** The column as drawn, in the host's pixels: {@code x, y, width, height}; null while it is not in sight. */
-    double @Nullable [] bounds() {
+    @Override
+    public double @Nullable [] bounds() {
         if (!shown || !column.isVisible()) {
             return null;
         }
@@ -596,7 +590,8 @@ final class ProjectMapCardStructure {
     }
 
     /** Whether the keyboard is in the column. */
-    boolean contains(@Nullable Node node) {
+    @Override
+    public boolean contains(@Nullable Node node) {
         for (Node current = node; current != null; current = current.getParent()) {
             if (current == column) {
                 return true;
@@ -634,7 +629,8 @@ final class ProjectMapCardStructure {
         return column;
     }
 
-    void dispose() {
+    @Override
+    public void dispose() {
         if (!shown) {
             return;
         }
