@@ -11,11 +11,12 @@ import org.jspecify.annotations.Nullable;
 /**
  * Indents HTML: one block element per line, indented by nesting depth. A lenient lexical pass, not a parser or a
  * sanitizer: a run of text and inline elements ({@code <b>}, {@code <a>}, {@code <span>}…) stays on one line, beside
- * the block tag that holds it. The contents of {@code <pre>}, {@code <textarea>}, {@code <script>}, {@code <style>}
- * and their kin ({@link HtmlElements#VERBATIM}), comments, and tags are copied exactly; only the whitespace
- * <em>between</em> tags changes. Void elements ({@code <br>}, {@code <img>}, {@code <meta>}…) and declarations
- * ({@code <!doctype>}) open no level, and the usual omitted end tags ({@code <li>}, {@code <p>}, {@code <td>}…) close
- * themselves.
+ * the block tag that holds it — every element that is not a {@link HtmlElements#BLOCK} is inline, custom elements
+ * included. The contents of {@code <pre>}, {@code <textarea>} and their kin ({@link HtmlElements#VERBATIM}), comments,
+ * and tags are copied exactly; a {@code <script>}'s or {@code <style>}'s lines move with its start tag, their relative
+ * indentation kept. Only whitespace changes. Void elements ({@code <br>}, {@code <img>}, {@code <meta>}…) and
+ * declarations ({@code <!doctype>}) open no level, and the usual omitted end tags ({@code <li>}, {@code <p>},
+ * {@code <td>}…) close themselves.
  *
  * <p>Two uses (HTML review C17, E21):
  * <ul>
@@ -143,6 +144,11 @@ public final class HtmlFormatter {
                     return null;
                 }
                 String tag = s.substring(i, end);
+                if (tag.startsWith("<!--") && last == Last.INLINE && touching(i, end)) {
+                    inline(tag); // "foo<!-- x -->bar": a line break on either side would split the word (E106)
+                    i = end;
+                    continue;
+                }
                 if (tag.startsWith("<!") || tag.startsWith("<?")) {
                     ownLine(tag); // comment, doctype, CDATA, processing instruction
                     i = end;
@@ -155,7 +161,7 @@ public final class HtmlFormatter {
                     i = end;
                     continue;
                 }
-                openTag(tag, name);
+                boolean inline = openTag(tag, name);
                 i = end;
                 if (HtmlElements.VERBATIM.contains(name) && !tag.endsWith("/>")) {
                     if ("plaintext".equals(name)) {
@@ -170,17 +176,119 @@ public final class HtmlFormatter {
                     if (closeEnd < 0) {
                         return null;
                     }
-                    out.append(s, i, close); // the element's content, untouched
+                    String content = s.substring(i, close);
+                    // A script's or a style's code moves with its start tag; a <pre>'s text stays as written (C107).
+                    out.append("script".equals(name) || "style".equals(name) ? rebased(content) : content);
                     open.removeLast(); // pushed by openTag
                     out.append(s, close, closeEnd);
                     if (lineOwner >= open.size()) {
                         lineOwner = -1;
                     }
-                    last = HtmlElements.PHRASING.contains(name) ? Last.INLINE : Last.CLOSED;
+                    last = inline ? Last.INLINE : Last.CLOSED;
                     i = closeEnd;
                 }
             }
             return out.toString();
+        }
+
+        /** Whether the construct {@code [from, to)} has no whitespace on either side: it is part of a word. */
+        private boolean touching(int from, int to) {
+            return from > 0
+                    && to < s.length()
+                    && !Character.isWhitespace(s.charAt(from - 1))
+                    && !Character.isWhitespace(s.charAt(to));
+        }
+
+        /**
+         * A {@code <script>}'s or {@code <style>}'s content re-based on its start tag (HTML review 2 C107): the code
+         * lines one level inside the start tag's line, their own indentation relative to one another kept, and an
+         * end tag on a line of its own at the start tag's indentation. A content with a string that runs over lines
+         * (a JavaScript template literal, a line continued with {@code \}) keeps its lines as written, since moving
+         * them would change the string; only the end tag moves.
+         */
+        private String rebased(String content) {
+            if (content.indexOf('\n') < 0) {
+                return content;
+            }
+            String base = lineIndent();
+            String[] lines = content.split("\n", -1);
+            int lastLine = lines.length - 1;
+            boolean endOwnLine = lines[lastLine].isBlank();
+            boolean keep = multiLineString(content);
+            String prefix = null;
+            for (int k = 1; k <= lastLine && !keep; k++) {
+                if (!lines[k].isBlank()) {
+                    String lead = lines[k].substring(
+                            0, lines[k].length() - lines[k].stripLeading().length());
+                    prefix = prefix == null ? lead : commonPrefix(prefix, lead);
+                }
+            }
+            StringBuilder b = new StringBuilder(content.length() + 16).append(lines[0]);
+            for (int k = 1; k <= lastLine; k++) {
+                b.append('\n');
+                if (k == lastLine && endOwnLine) {
+                    b.append(base);
+                } else if (keep || prefix == null) {
+                    b.append(lines[k]);
+                } else if (!lines[k].isBlank()) {
+                    b.append(base).append(indent).append(lines[k], prefix.length(), lines[k].length());
+                }
+            }
+            return b.toString();
+        }
+
+        /**
+         * Whether {@code code} (JavaScript or CSS) has a string that runs over a line break: a template literal
+         * holding one, or a quoted string continued with {@code \}. Comments are skipped; a regular expression
+         * holding a quote may be misread, which only ever keeps the lines as written.
+         */
+        static boolean multiLineString(String code) {
+            int n = code.length();
+            for (int k = 0; k < n; k++) {
+                char c = code.charAt(k);
+                char next = k + 1 < n ? code.charAt(k + 1) : 0;
+                if (c == '/' && next == '/') {
+                    int nl = code.indexOf('\n', k);
+                    k = nl < 0 ? n : nl;
+                } else if (c == '/' && next == '*') {
+                    int close = code.indexOf("*/", k + 2);
+                    k = close < 0 ? n : close + 1;
+                } else if (c == '"' || c == '\'' || c == '`') {
+                    for (k++; k < n && code.charAt(k) != c; k++) {
+                        char d = code.charAt(k);
+                        if (d == '\\' && k + 1 < n) {
+                            if (code.charAt(k + 1) == '\n' || code.charAt(k + 1) == '\r') {
+                                return true; // "a\<newline>b"
+                            }
+                            k++;
+                        } else if (d == '\n') {
+                            if (c == '`') {
+                                return true;
+                            }
+                            break; // an unterminated '…' or "…" ends at the line's end
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        /** The indentation of the output's current line. */
+        private String lineIndent() {
+            int start = out.lastIndexOf("\n") + 1;
+            int k = start;
+            while (k < out.length() && (out.charAt(k) == ' ' || out.charAt(k) == '\t')) {
+                k++;
+            }
+            return out.substring(start, k);
+        }
+
+        private static String commonPrefix(String a, String b) {
+            int k = 0;
+            while (k < a.length() && k < b.length() && a.charAt(k) == b.charAt(k)) {
+                k++;
+            }
+            return a.substring(0, k);
         }
 
         /** Whether the text in {@code [from, to)}, which a tag follows, ends in a line break and indentation. */
@@ -373,15 +481,24 @@ public final class HtmlFormatter {
             last = Last.CLOSED;
         }
 
-        private void openTag(String tag, String name) {
+        /**
+         * Writes a start tag; true when it stays inline. An element is inline unless it is a {@link
+         * HtmlElements#BLOCK} (HTML review 2 E106); a {@code <script>} is when it follows text on its line.
+         */
+        private boolean openTag(String tag, String name) {
             Set<String> ends = HtmlElements.impliedEnds(name);
             if (ends != null) {
                 while (!open.isEmpty() && ends.contains(open.getLast())) {
                     pop();
                 }
             }
-            boolean isVoid = HtmlElements.VOID.contains(name) || tag.endsWith("/>");
-            if (HtmlElements.PHRASING.contains(name)) {
+            boolean isVoid = tag.endsWith("/>")
+                    || ("image".equals(name) && !open.contains("svg")
+                            ? HtmlElements.isVoidInHtml(name)
+                            : HtmlElements.VOID.contains(name));
+            boolean inline =
+                    HtmlElements.isInline(name) || "script".equals(name) && last == Last.INLINE && !breakPending;
+            if (inline) {
                 inline(tag);
             } else {
                 newline(open.size());
@@ -393,18 +510,28 @@ public final class HtmlFormatter {
             if (!isVoid) {
                 open.add(name);
             }
+            return inline;
         }
 
         private void closeTag(String tag, String name) {
             int at = open.lastIndexOf(name);
             boolean ownsLine = at >= 0 && at == lineOwner; // read before the pops below clear it
+            boolean blockInside = false;
             if (at >= 0) {
                 while (open.size() > at) {
+                    blockInside |= open.size() > at + 1 && !HtmlElements.isInline(open.getLast());
                     pop(); // closes what it holds too: "<ul><li>a</ul>"
                 }
             }
-            if (HtmlElements.PHRASING.contains(name)) {
-                inline(tag);
+            if (HtmlElements.isInline(name)) {
+                if (blockInside) {
+                    newline(open.size()); // "<select><option>a</select>": the end tag lines up with its start tag
+                    out.append(tag);
+                    lineOwner = -1;
+                    last = Last.INLINE;
+                } else {
+                    inline(tag);
+                }
                 return;
             }
             if (ownsLine && !breakPending && (last == Last.INLINE || last == Last.BLOCK_OPEN)) {

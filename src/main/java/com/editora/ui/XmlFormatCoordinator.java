@@ -15,7 +15,7 @@ import static com.editora.i18n.Messages.tr;
  * Format Document on an XML file no language server formats — the XML server off, not installed, or LSP support
  * off altogether (XML review C8): Editora's own {@link XmlFormatter}, indenting with the buffer's indent unit,
  * applied as one undoable edit. A running server that formats keeps the job. An HTML file gets the same treatment
- * with {@link HtmlFormatter} (HTML review C17).
+ * with {@link HtmlFormatter} (HTML review C17), unless it uses template syntax (HTML review 2 C108).
  *
  * <p>The formatting itself runs on a virtual thread: a 6 MB file took over a second, all of it on the FX thread
  * (XML review 2 C10). The result is applied on the FX thread only when the tab is still the active one and its
@@ -64,6 +64,11 @@ final class XmlFormatCoordinator {
             return true;
         }
         String before = buffer.getArea().getText();
+        if (html && com.editora.text.HtmlElements.hasTemplateSyntax(before)) {
+            // A Django, Jinja or Hugo page: reflowing would split {# #} comments and nest {% if %} branches (C108).
+            host.setError(tr("status.html.formatTemplate"));
+            return true;
+        }
         String indent = buffer.indentUnit();
         int caret = buffer.getArea().getCaretPosition();
         running = buffer;
