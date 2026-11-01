@@ -352,7 +352,7 @@ final class ProjectMapView extends VBox {
         surface.setOnCloseColumn(this::closeColumn);
         surface.setOnPreview(this::previewSelection);
         surface.setOnStructure(this::toggleStructure);
-        surface.setOnNotesPreview(this::previewNotes);
+        surface.setOnNotesPreview(this::cardsShowNotes);
         surface.onTogglePreview = this::togglePreview;
         surface.setOnSelectionChanged(this::selectionChanged);
         surface.overviewCards = cards::visibleCards;
@@ -2208,7 +2208,7 @@ final class ProjectMapView extends VBox {
             items.add(mapMenuItem(key, () -> toggleStructure(entry)));
         }
         if (!entry.isSymbol() && surface.notedPaths.contains(entry.path())) {
-            items.add(mapMenuItem("project.map.menu.personalNotes", () -> previewNotes(entry.path())));
+            items.add(mapMenuItem("project.map.menu.personalNotes", () -> cardsShowNotes(entry.path())));
         }
         Path closable = surface.closeTargetFor(entry);
         if (closable != null) {
@@ -2315,6 +2315,21 @@ final class ProjectMapView extends VBox {
 
         /** Shows {@code file}'s Git history. */
         void fileHistory(Path file);
+
+        /** Opens {@code file} in the editor annotated with Git blame (Map explore round, position 9). */
+        default void annotate(Path file) {}
+
+        /**
+         * The commit that last changed {@code file}, or its 0-based lines {@code startLine..endLine} when {@code
+         * startLine >= 0}; null, on the FX thread, when Git knows none (Map explore round, position 9).
+         */
+        default void lastChange(
+                Path file,
+                int startLine,
+                int endLine,
+                Consumer<com.editora.git.GitService.@Nullable LastChange> found) {
+            found.accept(null);
+        }
     }
 
     private @Nullable FollowCode followCode;
@@ -2339,6 +2354,20 @@ final class ProjectMapView extends VBox {
                             @Override
                             public void fileHistory(Path file) {
                                 code.fileHistory(file);
+                            }
+
+                            @Override
+                            public void annotate(Path file) {
+                                code.annotate(file);
+                            }
+
+                            @Override
+                            public void lastChange(
+                                    Path file,
+                                    int startLine,
+                                    int endLine,
+                                    Consumer<com.editora.git.GitService.@Nullable LastChange> found) {
+                                code.lastChange(file, startLine, endLine, found);
                             }
                         });
     }
@@ -2937,6 +2966,11 @@ final class ProjectMapView extends VBox {
         structure.setServerSymbols(symbols);
     }
 
+    /** A running language server's outline of a file with no tab (Map explore round, position 10). */
+    void setClosedFileSymbols(ProjectMapStructure.@Nullable ClosedFileSymbols symbols) {
+        structure.setClosedFileSymbols(symbols);
+    }
+
     private void selectionChanged(Path path) {
         if (path == null) {
             return;
@@ -2974,8 +3008,18 @@ final class ProjectMapView extends VBox {
 
     // --- cards (MapCards): what the view and its tests still name here ---------------------------------------
 
+    /** Opens the note card of {@code path}: a folder's notes, or every note of a file (its sticky notes' "+K more"). */
     private void previewNotes(Path path) {
         cards.openNoteCard(path);
+    }
+
+    /**
+     * A row's Personal Notes (its badge, its menu): a file's open in its code card with the sticky notes out, a
+     * folder's in its note card (Map explore round, position 11).
+     */
+    private void cardsShowNotes(Path path) {
+        ProjectMapModel.Entry entry = surface.entryByPath.get(path);
+        cards.openNotes(path, entry != null && entry.isFile()); // no row: the note card, as before
     }
 
     private ProjectMapPreview createPreview(Path path) {
@@ -3128,7 +3172,54 @@ final class ProjectMapView extends VBox {
             public void panBy(double dx, double dy) {
                 surface.panBy(dx, dy);
             }
+
+            @Override
+            public boolean showInStructure(Path file, Path declaration) {
+                return cardsShowInMapStructure(file, declaration);
+            }
         };
+    }
+
+    /**
+     * A declaration card's Show in Structure, on the Map's own Structure column of {@code file} (Map explore round,
+     * position 8): the column and those of the declarations that hold it open, and its row is selected and brought
+     * into view. False when the file's row is not on the map, or the declaration not in its outline.
+     */
+    private boolean cardsShowInMapStructure(Path file, Path declaration) {
+        Path parent = file.getParent();
+        if (disposed || parent == null || !surface.contains(file) || structure.node(declaration) == null) {
+            return false;
+        }
+        boolean opened = false;
+        if (!structure.isOpen(file)) {
+            opened = structure.toggle(new ProjectMapModel.Entry(file, parent, 0, false));
+            if (!opened) {
+                return false;
+            }
+        }
+        java.util.ArrayDeque<Path> holders = new java.util.ArrayDeque<>();
+        for (Path holder = declaration.getParent(); holder != null && !holder.equals(file); ) {
+            holders.push(holder);
+            holder = holder.getParent();
+        }
+        Path holderParent = file;
+        for (Path holder : holders) {
+            ProjectMapStructure.Node node = structure.node(holder);
+            if (node != null && !structure.isOpen(holder)) {
+                opened |= structure.toggle(ProjectMapModel.Entry.symbol(holder, holderParent, 0, node.symbol()));
+            }
+            holderParent = holder;
+        }
+        if (opened || !surface.contains(declaration)) {
+            showRows();
+        }
+        if (!surface.contains(declaration)) {
+            return false;
+        }
+        surface.select(declaration);
+        surface.revealAfterLoad(declaration);
+        surface.requestFocus();
+        return true;
     }
 
     /** {@code value} within [{@code minimum}, {@code maximum}]; unlike {@link Math#clamp} it tolerates an empty range. */

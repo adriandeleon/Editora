@@ -1908,6 +1908,30 @@
 .project-map-preview-structure:selected {
     -fx-background-color: -color-accent-muted;
 }
+/* A pinned card's pin (Map explore round, position 7): lit, as the Structure button is while its column is out. */
+.project-map-preview-pin:selected {
+    -fx-background-color: -color-accent-muted;
+}
+/* A declaration card's ‹ ›: the previous and next declaration of its file (position 8). */
+.project-map-preview-step {
+    -fx-padding: 2 3 2 3;
+}
+/* The find bar under a card's title bar (position 6). */
+.project-map-preview-find {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: transparent transparent -color-border-default transparent;
+}
+.project-map-preview-find-field {
+    -fx-font-size: 11px;
+    -fx-padding: 2 6 2 6;
+}
+.project-map-preview-find-field:missing {
+    -fx-background-color: -color-danger-subtle;
+}
+.project-map-preview-find-count {
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
 /* A file card's Structure column, stuck beside it: the Map's Structure columns' violet over an opaque background,
    so the map never shows through. */
 .project-map-card-structure {

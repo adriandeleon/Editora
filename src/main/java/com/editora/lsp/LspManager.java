@@ -1582,15 +1582,24 @@ public final class LspManager {
         Object opener = new Object();
         cancelEviction(session);
         lentDocuments.merge(key, new Loan(session, 1), (held, more) -> new Loan(held.session(), held.count() + 1));
-        String name = file.getFileName() == null ? "" : file.getFileName().toString();
-        String language = com.editora.text.LanguageRegistry.forFileName(name);
-        session.didOpen(key, LspServerRegistry.protocolLanguageId(language, file), text == null ? "" : text, opener);
+        // Another window's editor may hold the document on this (shared) session already: its text is the one the
+        // server knows, unsaved edits and all. Opening it again would send the disk text over it as a change, so the
+        // loan only routes requests to the session and leaves the document as that editor has it.
+        boolean heldElsewhere = session.isOpen(key);
+        if (!heldElsewhere) {
+            String name = file.getFileName() == null ? "" : file.getFileName().toString();
+            String language = com.editora.text.LanguageRegistry.forFileName(name);
+            session.didOpen(
+                    key, LspServerRegistry.protocolLanguageId(language, file), text == null ? "" : text, opener);
+        }
         java.util.concurrent.atomic.AtomicBoolean ended = new java.util.concurrent.atomic.AtomicBoolean();
         return () -> {
             if (ended.compareAndSet(false, true)) {
                 lentDocuments.computeIfPresent(
                         key, (k, held) -> held.count() > 1 ? new Loan(held.session(), held.count() - 1) : null);
-                session.didClose(key, opener);
+                if (!heldElsewhere) {
+                    session.didClose(key, opener);
+                }
                 maybeScheduleEviction(session);
             }
         };
@@ -4241,6 +4250,54 @@ public final class LspManager {
             List<SymbolNode> symbols = error == null && result != null ? DocumentSymbolMapper.map(result) : List.of();
             Platform.runLater(() -> cb.accept(symbols));
         });
+    }
+
+    /** How long the Project Map waits for a running server's outline of a file with no tab. */
+    static final java.time.Duration CLOSED_FILE_OUTLINE_TIMEOUT = java.time.Duration.ofSeconds(8);
+
+    /**
+     * Whether the server that already runs in this window for {@code file} ({@link #runsFor}) answers the
+     * document-symbol outline: the Project Map's Structure columns for a file with no tab (Map explore round, position
+     * 10). Never starts a server.
+     */
+    public boolean outlinesClosedFile(@Nullable Path file) {
+        if (closed || !enabled || file == null || !servable(file)) {
+            return false;
+        }
+        LanguageServerSession s = runningSessionFor(file);
+        return s != null && documentSymbolProvider(s.capabilities());
+    }
+
+    /**
+     * The document-symbol outline of {@code text}, the content of {@code file}, from the server {@link
+     * #outlinesClosedFile} names. A file no window has open is lent to it for this request ({@link #lendDocument}) and
+     * the loan ends when the answer is in; a file another window has open on that session is asked about as it is, so
+     * its unsaved text is never replaced by the disk's. {@code cb} gets the symbols on the FX thread, or null when no
+     * such server runs, it fails or it takes longer than {@link #CLOSED_FILE_OUTLINE_TIMEOUT}. Never starts a server.
+     * FX thread.
+     */
+    public void closedFileSymbols(Path file, String text, Consumer<@Nullable List<SymbolNode>> cb) {
+        LanguageServerSession s = outlinesClosedFile(file) ? runningSessionFor(file) : null;
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        String uri = uri(file);
+        Runnable loan = s.isOpen(uri) ? () -> {} : lendDocument(file, text);
+        if (loan == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        s.documentSymbol(uri)
+                .orTimeout(CLOSED_FILE_OUTLINE_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)
+                .whenComplete((result, error) -> {
+                    List<SymbolNode> symbols =
+                            error == null && result != null ? DocumentSymbolMapper.map(result) : null;
+                    Platform.runLater(() -> {
+                        loan.run(); // didClose once nothing else holds the document
+                        cb.accept(symbols);
+                    });
+                });
     }
 
     /**

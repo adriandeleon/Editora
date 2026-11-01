@@ -171,7 +171,10 @@ after a card was placed only widens it where it stands, by at most 120 columns a
 a card the user moved keeps its position and one the user resized keeps its size.
 
 Up to eight cards remain open, code and note cards together; a ninth replaces the least recently used
-one. Pressing a card, moving keyboard focus into it and scrolling it all count as use, and so does any use of what
+one that is not pinned. A code card's **pin** (in its title bar, and **Pin Card** / **Unpin Card** in its menu)
+keeps it from ever being the one closed; when every card that could go is pinned, a new card is refused and the
+Map's status line says "All 8 cards are pinned: unpin one to open another" (`MapCards.makeRoomForCard` answers
+false; `roomForCard()` is the same check for a caller that builds its own cards). Pressing a card, moving keyboard focus into it and scrolling it all count as use, and so does any use of what
 is stuck on it — focus or a key in its Structure column, focus in a sticky note. Eviction works on groups: a file
 card with its Structure column out keeps the declaration cards of its file, goes only after them (the oldest of
 them first), and never while one of its declarations is being opened (`MapCards.makeRoomForCard`), so reading a
@@ -183,7 +186,9 @@ A preview uses current unsaved text when the file is already open; otherwise it 
 the JavaFX application thread, decoded as the editor would open it (BOM, then the `.editorconfig`
 charset, then UTF-8 with a single-byte fallback instead of U+FFFD) and with `\n` line endings. It is
 visibly marked read-only, has independent text/image zoom controls, and renders common bitmap image
-formats as well as syntax-highlighted text. Card text is set in the editor's font family and size
+formats as well as syntax-highlighted text. Its lock says what a card is for: "Preview — read only; Open to edit"
+(tooltip and accessible text), and the ? popover's Cards section opens with one sentence: cards are for a glance
+beside the map, the editor for reading and editing. Card text is set in the editor's font family and size
 (published on the editor window with the console and Diff fonts, `ProjectMapPreview.EDITOR_FONT_KEY`, and
 followed by that window's Map), and a new card opens at the −/+ text
 zoom last used on a card of the same Map. A file over the 160,000-character highlighting cap has its first
@@ -198,6 +203,31 @@ action promotes the previewed file to a normal editor tab. A file card cut at th
 file it holds ("Showing lines 1–7,515 of 9,135", or "Showing the first N lines" when the rest is not counted: past
 64 MB on disk, or an open buffer past 4,000,000 characters) and ends in a last line, "— Preview ends here; Open to
 read the rest —", which opens the file when clicked.
+
+**Find in a card.** Find typed in a focused card (`find.show`: Ctrl+F, Cmd+F, Emacs `C-s`), or the menu's **Find in
+Card…**, opens a find bar under its title bar: a field (a one-line selection is what it looks for), "k of N", ‹ ›
+and **Aa** (match case). Typing selects the first match from where the find began; Enter and Shift+Enter, F3 and
+Shift+F3 (`find.next` / `find.previous`), and `C-s` / `C-r` again in the field step through the matches, wrapping.
+It searches the text the card shows (a declaration card's lines), at most 10,000 matches counted. Escape closes the
+bar first and leaves the match selected; the next Escape closes the card. The find commands go through
+`KeyDispatcher.HANDLED_COMMANDS`, so they follow the keymap and never reach the editor's own find.
+
+**Title bar.** Title, lock, status, then a declaration card's ‹ ›, −/+, the pin, Structure (file cards), Notes,
+Open and ×. The title keeps room for the file's name (a declaration card's: up to its parameters), at most half
+the card (review 3, C11), and takes whatever the buttons leave up to its whole text before the status gets any;
+the status gives way first and is read in full from its tooltip. When even an empty status leaves too little room,
+optional buttons go in turn (`fitTitleBar`): −/+ (also when they would leave the status under 140 px), the pin
+unless pressed, ‹ ›, then Notes unless pressed. The menu has each of them.
+
+**Git context.** A card's status ends with "Last change: <author>, <relative date>" — a file card's file's last
+commit (`git log -1 -- <file>`), a declaration card's lines' (`git log -1 -L<start>,<end>:<file>`, given 2 s, else the
+file's) — with the subject and short hash in the status's tooltip, saying whether it is the lines' or the file's
+change. `GitService.lastChange` runs on the Git service's history lane, never on the FX thread, and caches each
+answer by HEAD, file and lines; HEAD is read at most every 3 s per folder, so a commit or checkout is followed on the
+next card refresh. Asked when a card opens, steps, follows a rename, and on every card refresh that is not the
+once-a-second poll; nothing outside a repository, with Git off (`ProjectTreeFileActions.gitLastChange`), or for an
+uncommitted file. The card menu adds **Annotate** (the editor's blame of the file, at a declaration card's
+declaration) beside **Show Git History**.
 
 An open preview is kept current without being moved or re-scrolled: a card that mirrors an open buffer
 looks for edits once a second while the Map is on screen and replaces only the range that changed (a buffer
@@ -268,9 +298,12 @@ other Project menus and ensures a click elsewhere closes the menu even on platfo
 native popup grab misses the press.
 
 Files and folders with one or more bookmarks or Personal Notes show compact, independently colored
-indicators in both the Tree and Map. Personal Notes indicators are interactive: they open a separate editable note card attached to the same
-file or folder row by a connector. A note card and the code preview of the same file open and close
-independently, under the shared limit above. The options
+indicators in both the Tree and Map. Personal Notes indicators are interactive, and a file's notes are shown one
+way (explore round, position 11): a file row's badge, and its menu's **Personal Notes**, open the file's code card
+with its sticky notes out (`MapCards.openNotes`, below); a folder row's open the folder's editable note card,
+attached to its row by a connector. The note card of a file remains only as the list a code card's "+K more notes"
+sheet opens. A note card and the code preview of the same file open and close independently, under the shared
+limit above. The options
 menu's default-off “Hide all open Personal Notes” item temporarily hides those cards without closing them.
 A note card saves an edit on focus loss, Shortcut+Enter or close, comparing against the body the store
 last held. It follows the store: when notes change elsewhere it adopts the new bodies (an edit in
@@ -384,6 +417,26 @@ its bookmark and note actions off. Text that arrives before the outline is not c
 follows its declaration line when lines were added or removed above it, and otherwise holds the new text,
 still showing the old lines, until the outline says where the declaration went. No language server is started
 for a closed file; a declaration card the workspace brought back (below) waits for its file's outline.
+
+**Outlines of files with no tab from a running server** (explore round, position 10). When a server for a closed
+file's language already runs in this window, on a root that holds the file, past its handshake and with document
+symbols (`LspManager.outlinesClosedFile`), the file is read as above and lent to that session for one
+`documentSymbol` request (`LspManager.closedFileSymbols` over `lendDocument`, the loan the linked cards use too),
+the loan ending when the answer is in; a file some window has open is asked about as it is, so its unsaved text is
+never replaced, and a tab opened meanwhile keeps it open. The server's outline replaces the
+heuristic one; the heuristic one is shown if the server has not answered within 1.5 s (and replaced when it does),
+answers with nothing, fails, or takes over 8 s. A file past 1,000,000 characters or cut at the read cap is outlined
+by the heuristic only. The server is asked again only when the file changed on disk (or once, when a server starts
+after the file was first outlined). The wiring is `ProjectPanel.shareIndexes` → `ProjectMapStructure.ClosedFileSymbols`.
+
+**Declaration cards step.** A declaration card's ‹ › (and Alt+Page Up / Alt+Page Down, claimed through
+`DECLARATION_CARD_KEYS`, and the menu's **Previous / Next Declaration**) show the previous or next declaration of the
+same file, depth-first through its outline (`MapCards.cardsStep`), in the same card where it stands: the card is
+re-keyed to that declaration, its title, lines and gutter follow, its notes and Git context are read again, and
+another card already open on that declaration closes. The menu's **Show in Structure** selects its row in the file's
+Structure column: the file card's column when that card has it out, else the Map's own Structure column of the file
+(opened, with the columns of the declarations that hold it, and the row revealed — `Host.showInStructure`), else
+the file card's, which is opened for it.
 A file card whose file can be outlined has a **Structure** button in its title bar, before Notes. It sticks a
 **Structure column** beside the card (`ProjectMapCardStructure`): the same outline as the Map's Structure column,
 as an indented list in the same violet tint, with a lone top-level type opened. Each label is coloured as the
@@ -1088,6 +1141,11 @@ The focused coverage lives in:
   selection, tooltips and the Overview card's sections; `StyleContrastTest` holds the tint's floors in every theme;
 - `ProjectMapNoteCardFxTest`, `ProjectMapPreviewCardFxTest`, `ProjectMapPreviewMenuEscapeFxTest` and
   `ProjectMapStickyNotesTest` for note cards, code cards, a card menu's Escape, and sticky notes;
+- `ProjectMapCardsExploreFxTest` / `ProjectMapCardsExploreTest` for the explore round's cards: find in a card, a
+  pinned card and the refused ninth, declaration stepping and Show in Structure (card and Map columns), a card's Git
+  context and its cache per HEAD, closed-file outlines from a running server (and the heuristic fallback and wait),
+  a file's notes on its code card, and the glance text and title bar at the minimum width; `GitServiceLastChangeTest`
+  and `LspClosedFileSymbolsFxTest` (no running server: nothing asked, nothing started);
 - `ProjectMapWindowReviewFxTest` for the pinned root in the No Project window, the Map returning with its
   project, cards and row states across a close and reopen, the theme mirror, a maximized window, New Folder
   and Rename from the Map, an unreadable folder's status line, Reveal Active File and its option, a card's

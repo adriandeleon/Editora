@@ -141,7 +141,8 @@ final class MapCardLinks {
         @Nullable
         ProjectMapPreview openDeclaration(ProjectMapStructure.Node node);
 
-        /** Opens (or brings up) the card of a whole file. */
+        /** Opens (or brings up) the card of a whole file; null when it was refused (every card is pinned). */
+        @Nullable
         ProjectMapPreview openFile(Path file);
 
         /** Whether {@code card} is still open. */
@@ -576,7 +577,9 @@ final class MapCardLinks {
                 card = cards.openDeclaration(node);
             } else {
                 card = cards.openFile(group.file());
-                if (!card.revealRange(new ProjectMapPreview.Range("", group.line(), group.line(), group.line()))) {
+                if (card != null
+                        && !card.revealRange(
+                                new ProjectMapPreview.Range("", group.line(), group.line(), group.line()))) {
                     reveals.put(card, group.line()); // its text is still on its way
                 }
             }

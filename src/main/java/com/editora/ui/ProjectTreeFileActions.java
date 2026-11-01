@@ -147,4 +147,17 @@ final class ProjectTreeFileActions implements ProjectPanel.FileActions {
     public void gitAddToGitignore(Path file) {
         git.ifEnabled(() -> git.addToGitignore(file));
     }
+
+    @Override
+    public void gitLastChange(
+            Path file,
+            int startLine,
+            int endLine,
+            java.util.function.Consumer<com.editora.git.GitService.@Nullable LastChange> found) {
+        if (git.isEnabled()) {
+            git.service().lastChange(file, startLine, endLine, found);
+        } else {
+            found.accept(null);
+        }
+    }
 }
