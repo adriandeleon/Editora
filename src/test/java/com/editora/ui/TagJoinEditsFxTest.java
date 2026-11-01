@@ -81,10 +81,17 @@ class TagJoinEditsFxTest {
         Event.fireEvent(area, new KeyEvent(KeyEvent.KEY_TYPED, s, s, KeyCode.UNDEFINED, false, false, false, false));
     }
 
-    private static Consumer<CodeArea> press(KeyCode code, boolean shift, boolean ctrl) {
+    /**
+     * {@code code} with Shift and/or the word modifier: Ctrl, or Option on macOS, where RichTextFX deletes a word with
+     * Alt+Backspace and Ctrl+Backspace does nothing.
+     */
+    private static Consumer<CodeArea> press(KeyCode code, boolean shift, boolean word) {
+        boolean mac = com.editora.command.KeymapManager.isMac();
+        boolean ctrl = word && !mac;
+        boolean alt = word && mac;
         return area -> {
-            Event.fireEvent(area, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, shift, ctrl, false, false));
-            Event.fireEvent(area, new KeyEvent(KeyEvent.KEY_RELEASED, "", "", code, shift, ctrl, false, false));
+            Event.fireEvent(area, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, shift, ctrl, alt, false));
+            Event.fireEvent(area, new KeyEvent(KeyEvent.KEY_RELEASED, "", "", code, shift, ctrl, alt, false));
         };
     }
 
