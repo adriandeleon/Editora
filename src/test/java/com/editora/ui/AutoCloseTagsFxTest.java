@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.util.List;
 
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.TagTyping;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * End-to-end (headless-FX) coverage of tag auto-closing: a real {@link EditorBuffer} with a real
@@ -298,5 +300,44 @@ class AutoCloseTagsFxTest {
         EditorBuffer off = htmlBuffer("<a class>");
         FxTestSupport.runOnFx(() -> off.setAutoCloseTags(false));
         assertEquals("<a class=|>", typeAt(off, 8, "="), "the auto-close setting gates it");
+    }
+
+    /**
+     * The quote habits and the setting (HTML review 2 C104, D101, E112): {@code class='x'} typed by habit gave
+     * {@code class="'x'"}, "Quotes for completed attributes" was ignored by a typed {@code =}, a template tag in a
+     * start tag got quotes, and so did code in the middle of a long inline script.
+     */
+    @Test
+    void autoQuoteFollowsTheUsersQuotesAndTheSetting() throws Exception {
+        assertEquals("<p class='x'|></p>", typeAt(htmlBuffer("<p ></p>"), 3, "class='x'"), "single quotes by habit");
+        assertEquals("<p class=\"x\"|></p>", typeAt(htmlBuffer("<p ></p>"), 3, "class=\"x\""), "double, as before");
+        assertEquals("<p class= |></p>", typeAt(htmlBuffer("<p ></p>"), 3, "class= "), "a space: no quotes wanted");
+        assertEquals("<p class=\"a b\"|></p>", typeAt(htmlBuffer("<p ></p>"), 3, "class=\"a b\""));
+        assertEquals(
+                "<p class=\"a b|\"></p>",
+                typeAt(htmlBuffer("<p ></p>"), 3, "class=a b"),
+                "a value with a space stays inside the quotes");
+        assertEquals("<p a=>|</p>", typeAt(htmlBuffer("<p a"), 4, "=>"), "a '>' takes the empty pair back");
+        assertEquals(
+                "<option {% if a==|b %}>",
+                typeAt(htmlBuffer("<option {% if ab %}>"), 15, "=="), "a template tag in a start tag");
+        assertEquals("<b {{x=|}}>", typeAt(htmlBuffer("<b {{x}}>"), 6, "="));
+        assertEquals("<b <% x=| %>>", typeAt(htmlBuffer("<b <% x %>>"), 7, "="));
+        assertEquals("<b {{x}} c=\"|\">", typeAt(htmlBuffer("<b {{x}} c>"), 10, "="), "after a closed one: as usual");
+        try {
+            TagTyping.setAttributeQuotes("singlequotes");
+            assertEquals("<p id='|'></p>", typeAt(htmlBuffer("<p id></p>"), 5, "="));
+            assertEquals("<p id='x'|></p>", typeAt(htmlBuffer("<p id></p>"), 5, "='x'"));
+            assertEquals("<p id=\"x\"|></p>", typeAt(htmlBuffer("<p id></p>"), 5, "=\"x\""));
+            TagTyping.setAttributeQuotes("empty");
+            assertEquals("<p id=|></p>", typeAt(htmlBuffer("<p id></p>"), 5, "="));
+        } finally {
+            TagTyping.setAttributeQuotes(null);
+        }
+        // A script longer than the region window: its middle is code, read from the script's own start tag.
+        String script =
+                "<p>\n<script>\n" + "var i = 0; for (i = 0; i<n; i++) { total += i; }\n".repeat(600) + "total\n";
+        EditorBuffer longScript = htmlBuffer(script + "</script>");
+        assertTrue(typeAt(longScript, script.length() - 1, "=").endsWith("total=|\n</script>"), "code, not a tag");
     }
 }

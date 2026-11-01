@@ -66,8 +66,11 @@ public final class IndentWindow {
     public static Indenter.EnterEdit enterEdit(Doc doc, int caret, String language, String unit) {
         int line = doc.lineOf(caret);
         Embedded embedded = embedded(doc, caret, language);
-        if (embedded != null) {
+        if (embedded != null && !beforeEndTag(doc, caret, line)) {
             language = embedded.language(); // the brace rules inside an HTML page's <script> or <style> (C10)
+        } else {
+            embedded =
+                    null; // `<style>|</style>`: the end tag goes on a line of its own, as markup (HTML review 2 C105)
         }
         // Shell, Python, Lisp and brace languages read the stretch above the caret (blocks, quotes, wrapped
         // statements, open forms, case labels, open argument lists); the rest only the line.
@@ -190,9 +193,27 @@ public final class IndentWindow {
         // re-indented from the lines above.
         boolean above = a == b || Indenter.styleFor(language) == Indenter.Style.SHELL;
         int start = above ? backScanStart(doc, firstLine) : doc.lineStart(firstLine);
+        boolean plain = false;
+        if (a == b && !shift) {
+            HtmlTabRule rule = htmlTabRule(doc, a, language);
+            if (rule != null && rule.language() != null) {
+                language = rule.language(); // the brace rules in a page's <script> or <style> (HTML review 2 C106)
+                start = Math.max(start, rule.start());
+            }
+            plain = rule != null && rule.language() == null;
+            if (plain) {
+                int lineStart = doc.lineStart(firstLine);
+                String text = doc.text(lineStart, lineStart + doc.lineLength(firstLine));
+                int indentEnd = lineStart + (text.length() - text.stripLeading().length());
+                if (!text.isBlank() && a <= indentEnd) {
+                    return new Indenter.TabEdit(a, a, "", indentEnd, indentEnd); // its whitespace is content: kept
+                }
+            }
+        }
         int lastLine = doc.lineOf(b > a ? b - 1 : b);
         String window = doc.text(start, doc.lineStart(lastLine) + doc.lineLength(lastLine));
-        Indenter.TabEdit edit = Indenter.smartTab(window, a - start, b - start, language, tabSize, shift, unit);
+        Indenter.TabEdit edit =
+                plain ? null : Indenter.smartTab(window, a - start, b - start, language, tabSize, shift, unit);
         if (edit == null) {
             edit = PlainTab.edit(window, a - start, b - start, tabSize, shift, PlainTab.unit(language, unit));
         }
@@ -202,6 +223,111 @@ public final class IndentWindow {
                 edit.replacement(),
                 edit.selStart() + start,
                 edit.selEnd() + start);
+    }
+
+    /**
+     * Whether a Tab on the caret's line of a {@code language} buffer may take the line's indent from the language
+     * server. Not in an HTML page's {@code <script>}/{@code <style>} (the brace rules, as Enter) nor in a {@code
+     * <pre>}, {@code <textarea>}… whose whitespace is content: the server, asked to format the two-line fragment,
+     * cannot see the element around it and indented {@code <pre>} lines and script code as markup (HTML review 2
+     * B102). True for every buffer that is not HTML.
+     */
+    public static boolean serverReindents(Doc doc, int caret, String language) {
+        return htmlTabRule(doc, caret, language) == null;
+    }
+
+    /**
+     * How Tab re-indents the caret's line inside an element of an HTML page whose content is not markup: by {@code
+     * language}'s rules over the slice from {@code start} (a script's or style's code), or, with a null language,
+     * not at all (a verbatim element, or a script that is not JavaScript): a caret in a line's indent goes to its
+     * end, and elsewhere, or on a blank line, Tab inserts one unit as in plain text.
+     */
+    private record HtmlTabRule(@Nullable String language, int start) {}
+
+    /** How far back the start tag of the verbatim element holding a line is looked for. */
+    static final int VERBATIM_LOOKBACK = 65_536;
+
+    /**
+     * The rule for Tab at {@code caret} of an HTML-family buffer when its line is inside a {@link
+     * HtmlElements#VERBATIM} element, else null (markup: the markup rules, and the server when one runs). The first
+     * line of a script's or style's code, and the line of its end tag, indent as markup.
+     */
+    private static @Nullable HtmlTabRule htmlTabRule(Doc doc, int caret, String language) {
+        if (!HtmlElements.isHtmlLanguage(language) || doc.length() == 0) {
+            return null;
+        }
+        int line = doc.lineOf(caret);
+        int lineStart = doc.lineStart(line);
+        int from = Math.max(0, lineStart - VERBATIM_LOOKBACK);
+        String inside = verbatimBefore(doc.text(from, lineStart));
+        if (inside == null) {
+            return null;
+        }
+        if (!inside.equals("script") && !inside.equals("style")) {
+            return new HtmlTabRule(null, lineStart);
+        }
+        Embedded embedded = embedded(doc, caret, language);
+        if (embedded == null) {
+            return new HtmlTabRule(null, lineStart); // a template or data script: its lines are kept as typed
+        }
+        String rest = doc.text(lineStart, lineStart + doc.lineLength(line)).stripLeading();
+        if (line == doc.lineOf(embedded.start())
+                || rest.regionMatches(true, 0, "</" + inside, 0, inside.length() + 2)) {
+            return new HtmlTabRule("html", 0); // markup, read from the lines above as usual
+        }
+        return new HtmlTabRule(embedded.language(), embedded.start());
+    }
+
+    /**
+     * The {@link HtmlElements#VERBATIM} element whose content the end of {@code text} is in, read backwards: the last
+     * start or end tag of one, outside comments, is a start tag that is already whole. Null when there is none.
+     */
+    static @Nullable String verbatimBefore(String text) {
+        int k = text.length();
+        while (k > 0) {
+            int lt = text.lastIndexOf('<', k - 1);
+            if (lt < 0) {
+                return null;
+            }
+            k = lt;
+            boolean closing = lt + 1 < text.length() && text.charAt(lt + 1) == '/';
+            int nameStart = lt + (closing ? 2 : 1);
+            int nameEnd = nameStart;
+            while (nameEnd < text.length() && Character.isLetterOrDigit(text.charAt(nameEnd))) {
+                nameEnd++;
+            }
+            String name = text.substring(nameStart, nameEnd).toLowerCase(java.util.Locale.ROOT);
+            if (name.isEmpty() || !HtmlElements.isVerbatim(name)) {
+                continue;
+            }
+            if (nameEnd < text.length() && !isTagBoundary(text.charAt(nameEnd))) {
+                continue; // <prefix>, <scripted-thing>
+            }
+            int open = text.lastIndexOf("<!--", lt);
+            if (open >= 0 && text.lastIndexOf("-->", lt) < open) {
+                continue; // mentioned in a comment
+            }
+            if (closing) {
+                return null;
+            }
+            return text.indexOf('>', nameEnd) >= 0 && !selfClosed(text, nameEnd) ? name : null;
+        }
+        return null;
+    }
+
+    private static boolean isTagBoundary(char c) {
+        return Character.isWhitespace(c) || c == '>' || c == '/';
+    }
+
+    private static boolean selfClosed(String text, int nameEnd) {
+        int gt = text.indexOf('>', nameEnd);
+        return gt > 0 && text.charAt(gt - 1) == '/';
+    }
+
+    /** The caret of {@code line} sits right before the end tag of the script or style it is in: {@code <style>|</style>}. */
+    private static boolean beforeEndTag(Doc doc, int caret, int line) {
+        String after = doc.text(caret, doc.lineStart(line) + doc.lineLength(line));
+        return after.regionMatches(true, 0, "</style", 0, 7) || after.regionMatches(true, 0, "</script", 0, 8);
     }
 
     /**

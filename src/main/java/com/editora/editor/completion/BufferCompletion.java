@@ -215,6 +215,15 @@ public final class BufferCompletion {
     long suppressCompletionAtVersion = -1;
 
     /**
+     * The version and caret of an accept whose item asked for the list again ({@code triggerSuggest}: a CSS property's
+     * values, a folder's files). The accept's own automatic passes at that version (the queued one and the 90 ms
+     * settled-edit one) leave that second list, or its request in flight, alone; they hid it (HTML review B101).
+     */
+    long twoStepVersion = -1;
+
+    int twoStepCaret = -1;
+
+    /**
      * The edit the last completion accept made, measured around it, so the {@code additionalTextEdits} a later
      * {@code completionItem/resolve} returns — positions the server computed against the document as it stood
      * <em>before</em> that accept — can be translated into the document as it stands now. See
@@ -980,6 +989,7 @@ public final class BufferCompletion {
     /** Recomputes the word at the caret and shows/refreshes/hides the popup. {@code manual} lowers the
      *  minimum prefix length so an explicit invoke works on a single character. */
     public void updateCompletion(CodeArea a, boolean manual) {
+        if (!manual && host.docVersion() == twoStepVersion && a.getCaretPosition() == twoStepCaret) return; // B101
         if (!autocompleteEnabled
                 || host.largeFile() // off in large-file mode: a.getText() below would allocate the whole document
                 // per trigger (the same per-keystroke cost brace matching is gated to avoid), and there is
@@ -2002,6 +2012,8 @@ public final class BufferCompletion {
             // The server's two-step items (HTML review B7): `color: ` then its values, `css/` then its files. Manual,
             // so the suppression of the accept's own auto-trigger does not hold it back.
             long acceptedVersion = host.docVersion();
+            twoStepVersion = acceptedVersion;
+            twoStepCaret = a.getCaretPosition();
             Platform.runLater(() -> {
                 if (acceptedVersion == host.docVersion() && a.getScene() != null) updateCompletion(a, true);
             });
