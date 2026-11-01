@@ -425,6 +425,15 @@ public final class JavaMembers {
 
     /**
      * The offset of the last segment of the type an anonymous class instantiates when {@code caret} is on its header,
+     * from any segment of the type's name to the body's {@code '{'}, wherever the class is written; else -1.
+     */
+    public static int anonymousHeaderAt(String text, int caret) {
+        String code = code(text);
+        return anonymousHeader(code, 0, Math.min(caret, code.length()));
+    }
+
+    /**
+     * The offset of the last segment of the type an anonymous class instantiates when {@code caret} is on its header,
      * from the type's name to the body's {@code '{'} ({@code new} itself is the enclosing member's, as in IntelliJ);
      * else -1 (thirteenth review BK2, EL2).
      */
