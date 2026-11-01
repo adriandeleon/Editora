@@ -215,6 +215,50 @@ class HtmlLinksFxTest {
         }
     }
 
+    /**
+     * Typing before a colour moves its swatch with the text until the server answers again; it stayed at its column
+     * and landed inside the words typed (HTML review 2 C111/B108). The server's answer is stood in for by the cache.
+     */
+    @Test
+    void swatchesMoveWithTheTextTypedBeforeThem(@TempDir Path dir) throws Exception {
+        Path css = Files.writeString(dir.resolve("b.css"), "a { color: red; background: lime; }\nb { color: blue; }\n");
+        try (WindowRig w = new WindowRig()) {
+            EditorBuffer b = w.open(css);
+            LspCoordinator coordinator = w.field("lspCoordinator");
+            HtmlLspAids aids = coordinator.html;
+            FxTestSupport.runOnFx(() -> {
+                java.util.Map<EditorBuffer, List<ColorSwatch>> colors = FxTestSupport.field(aids, "colors");
+                colors.put(
+                        b,
+                        List.of(
+                                new ColorSwatch(0, 11, 1, 0, 0, 1),
+                                new ColorSwatch(0, 28, 0, 1, 0, 1),
+                                new ColorSwatch(1, 11, 0, 0, 1, 1)));
+                FxTestSupport.call(aids, "followScroll", new Class<?>[] {EditorBuffer.class}, b);
+                FxTestSupport.call(aids, "showColors", new Class<?>[] {EditorBuffer.class}, b);
+            });
+            w.await("the swatches laid out", () -> swatches(b).size() == 3);
+            FxTestSupport.runOnFx(() -> b.getArea().insertText(4, "border-top-color: navy; "));
+            FxTestSupport.runOnFx(() -> {
+                Object inlays = FxTestSupport.field(b, "swatchInlays");
+                java.util.Map<Integer, List<org.fxmisc.richtext.Inlay>> byLine = FxTestSupport.field(inlays, "byLine");
+                assertEquals(
+                        List.of(35, 52),
+                        byLine.get(0).stream()
+                                .map(org.fxmisc.richtext.Inlay::getColumn)
+                                .toList(),
+                        "still before `red` and `lime`");
+                assertEquals(11, byLine.get(1).getFirst().getColumn(), "the next line's stays");
+            });
+            FxTestSupport.runOnFx(() -> b.getArea().replaceText(0, 0, "x {}\n"));
+            FxTestSupport.runOnFx(() -> {
+                Object inlays = FxTestSupport.field(b, "swatchInlays");
+                java.util.Map<Integer, List<org.fxmisc.richtext.Inlay>> byLine = FxTestSupport.field(inlays, "byLine");
+                assertEquals(java.util.Set.of(1, 2), byLine.keySet(), "a line added above moves them down");
+            });
+        }
+    }
+
     private static List<com.editora.markdown.MarkdownLint.Diagnostic> marks(EditorBuffer b) {
         return b.httpVariableDiagnostics();
     }

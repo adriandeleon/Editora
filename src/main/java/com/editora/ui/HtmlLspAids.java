@@ -137,11 +137,29 @@ final class HtmlLspAids {
         return all.stream().filter(s -> s.line() >= first && s.line() <= last).toList();
     }
 
-    /** Re-bounds the swatches when scrolling settles (from the cached answer: documentColor has no range). */
+    /**
+     * Re-bounds the swatches when scrolling settles (from the cached answer: documentColor has no range), and moves
+     * them with each edit until the next answer: column-anchored, they stayed put and landed inside the words typed
+     * before them (HTML review 2 C111/B108).
+     */
     private void followScroll(EditorBuffer buffer) {
         if (followed.put(buffer, Boolean.TRUE) != null) {
             return;
         }
+        var area = buffer.getArea();
+        area.plainTextChanges().subscribe(change -> {
+            List<ColorSwatch> all = colors.get(buffer);
+            if (all == null || all.isEmpty()) {
+                return;
+            }
+            var at = area.offsetToPosition(change.getPosition(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+            List<ColorSwatch> moved =
+                    ColorSwatch.shifted(all, at.getMajor(), at.getMinor(), change.getRemoved(), change.getInserted());
+            if (moved != all) {
+                colors.put(buffer, moved);
+                showColors(buffer);
+            }
+        });
         PauseTransition settle = new PauseTransition(Duration.millis(150));
         settle.setOnFinished(e -> showColors(buffer));
         buffer.getArea().estimatedScrollYProperty().addListener((obs, was, now) -> {
