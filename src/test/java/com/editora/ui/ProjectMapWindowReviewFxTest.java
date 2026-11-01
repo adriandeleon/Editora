@@ -264,9 +264,7 @@ class ProjectMapWindowReviewFxTest {
 
     /** Waits for a timer of the card poll's interval, started now on the FX thread, to fire. */
     private static void awaitPollInterval() throws Exception {
-        java.lang.reflect.Field interval = ProjectMapView.class.getDeclaredField("CARD_POLL_INTERVAL");
-        interval.setAccessible(true);
-        javafx.util.Duration poll = (javafx.util.Duration) interval.get(null);
+        javafx.util.Duration poll = MapCards.CARD_POLL_INTERVAL;
         java.util.concurrent.CountDownLatch fired = new java.util.concurrent.CountDownLatch(1);
         FxTestSupport.runOnFx(() -> {
             PauseTransition sentinel = new PauseTransition(poll.add(javafx.util.Duration.millis(100)));
