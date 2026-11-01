@@ -655,6 +655,56 @@ modification time, and relevant open, unsaved, or Git status from the loaded
 snapshot — preceded, over the eye, a chevron or a note badge, by what a click there does. Hover does no
 filesystem work.
 
+### Working sets and trails (Map explore, views)
+
+**Working sets** are named views of the Map, per workspace (`projectMapWorkingSets`, workspace schema v29,
+`config.ProjectMapWorkingSet`: a name and a `ProjectMapState`). ⋯ → **Working sets** ▸ *Save Current As…* asks for a
+name in the Map window's prompt and saves `bearingsState()` under it — the folders opened by hand, the selection, the
+zoom and pan, and the open code cards with their place, size, text zoom and Structure column — without the
+Back/Forward places. A name already used in the folder (ignoring case) replaces that set where it stands; a folder
+keeps at most 30. One item per set of the folder the Map shows (sets of other folders are kept but not listed) shows
+it again, and *Delete* ▸ removes one. Showing a set goes through the restart's path (`ProjectMapView.viewsApply`):
+the search is cleared, every card closes, the open folders become the set's, `bearingsRestore` brings back the
+selection (one more Back/Forward place), the surface fits again with the set's zoom and pan
+(`MapSurface.viewsRefit`), and the cards open once the map is laid out, a declaration card once its file's outline
+is in — what no longer exists is dropped, as after a restart. Local folders only (`bearingsState()` is null for a
+remote root).
+
+**Trails** are guided tours kept in the project, `.editora/map-trails/<name>.json` (`config.MapTrails`), so a team
+commits them next to `.editora/settings.json` and `.editora/run-configurations.json`. A trail is `{version, title,
+stops}`; a stop is `{file, declaration, startLine, endLine, title, note}` — `file` relative to the project with `/`,
+`declaration` the Map's declaration path below that file (`""` for the whole file), 1-based inclusive lines. The
+file name is the trail's name made safe on every OS (`MapTrails.fileName`: blanks to `-`, no `/\:*?"<>|`, no
+leading dot). Every write is atomic (`ConfigWriter.writeAtomic`). A file that is not a trail is listed with its
+reason ("broken (unreadable)", disabled) and never overwritten; a file whose `version` is newer than this build's is
+played but not edited or written (`MapTrails.NotWritableException`).
+
+⋯ → **Trails** ▸ *New Trail…* writes an empty trail and opens its editor; *Add This Card as a Stop* (also at the end of
+a code card's menu, `MapCards.Host.viewsCardMenu`) asks for the stop's note and appends the card used last (or the
+card whose menu it is): its file, its declaration for a declaration card, and its lines — a declaration's, else the
+selected lines, else the lines in sight (`ProjectMapPreview.viewsStopLines`). With no current trail, New Trail… comes
+first. *Play <name>* per trail, and *Edit* ▸ per trail.
+
+Playing (`ProjectMapTrails`) puts a bar at the top of the map area — ‹ *Stop 3 of 9* › the stop's title, Edit, × —
+above the cards (Escape in it closes it). Each stop reveals its file (`revealPath`) and opens its card through the
+restart's path (`ProjectMapView.viewsShowCard`: a `ProjectMapState.Card` with no place joins `bearingsPendingCards`,
+and opens beside its row once the map is laid out with the row on it — at the first fit on a Map that has only just
+been given its folder, else when the load that brings the row lands — and for a declaration once its file's outline
+is in). A whole-file card scrolls to the stop's lines and selects them (`ProjectMapPreview.viewsRevealLines`, applied
+after the opening line once the text is coloured). The note is stuck on the card as a read-only sheet in the accent
+colour (`ProjectMapTrailNote`, a `CardAttachment` held by `MapCards.viewsAttach`), tied to the stop's first line,
+moving, zooming, hiding and closing with the card. A stop whose file is gone says so in the status line and leaves
+the bar on it; a declaration no longer in the outline shows the stop's lines in the file instead. Moving on detaches
+the note and closes the card if the trail opened it; × closes the bar and detaches the note, leaving the card.
+
+*Edit* opens `ProjectMapTrailEditor`, a card over the map (not counted against the card limit): the stops in order
+with title, file:lines and note; Move Up / Move Down (Alt+↑/↓), Remove (Delete), Rename…, Note…, Play from Here
+(Enter, double-click) and Rename Trail… (which moves the file). Each change is written at once.
+
+A restart's declaration card, and a trail's declaration stop, wait for a real outline: `ProjectMapStructure.ensure`
+holds a LOADING placeholder at once, and `bearingsRestoreDeclarations` now skips it instead of dropping the card as
+gone.
+
 ## Layout and rendering
 
 `MapSurface` owns the canvas coordinate system. Node and column geometry is computed
@@ -959,7 +1009,9 @@ window's bounds (`projectMapWindowBounds`, v24) and maximized state (`projectMap
 flow, and the two navigation options; v27 also adds `projectMapSingleClickOpens`,
 `projectMapCompactChains` and `projectMapFollowActiveFile` for three ⋯ options; v28 adds `projectMapState` (above)
 and `projectMapCompactRows`, `projectMapHideIgnored` and `projectMapOverviewSeen` for the review-3 ⋯ options, written
-through the view's change callbacks (`setOnCompactRowsChanged`, `setOnHideIgnoredChanged`, `setOnOverviewSeen`). The
+through the view's change callbacks (`setOnCompactRowsChanged`, `setOnHideIgnoredChanged`, `setOnOverviewSeen`). v29 adds
+`projectMapWorkingSets`, the named views of ⋯ → Working sets (see *Working sets and trails*); trails are files of the
+project, not workspace state. The
 status/type filters are not persisted.
 
 The Map recovers from every failure it meets (an empty listing, an unmarked row, no outline, a card left
@@ -1031,6 +1083,13 @@ The focused coverage lives in:
   across edits, overloads and deletion, re-anchored notes, placement, sticky-note overflow and counts,
   outlines in more languages, keyboard move and resize, binary and large files, the editor font, and the
   shared loader threads;
+- `ProjectMapViewsFxTest` for working sets (saved, listed for their folder only, replaced by name, shown again with
+  their folders, selection, zoom and cards, deleted) and trails (made from a file card's selected lines and a
+  declaration card through the card menu, played on a Map that has only just been given its folder, the note sheet,
+  stepping closing the card the trail opened, a malformed trail and a stop whose file is gone, the editor's reorder,
+  remove, retitle, note and rename), and a restart's declaration card waiting for its outline; `MapTrailsTest` for
+  the trail files (layout, malformed and newer files, rename, safe names) and `WorkspaceStateV29Test` for the sets in
+  the workspace;
 - `ProjectMapMessagesTest` that every `project.map.*` string is used, and `ProjectMapLogTest` for the
   debug-log record of a failure the Map recovers from.
 
