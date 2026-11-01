@@ -343,6 +343,7 @@ final class ProjectMapPreview extends StackPane {
     private Consumer<Path> onReveal = file -> com.editora.process.DesktopActions.reveal(file, false, error -> {});
     private Runnable onMoveToFreeSpace = () -> {};
     private Runnable onTextShown = () -> {};
+    private Runnable onStylesShown = () -> {};
     private java.util.function.DoubleConsumer onContentZoomed = zoom -> {};
 
     private java.util.function.@Nullable BiConsumer<Path, Integer> onOpenAt;
@@ -426,8 +427,11 @@ final class ProjectMapPreview extends StackPane {
         open.setOnAction(event -> {
             Path selected = path;
             Range shown = range;
-            if (selected != null && shown != null && onOpenAt != null) {
-                onOpenAt.accept(selected, shown.line()); // a declaration card opens the file at the declaration
+            Runnable narrowed = onOpenNarrowed;
+            if (selected != null && shown != null && narrowed != null && !symbolMissing && !missing) {
+                narrowed.run(); // a declaration card opens the file narrowed to its declaration
+            } else if (selected != null && shown != null && onOpenAt != null) {
+                onOpenAt.accept(selected, shown.line()); // one that is gone: the file at its last line
             } else if (selected != null) {
                 onOpenFile.accept(selected);
             }
@@ -717,14 +721,17 @@ final class ProjectMapPreview extends StackPane {
         return range;
     }
 
-    /** Where a declaration card's Open goes: its file, at its declaration's line. */
+    /** Where a declaration card's Open goes when its declaration is gone: its file, at the declaration's line. */
     void setOnOpenAt(java.util.function.BiConsumer<Path, Integer> callback) {
         onOpenAt = callback;
     }
 
-    /** The card menu's Open Narrowed: the file opens narrowed to the declaration's block. */
+    /** A declaration card's Open (and its menu's Open Narrowed): the file opens narrowed to the declaration's block. */
     void setOnOpenNarrowed(Runnable callback) {
         onOpenNarrowed = callback;
+        open.getTooltip()
+                .setText(
+                        tr(callback == null ? "project.map.preview.openHelp" : "project.map.preview.openNarrowedHelp"));
     }
 
     private void updateRangeChrome() {
@@ -1489,6 +1496,11 @@ final class ProjectMapPreview extends StackPane {
         freeSpace.setOnAction(ignored -> onMoveToFreeSpace.run());
         items.add(freeSpace);
         editorContextMenu.getItems().setAll(items);
+    }
+
+    /** Called when the card's text has been coloured: what borrows its colours takes them again. */
+    void setOnStylesShown(Runnable callback) {
+        onStylesShown = callback == null ? () -> {} : callback;
     }
 
     /** The card menu's Move to Free Space: the owner places the card again where it covers least. */
@@ -2261,6 +2273,7 @@ final class ProjectMapPreview extends StackPane {
             editor.setStyleSpans(0, spans.subView(sliceOffset, end));
         }
         status.setText(idleStatus(truncated));
+        onStylesShown.run();
     }
 
     private static boolean looksBinary(byte[] bytes) {
