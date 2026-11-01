@@ -385,4 +385,50 @@ class StyleContrastTest {
         }
         assertTrue(problems.isEmpty(), "Git state colours under 4.5:1:\n" + String.join("\n", problems));
     }
+
+    /**
+     * "Show recent changes" mixes the heat ({@code -state-amber}) into a Project Map row's fill. At the hottest step the
+     * row's label still reads at 4.5:1 and its muted ink at 3:1, the tint still shows, and the heat meter stands 3:1 off
+     * the row, in every bundled app theme; Editora's own themes get the full tint (Map explore position 3).
+     */
+    @Test
+    void theMapsHeatTintKeepsItsRowsReadableInEveryTheme() throws Exception {
+        String app = read("app.css");
+        assertTrue(String.join(";", rules(app, ".project-map-probe-heat")).contains("-fx-fill: -state-amber"));
+        assertTrue(String.join(";", rules(app, ".root")).contains("-state-amber: -color-warning-fg"));
+        assertTrue(String.join(";", rules(app, ".project-map-probe-surface")).contains("-color-bg-subtle"));
+        double hottest = ProjectMapActivity.HEAT_TINT[ProjectMapActivity.LEVELS];
+        List<String> problems = new ArrayList<>();
+        for (String name : Themes.NAMES) {
+            String[] bundled = Themes.BUNDLED.get(name);
+            String base = bundled != null
+                    ? bundled[0]
+                    : name.toLowerCase(java.util.Locale.ROOT).replace(' ', '-');
+            Map<String, String> p = bundled != null ? palette(base) : builtInPalette(base);
+            Color row = color(p, "-color-bg-subtle");
+            Color heat = color(p, "-color-warning-fg");
+            Color ink = color(p, "-color-fg-default");
+            Color mutedInk = color(p, "-color-fg-muted");
+            Color tinted = ProjectMapActivity.tinted(row, heat, ProjectMapActivity.LEVELS, ink, mutedInk);
+            double text = contrast(ink, tinted);
+            double muted = contrast(mutedInk, tinted);
+            if (muted < 3 && contrast(mutedInk, row) >= 3 || contrast(tinted, row) < 1.04) {
+                muted = 0; // the tint took the muted ink under 3:1, or was given up altogether
+            } else if (muted < 3) {
+                muted = 3; // the theme's own muted ink is under 3:1 on its rows: the tint keeps what there was
+            }
+            double meter = Double.MAX_VALUE;
+            for (int level = 1; level <= ProjectMapActivity.LEVELS; level++) { // the meter sits on each step's tint
+                Color ground = ProjectMapActivity.tinted(row, heat, level, ink, mutedInk);
+                meter = Math.min(meter, contrast(ProjectMapActivity.meterInk(heat, ground, ink), ground));
+            }
+            if (base.startsWith("editora") && !tinted.equals(row.interpolate(heat, hottest))) {
+                problems.add(name + ": Editora's own theme gets the full tint");
+            }
+            if (text < 4.5 || muted < 3 || meter < 3) {
+                problems.add(String.format("%s: text %.2f, muted %.2f, meter %.2f", name, text, muted, meter));
+            }
+        }
+        assertTrue(problems.isEmpty(), "heat tint under its floor:\n" + String.join("\n", problems));
+    }
 }

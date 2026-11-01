@@ -105,6 +105,13 @@ final class ProjectMapView extends VBox {
 
     private Consumer<Boolean> onCompactRowsChanged = ignored -> {};
     private Consumer<Boolean> onHideIgnoredChanged = ignored -> {};
+    /** "Show recent changes" (Map explore position 3): rows tinted by their commits of the last 90 days. */
+    private final CheckMenuItem activityRecentChangesOption =
+            optionItem("project.map.activity.showRecentChanges", false);
+
+    private Consumer<Boolean> onShowRecentChangesChanged = ignored -> {};
+    /** How often rows changed lately and who owns them (Map explore positions 3, 4). */
+    final ProjectMapActivity activity = new ProjectMapActivity(this::activityChanged);
     /** Why rows are dimmed, and the project's facts for the Overview card and the folder rows (review 3 A11, B4). */
     final ProjectMapOrientation orientation = new ProjectMapOrientation(this::layoutOrientationChanged);
     /**
@@ -413,6 +420,7 @@ final class ProjectMapView extends VBox {
                         compactChainsOption,
                         layoutCompactRowsOption,
                         layoutHideIgnoredOption,
+                        activityRecentChangesOption,
                         hideOpenNotes,
                         followActiveFile,
                         new SeparatorMenuItem(),
@@ -445,6 +453,10 @@ final class ProjectMapView extends VBox {
             onHideIgnoredChanged.accept(selected);
         });
         layoutOverviewItem.setOnAction(event -> openOverview());
+        activityRecentChangesOption.selectedProperty().addListener((obs, old, selected) -> {
+            activity.setHeat(selected);
+            onShowRecentChangesChanged.accept(selected);
+        });
 
         HBox row = new HBox(3, backButton, forwardButton, breadcrumbs, revealActiveButton, help, options);
         row.getStyleClass().add("project-map-navigation");
@@ -528,6 +540,45 @@ final class ProjectMapView extends VBox {
         onHideIgnoredChanged = callback == null ? ignored -> {} : callback;
     }
 
+    /**
+     * Whether "Show recent changes" is on: rows are tinted by how many commits of the last 90 days touched them, and
+     * their tooltips say how many and whose was last (Map explore position 3).
+     */
+    boolean isShowRecentChanges() {
+        return activityRecentChangesOption.isSelected();
+    }
+
+    void setShowRecentChanges(boolean show) {
+        activityRecentChangesOption.setSelected(show);
+    }
+
+    /** Told each time "Show recent changes" changes, for the workspace to remember it. */
+    void setOnShowRecentChangesChanged(@Nullable Consumer<Boolean> callback) {
+        onShowRecentChangesChanged = callback == null ? ignored -> {} : callback;
+    }
+
+    /** The window's Git service: the recent changes are read on its activity lane. Null: none are read. */
+    void setActivityGit(com.editora.git.@Nullable GitService service) {
+        activity.setGit(service);
+    }
+
+    /** The history or the owners arrived: the rows and an open Overview card follow. */
+    private void activityChanged() {
+        surface.repaint();
+        ProjectMapOverviewCard card = cards.overviewCard();
+        if (card != null) {
+            card.setActivity(activity.summary());
+        }
+    }
+
+    /** The Overview card opened: it lists the most changed folders and the owners of the top folders. */
+    private void activityOverviewShown(ProjectMapOverviewCard card, ProjectMapOverview.Facts facts) {
+        activity.setOverviewWanted(true);
+        activity.loadOverviewOwners(
+                facts.topFolders().stream().map(ProjectMapOverview.Folder::name).toList());
+        card.setActivity(activity.summary());
+    }
+
     /** Whether this workspace's Overview card was seen (true while the owner has not said). */
     boolean isOverviewSeen() {
         return !Boolean.FALSE.equals(overviewSeen);
@@ -586,7 +637,7 @@ final class ProjectMapView extends VBox {
         if (disposed || !com.editora.config.PathKeys.samePath(forRoot, root)) {
             return;
         }
-        cards.openOverviewCard(forRoot, facts, this::revealPath, onOpenFile);
+        activityOverviewShown(cards.openOverviewCard(forRoot, facts, this::revealPath, onOpenFile), facts);
     }
 
     /** The Overview card opens by itself on a project's first Map open, when the workspace has not seen it. */
@@ -606,6 +657,7 @@ final class ProjectMapView extends VBox {
             return;
         }
         orientation.classify(shown);
+        activity.classify(shown);
         if (active) {
             orientation.loadFacts(false, null);
             layoutMaybeOpenOverview();
@@ -1010,6 +1062,7 @@ final class ProjectMapView extends VBox {
         pendingSelection = normalized;
         setOutputEnabled(false);
         orientation.setRoot(normalized);
+        activity.setRoot(normalized);
         surface.resetForRoot();
         if (otherFileSystem) {
             // Until the reload lands the surface would compare the old connection's entries with the new
@@ -1886,6 +1939,9 @@ final class ProjectMapView extends VBox {
     }
 
     void setGitStatus(Map<Path, GitFileStatus> status) {
+        // A refresh may follow a commit, checkout or pull: the recent changes are asked for again (one rev-parse).
+        activity.setOverviewWanted(cards.overviewCard() != null);
+        activity.headMaybeMoved();
         Map<Path, GitFileStatus> given = status == null ? Map.of() : status;
         if (given.equals(dataGitStatusGiven) && java.util.Objects.equals(root, dataGitStatusRoot)) {
             return; // every Git refresh (a tab switch, a save, a focus regain) pushes the status, mostly unchanged
@@ -2410,6 +2466,7 @@ final class ProjectMapView extends VBox {
         surface.dispose();
         cards.dispose();
         orientation.dispose();
+        activity.dispose();
         noMatchesDelay.stop();
         if (helpPopup != null) {
             helpPopup.hide();

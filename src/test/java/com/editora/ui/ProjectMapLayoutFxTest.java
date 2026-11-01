@@ -756,6 +756,7 @@ class ProjectMapLayoutFxTest {
                             tr("project.map.layout.compactChains"),
                             tr("project.map.layout.compactRows"), // review 3 B15
                             tr("project.map.layout.hideIgnored"), // review 3 A11
+                            tr("project.map.activity.showRecentChanges"), // Map explore position 3
                             tr("project.map.filter.hideOpenNotes"),
                             tr("project.map.navigation.followActiveFile"),
                             tr("project.map.revealActiveFile"), // review 3, E9

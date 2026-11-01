@@ -2751,6 +2751,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapView.setServerSymbols(symbols);
     }
 
+    /** The window's Git service, for the Map's recent changes (read on its activity lane). */
+    void setMapGit(com.editora.git.@Nullable GitService service) {
+        mapView.setActivityGit(service);
+    }
+
     /** Injects bookmark/note actions and state used by both Project renderers. */
     public void setMarkerActions(MarkerActions markerActions) {
         this.markerActions = markerActions;

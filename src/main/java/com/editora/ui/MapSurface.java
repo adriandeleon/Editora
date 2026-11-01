@@ -238,6 +238,12 @@ final class MapSurface extends Region {
     private final Rectangle violetProbe = probe("project-map-probe-violet");
     /** The tint that sets a file's Structure columns (and their rows) apart from the folder columns. */
     private final Rectangle structureProbe = probe("project-map-probe-structure");
+    /** The heat of "Show recent changes" (Map explore position 3): a row's tint and its meter. */
+    private final Rectangle activityHeatProbe = probe("project-map-probe-heat");
+    /** The heat meter's ink by heat, row fill and text colour ({@link ProjectMapActivity#meterInk}). */
+    private final Map<List<Color>, Color> activityMeterInks = new HashMap<>();
+    /** Heat-tinted row fills by fill, heat, text, muted ink and step ({@link ProjectMapActivity#tinted}). */
+    private final Map<List<Object>, Color> activityTints = new HashMap<>();
 
     private final Tooltip nodeTooltip = new Tooltip();
     private final Text textMeasurer = new Text();
@@ -458,7 +464,8 @@ final class MapSurface extends Region {
                         fileProbe,
                         oliveProbe,
                         violetProbe,
-                        structureProbe);
+                        structureProbe,
+                        activityHeatProbe);
         setMinSize(80, 100);
         overviewForwardsInput();
         setFocusTraversable(true);
@@ -495,7 +502,8 @@ final class MapSurface extends Region {
                 fileProbe,
                 oliveProbe,
                 violetProbe,
-                structureProbe)) {
+                structureProbe,
+                activityHeatProbe)) {
             probe.fillProperty().addListener((obs, old, value) -> {
                 iconImages.clear();
                 warmIcons(); // the new theme's icons, ahead of the rows that will need them
@@ -1493,6 +1501,7 @@ final class MapSurface extends Region {
         palette.put(oliveProbe, Color.web("#6e7b25"));
         palette.put(violetProbe, Color.web("#8250df"));
         palette.put(structureProbe, Color.web("#8250df"));
+        palette.put(activityHeatProbe, Color.web("#9a6700"));
         return palette;
     }
 
@@ -3320,6 +3329,10 @@ final class MapSurface extends Region {
                 : null;
         Color fill =
                 focusedSelection ? accent : isSelected ? color(accentSubtleProbe, mix(surface, accent, 0.22)) : surface;
+        int heat = activityHeatLevel(entry);
+        if (heat > 0 && !isSelected) {
+            fill = activityTinted(fill, heat);
+        }
         if (isHovered && !isSelected) {
             fill = mix(fill, accent, 0.16);
         }
@@ -3335,6 +3348,7 @@ final class MapSurface extends Region {
             g.strokeRoundRect(box.x() - 3, box.y() - 3, box.width() + 6, box.height() + 6, 8 * zoom + 6, 8 * zoom + 6);
         }
         g.setGlobalAlpha(dimmed ? DIMMED_MARK_ALPHA : 1.0);
+        activityDrawHeatMeter(g, box, heat, focusedSelection, fill);
         drawOpenMarker(g, entry, content, focusedSelection);
 
         double iconX = content.x() + 7 * zoom;
@@ -4313,6 +4327,7 @@ final class MapSurface extends Region {
                     "project.map.tooltip.modified", TOOLTIP_TIME.format(Instant.ofEpochMilli(entry.modifiedMillis()))));
         }
         layoutTooltipLines(entry, lines);
+        activityTooltipLines(entry, lines);
 
         List<String> statuses = new ArrayList<>(5);
         if (openPaths.contains(entry.path())) {
@@ -4360,6 +4375,63 @@ final class MapSurface extends Region {
         ProjectMapIgnored.Reason reason = layoutIgnoredReason(entry);
         if (reason != null) {
             lines.add(tr(reason.key()));
+        }
+    }
+
+    /** How hot a row is under "Show recent changes", 0 to {@link ProjectMapActivity#LEVELS} (0 when it is off). */
+    private int activityHeatLevel(ProjectMapModel.Entry entry) {
+        return entry.isPlaceholder() || entry.isSymbol() ? 0 : view.activity.heatLevel(entry.path(), entry.directory());
+    }
+
+    /**
+     * A hot row's heat meter along its foot, longer the hotter it is: the heat stays visible where the row's fill is
+     * the selection's, and it keeps clear of the open file's bar at the leading edge (Map explore position 3). In the
+     * on-accent ink on the focused selection's accent fill.
+     */
+    private void activityDrawHeatMeter(GraphicsContext g, NodeBox box, int heat, boolean onAccentFill, Color ground) {
+        if (heat <= 0) {
+            return;
+        }
+        double inset = 8 * zoom;
+        double length = (box.width() - inset * 2) * heat / ProjectMapActivity.LEVELS;
+        double thickness = Math.max(2, 2.5 * zoom);
+        Color heatInk = color(activityHeatProbe, Color.web("#d29922"));
+        Color text = color(textProbe, Color.web("#d8dee9"));
+        g.setFill(
+                onAccentFill
+                        ? onAccent()
+                        : activityMeterInks.computeIfAbsent(
+                                List.of(heatInk, ground, text),
+                                key -> ProjectMapActivity.meterInk(heatInk, ground, text)));
+        g.fillRoundRect(box.x() + inset, box.y() + box.height() - 4 * zoom, length, thickness, thickness, thickness);
+    }
+
+    /** A row's fill at a heat step, kept readable ({@link ProjectMapActivity#tinted}); cached by its inputs. */
+    private Color activityTinted(Color fill, int heat) {
+        Color heatInk = color(activityHeatProbe, Color.web("#d29922"));
+        Color text = color(textProbe, Color.web("#d8dee9"));
+        Color muted = color(mutedProbe, Color.web("#8b949e"));
+        return activityTints.computeIfAbsent(
+                List.of(fill, heatInk, text, muted, heat),
+                key -> ProjectMapActivity.tinted(fill, heatInk, heat, text, muted));
+    }
+
+    /** What Map explore adds to a row's tooltip: its commits of the last 90 days, and who owns it. */
+    private void activityTooltipLines(ProjectMapModel.Entry entry, List<String> lines) {
+        if (entry.isPlaceholder() || entry.isSymbol()) {
+            return;
+        }
+        com.editora.git.GitRecentChanges.Stat stat = view.activity.stat(entry.path(), entry.directory());
+        if (stat != null) {
+            lines.add(tr(
+                    "project.map.activity.commits",
+                    stat.commits(),
+                    stat.lastAuthor(),
+                    GitBlameCoordinator.relativeTimeLabel(stat.lastEpochSeconds(), System.currentTimeMillis() / 1000)));
+        }
+        ProjectMapOwners.Owners owners = view.activity.owners(entry.path());
+        if (owners != null) {
+            lines.addAll(ProjectMapActivity.ownerLines(owners));
         }
     }
 
