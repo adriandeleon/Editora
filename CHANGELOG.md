@@ -30,6 +30,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Check a download with
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
 
+### Fixed
+
+- **XML and HTML: Emacs word kills on a tag name keep the caret in that tag.** M-DEL or M-d in a closing tag left
+  the caret where it was before auto-rename shortened the start tag, so the next word renamed the following element,
+  and at the end of the file the next key threw.
+- **XML and HTML: a hand-typed close tag survives every key.** While `</it` steps into the existing `</item>`,
+  Ctrl/Shift/Alt+Backspace, Delete, Enter, Tab, a paste and the Emacs kills now act on what you typed, as Backspace
+  already did; they used to edit the real end tag, and auto-rename carried the change to the start tag.
+- **Built-in XML/HTML format: switching tabs no longer discards it.** The result goes into its own tab when that
+  file is unchanged, and Format Document in another tab runs at once instead of saying "Already formatting". The
+  large-file question names the file ("Format big.xml?", not "Format ?").
+- **Settings: long server and tool commands are readable.** The LSP, build, debug and tool path fields show their
+  whole value as a tooltip and have a screen-reader name; Schema associations is as wide as XML catalogs.
+
 ## [0.26.0] - 2026-10-29
 
 ### Added
