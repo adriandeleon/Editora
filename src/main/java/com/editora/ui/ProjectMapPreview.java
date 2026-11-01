@@ -427,8 +427,11 @@ final class ProjectMapPreview extends StackPane {
         open.setOnAction(event -> {
             Path selected = path;
             Range shown = range;
-            if (selected != null && shown != null && onOpenAt != null) {
-                onOpenAt.accept(selected, shown.line()); // a declaration card opens the file at the declaration
+            Runnable narrowed = onOpenNarrowed;
+            if (selected != null && shown != null && narrowed != null && !symbolMissing && !missing) {
+                narrowed.run(); // a declaration card opens the file narrowed to its declaration
+            } else if (selected != null && shown != null && onOpenAt != null) {
+                onOpenAt.accept(selected, shown.line()); // one that is gone: the file at its last line
             } else if (selected != null) {
                 onOpenFile.accept(selected);
             }
@@ -718,14 +721,17 @@ final class ProjectMapPreview extends StackPane {
         return range;
     }
 
-    /** Where a declaration card's Open goes: its file, at its declaration's line. */
+    /** Where a declaration card's Open goes when its declaration is gone: its file, at the declaration's line. */
     void setOnOpenAt(java.util.function.BiConsumer<Path, Integer> callback) {
         onOpenAt = callback;
     }
 
-    /** The card menu's Open Narrowed: the file opens narrowed to the declaration's block. */
+    /** A declaration card's Open (and its menu's Open Narrowed): the file opens narrowed to the declaration's block. */
     void setOnOpenNarrowed(Runnable callback) {
         onOpenNarrowed = callback;
+        open.getTooltip()
+                .setText(
+                        tr(callback == null ? "project.map.preview.openHelp" : "project.map.preview.openNarrowedHelp"));
     }
 
     private void updateRangeChrome() {

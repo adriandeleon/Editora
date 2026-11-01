@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as wide as the longest name needs — and clicking a method or type (or Enter on it) opens its declaration
   preview beside the column, tied to its row by a connector line. It moves, resizes and zooms with the card, works even
   when the file's row is filtered or scrolled off the map, and the card's sticky notes stand past it.
+- **Project Map: declaration previews open narrowed.** A method or type preview's **Open** now opens the file in
+  the editor narrowed to that declaration, as Open Narrowed does.
+- **Project Map: close one sticky note.** Each Personal Note stuck on a preview card has a × that closes just that
+  note on the card; the note stays saved and comes back when the card's notes are shown again.
 
 ### Changed
 

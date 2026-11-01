@@ -183,7 +183,13 @@ final class ProjectMapStickyNotes {
             where.setMinWidth(0);
             where.setMaxWidth(Double.MAX_VALUE);
             HBox.setHgrow(where, Priority.ALWAYS);
-            HBox header = new HBox(where);
+            javafx.scene.control.Button close = new javafx.scene.control.Button("×");
+            close.getStyleClass().addAll("flat", "project-map-sticky-note-close");
+            close.setFocusTraversable(false);
+            close.setTooltip(new Tooltip(tr("project.map.sticky.closeHelp")));
+            close.setAccessibleText(tr("project.map.sticky.close"));
+            close.setOnAction(event -> closeNote(this.note));
+            HBox header = new HBox(where, close);
             header.getStyleClass().add("project-map-sticky-note-header");
             header.setAlignment(Pos.CENTER_LEFT);
             header.addEventHandler(MouseEvent.MOUSE_PRESSED, this::dragPressed);
@@ -267,6 +273,12 @@ final class ProjectMapStickyNotes {
     private final List<Sticky> stickies = new ArrayList<>();
     /** The "+K more notes" sheet, when the notes outnumber what two stacks hold. */
     private @Nullable More more;
+    /** Notes whose sheet the user closed: off the card until the card's notes are shown again. */
+    private final java.util.Set<UUID> closed = new java.util.HashSet<>();
+    /** The card's notes as last handed over, closed ones included. */
+    private List<PersonalNote> all = List.of();
+
+    private Runnable onAllClosed = () -> {};
     /** Where the user dragged each note's sheet: kept across hiding and showing the notes. */
     private final Map<UUID, double[]> moved = new HashMap<>();
 
@@ -307,6 +319,41 @@ final class ProjectMapStickyNotes {
             place();
             layout();
         }
+    }
+
+    /** Called when the user has closed every sheet: the owner turns the card's notes off. */
+    void setOnAllClosed(Runnable callback) {
+        onAllClosed = callback == null ? () -> {} : callback;
+    }
+
+    /**
+     * A sheet's ×: takes that one note off the card, saving any edit first. The note stays in the store, and
+     * comes back when the card's notes are shown again. The last one closed turns the card's notes off.
+     */
+    void closeNote(PersonalNote note) {
+        if (!shown || !closed.add(note.id())) {
+            return;
+        }
+        List<PersonalNote> open = open(all);
+        if (open.isEmpty()) {
+            clear(); // saves, as hide() would
+            onAllClosed.run();
+            return;
+        }
+        Map<UUID, String> edits = new HashMap<>();
+        for (Sticky sticky : stickies) {
+            if (sticky.edited()) {
+                edits.put(sticky.note.id(), sticky.editor.getText());
+            }
+        }
+        rebuild(open, edits);
+    }
+
+    /** {@code notes} without the ones whose sheet was closed. */
+    private List<PersonalNote> open(List<PersonalNote> notes) {
+        return closed.isEmpty()
+                ? notes
+                : notes.stream().filter(note -> !closed.contains(note.id())).toList();
     }
 
     /** Called by the "+K more notes" sheet: the owner opens the file's note card, which lists them all. */
@@ -478,7 +525,8 @@ final class ProjectMapStickyNotes {
             card.mapScaleProperty().addListener(follow);
             card.visibleProperty().addListener(follow);
         }
-        rebuild(notes, Map.of());
+        all = notes;
+        rebuild(open(notes), Map.of());
     }
 
     /**
@@ -489,6 +537,9 @@ final class ProjectMapStickyNotes {
         if (!shown) {
             return;
         }
+        all = notes;
+        closed.retainAll(notes.stream().map(PersonalNote::id).toList()); // a deleted note is forgotten
+        notes = open(notes);
         boolean same = notes.size() == total && stickies.size() <= notes.size();
         for (int i = 0; same && i < stickies.size(); i++) {
             same = stickies.get(i).note.id().equals(notes.get(i).id());
@@ -562,6 +613,7 @@ final class ProjectMapStickyNotes {
     void dispose() {
         hide();
         moved.clear();
+        closed.clear();
     }
 
     /** The sheets' connectors, each from its note's line on the card's edge to the sheet's header. */

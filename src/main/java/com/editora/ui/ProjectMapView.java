@@ -2485,6 +2485,7 @@ final class ProjectMapView extends VBox {
                         this::repaintPreviewConnectors,
                         () -> onStatus.accept(tr("status.projectMap.noteBlankRestored")),
                         () -> touchCard(card, false)));
+        stuck.setOnAllClosed(() -> card.setNotesShown(false)); // every sheet closed: the Notes button goes off
         stuck.setOnMore(() -> {
             Path file = card.path();
             if (file != null) {
