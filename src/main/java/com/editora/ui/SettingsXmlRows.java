@@ -81,6 +81,7 @@ final class SettingsXmlRows {
                         ? null
                         : tr("settings.lsp.xml.fileAssociations.invalid"),
                 WORDS + "file association pattern glob bind");
+        w.widenField("lsp.xml.fileAssociations", 440); // a pattern and a schema path (XML/pom review 4, C36)
         w.cardSubheading(
                 c,
                 cat,

@@ -178,7 +178,10 @@ class InstallServiceLemminxTest {
     void aProgramThatCannotRunHereFallsBackToTheJavaLemminxOfThePomServer() throws IOException {
         Path maven = Files.createDirectories(config.resolve("plugins/lsp/maven"));
         for (String artifact : XmlServerInstall.PLAIN_LEMMINX_ARTIFACTS) {
-            Files.writeString(maven.resolve(artifact + "-1.0.jar"), "");
+            Files.writeString(
+                    maven.resolve(artifact + "-" + (artifact.equals("jsoup") ? InstallCatalog.JSOUP_VERSION : "1.0")
+                            + ".jar"),
+                    "");
         }
         for (String jar : List.of("lemminx-maven-0.12.0.jar", "maven-core-3.9.9.jar", "plexus-utils-3.5.1.jar")) {
             Files.writeString(maven.resolve(jar), "");

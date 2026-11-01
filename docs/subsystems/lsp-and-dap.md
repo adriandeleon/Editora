@@ -156,13 +156,27 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   classpath is the plain-lemminx jars only. Both servers get the bundled POM schemas (`lsp/XmlBundledSchemas`:
   `maven-4.0.0.xsd`, `maven-4.1.0.xsd` behind a catalog in `<config>/cache/schemas/`, listed first) so an untrusted
   or offline pom validates; a JVM lemminx gets `-Duser.home=<Editora's home>` like the native one's `workDir`.
+  `maven-pom` is also sent `xml.maven.repo.local`, the absolute local repository `MavenPluginGoals.localRepository`
+  reads (with `${env.…}` and system properties expanded), so its `.lemminx-maven` store is the one Doctor shows.
+- **The pom bundle's jar signatures** (`install/JarSignatures`): Eclipse signs `org.eclipse.lemminx-*.jar`, which adds
+  classes to Jing's `com.thaiopensource.relaxng.pattern`, so the JVM refused lemminx's `RelaxNGPlugin` ("signer
+  information does not match") and the Java lemminx had no RELAX NG completion. Install strips `META-INF/*.SF|RSA|DSA|EC`
+  from the bundle's jars before the smoke test; a bundle installed earlier is rewritten once when a local lemminx is
+  started from it (`LspManager`), and `.editora-unsigned` marks the folder as done.
 - **A malformed pom and lemminx-maven** (`ui/PomServerSupport`, `maven/MalformedPoms`): lemminx-maven 0.12.0 keeps a
   malformed pom in its workspace with a null project, and every coordinate completion after the first throws on it
   (upstream: `getCurrentWorkspaceProjects` filters null futures, not null projects). On such an answer Editora walks the
   root the way lemminx-maven does, reads each pom from disk (what the server built from), takes each malformed one out
   with a `workspace/didChangeWorkspaceFolders` that removes its own file URI, and asks again. lemminx-maven never
-  rebuilds a closed pom, so one cannot be put back in the same session: when a left-out pom parses again, that root's
-  server is restarted.
+  rebuilds a closed pom, so one cannot be put back in the same session: when a left-out pom parses again (a save, or
+  either watcher: the Project panel's or `LspManager`'s root watcher), that root's server is restarted. The proof that
+  an answer is the broken one is the server's own log (`xml.logs.client`, counted per session); an empty answer without
+  it is an honest no-match and changes nothing. lemminx-maven also keeps a null project for a well-formed pom whose
+  effective model fails (an unresolvable parent) and whose strict re-read fails (a duplicated or unknown `<project>`
+  child, a DOCTYPE with entities). Such a pom is never left out: the status says once per root that Maven completion
+  is off, naming the pom `MalformedPoms.unbuildable` finds, and the root restarts only when one of its poms changed on
+  disk since that server started, never twice for the same files. `${env.*}` completion items keep their names but
+  not their values.
 - **Formatting options** (`lsp/FormattingIndent`): every formatting request describes the document's own indentation;
   Format Document and Format Selection also carry the file's save rules (EditorConfig `trim_trailing_whitespace` /
   `insert_final_newline`, else the project's) as `trimTrailingWhitespace` / `insertFinalNewline`. Tab re-indent and

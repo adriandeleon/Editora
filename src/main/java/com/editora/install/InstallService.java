@@ -453,8 +453,9 @@ public final class InstallService {
 
     /**
      * The Java lemminx the pom.xml server's bundle holds, as a launch command, when that bundle is installed and
-     * complete under {@code configDir}; else null. It serves plain XML as well as the native build does — what
-     * vscode-xml falls back to where its binary cannot run. Its classpath names lemminx's own jars only ({@link
+     * complete under {@code configDir}; else null. It serves plain XML as the native build does (its jars unsigned at
+     * install, so RELAX NG completion works: review 4, A31), if at the bundle's lemminx release — what vscode-xml
+     * falls back to where its binary cannot run. Its classpath names lemminx's own jars only ({@link
      * XmlServerInstall#javaLemminxCommand}): on the bundle's whole folder lemminx-maven joined in and resolved an
      * untrusted pom, running its plugins (XML/pom review 3, A21).
      */
@@ -613,6 +614,11 @@ public final class InstallService {
             }
             for (int i = 0; i < extras.size(); i++) {
                 Files.write(staged.resolve(extras.get(i).fileName()), extraData.get(i));
+            }
+            // Eclipse's signature on the lemminx jar kept its RELAX NG plugin from loading beside the unsigned Jing
+            // (XML/pom review 4, A31): the jars are unsigned here, after their checks and before the smoke test.
+            if (InstallCatalog.LEMMINX_MAVEN_STEP.equals(s.id())) {
+                JarSignatures.ensureUnsigned(staged);
             }
             // A bundle that starts and says it is ready can still fail every request inside the server (the
             // upstream zip without its `provided` jars did, for a whole release): ask it one before swapping it in.

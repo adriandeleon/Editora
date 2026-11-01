@@ -188,6 +188,8 @@ class XmlServerSettingsTest {
         assertEquals(false, format.get("preserveEmptyContent"));
         assertEquals("ignore", format.get("enforceQuoteStyle"));
         assertEquals(Settings.XML_PRESERVE_SPACE_DEFAULT, format.get("preserveSpace"));
+        // the request's own options decide it, and they never carry it: a dead key (XML/pom review 4, B's gap)
+        assertFalse(format.containsKey("trimFinalNewlines"));
         assertEquals(
                 true,
                 XmlServerSettings.answer(

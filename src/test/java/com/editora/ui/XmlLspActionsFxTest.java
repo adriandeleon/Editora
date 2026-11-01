@@ -295,6 +295,32 @@ class XmlLspActionsFxTest {
         assertEquals(List.of("generate [" + model.getTitle() + "]"), prompts.asked);
     }
 
+    /**
+     * XML/pom review 4, C33: lemminx's XSD generator knows no namespaces, so "Generate … .xsd" on a namespaced root
+     * said "Applied" and turned the file red at once. Those two are left out; the DTD and RELAX NG ones stay.
+     */
+    @Test
+    void generateGrammarOnANamespacedRootLeavesOutTheXsdFixes() throws Exception {
+        Served s =
+                serve("ns.xml", "<?xml version=\"1.0\"?>\n<note xmlns=\"urn:example:note\">\n  <to>x</to>\n</note>\n");
+        var diagnostic = XmlServer.noGrammarDiagnostic(new org.eclipse.lsp4j.Range());
+        var xsi = new org.eclipse.lsp4j.CodeAction("Generate 'ns.xsd' and bind with xsi:noNamespaceSchemaLocation");
+        var model = new org.eclipse.lsp4j.CodeAction("Generate 'ns.xsd' and bind with xml-model");
+        var rng = new org.eclipse.lsp4j.CodeAction("Generate 'ns.rng' and bind with RelaxNG");
+        for (var fix : List.of(xsi, model, rng)) {
+            fix.setDiagnostics(List.of(diagnostic));
+        }
+        s.server().codeActionResponse = List.of(Either.forRight(xsi), Either.forRight(model), Either.forRight(rng));
+        XmlLspActions xml = actions(s.buffer(), s.path());
+        Recording prompts = new Recording();
+        xml.setPromptsForTest(prompts);
+
+        FxTestSupport.runOnFx(xml::generateGrammar);
+        waitFor(() -> events.stream().anyMatch(e -> e.startsWith("apply:")));
+
+        assertEquals(List.of("generate [" + rng.getTitle() + "]"), prompts.asked);
+    }
+
     @Test
     void generateGrammarSaysSoWhenThereIsNothingToGenerate() throws Exception {
         Served s = serve("empty.xml", "<!-- nothing yet -->\n");
