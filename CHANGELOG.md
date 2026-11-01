@@ -30,6 +30,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Check a download with
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
 
+### Fixed
+
+- **XML: Go to Definition and schema changes (XML/pom review 4).**
+  - A schema or DTD open in a tab and changed on disk (a pull, a checkout, a build) revalidates the files that use
+    it, in the background and after Reload; their old errors stayed until the schema was saved in Editora.
+  - F12 on `schemaLocation` inside an XSD (`xs:include`, `xs:import`) opens the included schema, not the cached
+    `XMLSchema.xsd`.
+  - F12 on a link to a missing file (`xi:include`, `xsi:noNamespaceSchemaLocation`, a DOCTYPE) says
+    "<name> does not exist" instead of "Failed to open" with the full path.
+  - In a `pom.xml` on the Maven server, F12 on the schema location or an element the Maven extension does not
+    handle goes to the POM schema, as on the plain XML server.
+  - Include hrefs written `file://localhost/…` or with a `?query` open their file, and a `>` inside another
+    attribute of the include tag no longer hides its `href`.
+  - XML: Generate Grammar… no longer offers the two XSD choices for a document whose root element is in a
+    namespace: lemminx's generated schema had no namespace and failed the document at once.
+
 ## [0.26.0] - 2026-10-29
 
 ### Added
