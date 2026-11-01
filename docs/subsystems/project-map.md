@@ -109,16 +109,21 @@ right-to-left to left-to-right once (`ConfigMigrations.resetRightToLeftMapFlow`)
 | Drag a column header | Move that column independently unless it is locked; it stops at its parent column |
 | Click a column lock | Prevent or allow accidental header dragging |
 | Click a column close button | Close that branch and all of its descendant columns |
+| Options (⋯) menu → **Open cards** | List the open cards, the most recently used first; one brings its card into the middle of the map area with the keyboard in it |
 | Options (⋯) menu → **Print…** | Open the standard print preview for the complete map layout |
 | Options (⋯) menu → **PDF…** | Export the complete map layout using the configured PDF page size |
 | Click **?** | Show what the Map is for and its pointer, cards and notes, keyboard and filter models in a popover (key names in the user's language, modifiers as the platform writes them) |
-| Click or drag in the overview | Centre the view on that point of the map, clamped to the map's bounds |
+| Click or drag in the overview | Centre the view on that point of the map, clamped to the map's bounds; a press on a card's mark brings that card into view |
 
-Preview and note cards sit on the canvas: a pan or zoom carries each card's corner with the map under it
-and draws the card at the map's zoom from that corner (`MapSurface.moveCardsWithViewport`, run after every
-paint, sets each card's `setMapScale`), so cards shrink and grow with the columns. A card's own width and
-height are unzoomed; placement, overlap, connectors and size limits work on the card as drawn
-(`ProjectMapView.cardScale`), and the resize grip divides the pointer's movement by the zoom. Each title bar
+Preview and note cards, and what is stuck on a card, belong to `MapCards` (review 3, stage 1 of the refactor
+plan): their lifecycle, use and eviction, placement, connectors, refresh and poll. It reaches the map through
+`MapCards.Host`, which `ProjectMapView` implements over its surface; sticky notes and a card's Structure column are
+`CardAttachment`s, treated alike for raising, focus, placement, connectors and closing. Cards sit on the canvas: a
+pan or zoom carries each card's corner with the map under it and draws the card at the map's zoom from that corner
+(`MapSurface.moveCardsWithViewport` → `MapCards.moveWithViewport`, run after every paint, sets each card's
+`setMapScale`), so cards shrink and grow with the columns. A card's own width and height are unzoomed;
+placement, overlap, connectors and size limits work on the card as drawn (`MapCards.cardScale`), and the resize
+grip divides the pointer's movement by the zoom. Each title bar
 moves its card — like a column header, anywhere, including out of view, where panning finds it again — each
 lower corner resizes it up to the panel's size at the current zoom, and each editor scrolls independently.
 A resized panel bounds a card's size but never moves it; a zoom never resizes a card, so one zoomed in may
@@ -126,16 +131,30 @@ outgrow the panel as a column does. The map area (`canvasHost`) clips its childr
 lies outside it is neither drawn nor clickable — never over the filter bar or breadcrumbs above. The card's own − / + buttons scale its text on top of the map's zoom. Opening another file
 keeps existing cards visible; clicking an already-previewed file focuses its existing card, and each
 close button removes only that card. An accent connector runs from every preview to its source file row
-and follows map pan/zoom plus card movement and resizing.
+and follows map pan/zoom plus card movement and resizing. A move only marks the connectors; they are drawn once,
+at the map area's layout pass (after the surface and the cards are laid out) or the next pulse, whichever comes
+first (`MapCards.connectorsMoved`), however many cards and attachments moved. A card's title keeps room for its
+file's name (a declaration card's file and declaration name up to its parameters), up to half the card; the status
+line gives way first and is read in full from its tooltip, read-only is a muted lock, and the buttons never shrink.
+A whole-file card opens past a leading licence header — a comment block of three or more lines that names a
+copyright or licence, after an optional `#!` or `<?xml` line — on the next non-blank line, the caret there and the
+numbers the file's own (`ProjectMapPreview.openingLine`).
 
-Code previews and note cards are placed by one path (`ProjectMapView.previewPlacement` over
+Open cards stay in map space, so navigating elsewhere takes them out of sight; the overview marks every card in
+sight (note cards in the note colour), and counts the cards in its picture, so a card out of view brings it up. A
+press on a mark, or the card's item in the options menu's **Open cards**, pans the map until the card stands in the
+middle of the map area and puts the keyboard in it (`MapCards.bringIntoView`).
+
+Code previews and note cards are placed by one path (`MapCards.previewPlacement` over
 `MapSurface.cardSite`): the spot that covers least. The candidates are after and before the row's column,
 above and below the columns' band, and every corner of free panel the card fits against (at full size, or as
 large as fits down to its minimum); each is scored by what it would cover on screen
-(`ProjectMapView.cardOverlapCost`) — the row's own column weighs 6, the columns that lead to it 4, the band where
-the row's next column (a folder's, or a file's Structure column) would open 3, the zoom bar and the overview 4,
-other columns 1, other open cards 5 — then by nearness to the row and by size (narrower than its lines weighs
-more than shorter). A card used to take the side after its column, else the side before, which is where the
+(`MapCards.cardOverlapCost`) — the row's own column weighs 6, the columns that lead to it 4, the band where
+the row's next column (a folder's, or a file's Structure column) would open 3, other columns 1, other open cards
+and what is stuck on them 5, and the zoom bar and the overview 60 (`MapCards.CHROME_WEIGHT`, for every row, also
+beside a card's Structure column and for a row off the map) — then by nearness to the row and by size (narrower than
+its lines weighs more than shorter). Each spot is also tried cut short of the zoom bar and the overview, down to the
+card's minimum, so a new card does not open with its last lines under them. A card used to take the side after its column, else the side before, which is where the
 columns leading to it are. **Placement never pans the map**, and a card is never smaller
 than its minimum (340 × 220 for code, 300 × 180 for notes) unless the panel itself is. Text that arrives
 after a card was placed only widens it where it stands, by at most 120 columns and never past the panel
@@ -143,7 +162,11 @@ after a card was placed only widens it where it stands, by at most 120 columns a
 a card the user moved keeps its position and one the user resized keeps its size.
 
 Up to eight cards remain open, code and note cards together; a ninth replaces the least recently used
-one. Pressing a card, moving keyboard focus into it and scrolling it all count as use. A folder's cards
+one. Pressing a card, moving keyboard focus into it and scrolling it all count as use, and so does any use of what
+is stuck on it — focus or a key in its Structure column, focus in a sticky note. Eviction works on groups: a file
+card with its Structure column out keeps the declaration cards of its file, goes only after them (the oldest of
+them first), and never while one of its declarations is being opened (`MapCards.makeRoomForCard`), so reading a
+file's declarations from its column by keyboard never closes the file card, its column and every card read so far. A folder's cards
 close when the folder stops being expanded, however it was collapsed, and all cards close when the root
 changes. Closing the Map window and opening it again keeps them where they were.
 
@@ -184,7 +207,9 @@ keymap): a note on the selection or the caret's line, a bookmark on the caret's 
 card's notes up. So a focused card has an accent border and its text area's accessible name states the file and
 that it is read-only. Alt+arrows move a focused card, note card or sticky sheet by 16 px and Alt+Shift+arrows
 resize a card (`ProjectMapPreview.GEOMETRY_KEYS`, claimed through `KeyDispatcher.CLAIMED_KEYS`); the new place and
-size go in its accessible help. Cards share two `project-map-preview-loader` threads that time out when idle, each
+size go in its accessible help. The Structure tool window's command (`tool.structure`: Alt+7 in the Emacs and
+IntelliJ keymaps) typed in a file card shows the card's own Structure column and puts the keyboard there; typed in
+the column it goes back to the card; the card menu's **Show / Hide this preview's Structure** does the same. Cards share two `project-map-preview-loader` threads that time out when idle, each
 card's reads still in order; a card created before its host has a size waits for the size, not on `runLater`.
 
 Context menus use JavaFX auto-hide plus a next-pulse owner-scene press filter. This mirrors the
@@ -298,16 +323,24 @@ card colours its declaration line (`StructurePanel.labelRuns` over the card's ow
 card's text or colours change), and the column is as wide as its longest row needs, between 240 and 560 px
 (`ProjectMapCardStructure.fit`, measured in the rows' font). It works wherever the file's row
 is — filtered, scrolled off or in a closed column — because it belongs to the card: it moves, resizes, zooms,
-hides, rises and closes with it, and does not count against the open-card limit. It goes on the side away from
-the card's row (the connector's side is left clear), else the other side, else over the card's right edge, and
-the card's sticky notes stand past it (`ProjectMapStickyNotes.setReserved`). A click or Enter on a declaration
-opens its card, as a Map row does; the right-click / Menu-key menu is the row's (Preview, Open at Declaration,
-Open Narrowed); Escape or its × takes it off. A declaration card opened from it whose row is not on the map is
+hides, rises and closes with it, and does not count against the open-card limit. It goes on the side of the card
+that covers least (`MapCards.chooseColumnSide`) — the map's columns (its row's own and those leading to it
+heaviest), the zoom bar and the overview, other cards and their attachments, the part outside the map area
+(unseen), over the card's right edge last; between sides that cover alike, the one away from the card's row, so the
+connector's side is left clear — and the card's sticky notes stand past it (`ProjectMapStickyNotes.setReserved`).
+It moves when its card is dragged or the map panned and the other side covers clearly less; opened on a card with no free side, the card
+moves where card and column together cover less, if there is such a spot. A click or Enter on a declaration
+scrolls the card to it and marks its lines (`ProjectMapPreview.revealRange`), as an outline beside a code view moves
+the view; Shift+click or Shift+Enter opens the declaration's own card, as a Map row's card; the right-click /
+Menu-key menu is the row's (Preview, Open at Declaration, Open Narrowed); the Structure window's Emacs moves
+(`C-n`, `C-p`, `C-f`, `C-b`) work in it; Escape or its × takes it off. A declaration card opened from it whose row is not on the map is
 placed beside the column, by the declaration's row in it, with a connector from that row (while it is scrolled
 into sight) as a Map row has to its card, and is kept by the orphan check while the column is
 out; taking the column off closes those cards, as closing the Map's column closes its rows' cards. The outline
 is held for as long as the column is out (`cardOutlineFiles`, kept by `ProjectMapStructure.prune`), follows the
-buffer or the file on disk, and an edit keeps what was expanded and selected. Nothing about it is remembered.
+buffer or the file on disk, and an edit keeps what was expanded and selected. An outline change rebuilds the map's
+rows only when its file has a Structure column of the Map's own open (`ProjectMapStructure.setOnFileChanged`);
+otherwise only that file's card column and declaration cards follow it. Nothing about it is remembered.
 
 The Map's global search walks file names only, but the query is also matched against the declaration rows of
 the open structure columns (no disk or server work): a matching declaration stays prominent with the rows
@@ -565,7 +598,8 @@ the zoom bar (it is left out when the surface is too narrow for both), and clamp
 frame. The frame takes the map's shape inside at most 150 × 86 with the map centred in it, and is drawn on a
 small canvas of its own above the cards (`MapSurface.overviewLayer`), which passes its pointer events to the
 surface. A press or drag in it centres the view on that point, clamped to the map, so it never pans into
-empty space.
+empty space. The open cards in sight are part of its picture and are marked in it (`MapSurface.overviewCards`, from
+`MapCards.visibleCards`); a press on a mark brings that card into view instead.
 
 ## Architecture and data flow
 
