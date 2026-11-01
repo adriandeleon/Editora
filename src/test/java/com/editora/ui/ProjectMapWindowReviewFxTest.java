@@ -411,9 +411,11 @@ class ProjectMapWindowReviewFxTest {
             try {
                 assumeTrue(!Files.isReadable(locked), "running as a user who can read anything");
                 FxTestSupport.runOnFx(() -> map(r.panel).revealPath(locked.resolve("inside.txt")));
+                // In the Map window's own status line, not the editor window's (review 3 A2).
                 r.await(
                         "the status line",
-                        () -> r.status.contains(tr("project.map.status.unreadable", locked.getFileName())));
+                        () -> tr("project.map.status.unreadable", locked.getFileName())
+                                .equals(r.panel.mapStatusLine().text()));
             } finally {
                 Files.setPosixFilePermissions(
                         locked, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
@@ -451,7 +453,10 @@ class ProjectMapWindowReviewFxTest {
                 r.panel.mapWindow().closeByUser();
                 r.panel.setActiveFile(null);
                 r.panel.revealActiveFileInMap();
-                assertTrue(r.status.contains(tr("status.projectMap.noActiveFile")));
+                // Said in the Map window, which the command brought forward (review 3 A2).
+                assertEquals(
+                        tr("status.projectMap.noActiveFile"),
+                        r.panel.mapStatusLine().text());
             });
         }
     }

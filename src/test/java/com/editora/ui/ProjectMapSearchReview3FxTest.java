@@ -167,13 +167,14 @@ class ProjectMapSearchReview3FxTest {
         ProjectMapView view = FxTestSupport.field(panel, "mapView");
         Region surface = FxTestSupport.field(view, "surface");
         search(panel, "types.go");
-        waitFor(() -> view.searchResult().matches().size() == ProjectMapView.SEARCH_OPEN_LIMIT + 20, "all 320");
+        waitFor(() -> view.searchResult().matches().size() == ProjectMapView.SEARCH_OPEN_LIMIT + 20, "all of them");
         Match last = FxTestSupport.callOnFx(() -> view.searchResult().matches().getLast());
         FxTestSupport.runOnFx(() -> {
-            assertEquals(320, view.searchResult().total());
+            assertEquals(
+                    ProjectMapView.SEARCH_OPEN_LIMIT + 20, view.searchResult().total());
             assertFalse(
                     view.expandedDirectories().contains(last.path().getParent()),
-                    "the map opens the folders of the best 300 only");
+                    "the map opens the folders of the best few only");
             view.showSearchMatch(last, false);
         });
         waitFor(() -> last.path().equals(FxTestSupport.field(surface, "selected")), "a match past them is shown");

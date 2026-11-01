@@ -266,10 +266,10 @@ class ProjectMapNavReviewFxTest {
         }
     }
 
-    // B26
+    // B26, reversed by review 3 B2: clearing keeps the place, and one Back returns to the row before the search.
 
     @Test
-    void clearingTheSearchReturnsToThePreSearchSelectionUnlessTheUserPickedAnother() throws Exception {
+    void clearingTheSearchKeepsThePlaceAndBackReturnsToThePreSearchSelection() throws Exception {
         try (Harness h = open(0)) {
             Path x = h.b().resolve("x.txt");
             FxTestSupport.runOnFx(() -> {
@@ -279,9 +279,15 @@ class ProjectMapNavReviewFxTest {
             });
             waitForFx(() -> x.equals(selected(h.surface())));
             FxTestSupport.runOnFx(() -> h.view().setQuery(""));
-            waitForFx(() -> !contains(h.surface(), x));
             settle(h.surface());
-            assertEquals(h.file(7), FxTestSupport.callOnFx(() -> selected(h.surface())), "back to where it was");
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(x, selected(h.surface()), "the selection stays where the search took the user");
+                assertTrue(contains(h.surface(), x), "and its folder stays open");
+                FxTestSupport.call(h.view(), "moveHistory", new Class<?>[] {int.class}, -1);
+            });
+            waitForFx(() -> h.file(7).equals(selected(h.surface())));
+            settle(h.surface());
+            assertEquals(h.file(7), FxTestSupport.callOnFx(() -> selected(h.surface())), "one Back: where it was");
 
             // A row the user chose during the search, and that stays on the map, is kept.
             FxTestSupport.runOnFx(() -> {
@@ -293,7 +299,6 @@ class ProjectMapNavReviewFxTest {
                 select(h.surface(), h.readme());
                 h.view().setQuery("");
             });
-            waitForFx(() -> !contains(h.surface(), x));
             settle(h.surface());
             assertEquals(h.readme(), FxTestSupport.callOnFx(() -> selected(h.surface())));
         }
@@ -599,7 +604,11 @@ class ProjectMapNavReviewFxTest {
                 assertEquals(
                         tr(
                                 "project.map.accessible.withStates",
-                                tr("project.map.accessible.file", "f1.txt", 1, 1),
+                                // The row's folder, so one of several same-named files is told apart (review 3 B11).
+                                tr(
+                                        "project.map.accessible.inFolder",
+                                        tr("project.map.accessible.file", "f1.txt", 1, 1),
+                                        "a"),
                                 tr("project.map.tooltip.gitChanged") + ", " + tr("project.map.tooltip.bookmarked")),
                         h.surface().getAccessibleText());
                 FxTestSupport.call(h.surface(), "setSelected", new Class<?>[] {Path.class}, h.file(4));
@@ -733,7 +742,7 @@ class ProjectMapNavReviewFxTest {
     // --- a fully wired window: the scene's KeyDispatcher sees each key first ---
 
     @Test
-    void shiftEnterReachesTheMapUnderAKeymapThatBindsItAndEscapeRestoresTheSelection() throws Exception {
+    void shiftEnterReachesTheMapUnderAKeymapThatBindsItAndEscapeKeepsThePlace() throws Exception {
         if (fx == null) {
             fx = FxWindowFixture.create();
         }
@@ -773,7 +782,7 @@ class ProjectMapNavReviewFxTest {
             assertEquals(1, previews.size(), "the map got Shift+Enter, not the keymap");
         });
 
-        // Escape clears the search and returns to the selection before it.
+        // Escape clears the search and keeps the place; one Back returns to the selection before it (review 3 B2).
         TextField search = FxTestSupport.field(panel, "mapFilterField");
         FxTestSupport.runOnFx(() -> {
             press(surface, KeyCode.ESCAPE); // closes the card first
@@ -791,6 +800,11 @@ class ProjectMapNavReviewFxTest {
                     .stop();
             FxTestSupport.invoke(panel, "searchMap");
             assertSame(surface, scene.getFocusOwner());
+        });
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(readme, selected(surface), "the search's landing stays selected");
+            FxTestSupport.call(view, "moveHistory", new Class<?>[] {int.class}, -1);
         });
         waitForFx(() -> a.resolve("f2.txt").equals(selected(surface)));
     }
