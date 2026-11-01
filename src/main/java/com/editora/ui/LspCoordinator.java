@@ -9706,6 +9706,18 @@ final class LspCoordinator {
         watchedFlush.playFromStart();
     }
 
+    /**
+     * A tab was reloaded from disk: on lemminx its new text is also the saved one, and only a save makes lemminx
+     * revalidate the documents that use it when it is a schema or DTD (XML/pom review 4, B31). FX thread.
+     */
+    void reloadedFromDisk(EditorBuffer buffer) {
+        Path path = lspPath(buffer);
+        if (path != null && com.editora.lsp.XmlServerSettings.isLemminx(lspManager.managedServerId(path))) {
+            lspManager.changeDocument(path, buffer.getContent()); // the reloaded text first, then its save
+            lspManager.saveDocument(path, buffer.getContent());
+        }
+    }
+
     /** Convenience for the reload paths: a batch of files that changed on disk (kind CHANGED). */
     void watchedFilesReloaded(List<Path> files) {
         if (files == null || files.isEmpty()) {

@@ -3192,9 +3192,33 @@ public final class LspManager {
             if (!events.isEmpty()) {
                 s.didChangeWatchedFiles(events);
                 bashReanalysis.changed(s, changes); // the Bash server ignores the notification (Bash review B7)
+                openGrammarsChanged(s, changes);
             }
         }
         changes.stream().map(WatchedFile::file).filter(f -> f != null).forEach(this::projectStyleChanged);
+    }
+
+    /**
+     * lemminx revalidates the documents that use a grammar when that grammar is saved, and treats a watched-file
+     * change as a save only for a file the client does not hold open (XML/pom review 4, B31): a schema open in a tab
+     * and rewritten on disk by a pull or a build left every document using it with its old errors. Such a change is
+     * told as the save it is on disk; the tab's own text is the editor's to reload.
+     */
+    private static void openGrammarsChanged(LanguageServerSession s, List<WatchedFile> changes) {
+        if (!XmlServerSettings.isLemminx(s.serverId())) {
+            return;
+        }
+        for (WatchedFile c : openGrammarChanges(changes, s::isOpen)) {
+            s.didSave(uri(c.file()), null);
+        }
+    }
+
+    /** Pure: the changes to a grammar file ({@link #xmlGrammarFile}) still on disk whose document {@code open} holds. */
+    static List<WatchedFile> openGrammarChanges(List<WatchedFile> changes, java.util.function.Predicate<String> open) {
+        return changes.stream()
+                .filter(c -> c != null && c.file() != null && c.kind() != WatchedKind.DELETED)
+                .filter(c -> xmlGrammarFile(c.file()) && open.test(uri(c.file())))
+                .toList();
     }
 
     /**
@@ -4925,12 +4949,16 @@ public final class LspManager {
             int line,
             int character,
             Consumer<List<Target>> cb) {
-        // XML: the grammar declaration instead of the element's own other tag, else the linked schema (B5, B10).
-        boolean xml = s != null && XmlServer.isXml(s.serverId());
-        LocationRequest request = xml ? XmlServer::definition : LanguageServerSession::definition;
+        // XML: the grammar declaration instead of the element's own other tag, else the linked schema (B5, B10);
+        // a pom on the Maven server is lemminx too, its own answer still first (XML/pom review 4, B34).
+        boolean xml = s != null && XmlServerSettings.isLemminx(s.serverId());
+        var missingLink = new java.util.concurrent.atomic.AtomicReference<@Nullable String>();
+        LocationRequest request = xml
+                ? (session, uri, pos) -> XmlServer.definition(session, uri, pos, missingLink::set)
+                : LanguageServerSession::definition;
         lastMissingInclude = null;
         Consumer<List<Target>> answer = xml && s != null && documentUri != null
-                ? notingMissingInclude(s, documentUri, new Position(line, character), cb)
+                ? notingMissingInclude(s, documentUri, new Position(line, character), missingLink, cb)
                 : cb;
         requestLocations(s, documentUri, line, character, request, answer, null);
     }
@@ -4978,14 +5006,23 @@ public final class LspManager {
 
     /** {@code cb}, after noting when nothing was found on an include href that names no file (C26). */
     private Consumer<List<Target>> notingMissingInclude(
-            LanguageServerSession s, String documentUri, Position pos, Consumer<List<Target>> cb) {
+            LanguageServerSession s,
+            String documentUri,
+            Position pos,
+            java.util.concurrent.atomic.AtomicReference<@Nullable String> missingLink,
+            Consumer<List<Target>> cb) {
         return targets -> {
-            lastMissingInclude = targets.isEmpty() ? XmlServer.missingInclude(s, documentUri, pos) : null;
+            String link = missingLink.get();
+            lastMissingInclude =
+                    !targets.isEmpty() ? null : link != null ? link : XmlServer.missingInclude(s, documentUri, pos);
             cb.accept(targets);
         };
     }
 
-    /** The file the last Go to Definition's include href named when it does not exist, or null (C26). */
+    /**
+     * The file the last Go to Definition's include href (C26) or document link (XML/pom review 4, B33) named when it
+     * does not exist, or null.
+     */
     private volatile @Nullable String lastMissingInclude;
 
     public @Nullable String lastMissingInclude() {

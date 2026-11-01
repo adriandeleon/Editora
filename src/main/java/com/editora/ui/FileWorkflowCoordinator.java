@@ -1747,6 +1747,7 @@ final class FileWorkflowCoordinator {
         buffer.markClean();
         view.restore();
         host.updateTabMeta(tab, buffer);
+        host.lspCoordinator().reloadedFromDisk(buffer);
         host.lspCoordinator().watchedFilesReloaded(java.util.List.of(load.file()));
         host.setStatus(note.isEmpty() ? tr("status.reloaded", load.file().getFileName()) : note);
     }
