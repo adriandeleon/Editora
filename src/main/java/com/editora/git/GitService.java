@@ -190,6 +190,11 @@ public final class GitService {
      * gutter refresh would wait behind it. Read-only, so it needs no ordering against the other lanes.
      */
     private final ExecutorService historyExec = lane("git-history");
+    /**
+     * The Project Map's recent-changes reads ({@link #recentChanges}): a capped log that can take seconds on a large
+     * history, kept off the other lanes so it delays neither status nor the Git Log. Read-only.
+     */
+    private final ExecutorService activityExec = lane("git-activity");
     /** Serialises working-tree mutations across the two lanes ({@code pull} runs on the network lane). */
     private final ReentrantLock worktreeLock = new ReentrantLock();
     /** User commands currently running per lane; {@link #shutdown()} lets these finish instead of killing them. */
@@ -925,6 +930,71 @@ public final class GitService {
             Platform.runLater(() -> onResult.accept(posted));
         });
     }
+
+    /**
+     * How often each file and folder below {@code root} changed in the last {@link GitRecentChanges#DAYS} days (the
+     * Project Map's "Show recent changes"): one streamed {@code git log --name-only}, capped as
+     * {@link GitRecentChanges} says, on a lane of its own so a long read never delays status or the Git Log. Kept per
+     * HEAD: asking again before a commit, checkout or pull costs one {@code rev-parse}. Posts
+     * {@link GitRecentChanges.Result#NONE} when {@code root} is not in a repository with commits, or git is missing.
+     * Posts on the FX thread.
+     */
+    public void recentChanges(Path root, Consumer<GitRecentChanges.Result> onResult) {
+        submit(activityExec, () -> {
+            GitRecentChanges.Result result = recentChangesNow(root);
+            Platform.runLater(() -> onResult.accept(result));
+        });
+    }
+
+    /** {@link #recentChanges} on the calling thread (a lane). */
+    GitRecentChanges.Result recentChangesNow(Path root) {
+        if (root == null || !gitAvailable(root)) {
+            return GitRecentChanges.Result.NONE;
+        }
+        ProcessRunner.Result rev = git(root, QUICK, "rev-parse", "HEAD", "--is-shallow-repository");
+        if (!rev.ok()) {
+            return GitRecentChanges.Result.NONE; // not a repository, or no commit yet
+        }
+        String[] lines = rev.out().strip().split("\\R");
+        String head = lines[0].strip();
+        boolean shallow = lines.length > 1 && lines[lines.length - 1].strip().equals("true");
+        String key = gitPath(root) + "\n" + head;
+        synchronized (recentChanges) {
+            GitRecentChanges.Result known = recentChanges.get(key);
+            if (known != null) {
+                return known;
+            }
+        }
+        GitRecentChanges.Parser parser = new GitRecentChanges.Parser(shallow);
+        List<String> args = new ArrayList<>();
+        args.add(GitSafety.LITERAL_PATHSPECS);
+        args.addAll(GitRecentChanges.logArgs(GitRecentChanges.DAYS));
+        ProcessRunner.Result r = ProcessRunner.runLines(
+                root,
+                GitRecentChanges.BUDGET,
+                backgroundArgv(root, args.toArray(String[]::new)),
+                READ_ENV,
+                parser::accept);
+        GitRecentChanges.Result result = parser.finish(head);
+        if (r.timedOut() || r.outTruncated()) {
+            parser.cutShort();
+            result = parser.finish(head);
+        } else if (!r.ok() && !result.truncated()) {
+            return noCommitsYet(r) ? GitRecentChanges.Result.NONE : GitRecentChanges.Result.failed(head, r.message());
+        }
+        synchronized (recentChanges) {
+            recentChanges.put(key, result);
+        }
+        return result;
+    }
+
+    /** The last few {@link #recentChanges} answers, by repository folder and HEAD. */
+    private final Map<String, GitRecentChanges.Result> recentChanges = new LinkedHashMap<>(4, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, GitRecentChanges.Result> eldest) {
+            return size() > 3;
+        }
+    };
 
     /**
      * One page of the Git Log ({@link GitLog.Request}): rows with parents, author time and ref decorations,
@@ -3408,6 +3478,7 @@ public final class GitService {
         stop(exec, localCommands);
         stop(networkExec, networkCommands);
         historyExec.shutdownNow(); // reads only: nothing to leave half-done
+        activityExec.shutdownNow();
     }
 
     private static void stop(ExecutorService lane, AtomicInteger running) {

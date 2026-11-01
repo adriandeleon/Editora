@@ -2064,6 +2064,9 @@
 .project-map-probe-olive { -fx-fill: -state-olive; }
 .project-map-probe-violet { -fx-fill: -state-violet; }
 .project-map-probe-structure { -fx-fill: -state-violet; }
+/* "Show recent changes" (Map explore): a hot row's tint and heat meter. The hottest tint keeps the label at 4.5:1
+   and muted ink at 3:1, and the meter stands 3:1 off its row, in every bundled theme (StyleContrastTest). */
+.project-map-probe-heat { -fx-fill: -state-amber; }
 .project-tree .tree-cell {
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;
