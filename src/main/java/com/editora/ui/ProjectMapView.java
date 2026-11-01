@@ -201,8 +201,7 @@ final class ProjectMapView extends VBox {
     });
     private final AtomicLong generation = new AtomicLong();
     /** Directory listings: cached for the folders the Project watcher follows, each one with a timeout. */
-    final ProjectMapModel.Listings listings =
-            new ProjectMapModel.Listings(ProjectMapModel.LISTING_TIMEOUT_MILLIS, null);
+    final ListingService listings = new ListingService(ListingService.LISTING_TIMEOUT_MILLIS, null);
     /** How many queued loads actually began listing (the rest were superseded first). */
     final java.util.concurrent.atomic.AtomicInteger loadsStartedForTest =
             new java.util.concurrent.atomic.AtomicInteger();

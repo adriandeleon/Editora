@@ -844,7 +844,7 @@ sorts among the files). A load
 that outlasts 200 ms shows a "Loading…" label over the canvas, and an empty map reads "Loading…" rather than
 "No project items" while its first load is in flight.
 
-Listings go through `ProjectMapModel.Listings`. A folder the Project watcher follows (`ProjectPanel` hands
+Listings go through `ListingService`. A folder the Project watcher follows (`ProjectPanel` hands
 the watched set to `setWatchedDirectories` after every watch sync) keeps its sorted listing between loads,
 so opening a folder lists only that folder. A watcher event for a folder (`refresh(directories)`), a file
 rewritten there or saved by Editora (`listingsChanged`), and an in-app file operation (`refresh()`,
@@ -855,7 +855,7 @@ taken within 2 s of the folder's last change, which a coarse clock could hide). 
 Editora's own windows — a file opened from the Map raises its editor window, Escape leaves the Map, a dialog
 closes — is not a regain at all (`StartupFocus` follows every stage's focus: a gain within 250 ms of another
 stage's loss is a move), unless Editora came back from another program through another of its windows since
-that window last refreshed. A remote folder has no local watcher: its listing is reused for 30 s (`Listings.REMOTE_TTL_MILLIS`) and dropped by an in-app change or a real regain, so a click does not cost one SFTP round trip per open folder. Each listing runs
+that window last refreshed. A remote folder has no local watcher: its listing is reused for 30 s (`ListingService.REMOTE_TTL_MILLIS`) and dropped by an in-app change or a real regain, so a click does not cost one SFTP round trip per open folder. Each listing runs
 on a worker (at most `MAX_LISTING_THREADS`, 4, at once) with a 10 s timeout: a folder that does not answer
 holds a "Not responding" stub (nothing below it is forgotten). Its listing stays the folder's only one until
 it ends: through any number of invalidations its next loads say "Not responding" at once, without waiting
