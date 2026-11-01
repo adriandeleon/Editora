@@ -25,6 +25,10 @@
 <component type="desktop-application">
   <id>com.editora.Editora</id>
   <launchable type="desktop-id">editora-Editora.desktop</launchable>
+  <!-- Ties this listing to the .deb and .rpm of that name, so the installed app's page has their
+       version and can remove them. A distribution's catalogue would add it; a package installed
+       from a download has none. -->
+  <pkgname>editora</pkgname>
 
   <name>Editora</name>
   <summary>Keyboard-driven programmer's text editor</summary>

@@ -103,6 +103,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **GNOME Software's page for the installed Editora shows its version and can remove it.** The
+  AppStream listing did not name its package, so Software had no way to tie the two together.
+
 - **Java: the last Go to Super Method and import edges.** On any segment of an anonymous class's name
   (`new java.util.Comparator<>() {`, `Map` of `new Map.Entry<>() {`), and on the header of one passed as a call's
   argument, Go to Super Method opens the type it instantiates; so it does for a member type the enclosing class
