@@ -285,6 +285,25 @@ class ProjectMapCardsReview3FxTest {
         });
     }
 
+    // --- D8 ---------------------------------------------------------------------------------------------
+
+    @Test
+    void anOutlineThatFeedsOnlyACardsColumnLeavesTheMapsRowsAlone() throws Exception {
+        Path big = writeBig();
+        map = openMap();
+        ProjectMapPreview card = openFileCard(big);
+        ProjectMapCardStructure column = showStructure(card);
+        Object rowsBefore = FxTestSupport.callOnFx(() -> FxTestSupport.field(map.surface(), "entryByPath"));
+        Files.writeString(big, source().replace("int m3(int a) {", "int m3(int a) {\n    }\n\n    void added() {"));
+        FxTestSupport.runOnFx(
+                () -> FxTestSupport.call(map.view(), "refreshCards", new Class<?>[] {boolean.class}, false));
+        await("the card's column follows the edit", () -> labels(column).contains("added()"));
+        FxTestSupport.runOnFx(() -> assertSame(
+                rowsBefore,
+                FxTestSupport.field(map.surface(), "entryByPath"),
+                "the map's row list was not rebuilt for an outline only the card shows"));
+    }
+
     private static void setDouble(Object target, String name, double value) {
         try {
             java.lang.reflect.Field field = target.getClass().getDeclaredField(name);

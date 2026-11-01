@@ -297,7 +297,7 @@ final class ProjectMapView extends VBox {
         this.structure = new ProjectMapStructure(this::previewContentFor);
         // A folder that stopped answering and then answers is listed again by the next load.
         listings.setOnRecovered(() -> Platform.runLater(this::reload));
-        structure.setOnChanged(this::structureChanged);
+        structure.setOnFileChanged(this::structureChanged);
         getStyleClass().add("project-map-view");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
@@ -1994,12 +1994,16 @@ final class ProjectMapView extends VBox {
     }
 
     /** An outline arrived or changed: the columns are redrawn and every declaration card follows its lines. */
-    private void structureChanged() {
+    private void structureChanged(Path file) {
         if (disposed) {
             return;
         }
-        showRows();
-        cards.outlineChanged();
+        // The map's rows change only when the file has a Structure column of the Map's own open: an outline that
+        // feeds only a card's column leaves the rows, their caches and the tooltip alone (review 3, D8).
+        if (structure.isOpen(file)) {
+            showRows();
+        }
+        cards.outlineChanged(file);
     }
 
     /** Where the cards' editor font comes from: the editor window this Map belongs to. */

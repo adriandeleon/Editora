@@ -356,21 +356,22 @@ final class MapCards {
     }
 
     /**
-     * An outline arrived or changed: each card's Structure column lists it, and every declaration card follows its
-     * declaration's lines (to its new path when its parameter list was edited).
+     * The outline of {@code file} arrived or changed: the Structure column of its card lists it, and each of its
+     * declaration cards follows its declaration's lines (to its new path when its parameter list was edited). The
+     * other cards are left alone (review 3, D8).
      */
-    void outlineChanged() {
-        if (disposed) {
+    void outlineChanged(Path file) {
+        if (disposed || file == null) {
             return;
         }
         cardStructures.forEach((card, column) -> {
-            Path file = card.path();
-            if (file != null) {
+            if (file.equals(card.path())) {
                 column.update(structure.view(file));
             }
         });
         for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
-            if (!ProjectMapStructure.isSymbolPath(entry.getKey())) {
+            if (!ProjectMapStructure.isSymbolPath(entry.getKey())
+                    || !entry.getKey().startsWith(file)) {
                 continue;
             }
             Path key = entry.getKey();
@@ -383,9 +384,8 @@ final class MapCards {
                 previews.put(next, card);
                 node = structure.node(next);
             }
-            Path file = structure.fileOf(entry.getKey());
             if (node == null) {
-                if (file != null && structure.hasOutline(file)) {
+                if (structure.hasOutline(file)) {
                     card.setSymbolMissing(true); // keeps its last lines: they may be the last copy to read
                 }
                 continue;

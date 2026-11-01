@@ -110,6 +110,7 @@ final class ProjectMapStructure {
     private final Function<Path, ProjectMapPreview.@Nullable Content> content;
     private Function<Path, @Nullable List<SymbolNode>> serverSymbols = path -> null;
     private Runnable onChanged = () -> {};
+    private java.util.function.Consumer<Path> onFileChanged = file -> {};
     private long requestSequence;
     private boolean disposed;
 
@@ -125,6 +126,14 @@ final class ProjectMapStructure {
     /** Told on the FX thread when an outline arrives or changes: the rows and cards need to follow. */
     void setOnChanged(Runnable callback) {
         onChanged = callback == null ? () -> {} : callback;
+    }
+
+    /**
+     * Told on the FX thread, with the file, when its outline arrives or changes: what shows only that file's outline
+     * (a card's Structure column, its declaration cards) follows it alone (review 3, D8).
+     */
+    void setOnFileChanged(java.util.function.Consumer<Path> callback) {
+        onFileChanged = callback == null ? file -> {} : callback;
     }
 
     /** Whether a file of this name gets a Structure icon. By name only; the answer is kept per name. */
@@ -508,6 +517,7 @@ final class ProjectMapStructure {
                 && outline.problem() == Problem.NONE
                 && !outline.byPath().containsKey(path));
         onChanged.run();
+        onFileChanged.accept(file);
     }
 
     /**
