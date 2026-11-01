@@ -174,6 +174,11 @@ final class ProjectMapNotePreview extends StackPane {
         toFront();
     }
 
+    /** The card's title: its file's or folder's name. */
+    String title() {
+        return title.getText();
+    }
+
     /** Names the file whose notes the card lists: on show, and when the file is renamed inside Editora. */
     void pathRenamed(Path path) {
         this.path = path;

@@ -187,7 +187,9 @@ class ProjectMapWindowReviewFxTest {
                 assertFalse(running(mapView, "cardPoll"), "a closed Map does not poll its cards");
                 assertFalse(running(mapView, "cardRefresh"), "nor refresh them");
             });
-            Thread.sleep(1_300); // longer than the poll interval
+            // A positive sentinel instead of a fixed sleep: a timer of the poll's own interval, started after
+            // the close, has fired, so a poll that was still armed would have fired too (Map review 3 D11).
+            awaitPollInterval();
             assertEquals(
                     "class Live {}\n// one\n",
                     FxTestSupport.callOnFx(() -> card.editor().getText()),
@@ -260,8 +262,22 @@ class ProjectMapWindowReviewFxTest {
         }
     }
 
+    /** Waits for a timer of the card poll's interval, started now on the FX thread, to fire. */
+    private static void awaitPollInterval() throws Exception {
+        javafx.util.Duration poll = MapCards.CARD_POLL_INTERVAL;
+        java.util.concurrent.CountDownLatch fired = new java.util.concurrent.CountDownLatch(1);
+        FxTestSupport.runOnFx(() -> {
+            PauseTransition sentinel = new PauseTransition(poll.add(javafx.util.Duration.millis(100)));
+            sentinel.setOnFinished(event -> fired.countDown());
+            sentinel.play();
+        });
+        assertTrue(fired.await(30, TimeUnit.SECONDS), "the sentinel timer fired");
+        FxTestSupport.drainFx();
+    }
+
     private static boolean running(ProjectMapView view, String timer) {
-        return FxTestSupport.<PauseTransition>field(view, timer).getStatus() == Animation.Status.RUNNING;
+        Object cards = FxTestSupport.field(view, "cards"); // the card manager's timers (review 3, MapCards)
+        return FxTestSupport.<PauseTransition>field(cards, timer).getStatus() == Animation.Status.RUNNING;
     }
 
     // --- A4 / A12: the window ----------------------------------------------------------------------------
@@ -395,9 +411,11 @@ class ProjectMapWindowReviewFxTest {
             try {
                 assumeTrue(!Files.isReadable(locked), "running as a user who can read anything");
                 FxTestSupport.runOnFx(() -> map(r.panel).revealPath(locked.resolve("inside.txt")));
+                // In the Map window's own status line, not the editor window's (review 3 A2).
                 r.await(
                         "the status line",
-                        () -> r.status.contains(tr("project.map.status.unreadable", locked.getFileName())));
+                        () -> tr("project.map.status.unreadable", locked.getFileName())
+                                .equals(r.panel.mapStatusLine().text()));
             } finally {
                 Files.setPosixFilePermissions(
                         locked, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
@@ -418,7 +436,10 @@ class ProjectMapWindowReviewFxTest {
             r.await("the active file selected on the map", () -> r.helper.equals(selection(r.panel)));
 
             FxTestSupport.runOnFx(() -> r.panel.setActiveFile(r.guide));
-            Thread.sleep(300);
+            // A reveal is a load: once the Map is idle again, one the tab switch started has been applied.
+            FxTestSupport.drainFx();
+            r.await("the map idle", () -> !FxTestSupport.<Boolean>field(map(r.panel), "loadInFlight"));
+            FxTestSupport.drainFx();
             assertEquals(r.helper, FxTestSupport.callOnFx(() -> selection(r.panel)), "off by default: no jumping");
 
             FxTestSupport.runOnFx(() -> {
@@ -432,7 +453,10 @@ class ProjectMapWindowReviewFxTest {
                 r.panel.mapWindow().closeByUser();
                 r.panel.setActiveFile(null);
                 r.panel.revealActiveFileInMap();
-                assertTrue(r.status.contains(tr("status.projectMap.noActiveFile")));
+                // Said in the Map window, which the command brought forward (review 3 A2).
+                assertEquals(
+                        tr("status.projectMap.noActiveFile"),
+                        r.panel.mapStatusLine().text());
             });
         }
     }

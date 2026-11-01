@@ -366,14 +366,14 @@ public final class TextMateHighlighter {
                 }
             }
             String name = line.substring(start, end).strip();
-            if (name.isEmpty()) {
-                continue;
+            if (name.isEmpty() || name.startsWith("@")) {
+                continue; // `@Deprecated`: Kotlin scopes an annotation's name as a type; it declares nothing
             }
             if (!kind.equals("type")) {
                 symbols.add(new Symbol(lineIndex, name, kind));
                 return; // one definition name per line is enough for the outline
             }
-            if (type == null && !isTypeReference(token.getScopes(), line.substring(0, start))) {
+            if (type == null && !isTypeReference(token.getScopes(), line.substring(0, start), line.substring(end))) {
                 type = new Symbol(lineIndex, name, kind);
             }
         }
@@ -403,6 +403,19 @@ public final class TextMateHighlighter {
      * @param before the line's text before the token
      */
     public static boolean isTypeReference(List<String> scopes, String before) {
+        return isTypeReference(scopes, before, null);
+    }
+
+    /**
+     * As {@link #isTypeReference(List, String)}, with the line's text after the token: a line-leading Go type name
+     * counts as a grouped {@code type ( … )} spec only when a type follows it ({@code Name struct &#123;}, {@code
+     * Name = Other}), not when it is a package qualifier ({@code metav1.TypeMeta}), an embedded field (nothing after
+     * it but a tag) or a composite literal ({@code clock.RealClock&#123;&#125;,}) — each of those was listed as a type
+     * (Project Map review 3, C3).
+     *
+     * @param after the line's text after the token, or null when not known (then a line-leading Go name counts)
+     */
+    public static boolean isTypeReference(List<String> scopes, String before, @Nullable String after) {
         String entity = null;
         for (String scope : scopes) {
             if (scope.startsWith("meta.type.annotation")
@@ -421,6 +434,9 @@ public final class TextMateHighlighter {
         if (parts.length > 4) { // entity.name.type.<sub-kind>.<lang>
             String sub = parts[3];
             return sub.equals("lifetime")
+                    || sub.equals("package") // Go's `package kubelet` clause and `metav1.` qualifiers
+                    || sub.equals("annotation") // Kotlin's `@Deprecated`
+                    || sub.equals("annotation-site") // Kotlin's `@file:`
                     || sub.equals("primitive")
                     || sub.equals("numeric")
                     || sub.equals("option")
@@ -433,7 +449,20 @@ public final class TextMateHighlighter {
         if (TYPE_DECLARATION_PREFIX.matcher(before).matches()) {
             return false;
         }
-        return !(entity.endsWith(".go") && before.isBlank());
+        return !(entity.endsWith(".go") && before.isBlank() && goSpecFollows(after));
+    }
+
+    /** Whether {@code after}, the text after a line-leading Go type name, is the rest of a type spec. */
+    private static boolean goSpecFollows(@Nullable String after) {
+        if (after == null) {
+            return true;
+        }
+        String rest = after.strip();
+        if (rest.isEmpty() || rest.startsWith("`") || rest.startsWith("//")) {
+            return false; // an embedded field, perhaps tagged
+        }
+        char first = rest.charAt(0);
+        return first != '.' && first != '{' && first != ',' && first != ')' && first != '(';
     }
 
     /**

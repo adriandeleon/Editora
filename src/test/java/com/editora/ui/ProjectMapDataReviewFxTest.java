@@ -351,7 +351,9 @@ class ProjectMapDataReviewFxTest {
         FxTestSupport.drainFx();
         FxTestSupport.runOnFx(() -> {
             assertFalse(mapView.expandedDirectories().contains(deep), "no folder is opened for one letter");
-            assertTrue(statuses.contains(tr("project.map.status.searchTooShort", ProjectPanel.MIN_MAP_SEARCH_LENGTH)));
+            assertEquals( // in the Map window's own status line (review 3 A2)
+                    tr("project.map.status.searchTooShort", ProjectPanel.MIN_MAP_SEARCH_LENGTH),
+                    panel.mapStatusLine().text());
             FxTestSupport.<TextField>field(panel, "mapFilterField").setText("e.");
             FxTestSupport.<javafx.animation.PauseTransition>field(panel, "mapFilterDebounce")
                     .stop();

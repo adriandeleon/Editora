@@ -316,7 +316,8 @@ class ProjectMapPreviewCardFxTest {
                 assertEquals(6, r.card.editor().getCaretPosition(), "a caret inside the edit lands where it began");
 
                 r.card.refresh(new Content("alpha b gamma, cut here", true));
-                assertEquals(tr("project.map.preview.truncated"), r.status());
+                // how much of the file the card holds (Map review 3, C2): the rest of the buffer is not known
+                assertEquals(tr("project.map.preview.showingFirstLines", 1), r.status());
 
                 r.card.refresh(Content.closed(null)); // its tab was closed
                 assertFalse(r.card.showsOpenBuffer());

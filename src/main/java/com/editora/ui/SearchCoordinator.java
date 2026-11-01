@@ -306,6 +306,18 @@ final class SearchCoordinator {
      * a single-line editor selection. Reuses the same {@link SearchService} as the tool window.
      */
     void showFindInFilesPopup() {
+        showFindInFilesPopup(null);
+    }
+
+    /**
+     * A folder's Find in Folder… (the Project tree's and the Project Map's row menu, Project Map review 3 E10): the
+     * popup, with its search-root field set to {@code folder}.
+     */
+    void findInFolder(Path folder) {
+        showFindInFilesPopup(folder);
+    }
+
+    private void showFindInFilesPopup(@Nullable Path folder) {
         if (host.overlayHost() == null) {
             return;
         }
@@ -347,7 +359,7 @@ final class SearchCoordinator {
             });
         }
         popup.setBackendActive(backendRipgrep);
-        popup.show(selectedLineForSearch());
+        popup.show(selectedLineForSearch(), folder);
     }
 
     /** Runs a multi-file search: open buffers (in-memory) + the active project root, results to the panel. */

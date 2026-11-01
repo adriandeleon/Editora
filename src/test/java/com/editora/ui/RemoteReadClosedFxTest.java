@@ -115,12 +115,21 @@ class RemoteReadClosedFxTest {
             awaitEchoEnding(async, fx, closed);
             assertEquals(tr("status.remote.unreadable", com.editora.vfs.Vfs.displayLabel(root), closed), echo(fx));
 
-            // Project map: the same folder, drawn as a map in its window (the tree above already listed it).
+            // Project map: the same folder, drawn as a map in its window (the tree above already listed it). The Map
+            // says so on its own window's status line (Map review 3, A2), not in the editor window's.
             FxTestSupport.runOnFx(() -> {
                 FxTestSupport.call(fx.controller, "setStatus", new Class<?>[] {String.class}, "");
                 panel.openMapWindow(false);
             });
-            awaitEchoEnding(async, fx, closed);
+            long mapDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+            while (!FxTestSupport.callOnFx(() -> panel.mapStatusLine().text()).endsWith(closed)
+                    && System.nanoTime() < mapDeadline) {
+                TimeUnit.MILLISECONDS.sleep(20);
+                async.awaitFx();
+            }
+            String mapStatus =
+                    FxTestSupport.callOnFx(() -> panel.mapStatusLine().text());
+            assertTrue(mapStatus.endsWith(closed), mapStatus);
 
             // Search in the remote folder: "No results" would be a claim about files that were never read.
             FxTestSupport.runOnFx(
