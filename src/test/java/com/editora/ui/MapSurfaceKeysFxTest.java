@@ -217,7 +217,7 @@ class MapSurfaceKeysFxTest {
                         zoom * 2.5,
                         10.0,
                         10.0);
-                press(h, KeyCode.DIGIT0, false, true, false); // Ctrl+0: fit
+                pressShortcut(h, KeyCode.DIGIT0); // Shortcut+0 (Cmd on macOS, Ctrl elsewhere): fit
                 assertNotEquals(zoom * 2.5, (double) FxTestSupport.field(h.surface(), "zoom"), 1e-6, "fitted");
                 press(h, KeyCode.NUMPAD0, false, true, true); // with Alt: not Fit
                 press(h, KeyCode.F3);
@@ -236,6 +236,14 @@ class MapSurfaceKeysFxTest {
 
     private static void press(Harness h, KeyCode code) {
         press(h, code, false, false, false);
+    }
+
+    /** {@code code} with the platform's shortcut modifier: Cmd on macOS, Ctrl elsewhere. */
+    private static void pressShortcut(Harness h, KeyCode code) {
+        boolean mac = com.editora.command.KeymapManager.isMac();
+        Event.fireEvent(
+                h.surface(),
+                new KeyEvent(h.surface(), h.surface(), KeyEvent.KEY_PRESSED, "", "", code, false, !mac, false, mac));
     }
 
     private static void press(Harness h, KeyCode code, boolean shift, boolean control, boolean alt) {
