@@ -150,6 +150,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name (`zz_generated.openapi.go` read `zzgenerated.openapi.go`).
 - **Structure: Kubernetes' `core/v1/types.go` outline stopped at `NodeAddress`**; files past the card's 400,000-character
   display limit are now outlined whole.
+- **HTML and the npm language servers (HTML review 3: server).**
+  - A project's `html` settings (`.editora/settings.json`) apply as soon as its window opens a page, and the
+    "Not used from .editora/settings.json" notice appears then; before, both waited for some Settings change.
+  - Go to Definition on a `/…` link in a page outside the window's project starts from that page's own site, as
+    its language server and the markup check do; it opened the project's same-named file. With LSP off, the markup
+    check of such a page uses the same root.
+  - Format Document on an already formatted page under `insert_final_newline = true` says "Already formatted" and
+    leaves no undo step.
+  - A server Install put in the Settings Node.js's own folder with `npm install -g` (YAML, Pyright, Bash,
+    TypeScript, Dockerfile, TOML, Astro) is found there: detection, Doctor, the launch and the banner look in that
+    folder after PATH. When npm puts it somewhere Editora does not look, Install says where instead of "installed".
+  - Doctor's Installer Prerequisites counts the Node.js chosen in Settings and npm beside it, named as such.
+  - A git push, pull or commit that fails after its window closed is said in another open window — its status line
+    and message log, as an unread error naming the project — instead of nowhere; with no other window, the Debug
+    Log has it.
 - **HTML templates (HTML review 2: templates).**
   - The markup check no longer flags Django, Jinja, Jekyll, Hugo, Handlebars or ERB pages saved as `.html`, nor
     header/footer partials in `templates/`, `_layouts/`, `partials/` and similar folders: their branches are not

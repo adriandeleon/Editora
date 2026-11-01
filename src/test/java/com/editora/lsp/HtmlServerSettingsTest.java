@@ -121,6 +121,18 @@ class HtmlServerSettingsTest {
         var plain = HtmlServerSettings.defaults().formattingOptions(new FormattingIndent(2, true));
         assertEquals(120, plain.getNumber("wrapLineLength").intValue());
         assertEquals(Boolean.FALSE, plain.getBoolean("endWithNewline"));
+        // HTML review 3 A205: insert_final_newline is Editora's to keep, so the server is not told it either
+        var rules = HtmlServerSettings.defaults()
+                .formattingOptions(new FormattingIndent(2, true).withSaveRules(true, true));
+        assertEquals(Boolean.TRUE, rules.getBoolean("trimTrailingWhitespace"));
+        assertFalse(rules.containsKey("insertFinalNewline"), String.valueOf(rules));
+        assertEquals(
+                Boolean.TRUE,
+                new FormattingIndent(2, true)
+                        .withSaveRules(true, true)
+                        .options()
+                        .getBoolean("insertFinalNewline"),
+                "other servers still are");
     }
 
     /** A4, D2: a project's {@code html} object, in VS Code's key names, is laid over the user's settings. */

@@ -5370,18 +5370,18 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void invalidatePendingWritesInOtherWindows(Path root, List<String> pathspecs) {
-            if (windowManager != null) {
-                windowManager.invalidatePendingGitWrites(MainController.this, root, pathspecs);
-            }
+            if (windowManager != null) windowManager.invalidatePendingGitWrites(MainController.this, root, pathspecs);
+        }
+
+        @Override
+        public boolean errorInAnotherWindow(String message) { // a git failure after this window closed (A204)
+            return windowManager != null && windowManager.errorInAnotherWindow(MainController.this, message);
         }
 
         @Override
         public void reloadAllFromDiskSilently() {
-            if (windowManager != null) {
-                windowManager.reloadAllFromDiskSilentlyAcrossWindows();
-            } else {
-                MainController.this.reloadAllFromDiskSilently();
-            }
+            if (windowManager != null) windowManager.reloadAllFromDiskSilentlyAcrossWindows();
+            else MainController.this.reloadAllFromDiskSilently();
         }
 
         @Override

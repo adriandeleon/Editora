@@ -10,26 +10,53 @@ public final class LspTextEdits {
     /**
      * Whether applying {@code edits} to {@code text} would leave it as it is: every edit replaces its range with
      * the text already there. bash-language-server answers Format Document with one whole-file edit even when shfmt
-     * changed nothing, and Editora said "Document formatted" over an untouched file (Bash review B14). An edit
-     * outside the text counts as a change, so a doubtful answer is applied as before.
+     * changed nothing, and Editora said "Document formatted" over an untouched file (Bash review B14). Edits that
+     * change nothing together count too: the HTML server answered an already formatted page with its text less the
+     * final line break, then that line break inserted (HTML review 3, A205). An edit outside the text, or edits that
+     * overlap, count as a change, so a doubtful answer is applied as before.
      */
     public static boolean changesNothing(String text, List<LspTextEdit> edits) {
         if (text == null || edits == null) {
             return false;
         }
         int[] starts = lineStarts(text);
-        for (LspTextEdit e : edits) {
+        int[][] spans = new int[edits.size()][];
+        boolean each = true;
+        for (int i = 0; i < edits.size(); i++) {
+            LspTextEdit e = edits.get(i);
             int from = offset(text, starts, e.startLine(), e.startCol());
             int to = offset(text, starts, e.endLine(), e.endCol());
             if (from < 0 || to < from) {
                 return false;
             }
-            String newText = e.newText() == null ? "" : e.newText();
-            if (!text.substring(from, to).equals(newText.replace("\r\n", "\n"))) {
-                return false;
-            }
+            spans[i] = new int[] {from, to, i};
+            each &= text.substring(from, to).equals(newText(e));
         }
-        return true;
+        return each || appliedEquals(text, edits, spans);
+    }
+
+    /** Whether {@code edits}, at their {@code spans} ({@code from, to, index}), leave {@code text} as it is. */
+    private static boolean appliedEquals(String text, List<LspTextEdit> edits, int[][] spans) {
+        // in document order; edits at one position in the order the server sent them (as the protocol applies them)
+        java.util.Arrays.sort(
+                spans,
+                java.util.Comparator.<int[]>comparingInt(s -> s[0])
+                        .thenComparingInt(s -> s[1])
+                        .thenComparingInt(s -> s[2]));
+        StringBuilder out = new StringBuilder(text.length());
+        int at = 0;
+        for (int[] span : spans) {
+            if (span[0] < at) {
+                return false; // overlapping edits: not a well-formed answer, so not a provable no-op
+            }
+            out.append(text, at, span[0]).append(newText(edits.get(span[2])));
+            at = span[1];
+        }
+        return out.append(text, at, text.length()).toString().equals(text);
+    }
+
+    private static String newText(LspTextEdit e) {
+        return e.newText() == null ? "" : e.newText().replace("\r\n", "\n");
     }
 
     /**

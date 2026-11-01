@@ -72,9 +72,27 @@ final class HtmlLinkFollow {
             return false;
         }
         Path file = b.getPath();
+        String base = HtmlLinks.baseHref(text);
+        Path project = ops.lspProjectRoot();
+        Path served = file != null && lsp.isManaged(file) ? lsp.sessionRoot(file) : null;
+        if (file != null && served == null && rootRelative(link.value(), base) && !inProject(file, project)) {
+            // A page outside the project: its site's root, as its server and the markup check have it, found on disk
+            // off the FX thread — the project's root opened the project's same-named file (HTML review 3, A202).
+            CompletableFuture.supplyAsync(
+                            () -> HtmlLinks.resolve(
+                                    file, com.editora.lsp.RootResolver.htmlRoot(project, file), link.value(), base),
+                            IO)
+                    .exceptionally(t -> HtmlLinks.resolve(file, null, link.value(), base))
+                    .thenAccept(target -> Platform.runLater(() -> {
+                        if (host.activeBuffer() == b) {
+                            go(b, target, link.value());
+                        }
+                    }));
+            return true;
+        }
         HtmlLinks.Target local = file == null
                 ? fragmentOrWeb(link.value())
-                : HtmlLinks.resolve(file, ops.lspProjectRoot(), link.value(), HtmlLinks.baseHref(text));
+                : HtmlLinks.resolve(file, served != null ? served : project, link.value(), base);
         Path localFile = local.file();
         if (file != null && localFile != null && lsp.isManaged(file) && local.kind() == HtmlLinks.Kind.FILE) {
             int line = a.getCurrentParagraph();
@@ -99,6 +117,28 @@ final class HtmlLinkFollow {
             go(b, local, link.value());
         }
         return true;
+    }
+
+    /** Whether {@code value} (or the page's {@code <base>}) starts from the site's root: {@code /x}, not {@code //host}. */
+    static boolean rootRelative(String value, @Nullable String base) {
+        String v = value.strip();
+        if (v.startsWith("/")) {
+            return !v.startsWith("//");
+        }
+        String b = base == null ? "" : base.strip();
+        return !v.contains(":") && !v.startsWith("#") && b.startsWith("/") && !b.startsWith("//");
+    }
+
+    /** Whether {@code file} is in {@code project}, or on another machine (whose page keeps the project's root). */
+    private static boolean inProject(Path file, @Nullable Path project) {
+        if (Vfs.isRemote(file)) {
+            return true;
+        }
+        return project != null
+                && project.getFileSystem() == file.getFileSystem()
+                && file.toAbsolutePath()
+                        .normalize()
+                        .startsWith(project.toAbsolutePath().normalize());
     }
 
     /** An untitled page's link: only a fragment or a web address means anything without a folder. */

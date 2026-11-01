@@ -105,6 +105,14 @@ final class GitCoordinator {
         /** Extends write invalidation to buffers owned by other application windows. */
         default void invalidatePendingWritesInOtherWindows(Path root, List<String> pathspecs) {}
 
+        /**
+         * Reports {@code message}, a failure, in another open window — its status line and message log, as an
+         * unread error; false when no other window is open.
+         */
+        default boolean errorInAnotherWindow(String message) {
+            return false;
+        }
+
         /** After a branch switch / pull, silently reload any open buffer whose file changed on disk. */
         void reloadAllFromDiskSilently();
 
@@ -1901,7 +1909,13 @@ final class GitCoordinator {
         }
         host.setStatus(summary);
         if (!host.window().isShowing()) {
-            return; // git finished after its window closed: a dialog now would be an orphan nobody can see to close
+            // git finished after its window closed: a dialog now would be an orphan nobody can see to close, so another
+            // open window says it (HTML review 3, A204); with none, the Debug Log does
+            String said = closedWindowError(summary, detail, windowName());
+            if (!ops.errorInAnotherWindow(said)) {
+                LOG.warning(() -> "git failed after its window closed: " + said);
+            }
+            return;
         }
         // A sign-in failure gets its next step appended: git's own line ("terminal prompts disabled") has none.
         String body = detail == null || detail.isBlank() ? summary : GitAuthFailure.withGuidance(detail.strip());
@@ -1918,6 +1932,33 @@ final class GitCoordinator {
         alert.getDialogPane().setContent(area);
         alert.showAndWait();
     }
+
+    /** What a git failure from the closed window {@code window} says in another window: {@code detail} on one line. */
+    static String closedWindowError(String summary, @Nullable String detail, String window) {
+        String said = detail == null ? "" : detail.strip().replaceAll("\\s*\\R\\s*", " · ");
+        if (said.length() > CLOSED_WINDOW_DETAIL_MAX) {
+            said = said.substring(0, CLOSED_WINDOW_DETAIL_MAX - 1) + "…";
+        }
+        return said.isEmpty()
+                ? tr("status.git.closedWindowError", summary, window)
+                : tr("status.git.closedWindowErrorDetail", summary, window, said);
+    }
+
+    /** How much of git's output a closed window's failure carries into another window's status line. */
+    static final int CLOSED_WINDOW_DETAIL_MAX = 300;
+
+    /** This window, as another window names it: its project's folder, else its title. */
+    private String windowName() {
+        Path root = ops.projectRoot();
+        Path name = root == null ? null : root.getFileName();
+        if (name != null) {
+            return name.toString();
+        }
+        return host.window() instanceof javafx.stage.Stage stage && stage.getTitle() != null ? stage.getTitle() : "";
+    }
+
+    private static final java.util.logging.Logger LOG =
+            java.util.logging.Logger.getLogger(GitCoordinator.class.getName());
 
     // --- clone (URL + destination form → git clone → open a file so Git lights up) ---
 
