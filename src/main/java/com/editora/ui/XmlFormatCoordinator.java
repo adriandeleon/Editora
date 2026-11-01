@@ -51,6 +51,14 @@ final class XmlFormatCoordinator {
             return false;
         }
         boolean html = "html".equals(buffer.getLanguage());
+        if (html
+                && com.editora.text.HtmlElements.hasTemplateSyntax(
+                        buffer.getArea().getText())) {
+            // A Django, Jinja or Hugo page: reflowing would split {# #} comments and nest {% if %} branches (C108).
+            // The HTML server's js-beautify does the same, so it is not asked either (HTML review 3 C206).
+            host.setError(tr("status.html.formatTemplate"));
+            return true;
+        }
         Path path = buffer.getPath();
         if (path != null && host.serverFormats(path)) {
             return false;
@@ -64,11 +72,6 @@ final class XmlFormatCoordinator {
             return true;
         }
         String before = buffer.getArea().getText();
-        if (html && com.editora.text.HtmlElements.hasTemplateSyntax(before)) {
-            // A Django, Jinja or Hugo page: reflowing would split {# #} comments and nest {% if %} branches (C108).
-            host.setError(tr("status.html.formatTemplate"));
-            return true;
-        }
         String indent = buffer.indentUnit();
         int caret = buffer.getArea().getCaretPosition();
         running = buffer;
