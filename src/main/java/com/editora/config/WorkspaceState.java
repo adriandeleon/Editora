@@ -90,8 +90,11 @@ public class WorkspaceState {
      * {@code projectMapOverviewSeen} (the Overview card was shown once). Additive; absent means a Map that starts
      * afresh, with normal rows, ignored and generated entries dimmed rather than hidden, and the Overview card not
      * yet shown.
+     *
+     * <p>v28 → v29 added {@code projectMapWorkingSets} (the Project Map's named views: ⋯ → Working sets). Additive;
+     * absent means none.
      */
-    public static final int SCHEMA_VERSION = 28;
+    public static final int SCHEMA_VERSION = 29;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -219,6 +222,8 @@ public class WorkspaceState {
     private boolean projectMapOverviewSeen;
     /** What the Project Map keeps of the exploration across restarts (review 3 B6); null for none. v28. */
     private @Nullable ProjectMapState projectMapState;
+    /** The Project Map's named views (⋯ → Working sets), in the order they were saved. Additive in v29. */
+    private List<ProjectMapWorkingSet> projectMapWorkingSets = new ArrayList<>();
     /** Branch dropdown sections shown folded ("local", "remote", "remote:<name>", "actions"). Additive in v14. */
     private List<String> collapsedBranchSections = new ArrayList<>();
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
@@ -678,6 +683,15 @@ public class WorkspaceState {
 
     public void setProjectMapState(@Nullable ProjectMapState projectMapState) {
         this.projectMapState = projectMapState;
+    }
+
+    public List<ProjectMapWorkingSet> getProjectMapWorkingSets() {
+        return projectMapWorkingSets;
+    }
+
+    public void setProjectMapWorkingSets(@Nullable List<ProjectMapWorkingSet> projectMapWorkingSets) {
+        this.projectMapWorkingSets =
+                projectMapWorkingSets == null ? new ArrayList<>() : new ArrayList<>(projectMapWorkingSets);
     }
 
     public Map<String, String> getProgramArgs() {

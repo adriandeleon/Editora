@@ -435,7 +435,9 @@ public enum ConfigSchema {
                     // v27→28: + projectMapState, projectMapCompactRows, projectMapHideIgnored, projectMapOverviewSeen
                     // (additive; absent means a Map that starts afresh, normal rows, ignored entries dimmed, and
                     // the Overview card not yet shown)
-                    Map.entry(27, ConfigMigrations::identity))),
+                    Map.entry(27, ConfigMigrations::identity),
+                    // v28→29: + projectMapWorkingSets (additive; absent means the Map has no named views)
+                    Map.entry(28, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
