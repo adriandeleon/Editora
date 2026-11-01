@@ -1749,7 +1749,8 @@ final class MapCards {
         if (row == null) {
             row = new double[] {drawn[0], drawn[1] + drawn[3] / 2 - 10, drawn[2], 20};
         }
-        return new Site(row, drawn, drawn, List.of());
+        // The map's columns on screen still weigh: beside the column a card used to cover the very file's column.
+        return new Site(row, drawn, drawn, host.columns());
     }
 
     /**
