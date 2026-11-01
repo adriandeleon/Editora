@@ -80,10 +80,11 @@ public final class RootResolver {
 
     /**
      * The HTML server's root for {@code file} given {@code resolved}, the root its markers found: unchanged when a
-     * project or a marker chose it; for a loose page in a folder with neither, the highest ancestor holding an {@code
-     * index.html} below the home folder (else {@code resolved}). The server resolves root-relative links ({@code
-     * /css/site.css}) against its root, and a page in {@code site/pages/} of a static site with no {@code
-     * package.json} or {@code .git} sent them to {@code site/pages/css/} (HTML review A6). File reads only.
+     * project or a marker chose it; for a loose page in a folder with neither, the site root of {@link
+     * com.editora.web.SiteRoots#looseRoot} — the rule HTML Live Preview serves the same page under, so Ctrl-click
+     * on {@code /css/site.css} and the browser agree (HTML review 2, A101). A marker in the home folder or above
+     * it (a dotfiles {@code ~/.git}, a stray {@code ~/package.json}) is no marker here, as {@link #resolve} already
+     * ignores it (A102). The server resolves root-relative links against its root (HTML review A6). File reads only.
      */
     public static Path siteRoot(Path resolved, Path file, @Nullable Path projectRoot) {
         String home = System.getProperty("user.home");
@@ -99,21 +100,23 @@ public final class RootResolver {
                 || projectRoot != null
                         && abs.startsWith(projectRoot.toAbsolutePath().normalize())
                 || com.editora.vfs.Vfs.isRemote(abs)
-                || findMarkerRoot(abs, LspServerRegistry.WEB_ROOT_MARKERS) != null) {
+                || usableMarker(findMarkerRoot(abs, LspServerRegistry.WEB_ROOT_MARKERS), home)) {
             return resolved;
         }
-        String tmp = System.getProperty("java.io.tmpdir");
-        Path best = null;
-        Path dir = folder;
-        for (int hops = 0; dir != null && hops < 32; hops++, dir = dir.getParent()) {
-            if (tooBroad(dir, home) || sameFolder(dir, tmp)) {
-                break; // never the home folder, the temp folder or a filesystem root, nor anything above them
-            }
-            if (Files.isRegularFile(dir.resolve("index.html"))) {
-                best = dir;
-            }
+        return com.editora.web.SiteRoots.looseRoot(abs, home);
+    }
+
+    /** A marker root that makes a workspace: not the home folder, nor above it, nor a filesystem root. */
+    private static boolean usableMarker(@Nullable Path markerRoot, @Nullable Path home) {
+        if (markerRoot == null || tooBroad(markerRoot, home)) {
+            return false;
         }
-        return best != null ? best : resolved;
+        if (home == null) {
+            return true;
+        }
+        Path h = home.toAbsolutePath().normalize();
+        Path m = markerRoot.toAbsolutePath().normalize();
+        return !h.startsWith(m) && !com.editora.config.PathKeys.canonical(h).startsWith(m);
     }
 
     /**
