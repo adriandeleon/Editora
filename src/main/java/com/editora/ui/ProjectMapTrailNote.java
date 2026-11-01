@@ -125,7 +125,8 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
         double scale = card.mapScale();
         double right = card.getLayoutX() + card.getWidth() * scale;
         fromLeft = x + WIDTH * scale / 2 < (card.getLayoutX() + right) / 2;
-        dx = fromLeft ? (card.getLayoutX() - x) / scale : (x - right) / scale;
+        // The gap between the sheet's near edge and the card, as place() keeps it: follow() puts the sheet back there.
+        dx = fromLeft ? (card.getLayoutX() - x) / scale - WIDTH : (x - right) / scale;
         dy = (y - card.getLayoutY()) / scale;
         relocate(x, y);
         onMoved.run();
