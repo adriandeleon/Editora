@@ -1190,14 +1190,16 @@ final class ProjectMapView extends VBox {
         for (MapCards.OpenCard card : cards.openCards().reversed()) {
             String relative = bearingsRelative(current, card.key());
             if (!card.note() && card.node() instanceof ProjectMapPreview code && relative != null) {
-                open.add(new com.editora.config.ProjectMapState.Card(
+                com.editora.config.ProjectMapState.Card kept = new com.editora.config.ProjectMapState.Card(
                         relative,
                         code.getLayoutX(),
                         code.getLayoutY(),
                         code.getWidth(),
                         code.getHeight(),
                         code.contentZoom(),
-                        code.structureShown()));
+                        code.structureShown());
+                kept.setPinned(cards.pinned(code)); // a pinned card stays pinned across a restart or a working set
+                open.add(kept);
             }
         }
         state.setCards(open);
@@ -1368,6 +1370,9 @@ final class ProjectMapView extends VBox {
                         card.getHeight() > 0 ? card.getHeight() : ProjectMapPreview.DEFAULT_HEIGHT,
                         card.getTextZoom() > 0 ? card.getTextZoom() : 1.0,
                         card.isStructure());
+        if (opened != null && card.isPinned()) {
+            opened.setPinned(true);
+        }
         if (then != null) {
             then.accept(opened);
         }

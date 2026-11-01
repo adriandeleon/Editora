@@ -2553,6 +2553,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             state.get().setProjectMapOverviewSeen(true);
             save.run();
         });
+        mapView.setShowRecentChanges(stored.isProjectMapShowRecentChanges());
+        mapView.setOnShowRecentChangesChanged(show -> {
+            state.get().setProjectMapShowRecentChanges(show);
+            save.run();
+        });
         mapView.setOverviewSeen(stored.isProjectMapOverviewSeen()); // false opens the card on the first Map open
         mapWindow.setBoundsMemory(
                 () -> state.get().getProjectMapWindowBounds(),
