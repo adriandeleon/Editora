@@ -314,7 +314,7 @@ class ProjectMapDataReview3Test {
 
     @Test
     void sizesUseTheLocalesDecimalSeparator() throws Exception {
-        Class<?> surface = Class.forName("com.editora.ui.ProjectMapView$MapSurface");
+        Class<?> surface = Class.forName("com.editora.ui.MapSurface");
         java.lang.reflect.Method format = surface.getDeclaredMethod("formatSize", long.class, Locale.class);
         format.setAccessible(true);
         assertEquals("1,5 KiB", format.invoke(null, 1536L, Locale.GERMANY));

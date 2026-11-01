@@ -424,7 +424,7 @@ class ProjectMapLayoutReview3FxTest {
             }
             assertTrue(texts.contains("zz_generated.openapi.go"), texts.toString());
 
-            Node help = (Node) FxTestSupport.call(map.view(), "buildHelp", new Class<?>[0]);
+            Node help = (Node) ProjectMapHelp.build();
             List<String> labels = new ArrayList<>();
             collectLabels(help, labels);
             assertTrue(labels.contains(tr("project.map.help.search")), labels.toString());

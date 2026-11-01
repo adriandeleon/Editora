@@ -815,7 +815,7 @@ class ProjectMapLayoutFxTest {
     void helpPopoverListsTheMouseAndKeyboardModel() throws Exception {
         show(600, 500);
         FxTestSupport.runOnFx(() -> {
-            Parent help = (Parent) FxTestSupport.call(mapView, "buildHelp", new Class<?>[0]);
+            Parent help = (Parent) ProjectMapHelp.build();
             List<String> text = new ArrayList<>();
             List<Parent> pending = new ArrayList<>(List.of(help));
             while (!pending.isEmpty()) {
@@ -835,7 +835,7 @@ class ProjectMapLayoutFxTest {
             assertTrue(text.contains(tr("project.map.help.escape")));
             assertTrue(text.contains(tr("project.map.help.columnFilter")));
             assertTrue(
-                    text.contains(ProjectMapView.helpChord("shortcut", "0")),
+                    text.contains(ProjectMapHelp.chord("shortcut", "0")),
                     "the fit chord is spelled for this platform, not baked into a message");
             assertTrue(text.contains(tr("project.map.help.key.pageUp") + " / " + tr("project.map.help.key.pageDown")));
         });

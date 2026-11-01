@@ -245,9 +245,7 @@ class ProjectMapDataReview3FxTest {
     @Test
     void theHelpPopoverListsTheCardStructureButton() throws Exception {
         Node help = FxTestSupport.callOnFx(() -> {
-            java.lang.reflect.Method build = ProjectMapView.class.getDeclaredMethod("buildHelp");
-            build.setAccessible(true);
-            return (Node) build.invoke(null);
+            return ProjectMapHelp.build();
         });
         List<String> texts = FxTestSupport.callOnFx(() -> labels(help));
         assertTrue(texts.contains(tr("project.map.help.cardStructure.gesture")), texts.toString());

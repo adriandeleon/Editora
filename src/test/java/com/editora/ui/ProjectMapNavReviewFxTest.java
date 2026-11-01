@@ -625,7 +625,7 @@ class ProjectMapNavReviewFxTest {
     void theHelpPopoverCoversTheWholeModelInTheUsersLanguage() throws Exception {
         try (Harness h = open(0)) {
             FxTestSupport.runOnFx(() -> {
-                List<String> text = labels((Parent) FxTestSupport.call(h.view(), "buildHelp", new Class<?>[0]));
+                List<String> text = labels((Parent) ProjectMapHelp.build());
                 for (String key : List.of(
                         "project.map.help.intro",
                         "project.map.help.cards",
@@ -646,7 +646,7 @@ class ProjectMapNavReviewFxTest {
             try {
                 FxTestSupport.runOnFx(() -> {
                     Messages.init("de");
-                    List<String> text = labels((Parent) FxTestSupport.call(h.view(), "buildHelp", new Class<?>[0]));
+                    List<String> text = labels((Parent) ProjectMapHelp.build());
                     assertTrue(text.contains("Eingabe / Leertaste"), "key names in German: " + text);
                     assertTrue(text.contains("Bild auf / Bild ab"));
                     assertFalse(text.contains("Enter / Space"));
