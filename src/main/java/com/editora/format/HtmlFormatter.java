@@ -124,6 +124,9 @@ public final class HtmlFormatter {
         /** The Angular blocks open at this point. */
         private int blocks;
 
+        /** Braces opened by other text (an i18n ICU expression, a multi-line interpolation): their {@code }} closes no block. */
+        private int otherBraces;
+
         Writer(String s, String indent, boolean document) {
             this.s = s;
             this.indent = indent;
@@ -244,16 +247,31 @@ public final class HtmlFormatter {
                 int nl = text.indexOf('\n', from);
                 int to = nl < 0 ? text.length() : nl + 1;
                 String core = text.substring(from, to).strip();
-                if (core.startsWith("}") && !core.startsWith("}}") && blocks > 0) {
+                boolean opens = NG_OPEN.matcher(core).matches();
+                boolean closes = core.startsWith("}") && !core.startsWith("}}") && otherBraces == 0;
+                if (closes && blocks > 0) {
                     blocks--;
                 }
                 plainText(text.substring(from, to));
-                if (NG_OPEN.matcher(core).matches()) {
+                if (opens) {
                     blocks++;
+                } else if (!closes) {
+                    otherBraces = Math.max(0, otherBraces + braceBalance(core));
                 }
                 from = to;
             }
             return true;
+        }
+
+        /** {@code {} minus {@code }} in {@code line}, not counting {@code {{ … }}} interpolation delimiters. */
+        static int braceBalance(String line) {
+            String rest = line.replace("{{", "").replace("}}", "");
+            int balance = 0;
+            for (int i = 0; i < rest.length(); i++) {
+                char c = rest.charAt(i);
+                balance += c == '{' ? 1 : c == '}' ? -1 : 0;
+            }
+            return balance;
         }
 
         /** Whether the construct {@code [from, to)} has no whitespace on either side: it is part of a word. */

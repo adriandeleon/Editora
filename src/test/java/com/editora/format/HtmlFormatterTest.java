@@ -244,4 +244,23 @@ class HtmlFormatterTest {
                 HtmlFormatter.format(inline, "  "),
                 "a block on one line opens no level");
     }
+
+    /** A <code>}</code> line that closes an i18n ICU expression or an interpolation closes no Angular block. */
+    @Test
+    void anIcuExpressionsClosingBraceInsideABlockClosesNoBlock() {
+        String icu = """
+                <app-x />
+                @if (show) {
+                  <span i18n>
+                    {count, plural, =0 {none} other {many}
+                    }
+                  </span>
+                  <p>{{ total(
+                    a) }}</p>
+                  <p>after</p>
+                }
+                <p>out</p>
+                """;
+        assertEquals(icu, HtmlFormatter.format(icu, "  "), "an indented page is left as it is (idempotent)");
+    }
 }
