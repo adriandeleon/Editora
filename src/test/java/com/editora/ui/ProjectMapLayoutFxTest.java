@@ -168,7 +168,7 @@ class ProjectMapLayoutFxTest {
             FxTestSupport.invoke(surface, "fitContent");
         });
         FxTestSupport.runOnFx(() -> {
-            assertEquals(0.4, zoom(surface), 0.0001, "twelve columns cannot fit: the floor is hit");
+            assertEquals(0.15, zoom(surface), 0.0001, "twelve columns cannot fit: the floor is hit");
             assertInView(surface, boxFor(surface, deepest), "the selected row");
             Object column = columnBoxForParent(surface, deepest.getParent());
             assertTrue(origin(column, "y") >= 0, "its column header is in view");
@@ -753,9 +753,12 @@ class ProjectMapLayoutFxTest {
                             tr("project.map.navigation.focusNewColumn"),
                             tr("project.map.navigation.singleClickOpens"),
                             tr("project.map.layout.compactChains"),
+                            tr("project.map.layout.compactRows"), // review 3 B15
+                            tr("project.map.layout.hideIgnored"), // review 3 A11
                             tr("project.map.filter.hideOpenNotes"),
                             tr("project.map.navigation.followActiveFile"),
                             tr("project.map.revealActiveFile"), // review 3, E9
+                            tr("project.map.overview.open"), // the Overview card (review 3 B4)
                             tr("project.map.openCards"), // the open cards' list (review 3, C10)
                             tr("project.map.print"),
                             tr("project.map.exportPdf")),
@@ -823,9 +826,9 @@ class ProjectMapLayoutFxTest {
                     }
                 }
             }
-            // The intro, four headings (pointer, cards and notes, keyboard, filters) and 44 gesture rows (the
-            // type-ahead's, review 3 B14).
-            assertEquals(1 + 4 + 44 * 2, text.size());
+            // The intro, six headings (pointer, cards and notes, keyboard, search, where am I, filters) and 54
+            // gesture rows (review 3: B14 added the type-ahead row, B19 the search and "where am I" ones).
+            assertEquals(1 + 6 + 54 * 2, text.size());
             assertTrue(text.contains(tr("project.map.help.chevron")));
             assertTrue(text.contains(tr("project.map.help.dragHeader.gesture")));
             assertTrue(text.contains(tr("project.map.help.escape")));

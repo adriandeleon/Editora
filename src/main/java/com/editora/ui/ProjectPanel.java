@@ -511,6 +511,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.mapView = new ProjectMapView(this::openFromMap, isOpen, isModified, previewContent);
         this.mapView.setShowing(false); // nothing is listed for the Map until its window first shows
         this.mapView.setShowHidden(showHidden);
+        this.mapView.setSearchSkipsIgnored(respectGitignore);
+        this.mapView.setOverviewFileSource(this::layoutOverviewFiles); // the Overview card counts the search's list
         this.mapView.setOnExpandedChanged(this::syncWatches);
         this.mapView.setContextMenuFactory(entry -> raisingEditorWindow(contextMenuFor(
                 new MapRowItem(entry.path()), entry.directory(), entry.path().equals(mapRoot))));
@@ -1146,6 +1148,25 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapSymbols = source;
     }
 
+    /**
+     * The Map search's file list of {@code root}, made on the search thread if there is none yet, for the Map's
+     * Overview card and folder tooltips (Project Map review 3 B4). Called off the FX thread; null when gone.
+     */
+    private com.editora.search.ProjectFileList.@Nullable Snapshot layoutOverviewFiles(Path root) {
+        com.editora.search.ProjectFileList.Settings settings =
+                new com.editora.search.ProjectFileList.Settings(respectGitignore, showHidden);
+        try {
+            com.editora.search.ProjectFileList list =
+                    searchExecutor.submit(() -> searchFileList(root, settings)).get();
+            return list == null ? null : list.snapshot();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.RejectedExecutionException e) {
+            return null;
+        }
+    }
+
     /** The Map search's file list as it is now (tests); null before the first search. */
     com.editora.search.@Nullable ProjectFileList mapFileListForTest() {
         return mapFiles;
@@ -1701,6 +1722,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         this.respectGitignore = respectGitignore;
+        mapView.setSearchSkipsIgnored(respectGitignore);
         if (root != null && filtering) {
             rebuildBody(); // re-run the current filter with the new exclusion
         }

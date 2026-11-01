@@ -121,7 +121,7 @@ right-to-left to left-to-right once (`ConfigMigrations.resetRightToLeftMapFlow`)
 | Options (⋯) menu → **Open cards** | List the open cards, the most recently used first; one brings its card into the middle of the map area with the keyboard in it |
 | Options (⋯) menu → **Print…** | Open the standard print preview for the complete map layout |
 | Options (⋯) menu → **PDF…** | Export the complete map layout using the configured PDF page size |
-| Click **?** | Show what the Map is for and its pointer, cards and notes, keyboard and filter models in a popover (key names in the user's language, modifiers as the platform writes them) |
+| Click **?** | Show what the Map is for and its pointer, cards and notes, keyboard, search ("where am I" included: Reveal Active File, Always select opened file, Project overview) and filter models in a popover (key names in the user's language, modifiers as the platform writes them) |
 | Click or drag in the overview | Centre the view on that point of the map, clamped to the map's bounds; a press on a card's mark brings that card into view |
 
 Preview and note cards, and what is stuck on a card, belong to `MapCards` (review 3, stage 1 of the refactor
@@ -445,26 +445,42 @@ is a place. Back and Forward have a menu of the places ("name — folder", the c
 column's folder only when the selection was inside the closed branch.
 
 The bottom-left zoom bar is icon buttons (each with a tooltip and accessible name) around the current
-percentage: zoom out, zoom in, Fit, Center selection, and Reset. Manual zoom runs from 40% to 225%.
+percentage: zoom out, zoom in, Fit, Center selection, and Reset. Manual zoom runs from 15% to 225%. Below 60%
+the columns are drawn as labelled blocks (`MapSurface.layoutBlockMode`): each row is a bar (search and filter
+matches in the accent, the selection strongest), and each column carries a label over its rows — its title, how many
+items it lists and, while a search or filter is on, how many match — that stays in sight while the block's top is
+scrolled off. Column controls are hidden on a block.
 
 - The **first view** of a project opens at 100% with the start of the first column in view (a small
   project that fits is centred instead). It steps down, never below 85%, only when that is what shows the
   column's width.
-- **Fit** (the button or Shortcut + `0`) scales and centres the whole map when that is possible at 40% or
-  more. When the floor is hit it anchors on the selected path instead: the selected row, its column
+- **Fit** (the button or Shortcut + `0`) scales and centres the whole map when that is possible at 15% or
+  more (labelled blocks below 60%). When the floor is hit it anchors on the selected path instead: the selected row, its column
   header, and as many of the columns leading to it as the view holds.
 - **Auto-fit** (changing flow, or opening a folder with Keep current zoom off) does the same with 85% as
   its floor, so the map never shrinks to an unreadable thumbnail by itself.
 - **Reset** restores 100%, clears manual column positions and locks, and returns to the first view.
 
 Reveal, Fit and the first view reserve the strip the zoom bar covers, and a revealed row is also lifted
-clear of the overview. A selection that arrives with a load — a search's first match, a reveal, a breadcrumb
-or a history step whose column had been closed — is revealed the same way, once more after the deferred
-"show the opened column" pass, so the selected row wins over the new column's start
-(`MapSurface.revealAfterLoad`). The zoom bar, the overview and the Loading / No matches notices are drawn and
-picked above every card (`viewOrder`), and only the zoom bar's buttons take clicks, not the gaps between them.
+clear of the overview. A step from row to row by key scrolls as little as it can (`MapSurface.revealSelected`). A
+reveal of a place — Reveal Active File, a search landing, a breadcrumb or history step, `revealPath` — shows the row
+about a third of the way down with as much of the path to it as the view holds: its column's title, then each folder
+above it, nearest first, taken across and down separately (a long column puts its parent row far above, while the
+columns leading to it still fit beside it), zoomed out to no less than 70% when that shows more of it; then the row
+is flashed for 0.9 s (`MapSurface.layoutRevealPlace`, review 3 B7). A selection that arrives with a load is
+revealed the same way, once more after the deferred "show the opened column" pass, so the selected row wins over
+the new column's start (`MapSurface.revealAfterLoad`). The zoom bar, the overview and the Loading / No matches
+notices are drawn and picked above every card (`viewOrder`), and only the zoom bar's buttons take clicks, not the
+gaps between them. When the pointer is on the free part of a row that the zoom bar or the overview covers, that one
+fades and lets the pointer through until it leaves the row, so the row's icon and eye can be reached; a pointer that
+comes onto them from elsewhere finds them as usual (`MapSurface.layoutOverlaysGiveWay`).
 
-The options (⋯) menu in the navigation row holds **Compact folder chains** (see the user model), the
+The options (⋯) menu in the navigation row holds **Compact rows** (default off, `isCompactRows()` /
+`setCompactRows`, review 3 B15: 26-unit rows 4 apart instead of 32 and 9, and a column shows its filter, Show hidden
+and lock only while it is hovered, holds the selection or the keyboard, or has a filter, a Show hidden of its own or a
+lock — such a card grows upward by the controls' band, into the gap before it, so its rows never move), **Hide
+ignored and generated** (default off, `isHideIgnored()` / `setHideIgnored`, see Filters), **Project overview**
+(the Overview card, see below), **Compact folder chains** (see the user model), the
 default-on **Keep current zoom** and **Focus new column** options (`isKeepZoom()` / `isFocusNewColumn()` and their
 setters on the view), and the default-on **Single-click opens files** (`isSingleClickOpens()` /
 `setSingleClickOpens`). Opening a
@@ -475,7 +491,8 @@ Either effect can be disabled independently; disabling zoom preservation restore
 The filter row holds only filters and wraps instead of truncating; the selectors show their value alone
 ("Source", "Left → Right") and carry the "Type:" / "Flow:" form as tooltip and accessible name. Breadcrumbs
 that do not fit collapse their middle into one "…" (whose tooltip lists the hidden folders) and keep the
-root and the last two crumbs. A new selection replaces only the crumbs after the part its trail shares with
+root and the last two crumbs. A crumb shows its name as written — mnemonic parsing is off, so `zz_generated.go`
+keeps its underscore (review 3 E4). A new selection replaces only the crumbs after the part its trail shares with
 the previous one, and a crumb's tooltip (its full path) is made when the pointer first rests on it. The
 toolbar's small text (chips, selectors, Clear, Hide unmatched, the breadcrumb, the column filter and Show
 hidden) is 0.85em of the UI size, and the back, forward and help buttons and the crumbs are at least 24 px.
@@ -671,14 +688,20 @@ are bitmap, so the PDF is not searchable.
 Column cards are content-sized rather than uniform. For each branch column, the map measures every
 loaded entry name at the drawing font and reserves enough width for the full label, icon, status
 marks, directory arrow, and padding. The node width is at least 164 and at most 360 pixels; a longer name
-is elided in the middle (its start and extension stay) and the tooltip has it whole. Measuring the underlying
+is cut so its siblings stay apart: what it shares with the other names of its column — its longest common start
+and end — goes first, and the part that tells it apart is kept with a few leading characters and its extension
+(`ProjectMapElision`, review 3 B10: `…tRefreshableApplicationC….java` / `…freshableConfigApplicatio….java`); only when
+that part does not fit either is the name cut in the middle. The tooltip has it whole. Measuring the underlying
 loaded entries—not only the currently filtered rows—keeps widths stable when a filter or Hidden
 checkbox is toggled. In a language whose checkbox label is long, branch columns are widened so the header
 row still holds the filter, the labelled checkbox and the lock at 100%.
 
 Along the flow, every level (a column's distance from the first column; a compacted chain is one step) has
 a band of its own: a column starts beyond its parent card and beyond the widest card of the parent's level,
-so columns at different levels cannot overlap (manual offsets are kept
+so columns at different levels cannot overlap. Every card is measured and every band set in a first pass,
+before any column is placed (`MapSurface.layoutFinalBands`, review 3 B3): the listing is breadth-first on disk, so
+a compacted chain deep on disk is listed after a shallower branch's next level, and built as the cards came its
+wider band arrived too late and its card covered theirs (manual offsets are kept
 out of the band, so dragging one column does not move other branches). Across the flow, a column is
 centred on the row that opened it while it is short and hangs from that row once it is long
 (`MAX_COLUMN_LEAD`), so its header, its first rows and its parent row can be on screen together. Columns
@@ -698,11 +721,44 @@ text editing, focus traversal, and accessibility.
 
 The overview appears only while some content is off-screen and the surface is at least 600 × 400, sits beside
 the zoom bar (it is left out when the surface is too narrow for both), and clamps its viewport rectangle to its
-frame. The frame takes the map's shape inside at most 150 × 86 with the map centred in it, and is drawn on a
+frame. The frame takes the map's shape inside at most 150 × 86, at least 90 × 40, with the map centred in it; a
+tall, narrow map is stretched along its short side, up to three times, rather than drawn as a stripe (review 3
+B8). It is drawn on a
 small canvas of its own above the cards (`MapSurface.overviewLayer`), which passes its pointer events to the
 surface. A press or drag in it centres the view on that point, clamped to the map, so it never pans into
 empty space. The open cards in sight are part of its picture and are marked in it (`MapSurface.overviewCards`, from
 `MapCards.visibleCards`); a press on a mark brings that card into view instead.
+
+### Orientation: the Overview card, module badges, folder tooltips, dimmed rows (review 3 B4, A11)
+
+`ProjectMapOrientation` works out, on one worker thread, what the listings do not say. **Dimmed rows**: each row the
+map shows is classified by `ProjectMapIgnored` — ignored by the `.gitignore` files from the root down to its folder
+(the root's only on a remote root), a `DependencyDirs` folder (`node_modules`), a vendor folder (`vendor`,
+`third_party`), or marked `linguist-generated` / `linguist-vendored` in the root's `.gitattributes` (a later line that
+unsets the attribute wins); a row inside such a folder inherits its reason. Such rows are drawn faded, as rows a
+filter fades are, whatever the "respect .gitignore" setting, and their tooltip says why. The ⋯ option **Hide
+ignored and generated** leaves them, and what is in them, out of the layout instead. The search keeps skipping
+ignored files; with "respect .gitignore" on, its "No files match" banner adds that ignored files are not searched
+(`setSearchSkipsIgnored`, from the panel).
+
+**The project's facts** (`ProjectMapOverview.analyse`, pure) come from the project's file list — the Map search's
+`ProjectFileList` when the panel gives it (`setOverviewFileSource`), else one walk of the view's own — once per root
+while the Map shows: the README and the first paragraphs of it as plain text; the build systems and their module
+folders (folders holding go.mod, pom.xml, build.gradle(.kts), settings.gradle(.kts), a Gradle file named after its
+folder, package.json, Cargo.toml or pyproject.toml; none under vendor, node_modules, testdata or fixtures); the
+language mix; each top-level folder's file count and main language; likely entry points (Go `cmd/<name>` folders,
+`main.*` sources, `*Application` classes, `__main__.py`, package.json `main`/`bin`; not in test or example folders);
+the test and docs folders; and each folder's counts. Module folders carry a package badge on their row, and a
+folder's tooltip starts with its project-relative path and says how many folders and files it holds (and how many
+files in all) and which build files make it a module.
+
+**The Overview card** (`ProjectMapOverviewCard`, a card kind of `MapCards`: placed, moved, resized, zoomed, marked in
+the overview and listed in Open cards like the others, never counted against the eight or evicted) shows those facts
+with every folder and file a press away (`revealPath`) and the README one press from the editor. It opens by itself
+on a project's first Map open when the workspace says it was not seen (`setOverviewSeen(false)`; a view nobody told
+never opens it by itself), which marks it seen and tells `setOnOverviewSeen`; ⋯ → **Project overview** opens it
+again with the facts worked out afresh. Its first line is the one-time orientation subtitle: what a column is, where
+to search, and that ? lists every key.
 
 ## Architecture and data flow
 
@@ -879,7 +935,8 @@ v13 — "MAP" meant the Map was the panel's view before v24, and means its windo
 window's bounds (`projectMapWindowBounds`, v24) and maximized state (`projectMapWindowMaximized`, v27), the
 flow, and the two navigation options; v27 also adds `projectMapSingleClickOpens`,
 `projectMapCompactChains` and `projectMapFollowActiveFile` for three ⋯ options; v28 adds `projectMapState` (above)
-and `projectMapCompactRows`, `projectMapHideIgnored` and `projectMapOverviewSeen` for the review-3 ⋯ options. The
+and `projectMapCompactRows`, `projectMapHideIgnored` and `projectMapOverviewSeen` for the review-3 ⋯ options, written
+through the view's change callbacks (`setOnCompactRowsChanged`, `setOnHideIgnoredChanged`, `setOnOverviewSeen`). The
 status/type filters are not persisted.
 
 The Map recovers from every failure it meets (an empty listing, an unmarked row, no outline, a card left
@@ -925,6 +982,11 @@ The focused coverage lives in:
   bands, header collapse, reserved areas, empty states, row painting (selection, focus ring, chevrons,
   status marks, contrast), the toolbar at tool-window widths in all six languages, breadcrumbs, the help
   popover, and accessible names;
+- `ProjectMapLayoutReview3Test` / `ProjectMapLayoutReview3FxTest` for the review 3 layout fixes: no column overlaps
+  in a Spring-like multi-branch search in every flow, the place reveal and its flash, the overlays giving way,
+  labelled blocks and Fit below 40%, compact rows and controls on demand, the Overview card, module badges and folder
+  tooltips, dimmed and hidden ignored rows, crumbs with underscores, the help's search section, and the elision,
+  ignore rules and project facts as pure functions;
 - `ProjectMapNoteCardFxTest`, `ProjectMapPreviewCardFxTest`, `ProjectMapPreviewMenuEscapeFxTest` and
   `ProjectMapStickyNotesTest` for note cards, code cards, a card menu's Escape, and sticky notes;
 - `ProjectMapWindowReviewFxTest` for the pinned root in the No Project window, the Map returning with its
