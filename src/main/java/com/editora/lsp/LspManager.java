@@ -620,11 +620,37 @@ public final class LspManager {
         Map<String, Object> xml =
                 new java.util.LinkedHashMap<>(xmlServerSettings.section(base, folderTrust.test(root), local));
         if (LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
-            xml.put("maven", Map.of("central", Map.of("skip", !mavenCentralIndex)));
+            xml.put("maven", mavenSection(mavenCentralIndex, local ? mavenRepoLocal() : null));
             // lemminx-maven says only in its log that a coordinate completion failed on its workspace (E21)
             xml.put("logs", Map.of("client", true));
         }
         return Map.copyOf(xml);
+    }
+
+    /**
+     * lemminx-maven's {@code xml.maven} object: whether it may search Maven Central, and the local repository Editora
+     * reads ({@code repo.local}, null = none sent), so the server keeps its {@code .lemminx-maven} store beside the
+     * repository Doctor shows rather than one it worked out differently (XML/pom review 4, A34). Pure.
+     */
+    static Map<String, Object> mavenSection(boolean centralIndex, @Nullable String repoLocal) {
+        Map<String, Object> maven = new java.util.LinkedHashMap<>();
+        maven.put("central", Map.of("skip", !centralIndex));
+        if (repoLocal != null && !repoLocal.isBlank()) {
+            maven.put("repo", Map.of("local", repoLocal));
+        }
+        return Map.copyOf(maven);
+    }
+
+    /** The local Maven repository as an absolute path, read from {@code settings.xml} under Editora's user.home. */
+    private static @Nullable String mavenRepoLocal() {
+        try {
+            return com.editora.maven.MavenPluginGoals.localRepository(Path.of(System.getProperty("user.home", "")))
+                    .toAbsolutePath()
+                    .normalize()
+                    .toString();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /** Root → the HTML server's settings there (Settings → LSP → HTML, a project's {@code html} object). */
@@ -1185,6 +1211,15 @@ public final class LspManager {
     public int mavenCompletionFailures(@Nullable Path file) {
         LanguageServerSession s = mavenSession(file);
         return s == null ? 0 : s.workspaceCompletionFailures();
+    }
+
+    /**
+     * When the Maven pom server serving {@code file} was launched (epoch millis), or -1 when none serves it: a pom
+     * changed on disk after it may be worth a restart, one older is what it already built (review 4, E31).
+     */
+    public long mavenStartedMillis(@Nullable Path file) {
+        LanguageServerSession s = mavenSession(file);
+        return s == null ? -1 : s.startedMillis();
     }
 
     /** Restarts {@code serverId} (dispose + drop its cached sessions) so the next {@code openDocument}
@@ -1974,6 +2009,7 @@ public final class LspManager {
         client.onApplyEdit = (edit, respond) -> onServerApplyEdit(session, edit, respond); // server-side fix (#670)
         client.ui = fxClientUi; // showMessageRequest and Metals' prompts, answered on the FX thread
         client.focused = () -> windowFocused.getAsBoolean();
+        client.onSourceInvalidated = roots -> Platform.runLater(() -> onSourceInvalidated.accept(roots));
     }
 
     /**
@@ -2094,7 +2130,6 @@ public final class LspManager {
         configureClient(session.primaryClient(), key, session);
         session.setJavaOnTypeFormatting(javaOnTypeFormatting);
         session.setJavaDownloadSources(javaDownloadSources);
-        session.setOnSourceInvalidated(roots -> Platform.runLater(() -> onSourceInvalidated.accept(roots)));
         session.setJavaCleanups(javaCleanups);
         session.setJavaFilteredTypes(javaFilteredTypes);
         session.setBashIde(bashIdeFor(root));
@@ -2232,6 +2267,9 @@ public final class LspManager {
                 // A Java lemminx (the pom server's, or XML's fallback) keeps lemminx-maven's artifact store under
                 // user.home: Editora's, not the passwd home the JVM would read (review D14).
                 startCommand = JvmServerCommand.withUserHome(startCommand, System.getProperty("user.home", ""));
+                // A bundle installed before review 4 still carries Eclipse's jar signatures, which kept lemminx's
+                // RELAX NG plugin from loading (A31): unsigned once, here, before a server runs on it.
+                com.editora.install.JarSignatures.repairBundleOf(startCommand);
             }
             if (XmlServerSettings.SERVER_ID.equals(serverId)
                     && LemminxMavenGuard.loadsLemminxMaven(startCommand, !remote)) {
@@ -3218,9 +3256,33 @@ public final class LspManager {
             if (!events.isEmpty()) {
                 s.didChangeWatchedFiles(events);
                 bashReanalysis.changed(s, changes); // the Bash server ignores the notification (Bash review B7)
+                openGrammarsChanged(s, changes);
             }
         }
         changes.stream().map(WatchedFile::file).filter(f -> f != null).forEach(this::projectStyleChanged);
+    }
+
+    /**
+     * lemminx revalidates the documents that use a grammar when that grammar is saved, and treats a watched-file
+     * change as a save only for a file the client does not hold open (XML/pom review 4, B31): a schema open in a tab
+     * and rewritten on disk by a pull or a build left every document using it with its old errors. Such a change is
+     * told as the save it is on disk; the tab's own text is the editor's to reload.
+     */
+    private static void openGrammarsChanged(LanguageServerSession s, List<WatchedFile> changes) {
+        if (!XmlServerSettings.isLemminx(s.serverId())) {
+            return;
+        }
+        for (WatchedFile c : openGrammarChanges(changes, s::isOpen)) {
+            s.didSave(uri(c.file()), null);
+        }
+    }
+
+    /** Pure: the changes to a grammar file ({@link #xmlGrammarFile}) still on disk whose document {@code open} holds. */
+    static List<WatchedFile> openGrammarChanges(List<WatchedFile> changes, java.util.function.Predicate<String> open) {
+        return changes.stream()
+                .filter(c -> c != null && c.file() != null && c.kind() != WatchedKind.DELETED)
+                .filter(c -> xmlGrammarFile(c.file()) && open.test(uri(c.file())))
+                .toList();
     }
 
     /**
@@ -4955,12 +5017,16 @@ public final class LspManager {
             int line,
             int character,
             Consumer<List<Target>> cb) {
-        // XML: the grammar declaration instead of the element's own other tag, else the linked schema (B5, B10).
-        boolean xml = s != null && XmlServer.isXml(s.serverId());
-        LocationRequest request = xml ? XmlServer::definition : LanguageServerSession::definition;
+        // XML: the grammar declaration instead of the element's own other tag, else the linked schema (B5, B10);
+        // a pom on the Maven server is lemminx too, its own answer still first (XML/pom review 4, B34).
+        boolean xml = s != null && XmlServerSettings.isLemminx(s.serverId());
+        var missingLink = new java.util.concurrent.atomic.AtomicReference<@Nullable String>();
+        LocationRequest request = xml
+                ? (session, uri, pos) -> XmlServer.definition(session, uri, pos, missingLink::set)
+                : LanguageServerSession::definition;
         lastMissingInclude = null;
         Consumer<List<Target>> answer = xml && s != null && documentUri != null
-                ? notingMissingInclude(s, documentUri, new Position(line, character), cb)
+                ? notingMissingInclude(s, documentUri, new Position(line, character), missingLink, cb)
                 : cb;
         requestLocations(s, documentUri, line, character, request, answer, null);
     }
@@ -5010,14 +5076,23 @@ public final class LspManager {
 
     /** {@code cb}, after noting when nothing was found on an include href that names no file (C26). */
     private Consumer<List<Target>> notingMissingInclude(
-            LanguageServerSession s, String documentUri, Position pos, Consumer<List<Target>> cb) {
+            LanguageServerSession s,
+            String documentUri,
+            Position pos,
+            java.util.concurrent.atomic.AtomicReference<@Nullable String> missingLink,
+            Consumer<List<Target>> cb) {
         return targets -> {
-            lastMissingInclude = targets.isEmpty() ? XmlServer.missingInclude(s, documentUri, pos) : null;
+            String link = missingLink.get();
+            lastMissingInclude =
+                    !targets.isEmpty() ? null : link != null ? link : XmlServer.missingInclude(s, documentUri, pos);
             cb.accept(targets);
         };
     }
 
-    /** The file the last Go to Definition's include href named when it does not exist, or null (C26). */
+    /**
+     * The file the last Go to Definition's include href (C26) or document link (XML/pom review 4, B33) named when it
+     * does not exist, or null.
+     */
     private volatile @Nullable String lastMissingInclude;
 
     public @Nullable String lastMissingInclude() {

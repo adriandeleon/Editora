@@ -1951,7 +1951,8 @@ class LspCoordinatorCommandsFxTest {
     // --- a failed import says why (re-review CN2, CN9) -----------------------------------------------
 
     private void awaitError(String expected) throws Exception {
-        for (int i = 0; i < 200 && !expected.equals(fx.host.lastError()); i++) {
+        // a failure without a project diagnostic is said after up to six seconds: one naming its folder may come
+        for (int i = 0; i < 900 && !expected.equals(fx.host.lastError()); i++) {
             Thread.sleep(10);
             fx.settle();
         }

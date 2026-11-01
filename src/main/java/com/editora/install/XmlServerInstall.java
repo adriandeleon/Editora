@@ -123,13 +123,17 @@ public final class XmlServerInstall {
     }
 
     /**
-     * Whether {@code configured} is not the user's own choice of server: blank, the bare default, or a path into
-     * Editora's own lemminx folder (what an earlier install wrote into the setting). Such a command is replaced by
-     * whatever Install puts there, so the install banner may offer Install for it.
+     * Whether {@code configured} is not the user's own choice of server: blank, the bare default, a path into
+     * Editora's own lemminx folder (what an earlier install wrote into the setting), or the Java lemminx out of
+     * Editora's pom server bundle that a fallback install stored before review 3 ({@link #isOwnJavaLemminx}, review 4
+     * A33). Such a command is replaced by whatever Install puts there, so the install banner may offer Install for it.
      */
     public static boolean editorasOwn(@Nullable String configured, @Nullable Path configDir) {
         String raw = configured == null ? "" : configured.strip();
-        return raw.isEmpty() || raw.equals(DEFAULT_COMMAND) || inOwnFolder(raw, configDir);
+        return raw.isEmpty()
+                || raw.equals(DEFAULT_COMMAND)
+                || inOwnFolder(raw, configDir)
+                || (configDir != null && isOwnJavaLemminx(raw, configDir));
     }
 
     /**
@@ -156,7 +160,9 @@ public final class XmlServerInstall {
      * The jars plain lemminx needs, by artifact name, taken from the pom server's bundle when the native build cannot
      * run here: lemminx core, lsp4j and its JSON-RPC, gson, Xerces, the XML catalog resolver, Jing (RELAX NG) with
      * isorelax, remark and jsoup (documentation as Markdown), guava with failureaccess, and commons-lang3. Checked
-     * against the real server: XSD, DTD and RELAX NG validation, completion and formatting work on exactly these.
+     * against the real server: XSD, DTD and RELAX NG validation, completion and formatting work on exactly these —
+     * RELAX NG completion only once the bundle's jars are unsigned ({@link JarSignatures}): Eclipse signs the lemminx
+     * jar, which adds classes to Jing's package, and the JVM then refused lemminx's RELAX NG plugin (review 4, A31).
      * Never lemminx-maven, Maven, Plexus, Sisu or the resolver: lemminx-maven joins any lemminx whose classpath holds
      * it (it is a ServiceLoader extension) and then resolves a pom and runs its plugins, trusted or not.
      */
@@ -236,7 +242,11 @@ public final class XmlServerInstall {
         if (command == null || command.isBlank()) {
             return false;
         }
-        List<String> argv = com.editora.run.ProgramArgs.commandLine(command);
+        return isOwnJavaLemminx(com.editora.run.ProgramArgs.commandLine(command), configDir);
+    }
+
+    /** {@link #isOwnJavaLemminx(String, Path)} for a command already split into {@code argv}. */
+    static boolean isOwnJavaLemminx(List<String> argv, @Nullable Path configDir) {
         if (argv.size() < 4 || !InstallCatalog.LEMMINX_MAIN_CLASS.equals(argv.get(argv.size() - 1))) {
             return false;
         }
@@ -269,6 +279,41 @@ public final class XmlServerInstall {
         } catch (InvalidPathException e) {
             return false;
         }
+    }
+
+    /**
+     * Whether XML, configured as {@code configured}, runs the Java lemminx out of the pom server's bundle under
+     * {@code configDir} — the fallback where the native build cannot run — so replacing that bundle must stop XML too
+     * (XML/pom review 4, A35). File lookups only.
+     */
+    public static boolean runsOnMavenBundle(@Nullable String configured, @Nullable Path configDir) {
+        return configDir != null && isOwnJavaLemminx(effectiveCommand(configured, configDir), configDir);
+    }
+
+    /**
+     * How Doctor and Settings name XML's Java fallback, the lemminx release in the pom server's bundle that {@code
+     * argv} runs ({@code org.eclipse.lemminx-0.30.1.jar} gives {@code 0.30.1}), or null when {@code argv} is not that
+     * fallback (review 4, A32). Pure but for path normalisation.
+     */
+    public static @Nullable String javaFallbackVersion(List<String> argv, @Nullable Path configDir) {
+        if (argv == null || !isOwnJavaLemminx(argv, configDir)) {
+            return null;
+        }
+        for (String token : argv) {
+            for (String entry : token.split(java.util.regex.Pattern.quote(java.io.File.pathSeparator))) {
+                String name;
+                try {
+                    Path file = Path.of(entry.strip()).getFileName();
+                    name = file == null ? "" : file.toString();
+                } catch (InvalidPathException e) {
+                    continue;
+                }
+                if (isJarOf(name, "org.eclipse.lemminx")) {
+                    return name.substring("org.eclipse.lemminx-".length(), name.length() - ".jar".length());
+                }
+            }
+        }
+        return null;
     }
 
     private static boolean inBundle(Path folder, @Nullable Path bundle) {

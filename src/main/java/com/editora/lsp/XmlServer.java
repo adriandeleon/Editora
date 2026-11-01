@@ -120,6 +120,36 @@ public final class XmlServer {
                 || (title != null && title.endsWith(" and bind with DOCTYPE"));
     }
 
+    /**
+     * Whether a generate fix writes an XSD (lemminx's {@code GenerateXSINoNamespaceSchemaCodeActionResolver} or
+     * {@code GenerateXMLModelWithXSDCodeActionResolver}, or its title when resolved in place): lemminx's XSD generator
+     * knows no namespaces, so for a namespaced root its schema fails the document at once (XML/pom review 4, C33).
+     */
+    public static boolean generatesXsd(@Nullable Object raw) {
+        if (!(raw instanceof org.eclipse.lsp4j.CodeAction action)) {
+            return false;
+        }
+        String data = String.valueOf(action.getData());
+        String title = action.getTitle();
+        return data.contains("GenerateXSINoNamespaceSchemaCodeActionResolver")
+                || data.contains("GenerateXMLModelWithXSDCodeActionResolver")
+                || (title != null && title.matches("(?s)Generate '.*\\.xsd' and bind with .*"));
+    }
+
+    /**
+     * Whether the root element whose name runs from {@code nameStart} to {@code nameEnd} is in a namespace: a prefixed
+     * name, or a non-empty default namespace declared on it (the root has no ancestor to inherit one from).
+     */
+    public static boolean rootInNamespace(String text, int nameStart, int nameEnd) {
+        if (text.substring(nameStart, nameEnd).indexOf(':') > 0) {
+            return true;
+        }
+        int lt = nameStart - 1;
+        int end = tagEnd(text, lt);
+        String ns = declaredNamespace(text, lt, end < 0 ? text.length() : end);
+        return ns != null && !ns.isBlank();
+    }
+
     /** Whether {@code serverId} is the plain XML server. */
     public static boolean isXml(@Nullable String serverId) {
         return SERVER_ID.equals(serverId);
@@ -331,40 +361,112 @@ public final class XmlServer {
     }
 
     /**
-     * Go to Definition on the XML server (XML review B5, B10): lemminx's {@code definition}; when that finds nothing
-     * or only the element's own other tag, the grammar declaration ({@code typeDefinition}) instead; and when that
-     * finds nothing either, the file a document link at the position names — the schema of a {@code schemaLocation},
-     * the DTD of a DOCTYPE, an {@code xml-model} href. Last, on the {@code href} of an {@code xsl:include} or
-     * {@code xsl:import}, the stylesheet it names: lemminx has no link for those (XML review 2 B3). A link to a web
-     * page is not followed (there is no file to open); the definition's own answer then stands.
+     * Go to Definition on a lemminx server, the plain XML one or the Maven one for a pom (XML review B5, B10; XML/pom
+     * review 4, B34): lemminx's {@code definition}; when that finds nothing or only the element's own other tag, the
+     * grammar declaration ({@code typeDefinition}) instead; and when that finds nothing either, the file a document
+     * link at the position names — the schema of a {@code schemaLocation}, the DTD of a DOCTYPE, an {@code xml-model}
+     * href. Last, on the {@code href} of an {@code xsl:include} or {@code xsl:import}, the stylesheet it names:
+     * lemminx has no link for those (XML review 2 B3). A link to a web page is not followed (there is no file to
+     * open); the definition's own answer then stands.
+     *
+     * <p>Inside a quoted value the link comes before the declaration (XML/pom review 4, B32): in an XSD every
+     * attribute is declared in the meta-schema, so {@code typeDefinition} on {@code schemaLocation="other.xsd"}
+     * answered with lemminx's cached {@code XMLSchema.xsd} and the link was never asked. A link to a local file that
+     * is not there ends the search: its name goes to {@code missing}, for "… does not exist" (B33).
      */
     static CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
-            LanguageServerSession s, String key, Position pos) {
+            LanguageServerSession s, String key, Position pos, java.util.function.Consumer<String> missing) {
         return s.definition(key, pos).thenCompose(found -> {
             String text = s.documentSnapshots().get(key);
             if (!isEmpty(found) && !onlyPairedTag(text, pos, sameDocumentRanges(found, s.uris(), key))) {
                 return CompletableFuture.completedFuture(found);
             }
-            return s.typeDefinition(key, pos)
-                    .handle((types, error) -> error == null ? types : null)
-                    .thenCompose(types -> {
-                        if (!isEmpty(types)) {
-                            return CompletableFuture.completedFuture(types);
-                        }
-                        return linkLocation(s, key, pos).thenApply(link -> {
-                            Location to = link != null ? link : includeLocation(s, key, pos);
-                            return to == null
-                                    ? found
-                                    : Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(
-                                            List.of(to));
+            boolean inValue = text != null && inQuotedValue(text, offset(text, pos));
+            CompletableFuture<LinkAt> firstLink =
+                    inValue ? linkLocation(s, key, pos) : CompletableFuture.completedFuture(LinkAt.NONE);
+            return firstLink.thenCompose(early -> {
+                if (early.present()) {
+                    return CompletableFuture.completedFuture(answer(found, early, missing));
+                }
+                return s.typeDefinition(key, pos)
+                        .handle((types, error) -> error == null ? types : null)
+                        .thenCompose(types -> {
+                            if (!isEmpty(types)) {
+                                return CompletableFuture.completedFuture(types);
+                            }
+                            CompletableFuture<LinkAt> late = inValue
+                                    ? CompletableFuture.completedFuture(LinkAt.NONE) // asked already
+                                    : linkLocation(s, key, pos);
+                            return late.thenApply(link -> link.present()
+                                    ? answer(found, link, missing)
+                                    : orInclude(found, includeLocation(s, key, pos)));
                         });
-                    });
+            });
         });
     }
 
-    /** The document link at {@code pos} as a location at the start of its file (resolved when it must be), or null. */
-    private static CompletableFuture<@Nullable Location> linkLocation(
-            LanguageServerSession s, String key, Position pos) {
+    /** What a document link at the position gives: nothing, a file to open, or the name of one that is missing. */
+    record LinkAt(@Nullable Location location, @Nullable String missing) {
+        static final LinkAt NONE = new LinkAt(null, null);
+
+        boolean present() {
+            return location != null || missing != null;
+        }
+    }
+
+    private static Either<List<? extends Location>, List<? extends LocationLink>> answer(
+            Either<List<? extends Location>, List<? extends LocationLink>> found,
+            LinkAt link,
+            java.util.function.Consumer<String> missing) {
+        if (link.location() == null) {
+            if (link.missing() != null) {
+                missing.accept(link.missing());
+            }
+            return found;
+        }
+        return Either.forLeft(List.of(link.location()));
+    }
+
+    private static Either<List<? extends Location>, List<? extends LocationLink>> orInclude(
+            Either<List<? extends Location>, List<? extends LocationLink>> found, @Nullable Location include) {
+        return include == null ? found : Either.forLeft(List.of(include));
+    }
+
+    /**
+     * Whether {@code offset} is inside a quoted value of the markup it is in — an attribute, a processing
+     * instruction's pseudo-attribute ({@code <?xml-model href="…"?>}), a DOCTYPE's system id — where a document link
+     * can be. Text content and names are not.
+     */
+    static boolean inQuotedValue(String text, int offset) {
+        if (offset <= 0 || offset > text.length()) {
+            return false;
+        }
+        int lt = text.lastIndexOf('<', offset - 1);
+        if (lt < 0) {
+            return false;
+        }
+        char quote = 0;
+        for (int i = lt + 1; i < offset; i++) {
+            char c = text.charAt(i);
+            if (quote != 0) {
+                if (c == quote) {
+                    quote = 0;
+                }
+            } else if (c == '"' || c == '\'') {
+                quote = c;
+            } else if (c == '>') {
+                return false; // the markup ended before the offset: text content
+            }
+        }
+        return quote != 0;
+    }
+
+    /**
+     * The document link at {@code pos} (resolved when it must be): a location at the start of its file, the name of
+     * a local file it names that does not exist (XML/pom review 4, B33), or {@link LinkAt#NONE} when there is no
+     * link or it names no file (a web page, another scheme).
+     */
+    private static CompletableFuture<LinkAt> linkLocation(LanguageServerSession s, String key, Position pos) {
         return s.documentLinks(key)
                 .thenCompose(links -> {
                     DocumentLink link = linkAt(links, pos);
@@ -375,14 +477,21 @@ public final class XmlServer {
                             ? CompletableFuture.<@Nullable DocumentLink>completedFuture(link)
                             : s.resolveDocumentLink(link);
                 })
-                .<@Nullable Location>thenApply(link -> {
-                    String target = link == null ? null : link.getTarget();
-                    if (target == null || s.uris().toPath(target) == null) {
-                        return null; // a web page or another scheme: nothing to open as a file
-                    }
-                    return new Location(target, new Range(new Position(0, 0), new Position(0, 0)));
-                })
-                .exceptionally(t -> null);
+                .thenApply(link -> linkTarget(link == null ? null : link.getTarget(), s.uris()))
+                .exceptionally(t -> LinkAt.NONE);
+    }
+
+    /** What a link's {@code target} gives Go to Definition (see {@link #linkLocation}). */
+    static LinkAt linkTarget(@Nullable String target, WireUris uris) {
+        Path file = target == null ? null : toPath(uris, target);
+        if (target == null || file == null) {
+            return LinkAt.NONE; // a web page or another scheme: nothing to open as a file
+        }
+        if (isLocal(file) && !java.nio.file.Files.isRegularFile(file)) {
+            Path name = file.getFileName();
+            return name == null || java.nio.file.Files.exists(file) ? LinkAt.NONE : new LinkAt(null, name.toString());
+        }
+        return new LinkAt(new Location(target, new Range(new Position(0, 0), new Position(0, 0))), null);
     }
 
     /** An {@code href} attribute's value, quoted either way, with its value group. */
@@ -401,7 +510,7 @@ public final class XmlServer {
             return null;
         }
         int lt = text.lastIndexOf('<', Math.max(0, offset - 1));
-        int gt = lt < 0 ? -1 : text.indexOf('>', lt);
+        int gt = lt < 0 ? -1 : tagEnd(text, lt); // a '>' in a quoted value does not end it (XML/pom review 4, B35)
         if (lt < 0 || (gt >= 0 && gt < offset)) {
             return null;
         }
@@ -510,13 +619,17 @@ public final class XmlServer {
     }
 
     /**
-     * The URI an include {@code href} names, resolved against the wire URI {@code documentUri}, without its fragment:
+     * The URI an include {@code href} names, resolved against the wire URI {@code documentUri}, without its fragment
+     * or query, a {@code file://localhost/} URI as {@code file:///}:
      * a URI reference as such ({@code sub%20dir/lib.xsl} is {@code sub dir/lib.xsl}, XML/pom review 3, B22), else the
      * text as a path ({@code sub dir/lib.xsl}); a {@code file:} URI as it is. Null for another scheme (a web
      * address, a drive letter) or a reference that cannot be parsed.
      */
     static @Nullable String includeUri(String documentUri, String href) {
         String h = href.replace('\\', '/');
+        if (h.regionMatches(true, 0, "file://localhost/", 0, "file://localhost/".length())) {
+            h = "file:///" + h.substring("file://localhost/".length()); // RFC 8089's local host (B35)
+        }
         java.net.URI ref;
         try {
             ref = new java.net.URI(h);
@@ -535,7 +648,9 @@ public final class XmlServer {
             String target =
                     (scheme != null ? ref : java.net.URI.create(documentUri).resolve(ref)).toString();
             int hash = target.indexOf('#');
-            return hash < 0 ? target : target.substring(0, hash);
+            String file = hash < 0 ? target : target.substring(0, hash);
+            int query = file.indexOf('?'); // lib.xsl?v=1 names lib.xsl (B35); a '?' in a name is encoded
+            return query < 0 ? file : file.substring(0, query);
         } catch (IllegalArgumentException e) {
             return null;
         }

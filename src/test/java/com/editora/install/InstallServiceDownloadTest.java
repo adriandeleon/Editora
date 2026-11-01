@@ -90,7 +90,10 @@ class InstallServiceDownloadTest {
         return Path.of(System.getProperty("java.home"), "bin", "java").toString();
     }
 
-    /** The install's files, without the version receipt every pinned install leaves (InstallReceiptTest). */
+    /**
+     * The install's files, without the version receipt every pinned install leaves (InstallReceiptTest) and the
+     * jar-signature marker ({@link JarSignatures#MARKER}).
+     */
     private static List<String> names(Path dir) throws IOException {
         if (!Files.exists(dir)) {
             return List.of();
@@ -98,6 +101,7 @@ class InstallServiceDownloadTest {
         try (Stream<Path> walk = Files.walk(dir)) {
             return walk.filter(p -> !p.equals(dir))
                     .filter(p -> !p.getFileName().toString().equals(InstallReceipt.FILE_NAME))
+                    .filter(p -> !p.getFileName().toString().equals(JarSignatures.MARKER))
                     .map(p -> dir.relativize(p).toString().replace('\\', '/'))
                     .sorted()
                     .toList();
