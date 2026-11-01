@@ -30,6 +30,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Check a download with
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
 
+### Fixed
+
+- **XML and pom.xml servers: install and status (XML/pom review 4).**
+  - RELAX NG completion works on the Java lemminx (the pom.xml server, and XML's fallback on older Linux): Eclipse's
+    signature on the lemminx jar kept its RELAX NG plugin from loading. Install now removes the bundle's jar
+    signatures, and a bundle installed earlier is fixed the next time a server starts from it.
+  - An XML command Editora refuses to start (it loads lemminx-maven) shows as a problem in Settings → LSP and as an
+    error in Doctor, not "found" and "OK". XML's Java fallback is named "Java lemminx <version> (fallback)".
+  - The XML command an earlier fallback install stored is treated as Editora's own: Doctor offers Install, and a
+    native build is installed when it can run.
+  - The pom.xml server is told the local Maven repository Editora reads, so Doctor's lemminx-maven store row is
+    right for a `${env.…}` or relative `<localRepository>`; `${env.…}` and system properties are expanded.
+  - Updating the pom.xml server also stops XML while XML runs on its Java lemminx.
+
 ## [0.26.0] - 2026-10-29
 
 ### Added

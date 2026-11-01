@@ -176,6 +176,54 @@ class XmlServerInstallTest {
         assertNull(XmlServerInstall.javaLemminxCommand(maven), "a jar short: no command that fails on RELAX NG");
     }
 
+    /**
+     * The whole-bundle command a fallback install stored before review 3 is Editora's, not the user's: Doctor offers
+     * Install, a crash gets the install tip, and a later native build is offered (review 4, A33).
+     */
+    @Test
+    void theStoredWholeBundleCommandIsEditorasOwnNotTheUsers() throws IOException {
+        Path maven = Files.createDirectories(config.resolve(InstallCatalog.LEMMINX_MAVEN_DIR));
+        fillBundle(maven);
+        String stored = InstallCatalog.jvmClasspathCommand(maven, InstallCatalog.LEMMINX_MAIN_CLASS);
+
+        assertTrue(XmlServerInstall.editorasOwn(stored, config));
+        assertTrue(XmlServerInstall.editorasOwn(XmlServerInstall.javaLemminxCommand(maven), config));
+        assertFalse(
+                XmlServerInstall.editorasOwn("java -cp \"/opt/copy/*\" " + InstallCatalog.LEMMINX_MAIN_CLASS, config),
+                "a copy of the bundle elsewhere is the user's own");
+        assertFalse(XmlServerInstall.editorasOwn(stored, null), "no config dir: nothing to compare with");
+    }
+
+    /**
+     * Doctor and Settings name XML's Java fallback by the bundle's lemminx release, and an update of the bundle stops
+     * XML while it runs on that fallback (review 4, A32, A35).
+     */
+    @Test
+    void theJavaFallbackIsNamedByItsLemminxReleaseAndRunsOnTheBundle() throws IOException {
+        Path maven = Files.createDirectories(config.resolve(InstallCatalog.LEMMINX_MAVEN_DIR));
+        fillBundle(maven);
+        java.util.List<String> argv =
+                com.editora.run.ProgramArgs.commandLine(XmlServerInstall.javaLemminxCommand(maven));
+
+        assertEquals("2.0.1", XmlServerInstall.javaFallbackVersion(argv, config));
+        java.util.List<String> onJdk = new java.util.ArrayList<>(argv);
+        onJdk.set(0, "/opt/jdk/bin/java"); // the Maven JDK in place of a bare java
+        assertEquals("2.0.1", XmlServerInstall.javaFallbackVersion(onJdk, config));
+        assertNull(XmlServerInstall.javaFallbackVersion(java.util.List.of("/usr/bin/lemminx"), config));
+        assertNull(XmlServerInstall.javaFallbackVersion(
+                java.util.List.of(
+                        "java", "-cp", "/opt/copy/org.eclipse.lemminx-1.0.jar", InstallCatalog.LEMMINX_MAIN_CLASS),
+                config));
+
+        assertFalse(XmlServerInstall.runsOnMavenBundle("", config), "no fallback recorded: XML runs no bundle");
+        XmlServerInstall.recordJavaFallback(XmlServerInstall.folder(config), "GLIBC_2.34 not found");
+        assertTrue(XmlServerInstall.runsOnMavenBundle("", config));
+        assertTrue(XmlServerInstall.runsOnMavenBundle(
+                InstallCatalog.jvmClasspathCommand(maven, InstallCatalog.LEMMINX_MAIN_CLASS), config));
+        assertFalse(XmlServerInstall.runsOnMavenBundle("/usr/bin/lemminx", config), "the user's own server");
+        assertFalse(XmlServerInstall.runsOnMavenBundle("", null));
+    }
+
     @Test
     void aJarIsMatchedByItsArtifactNameAndAVersion() {
         assertTrue(XmlServerInstall.isJarOf("org.eclipse.lsp4j-0.23.1.jar", "org.eclipse.lsp4j"));

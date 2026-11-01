@@ -108,6 +108,19 @@ class LspManagerTest {
         assertNull(LspManager.semanticTokensProvider(noLegend)); // can't decode without a legend
     }
 
+    /**
+     * The pom server is told the local repository Editora reads, so its {@code .lemminx-maven} store is the one Doctor
+     * shows even for a {@code ${env.…}} or relative {@code <localRepository>} (review 4, A34).
+     */
+    @Test
+    void thePomServersMavenObjectCarriesTheLocalRepository() {
+        assertEquals(
+                Map.of("central", Map.of("skip", true), "repo", Map.of("local", "/data/m2/repository")),
+                LspManager.mavenSection(false, "/data/m2/repository"));
+        assertEquals(Map.of("central", Map.of("skip", false)), LspManager.mavenSection(true, null));
+        assertEquals(Map.of("central", Map.of("skip", true)), LspManager.mavenSection(false, " "));
+    }
+
     @SuppressWarnings("unchecked")
     @Test
     void initOptionsFor() {

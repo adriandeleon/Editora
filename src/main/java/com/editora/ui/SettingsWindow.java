@@ -7982,6 +7982,12 @@ public class SettingsWindow {
                                     tr("settings.lsp.pinUnknown", name, unknown));
                             return;
                         }
+                        if (found && xmlRefused(srv.id(), argv)) { // not started at all: not "found" (review 4, A32)
+                            status.showProblem(
+                                    tr("settings.lsp.xmlLoadsMaven", lspToolName(srv.id(), argv)),
+                                    lspCheck.isSelected());
+                            return;
+                        }
                         String crash = found && projectLsp != null ? projectLsp.serverCrash(srv.id()) : null;
                         if (crash != null) { // found, but it exits before it is ready: not "Installed" (XML A4)
                             String name = lspToolName(srv.id(), argv);
@@ -7991,6 +7997,12 @@ public class SettingsWindow {
                         String where = found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "";
                         where = com.editora.install.PinnedVersions.withVersion(
                                 srv.id(), argv, config.getConfigDir(), where);
+                        String fallback = found && "xml".equals(srv.id())
+                                ? com.editora.install.XmlServerInstall.javaFallbackVersion(argv, config.getConfigDir())
+                                : null;
+                        if (fallback != null) { // the pom bundle's Java lemminx, not the pinned native build (A32)
+                            where = tr("lsp.xml.javaFallback", fallback) + " — " + where;
+                        }
                         status.show(found, where, lspCheck.isSelected());
                     });
         }
@@ -8028,6 +8040,19 @@ public class SettingsWindow {
         return editoras && com.editora.install.PinnedVersions.installedFreshness(pin, configDir) == freshness
                 ? pin.label()
                 : null;
+    }
+
+    /**
+     * Whether Editora will not start the XML command {@code argv} — it loads lemminx-maven — or this window's project
+     * command was refused for that (review 4, A32). File lookups only.
+     */
+    private boolean xmlRefused(String serverId, List<String> argv) {
+        if (!"xml".equals(serverId)) {
+            return false;
+        }
+        LspCoordinator.ServerTrouble trouble = projectLsp == null ? null : projectLsp.serverTrouble(serverId);
+        return (trouble != null && trouble.refused())
+                || com.editora.lsp.LemminxMavenGuard.loadsLemminxMaven(argv, true);
     }
 
     /** Whether the Maven server's {@code java -cp "<dir>/*"} folder exists but lacks required jars. Pure (file lookups). */

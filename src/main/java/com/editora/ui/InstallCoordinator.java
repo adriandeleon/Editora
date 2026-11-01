@@ -559,11 +559,28 @@ final class InstallCoordinator {
      * them again.
      */
     private List<String> runningServersOf(List<Step> steps) {
+        String xmlCommand = host.settings() == null ? "" : host.settings().getXmlLspCommand();
         return steps.stream()
-                .flatMap(s -> InstallCatalog.serversOfStep(s.id()).stream())
+                .flatMap(s -> serversReplacedBy(s.id(), xmlCommand, ops.configDir()).stream())
                 .filter(ops::lspAvailable)
                 .distinct()
                 .toList();
+    }
+
+    /**
+     * The servers that run out of what install step {@code stepId} replaces: those it installs ({@link
+     * InstallCatalog#serversOfStep}), and XML as well for the pom server's bundle when XML runs its Java lemminx
+     * (the fallback where the native build cannot run, configured as {@code xmlCommand}), which kept running the old
+     * bundle's deleted jars, or started from a half-swapped folder (XML/pom review 4, A35). File lookups only.
+     */
+    static List<String> serversReplacedBy(String stepId, @Nullable String xmlCommand, @Nullable Path configDir) {
+        List<String> servers = new java.util.ArrayList<>(InstallCatalog.serversOfStep(stepId));
+        if (InstallCatalog.LEMMINX_MAVEN_STEP.equals(stepId)
+                && !servers.contains("xml")
+                && XmlServerInstall.runsOnMavenBundle(xmlCommand, configDir)) {
+            servers.add("xml");
+        }
+        return List.copyOf(servers);
     }
 
     /**
