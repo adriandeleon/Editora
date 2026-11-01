@@ -70,6 +70,14 @@ public final class CheckRelease {
             "macos-arm64", List.of("dmg"),
             "windows-x64", List.of("msi", "jar"));
 
+    /**
+     * What the sign-linux job signs. Each Linux download of these formats has its detached
+     * {@code .asc} beside it, and the public key is attached as {@link #SIGNING_KEY}.
+     */
+    static final List<String> SIGNED = List.of("deb", "rpm", "AppImage", "tar.gz");
+
+    static final String SIGNING_KEY = "editora-signing-key.asc";
+
     /** Best-effort archives from the native-experimental matrix: reported, never required. */
     static final Map<String, String> OPTIONAL = ordered(
             "linux-x64", "tar.gz",
@@ -135,15 +143,23 @@ public final class CheckRelease {
         return List.of();
     }
 
-    /** Every required file name. Fat jars carry the POM version, everything else the release version. */
+    /**
+     * Every required file name. Fat jars carry the POM version, everything else the release version. A
+     * Linux download sign-linux signs is required with its {@code .asc}, and the key with them.
+     */
     static List<String> expectedAssets(String version, String jarVersion) {
         var names = new ArrayList<String>();
         EXPECTED.forEach((target, extensions) -> {
             for (String extension : extensions) {
                 String stem = extension.equals("jar") ? jarVersion : version;
-                names.add("Editora-" + stem + "-" + target + "." + extension);
+                String name = "Editora-" + stem + "-" + target + "." + extension;
+                names.add(name);
+                if (target.startsWith("linux-") && SIGNED.contains(extension)) {
+                    names.add(name + ".asc");
+                }
             }
         });
+        names.add(SIGNING_KEY);
         return names;
     }
 

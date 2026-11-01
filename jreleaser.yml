@@ -43,7 +43,9 @@ release:
 # Attach every artifact gathered from the build matrix (downloaded under ./artifacts): native installers
 # (.dmg/.msi/.deb/.rpm), the portable Linux builds (.AppImage single-file + .tar.gz extract-and-install),
 # experimental Native Image archives, and per-platform runnable fat jars. All are named
-# per target in CI, so names are unique across OS/arch.
+# per target in CI, so names are unique across OS/arch. Each Linux download has its OpenPGP signature
+# beside it (release.yml, sign-linux), and editora-signing-key.asc, the key that made them, is attached
+# too.
 files:
   globs:
     - pattern: 'artifacts/**/*.dmg'
@@ -54,3 +56,4 @@ files:
     - pattern: 'artifacts/**/*.tar.gz'
     - pattern: 'artifacts/**/Editora-*-native-experimental.zip'
     - pattern: 'artifacts/**/Editora-*.jar'
+    - pattern: 'artifacts/**/*.asc'

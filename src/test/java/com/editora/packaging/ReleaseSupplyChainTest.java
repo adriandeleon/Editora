@@ -209,6 +209,37 @@ class ReleaseSupplyChainTest {
     }
 
     @Test
+    void theLinuxPackagesAreSignedOffTheBuildRunnersBeforeTheReleaseSeesThem() throws IOException {
+        Map<String, String> jobs = jobs(read(WORKFLOWS.resolve("release.yml")));
+        String sign = jobs.get("sign-linux");
+        assertTrue(sign != null, "the release no longer signs the Linux packages");
+        assertTrue(sign.contains("needs: build"), "sign-linux signs what the build legs uploaded");
+        assertFalse(
+                jobs.get("build").contains("LINUX_GPG_KEY"),
+                "the key must never reach a build leg, which runs whatever Maven resolves");
+        assertTrue(
+                sign.contains("GITHUB_REF_TYPE\" = \"tag\"") && sign.contains("exit 1"),
+                "a tag without the signing key must fail, not publish unsigned packages");
+        assertTrue(
+                sign.contains("EDITORA_GPG_EXPECTED_KEY=packaging/linux/signing-key.asc"),
+                "a tag must be signed by the committed key and no other");
+        assertTrue(
+                sign.indexOf("sign-linux-packages.sh") < sign.indexOf("check-linux-signatures.sh"),
+                "what was signed is checked against the public key alone before it is uploaded");
+        for (String target : List.of("linux-x64", "linux-arm64")) {
+            assertTrue(
+                    sign.contains("name: Editora-${{ steps.ver.outputs.version }}-" + target + "\n")
+                            && sign.contains("overwrite: true"),
+                    "the signed " + target + " files must replace the build leg's unsigned ones");
+        }
+        String publish = jobs.get("release");
+        assertTrue(
+                publish.contains("needs: [build, sign-linux]")
+                        && publish.contains("needs.sign-linux.result == 'success'"),
+                "the release must wait for the signed files, and not run without them");
+    }
+
+    @Test
     void everyReleaseAssetGetsAProvenanceAttestationBeforeItIsPublished() throws IOException {
         Map<String, String> jobs = jobs(read(WORKFLOWS.resolve("release.yml")));
         for (var job : jobs.entrySet()) {
