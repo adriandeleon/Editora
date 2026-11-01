@@ -55,6 +55,9 @@ class LinuxAppStreamMetadataTest {
         // "Unknown License" on the app page is precisely this element being absent.
         assertEquals("MIT", text(doc, "project_license"));
         assertTrue(text(doc, "metadata_license").length() > 2, "AppStream requires the metadata's own licence");
+        // Without it GNOME Software's page for the installed app shows no version and offers no Uninstall:
+        // nothing ties the listing to the package that installed it.
+        assertEquals("editora", text(doc, "pkgname"));
     }
 
     @Test

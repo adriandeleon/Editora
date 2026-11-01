@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **GNOME Software's page for the installed Editora shows its version and can remove it.** The
+  AppStream listing did not name its package, so Software had no way to tie the two together.
+
 - **HTML templates (HTML review 2: templates).**
   - The markup check no longer flags Django, Jinja, Jekyll, Hugo, Handlebars or ERB pages saved as `.html`, nor
     header/footer partials in `templates/`, `_layouts/`, `partials/` and similar folders: their branches are not
