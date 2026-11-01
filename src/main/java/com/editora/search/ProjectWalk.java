@@ -76,16 +76,26 @@ public final class ProjectWalk {
         }
     }
 
-    /** The limits and filters of one walk. */
+    /**
+     * The limits and filters of one walk.
+     *
+     * @param includeHidden offer dot-files and enter dot-directories too ({@code .git} itself never), for a
+     *     caller that shows hidden files: the Project Map's file list with "Show hidden" on
+     */
     public record Options(
             int maxDepth,
             int maxAccepted,
             GitignoreFilter gitignore,
-            @Nullable BooleanSupplier cancelled) {
+            @Nullable BooleanSupplier cancelled,
+            boolean includeHidden) {
 
         public Options {
             gitignore = gitignore == null ? GitignoreFilter.NONE : gitignore;
             cancelled = cancelled == null ? () -> false : cancelled;
+        }
+
+        public Options(int maxDepth, int maxAccepted, GitignoreFilter gitignore, @Nullable BooleanSupplier cancelled) {
+            this(maxDepth, maxAccepted, gitignore, cancelled, false);
         }
 
         public Options(int maxDepth, int maxAccepted, GitignoreFilter gitignore) {
@@ -123,6 +133,7 @@ public final class ProjectWalk {
         filters.push(options.gitignore());
         BooleanSupplier stop = options.cancelled(); // never null once constructed: see Options
         BooleanSupplier cancelled = stop != null ? stop : () -> false;
+        boolean includeHidden = options.includeHidden();
         try {
             Files.walkFileTree(
                     real, EnumSet.noneOf(FileVisitOption.class), options.maxDepth(), new SimpleFileVisitor<>() {
@@ -143,7 +154,7 @@ public final class ProjectWalk {
                             if (dir.equals(real)) {
                                 return FileVisitResult.CONTINUE;
                             }
-                            if (hidden(dir)) {
+                            if (includeHidden ? isGitDir(dir) : hidden(dir)) {
                                 return FileVisitResult.SKIP_SUBTREE; // .git, .idea, …
                             }
                             String rel = relativize(real, dir);
@@ -166,12 +177,13 @@ public final class ProjectWalk {
                             }
                             if (attrs.isDirectory()) {
                                 // walkFileTree hands a directory to visitFile only at the depth limit.
-                                if (!hidden(file) && !filters.peek().ignored(relativize(real, file), true)) {
+                                if (!(includeHidden ? isGitDir(file) : hidden(file))
+                                        && !filters.peek().ignored(relativize(real, file), true)) {
                                     depthLimited[0] = true;
                                 }
                                 return FileVisitResult.CONTINUE;
                             }
-                            if (hidden(file)) {
+                            if (!includeHidden && hidden(file)) {
                                 return FileVisitResult.CONTINUE;
                             }
                             String rel = relativize(real, file);
@@ -252,6 +264,12 @@ public final class ProjectWalk {
             dir = next;
         }
         return true;
+    }
+
+    /** The repository's own folder: not project content even for a walk that shows hidden files. */
+    private static boolean isGitDir(Path path) {
+        Path name = path.getFileName();
+        return name != null && name.toString().equals(".git");
     }
 
     private static boolean hidden(Path path) {
