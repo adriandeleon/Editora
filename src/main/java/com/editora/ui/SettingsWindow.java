@@ -3678,7 +3678,6 @@ public class SettingsWindow {
         TextField field = new TextField();
         field.setPromptText(prompt);
         field.setPrefWidth(220);
-        field.setAccessibleText(tr("settings." + key));
         settingControls.put(key, field);
         commitOnEnterOrBlur(field, () -> get.apply(config.getSettings()), now -> {
             String why = problem == null ? null : problem.apply(now);
@@ -3695,8 +3694,20 @@ public class SettingsWindow {
             field.setText(get.apply(st));
             showProblem(field, null);
         });
-        field.textProperty().addListener((o, was, now) -> { // the whole value as its tooltip (C28)
-            if (!field.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER)) {
+        fullValueTip(field, tr("settings." + key));
+    }
+
+    /**
+     * Names {@code field} for a screen reader, unless it has a name, and makes its whole value its tooltip while it
+     * is too long to read in the field and holds no problem (XML/pom review 3, C28; review 4, C36).
+     */
+    private static void fullValueTip(TextField field, String name) {
+        if (field.getAccessibleText() == null) {
+            field.setAccessibleText(name);
+        }
+        field.textProperty().addListener((o, was, now) -> {
+            if (!(field instanceof javafx.scene.control.PasswordField) // a secret is never shown
+                    && !field.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER)) {
                 showProblem(field, null);
             }
         });
@@ -5290,6 +5301,7 @@ public class SettingsWindow {
             return; // the callers' maps hold a field for every row they build
         }
         field.setPrefWidth(PATH_FIELD_WIDTH);
+        fullValueTip(field, title); // a 111-character server command was cut off, unnamed (XML/pom review 4, C36)
         HBox path = new HBox(6, field, browseButton(title, field));
         controlRow(c, cat, title, description, master == null ? path : dependent(master, path), keywords + " path");
         controlRow(c, cat, tr("settings.git.detected"), null, status.node(), keywords + " found not found install");
