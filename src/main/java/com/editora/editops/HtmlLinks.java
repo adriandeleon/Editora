@@ -164,15 +164,18 @@ public final class HtmlLinks {
         return resolvePath(dir, root, v);
     }
 
+    /** The path of a link value: without its fragment and query, percent-escapes decoded. */
+    static String pathPart(String v) {
+        int hash = v.indexOf('#');
+        String path = hash < 0 ? v : v.substring(0, hash);
+        int query = path.indexOf('?');
+        return decode(query < 0 ? path : path.substring(0, query));
+    }
+
     private static Target resolvePath(Path dir, @Nullable Path root, String v) {
         int hash = v.indexOf('#');
         String fragment = hash < 0 ? "" : decode(v.substring(hash + 1));
-        String path = hash < 0 ? v : v.substring(0, hash);
-        int query = path.indexOf('?');
-        if (query >= 0) {
-            path = path.substring(0, query);
-        }
-        path = decode(path);
+        String path = pathPart(v);
         try {
             Path from = dir;
             if (path.startsWith("/")) {
@@ -270,10 +273,22 @@ public final class HtmlLinks {
         return found[0];
     }
 
-    /** A value built by a template ({@code {{ url }}}, {@code <%= path %>}, {@code ${base}}): nothing to resolve. */
+    /**
+     * A value built by a template ({@code {{ url }}}, {@code <%= path %>}, {@code ${base}}, Create React App's
+     * {@code %PUBLIC_URL%}): nothing to resolve.
+     */
     static boolean templated(String v) {
-        return v.contains("{{") || v.contains("{%") || v.contains("<%") || v.contains("${") || v.contains("<?");
+        return v.contains("{{")
+                || v.contains("{%")
+                || v.contains("<%")
+                || v.contains("${")
+                || v.contains("<?")
+                || BUILD_PLACEHOLDER.matcher(v).find();
     }
+
+    /** A build tool's {@code %NAME%} placeholder (HTML review 2 C102). */
+    private static final java.util.regex.Pattern BUILD_PLACEHOLDER =
+            java.util.regex.Pattern.compile("%[A-Z][A-Z0-9_]{2,}%"); // not an escape: %C3%A9
 
     /** The URI scheme of {@code v} in lower case ({@code mailto}, {@code http}), or null; a drive letter is none. */
     static @Nullable String scheme(String v) {
