@@ -107,8 +107,8 @@ public class ProjectMapState {
 
     /**
      * One open code card: what it shows — a file, or a declaration of one (the declaration's path below its file)
-     * — relative to the root; where it is in the map area's pixels; its unzoomed size; its text zoom; and whether
-     * its Structure column was out.
+     * — relative to the root; where it is in the map area's pixels; its unzoomed size; its text zoom; whether
+     * its Structure column was out; and whether it was pinned (never evicted; v29, absent means not).
      */
     public static class Card {
         private String path = "";
@@ -118,6 +118,7 @@ public class ProjectMapState {
         private double height;
         private double textZoom = 1.0;
         private boolean structure;
+        private boolean pinned;
 
         public Card() {}
 
@@ -185,6 +186,15 @@ public class ProjectMapState {
 
         public void setStructure(boolean structure) {
             this.structure = structure;
+        }
+
+        /** The card was pinned: the open-card limit never evicts it (Map explore, cards group). */
+        public boolean isPinned() {
+            return pinned;
+        }
+
+        public void setPinned(boolean pinned) {
+            this.pinned = pinned;
         }
     }
 }

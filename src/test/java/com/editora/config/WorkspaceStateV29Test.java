@@ -9,12 +9,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Workspace schema v29 (Map explore, views): the Project Map's working sets, named {@link ProjectMapState}s kept per
- * workspace. A v28 file gains none and keeps the rest; the sets survive a restart in order, with their cards.
+ * Workspace schema v29 (Map explore): the Project Map's working sets (named {@link ProjectMapState}s kept per
+ * workspace), its "Show recent changes" option and a kept card's {@code pinned}. A v28 file gains none, off and
+ * unpinned, and keeps the rest; all three survive a restart.
  */
 class WorkspaceStateV29Test {
 
@@ -23,7 +25,8 @@ class WorkspaceStateV29Test {
         Files.writeString(
                 dir.resolve("workspace-state.json"),
                 "{\"schemaVersion\":28,\"projectMapCompactRows\":true,"
-                        + "\"projectMapState\":{\"root\":\"/work/p\",\"selected\":\"README.md\"}}");
+                        + "\"projectMapState\":{\"root\":\"/work/p\",\"selected\":\"README.md\","
+                        + "\"cards\":[{\"path\":\"a.go\",\"x\":10,\"structure\":true}]}}");
         ConfigManager config = new ConfigManager(dir);
         config.load();
         WorkspaceState state = config.getWorkspaceState();
@@ -32,12 +35,16 @@ class WorkspaceStateV29Test {
         assertTrue(state.isProjectMapCompactRows());
         assertNotNull(state.getProjectMapState());
         assertEquals("README.md", state.getProjectMapState().getSelected());
+        assertEquals(1, state.getProjectMapState().getCards().size());
+        assertTrue(state.getProjectMapState().getCards().getFirst().isStructure());
+        assertFalse(state.getProjectMapState().getCards().getFirst().isPinned(), "a v28 card is not pinned");
+        assertFalse(state.isProjectMapShowRecentChanges(), "no recent-changes tint");
         assertEquals(29, state.getSchemaVersion());
         assertEquals(29, ConfigSchema.WORKSPACE.currentVersion());
     }
 
     @Test
-    void workingSetsSurviveARestartInOrderWithTheirCards(@TempDir Path dir) {
+    void workingSetsRecentChangesAndPinnedCardsSurviveARestart(@TempDir Path dir) {
         ConfigManager first = new ConfigManager(dir);
         first.load();
         ProjectMapState api = new ProjectMapState();
@@ -47,13 +54,22 @@ class WorkspaceStateV29Test {
         api.setZoom(0.75);
         api.setOffsetX(-40);
         api.setOffsetY(12.5);
-        api.setCards(List.of(new ProjectMapState.Card("api/v1/types.go/…sPod~0", 300, 80, 520, 360, 1.1, false)));
+        ProjectMapState.Card pod = new ProjectMapState.Card("api/v1/types.go/…sPod~0", 300, 80, 520, 360, 1.1, false);
+        pod.setPinned(true);
+        api.setCards(List.of(pod));
         ProjectMapState docs = new ProjectMapState();
         docs.setRoot("/work/project");
         docs.setExpanded(List.of("docs"));
         first.getWorkspaceState()
                 .setProjectMapWorkingSets(
                         List.of(new ProjectMapWorkingSet("API types", api), new ProjectMapWorkingSet("Docs", docs)));
+        first.getWorkspaceState().setProjectMapShowRecentChanges(true);
+        ProjectMapState shown = new ProjectMapState();
+        shown.setRoot("/work/project");
+        ProjectMapState.Card pinned = new ProjectMapState.Card("README.md", 1, 2, 3, 4, 1.0, false);
+        pinned.setPinned(true);
+        shown.setCards(List.of(pinned, new ProjectMapState.Card("go.mod", 1, 2, 3, 4, 1.0, false)));
+        first.getWorkspaceState().setProjectMapState(shown);
         first.save();
 
         ConfigManager reopened = new ConfigManager(dir);
@@ -73,5 +89,11 @@ class WorkspaceStateV29Test {
         assertEquals("api/v1/types.go/…sPod~0", read.getCards().getFirst().getPath());
         assertEquals(1.1, read.getCards().getFirst().getTextZoom());
         assertEquals(List.of("docs"), sets.get(1).getState().getExpanded());
+        assertTrue(read.getCards().getFirst().isPinned(), "a set's pinned card stays pinned");
+        assertTrue(reopened.getWorkspaceState().isProjectMapShowRecentChanges());
+        List<ProjectMapState.Card> kept =
+                reopened.getWorkspaceState().getProjectMapState().getCards();
+        assertTrue(kept.getFirst().isPinned());
+        assertFalse(kept.get(1).isPinned());
     }
 }

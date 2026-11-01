@@ -1010,7 +1010,8 @@ flow, and the two navigation options; v27 also adds `projectMapSingleClickOpens`
 `projectMapCompactChains` and `projectMapFollowActiveFile` for three ⋯ options; v28 adds `projectMapState` (above)
 and `projectMapCompactRows`, `projectMapHideIgnored` and `projectMapOverviewSeen` for the review-3 ⋯ options, written
 through the view's change callbacks (`setOnCompactRowsChanged`, `setOnHideIgnoredChanged`, `setOnOverviewSeen`). v29 adds
-`projectMapWorkingSets`, the named views of ⋯ → Working sets (see *Working sets and trails*); trails are files of the
+`projectMapWorkingSets`, the named views of ⋯ → Working sets (see *Working sets and trails*),
+`projectMapShowRecentChanges` for ⋯ "Show recent changes", and a kept card's `pinned`; trails are files of the
 project, not workspace state. The
 status/type filters are not persisted.
 

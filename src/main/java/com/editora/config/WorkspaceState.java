@@ -91,8 +91,9 @@ public class WorkspaceState {
      * afresh, with normal rows, ignored and generated entries dimmed rather than hidden, and the Overview card not
      * yet shown.
      *
-     * <p>v28 → v29 added {@code projectMapWorkingSets} (the Project Map's named views: ⋯ → Working sets). Additive;
-     * absent means none.
+     * <p>v28 → v29 added {@code projectMapWorkingSets} (the Project Map's named views: ⋯ → Working sets),
+     * {@code projectMapShowRecentChanges} (the Map's ⋯ "Show recent changes") and a code card's {@code pinned} in
+     * {@code projectMapState}. Additive; absent means no sets, no recent-changes tint and unpinned cards.
      */
     public static final int SCHEMA_VERSION = 29;
 
@@ -224,6 +225,8 @@ public class WorkspaceState {
     private @Nullable ProjectMapState projectMapState;
     /** The Project Map's named views (⋯ → Working sets), in the order they were saved. Additive in v29. */
     private List<ProjectMapWorkingSet> projectMapWorkingSets = new ArrayList<>();
+    /** Project Map "Show recent changes" (rows tinted by recent commits). Additive in v29; off by default. */
+    private boolean projectMapShowRecentChanges;
     /** Branch dropdown sections shown folded ("local", "remote", "remote:<name>", "actions"). Additive in v14. */
     private List<String> collapsedBranchSections = new ArrayList<>();
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
@@ -683,6 +686,14 @@ public class WorkspaceState {
 
     public void setProjectMapState(@Nullable ProjectMapState projectMapState) {
         this.projectMapState = projectMapState;
+    }
+
+    public boolean isProjectMapShowRecentChanges() {
+        return projectMapShowRecentChanges;
+    }
+
+    public void setProjectMapShowRecentChanges(boolean projectMapShowRecentChanges) {
+        this.projectMapShowRecentChanges = projectMapShowRecentChanges;
     }
 
     public List<ProjectMapWorkingSet> getProjectMapWorkingSets() {

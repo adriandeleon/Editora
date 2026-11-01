@@ -212,14 +212,16 @@ final class ProjectMapWorkingSets {
         copy.setOffsetY(state.getOffsetY());
         List<ProjectMapState.Card> cards = new ArrayList<>();
         for (ProjectMapState.Card card : state.getCards()) {
-            cards.add(new ProjectMapState.Card(
+            ProjectMapState.Card copied = new ProjectMapState.Card(
                     card.getPath(),
                     card.getX(),
                     card.getY(),
                     card.getWidth(),
                     card.getHeight(),
                     card.getTextZoom(),
-                    card.isStructure()));
+                    card.isStructure());
+            copied.setPinned(card.isPinned());
+            cards.add(copied);
         }
         copy.setCards(cards);
         return copy;

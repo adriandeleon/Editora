@@ -436,7 +436,8 @@ public enum ConfigSchema {
                     // (additive; absent means a Map that starts afresh, normal rows, ignored entries dimmed, and
                     // the Overview card not yet shown)
                     Map.entry(27, ConfigMigrations::identity),
-                    // v28→29: + projectMapWorkingSets (additive; absent means the Map has no named views)
+                    // v28→29: + projectMapWorkingSets, projectMapShowRecentChanges, projectMapState's card `pinned`
+                    // (additive; absent means no named views, no recent-changes tint, unpinned cards)
                     Map.entry(28, ConfigMigrations::identity))),
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
