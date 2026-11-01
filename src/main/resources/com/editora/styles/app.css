@@ -1585,7 +1585,6 @@
 }
 .project-map-filter-chip,
 .project-map-type-filter,
-.project-map-flow-filter,
 .project-map-filter-clear {
     -fx-font-size: 0.85em;
 }
@@ -1625,18 +1624,15 @@
 .project-map-filter-clear:hover {
     -fx-text-fill: -color-fg-default;
 }
-/* The selectors are as wide as their widest value and no wider: "Type:" / "Flow:" moved to the tooltip
+/* The type selector is as wide as its widest value and no wider: "Type:" moved to the tooltip
    and accessible name, and the theme's roomy combo insets are trimmed to the chips' scale. */
-.project-map-type-filter,
-.project-map-flow-filter {
+.project-map-type-filter {
     -fx-padding: 0;
 }
-.project-map-type-filter > .list-cell,
-.project-map-flow-filter > .list-cell {
+.project-map-type-filter > .list-cell {
     -fx-padding: 3 2 3 8;
 }
-.project-map-type-filter > .arrow-button,
-.project-map-flow-filter > .arrow-button {
+.project-map-type-filter > .arrow-button {
     -fx-padding: 0 6 0 4;
 }
 .project-map-host {

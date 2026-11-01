@@ -269,6 +269,21 @@ final class ProjectMapStructure {
         autoExpand.remove(path);
     }
 
+    /**
+     * Collapse All / Close Other Branches (Map explore, position 13): closes every structure column that is not
+     * on the way to {@code target} ({@code keepOwn}: the target's own column stays as well). Whether any closed.
+     */
+    boolean canvasCloseOthers(Path target, boolean keepOwn) {
+        List<Path> off = new ArrayList<>();
+        for (Path path : open) {
+            if (!(target.startsWith(path) && (keepOwn || !path.equals(target)))) {
+                off.add(path);
+            }
+        }
+        off.forEach(this::close);
+        return !off.isEmpty();
+    }
+
     /** Closes everything (a new root). */
     void clear() {
         open.clear();

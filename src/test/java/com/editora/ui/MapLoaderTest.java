@@ -145,6 +145,46 @@ class MapLoaderTest {
     }
 
     @Test
+    void closeOthersKeepsTheWayToTheRowAndReportsTheTopOfEachClosedBranch() throws IOException {
+        Path root = root();
+        Path a = root.resolve("a");
+        Path ax = a.resolve("x");
+        Path b = root.resolve("b");
+        Path by = b.resolve("y");
+        Path byz = by.resolve("z");
+        MapLoader loader = loader();
+        loader.setRoot(root);
+        loader.expanded.addAll(Set.of(a, ax, b, by, byz));
+
+        // Close Other Branches on folder b keeps its own column; everything under it is off the way.
+        assertEquals(List.of(a, by), loader.canvasCloseOthers(b, true), "the topmost folder of each closed branch");
+        assertEquals(Set.of(root, b), loader.expandedDirectories());
+
+        // Collapse All on a file keeps its folders and the first column.
+        loader.expanded.addAll(Set.of(a, ax, by, byz));
+        assertEquals(List.of(a), loader.canvasCloseOthers(byz.resolve("f.txt"), false));
+        assertEquals(Set.of(root, b, by, byz), loader.expandedDirectories());
+        // Collapse All on a folder row closes the folder's own column too; on nothing, all but the first.
+        assertEquals(List.of(byz), loader.canvasCloseOthers(byz, false));
+        assertEquals(List.of(b), loader.canvasCloseOthers(null, false));
+        assertEquals(Set.of(root), loader.expandedDirectories());
+        assertEquals(List.of(), loader.canvasCloseOthers(null, false), "nothing more to close");
+
+        // During a search the search's own view closes, and the manual set it hands back is left alone.
+        loader.expanded.addAll(Set.of(a, b));
+        host.searching = true;
+        loader.setSearchMatches(
+                List.of(ax.resolve("m.txt"), by.resolve("n.txt")),
+                List.of(ax.resolve("m.txt"), by.resolve("n.txt")),
+                null,
+                true);
+        loader.canvasCloseOthers(ax.resolve("m.txt"), false);
+        assertEquals(Set.of(root, a, ax), loader.expandedDirectories());
+        host.searching = false;
+        assertEquals(Set.of(root, a, b), loader.expandedDirectories(), "the manual set comes back after the search");
+    }
+
+    @Test
     void loadsQueuedBehindANewerOneAreSkippedAndOnlyTheNewestLands() throws IOException {
         Path root = root();
         Files.writeString(root.resolve("a.txt"), "a");

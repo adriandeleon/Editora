@@ -230,11 +230,9 @@ class ProjectMapDataReview3Test {
                     .filter(row -> !row.isPlaceholder())
                     .toList();
             assertEquals(ProjectMapModel.DIRECTORY_CHUNK, rows.size());
-            assertTrue(rows.stream().allMatch(row -> row.size() >= 0), "a shown row has its size");
-            assertEquals(
-                    700 - ProjectMapModel.DIRECTORY_CHUNK,
-                    listings.unreadForTest(corpus, false),
-                    "the rows past the limit were never read");
+            // Since Map explore position 15 a row of such a folder stays name-only: the tooltip reads its size.
+            assertTrue(rows.stream().allMatch(row -> row.size() < 0 && !row.directory()), "a shown row is not read");
+            assertEquals(700, listings.unreadForTest(corpus, false), "no child was read, shown or not");
         }
     }
 

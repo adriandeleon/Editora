@@ -156,11 +156,40 @@ public final class ImagePdfWriter {
     public static void writePages(
             List<BufferedImage> pages, double pointsPerPixel, String pageSizeKey, boolean landscape, Path out)
             throws IOException {
+        writePages(pages, pointsPerPixel, pageSizeKey, landscape, List.of(), out);
+    }
+
+    /**
+     * A name an image draws, in that image's pixels ({@code x, y} the top-left of its line, {@code height} its
+     * font size): written over the picture as invisible text, so the PDF can be searched and its names copied.
+     */
+    public record TextBox(String text, double x, double y, double width, double height) {}
+
+    /**
+     * As {@link #writePages(List, double, String, boolean, Path)}, with {@code texts.get(i)} laid over page
+     * {@code i} as invisible text (PDF text rendering mode 3, as scanned documents carry their OCR text): the
+     * page still looks like the picture, and a viewer's Find, selection and copy reach the names (Project Map
+     * export, Map explore position 16). Each name is stretched to the width the picture gives it. Characters the
+     * bundled Inter lacks come from the system fallback fonts, as in the other PDF exports.
+     */
+    public static void writePages(
+            List<BufferedImage> pages,
+            double pointsPerPixel,
+            String pageSizeKey,
+            boolean landscape,
+            List<List<TextBox>> texts,
+            Path out)
+            throws IOException {
         PDRectangle rect = pageRectangle(pageSizeKey, landscape);
         float availW = rect.getWidth() - 2 * MARGIN;
         float availH = rect.getHeight() - 2 * MARGIN;
-        try (PDDocument doc = new PDDocument()) {
+        boolean anyText = texts.stream().anyMatch(page -> page != null && !page.isEmpty());
+        try (PDDocument doc = new PDDocument();
+                PdfGlyphs glyphs = new PdfGlyphs(doc, anyText ? SystemFontFiles.get() : List.of())) {
+            org.apache.pdfbox.pdmodel.font.PDFont font = anyText ? textFont(doc) : null;
+            int index = -1;
             for (BufferedImage img : pages) {
+                index++;
                 if (img == null || img.getWidth() < 1 || img.getHeight() < 1) {
                     continue;
                 }
@@ -174,12 +203,66 @@ public final class ImagePdfWriter {
                 PDImageXObject xo = LosslessFactory.createFromImage(doc, img);
                 try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
                     cs.drawImage(xo, MARGIN, rect.getHeight() - MARGIN - drawH, drawW, drawH);
+                    List<TextBox> onPage = index < texts.size() ? texts.get(index) : null;
+                    if (font != null && onPage != null && !onPage.isEmpty()) {
+                        writeInvisibleText(cs, glyphs, font, onPage, scale, rect.getHeight() - MARGIN);
+                    }
                 }
             }
             if (doc.getNumberOfPages() == 0) {
                 doc.addPage(new PDPage(rect));
             }
             doc.save(out.toFile());
+        }
+    }
+
+    /** The bundled Inter, embedded as a subset: the Map's own face, and what its names are searched in. */
+    private static org.apache.pdfbox.pdmodel.font.PDFont textFont(PDDocument doc) throws IOException {
+        try (java.io.InputStream in =
+                ImagePdfWriter.class.getResourceAsStream("/com/editora/fonts/inter/Inter-Regular.ttf")) {
+            if (in == null) {
+                throw new IOException("Bundled font not found: Inter-Regular");
+            }
+            return org.apache.pdfbox.pdmodel.font.PDType0Font.load(doc, in);
+        }
+    }
+
+    /**
+     * Lays {@code boxes} (image pixels, drawn at {@code scale} points per pixel from the top-left margin, whose
+     * PDF y is {@code top}) over the page as text that is neither filled nor stroked.
+     */
+    private static void writeInvisibleText(
+            PDPageContentStream cs,
+            PdfGlyphs glyphs,
+            org.apache.pdfbox.pdmodel.font.PDFont primary,
+            List<TextBox> boxes,
+            double scale,
+            float top)
+            throws IOException {
+        for (TextBox box : boxes) {
+            if (box == null || box.text() == null || box.text().isBlank() || box.height() <= 0) {
+                continue;
+            }
+            float size = (float) (box.height() * scale);
+            List<PdfGlyphs.Run> runs = glyphs.runs(primary, box.text(), true);
+            double natural = 0;
+            for (PdfGlyphs.Run run : runs) {
+                natural += run.font().getStringWidth(run.text()) / 1000.0 * size;
+            }
+            if (natural <= 0) {
+                continue;
+            }
+            double target = Math.max(1, box.width() * scale);
+            float stretch = (float) Math.max(1, Math.min(1_000, target / natural * 100));
+            cs.beginText();
+            cs.setRenderingMode(org.apache.pdfbox.pdmodel.graphics.state.RenderingMode.NEITHER);
+            cs.setHorizontalScaling(stretch);
+            cs.newLineAtOffset(MARGIN + (float) (box.x() * scale), top - (float) ((box.y() + box.height()) * scale));
+            for (PdfGlyphs.Run run : runs) {
+                cs.setFont(run.font(), size);
+                cs.showText(run.text());
+            }
+            cs.endText();
         }
     }
 }

@@ -4066,6 +4066,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (revealer != null || terminalShown) {
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
         }
+        if (!(treeItem instanceof MapRowItem) && treeItem.getValue() != null) {
+            // The tree's row on the Map (Map explore, position 18); the Map's own rows are on it already.
+            if (!(revealer != null || terminalShown)) {
+                menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+            }
+            Path target = treeItem.getValue();
+            MenuItem revealInMap = new MenuItem(tr("project.map.menu.revealInMap"));
+            revealInMap.setGraphic(Icons.locateFile());
+            revealInMap.setOnAction(e -> showInMap(target));
+            menu.getItems().add(revealInMap);
+        }
         if (revealer != null) {
             MenuItem reveal = new MenuItem(tr("project.menu.revealInFileManager"));
             reveal.setGraphic(Icons.revealInFiles());

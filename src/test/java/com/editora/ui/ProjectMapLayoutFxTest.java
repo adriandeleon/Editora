@@ -759,13 +759,16 @@ class ProjectMapLayoutFxTest {
                             tr("project.map.activity.showRecentChanges"), // Map explore position 3
                             tr("project.map.filter.hideOpenNotes"),
                             tr("project.map.navigation.followActiveFile"),
+                            tr("project.map.flow.menu"), // the flow selector moved here (Map explore, 17)
                             tr("project.map.revealActiveFile"), // review 3, E9
                             tr("project.map.overview.open"), // the Overview card (review 3 B4)
                             tr("project.map.openCards"), // the open cards' list (review 3, C10)
+                            tr("project.map.collapseAll"), // Map explore, 13
                             tr("project.map.workingSets"), // named views (Map explore, views)
                             tr("project.map.trails"), // guided tours (Map explore, views)
                             tr("project.map.print"),
-                            tr("project.map.exportPdf")),
+                            tr("project.map.exportPdf"),
+                            tr("project.map.export.menu")), // PNG… and SVG… (Map explore, 16)
                     items);
             assertFalse(options.getAccessibleText().isBlank());
 
@@ -790,13 +793,14 @@ class ProjectMapLayoutFxTest {
                 assertNotEquals(chip.getText(), chip.getTooltip().getText(), "the tooltip says what the chip does");
             }
             ComboBox<?> type = FxTestSupport.field(mapView, "typeFilter");
-            ComboBox<ProjectMapView.FlowDirection> flow = FxTestSupport.field(mapView, "flowFilter");
             assertEquals(tr("project.map.type.all"), type.getAccessibleText(), "the prefix lives in the name");
             assertEquals(tr("project.map.type.all"), type.getTooltip().getText());
-            assertEquals(tr("project.map.flow.left_to_right"), flow.getAccessibleText());
             assertEquals(tr("project.map.type.name.all"), type.getConverter().toString(null), "and not in the face");
-            flow.setValue(ProjectMapView.FlowDirection.TOP_TO_BOTTOM);
-            assertEquals(tr("project.map.flow.top_to_bottom"), flow.getTooltip().getText());
+            // The flow moved into ⋯ → Flow (Map explore, position 17): its items name the directions.
+            assertEquals(
+                    tr("project.map.flow.name.top_to_bottom"),
+                    mapView.canvasFlowItem(ProjectMapView.FlowDirection.TOP_TO_BOTTOM)
+                            .getText());
 
             List<ButtonBase> glyphButtons = new ArrayList<>();
             mapView.lookupAll(".project-map-nav-button").forEach(node -> glyphButtons.add((ButtonBase) node));
@@ -912,14 +916,16 @@ class ProjectMapLayoutFxTest {
     void flowDefaultsToLeftToRightAndAStoredChoiceIsKept() throws Exception {
         show(600, 500);
         FxTestSupport.runOnFx(() -> {
-            ComboBox<ProjectMapView.FlowDirection> flow = FxTestSupport.field(mapView, "flowFilter");
-            assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, flow.getValue());
+            assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, mapView.canvasFlow());
             mapView.setRememberedFlow("BOTTOM_TO_TOP", ignored -> {});
-            assertEquals(ProjectMapView.FlowDirection.BOTTOM_TO_TOP, flow.getValue(), "a stored flow is restored");
+            assertEquals(ProjectMapView.FlowDirection.BOTTOM_TO_TOP, mapView.canvasFlow(), "a stored flow is restored");
+            assertTrue(mapView.canvasFlowItem(ProjectMapView.FlowDirection.BOTTOM_TO_TOP)
+                    .isSelected());
             mapView.setRememberedFlow(null, ignored -> {});
-            assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, flow.getValue(), "nothing stored: the default");
+            assertEquals(
+                    ProjectMapView.FlowDirection.LEFT_TO_RIGHT, mapView.canvasFlow(), "nothing stored: the default");
             mapView.setRememberedFlow("SIDEWAYS", ignored -> {});
-            assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, flow.getValue());
+            assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, mapView.canvasFlow());
         });
     }
 

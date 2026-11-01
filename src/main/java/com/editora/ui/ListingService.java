@@ -104,6 +104,11 @@ final class ListingService implements AutoCloseable {
             return attributes().symbolicLink();
         }
 
+        /** Whether the attributes were read (listed with them, or read since); not, for a name-only child. */
+        boolean attributesRead() {
+            return attributes != null;
+        }
+
         private Attributes attributes() {
             Attributes known = attributes;
             if (known == null) {

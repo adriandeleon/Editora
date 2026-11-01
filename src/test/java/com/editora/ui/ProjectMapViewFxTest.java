@@ -22,7 +22,6 @@ import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.CheckMenuItem;
-import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
@@ -941,7 +940,7 @@ class ProjectMapViewFxTest {
                 pinRef.set(pin);
                 assertTrue(filter.isVisible());
                 assertTrue(showHidden.isVisible());
-                assertTrue(pin.isVisible());
+                assertFalse(pin.isVisible(), "the lock waits for the column to be in use (Map explore, 17)");
             });
             FxTestSupport.runOnFx(() -> {}); // let the initial fit settle before testing interactive zoom
             FxTestSupport.runOnFx(() -> {
@@ -971,7 +970,7 @@ class ProjectMapViewFxTest {
             FxTestSupport.runOnFx(() -> {
                 assertTrue(filterRef.get().isVisible());
                 assertTrue(showHiddenRef.get().isVisible());
-                assertTrue(pinRef.get().isVisible());
+                assertFalse(pinRef.get().isVisible(), "not hovered, focused or locked");
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
@@ -1753,20 +1752,20 @@ class ProjectMapViewFxTest {
                                 new ProjectMapModel.Entry(java, src, 2, false)),
                         Set.of(root, src));
 
-                @SuppressWarnings("unchecked")
-                ComboBox<ProjectMapView.FlowDirection> flow = FxTestSupport.field(mapView, "flowFilter");
-                assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, flow.getValue(), "the default flow");
+                assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, mapView.canvasFlow(), "the default flow");
                 assertTrue(origin(boxFor(surface, java), "x") > origin(boxFor(surface, src), "x"));
 
                 mapView.setRememberedFlow("RIGHT_TO_LEFT", ignored -> {});
-                assertEquals(ProjectMapView.FlowDirection.RIGHT_TO_LEFT, flow.getValue(), "a stored flow is kept");
+                assertEquals(ProjectMapView.FlowDirection.RIGHT_TO_LEFT, mapView.canvasFlow(), "a stored flow is kept");
                 assertTrue(origin(boxFor(surface, java), "x") < origin(boxFor(surface, src), "x"));
 
-                flow.setValue(ProjectMapView.FlowDirection.TOP_TO_BOTTOM);
+                mapView.canvasFlowItem(ProjectMapView.FlowDirection.TOP_TO_BOTTOM)
+                        .fire();
                 assertTrue(origin(boxFor(surface, java), "y") > origin(boxFor(surface, src), "y"));
                 assertTrue(origin(boxFor(surface, src), "x") > origin(boxFor(surface, docs), "x"));
 
-                flow.setValue(ProjectMapView.FlowDirection.BOTTOM_TO_TOP);
+                mapView.canvasFlowItem(ProjectMapView.FlowDirection.BOTTOM_TO_TOP)
+                        .fire();
                 assertTrue(origin(boxFor(surface, java), "y") < origin(boxFor(surface, src), "y"));
             });
         } finally {

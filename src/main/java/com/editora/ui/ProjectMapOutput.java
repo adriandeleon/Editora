@@ -37,5 +37,18 @@ interface ProjectMapOutput {
      * @param pointsPerPixel the paper size of one image pixel, the same for every page
      * @param plan how the map was scaled and split
      */
-    record Rendered(List<Image> pages, double pointsPerPixel, ProjectMapOutputPlan.Plan plan) {}
+    record Rendered(
+            List<Image> pages, double pointsPerPixel, ProjectMapOutputPlan.Plan plan, List<List<Label>> labels) {
+
+        /** Pages without their text (the map's labels are then only pixels). */
+        Rendered(List<Image> pages, double pointsPerPixel, ProjectMapOutputPlan.Plan plan) {
+            this(pages, pointsPerPixel, plan, List.of());
+        }
+    }
+
+    /**
+     * A name the page image draws, in that page's image pixels: the PDF puts it there as invisible text, so the
+     * exported map is searchable (Map explore, position 16). {@code x, y} is the top-left of its line.
+     */
+    record Label(String text, double x, double y, double width, double height) {}
 }

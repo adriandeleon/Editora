@@ -135,7 +135,19 @@ final class ProjectMapView extends VBox {
 
     private final Label narrowedBadge = new Label();
     private Consumer<Boolean> onHideUnmatchedChanged = hide -> {};
-    private final ComboBox<FlowDirection> flowFilter = new ComboBox<>();
+    /** ⋯ → Flow ▸ the four directions (Map explore, position 17: the selector left the filter row). */
+    private final javafx.scene.control.Menu canvasFlowMenu = new javafx.scene.control.Menu(tr("project.map.flow.menu"));
+
+    private final Map<FlowDirection, javafx.scene.control.RadioMenuItem> canvasFlowItems =
+            new java.util.EnumMap<>(FlowDirection.class);
+    /** ⋯ → Collapse All (position 13). */
+    private final MenuItem canvasCollapseAllItem = new MenuItem(tr("project.map.collapseAll"));
+    /** ⋯ → Export ▸ PNG… / SVG… (position 16). */
+    private final javafx.scene.control.Menu canvasExportMenu =
+            new javafx.scene.control.Menu(tr("project.map.export.menu"));
+
+    private final MenuItem canvasExportPngItem = new MenuItem(tr("project.map.export.png"));
+    private final MenuItem canvasExportSvgItem = new MenuItem(tr("project.map.export.svg"));
     /** "Reveal active file", beside the breadcrumb and in the ⋯ menu (review 3 B13, E9). */
     private final Button revealActiveButton = new Button();
 
@@ -425,15 +437,23 @@ final class ProjectMapView extends VBox {
                         activityRecentChangesOption,
                         hideOpenNotes,
                         followActiveFile,
+                        canvasFlowMenu,
                         new SeparatorMenuItem(),
                         revealActiveItem,
                         layoutOverviewItem,
                         openCardsMenu,
+                        canvasCollapseAllItem,
                         workingSets.menu(),
                         trails.menu(),
                         new SeparatorMenuItem(),
                         printButton,
-                        exportPdfButton);
+                        exportPdfButton,
+                        canvasExportMenu);
+        canvasCollapseAllItem.setOnAction(event -> canvasCloseOthers(null, false));
+        canvasExportMenu.getItems().setAll(canvasExportPngItem, canvasExportSvgItem);
+        canvasExportMenu.setDisable(true);
+        canvasExportPngItem.setOnAction(event -> canvasExport(true));
+        canvasExportSvgItem.setOnAction(event -> canvasExport(false));
         openCardsMenu.setOnShowing(event -> fillOpenCardsMenu());
         fillOpenCardsMenu(); // never empty: a submenu with no items does not open
         printButton.setDisable(true);
@@ -749,23 +769,15 @@ final class ProjectMapView extends VBox {
         typeFilter.setCellFactory(list -> typeCell());
         nameSelector(typeFilter, ProjectMapView::typeLabel);
 
-        flowFilter.getItems().setAll(FlowDirection.values());
-        flowFilter.setValue(DEFAULT_FLOW);
-        flowFilter.getStyleClass().add("project-map-flow-filter");
-        flowFilter.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(FlowDirection value) {
-                return flowName(value);
-            }
-
-            @Override
-            public FlowDirection fromString(String value) {
-                return DEFAULT_FLOW;
-            }
-        });
-        flowFilter.setButtonCell(flowCell());
-        flowFilter.setCellFactory(list -> flowCell());
-        nameSelector(flowFilter, ProjectMapView::flowLabel);
+        javafx.scene.control.ToggleGroup flows = new javafx.scene.control.ToggleGroup();
+        for (FlowDirection flow : FlowDirection.values()) {
+            javafx.scene.control.RadioMenuItem item = new javafx.scene.control.RadioMenuItem(flowName(flow));
+            item.setToggleGroup(flows);
+            item.setSelected(flow == DEFAULT_FLOW);
+            item.setOnAction(event -> canvasApplyFlow(flow, true));
+            canvasFlowItems.put(flow, item);
+            canvasFlowMenu.getItems().add(item);
+        }
 
         Button clear = new Button(tr("project.map.filter.clear"));
         clear.getStyleClass().add("project-map-filter-clear");
@@ -809,11 +821,6 @@ final class ProjectMapView extends VBox {
         narrowedBadge.setAccessibleHelp(tr("project.map.narrowed.help"));
         showNarrowed(0);
         surface.setOnNarrowedChanged(this::showNarrowed);
-        flowFilter.setOnAction(event -> {
-            FlowDirection flow = flowFilter.getValue();
-            surface.setFlowDirection(flow);
-            onFlowChanged.accept(flow);
-        });
 
         // Only filters live here, and the row wraps rather than truncating: every control keeps its full
         // label at any tool-window width. The session options and Print/PDF are in the options menu.
@@ -828,7 +835,6 @@ final class ProjectMapView extends VBox {
                 typeFilter,
                 hideUnmatched,
                 narrowedBadge,
-                flowFilter,
                 clear);
         filters.getStyleClass().add("project-map-filters");
         filters.setAlignment(Pos.CENTER_LEFT);
@@ -1018,28 +1024,32 @@ final class ProjectMapView extends VBox {
         return tr("project.map.type." + type.name().toLowerCase(java.util.Locale.ROOT));
     }
 
-    private static ListCell<FlowDirection> flowCell() {
-        return new ListCell<>() {
-            @Override
-            protected void updateItem(FlowDirection item, boolean empty) {
-                super.updateItem(item, empty);
-                setText(empty || item == null ? null : flowName(item));
-            }
-        };
-    }
-
     private static String flowName(FlowDirection flow) {
-        if (flow == null) {
-            flow = DEFAULT_FLOW;
-        }
         return tr("project.map.flow.name." + flow.name().toLowerCase(java.util.Locale.ROOT));
     }
 
-    private static String flowLabel(FlowDirection flow) {
-        if (flow == null) {
-            flow = DEFAULT_FLOW;
+    /** The flow ticked in ⋯ → Flow. */
+    FlowDirection canvasFlow() {
+        for (Map.Entry<FlowDirection, javafx.scene.control.RadioMenuItem> item : canvasFlowItems.entrySet()) {
+            if (item.getValue().isSelected()) {
+                return item.getKey();
+            }
         }
-        return tr("project.map.flow." + flow.name().toLowerCase(java.util.Locale.ROOT));
+        return DEFAULT_FLOW;
+    }
+
+    /** ⋯ → Flow's item for {@code flow}; firing it is what picking it does. */
+    javafx.scene.control.RadioMenuItem canvasFlowItem(FlowDirection flow) {
+        return java.util.Objects.requireNonNull(canvasFlowItems.get(flow));
+    }
+
+    /** Ticks {@code flow} and lays the map out along it; {@code picked}: the user chose it, so it is stored. */
+    private void canvasApplyFlow(FlowDirection flow, boolean picked) {
+        canvasFlowItem(flow).setSelected(true);
+        surface.setFlowDirection(flow);
+        if (picked) {
+            onFlowChanged.accept(flow);
+        }
     }
 
     void setRoot(@Nullable Path root) {
@@ -2225,8 +2235,7 @@ final class ProjectMapView extends VBox {
             remembered = DEFAULT_FLOW; // nothing stored (or a value this build does not know)
         }
         onFlowChanged = callback == null ? ignored -> {} : callback;
-        flowFilter.setValue(remembered);
-        surface.setFlowDirection(remembered);
+        canvasApplyFlow(remembered, false);
     }
 
     /** Restores the two navigation options and reports later changes to {@code callback} (keep zoom, focus). */
@@ -2327,6 +2336,9 @@ final class ProjectMapView extends VBox {
         if (closable != null) {
             items.add(mapMenuItem("project.map.menu.closeColumn", () -> closeColumn(closable)));
         }
+        if (canvasHasOtherBranches(entry.path())) {
+            items.add(mapMenuItem("project.map.menu.closeOtherBranches", () -> canvasCloseOthers(entry.path(), true)));
+        }
         if (items.isEmpty()) {
             return menu;
         }
@@ -2341,6 +2353,25 @@ final class ProjectMapView extends VBox {
             menu.getItems().addAll(0, items);
         }
         return menu;
+    }
+
+    /** Whether a column off the way to {@code row} is open, so its Close Other Branches has something to do. */
+    private boolean canvasHasOtherBranches(Path row) {
+        Path current = root;
+        if (current == null) {
+            return false;
+        }
+        for (Path open : mapLoader.expandedDirectories()) {
+            if (!open.equals(current) && !row.startsWith(open)) {
+                return true;
+            }
+        }
+        for (Path open : structure.openFiles()) {
+            if (!row.startsWith(open)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static MenuItem mapMenuItem(String key, Runnable action) {
@@ -2667,6 +2698,150 @@ final class ProjectMapView extends VBox {
     private void setOutputEnabled(boolean enabled) {
         printButton.setDisable(!enabled);
         exportPdfButton.setDisable(!enabled);
+        canvasExportMenu.setDisable(!enabled);
+    }
+
+    /** Pixels per point of the PNG export: the current view at twice its size, as a sharp screenshot is. */
+    static final double CANVAS_PNG_SCALE = 2;
+
+    /** Where an Export ▸ PNG… / SVG… is written: asks with a Save dialog; a test hands in its own file. */
+    java.util.function.BiFunction<String, String, java.io.@Nullable File> canvasExportChooser =
+            this::canvasChooseExportFile;
+
+    /** How the PNG and SVG files are written: on a thread of their own, so a big map never holds the window. */
+    java.util.concurrent.Executor canvasExportWriter =
+            task -> Thread.ofVirtual().name("project-map-export").start(task);
+
+    /**
+     * ⋯ → Export ▸ PNG… (the current view at 2×, cards and all, without the zoom bar and overview) and SVG… (the
+     * whole map as Print/PDF lays it out, every name as text) — Map explore, position 16. The file is chosen
+     * first, then rendered on the FX thread and written off it; the status line says where it went.
+     */
+    private void canvasExport(boolean png) {
+        Path current = root;
+        if (disposed || current == null || surface.isEmpty()) {
+            onStatus.accept(tr("status.projectMap.outputEmpty"));
+            return;
+        }
+        Path folder = current.getFileName();
+        String base = (folder == null ? "project" : folder.toString()) + "-map";
+        java.io.File file = canvasExportChooser.apply(png ? "png" : "svg", base);
+        if (file == null) {
+            return;
+        }
+        if (png) {
+            javafx.scene.image.WritableImage image = canvasViewImage();
+            if (image == null) {
+                onStatus.accept(tr("status.projectMap.outputEmpty"));
+                return;
+            }
+            int width = (int) image.getWidth();
+            int height = (int) image.getHeight();
+            int[] argb = new int[width * height];
+            image.getPixelReader()
+                    .getPixels(
+                            0, 0, width, height, javafx.scene.image.PixelFormat.getIntArgbInstance(), argb, 0, width);
+            canvasWrite(file, out -> {
+                java.awt.image.BufferedImage buffered =
+                        new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                buffered.setRGB(0, 0, width, height, argb, 0, width);
+                if (!javax.imageio.ImageIO.write(buffered, "png", out)) {
+                    throw new java.io.IOException("no PNG writer");
+                }
+            });
+        } else {
+            String svg = surface.canvasSvg(tr("project.map.export.svgTitle", folder == null ? current : folder));
+            if (svg == null) {
+                onStatus.accept(tr("status.projectMap.outputEmpty"));
+                return;
+            }
+            byte[] bytes = svg.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            canvasWrite(file, out -> out.write(bytes));
+        }
+    }
+
+    /** What a writer puts in the file it is given. */
+    private interface CanvasFileWrite {
+        void write(java.io.OutputStream out) throws java.io.IOException;
+    }
+
+    /** Writes {@code file} through a temporary sibling, off the FX thread, and says how it went. */
+    private void canvasWrite(java.io.File file, CanvasFileWrite write) {
+        Path target = file.toPath().toAbsolutePath();
+        canvasExportWriter.execute(() -> {
+            String message;
+            try {
+                Path parent = target.getParent();
+                Path temp = java.nio.file.Files.createTempFile(
+                        parent == null ? Path.of(".") : parent, ".editora-map-", ".part");
+                try {
+                    try (java.io.OutputStream out =
+                            new java.io.BufferedOutputStream(java.nio.file.Files.newOutputStream(temp))) {
+                        write.write(out);
+                    }
+                    java.nio.file.Files.move(temp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                } finally {
+                    java.nio.file.Files.deleteIfExists(temp);
+                }
+                message = tr("project.map.export.done", target.getFileName());
+            } catch (java.io.IOException | RuntimeException failed) {
+                message = tr("project.map.export.failed", String.valueOf(failed.getMessage()));
+            }
+            String said = message;
+            Platform.runLater(() -> onStatus.accept(said));
+        });
+    }
+
+    /**
+     * The map as it is on screen, at {@link #CANVAS_PNG_SCALE}× (less when that would pass 8,192 pixels a
+     * side): canvas, connectors and cards, without the zoom bar, the overview and the loading notice. Null when
+     * the map has no size.
+     */
+    javafx.scene.image.@Nullable WritableImage canvasViewImage() {
+        double width = canvasHost.getWidth();
+        double height = canvasHost.getHeight();
+        if (width < 1 || height < 1) {
+            return null;
+        }
+        double scale = Math.min(CANVAS_PNG_SCALE, 8_192 / Math.max(width, height));
+        List<Node> chrome = new ArrayList<>(canvasHost.lookupAll(".project-map-zoom"));
+        chrome.add(surface.overviewLayer());
+        chrome.add(loadingLabel);
+        chrome.add(noMatchesLabel);
+        Map<Node, Boolean> visible = new HashMap<>();
+        for (Node node : chrome) {
+            visible.put(node, node.isVisible());
+            node.setVisible(false);
+        }
+        try {
+            javafx.scene.SnapshotParameters parameters = new javafx.scene.SnapshotParameters();
+            parameters.setTransform(javafx.scene.transform.Transform.scale(scale, scale));
+            parameters.setViewport(new javafx.geometry.Rectangle2D(0, 0, width * scale, height * scale));
+            return canvasHost.snapshot(parameters, null);
+        } finally {
+            visible.forEach(Node::setVisible);
+        }
+    }
+
+    /** The Save dialog of Export ▸ PNG… / SVG…, over the Map's window, in the project folder. */
+    private java.io.@Nullable File canvasChooseExportFile(String extension, String baseName) {
+        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
+        chooser.setTitle(tr(extension.equals("png") ? "project.map.export.pngTitle" : "project.map.export.svgDialog"));
+        chooser.setInitialFileName(baseName + "." + extension);
+        chooser.getExtensionFilters()
+                .add(new javafx.stage.FileChooser.ExtensionFilter(
+                        extension.toUpperCase(java.util.Locale.ROOT), "*." + extension));
+        Path current = root;
+        if (current != null && com.editora.vfs.Vfs.isLocal(current) && java.nio.file.Files.isDirectory(current)) {
+            chooser.setInitialDirectory(current.toFile());
+        }
+        javafx.stage.Window owner = getScene() == null ? null : getScene().getWindow();
+        return chooser.showSaveDialog(owner);
+    }
+
+    /** ⋯ → Export ▸ PNG… or SVG…, as the menu runs it. */
+    void canvasExportForTest(boolean png) {
+        (png ? canvasExportPngItem : canvasExportSvgItem).fire();
     }
 
     java.util.function.Consumer<String> onStatus = message -> {};
@@ -3001,6 +3176,41 @@ final class ProjectMapView extends VBox {
         }
         reload();
         onExpandedChanged.run();
+    }
+
+    /**
+     * ⋯ → Collapse All ({@code row} null: the selection; {@code keepOwn} false) and a row's Close Other Branches
+     * ({@code keepOwn} true): every column but the first and the ones on the way to the row closes, folder and
+     * Structure columns alike, with the cards opened from them (Map explore, position 13). The selection stays
+     * where it is. The status line says so when there was nothing to close.
+     */
+    void canvasCloseOthers(@Nullable Path row, boolean keepOwn) {
+        Path current = root;
+        if (current == null) {
+            return;
+        }
+        Path target = row != null ? row : surface.selectedPath();
+        if (target == null || !target.startsWith(current)) {
+            target = current;
+        }
+        List<Path> closed = mapLoader.canvasCloseOthers(target, keepOwn);
+        boolean structureClosed = structure.canvasCloseOthers(target, keepOwn);
+        if (closed.isEmpty() && !structureClosed) {
+            onStatus.accept(tr("project.map.status.nothingToCollapse"));
+            return;
+        }
+        closed.forEach(cards::closeUnder);
+        Path chosen = target;
+        if (closed.stream().anyMatch(surface::selectionBelow)) {
+            pendingSelection = chosen; // the selection was in a branch that closed: the row it was asked on
+            surface.select(chosen);
+        }
+        if (closed.isEmpty()) {
+            showRows();
+        } else {
+            reload();
+            onExpandedChanged.run();
+        }
     }
 
     /**

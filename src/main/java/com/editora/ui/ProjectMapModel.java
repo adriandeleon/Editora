@@ -33,6 +33,19 @@ final class ProjectMapModel {
     /** Rows one directory shows at first; each "+N more" activation raises that directory's limit by this. */
     static final int DIRECTORY_CHUNK = 300;
 
+    /**
+     * On a local root a column lists its whole folder, up to this many entries (Map explore, position 15): a
+     * 5,000-file folder scrolls end to end with no "+N more". Beyond it the rest waits behind "+N more" as before.
+     */
+    static final int WHOLE_FOLDER_LIMIT = 50_000;
+
+    /**
+     * What one long folder costs of {@link #MAX_VISIBLE_ITEMS} when it is listed whole: the rows a column can
+     * have near the viewport at once (a screen of rows at the smallest zoom that still draws them), not all of
+     * them. The surface draws, names and hit-tests only the rows near the viewport, so the budget counts those.
+     */
+    static final int NEAR_VIEWPORT_ROWS = DIRECTORY_CHUNK;
+
     /** File name of a placeholder row's synthetic path. Shown as-is by path-based chrome (breadcrumbs). */
     static final String PLACEHOLDER_NAME = "\u2026";
 
@@ -296,7 +309,8 @@ final class ProjectMapModel {
             BooleanSupplier cancelled,
             Map<Path, String> columnQueries,
             boolean compactChains,
-            List<Path> priority) {
+            List<Path> priority,
+            boolean wholeFolders) {
         Request {
             root = normalize(root);
             Set<Path> normalizedExpanded = new HashSet<>();
@@ -334,6 +348,40 @@ final class ProjectMapModel {
                 }
             }
             priority = List.copyOf(first);
+        }
+
+        /** As the canonical one, with long folders cut at their row limit (a remote root's way). */
+        Request(
+                Path root,
+                Set<Path> expanded,
+                boolean showHidden,
+                Map<Path, Boolean> hiddenOverrides,
+                Map<Path, Integer> limits,
+                List<Path> pinned,
+                Labels labels,
+                BooleanSupplier cancelled,
+                Map<Path, String> columnQueries,
+                boolean compactChains,
+                List<Path> priority) {
+            this(
+                    root,
+                    expanded,
+                    showHidden,
+                    hiddenOverrides,
+                    limits,
+                    pinned,
+                    labels,
+                    cancelled,
+                    columnQueries,
+                    compactChains,
+                    priority,
+                    false);
+        }
+
+        /** A folder's row limit: its own (raised by "+N more"), or the whole folder when folders list whole. */
+        int limitOf(Path directory) {
+            int own = limits.getOrDefault(directory, DIRECTORY_CHUNK);
+            return wholeFolders ? Math.max(WHOLE_FOLDER_LIMIT, own) : Math.max(DIRECTORY_CHUNK, own);
         }
 
         Request(
@@ -583,9 +631,12 @@ final class ProjectMapModel {
             if (items == null || listing.timedOut()) {
                 continue;
             }
-            int limit = Math.max(DIRECTORY_CHUNK, request.limits().getOrDefault(directory, DIRECTORY_CHUNK));
+            int limit = request.limitOf(directory);
             Map<Path, Item> pinnedHere = pins.getOrDefault(directory, Map.of());
             int wanted = Math.min(Math.max(0, items.size() - pinnedHere.size()), limit);
+            if (request.wholeFolders()) {
+                wanted = Math.min(wanted, NEAR_VIEWPORT_ROWS); // what it costs, not what it lists
+            }
             int granted = Math.min(wanted, budget - reservedTotal);
             if (granted > 0) {
                 reserved.put(directory, granted);
@@ -661,25 +712,36 @@ final class ProjectMapModel {
                 result.add(placeholder(directory, childDepth, PlaceholderKind.EMPTY, 0, request.labels()));
                 continue;
             }
-            int limit = Math.max(DIRECTORY_CHUNK, request.limits().getOrDefault(directory, DIRECTORY_CHUNK));
+            int limit = request.limitOf(directory);
             int loaded = 0;
+            int charged = 0;
             for (int index = 0; index < total; index++) {
                 Item item = all.get(index);
                 if (!pinnedHere.containsKey(item.path())) {
                     if (index >= limit && (columnQuery == null || FuzzyMatch.of(item.name(), columnQuery) == null)) {
                         continue; // beyond the row limit, and not a row the column's own filter is looking for
                     }
-                    if (budget - reservedTotal <= 0) {
-                        capped = true; // what is left is the priority folders' share
-                        continue;
+                    // A folder listed whole pays for the rows that can be near the viewport, then lists the rest
+                    // free (position 15). One the budget cut short before that stays cut: no gap in its rows.
+                    boolean free = request.wholeFolders() && charged >= NEAR_VIEWPORT_ROWS;
+                    if (!free) {
+                        if (budget - reservedTotal <= 0) {
+                            capped = true; // what is left is the priority folders' share
+                            continue;
+                        }
+                        budget--;
+                        charged++;
                     }
-                    budget--;
                 }
                 loaded++;
                 result.add(entry(item, directory, childDepth));
-                if (item.directory() && expanded.contains(item.path())) {
+                // A child listed by name only is read here only when it is open itself (position 15).
+                boolean folder = item.attributesRead() || expanded.contains(item.path())
+                        ? item.directory()
+                        : item.sortsAsDirectory();
+                if (folder && expanded.contains(item.path())) {
                     queue.addLast(new Pending(item.path(), childDepth, 0));
-                } else if (item.directory()
+                } else if (folder
                         && request.compactChains()
                         && total == 1
                         && !directory.equals(root)
@@ -720,6 +782,11 @@ final class ProjectMapModel {
     }
 
     private static Entry entry(Item item, @Nullable Path parent, int depth) {
+        if (!item.attributesRead()) {
+            // A long folder of files listed by name only stays that way when it is listed whole (position 15):
+            // its rows carry no size or time, which the tooltip reads for the one row it describes.
+            return new Entry(item.path(), parent, depth, item.sortsAsDirectory(), -1, -1, false);
+        }
         return new Entry(
                 item.path(), parent, depth, item.directory(), item.size(), item.modifiedMillis(), item.symbolicLink());
     }
