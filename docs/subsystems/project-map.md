@@ -30,6 +30,12 @@ untitled, Welcome or remote tab leaves it as it is. It takes the tree's root aga
 anew (bringing it forward keeps its folder), or when Reveal Active File needs a file it does not hold. A
 remote folder mounted in that window re-roots it as a project would.
 
+The window holds, top to bottom, the search row, the results strip (while a query searches), the Map, and the
+Map's own **status line** (`ProjectMapStatusLine`, review 3 A2). Every message the Map has — a folder it cannot
+read, the row limit, the search's notices, "no active file" for Reveal Active File — goes to that line, never to
+the editor window's status bar; so does the outcome of a move, an undo or a delete while the Map window is the
+one in use. A search's notice goes with its query; any other message stays until the next.
+
 Work started in the Map window that happens in the editor window brings the editor window forward:
 opening a file (a row, Enter, a preview card's Open), and every context-menu action except Rename, New
 Folder, Undo Move, Delete and Reveal, which stay over the Map — the name prompts in the Map window's own
@@ -387,7 +393,8 @@ files match".
 | `Alt-Left` / `Alt-Right` | Move backward or forward through map selection history |
 | `/` | Focus and select the selected column's filter text |
 | Shortcut + `0` | Fit all visible columns |
-| `Escape` | Close the open preview and note cards; otherwise clear the Map's search query (the selection returns to where it was before the search, unless a row picked during it stays on the map); otherwise return focus to the editor (in the editor window) |
+| `F3` / `Shift-F3` | Step to the next / previous match of the Map's search |
+| `Escape` | Close the open preview and note cards; otherwise clear the Map's search query (the selection stays where the search took you; one `Alt-Left` returns to where it was before the search); otherwise return focus to the editor (in the editor window) |
 
 Single sibling steps (perpendicular arrows, `Ctrl-N` / `Ctrl-P`) wrap around the column; page moves do
 not. `/` is matched by the character typed rather than the key, so it works where the slash is a
@@ -409,7 +416,8 @@ so a search that opens hundreds of columns builds no controls for the ones nobod
 selected column's controls if it has none yet.
 
 The scene-level `KeyDispatcher` sees every key before the map. While the surface itself is the focus
-owner it declares `Alt-Left`, `Alt-Right`, Shortcut + `0`, `Ctrl-N`, `Ctrl-P`, `F2`, `Delete`, and `Shift-Enter`
+owner it declares `Alt-Left`, `Alt-Right`, Shortcut + `0`, `Ctrl-N`, `Ctrl-P`, `F2`, `Delete`, `Shift-Enter`,
+`F3` and `Shift-F3`
 through `KeyDispatcher.CLAIMED_KEYS`, so they reach it in every bundled keymap instead of running the keymap's
 command for the same chord (text-zoom reset, New File, Print, Find File, symbol rename, insert line below) or being
 swallowed as an unbound `Alt` chord. The surface always consumes them; the dispatcher consumes a
@@ -535,25 +543,47 @@ before a file for the exact and whole-word tiers, then source before tests, fixt
 project code before `vendor/`, `third_party/` and `node_modules`, then the fuzzy score of the relative path (a
 root file earns the same basename bonus as a nested one, so the top-level `README.md` comes first), the
 shallower path, the shorter name. The best 2,000 are kept (`ProjectMapSearchResult`, handed to
-`ProjectMapView.setSearchMatches`); the map opens the ancestor columns of the best 300 and loads those matches
-before anything else, in rank order, so the first (best) match is always present and is selected. A folder
+`ProjectMapView.setSearchMatches`); the map opens the ancestor columns of the best 30
+(`SEARCH_OPEN_LIMIT`) plus the match the results strip stands on, and loads those matches before anything else,
+in rank order, so the first (best) match is always present and is selected. Every other match whose folder is
+open anyway is loaded too, so during a search a folder's "+N more" row hides no match and reads "+N not
+matching…" (review 3 B16). A folder
 match is selected and opened; a declaration match selects its file, opens the file's Structure column and
-selects the declaration once the outline is in (`showSearchMatch(match, true)` also opens its card). When the
-matches do not all fit the row limit the status bar says "showing N of M matches", and when more matched than
-the map opened, or the file list was cut, it says so too. A one-character query does not search the project: it
-only filters the rows already on the map, and the status bar says how many characters a project-wide search
-needs. The search never writes to the manual expansion set. Folders opened or
-closed by hand while a query is active (chevron, column ×, a reveal) are kept in the search's own view, so
-closing a search-opened column really closes it, and clearing the query restores exactly the manually
-expanded branches. Re-running the same query after an in-app file change reloads the map and leaves the
-selection alone. A column filter removes unmatched rows and their now-unreachable descendants so the
+selects the declaration once the outline is in (`showSearchMatch(match, true)` also opens its card).
+
+The **results strip** (`ProjectMapResultsStrip`, review 3 B1) sits under the Map window's search row while a
+query searches: "3 of 49" (or "3 of 2,000 (best of 5,120)"), a "partial" mark when the file list was cut,
+previous / next buttons, and a drop-down list of every kept match (name and relative folder; folders and
+declarations marked). In the search field Enter steps to the next match, Shift+Enter to the previous (both
+wrap), Ctrl/Cmd+Enter opens the current one (a file in the editor, a declaration's card); with nothing to step
+to, Enter opens the selection as before. F3 / Shift+F3 step too, in the field and on the map. Each step selects
+and reveals the match (`resultsGoTo` → `showSearchMatch`); a match past the opened 30 gets its own folders
+opened. Selecting a match's row by hand moves the strip to it. In the Map window Find (`find.show`: Ctrl+F,
+Cmd+F, Emacs C-s) focuses "Search the map…" and Find Backward steps back, through
+`KeyDispatcher.HANDLED_COMMANDS` on the window's content (a focused card's own handler is asked first).
+
+The search's notices go to the Map window's own status line (below). Once its folders are loaded the search
+says, together, everything that applies: how many matched when more than the 2,000 kept, that the map opens the
+folders of the best 30 only, how many of those the row limit left off, and that the search did not reach the
+whole project (it lists at most 200,000 files, 64 levels deep). A one-character query does not search the
+project: it only filters the rows already on the map, and the status line says how many characters a
+project-wide search needs. The first search of a remote project says it is listing the host's files meanwhile.
+A search's notice goes when its query changes or is cleared. The search never writes to the manual expansion set
+while it stands. Folders opened or closed by hand while a query is active (chevron, column ×, a reveal) are kept
+in the search's own view, so closing a search-opened column really closes it. Clearing the query stops the
+filtering but keeps the place (review 3 B2, reversing review 2's B26): the selection stays, the folders that
+lead to it and the ones opened by hand during the search join the manual set (one closed by hand does not), and
+the row selected before the search is put in the history, so one Back returns to it. Re-running the same query
+after an in-app file change reloads the map and leaves the selection alone. A column filter removes unmatched rows and their now-unreachable descendants so the
 remaining geometry is still a valid hierarchy. In a folder with more children than its row limit loads, a
 column filter lists the folder again with the filter (`Request.columnQueries`), and the children it matches
 are loaded beyond the limit, so the filter searches the whole folder and its "shown/total" count is true.
 
 When a query or chip is active and no loaded row matches, a "No files match" message (with the query)
 appears over the canvas once that state has lasted 300 ms — a global query first fades what is loaded and
-only then opens the folders that hold its matches. The viewport is not moved. A column whose own filter
+only then opens the folders that hold its matches. It always names the query in the field, refreshed as the
+query changes (review 3 B12), and says "the search did not reach the whole project" when the answer was partial
+(A2). The viewport is not moved. A column whose own filter
 matches nothing keeps one row of space for a "No matches" line.
 
 Rows use `ProjectPathOrder`: directories first, then names in natural order (runs of digits compared by
@@ -696,8 +726,10 @@ Responsibilities are split as follows:
 - `ProjectMapView.MapSurface` owns paint, layout, transforms, hit-testing, pointer/keyboard input,
   column controls, icon snapshots, and accessibility text. The surface has the `PARENT` role (a plain group, not
   a tree: it has no item nodes) and its accessible TEXT names the selection with its kind, open / unsaved / Git /
-  bookmark / Personal Notes / Structure states and its place among the rows its column draws (not those a
-  filter took out, nor a "+N more" row); every change is announced with `notifyAccessibleAttributeChanged`.
+  bookmark / Personal Notes / Structure states, the folder that holds it (relative to the root) and its place
+  among the rows its column draws (not those a filter took out, nor a "+N more" row); while a search stands, a
+  match also says "match k of N" (and "partial search"). Every change is announced with
+  `notifyAccessibleAttributeChanged`, as are the results strip's count and the status line (review 3 B11).
 - `ProjectMapPreview` owns one bounded read-only RichTextFX card, off-thread file loading and syntax
   highlighting, in-place refresh, drag/resize behavior, and promotion to an editor tab.
 - `ProjectMapStructure` owns the structure columns: which files and declarations have one open, the
@@ -774,7 +806,7 @@ Nothing is dropped silently. The snapshot carries `DirectoryFacts` (real child c
 unreadable) for every listed directory, and a column header shows "shown/total" whenever a filter or a
 limit hides rows. A directory that got no rows at all is reported as skipped but stays open: its column holds
 one "Not loaded — over the 1,200-row limit" stub, it and the folders opened below it stay in the manual
-expansion set, and it fills again once a column is closed. The status bar says the overall limit was
+expansion set, and it fills again once a column is closed. The status line says the overall limit was
 reached; the same message appears when "+N more…" cannot load anything. When the only open folders are the
 one being read and the folders that lead to it, closing a column would close it too, so the message says to
 type in that column's filter instead, which reaches the rest of a long folder. An expanded folder with nothing to list gets a column holding
@@ -809,7 +841,7 @@ A repaint asked for while it is closed (a Git status push) is only noted too, an
 A Git status push equal to the last one (most Git refreshes: a tab switch, a save) is not applied again,
 in the Project panel or the Map, and the Map's ancestor walk stops at the first folder already recorded.
 A state snapshot looks the open files and marker candidates up among the rows rather than asking each row.
-A folder that newly cannot be read is reported once in the status bar as well as by its column's stub.
+A folder that newly cannot be read is reported once in the status line as well as by its column's stub.
 
 All scene-graph mutation, paint, and control synchronization stays on the JavaFX application thread.
 No paint, hover, or per-keystroke path accesses the filesystem. `dispose()` invalidates generations,

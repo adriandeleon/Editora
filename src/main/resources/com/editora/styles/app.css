@@ -1444,6 +1444,50 @@
     -fx-padding: 6;
     -fx-spacing: 4;
 }
+/* Under the search row while a query searches: "3 of 49", previous / next, the list of matches (Map review 3 B1). */
+.project-map-results {
+    -fx-spacing: 4;
+    -fx-padding: 0 2 0 2;
+}
+.project-map-results-step {
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-padding: 2 5 2 5;
+    -fx-min-width: 24px;
+    -fx-min-height: 24px;
+}
+.project-map-results-step:hover {
+    -fx-background-color: -color-neutral-muted;
+}
+.project-map-results-count {
+    -fx-font-size: 0.85em;
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 0 4 0 2;
+}
+.project-map-results-partial {
+    -fx-font-size: 0.8em;
+    -fx-text-fill: -color-warning-fg;
+    -fx-border-color: -color-warning-fg;
+    -fx-border-radius: 8;
+    -fx-padding: 0 6 0 6;
+}
+.project-map-results-list {
+    -fx-font-size: 0.85em;
+}
+/* The Map window's own status line, under the Map: every Map message lands here (Map review 3 A2). */
+.project-map-status-line {
+    -fx-padding: 1 4 0 4;
+}
+.project-map-status-text {
+    -fx-font-size: 0.85em;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-status-text.project-map-status-warn {
+    -fx-text-fill: -color-warning-fg;
+}
+.project-map-status-text.project-map-status-error {
+    -fx-text-fill: -color-danger-fg;
+}
 
 /* Canvas project map. Filters are native controls for focus/accessibility; only the hierarchy is painted. */
 .project-map-view {

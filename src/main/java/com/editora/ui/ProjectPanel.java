@@ -337,6 +337,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final ProjectMapView mapView;
     /** The Map's own search field, in its window above the Map (the panel's field filters the tree). */
     private final TextField mapFilterField = new TextField();
+    /** The Map window's own status line, under the Map: every Map message lands there (Map review 3 A2). */
+    private final ProjectMapStatusLine mapStatusLine = new ProjectMapStatusLine();
+    /** Under the Map's search row: "3 of 49", previous / next and the list of matches (Map review 3 B1). */
+    private @Nullable ProjectMapResultsStrip mapResultsStrip;
 
     private final PauseTransition mapFilterDebounce = new PauseTransition(Duration.millis(150));
     /** Bumped by every Map search and by the Map window closing, so a stale result has nowhere to land. */
@@ -640,11 +644,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         });
         mapFilterDebounce.setOnFinished(e -> searchMap());
-        // Down / Enter / C-n / C-p hand navigation to the Canvas surface; outside Emacs the keymap binds C-n /
-        // C-p to New File / Print / Find File, which would run instead.
+        // Down / C-n / C-p hand navigation to the Canvas surface; Enter / Shift+Enter / F3 / Shift+F3 step
+        // through the matches and Ctrl/Cmd+Enter opens the current one (Map review 3 B1). Outside Emacs the keymap
+        // binds C-n / C-p to New File / Print / Find File, and F3 to Find, which would run instead.
         mapFilterField
                 .getProperties()
-                .put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("C-n", "C-p"));
+                .put(
+                        com.editora.command.KeyDispatcher.CLAIMED_KEYS,
+                        java.util.Set.of("C-n", "C-p", "f3", "S-f3", "enter", "S-enter", "C-enter", "Cmd-enter"));
         mapFilterField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             switch (e.getCode()) {
                 case DOWN -> {
@@ -652,8 +659,16 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     e.consume();
                 }
                 case ENTER -> {
-                    mapView.openSelection();
+                    resultsEnter(e);
                     e.consume();
+                }
+                case F3 -> {
+                    if (!e.isControlDown() && !e.isAltDown() && !e.isMetaDown()) {
+                        if (!resultsSearchNow()) {
+                            mapView.resultsStep(e.isShiftDown() ? -1 : 1);
+                        }
+                        e.consume();
+                    }
                 }
                 case N -> {
                     if (e.isControlDown()) {
@@ -675,10 +690,96 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         filterRow.getStyleClass().add("project-filter-bar");
         filterRow.setAlignment(Pos.CENTER);
         HBox.setHgrow(mapFilterField, Priority.ALWAYS);
-        VBox content = new VBox(filterRow, mapView);
+        ProjectMapResultsStrip strip = new ProjectMapResultsStrip(mapView, mapFilterField::getText);
+        mapResultsStrip = strip;
+        mapView.setOnResultsChanged(strip::refresh);
+        mapFilterField.textProperty().addListener((o, w, n) -> strip.refresh());
+        // Everything the Map says goes to its own window's status line, never the editor's (A2).
+        mapView.setOnStatus(mapStatusLine::show);
+        mapView.setOnSearchNotice(mapStatusLine::showSearch);
+        VBox content = new VBox(filterRow, strip, mapView, mapStatusLine);
         content.getStyleClass().add("project-map-window");
         VBox.setVgrow(mapView, Priority.ALWAYS);
+        // The usual find keys reach the Map's search (B17): Find (Ctrl+F, Cmd+F, Emacs C-s) focuses the field,
+        // Find Backward steps to the previous match. A card's own handler is asked first.
+        content.getProperties()
+                .put(com.editora.command.KeyDispatcher.HANDLED_COMMANDS, (java.util.function.Predicate<String>)
+                        this::resultsFindCommand);
         return content;
+    }
+
+    /** Enter in the Map's search field: the next match, Shift the previous, Ctrl/Cmd the current one opened. */
+    private void resultsEnter(KeyEvent e) {
+        if (resultsSearchNow()) {
+            return; // typed faster than the search waits: Enter searches, and lands on the first match
+        }
+        if (e.isShortcutDown()) {
+            mapView.resultsOpenCurrent();
+        } else if (mapView.resultsStep(e.isShiftDown() ? -1 : 1)) {
+            return;
+        } else if (mapFilterField.getText().isBlank() || mapView.resultsAnswered()) {
+            mapView.openSelection(); // nothing to step to: Enter opens the selection, as before
+        }
+    }
+
+    /**
+     * A key that steps through the matches came while the search was still waiting for typing to pause: the
+     * Map still holds the previous query's matches, so the query typed is searched now instead. Whether it was.
+     */
+    private boolean resultsSearchNow() {
+        if (mapFilterDebounce.getStatus() != javafx.animation.Animation.Status.RUNNING) {
+            return false;
+        }
+        mapFilterDebounce.stop();
+        searchMap();
+        return true;
+    }
+
+    /** {@code find.show} and {@code find.showBackward} while the Map window has the keyboard. */
+    private boolean resultsFindCommand(String commandId) {
+        switch (commandId) {
+            case "find.show" -> {
+                mapFilterField.requestFocus();
+                mapFilterField.selectAll();
+                return true;
+            }
+            case "find.showBackward" -> {
+                if (!mapView.resultsStep(-1)) {
+                    mapFilterField.requestFocus();
+                    mapFilterField.selectAll();
+                }
+                return true;
+            }
+            default -> {
+                return false;
+            }
+        }
+    }
+
+    /**
+     * A file operation's outcome (move, undo, delete): told in the Map window's status line when the Map window
+     * is the one in use — the operation was started there — else in the editor window's (Map review 3 A2).
+     */
+    private void fileOpStatus(String message) {
+        if (mapWindow.isFocused()) {
+            mapStatusLine.show(message);
+        } else {
+            onStatus.accept(message);
+        }
+    }
+
+    /** The Map window's status line (tests). */
+    ProjectMapStatusLine mapStatusLine() {
+        return mapStatusLine;
+    }
+
+    /** The Map window's results strip (tests). */
+    ProjectMapResultsStrip mapResultsStrip() {
+        ProjectMapResultsStrip strip = mapResultsStrip;
+        if (strip == null) {
+            throw new IllegalStateException("the Map window's content is built in the constructor");
+        }
+        return strip;
     }
 
     /**
@@ -772,7 +873,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         if (file == null || mapRoot == null || !com.editora.config.PathKeys.isAtOrUnder(file, mapRoot)) {
-            onStatus.accept(tr("status.projectMap.noActiveFile"));
+            mapStatusLine.show(tr("status.projectMap.noActiveFile")); // said in the window that is now in front
             return;
         }
         mapView.revealPath(file);
@@ -841,6 +942,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private void searchMap() {
         long gen = mapSearchGen.incrementAndGet(); // invalidate any in-flight Map search
         String q = mapFilterField.getText().trim();
+        mapStatusLine.clearSearch(); // the previous query's notice
         mapView.setQuery(q);
         syncWatches();
         Path searchRoot = mapRoot;
@@ -854,7 +956,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // stalled every window for a third of a second on a mid-size repository. It filters the rows already
             // on the map instead, and the status says how to search the whole project.
             mapView.setSearchMatches(q, List.of(), 0, false);
-            onStatus.accept(tr("project.map.status.searchTooShort", MIN_MAP_SEARCH_LENGTH));
+            mapStatusLine.showSearch(tr("project.map.status.searchTooShort", MIN_MAP_SEARCH_LENGTH));
             return;
         }
         if (parsed.symbols()) {
@@ -864,6 +966,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         com.editora.search.ProjectFileList.Settings settings =
                 new com.editora.search.ProjectFileList.Settings(respectGitignore, showHidden);
         java.util.function.BooleanSupplier superseded = () -> gen != mapSearchGen.get();
+        resultsSayListingHost(searchRoot, settings);
         submitUnlessDisposed(searchExecutor, () -> {
             if (superseded.getAsBoolean()) {
                 return; // a newer keystroke is queued behind this one: its answer is the one to show
@@ -881,6 +984,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 if (gen != mapSearchGen.get() || !isMapShowing()) {
                     return;
                 }
+                mapStatusLine.clearSearch(); // "listing the files on host…" is over
                 mapView.setSearchMatches(found);
             });
             if (list.stale()) {
@@ -972,9 +1076,30 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 },
                 message -> {
                     if (gen == mapSearchGen.get()) {
-                        onStatus.accept(message);
+                        mapStatusLine.showSearch(message);
                     }
                 });
+    }
+
+    /**
+     * The first search of a remote project lists its files on the host first, which takes a moment: the status
+     * line says so meanwhile (Map review 3 A4). Nothing when the list is in hand or the project is local.
+     */
+    private void resultsSayListingHost(Path root, com.editora.search.ProjectFileList.Settings settings) {
+        com.editora.search.ProjectFileList list = mapFiles;
+        if (com.editora.vfs.Vfs.isLocal(root) || list != null && list.isFor(root, settings)) {
+            return;
+        }
+        String host = null;
+        try {
+            host = root.toUri().getHost();
+        } catch (RuntimeException unavailable) {
+            // no URI for this file system: the notice names no host
+        }
+        mapStatusLine.showSearch(
+                host == null || host.isBlank()
+                        ? tr("project.map.status.searchingRemote")
+                        : tr("project.map.status.searchingHost", host));
     }
 
     /** Where the Map's {@code @name} queries look declarations up; without one they find none. */
@@ -2368,8 +2493,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Injects the status-message sink used for drag-move / multi-delete feedback. */
     public void setOnStatus(Consumer<String> onStatus) {
-        this.onStatus = onStatus == null ? m -> {} : onStatus;
-        mapView.setOnStatus(this.onStatus);
+        this.onStatus = onStatus == null ? m -> {} : onStatus; // the Map's own messages go to its status line
     }
 
     /** Injects how the Project Map hands keyboard focus back to the editor (Escape with nothing left to dismiss). */
@@ -2996,7 +3120,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (moving) {
             // one drag at a time: a second drop during the first's jdtls answer shared its state, and lost a move
             // that it reported as cancelled (seventh review BR4)
-            onStatus.accept(tr("project.moveInProgress"));
+            fileOpStatus(tr("project.moveInProgress"));
             return;
         }
         int skipped = 0;
@@ -3010,7 +3134,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         }
         if (moveNeedsConfirmation(movable) && !confirmQuestion.test(moveQuestion(movable, targetDir))) {
-            onStatus.accept(tr("project.moveCancelled"));
+            fileOpStatus(tr("project.moveCancelled"));
             return;
         }
         List<Move> planned = new ArrayList<>();
@@ -3040,7 +3164,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                                     : notMoved == 0
                                             ? tr("project.moved", moved, targetDir.getFileName())
                                             : tr("project.movedSome", moved, notMoved);
-            onStatus.accept(status);
+            fileOpStatus(status);
             moving = false;
             renameParticipant.endMove(false, status);
         });
@@ -3123,7 +3247,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      */
     void undoLastMove() {
         if (moving) {
-            onStatus.accept(tr("project.undoMoveInProgress")); // not "drop again": this was Undo Move (BQ5)
+            fileOpStatus(tr("project.undoMoveInProgress")); // not "drop again": this was Undo Move (BQ5)
             return;
         }
         List<Move> moves = lastMove;
@@ -3163,7 +3287,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                             : notBack == 0
                                     ? tr("project.moveUndone", done.size())
                                     : tr("project.moveUndoneSome", done.size(), notBack);
-            onStatus.accept(status);
+            fileOpStatus(status);
             moving = false;
             renameParticipant.endMove(true, status);
         });
@@ -3238,13 +3362,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         for (Map.Entry<Path, byte[]> expected : approval.expectedBytes().entrySet()) {
             try {
                 if (!java.util.Arrays.equals(expected.getValue(), deleteOperations.readAllBytes(expected.getKey()))) {
-                    onStatus.accept(
-                            tr("project.deleteChanged", expected.getKey().getFileName()));
+                    fileOpStatus(tr("project.deleteChanged", expected.getKey().getFileName()));
                     completion.complete(new DeleteResult(false, 0, files));
                     return;
                 }
             } catch (IOException | RuntimeException changedOrMissing) {
-                onStatus.accept(tr("project.deleteChanged", expected.getKey().getFileName()));
+                fileOpStatus(tr("project.deleteChanged", expected.getKey().getFileName()));
                 completion.complete(new DeleteResult(false, 0, files));
                 return;
             }
@@ -3304,9 +3427,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             refreshAfterChange();
         }
         if (trashed == 1) {
-            onStatus.accept(tr("project.trashedOne", firstTrashedName(files, failed, refusedByTrash)));
+            fileOpStatus(tr("project.trashedOne", firstTrashedName(files, failed, refusedByTrash)));
         } else if (trashed > 1) {
-            onStatus.accept(tr("project.trashedMany", trashed));
+            fileOpStatus(tr("project.trashedMany", trashed));
         }
         completion.complete(new DeleteResult(true, deleted, failed));
     }

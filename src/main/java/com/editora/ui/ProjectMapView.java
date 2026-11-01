@@ -197,10 +197,10 @@ final class ProjectMapView extends VBox {
 
     private boolean searchMatchesPartial;
     /**
-     * How many of a search's matches the map opens the folders of and keeps loaded (the best ones); the rest are
-     * in {@link #searchResult()} only.
+     * How many of a search's matches the map opens the folders of and keeps loaded (the best ones), plus the one
+     * the results strip stands on; the rest are in {@link #searchResult()} and its list (Map review 3 B1, A9).
      */
-    static final int SEARCH_OPEN_LIMIT = 300;
+    static final int SEARCH_OPEN_LIMIT = 30;
 
     /** The current query's whole answer: its files, folders and declarations, best first (review 3 A5, E2). */
     private ProjectMapSearchResult searchResult = ProjectMapSearchResult.EMPTY;
@@ -208,6 +208,12 @@ final class ProjectMapView extends VBox {
     private @Nullable Path searchFocusFolder;
     /** A match stepped to beyond the {@link #SEARCH_OPEN_LIMIT} opened ones: its folders are opened as well. */
     private @Nullable Path searchCurrent;
+    /** The match the results strip stands on, an index into {@link #searchResult}'s matches; -1 for none (B1). */
+    private int resultsCursor = -1;
+    /** Told whenever the search's answer or the match the strip stands on changes (the results strip). */
+    private Runnable resultsOnChanged = () -> {};
+    /** Where the search's own notices go (partial, cut, how many the map opens); the status line by default. */
+    private java.util.function.@Nullable Consumer<String> resultsOnNotice;
     /** The file whose Structure column a declaration landing opened (not one the user had open). */
     private @Nullable Path searchStructureOpened;
     /** A declaration the search is landing on, waiting for its file's row and outline. */
@@ -218,7 +224,7 @@ final class ProjectMapView extends VBox {
 
     /** The query whose first match was last selected, so re-running it does not steal the selection again. */
     private String searchSelectionQuery = "";
-    /** The selection when the current query was started, restored when it is cleared. */
+    /** The selection when the current query was started: put in the history when the query is cleared (B2). */
     private @Nullable Path searchReturnSelection;
     /** The row the current query selected by itself (its first match), as opposed to one the user picked. */
     private @Nullable Path searchSelected;
@@ -723,10 +729,7 @@ final class ProjectMapView extends VBox {
         if (disposed || !surface.hasNoMatches()) {
             return;
         }
-        noMatchesLabel.setText(
-                query.isBlank()
-                        ? tr("project.map.noMatches.filters")
-                        : tr("project.map.noMatches.query", query.strip()));
+        noMatchesLabel.setText(resultsBannerText());
         noMatchesLabel.setVisible(true);
     }
 
@@ -1116,16 +1119,19 @@ final class ProjectMapView extends VBox {
         searchSelectionQuery = "";
         searchReturnSelection = null;
         searchSelected = null;
+        resultsCursor = -1;
+        resultsOnChanged.run();
     }
 
     void setQuery(String query) {
         String value = query == null ? "" : query;
         if (!this.query.equals(value)) {
             boolean hadSearchState = !searchExpanded.isEmpty() || !searchOpened.isEmpty() || !searchClosed.isEmpty();
+            boolean keepPlace = false;
             if (this.query.isBlank()) {
-                searchReturnSelection = surface.selectedPath(); // where Escape (or an emptied field) comes back to
+                searchReturnSelection = surface.selectedPath(); // recorded in history when the search clears
             } else if (value.isBlank()) {
-                searchRestoreSelection(hadSearchState);
+                keepPlace = resultsKeepPlace(); // before the search's folders are dropped
             }
             this.query = value;
             // What was opened or closed by hand belonged to the previous query's results.
@@ -1134,48 +1140,56 @@ final class ProjectMapView extends VBox {
             updateFilters();
             if (value.isBlank()) {
                 clearSearchState();
-                if (hadSearchState) {
+                if (hadSearchState || keepPlace) {
+                    pendingSelection = surface.selectedPath(); // kept in view as the search's columns go
                     reload();
                     onExpandedChanged.run();
                 }
+            } else {
+                resultsOnChanged.run(); // the strip says "Searching…" until this query's answer lands
             }
+            resultsRefreshBanner();
         }
     }
 
     /**
-     * The query is being cleared. The selection goes back to where it was before the search, unless the user
-     * picked a row of their own meanwhile that stays on the map once the search's folders close (B26).
+     * The query is being cleared: the map stops filtering but stays where the search took the user (Map review 3
+     * B2, reversing review 2's B26). The selection stays; its folders, and the ones the user opened by hand during
+     * the search, become ordinary open folders; the row selected before the search goes into the history, so one
+     * Back returns to it. Whether anything was promoted (the map then reloads).
      */
-    private void searchRestoreSelection(boolean reloads) {
+    private boolean resultsKeepPlace() {
         Path before = searchReturnSelection;
         searchReturnSelection = null;
-        Path current = surface.selectedPath();
-        if (before == null || root == null || !before.startsWith(root)) {
-            return;
-        }
-        boolean ownPick = current != null && !current.equals(searchSelected) && staysLoadedWithoutSearch(current);
         searchSelected = null;
-        if (ownPick || before.equals(current)) {
-            return;
+        Path currentRoot = root;
+        Path current = surface.selectedPath();
+        if (currentRoot == null || current == null || !current.startsWith(currentRoot)) {
+            return false;
         }
-        if (reloads) {
-            pendingSelection = before; // applied, and revealed, by the reload that closes the search's folders
-        } else if (surface.contains(before)) {
-            surface.select(before);
+        Path row = current;
+        while (ProjectMapStructure.isSymbolPath(row) && row.getParent() != null) {
+            row = row.getParent(); // a declaration row: its file's folders are what stay open
         }
-    }
-
-    /** Whether {@code path}'s row is still listed once only the manually opened folders are open. */
-    private boolean staysLoadedWithoutSearch(Path path) {
-        for (Path parent = path.getParent(); parent != null && root != null; parent = parent.getParent()) {
-            if (!expanded.contains(parent)) {
-                return false;
+        Set<Path> promoted = new HashSet<>(searchOpened);
+        promoted.addAll(ProjectMapModel.ancestorsWithin(currentRoot, List.of(row)));
+        if (row.equals(searchFocusFolder)) {
+            promoted.add(row); // the folder match the search opened, and the user is still on it
+        }
+        promoted.removeIf(path -> !path.startsWith(currentRoot) || searchClosed.contains(path));
+        boolean changed = expanded.addAll(promoted);
+        boolean match = row.equals(searchCurrent) || searchResult.paths().contains(row);
+        if (match && revealPins.add(row)) {
+            changed = true; // a match, pinned past its folder's row limit by the search, stays loaded
+            while (revealPins.size() > MAX_REVEAL_PINS) {
+                revealPins.remove(revealPins.iterator().next());
             }
-            if (parent.equals(root)) {
-                return true;
-            }
         }
-        return path.equals(root);
+        if (before != null && before.startsWith(currentRoot) && !before.equals(current)) {
+            recordSelection(before);
+            recordSelection(current);
+        }
+        return changed;
     }
 
     void setSearchMatches(String query, List<Path> matches) {
@@ -1230,6 +1244,7 @@ final class ProjectMapView extends VBox {
         if (newQuery || searchCurrent != null && !allPaths.contains(searchCurrent)) {
             searchCurrent = null;
         }
+        resultsCursor = resultsCursorAfter(newQuery, kept);
         surface.setSearchHits(Set.copyOf(allPaths));
         Path target = first == null ? null : first.path();
         if (newQuery) {
@@ -1246,6 +1261,9 @@ final class ProjectMapView extends VBox {
             surface.select(target);
             searchResolveSymbol();
         }
+        resultsRefreshBanner();
+        surface.updateAccessibleText();
+        resultsOnChanged.run();
     }
 
     /** The current query's answer as the map holds it (only matches under its root); empty without one. */
@@ -1278,6 +1296,11 @@ final class ProjectMapView extends VBox {
             refocus = true;
         }
         searchSelected = target;
+        int index = searchResult.matches().indexOf(match);
+        if (index >= 0 && index != resultsCursor) {
+            resultsCursor = index;
+            resultsOnChanged.run();
+        }
         searchPrepareLanding(match, open);
         if (refocus || !surface.contains(target)) {
             pendingSelection = target;
@@ -1290,6 +1313,222 @@ final class ProjectMapView extends VBox {
         if (open && match.kind() == ProjectMapSearchResult.Kind.FILE) {
             onOpenFile.accept(target);
         }
+    }
+
+    // --- Search results: the strip's cursor, the banner, the notices (Project Map review 3 B1, A2, B12) ---
+
+    /** Told whenever the search's answer or the match the results strip stands on changes. */
+    void setOnResultsChanged(Runnable callback) {
+        resultsOnChanged = callback == null ? () -> {} : callback;
+    }
+
+    /**
+     * Where the search's own notices go — the search did not reach the whole project, the list was cut, the map
+     * opens the folders of the best few only. Without one they go to {@link #setOnStatus}'s sink.
+     */
+    void setOnSearchNotice(java.util.function.@Nullable Consumer<String> callback) {
+        resultsOnNotice = callback;
+    }
+
+    /** Whether the answer the map holds is the one for the query in the field (not an earlier query's). */
+    boolean resultsAnswered() {
+        return searching() && searchResult.query().equals(query);
+    }
+
+    /** The index of the match the strip stands on in {@link #searchResult()}'s matches; -1 for none. */
+    int resultsCursor() {
+        return resultsAnswered() && resultsCursor < searchResult.matches().size() ? resultsCursor : -1;
+    }
+
+    /** The match the strip stands on, or null. */
+    ProjectMapSearchResult.@Nullable Match resultsCurrent() {
+        int index = resultsCursor();
+        return index < 0 ? null : searchResult.matches().get(index);
+    }
+
+    /**
+     * Steps {@code delta} matches on from the current one, wrapping at either end, and lands on it (selected and
+     * revealed; a match past the opened ones gets its folders opened). False when there is nothing to step to.
+     */
+    boolean resultsStep(int delta) {
+        int count = resultsAnswered() ? searchResult.matches().size() : 0;
+        if (count == 0) {
+            return false;
+        }
+        int from = resultsCursor();
+        int next = from < 0 ? (delta >= 0 ? 0 : count - 1) : Math.floorMod(from + delta, count);
+        resultsGoTo(next, false);
+        return true;
+    }
+
+    /** Lands on match {@code index}; {@code open} also opens it (a file in the editor, a declaration's card). */
+    void resultsGoTo(int index, boolean open) {
+        if (!resultsAnswered() || index < 0 || index >= searchResult.matches().size()) {
+            return;
+        }
+        ProjectMapSearchResult.Match match = searchResult.matches().get(index);
+        resultsCursor = index;
+        showSearchMatch(match, open);
+        resultsOnChanged.run();
+    }
+
+    /** Ctrl/Cmd+Enter in the search field: opens the current match, or the selection when there is none. */
+    void resultsOpenCurrent() {
+        int index = resultsCursor();
+        if (index >= 0) {
+            resultsGoTo(index, true);
+        } else {
+            openSelection();
+        }
+    }
+
+    /** The match the strip stands on after a new answer: the first for a new query, else the same one if kept. */
+    private int resultsCursorAfter(boolean newQuery, List<ProjectMapSearchResult.Match> kept) {
+        if (kept.isEmpty()) {
+            return -1;
+        }
+        if (newQuery || resultsCursor < 0) {
+            return 0;
+        }
+        List<ProjectMapSearchResult.Match> before = searchResult.matches();
+        ProjectMapSearchResult.Match was = resultsCursor < before.size() ? before.get(resultsCursor) : null;
+        int same = was == null ? -1 : kept.indexOf(was);
+        return same >= 0 ? same : Math.min(resultsCursor, kept.size() - 1);
+    }
+
+    /** A row the user selected that is a match (a file or folder): the strip stands on it from now on. */
+    private void resultsFollowSelection(Path path) {
+        if (!resultsAnswered() || ProjectMapStructure.isSymbolPath(path)) {
+            return;
+        }
+        ProjectMapSearchResult.Match current = resultsCurrent();
+        if (current != null && current.path().equals(path)) {
+            return;
+        }
+        List<ProjectMapSearchResult.Match> matches = searchResult.matches();
+        for (int index = 0; index < matches.size(); index++) {
+            if (matches.get(index).kind() != ProjectMapSearchResult.Kind.SYMBOL
+                    && matches.get(index).path().equals(path)) {
+                resultsCursor = index;
+                resultsOnChanged.run();
+                return;
+            }
+        }
+    }
+
+    /**
+     * What a screen reader hears after the row's own description while a search stands: which match of how many
+     * it is, and whether the search was partial (B11). Empty when the row is not a match or nothing is searched.
+     */
+    private String resultsAccessibleSuffix(Path path) {
+        if (!resultsAnswered() || searchResult.isEmpty()) {
+            return "";
+        }
+        ProjectMapSearchResult.Match current = resultsCurrent();
+        int index = current != null && current.path().equals(path) ? resultsCursor() : -1;
+        if (index < 0) {
+            List<ProjectMapSearchResult.Match> matches = searchResult.matches();
+            for (int at = 0; at < matches.size() && index < 0; at++) {
+                if (matches.get(at).path().equals(path)) {
+                    index = at;
+                }
+            }
+        }
+        if (index < 0) {
+            return "";
+        }
+        return tr(
+                searchMatchesPartial
+                        ? "project.map.accessible.searchMatchPartial"
+                        : "project.map.accessible.searchMatch",
+                index + 1,
+                searchResult.matches().size());
+    }
+
+    /** The folder that holds {@code path}, relative to the root, for a screen reader (B11); the root's own name. */
+    private String resultsAccessibleFolder(Path path) {
+        Path currentRoot = root;
+        Path row = path;
+        while (ProjectMapStructure.isSymbolPath(row) && row.getParent() != null) {
+            row = row.getParent();
+        }
+        Path parent = row.getParent();
+        if (currentRoot == null || parent == null || !parent.startsWith(currentRoot) || row.equals(currentRoot)) {
+            return "";
+        }
+        Path rootName = currentRoot.getFileName();
+        String relative = currentRoot.relativize(parent).toString().replace('\\', '/');
+        return relative.isEmpty() ? (rootName == null ? currentRoot.toString() : rootName.toString()) : relative;
+    }
+
+    /** Keeps "No files match" naming the query in the field, and saying when the search was partial (B12, A2). */
+    private void resultsRefreshBanner() {
+        if (noMatchesLabel.isVisible()) {
+            noMatchesLabel.setText(resultsBannerText());
+        }
+    }
+
+    /** The no-match banner's text for the query and filters as they are now. */
+    private String resultsBannerText() {
+        if (query.isBlank()) {
+            return tr("project.map.noMatches.filters");
+        }
+        boolean partial = resultsAnswered() && searchMatchesPartial;
+        return tr(partial ? "project.map.noMatches.partial" : "project.map.noMatches.query", query.strip());
+    }
+
+    /**
+     * The search's notice once its folders are loaded: everything that applies, together — how many matched and
+     * how many the list holds, that the map opens the folders of the best {@link #SEARCH_OPEN_LIMIT} only, how
+     * many of those the row limit left off, and that the search did not reach the whole project (A2). Empty when
+     * there is nothing to say.
+     */
+    private String resultsNotice(int shown) {
+        List<String> parts = new ArrayList<>();
+        int kept = searchResult.matches().size();
+        if (searchMatchesTotal > kept) {
+            parts.add(tr("project.map.status.search.listed", searchMatchesTotal, kept));
+        }
+        if (kept > SEARCH_OPEN_LIMIT) {
+            parts.add(tr("project.map.status.search.opened", SEARCH_OPEN_LIMIT));
+        }
+        if (shown < searchMatches.size()) {
+            parts.add(tr("project.map.status.search.rowLimit", shown, searchMatches.size()));
+        }
+        if (searchMatchesPartial) {
+            parts.add(tr(
+                    "project.map.status.search.partial",
+                    com.editora.search.ProjectFileList.MAX_FILES,
+                    com.editora.search.ProjectFileList.MAX_DEPTH));
+        }
+        return parts.isEmpty() ? "" : tr("project.map.status.search.notice", String.join(" ", parts));
+    }
+
+    private void resultsNotify(String notice) {
+        java.util.function.Consumer<String> sink = resultsOnNotice;
+        (sink == null ? onStatus : sink).accept(notice);
+    }
+
+    /**
+     * During a search, a folder's "+N more" row stands for siblings that do not match: every match in an open
+     * folder is pinned (see {@link #resultsPins}), so none is behind it (B16).
+     */
+    private static String resultsPlaceholderLabel(ProjectMapModel.PlaceholderKind kind, int remaining) {
+        return kind == ProjectMapModel.PlaceholderKind.MORE
+                ? tr("project.map.row.moreNotMatching", remaining)
+                : placeholderLabel(kind, remaining);
+    }
+
+    /** The matches past the opened ones whose folder is open anyway: kept loaded, so "+N more" hides none. */
+    private List<Path> resultsPins(Set<Path> open) {
+        List<Path> pins = new ArrayList<>();
+        for (Path path : searchResult.paths()) {
+            Path parent = path.getParent();
+            if (parent != null && (open.contains(parent) || parent.equals(root)) && !searchMatches.contains(path)) {
+                pins.add(path);
+            }
+        }
+        return pins;
     }
 
     /**
@@ -1907,15 +2146,19 @@ final class ProjectMapView extends VBox {
         if (searching() && searchCurrent != null) {
             pinned.add(searchCurrent); // a match stepped to beyond the opened ones
         }
+        Set<Path> openDirectories = expandedDirectories();
+        if (searching()) {
+            pinned.addAll(resultsPins(openDirectories)); // B16: "+N more" in a search hides no match
+        }
         pinned.addAll(revealPins);
         ProjectMapModel.Request request = new ProjectMapModel.Request(
                 requestedRoot,
-                expandedDirectories(),
+                openDirectories,
                 showHiddenDefault,
                 surface.hiddenOverrides(),
                 directoryLimits,
                 pinned,
-                ProjectMapView::placeholderLabel,
+                searching() ? ProjectMapView::resultsPlaceholderLabel : ProjectMapView::placeholderLabel,
                 () -> requested != generation.get(),
                 surface.columnFilterQueries(),
                 // A search opens exactly the folders that lead to its matches: no chain opens on its own.
@@ -2130,22 +2373,17 @@ final class ProjectMapView extends VBox {
     /** Nothing is dropped silently: say when matches or folders did not fit the overall limit. */
     private void reportLimits(ProjectMapModel.Snapshot loaded, Set<Path> loadedPaths) {
         if (searching()) {
-            if (announceMatches && !searchMatches.isEmpty()) {
+            if (announceMatches && (!searchMatches.isEmpty() || searchMatchesPartial)) {
                 int shown = 0;
                 for (Path match : searchMatches) {
                     if (loadedPaths.contains(match)) {
                         shown++;
                     }
                 }
-                if (shown < searchMatches.size()) {
-                    onStatus.accept(tr("project.map.status.matchesShown", shown, searchMatches.size()));
-                } else if (searchMatchesTotal > searchMatches.size()) {
-                    onStatus.accept(tr("project.map.status.searchTruncated", searchMatches.size(), searchMatchesTotal));
-                } else if (searchMatchesPartial) {
-                    onStatus.accept(tr(
-                            "project.map.status.searchPartial",
-                            searchMatches.size(),
-                            com.editora.search.ProjectFileList.MAX_FILES));
+                // Everything that applies, in the Map window's own status line (A2), not one notice of three.
+                String notice = resultsNotice(shown);
+                if (!notice.isEmpty()) {
+                    resultsNotify(notice);
                 }
             }
         } else if (loaded.capped() && (announceLimit || !wasCapped)) {
@@ -2389,6 +2627,7 @@ final class ProjectMapView extends VBox {
             recordSelection(path, surface.movingSibling);
         }
         updateNavigation();
+        resultsFollowSelection(path);
     }
 
     private void previewSelection(Path path) {
@@ -6663,6 +6902,12 @@ final class ProjectMapView extends VBox {
                 event.consume();
                 return;
             }
+            if (event.getCode() == KeyCode.F3 && plain) {
+                // F3 / Shift+F3 step through a search's matches (B1); claimed, so consumed either way.
+                resultsStep(event.isShiftDown() ? -1 : 1);
+                event.consume();
+                return;
+            }
             boolean onlyAlt =
                     event.isAltDown() && !event.isControlDown() && !event.isMetaDown() && !event.isShiftDown();
             if (onlyAlt && (event.getCode() == KeyCode.LEFT || event.getCode() == KeyCode.RIGHT)) {
@@ -6754,8 +6999,8 @@ final class ProjectMapView extends VBox {
         /**
          * Hands the surface's own chords to it ahead of the keymap while it is the focus owner: history
          * (Alt+Left/Right, otherwise swallowed as an unbound Alt chord), Fit (Shortcut+0, text-zoom reset in
-         * every keymap), Ctrl-N/Ctrl-P (New File, Print or Find File outside Emacs) and the row actions F2
-         * and Delete. Not while a column filter has the focus: there the keymap keeps its meaning.
+         * every keymap), Ctrl-N/Ctrl-P (New File, Print or Find File outside Emacs), the row actions F2
+         * and Delete, and F3/Shift+F3 (a search's next/previous match; Find again in some keymaps). Not while a column filter has the focus: there the keymap keeps its meaning.
          */
         private void claimKeys(boolean claim) {
             if (claim) {
@@ -7477,6 +7722,14 @@ final class ProjectMapView extends VBox {
                     states.add(tr("project.map.accessible.state.structureOpen"));
                 }
             }
+            String folder = resultsAccessibleFolder(current.path());
+            if (!folder.isEmpty()) {
+                base = tr("project.map.accessible.inFolder", base, folder); // which of four proxier.go (B11)
+            }
+            String match = resultsAccessibleSuffix(current.path());
+            if (!match.isEmpty()) {
+                base = base + ", " + match;
+            }
             return states.isEmpty() ? base : tr("project.map.accessible.withStates", base, String.join(", ", states));
         }
 
@@ -7683,7 +7936,8 @@ final class ProjectMapView extends VBox {
 
     /** The chord tokens the focused map surface takes ahead of the keymap; see {@code MapSurface.claimKeys}. */
     static Set<String> claimedChords(boolean mac) {
-        return Set.of("M-left", "M-right", mac ? "Cmd-0" : "C-0", "C-n", "C-p", "f2", "delete", "S-enter");
+        return Set.of(
+                "M-left", "M-right", mac ? "Cmd-0" : "C-0", "C-n", "C-p", "f2", "delete", "S-enter", "f3", "S-f3");
     }
 
     private static boolean safeTest(Predicate<Path> predicate, Path path) {
