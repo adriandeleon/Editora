@@ -1735,6 +1735,17 @@ final class MapSurface extends Region {
     /** The last session's {@code {zoom, offsetX, offsetY}}, applied by the first view in place of its fit. */
     double @Nullable [] bearingsViewport;
 
+    /** Views (working sets): the next rows are fitted again as a first view's are, with {@link #bearingsViewport}. */
+    void viewsRefit() {
+        viewportInitialized = false;
+        initialFitPending = false;
+    }
+
+    /** Views (trails): whether the first view's fit is done, so a card placed now goes beside its row. */
+    boolean viewsLaidOut() {
+        return viewportInitialized && !initialFitPending;
+    }
+
     private void syncColumnControls() {
         Set<ProjectMapModel.ColumnId> ids = entries.stream()
                 .filter(entry -> entry.depth() > 0)

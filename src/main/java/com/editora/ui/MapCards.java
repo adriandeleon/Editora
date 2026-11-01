@@ -124,6 +124,11 @@ final class MapCards {
 
         /** Pans the map (and the cards on it) by {@code dx, dy} pixels. */
         void panBy(double dx, double dy);
+
+        /** Views (trails): what a code card's menu adds at its end, built each time it opens. */
+        default List<javafx.scene.control.MenuItem> viewsCardMenu(ProjectMapPreview card) {
+            return List.of();
+        }
     }
 
     /**
@@ -158,6 +163,8 @@ final class MapCards {
     private final Map<ProjectMapPreview, ProjectMapStickyNotes> stickyNotes = new java.util.IdentityHashMap<>();
     /** The Structure columns stuck on file cards (their Structure button). */
     final Map<ProjectMapPreview, ProjectMapCardStructure> cardStructures = new java.util.IdentityHashMap<>();
+    /** Views (trails): a trail stop's note, stuck on the stop's card while the trail plays there. */
+    private final Map<ProjectMapPreview, CardAttachment> viewsAttachments = new java.util.IdentityHashMap<>();
     /** The Overview card, when open (review 3 B4): not counted against the limit and never evicted. */
     private @Nullable ProjectMapOverviewCard overviewCard;
     /** When each open card was last used (pressed, focused, scrolled or opened); the oldest is evicted. */
@@ -253,6 +260,53 @@ final class MapCards {
             }
         }
         return card;
+    }
+
+    /**
+     * Views (trails): opens (or brings up) the code card of {@code key} — a file, or a declaration of an outlined file
+     * — placed beside its row as a click places it. Null when a declaration is not in its file's outline.
+     */
+    @Nullable
+    ProjectMapPreview viewsOpenCard(Path key) {
+        if (ProjectMapStructure.isSymbolPath(key)) {
+            ProjectMapStructure.Node node = structure.node(key);
+            return node == null ? null : previewSymbol(symbolEntry(node), null);
+        }
+        return previewFile(key.toAbsolutePath().normalize(), key);
+    }
+
+    /**
+     * Views (trails): sticks {@code stuck} on {@code card} — one per card, replacing (and disposing) any earlier one
+     * — until {@link #viewsDetach} or the card closes. It moves, rises and closes with the card like its other
+     * attachments.
+     */
+    void viewsAttach(ProjectMapPreview card, CardAttachment stuck) {
+        CardAttachment old = viewsAttachments.put(card, stuck);
+        if (old != null && old != stuck) {
+            old.dispose();
+        }
+        stuck.raise();
+        connectorsMoved();
+    }
+
+    /** Views (trails): takes what {@link #viewsAttach} stuck on {@code card} off it. */
+    void viewsDetach(ProjectMapPreview card) {
+        CardAttachment old = viewsAttachments.remove(card);
+        if (old != null) {
+            old.dispose();
+            connectorsMoved();
+        }
+    }
+
+    /** Views (trails): the attachment {@link #viewsAttach} stuck on {@code card}, or null. */
+    @Nullable
+    CardAttachment viewsAttachment(ProjectMapPreview card) {
+        return viewsAttachments.get(card);
+    }
+
+    /** Views (trails): an attachment moved; the connectors are drawn again once for the pulse. */
+    void viewsConnectorsMoved() {
+        connectorsMoved();
     }
 
     /** Opens (or brings up) the note card of a file or folder, when it has Personal Notes and notes are on. */
@@ -870,6 +924,7 @@ final class MapCards {
         preview.setNotesSuppressed(host.hideOpenNotes());
         preview.setOnShowSuppressedNotes(() -> host.showOpenNotes()); // the Notes button asks for them
         preview.setOnMoveToFreeSpace(() -> cardMoveToFreeSpace(preview, path));
+        preview.setViewsMenu(() -> host.viewsCardMenu(preview));
         preview.setOnTextShown(() -> {
             updateCardNotes(preview); // stored notes are found again in the new text
             restyleCardStructure(preview);
@@ -924,6 +979,10 @@ final class MapCards {
         if (notes != null) {
             stuck.add(notes);
         }
+        CardAttachment views = viewsAttachments.get(card);
+        if (views != null) {
+            stuck.add(views);
+        }
         return stuck;
     }
 
@@ -931,6 +990,7 @@ final class MapCards {
     private List<CardAttachment> allAttachments() {
         List<CardAttachment> all = new ArrayList<>(cardStructures.values());
         all.addAll(stickyNotes.values());
+        all.addAll(viewsAttachments.values());
         return all;
     }
 
@@ -1439,6 +1499,10 @@ final class MapCards {
         cardTouches.remove(preview);
         closeCardNotes(preview);
         closeCardStructure(preview);
+        CardAttachment views = viewsAttachments.remove(preview);
+        if (views != null) {
+            views.dispose();
+        }
         if (canvasHost != null) {
             canvasHost.getChildren().remove(preview);
         }
@@ -1456,6 +1520,7 @@ final class MapCards {
         previews.clear();
         List<CardAttachment> stuck = allAttachments();
         stickyNotes.clear();
+        viewsAttachments.clear();
         stuck.forEach(CardAttachment::dispose);
         cardStructures.clear();
         for (ProjectMapPreview preview : open) {

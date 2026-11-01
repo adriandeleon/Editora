@@ -761,6 +761,8 @@ class ProjectMapLayoutFxTest {
                             tr("project.map.revealActiveFile"), // review 3, E9
                             tr("project.map.overview.open"), // the Overview card (review 3 B4)
                             tr("project.map.openCards"), // the open cards' list (review 3, C10)
+                            tr("project.map.workingSets"), // named views (Map explore, views)
+                            tr("project.map.trails"), // guided tours (Map explore, views)
                             tr("project.map.print"),
                             tr("project.map.exportPdf")),
                     items);

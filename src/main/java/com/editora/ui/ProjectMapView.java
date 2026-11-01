@@ -336,6 +336,8 @@ final class ProjectMapView extends VBox {
         notePreviews = cards.notePreviews;
         cardStructures = cards.cardStructures;
         previewConnectors = cards.previewConnectors;
+        workingSets = new ProjectMapWorkingSets(this);
+        trails = new ProjectMapTrails(this);
         FlowPane filters = buildFilters();
         HBox navigation = buildNavigation();
         buildCanvasHost();
@@ -419,6 +421,8 @@ final class ProjectMapView extends VBox {
                         revealActiveItem,
                         layoutOverviewItem,
                         openCardsMenu,
+                        workingSets.menu(),
+                        trails.menu(),
                         new SeparatorMenuItem(),
                         printButton,
                         exportPdfButton);
@@ -999,6 +1003,7 @@ final class ProjectMapView extends VBox {
         mapLoader.rememberRoot(surface.selectedPath());
         bearingsFlush(); // what the workspace keeps is the folder being left, as it was
         bearingsReady = false;
+        trails.rootChanged(); // a trail is the folder's being left
         this.root = normalized;
         cards.closeAll();
         structure.clear();
@@ -1223,6 +1228,7 @@ final class ProjectMapView extends VBox {
             surface.bearingsViewport = new double[] {stored.getZoom(), stored.getOffsetX(), stored.getOffsetY()};
         }
         bearingsPendingCards.clear();
+        viewsCardThen.clear();
         for (com.editora.config.ProjectMapState.Card card : stored.getCards()) {
             Path key = bearingsResolve(current, card.getPath());
             if (key != null && !key.equals(current) && bearingsExists(key)) {
@@ -1267,7 +1273,13 @@ final class ProjectMapView extends VBox {
     /** The declaration cards of the last session in {@code file}, opened once its outline is in (or dropped). */
     private void bearingsRestoreDeclarations(Path file) {
         Path current = root;
-        if (disposed || current == null || bearingsPendingCards.isEmpty() || !structure.hasOutline(file)) {
+        // Not while the outline is only asked for: ensure() holds a LOADING placeholder at once, and a declaration
+        // looked up in that is "gone" (the restart's declaration cards and a trail stop's were dropped).
+        if (disposed
+                || current == null
+                || bearingsPendingCards.isEmpty()
+                || !structure.hasOutline(file)
+                || structure.view(file).problem() == ProjectMapStructure.Problem.LOADING) {
             return;
         }
         for (com.editora.config.ProjectMapState.Card card : List.copyOf(bearingsPendingCards)) {
@@ -1282,14 +1294,115 @@ final class ProjectMapView extends VBox {
     }
 
     private void bearingsOpenCard(Path key, com.editora.config.ProjectMapState.Card card) {
-        cards.restoreCard(
-                key,
-                card.getX(),
-                card.getY(),
-                card.getWidth() > 0 ? card.getWidth() : ProjectMapPreview.DEFAULT_WIDTH,
-                card.getHeight() > 0 ? card.getHeight() : ProjectMapPreview.DEFAULT_HEIGHT,
-                card.getTextZoom() > 0 ? card.getTextZoom() : 1.0,
-                card.isStructure());
+        Consumer<@Nullable ProjectMapPreview> then = viewsCardThen.remove(card);
+        ProjectMapPreview opened = Double.isNaN(card.getX())
+                ? cards.viewsOpenCard(key) // a trail stop's: placed beside its row, as a click would place it
+                : cards.restoreCard(
+                        key,
+                        card.getX(),
+                        card.getY(),
+                        card.getWidth() > 0 ? card.getWidth() : ProjectMapPreview.DEFAULT_WIDTH,
+                        card.getHeight() > 0 ? card.getHeight() : ProjectMapPreview.DEFAULT_HEIGHT,
+                        card.getTextZoom() > 0 ? card.getTextZoom() : 1.0,
+                        card.isStructure());
+        if (then != null) {
+            then.accept(opened);
+        }
+    }
+
+    // --- views: working sets and trails (Map explore, views group) ------------------------------------------------
+
+    /** The ⋯ menu's Working sets: named views of the Map, kept per workspace. */
+    final ProjectMapWorkingSets workingSets;
+    /** The ⋯ menu's Trails: guided tours kept in the project's {@code .editora/map-trails/}. */
+    final ProjectMapTrails trails;
+    /** What to do with a card asked for by {@link #viewsShowCard} once it opened (null: it could not open). */
+    private final Map<com.editora.config.ProjectMapState.Card, Consumer<@Nullable ProjectMapPreview>> viewsCardThen =
+            new java.util.IdentityHashMap<>();
+    /** A card asked for before its file's row was on the map: opened when the next load lands. */
+    private boolean viewsCardsAwaitRows;
+    /** Where the views ask for a name or a note: the Map window's overlay, set by the panel. */
+    OverlayInput.@Nullable Prompt viewsPrompt;
+
+    /** Where working sets and trails ask for a name or a note (the panel gives the Map window's own prompt). */
+    void setViewsPrompt(OverlayInput.@Nullable Prompt prompt) {
+        viewsPrompt = prompt;
+    }
+
+    /** The map area, which the trail bar, the trail editor and a stop's note sheet are put over. */
+    StackPane viewsCanvasHost() {
+        return canvasHost;
+    }
+
+    /** The workspace's working sets, and where a change to them is written (see {@link ProjectMapWorkingSets}). */
+    void setRememberedWorkingSets(
+            List<com.editora.config.ProjectMapWorkingSet> stored,
+            Consumer<List<com.editora.config.ProjectMapWorkingSet>> onChanged) {
+        workingSets.setRemembered(stored, onChanged);
+    }
+
+    /**
+     * Shows {@code state} — a working set — the way a restart shows the last session's: the search is cleared, every
+     * card closes, the open folders become the set's, and the set's selection, zoom and pan and cards come back once
+     * the map is laid out (missing paths pruned, as a restart prunes them). The Back/Forward places stay; the set's
+     * selection is one more. Nothing for another folder's state.
+     */
+    void viewsApply(com.editora.config.ProjectMapState state) {
+        Path current = root;
+        if (disposed || current == null || state == null || !current.toString().equals(state.getRoot())) {
+            return;
+        }
+        if (!query.isBlank()) {
+            onClearSearch.run();
+        }
+        bearingsFlush(); // the folder's state as it was, before the set replaces it
+        cards.closeAll();
+        bearingsPendingCards.clear();
+        viewsCardThen.clear();
+        viewsCardsAwaitRows = false;
+        expanded.clear();
+        expanded.add(current); // the root is always open
+        bearingsStored = state;
+        bearingsReady = false;
+        surface.viewsRefit(); // the next rows apply the set's zoom and pan, then open its cards
+        bearingsRestore();
+        if (pendingSelection != null) {
+            recordSelection(pendingSelection); // a place: Back returns to where the switch was made
+        }
+        reload();
+        onExpandedChanged.run();
+        bearingsChanged();
+    }
+
+    /**
+     * Opens the card of {@code key} — a file, or a declaration below it — through the restart's path: once the map is
+     * laid out with the file's row on it, and for a declaration once its file is outlined; placed beside its row.
+     * {@code then} gets the card, or null when a declaration is no longer in its file's outline.
+     */
+    void viewsShowCard(Path key, Consumer<@Nullable ProjectMapPreview> then) {
+        Path current = root;
+        String relative = current == null ? null : bearingsRelative(current, key);
+        if (disposed || relative == null || relative.isEmpty()) {
+            then.accept(null);
+            return;
+        }
+        com.editora.config.ProjectMapState.Card card =
+                new com.editora.config.ProjectMapState.Card(relative, Double.NaN, Double.NaN, 0, 0, 1.0, false);
+        bearingsPendingCards.add(card);
+        viewsCardThen.put(card, then);
+        if (surface.viewsLaidOut() && surface.contains(bearingsFileOf(key))) {
+            Platform.runLater(this::bearingsRestoreCards);
+        } else {
+            viewsCardsAwaitRows = true; // the first fit, or the load that brings the row, opens it
+        }
+    }
+
+    /** A load landed: cards asked for before their rows were on the map open now, if the map is laid out. */
+    private void viewsLoadLanded() {
+        if (viewsCardsAwaitRows && surface.viewsLaidOut()) {
+            viewsCardsAwaitRows = false;
+            Platform.runLater(this::bearingsRestoreCards);
+        }
     }
 
     /**
@@ -2408,6 +2521,7 @@ final class ProjectMapView extends VBox {
         loadInFlight = false;
         loadingDelay.stop();
         surface.dispose();
+        trails.close();
         cards.dispose();
         orientation.dispose();
         noMatchesDelay.stop();
@@ -2588,6 +2702,7 @@ final class ProjectMapView extends VBox {
             pendingSelection = null;
         }
         searchResolveSymbol(); // a search landing on a declaration: its file's row may have just arrived
+        viewsLoadLanded(); // a trail stop's card waiting for its row
         finishLoadMore(loaded, loadedPaths, selectedBefore);
         reportLimits(loaded, loadedPaths);
         windowReportUnreadable(requestedRoot, loaded);
@@ -2982,6 +3097,11 @@ final class ProjectMapView extends VBox {
             @Override
             public Color note() {
                 return surface.noteColor();
+            }
+
+            @Override
+            public List<MenuItem> viewsCardMenu(ProjectMapPreview card) {
+                return trails.cardMenu(card); // Add this card as a stop
             }
 
             @Override
