@@ -166,6 +166,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Git working-tree status per file (absolute normalized path → status), for IntelliJ-style tree coloring;
      *  empty when Git is off / not a repo. Pushed by the Git coordinator on each status refresh. */
     private java.util.Map<Path, com.editora.git.GitFileStatus> gitStatus = java.util.Map.of();
+    /** The root {@link #gitStatus} was given for: the same status under a new root is applied again. */
+    private @Nullable Path gitStatusRoot;
     /** Directories that contain at least one Git-changed descendant (colored to hint at nested changes). */
     private java.util.Set<Path> gitChangedDirs = java.util.Set.of();
     /** Resolves dirty buffers and durable history before any selected file is deleted. */
@@ -1093,7 +1095,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * Pushed by the Git coordinator on each status refresh; an empty map clears the coloring (Git off / clean).
      */
     public void setGitStatus(java.util.Map<Path, com.editora.git.GitFileStatus> byPath) {
-        gitStatus = byPath == null ? java.util.Map.of() : byPath;
+        java.util.Map<Path, com.editora.git.GitFileStatus> given = byPath == null ? java.util.Map.of() : byPath;
+        if (given.equals(gitStatus) && java.util.Objects.equals(root, gitStatusRoot)) {
+            return; // an unchanged status (most Git refreshes): no ancestor walk, no tree redraw, no Map push
+        }
+        gitStatusRoot = root;
+        gitStatus = given;
         java.util.Set<Path> dirs = new java.util.HashSet<>();
         for (Path file : gitStatus.keySet()) {
             for (Path dir = file.getParent();
