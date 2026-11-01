@@ -1116,10 +1116,26 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * while its window is open, reloads too.
      */
     public void refreshTree() {
+        refreshTree(false);
+    }
+
+    /**
+     * As {@link #refreshTree()}, for a real focus regain (Editora came back from another program): the Map
+     * keeps each watched folder's listing whose modification time did not move instead of listing it again.
+     */
+    public void refreshTreeOnRegain() {
+        refreshTree(true);
+    }
+
+    private void refreshTree(boolean regain) {
         treeRefreshCountForTest++;
         GitPathScope.learnRemote(root, false); // a repository made or removed there since (at most once a minute)
         if (isMapShowing()) {
-            mapView.refresh();
+            if (regain) {
+                mapView.revalidate();
+            } else {
+                mapView.refresh();
+            }
         }
         if (root == null || filtering || !(tree.getRoot() instanceof PathItem rootItem)) {
             return;
@@ -3376,13 +3392,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return List.of();
         }
         // The directory flag was read once, above; the comparator must not stat again per comparison.
-        java.util.Comparator<PathEntry> order = ProjectPathOrder.directoriesFirst(
-                PathEntry::directory, e -> e.path().getFileName().toString());
-        dirs.sort(order);
-        files.sort(order);
         List<PathEntry> all = new ArrayList<>(dirs.size() + files.size());
         all.addAll(dirs);
         all.addAll(files);
+        all.sort(ProjectPathOrder.forFolder(
+                all, PathEntry::directory, e -> e.path().getFileName().toString()));
         return all;
     }
 

@@ -283,7 +283,10 @@ final class ProjectMapModel {
      * happened to load. {@code cancelled} is polled between directories (and while a listing is awaited).
      * With {@code compactChains} a listed folder (not the root) whose only child is a folder lists that child
      * too, as if it were expanded (not through a symbolic link, and at most {@link #MAX_CHAIN} folders deep): one
-     * click on {@code src} opens {@code src/main/java/com/acme}, which the Map draws as one column.
+     * click on {@code src} opens {@code src/main/java/com/acme}, which the Map draws as one column. The open
+     * folders in {@code priority} (the one the selection is in, the one whose rows were last raised with "+N
+     * more") are paid before the rest: each keeps its rows, up to its row limit, when the overall limit is
+     * reached, and the shallower folders get what is left instead of the other way round.
      */
     record Request(
             Path root,
@@ -295,7 +298,8 @@ final class ProjectMapModel {
             Labels labels,
             BooleanSupplier cancelled,
             Map<Path, String> columnQueries,
-            boolean compactChains) {
+            boolean compactChains,
+            List<Path> priority) {
         Request {
             root = normalize(root);
             Set<Path> normalizedExpanded = new HashSet<>();
@@ -323,6 +327,41 @@ final class ProjectMapModel {
                 });
             }
             columnQueries = Map.copyOf(queries);
+            List<Path> first = new ArrayList<>();
+            if (priority != null) {
+                for (Path directory : priority) {
+                    Path normalized = normalize(directory);
+                    if (normalized != null && !first.contains(normalized)) {
+                        first.add(normalized);
+                    }
+                }
+            }
+            priority = List.copyOf(first);
+        }
+
+        Request(
+                Path root,
+                Set<Path> expanded,
+                boolean showHidden,
+                Map<Path, Boolean> hiddenOverrides,
+                Map<Path, Integer> limits,
+                List<Path> pinned,
+                Labels labels,
+                BooleanSupplier cancelled,
+                Map<Path, String> columnQueries,
+                boolean compactChains) {
+            this(
+                    root,
+                    expanded,
+                    showHidden,
+                    hiddenOverrides,
+                    limits,
+                    pinned,
+                    labels,
+                    cancelled,
+                    columnQueries,
+                    compactChains,
+                    List.of());
         }
 
         Request(
@@ -431,19 +470,89 @@ final class ProjectMapModel {
                         .toList();
     }
 
-    /** One child as listed: its attributes are read once and reused for ordering and for the entry. */
-    private record Item(Path path, boolean directory, long size, long modifiedMillis, boolean symbolicLink) {
+    /**
+     * One child as listed. Its kind (folder or not) is known when it is listed and orders it; the rest of its
+     * attributes are read once, either then or (in a large folder of files, see {@link #listDirectory}) the
+     * first time its row is loaded, and reused after that.
+     */
+    private static final class Item {
+        /** What one attribute read found. */
+        private record Attributes(boolean directory, long size, long modifiedMillis, boolean symbolicLink) {
+            static final Attributes GONE = new Attributes(false, -1, -1, false);
+        }
+
+        private final Path path;
+        private final boolean sortsAsDirectory;
+        private volatile @Nullable Attributes attributes;
+
+        Item(Path path, boolean directory, long size, long modifiedMillis, boolean symbolicLink) {
+            this.path = path;
+            this.sortsAsDirectory = directory;
+            this.attributes = new Attributes(directory, size, modifiedMillis, symbolicLink);
+        }
+
+        private Item(Path path) {
+            this.path = path;
+            this.sortsAsDirectory = false;
+        }
+
+        /** A child of a folder that holds no subfolders, whose attributes are read when its row is loaded. */
+        static Item unread(Path path) {
+            return new Item(path);
+        }
+
+        Path path() {
+            return path;
+        }
+
         String name() {
             Path fileName = path.getFileName();
             return fileName == null ? path.toString() : fileName.toString();
         }
+
+        /** Whether it sorts with the folders: what its listing knew, so the order never changes under it. */
+        boolean sortsAsDirectory() {
+            return sortsAsDirectory;
+        }
+
+        boolean directory() {
+            return attributes().directory();
+        }
+
+        long size() {
+            return attributes().size();
+        }
+
+        long modifiedMillis() {
+            return attributes().modifiedMillis();
+        }
+
+        boolean symbolicLink() {
+            return attributes().symbolicLink();
+        }
+
+        private Attributes attributes() {
+            Attributes known = attributes;
+            if (known == null) {
+                Item read = stat(path);
+                Attributes fresh = read == null ? null : read.attributes;
+                known = fresh == null ? Attributes.GONE : fresh;
+                attributes = known; // read twice at worst, by two loads at once: the same answer
+            }
+            return known;
+        }
     }
 
-    private static final java.util.Comparator<Item> ITEM_ORDER =
-            ProjectPathOrder.directoriesFirst(Item::directory, Item::name);
+    /** The order of one folder's listed children (see {@link ProjectPathOrder#forFolder}). */
+    private static java.util.Comparator<Item> itemOrder(List<Item> items) {
+        return ProjectPathOrder.forFolder(items, Item::sortsAsDirectory, Item::name);
+    }
 
     /** How long one directory listing may take before its folder is drawn as "Not responding". */
     static final long LISTING_TIMEOUT_MILLIS = 10_000;
+
+    /** At most this many folders are listed at once; one that hangs holds one of them until it answers. */
+    static final int MAX_LISTING_THREADS = 4;
 
     /**
      * One directory's listing as {@link Listings#list} answers it: the sorted children, or {@code null} when
@@ -460,17 +569,23 @@ final class ProjectMapModel {
     }
 
     /**
-     * Where a view's loads get their directory listings. Two things keep a load from costing a full re-list
+     * Where a view's loads get their directory listings. Three things keep a load from costing a full re-list
      * of every open folder per click:
      *
      * <ul>
      *   <li>A per-directory cache, used only for the folders the Project watcher follows ({@link
-     *       #setWatched}): a watcher event for a folder ({@link #invalidate}), an in-app change or a
-     *       focus-regain refresh ({@link #invalidateAll}) drops its entry, and a folder that stops being
-     *       watched is dropped too. A remote root has no local watcher, so it keeps listing afresh.
+     *       #setWatched}): a watcher event for a folder ({@link #invalidate}) or an in-app change ({@link
+     *       #invalidateAll}) drops its entry, and a folder that stops being watched is dropped too. A focus
+     *       regain only asks each cached folder again whether its modification time moved ({@link
+     *       #revalidateAll}), which is one attribute read instead of a listing. A remote root has no local
+     *       watcher, so it keeps listing afresh.
      *   <li>A timeout per listing: the listing runs on a worker, and a folder that does not answer in time
      *       is reported as not responding instead of holding up the loader (one hung listing used to block
      *       every later load of the window). When it does answer, {@link #setOnRecovered} hears so.
+     *   <li>One listing per folder: a folder whose listing is still blocked is reported as not responding at
+     *       once, through any number of invalidations, and never gets a second listing (and a second blocked
+     *       thread) of its own. A load that comes after an invalidation joins a listing begun before it and
+     *       lists again once that one has finished, so it never takes the earlier answer for the new one.
      * </ul>
      *
      * Thread-safe: the loader lists, the FX thread invalidates and sets the watched set.
@@ -480,38 +595,74 @@ final class ProjectMapModel {
         /** No cache, no worker: lists on the calling thread (pure loads and tests). */
         static final Listings DIRECT = new Listings(0, null);
 
+        /**
+         * A cached listing whose folder changed in the same clock tick as it was read could keep its old
+         * modification time; one read this soon after the folder last changed is listed again on a regain.
+         */
+        private static final long SETTLED_MILLIS = 2_000;
+
         private record Key(Path directory, boolean showHidden) {}
 
         /**
-         * A listing on a worker, when it began, and the folder's epoch and version then; {@code late} once some
-         * load gave up waiting for it.
+         * A watched folder's listing, the folder's modification time read just before it was listed, when it
+         * was listed, and the regain ({@link #revalidateAll}) it was last checked against.
+         */
+        private record Cached(List<Item> items, long directoryModified, long listedAtMillis, long checked) {
+            /** Whether the folder's modification time alone can tell that nothing came or went since. */
+            boolean settled() {
+                return directoryModified >= 0 && listedAtMillis - directoryModified >= SETTLED_MILLIS;
+            }
+        }
+
+        /** What a listing thread found: fresh children, or the cached ones again when nothing moved. */
+        private record Outcome(
+                @Nullable List<Item> items, long directoryModified, long listedAtMillis, boolean confirmed) {}
+
+        /**
+         * A listing on a worker, when it began, and the folder's epoch and version then. {@code hungSince} is
+         * the folder's "hung since" record: set once some load gave up waiting for it, and kept (through any
+         * invalidation) until the listing finishes, since nothing else may list the folder before that.
          */
         private static final class InFlight {
-            final java.util.concurrent.CompletableFuture<@Nullable List<Item>> future =
+            final java.util.concurrent.CompletableFuture<Outcome> future =
                     new java.util.concurrent.CompletableFuture<>();
             final long startedNanos = System.nanoTime();
             final long epoch;
             final long version;
-            volatile boolean late;
+            final @Nullable Cached known;
+            volatile long hungSinceNanos;
 
-            InFlight(long epoch, long version) {
+            InFlight(long epoch, long version, @Nullable Cached known) {
                 this.epoch = epoch;
                 this.version = version;
+                this.known = known;
+            }
+
+            boolean hung() {
+                return hungSinceNanos != 0;
             }
         }
 
         private final long timeoutMillis;
         private final java.util.function.@Nullable Consumer<Path> beforeListForTest;
-        private final Map<Key, List<Item>> cache = new java.util.concurrent.ConcurrentHashMap<>();
+        private final Map<Key, Cached> cache = new java.util.concurrent.ConcurrentHashMap<>();
         private final Map<Key, InFlight> inFlight = new java.util.concurrent.ConcurrentHashMap<>();
         private final Map<Path, Long> versions = new java.util.concurrent.ConcurrentHashMap<>();
         private final java.util.concurrent.atomic.AtomicLong epoch = new java.util.concurrent.atomic.AtomicLong();
+        private final java.util.concurrent.atomic.AtomicLong revalidations =
+                new java.util.concurrent.atomic.AtomicLong();
         private volatile Set<Path> watched = Set.of();
         private volatile Runnable onRecovered = () -> {};
-        private java.util.concurrent.@Nullable ExecutorService workers;
+        private java.util.concurrent.@Nullable ThreadPoolExecutor workers;
         private volatile boolean closed;
         /** How many directories were actually listed (not answered from the cache); for tests. */
         final java.util.concurrent.atomic.AtomicInteger listedForTest = new java.util.concurrent.atomic.AtomicInteger();
+        /** How many loads waited a listing's whole timeout out (not those told at once it hangs); for tests. */
+        final java.util.concurrent.atomic.AtomicInteger waitedOutForTest =
+                new java.util.concurrent.atomic.AtomicInteger();
+        /** How many cached listings a regain kept after one attribute read; for tests. */
+        final java.util.concurrent.atomic.AtomicInteger confirmedForTest =
+                new java.util.concurrent.atomic.AtomicInteger();
 
         /**
          * @param timeoutMillis how long one listing may take; {@code <= 0} lists on the calling thread
@@ -555,10 +706,20 @@ final class ProjectMapModel {
             }
         }
 
-        /** Anything may have changed (a focus regain, an in-app file operation, a new root). */
+        /** Anything may have changed (an in-app file operation, a new root). */
         void invalidateAll() {
             epoch.incrementAndGet();
             cache.clear();
+        }
+
+        /**
+         * Another program may have changed the watched folders while Editora was in the background (a focus
+         * regain): each cached folder's next load reads its modification time, off the FX thread, and lists it
+         * again only when that moved. The watcher reports what changes while Editora runs; this covers an
+         * event it may have missed.
+         */
+        void revalidateAll() {
+            revalidations.incrementAndGet();
         }
 
         boolean cached(Path directory, boolean showHidden) {
@@ -566,98 +727,142 @@ final class ProjectMapModel {
             return normalized != null && cache.containsKey(new Key(normalized, showHidden));
         }
 
+        /** How many children of a cached listing have not had their attributes read yet; for tests. */
+        int unreadForTest(Path directory, boolean showHidden) {
+            Path normalized = normalize(directory);
+            Cached known = normalized == null ? null : cache.get(new Key(normalized, showHidden));
+            if (known == null) {
+                return -1;
+            }
+            int unread = 0;
+            for (Item item : known.items()) {
+                if (item.attributes == null) {
+                    unread++;
+                }
+            }
+            return unread;
+        }
+
+        /** How many listings are running now (a hung one runs until its folder answers); for tests. */
+        int runningForTest() {
+            java.util.concurrent.ThreadPoolExecutor pool;
+            synchronized (this) {
+                pool = workers;
+            }
+            return pool == null ? 0 : pool.getActiveCount();
+        }
+
         private Listed list(Path directory, boolean showHidden, BooleanSupplier cancelled) {
             Key key = new Key(directory, showHidden);
             boolean cacheable = !closed && watched.contains(directory);
-            if (cacheable) {
-                List<Item> known = cache.get(key);
-                if (known != null) {
-                    return new Listed(known, false, false, true);
-                }
+            long revalidationBefore = revalidations.get();
+            Cached known = cacheable ? cache.get(key) : null;
+            if (known != null && known.checked() == revalidationBefore) {
+                return new Listed(known.items(), false, false, true);
             }
             long epochBefore = epoch.get();
             long versionBefore = versions.getOrDefault(directory, 0L);
-            @Nullable List<Item> items;
+            Outcome outcome;
             if (timeoutMillis <= 0) {
-                items = listSorted(directory, showHidden);
+                outcome = listOrConfirm(key, known);
             } else {
-                Listed awaited = await(key, cancelled);
-                if (awaited.cancelled() || awaited.timedOut()) {
-                    return awaited;
+                Awaited awaited = await(key, known, cancelled);
+                if (awaited.outcome() == null) {
+                    return awaited.listed();
                 }
-                items = awaited.items();
+                outcome = awaited.outcome();
             }
             // Cached only when nothing invalidated the folder while it was being listed, and it was watched
             // from before the listing began: an event in between is then never lost.
+            List<Item> items = outcome.items();
             if (cacheable
                     && items != null
                     && epoch.get() == epochBefore
                     && versions.getOrDefault(directory, 0L) == versionBefore
                     && watched.contains(directory)) {
-                cache.put(key, items);
+                cache.put(
+                        key,
+                        new Cached(items, outcome.directoryModified(), outcome.listedAtMillis(), revalidationBefore));
             }
-            return new Listed(items, false, false);
+            return new Listed(items, false, false, outcome.confirmed());
         }
 
-        private Listed await(Key key, BooleanSupplier cancelled) {
-            long epochNow = epoch.get();
-            long versionNow = versions.getOrDefault(key.directory(), 0L);
-            InFlight[] started = new InFlight[1];
-            // A listing that began before the folder was invalidated may have missed the change: it is not joined.
-            InFlight running = inFlight.compute(key, (unused, prior) -> {
-                if (prior != null && prior.epoch == epochNow && prior.version == versionNow) {
-                    return prior;
-                }
-                started[0] = new InFlight(epochNow, versionNow);
-                return started[0];
-            });
-            if (started[0] != null) {
-                try {
-                    start(key, started[0]); // registered first, so finishing always removes it again
-                } catch (java.util.concurrent.RejectedExecutionException shutDown) {
-                    inFlight.remove(key, started[0]);
-                    return Listed.CANCELLED;
-                }
-            }
-            long deadline = running.startedNanos + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        /** A wait's answer: the listing's outcome, or (with no outcome) why there is none. */
+        private record Awaited(@Nullable Outcome outcome, Listed listed) {
+            static final Awaited CANCELLED = new Awaited(null, Listed.CANCELLED);
+            static final Awaited TIMED_OUT = new Awaited(null, Listed.TIMED_OUT);
+        }
+
+        private Awaited await(Key key, @Nullable Cached known, BooleanSupplier cancelled) {
             while (true) {
-                long remaining = deadline - System.nanoTime();
-                if (remaining <= 0) {
-                    running.late = true; // the folder's next load says "Not responding" without waiting again
-                    return Listed.TIMED_OUT;
-                }
-                try {
-                    @Nullable
-                    List<Item> items = running.future.get(
-                            Math.min(remaining, java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(100)),
-                            java.util.concurrent.TimeUnit.NANOSECONDS);
-                    return new Listed(items, false, false);
-                } catch (java.util.concurrent.TimeoutException stillListing) {
-                    if (cancelled.getAsBoolean()) {
-                        return Listed.CANCELLED; // the listing goes on; the next load picks its answer up
+                long epochNow = epoch.get();
+                long versionNow = versions.getOrDefault(key.directory(), 0L);
+                InFlight[] started = new InFlight[1];
+                // At most one listing per folder: a running one is joined, whenever it began.
+                InFlight running =
+                        inFlight.computeIfAbsent(key, unused -> started[0] = new InFlight(epochNow, versionNow, known));
+                if (started[0] != null) {
+                    try {
+                        start(key, started[0]); // registered first, so finishing always removes it again
+                    } catch (java.util.concurrent.RejectedExecutionException shutDown) {
+                        inFlight.remove(key, started[0]);
+                        return Awaited.CANCELLED;
                     }
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    return Listed.CANCELLED;
-                } catch (java.util.concurrent.ExecutionException | RuntimeException failed) {
-                    return new Listed(null, false, false);
+                }
+                if (running.hung()) {
+                    return Awaited.TIMED_OUT; // still blocked: said at once, and no second listing is started
+                }
+                long deadline =
+                        running.startedNanos + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+                Outcome outcome = null;
+                while (outcome == null) {
+                    long remaining = deadline - System.nanoTime();
+                    if (remaining <= 0) {
+                        if (running.hungSinceNanos == 0) {
+                            running.hungSinceNanos = Math.max(1, System.nanoTime());
+                        }
+                        waitedOutForTest.incrementAndGet();
+                        return Awaited.TIMED_OUT;
+                    }
+                    try {
+                        outcome = running.future.get(
+                                Math.min(remaining, java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(100)),
+                                java.util.concurrent.TimeUnit.NANOSECONDS);
+                    } catch (java.util.concurrent.TimeoutException stillListing) {
+                        if (cancelled.getAsBoolean()) {
+                            return Awaited.CANCELLED; // the listing goes on; the next load picks its answer up
+                        }
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return Awaited.CANCELLED;
+                    } catch (java.util.concurrent.ExecutionException | RuntimeException failed) {
+                        outcome = new Outcome(null, -1, System.currentTimeMillis(), false);
+                    }
+                }
+                if (running.epoch == epochNow && running.version == versionNow) {
+                    return new Awaited(outcome, Listed.CANCELLED); // the second half is unused with an outcome
+                }
+                // It began before the folder was invalidated and may have missed the change: once it has
+                // finished (and left the in-flight map), the folder is listed again.
+                if (cancelled.getAsBoolean()) {
+                    return Awaited.CANCELLED;
                 }
             }
         }
 
         private void start(Key key, InFlight running) {
-            java.util.concurrent.CompletableFuture<@Nullable List<Item>> future = running.future;
+            java.util.concurrent.CompletableFuture<Outcome> future = running.future;
             workers().execute(() -> {
-                @Nullable List<Item> items = null;
+                Outcome outcome = new Outcome(null, -1, System.currentTimeMillis(), false);
                 try {
-                    items = listSorted(key.directory(), key.showHidden());
+                    outcome = listOrConfirm(key, running.known);
                 } catch (RuntimeException failed) {
                     ProjectMapLog.unexpected("listing a folder", failed);
                 } finally {
                     // Dropped before the waiters wake, so a load right after this one never joins a finished listing.
                     inFlight.remove(key, running);
-                    future.complete(items);
-                    if (running.late && !closed) {
+                    future.complete(outcome);
+                    if (running.hung() && !closed) {
                         onRecovered.run();
                     }
                 }
@@ -669,13 +874,45 @@ final class ProjectMapModel {
                 throw new java.util.concurrent.RejectedExecutionException("closed");
             }
             if (workers == null) {
-                workers = java.util.concurrent.Executors.newCachedThreadPool(runnable -> {
-                    Thread thread = new Thread(runnable, "project-map-listing");
-                    thread.setDaemon(true);
-                    return thread;
-                });
+                java.util.concurrent.ThreadPoolExecutor pool = new java.util.concurrent.ThreadPoolExecutor(
+                        MAX_LISTING_THREADS,
+                        MAX_LISTING_THREADS,
+                        30,
+                        java.util.concurrent.TimeUnit.SECONDS,
+                        new java.util.concurrent.LinkedBlockingQueue<>(),
+                        runnable -> {
+                            Thread thread = new Thread(runnable, "project-map-listing");
+                            thread.setDaemon(true);
+                            return thread;
+                        });
+                pool.allowCoreThreadTimeOut(true);
+                workers = pool;
             }
             return workers;
+        }
+
+        /**
+         * Lists the folder, or, when a cached listing is being checked after a regain and the folder's
+         * modification time has not moved since it was taken, answers that listing again without listing.
+         */
+        private Outcome listOrConfirm(Key key, @Nullable Cached known) {
+            Path directory = key.directory();
+            long modified = directoryModified(directory);
+            if (known != null && known.settled() && modified == known.directoryModified()) {
+                confirmedForTest.incrementAndGet();
+                return new Outcome(known.items(), known.directoryModified(), known.listedAtMillis(), true);
+            }
+            long listedAt = System.currentTimeMillis();
+            return new Outcome(listSorted(directory, key.showHidden()), modified, listedAt, false);
+        }
+
+        private static long directoryModified(Path directory) {
+            try {
+                return Files.getLastModifiedTime(directory, LinkOption.NOFOLLOW_LINKS)
+                        .toMillis();
+            } catch (IOException | RuntimeException unreadable) {
+                return -1;
+            }
         }
 
         private @Nullable List<Item> listSorted(Path directory, boolean showHidden) {
@@ -687,7 +924,7 @@ final class ProjectMapModel {
             if (items == null) {
                 return null;
             }
-            items.sort(ITEM_ORDER);
+            items.sort(itemOrder(items));
             return List.copyOf(items);
         }
 
@@ -700,7 +937,6 @@ final class ProjectMapModel {
             }
         }
     }
-
     /**
      * Loads the root and the children of every expanded directory. Two limits bound it: each directory shows
      * at most its row limit ({@link #DIRECTORY_CHUNK} unless raised), and the whole snapshot at most
@@ -735,18 +971,24 @@ final class ProjectMapModel {
         boolean capped = false;
 
         // Pinned chains first: every row between the root and a pinned path, charged once each.
+        // The priority folders' own rows are pinned too, so the folder is reached whatever its siblings get.
         Map<Path, Map<Path, Item>> pins = new HashMap<>();
         int pinnedRequested = 0;
         int pinnedLoaded = 0;
-        for (Path requested : request.pinned()) {
+        List<Path> chained = new ArrayList<>(request.pinned());
+        chained.addAll(request.priority());
+        for (int pinIndex = 0; pinIndex < chained.size(); pinIndex++) {
             if (request.cancelled().getAsBoolean()) {
                 return null;
             }
-            Path pinned = normalize(requested);
+            boolean match = pinIndex < request.pinned().size(); // a search match or a reveal, which is counted
+            Path pinned = normalize(chained.get(pinIndex));
             if (pinned == null || pinned.equals(root) || !pinned.startsWith(root)) {
                 continue;
             }
-            pinnedRequested++;
+            if (match) {
+                pinnedRequested++;
+            }
             List<Path> chain = new ArrayList<>();
             for (Path current = pinned; current != null && !current.equals(root); current = current.getParent()) {
                 chain.add(current);
@@ -782,7 +1024,43 @@ final class ProjectMapModel {
                 pins.computeIfAbsent(item.path().getParent(), ignored -> new LinkedHashMap<>())
                         .put(item.path(), item);
             }
-            pinnedLoaded++;
+            if (match) {
+                pinnedLoaded++;
+            }
+        }
+
+        // Then the priority folders' rows: listed now, so each reserves what it will show (up to its row
+        // limit), and the breadth-first pass below cannot spend that on the shallower folders first (A10).
+        Map<Path, Listed> prelisted = new HashMap<>();
+        Map<Path, Integer> reserved = new HashMap<>();
+        int reservedTotal = 0;
+        for (Path directory : request.priority()) {
+            if (request.cancelled().getAsBoolean()) {
+                return null;
+            }
+            if (!directory.startsWith(root)
+                    || prelisted.containsKey(directory)
+                    || !openFromRoot(root, directory, expanded)) {
+                continue;
+            }
+            boolean showHidden = request.hiddenOverrides().getOrDefault(directory, request.showHidden());
+            Listed listing = listings.list(directory, showHidden, request.cancelled());
+            if (listing.cancelled()) {
+                return null;
+            }
+            prelisted.put(directory, listing);
+            List<Item> items = listing.items();
+            if (items == null || listing.timedOut()) {
+                continue;
+            }
+            int limit = Math.max(DIRECTORY_CHUNK, request.limits().getOrDefault(directory, DIRECTORY_CHUNK));
+            Map<Path, Item> pinnedHere = pins.getOrDefault(directory, Map.of());
+            int wanted = Math.min(Math.max(0, items.size() - pinnedHere.size()), limit);
+            int granted = Math.min(wanted, budget - reservedTotal);
+            if (granted > 0) {
+                reserved.put(directory, granted);
+                reservedTotal += granted;
+            }
         }
 
         record Pending(Path directory, int depth, int chain) {}
@@ -803,7 +1081,12 @@ final class ProjectMapModel {
             int childDepth = pending.depth() + 1;
             Map<Path, Item> pinnedHere = pins.getOrDefault(directory, Map.of());
             boolean showHidden = request.hiddenOverrides().getOrDefault(directory, request.showHidden());
-            Listed listing = listings.list(directory, showHidden, request.cancelled());
+            Integer ownReservation = reserved.remove(directory);
+            if (ownReservation != null) {
+                reservedTotal -= ownReservation; // this folder spends its own share now
+            }
+            Listed early = prelisted.remove(directory);
+            Listed listing = early != null ? early : listings.list(directory, showHidden, request.cancelled());
             if (listing.cached() && missesKnownChild(listing.items(), directory, expanded, pinnedHere)) {
                 // The watcher has not reported a child that is open or being revealed yet: a cached listing taken
                 // before it appeared would drop it from the open set, so this folder is listed again.
@@ -838,7 +1121,7 @@ final class ProjectMapModel {
                     }
                 }
                 if (added) {
-                    all.sort(ITEM_ORDER);
+                    all.sort(itemOrder(all));
                 }
             }
             String columnQuery = request.columnQueries().get(directory);
@@ -856,8 +1139,8 @@ final class ProjectMapModel {
                     if (index >= limit && (columnQuery == null || FuzzyMatch.of(item.name(), columnQuery) == null)) {
                         continue; // beyond the row limit, and not a row the column's own filter is looking for
                     }
-                    if (budget <= 0) {
-                        capped = true;
+                    if (budget - reservedTotal <= 0) {
+                        capped = true; // what is left is the priority folders' share
                         continue;
                     }
                     budget--;
@@ -891,6 +1174,19 @@ final class ProjectMapModel {
             }
         }
         return new Snapshot(result, directories, skipped, capped, pinnedRequested, pinnedLoaded);
+    }
+
+    /** Whether {@code directory} and every folder between it and {@code root} is open. */
+    private static boolean openFromRoot(Path root, Path directory, Set<Path> expanded) {
+        for (Path current = directory; current != null; current = current.getParent()) {
+            if (!expanded.contains(current)) {
+                return false;
+            }
+            if (current.equals(root)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Entry entry(Item item, @Nullable Path parent, int depth) {
@@ -1083,8 +1379,12 @@ final class ProjectMapModel {
                     .sorted(
                             structure
                                     ? order
-                                    : order.thenComparing(
-                                            ProjectPathOrder.directoriesFirst(Entry::directory, Entry::name)))
+                                    : order.thenComparing(ProjectPathOrder.forFolder(
+                                            group.getValue().stream()
+                                                    .filter(entry -> !entry.isPlaceholder())
+                                                    .toList(),
+                                            Entry::directory,
+                                            Entry::name)))
                     .toList();
             if (depth > 0 && id.parent() != null && !visible.contains(id.parent())) {
                 continue;
@@ -1445,28 +1745,85 @@ final class ProjectMapModel {
     }
 
     /**
-     * The children of {@code directory}, each with its attributes, or {@code null} when it cannot be listed.
-     * One attribute read per child (two for a symbolic link) serves both the ordering and the row.
+     * The children of {@code directory}, or {@code null} when it cannot be listed. Each child's attributes
+     * are read once (two reads for a symbolic link) and serve both the ordering and the row. In a folder
+     * longer than {@link #DIRECTORY_CHUNK} that its link count says holds no subfolder ({@link
+     * #holdsNoSubfolders}), the children are all files, so their order needs only their names: each one's
+     * attributes are read when its row is first loaded, and the rows past the limit (most of a 1,500-file
+     * corpus folder) are never read at all. (A symbolic link to a folder there sorts among the files.)
      */
     private static @Nullable List<Item> listDirectory(Path directory, boolean showHidden) {
-        List<Item> result = new ArrayList<>();
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
-            for (Path child : stream) {
-                Path fileName = child.getFileName();
-                if (fileName != null && ProjectWatchChanges.isInternalName(fileName.toString())) {
-                    continue; // a save's temporary sibling: gone in a moment, and its removal raises no event
+        List<Path> children = new ArrayList<>();
+        boolean noSubfolders;
+        try {
+            noSubfolders = holdsNoSubfolders(directory); // read before listing: a folder made meanwhile shows
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
+                for (Path child : stream) {
+                    Path fileName = child.getFileName();
+                    if (fileName != null && ProjectWatchChanges.isInternalName(fileName.toString())) {
+                        continue; // a save's temporary sibling: gone in a moment, and its removal raises no event
+                    }
+                    if (!showHidden && fileName != null && fileName.toString().startsWith(".")) {
+                        continue;
+                    }
+                    children.add(child);
                 }
-                if (!showHidden && fileName != null && fileName.toString().startsWith(".")) {
-                    continue;
-                }
-                Item item = stat(child);
-                result.add(item == null ? new Item(child, false, -1, -1, false) : item); // vanished mid-listing
             }
         } catch (IOException | RuntimeException unreadable) {
             return null;
         }
+        boolean lazy = noSubfolders && children.size() > DIRECTORY_CHUNK;
+        List<Item> result = new ArrayList<>(children.size());
+        for (Path child : children) {
+            if (lazy) {
+                result.add(Item.unread(child));
+                continue;
+            }
+            Item item = stat(child);
+            result.add(item == null ? new Item(child, false, -1, -1, false) : item); // vanished mid-listing
+        }
         return result;
     }
+
+    /** The file systems whose folder link count is 2 plus the number of subfolders. */
+    private static final Set<String> LINK_COUNTING_STORES = Set.of("ext2", "ext3", "ext4", "xfs", "tmpfs", "f2fs");
+
+    /** By device: whether its file system counts subfolders in the link count (asked once per device). */
+    private static final Map<Object, Boolean> LINK_COUNTING_DEVICES = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Whether {@code directory} certainly holds no subfolder: on a local Linux file system that counts a
+     * folder's subfolders in its link count, a link count of 2 (itself and its {@code .}) says so without
+     * reading any child. Anywhere else (another system, btrfs, a network or remote mount) the answer is no,
+     * and every child is read as before.
+     */
+    private static boolean holdsNoSubfolders(Path directory) throws IOException {
+        if (directory.getFileSystem() != java.nio.file.FileSystems.getDefault() || !LINUX) {
+            return false;
+        }
+        Map<String, Object> unix;
+        try {
+            unix = Files.readAttributes(directory, "unix:nlink,dev", LinkOption.NOFOLLOW_LINKS);
+        } catch (UnsupportedOperationException | IllegalArgumentException unsupported) {
+            return false;
+        }
+        if (!(unix.get("nlink") instanceof Integer links) || links != 2) {
+            return false;
+        }
+        Object device = unix.get("dev");
+        if (device == null) {
+            return false;
+        }
+        Boolean counts = LINK_COUNTING_DEVICES.get(device);
+        if (counts == null) {
+            counts = LINK_COUNTING_STORES.contains(Files.getFileStore(directory).type());
+            LINK_COUNTING_DEVICES.put(device, counts);
+        }
+        return counts;
+    }
+
+    private static final boolean LINUX =
+            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("linux");
 
     /** Whether a cached listing lacks a folder the user keeps open below it, or a row a reveal pinned there. */
     private static boolean missesKnownChild(

@@ -1017,7 +1017,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         refreshBuildTools(); // a marker file (or the active file's project) may have changed while away
         refreshPasteState(); // clipboard may have changed in another app while we were away
         if (projectPanel != null) {
-            projectPanel.refreshTree(); // pick up files/folders added or removed outside Editora
+            projectPanel.refreshTreeOnRegain(); // pick up files/folders added or removed outside Editora
         }
         if (containerCoordinator != null) {
             containerCoordinator.windowFocused(); // a dev container may have been started or stopped meanwhile

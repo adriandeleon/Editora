@@ -1240,9 +1240,20 @@ final class ProjectMapView extends VBox {
         previews.values().forEach(this::updateCardNotes);
     }
 
-    /** Anything on disk may have changed (a focus regain, an in-app file operation): every folder is listed again. */
+    /** Anything on disk may have changed (an in-app file operation): every folder is listed again. */
     void refresh() {
         listings.invalidateAll();
+        reload();
+        scheduleCardRefresh();
+    }
+
+    /**
+     * Editora came back from another program (a real focus regain): each watched folder's cached listing is
+     * kept when the folder's modification time did not move, which the loader reads off the FX thread; only
+     * the folders that changed, and the unwatched ones, are listed again (position 22 of Map review 3).
+     */
+    void revalidate() {
+        listings.revalidateAll();
         reload();
         scheduleCardRefresh();
     }
@@ -1733,7 +1744,8 @@ final class ProjectMapView extends VBox {
                 () -> requested != generation.get(),
                 surface.columnFilterQueries(),
                 // A search opens exactly the folders that lead to its matches: no chain opens on its own.
-                compactChainsOption.isSelected() && !searching());
+                compactChainsOption.isSelected() && !searching(),
+                dataPriorityFolders());
         loadStarted();
         try {
             loader.submit(() -> {
@@ -1758,6 +1770,38 @@ final class ProjectMapView extends VBox {
         } catch (java.util.concurrent.RejectedExecutionException shutDown) {
             loadFinished();
         }
+    }
+
+    /** The folder whose rows "+N more" raised last; the load pays it before the shallower folders (A10). */
+    private @Nullable Path dataLastRaised;
+
+    /**
+     * The open folders a load pays first when the overall limit is near: the one the selection is in, then
+     * the one whose rows were raised last. The folder being read keeps its rows when another column opens.
+     */
+    private List<Path> dataPriorityFolders() {
+        List<Path> first = new ArrayList<>(2);
+        Path selectedColumn = dataSelectedColumn();
+        if (selectedColumn != null) {
+            first.add(selectedColumn);
+        }
+        Path raised = dataLastRaised;
+        if (raised != null && directoryLimits.containsKey(raised) && !raised.equals(selectedColumn)) {
+            first.add(raised);
+        } else if (raised != null && !directoryLimits.containsKey(raised)) {
+            dataLastRaised = null; // its column closed, or its raise was undone
+        }
+        return first;
+    }
+
+    /** The folder whose column holds the selected row, or null without a selection there. */
+    private @Nullable Path dataSelectedColumn() {
+        Path selected = surface.selectedPath();
+        ProjectMapModel.Entry entry = selected == null ? null : surface.entryByPath.get(selected);
+        if (entry == null || entry.isSymbol()) {
+            return null;
+        }
+        return entry.parent();
     }
 
     private static String placeholderLabel(ProjectMapModel.PlaceholderKind kind, int remaining) {
@@ -1927,11 +1971,31 @@ final class ProjectMapView extends VBox {
                 }
             }
         } else if (loaded.capped() && (announceLimit || !wasCapped)) {
-            onStatus.accept(tr("project.map.status.limit", ProjectMapModel.MAX_VISIBLE_ITEMS));
+            Path reading = dataLastRaised != null ? dataLastRaised : dataSelectedColumn();
+            if (reading != null && dataOnlyAncestorsOpen(reading)) {
+                // Closing a column would close the folder itself: its filter reaches the rest (A10).
+                Path name = reading.getFileName();
+                onStatus.accept(tr(
+                        "project.map.status.limitUseFilter",
+                        ProjectMapModel.MAX_VISIBLE_ITEMS,
+                        name == null ? reading : name));
+            } else {
+                onStatus.accept(tr("project.map.status.limit", ProjectMapModel.MAX_VISIBLE_ITEMS));
+            }
         }
         announceMatches = false;
         announceLimit = false;
         wasCapped = loaded.capped();
+    }
+
+    /** Whether every open folder is {@code folder} or one of the folders that lead to it. */
+    private boolean dataOnlyAncestorsOpen(Path folder) {
+        for (Path open : expandedDirectories()) {
+            if (!folder.startsWith(open)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** Removes a path that no longer resolves from the selection history, keeping the index on the selection. */
@@ -2035,6 +2099,7 @@ final class ProjectMapView extends VBox {
         loadMorePreviousLimit = directoryLimits.getOrDefault(path, ProjectMapModel.DIRECTORY_CHUNK);
         loadMorePreviousLoaded = facts == null ? 0 : facts.loaded();
         loadMoreDirectory = path;
+        dataLastRaised = path;
         directoryLimits.put(
                 path, Math.max(loadMorePreviousLimit, loadMorePreviousLoaded) + ProjectMapModel.DIRECTORY_CHUNK);
         reloadForUser();
