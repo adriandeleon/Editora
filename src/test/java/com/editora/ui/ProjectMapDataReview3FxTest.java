@@ -225,6 +225,8 @@ class ProjectMapDataReview3FxTest {
             Files.writeString(big.resolve(String.format("c%05d", index)), "");
         }
         try (Harness h = open(project)) {
+            FxTestSupport.runOnFx(() -> FxTestSupport.<MapLoader>field(h.view(), "mapLoader").canvasWholeFolders =
+                    folder -> false); // "+N more" is a remote root's way since Map explore 15
             FxTestSupport.runOnFx(() -> h.view().revealPath(big.resolve("c00000")));
             waitForFx(() ->
                     rows(h.surface()).stream().anyMatch(entry -> entry.path().equals(big.resolve("c00000"))));

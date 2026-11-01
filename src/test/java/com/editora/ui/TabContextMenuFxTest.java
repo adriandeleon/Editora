@@ -100,6 +100,59 @@ class TabContextMenuFxTest {
     }
 
     /**
+     * Reveal in Map sits beside Reveal in File Manager and selects the tab's file on the Project Map, opening the
+     * Map window for it (Map explore, position 18).
+     */
+    @Test
+    void revealInMapSelectsTheTabsFileOnTheMap(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("notes.txt"), "one\n");
+        FxWindowFixture fx = FxWindowFixture.create(
+                Files.createDirectories(dir.resolve("config")),
+                false,
+                false,
+                false,
+                List.of(new MainController.OpenTarget(file, 0, 0)),
+                c -> {});
+        try {
+            FxTestSupport.runOnFx(() -> {
+                MainController c = fx.controller;
+                EditorArea area = FxTestSupport.field(c, "editorArea");
+                Tab tab = area.tabs().stream()
+                        .filter(t -> FxTestSupport.call(c, "bufferOf", new Class<?>[] {Tab.class}, t)
+                                instanceof EditorBuffer)
+                        .findFirst()
+                        .orElseThrow();
+                ContextMenu menu = tab.getContextMenu();
+                menu.getOnShowing().handle(null);
+                List<String> labels =
+                        menu.getItems().stream().map(MenuItem::getText).toList();
+                int at = labels.indexOf(tr("project.map.menu.revealInMap"));
+                assertTrue(at >= 0, labels.toString());
+                assertEquals(tr("menu.revealInFileManager"), labels.get(at + 1), "beside Reveal in File Manager");
+                menu.getItems().get(at).fire();
+            });
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+            boolean shown = false;
+            while (!shown && System.nanoTime() < deadline) {
+                shown = FxTestSupport.callOnFx(() -> {
+                    ProjectPanel panel = fx.controller.projectPanel();
+                    ProjectMapView map = FxTestSupport.field(panel, "mapView");
+                    javafx.scene.layout.Region surface = FxTestSupport.field(map, "surface");
+                    return panel.isMapShowing()
+                            && file.toRealPath().equals(FxTestSupport.call(surface, "selectedPath", new Class<?>[0]));
+                });
+                if (!shown) {
+                    Thread.sleep(25);
+                }
+            }
+            assertTrue(shown, "the Map window opened with the tab's file selected");
+            FxTestSupport.runOnFx(() -> fx.controller.projectPanel().mapWindow().closeByUser());
+        } finally {
+            fx.dispose();
+        }
+    }
+
+    /**
      * Simple UI mode trims the tab menu as it trims the menu bar — no Git, Local History, diff, terminal or
      * bulk-close entries, and no doubled separators where they were — and the same, already built menu comes
      * back in full when the mode is turned off.
@@ -140,6 +193,7 @@ class TabContextMenuFxTest {
                                 tr("menu.closeOthers"),
                                 tr("menu.closeAll"),
                                 "-",
+                                tr("project.map.menu.revealInMap"), // as Reveal Active File, kept in Simple mode
                                 tr("menu.revealInFileManager"),
                                 tr("menu.copyPath"),
                                 tr("menu.rename")),

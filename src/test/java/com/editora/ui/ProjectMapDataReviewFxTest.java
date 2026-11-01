@@ -217,6 +217,8 @@ class ProjectMapDataReviewFxTest {
         }
         Path wanted = huge.resolve("item-0650.txt");
         Fixture map = openMap();
+        FxTestSupport.runOnFx(() -> FxTestSupport.<MapLoader>field(map.view(), "mapLoader").canvasWholeFolders =
+                folder -> false); // "+N more" is a remote root's way since Map explore 15
         try {
             waitForRow(map, huge);
             FxTestSupport.runOnFx(() -> toggle(map.view(), huge));

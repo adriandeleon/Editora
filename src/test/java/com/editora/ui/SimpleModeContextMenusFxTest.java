@@ -118,6 +118,7 @@ class SimpleModeContextMenusFxTest {
                                 tr("project.menu.delete"),
                                 tr("project.menu.encrypt"), // kept: encrypting a file is file management
                                 "-",
+                                tr("project.map.menu.revealInMap"), // as Reveal Active File (Map explore 18)
                                 tr("project.menu.revealInFileManager")),
                         treeMenu(panel, file, false));
                 String newFile = ProjectPanel.labelFor(com.editora.template.NewFileCatalog.PLAIN);
@@ -127,6 +128,7 @@ class SimpleModeContextMenusFxTest {
                                 tr("newfile.menu.new") + "[" + newFile + ", " + tr("project.menu.newFolder") + "]",
                                 tr("project.menu.rename"),
                                 "-",
+                                tr("project.map.menu.revealInMap"),
                                 tr("project.menu.revealInFileManager")),
                         simpleDir,
                         "New offers a file or a folder only");

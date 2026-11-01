@@ -321,6 +321,8 @@ class ProjectMapDataFxTest {
         Path big = folderWithFiles("big", 350);
         Path moreRow = big.resolve(ProjectMapModel.PLACEHOLDER_NAME);
         ProjectMapView mapView = newMap(new ArrayList<>());
+        FxTestSupport.runOnFx(() -> FxTestSupport.<MapLoader>field(mapView, "mapLoader").canvasWholeFolders =
+                folder -> false); // "+N more" is a remote root's way since Map explore 15
         try {
             Region surface = FxTestSupport.field(mapView, "surface");
             FxTestSupport.runOnFx(() -> mapView.setRoot(root));
