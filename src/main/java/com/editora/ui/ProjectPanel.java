@@ -2611,6 +2611,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     state.get().setProjectMapFollowActiveFile(follow);
                     save.run();
                 });
+        // The review-3 options: restored before their callbacks are set, so a restore is not written back.
+        mapView.setCompactRows(stored.isProjectMapCompactRows());
+        mapView.setOnCompactRowsChanged(compact -> {
+            state.get().setProjectMapCompactRows(compact);
+            save.run();
+        });
+        mapView.setHideIgnored(stored.isProjectMapHideIgnored());
+        mapView.setOnHideIgnoredChanged(hide -> {
+            state.get().setProjectMapHideIgnored(hide);
+            save.run();
+        });
+        mapView.setOnOverviewSeen(() -> {
+            state.get().setProjectMapOverviewSeen(true);
+            save.run();
+        });
+        mapView.setOverviewSeen(stored.isProjectMapOverviewSeen()); // false opens the card on the first Map open
         mapWindow.setBoundsMemory(
                 () -> state.get().getProjectMapWindowBounds(),
                 bounds -> state.get().setProjectMapWindowBounds(bounds));
