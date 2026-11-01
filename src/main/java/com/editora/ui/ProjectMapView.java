@@ -6807,13 +6807,6 @@ final class ProjectMapView extends VBox {
         }
 
         /**
-         * What card placement needs to know about the row at {@code path}, in panel pixels (see {@code
-         * drawnPlacement}): the row and its column as {@code {x, y, w, h}}, the extent of the columns on screen, and
-         * what a card should not cover, as {@code {x, y, w, h, weight}} — every column on screen (the row's own
-         * weighs 6, those that lead to it 4, others 1), the band where the row's next column would open (3), and the
-         * zoom bar and the overview are added by the cards themselves ({@link #cardChrome}). Reads the layout only.
-         */
-        /**
          * The zoom bar and the overview as drawn, {@code {x, y, w, h, weight}}: cards and their Structure columns keep
          * clear of them (review 3, E11).
          */
@@ -6847,6 +6840,13 @@ final class ProjectMapView extends VBox {
             return columns;
         }
 
+        /**
+         * What card placement needs to know about the row at {@code path}, in panel pixels (see {@code
+         * drawnPlacement}): the row and its column as {@code {x, y, w, h}}, the extent of the columns on screen, and
+         * what a card should not cover, as {@code {x, y, w, h, weight}} — every column on screen (the row's own
+         * weighs 6, those that lead to it 4, others 1), and the band where the row's next column would open (3); the
+         * zoom bar and the overview are added by the cards themselves ({@link #cardChrome}). Reads the layout only.
+         */
         private MapCards.Site cardSite(Path path) {
             NodeBox node = boxes.stream()
                     .filter(box -> box.entry().path().equals(path))
