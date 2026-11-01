@@ -8,7 +8,6 @@ import java.time.format.FormatStyle;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -93,8 +92,6 @@ final class ProjectMapView extends VBox {
     /** Selections kept for Back/Forward; the oldest are dropped beyond this. */
     static final int MAX_SELECTION_HISTORY = 100;
 
-    private static final int MAX_REMEMBERED_ROOTS = 8;
-    private static final int MAX_REVEAL_PINS = 64;
     private static final double LOADING_NOTICE_MILLIS = 200;
 
     enum FlowDirection {
@@ -194,28 +191,22 @@ final class ProjectMapView extends VBox {
     private final Map<Path, ProjectMapNotePreview> notePreviews;
     private final Map<ProjectMapPreview, ProjectMapCardStructure> cardStructures;
     private final Map<Path, MapCards.PreviewConnector> previewConnectors;
+    /** The thread loads run on: one, so a later load waits behind the one listing. */
     private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "project-map-loader");
         thread.setDaemon(true);
         return thread;
     });
-    private final AtomicLong generation = new AtomicLong();
+    /** What the map lists — open folders, row limits, pins — and the listing (Map refactor stage 2). */
+    private final MapLoader mapLoader;
+    // The loader's own state, under the names the tests have long read them by.
+    private final AtomicLong generation;
     /** Directory listings: cached for the folders the Project watcher follows, each one with a timeout. */
-    final ListingService listings = new ListingService(ListingService.LISTING_TIMEOUT_MILLIS, null);
+    final ListingService listings;
     /** How many queued loads actually began listing (the rest were superseded first). */
-    final java.util.concurrent.atomic.AtomicInteger loadsStartedForTest =
-            new java.util.concurrent.atomic.AtomicInteger();
-
-    /** The folders the user opened by hand. A search never writes here, so clearing it restores this set. */
-    private final Set<Path> expanded = new HashSet<>();
-    /** While a query is active: the ancestors of its matches, opened on top of {@link #expanded}. */
-    private Set<Path> searchExpanded = Set.of();
-    /** The current query's matches, best first; loaded before anything else so the first is always present. */
-    private List<Path> searchMatches = List.of();
-    /** Folders opened / closed by hand while a query is active. Dropped with the query. */
-    private final Set<Path> searchOpened = new HashSet<>();
-
-    private final Set<Path> searchClosed = new HashSet<>();
+    final java.util.concurrent.atomic.AtomicInteger loadsStartedForTest;
+    /** The folders the user opened by hand ({@link MapLoader#expanded}). */
+    private final Set<Path> expanded;
     /** How many names the current query matched in all, and whether its walk stopped short of the project. */
     private int searchMatchesTotal;
 
@@ -231,10 +222,6 @@ final class ProjectMapView extends VBox {
 
     /** The current query's whole answer: its files, folders and declarations, best first (review 3 A5, E2). */
     private ProjectMapSearchResult searchResult = ProjectMapSearchResult.EMPTY;
-    /** The folder match the search landed on: opened, on top of the ancestors of every match. */
-    private @Nullable Path searchFocusFolder;
-    /** A match stepped to beyond the {@link #SEARCH_OPEN_LIMIT} opened ones: its folders are opened as well. */
-    private @Nullable Path searchCurrent;
     /** The match the results strip stands on, an index into {@link #searchResult}'s matches; -1 for none (B1). */
     private int resultsCursor = -1;
     /** Told whenever the search's answer or the match the strip stands on changes (the results strip). */
@@ -255,12 +242,6 @@ final class ProjectMapView extends VBox {
     private @Nullable Path searchReturnSelection;
     /** The row the current query selected by itself (its first match), as opposed to one the user picked. */
     private @Nullable Path searchSelected;
-    /** Row limits raised by "+N more", by directory. */
-    private final Map<Path, Integer> directoryLimits = new HashMap<>();
-    /** Revealed paths that must stay loaded even when they sort beyond their directory's row limit. */
-    private final Set<Path> revealPins = new java.util.LinkedHashSet<>();
-    /** Expansion and selection of the folders this view showed before, so returning to one restores them. */
-    private final Map<String, RootMemory> rootMemory = new LinkedHashMap<>(16, 0.75f, true);
 
     private final Label loadingLabel = new Label(tr("project.map.loading"));
     private final javafx.animation.PauseTransition loadingDelay =
@@ -290,10 +271,6 @@ final class ProjectMapView extends VBox {
     private boolean announceLimit;
     private boolean announceMatches;
     private boolean wasCapped;
-    private @Nullable Path loadMoreDirectory;
-    private int loadMorePreviousLimit;
-    private int loadMorePreviousLoaded;
-    private ProjectMapModel.Snapshot snapshot = ProjectMapModel.Snapshot.EMPTY;
     private java.util.function.Supplier<java.util.Collection<Path>> openFiles = List::of;
     private java.util.function.Supplier<java.util.Collection<Path>> markerCandidates = List::of;
     private java.util.function.BiConsumer<Boolean, Boolean> onNavigationChanged = (keepZoom, focusColumn) -> {};
@@ -368,13 +345,16 @@ final class ProjectMapView extends VBox {
             Predicate<Path> isOpen,
             Predicate<Path> isModified,
             Function<Path, ProjectMapPreview.@Nullable Content> previewContent) {
+        this.mapLoader = new MapLoader(loaderHost(), loader::submit, Platform::runLater, System::currentTimeMillis);
+        this.generation = mapLoader.generation;
+        this.listings = mapLoader.listings;
+        this.loadsStartedForTest = mapLoader.loadsStartedForTest;
+        this.expanded = mapLoader.expanded;
         this.onOpenFile = onOpenFile;
         this.isOpen = isOpen == null ? path -> false : isOpen;
         this.isModified = isModified == null ? path -> false : isModified;
         this.previewContent = previewContent == null ? path -> null : previewContent;
         this.structure = new ProjectMapStructure(this::previewContentFor);
-        // A folder that stopped answering and then answers is listed again by the next load.
-        listings.setOnRecovered(() -> Platform.runLater(this::reload));
         structure.setOnFileChanged(this::structureChanged);
         getStyleClass().add("project-map-view");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
@@ -539,11 +519,8 @@ final class ProjectMapView extends VBox {
      * chain opened open, so the columns stay where they are, only drawn one per folder again.
      */
     private void layoutCompactChanged(boolean compact) {
-        if (!compact && !searching()) {
-            boolean changed = expanded.addAll(snapshot.loadedDirectories());
-            if (changed) {
-                onExpandedChanged.run();
-            }
+        if (!compact && mapLoader.keepLoadedFoldersOpen()) {
+            onExpandedChanged.run();
         }
         surface.setCompactChains(compact);
         reload();
@@ -1190,19 +1167,15 @@ final class ProjectMapView extends VBox {
         boolean otherFileSystem = this.root != null
                 && normalized != null
                 && !com.editora.config.PathKeys.sameFileSystem(this.root, normalized);
-        rememberRoot();
+        mapLoader.rememberRoot(surface.selectedPath());
         bearingsFlush(); // what the workspace keeps is the folder being left, as it was
         bearingsReady = false;
         this.root = normalized;
         cards.closeAll();
         structure.clear();
-        expanded.clear();
+        Path remembered = mapLoader.setRoot(normalized); // what was open there last time comes back
         clearSearchState();
-        directoryLimits.clear();
-        revealPins.clear();
-        snapshot = ProjectMapModel.Snapshot.EMPTY;
         wasCapped = false;
-        loadMoreDirectory = null;
         selectionHistory.clear();
         historyIndex = -1;
         pendingSelection = normalized;
@@ -1215,9 +1188,10 @@ final class ProjectMapView extends VBox {
             surface.setEntries(List.of(), Set.of());
         }
         if (normalized != null) {
-            expanded.add(normalized);
             recordSelection(normalized);
-            restoreRoot(normalized);
+            if (remembered != null) {
+                pendingSelection = remembered;
+            }
             if (active) {
                 bearingsRestore(); // shown already: the workspace's state for this folder applies now
             }
@@ -1225,42 +1199,6 @@ final class ProjectMapView extends VBox {
         surface.setSelected(normalized);
         updateNavigation();
         reload();
-    }
-
-    /** What the view keeps of a folder it is leaving. Local folders only: their paths compare safely. */
-    private record RootMemory(
-            Set<Path> expanded,
-            Map<Path, Integer> limits,
-            @Nullable Path selected) {}
-
-    /**
-     * In the window with no project the root follows the active tab's folder, so every tab switch to another
-     * folder is a root change. Remembering the last few folders' open branches and selection means switching
-     * back does not start that folder's map from nothing. Zoom and column positions belong to one layout and
-     * are not carried over.
-     */
-    private void rememberRoot() {
-        if (root == null || !com.editora.vfs.Vfs.isLocal(root)) {
-            return;
-        }
-        rootMemory.put(
-                root.toString(),
-                new RootMemory(Set.copyOf(expanded), Map.copyOf(directoryLimits), surface.selectedPath()));
-        while (rootMemory.size() > MAX_REMEMBERED_ROOTS) {
-            rootMemory.remove(rootMemory.keySet().iterator().next());
-        }
-    }
-
-    private void restoreRoot(Path next) {
-        RootMemory memory = com.editora.vfs.Vfs.isLocal(next) ? rootMemory.get(next.toString()) : null;
-        if (memory == null) {
-            return;
-        }
-        expanded.addAll(memory.expanded()); // pruned against the disk by the load that follows
-        directoryLimits.putAll(memory.limits());
-        if (memory.selected() != null && memory.selected().startsWith(next)) {
-            pendingSelection = memory.selected();
-        }
     }
 
     // --- bearings: what the Map keeps of an exploration across restarts (Project Map review 3 B6) ------------
@@ -1615,18 +1553,13 @@ final class ProjectMapView extends VBox {
     }
 
     private void clearSearchState() {
-        searchExpanded = Set.of();
-        searchMatches = List.of();
+        mapLoader.clearSearch();
         searchMatchesTotal = 0;
         searchMatchesPartial = false;
         searchResult = ProjectMapSearchResult.EMPTY;
-        searchFocusFolder = null;
-        searchCurrent = null;
         searchStructureOpened = null;
         searchPendingSymbol = null;
         surface.setSearchHits(Set.of());
-        searchOpened.clear();
-        searchClosed.clear();
         searchSelectionQuery = "";
         searchReturnSelection = null;
         searchSelected = null;
@@ -1637,7 +1570,7 @@ final class ProjectMapView extends VBox {
     void setQuery(String query) {
         String value = query == null ? "" : query;
         if (!this.query.equals(value)) {
-            boolean hadSearchState = !searchExpanded.isEmpty() || !searchOpened.isEmpty() || !searchClosed.isEmpty();
+            boolean hadSearchState = mapLoader.hasSearchFolders();
             boolean keepPlace = false;
             if (this.query.isBlank()) {
                 searchReturnSelection = surface.selectedPath(); // recorded in history when the search clears
@@ -1645,9 +1578,7 @@ final class ProjectMapView extends VBox {
                 keepPlace = resultsKeepPlace(); // before the search's folders are dropped
             }
             this.query = value;
-            // What was opened or closed by hand belonged to the previous query's results.
-            searchOpened.clear();
-            searchClosed.clear();
+            mapLoader.clearSearchEdits(); // what was opened or closed by hand was the previous query's
             updateFilters();
             if (value.isBlank()) {
                 clearSearchState();
@@ -1682,20 +1613,7 @@ final class ProjectMapView extends VBox {
         while (ProjectMapStructure.isSymbolPath(row) && row.getParent() != null) {
             row = row.getParent(); // a declaration row: its file's folders are what stay open
         }
-        Set<Path> promoted = new HashSet<>(searchOpened);
-        promoted.addAll(ProjectMapModel.ancestorsWithin(currentRoot, List.of(row)));
-        if (row.equals(searchFocusFolder)) {
-            promoted.add(row); // the folder match the search opened, and the user is still on it
-        }
-        promoted.removeIf(path -> !path.startsWith(currentRoot) || searchClosed.contains(path));
-        boolean changed = expanded.addAll(promoted);
-        boolean match = row.equals(searchCurrent) || searchResult.paths().contains(row);
-        if (match && revealPins.add(row)) {
-            changed = true; // a match, pinned past its folder's row limit by the search, stays loaded
-            while (revealPins.size() > MAX_REVEAL_PINS) {
-                revealPins.remove(revealPins.iterator().next());
-            }
-        }
+        boolean changed = mapLoader.keepSearchPlace(currentRoot, row);
         if (before != null && before.startsWith(currentRoot) && !before.equals(current)) {
             recordSelection(before);
             recordSelection(current);
@@ -1742,19 +1660,11 @@ final class ProjectMapView extends VBox {
         // The same query runs again after every in-app file change; only a new query moves the selection.
         boolean newQuery = !value.equals(searchSelectionQuery);
         searchSelectionQuery = value;
+        Path focusBefore = mapLoader.searchFocusFolder();
         Path nextFocus = newQuery
                 ? (first != null && first.kind() == ProjectMapSearchResult.Kind.FOLDER ? first.path() : null)
-                : (searchFocusFolder != null && allPaths.contains(searchFocusFolder) ? searchFocusFolder : null);
-        Set<Path> nextExpansion = ProjectMapModel.expandedAncestors(root, nextMatches);
-        boolean changed = !searchExpanded.equals(nextExpansion)
-                || !searchMatches.equals(nextMatches)
-                || !java.util.Objects.equals(searchFocusFolder, nextFocus);
-        searchExpanded = nextExpansion;
-        searchMatches = nextMatches;
-        searchFocusFolder = nextFocus;
-        if (newQuery || searchCurrent != null && !allPaths.contains(searchCurrent)) {
-            searchCurrent = null;
-        }
+                : (focusBefore != null && allPaths.contains(focusBefore) ? focusBefore : null);
+        boolean changed = mapLoader.setSearchMatches(allPaths, nextMatches, nextFocus, newQuery);
         resultsCursor = resultsCursorAfter(newQuery, kept);
         surface.setSearchHits(Set.copyOf(allPaths));
         Path target = first == null ? null : first.path();
@@ -1802,15 +1712,7 @@ final class ProjectMapView extends VBox {
             return;
         }
         Path target = match.path();
-        boolean refocus = match.kind() == ProjectMapSearchResult.Kind.FOLDER && !target.equals(searchFocusFolder);
-        if (refocus) {
-            searchFocusFolder = target;
-        }
-        Path beyond = searchMatches.contains(target) ? null : target;
-        if (!java.util.Objects.equals(beyond, searchCurrent)) {
-            searchCurrent = beyond; // past the opened ones: its own folders open for it
-            refocus = true;
-        }
+        boolean refocus = mapLoader.showMatch(target, match.kind() == ProjectMapSearchResult.Kind.FOLDER);
         searchSelected = target;
         int index = searchResult.matches().indexOf(match);
         if (index >= 0 && index != resultsCursor) {
@@ -2009,8 +1911,9 @@ final class ProjectMapView extends VBox {
         if (kept > searchOpenLimit) {
             parts.add(tr("project.map.status.search.opened", searchOpenLimit));
         }
-        if (shown < searchMatches.size()) {
-            parts.add(tr("project.map.status.search.rowLimit", shown, searchMatches.size()));
+        int opened = mapLoader.openedMatches().size();
+        if (shown < opened) {
+            parts.add(tr("project.map.status.search.rowLimit", shown, opened));
         }
         if (searchMatchesPartial) {
             parts.add(tr(
@@ -2024,28 +1927,6 @@ final class ProjectMapView extends VBox {
     private void resultsNotify(String notice) {
         java.util.function.Consumer<String> sink = resultsOnNotice;
         (sink == null ? onStatus : sink).accept(notice);
-    }
-
-    /**
-     * During a search, a folder's "+N more" row stands for siblings that do not match: every match in an open
-     * folder is pinned (see {@link #resultsPins}), so none is behind it (B16).
-     */
-    private static String resultsPlaceholderLabel(ProjectMapModel.PlaceholderKind kind, int remaining) {
-        return kind == ProjectMapModel.PlaceholderKind.MORE
-                ? tr("project.map.row.moreNotMatching", remaining)
-                : placeholderLabel(kind, remaining);
-    }
-
-    /** The matches past the opened ones whose folder is open anyway: kept loaded, so "+N more" hides none. */
-    private List<Path> resultsPins(Set<Path> open) {
-        List<Path> pins = new ArrayList<>();
-        for (Path path : searchResult.paths()) {
-            Path parent = path.getParent();
-            if (parent != null && (open.contains(parent) || parent.equals(root)) && !searchMatches.contains(path)) {
-                pins.add(path);
-            }
-        }
-        return pins;
     }
 
     /**
@@ -2233,8 +2114,7 @@ final class ProjectMapView extends VBox {
 
     /** Anything on disk may have changed (an in-app file operation): every folder is listed again. */
     void refresh() {
-        listings.invalidateAll();
-        reload();
+        mapLoader.refresh();
         scheduleCardRefresh();
     }
 
@@ -2244,15 +2124,13 @@ final class ProjectMapView extends VBox {
      * the folders that changed, and the unwatched ones, are listed again (position 22 of Map review 3).
      */
     void revalidate() {
-        listings.revalidateAll();
-        reload();
+        mapLoader.revalidate();
         scheduleCardRefresh();
     }
 
     /** The Project watcher saw entries come or go in {@code directories}: those are listed again, the rest kept. */
     void refresh(java.util.Collection<Path> directories) {
-        listings.invalidate(directories);
-        reload();
+        mapLoader.refresh(directories);
         scheduleCardRefresh();
     }
 
@@ -2261,12 +2139,12 @@ final class ProjectMapView extends VBox {
      * listing reads them again, but nothing is reloaded for it now.
      */
     void listingsChanged(java.util.Collection<Path> directories) {
-        listings.invalidate(directories);
+        mapLoader.listingsChanged(directories);
     }
 
     /** The folders the Project watcher follows now: only their listings may be reused between loads. */
     void setWatchedDirectories(Set<Path> directories) {
-        listings.setWatched(directories);
+        mapLoader.setWatchedDirectories(directories);
     }
 
     /**
@@ -2275,21 +2153,7 @@ final class ProjectMapView extends VBox {
      * there hides its whole branch, and none of it reaches the manual set.
      */
     Set<Path> expandedDirectories() {
-        Set<Path> result = new HashSet<>(expanded);
-        if (searching()) {
-            result.addAll(searchExpanded);
-            result.addAll(searchOpened);
-            if (searchFocusFolder != null) {
-                result.add(searchFocusFolder); // the folder match the search landed on
-            }
-            if (searchCurrent != null) {
-                result.addAll(ProjectMapModel.expandedAncestors(root, List.of(searchCurrent)));
-            }
-            if (!searchClosed.isEmpty()) {
-                result.removeIf(path -> searchClosed.stream().anyMatch(path::startsWith));
-            }
-        }
-        return Set.copyOf(result);
+        return mapLoader.expandedDirectories();
     }
 
     /** Carries the map's state across an in-app rename or move, so a renamed open folder stays open. */
@@ -2297,39 +2161,15 @@ final class ProjectMapView extends VBox {
         if (root == null || from == null || to == null) {
             return;
         }
-        remapAll(expanded, from, to);
-        remapAll(searchOpened, from, to);
-        remapAll(searchClosed, from, to);
-        remapAll(revealPins, from, to);
         structure.pathRenamed(
                 from.toAbsolutePath().normalize(), to.toAbsolutePath().normalize());
-        Map<Path, Integer> limits = new HashMap<>();
-        directoryLimits.forEach((path, limit) -> limits.put(ProjectMapModel.remap(path, from, to), limit));
-        directoryLimits.clear();
-        directoryLimits.putAll(limits);
         Path selected = surface.selectedPath();
         Path renamed = ProjectMapModel.normalize(from);
         if (selected != null && renamed != null && selected.startsWith(renamed)) {
             pendingSelection = ProjectMapModel.remap(selected, from, to);
         }
         cards.pathRenamed(from, to);
-        listings.invalidateAll(); // the folders on both sides of the move are listed afresh
-        // A load that is listing the old tree may be in flight. Its snapshot would prune the folders just
-        // remapped (they are not in it) and close them: it must not land, and the new tree is listed instead.
-        if (active) {
-            reload();
-        } else {
-            generation.incrementAndGet();
-            loadFinished();
-        }
-    }
-
-    private static void remapAll(Set<Path> paths, Path from, Path to) {
-        List<Path> moved = paths.stream()
-                .map(path -> ProjectMapModel.remap(path, from, to))
-                .toList();
-        paths.clear();
-        paths.addAll(moved);
+        mapLoader.pathRenamed(from, to); // the open folders follow; the new tree is listed, not the old one
     }
 
     void focusMap() {
@@ -2733,9 +2573,8 @@ final class ProjectMapView extends VBox {
         bearingsFlush(); // into the workspace state; the window's session write is what saves it
         disposed = true;
         cards.stopRefreshing();
-        generation.incrementAndGet();
+        mapLoader.dispose();
         loader.shutdownNow();
-        listings.close();
         structure.dispose();
         loadInFlight = false;
         loadingDelay.stop();
@@ -2794,88 +2633,71 @@ final class ProjectMapView extends VBox {
     }
 
     private void reload() {
-        if (disposed) {
-            return; // a late callback after the window closed: the loader is gone
-        }
-        if (!active) {
-            return; // setShowing(true) reloads when the Map window is next shown
-        }
-        long requested = generation.incrementAndGet();
-        Path requestedRoot = root;
-        if (requestedRoot == null) {
-            loadFinished();
-            snapshot = ProjectMapModel.Snapshot.EMPTY;
-            surface.setEntries(List.of(), Set.of());
-            return;
-        }
-        List<Path> pinned = new ArrayList<>(searching() ? searchMatches : List.<Path>of());
-        if (searching() && searchCurrent != null) {
-            pinned.add(searchCurrent); // a match stepped to beyond the opened ones
-        }
-        Set<Path> openDirectories = expandedDirectories();
-        if (searching()) {
-            pinned.addAll(resultsPins(openDirectories)); // B16: "+N more" in a search hides no match
-        }
-        pinned.addAll(revealPins);
-        ProjectMapModel.Request request = new ProjectMapModel.Request(
-                requestedRoot,
-                openDirectories,
-                showHiddenDefault,
-                surface.hiddenOverrides(),
-                directoryLimits,
-                pinned,
-                searching() ? ProjectMapView::resultsPlaceholderLabel : ProjectMapView::placeholderLabel,
-                () -> requested != generation.get(),
-                surface.columnFilterQueries(),
-                // A search opens exactly the folders that lead to its matches: no chain opens on its own.
-                compactChainsOption.isSelected() && !searching(),
-                dataPriorityFolders());
-        loadStarted();
-        try {
-            loader.submit(() -> {
-                if (requested != generation.get()) {
-                    return; // superseded while queued: ten quick clicks list the folders once, not ten times
-                }
-                loadsStartedForTest.incrementAndGet();
-                ProjectMapModel.Snapshot loaded;
-                try {
-                    loaded = ProjectMapModel.load(request, listings);
-                } catch (RuntimeException unreadable) {
-                    ProjectMapLog.unexpected("loading the map", unreadable);
-                    // a closed SFTP file system throws unchecked; the map must still hear back
-                    loaded = ProjectMapModel.Snapshot.EMPTY;
-                }
-                if (loaded == null) {
-                    return; // cancelled part-way by a newer request
-                }
-                ProjectMapModel.Snapshot result = loaded;
-                Platform.runLater(() -> applySnapshot(requested, requestedRoot, result));
-            });
-        } catch (java.util.concurrent.RejectedExecutionException shutDown) {
-            loadFinished();
-        }
+        mapLoader.reload();
     }
 
-    /** The folder whose rows "+N more" raised last; the load pays it before the shallower folders (A10). */
-    private @Nullable Path dataLastRaised;
+    /** What the loader asks of the view: the window's state, the columns' settings, where a load lands. */
+    private MapLoader.Host loaderHost() {
+        return new MapLoader.Host() {
+            @Override
+            public boolean active() {
+                return active;
+            }
 
-    /**
-     * The open folders a load pays first when the overall limit is near: the one the selection is in, then
-     * the one whose rows were raised last. The folder being read keeps its rows when another column opens.
-     */
-    private List<Path> dataPriorityFolders() {
-        List<Path> first = new ArrayList<>(2);
-        Path selectedColumn = dataSelectedColumn();
-        if (selectedColumn != null) {
-            first.add(selectedColumn);
-        }
-        Path raised = dataLastRaised;
-        if (raised != null && directoryLimits.containsKey(raised) && !raised.equals(selectedColumn)) {
-            first.add(raised);
-        } else if (raised != null && !directoryLimits.containsKey(raised)) {
-            dataLastRaised = null; // its column closed, or its raise was undone
-        }
-        return first;
+            @Override
+            public boolean searching() {
+                return ProjectMapView.this.searching();
+            }
+
+            @Override
+            public boolean showHidden() {
+                return showHiddenDefault;
+            }
+
+            @Override
+            public Map<Path, Boolean> hiddenOverrides() {
+                return surface.hiddenOverrides();
+            }
+
+            @Override
+            public Map<Path, String> columnFilterQueries() {
+                return surface.columnFilterQueries();
+            }
+
+            @Override
+            public boolean compactChains() {
+                return compactChainsOption.isSelected();
+            }
+
+            @Override
+            public @Nullable Path selectedColumn() {
+                return dataSelectedColumn();
+            }
+
+            @Override
+            public void loadStarted() {
+                ProjectMapView.this.loadStarted();
+            }
+
+            @Override
+            public void loadFinished() {
+                ProjectMapView.this.loadFinished();
+            }
+
+            @Override
+            public void cleared() {
+                surface.setEntries(List.of(), Set.of());
+            }
+
+            @Override
+            public void loaded(
+                    Path requestedRoot,
+                    ProjectMapModel.Snapshot loaded,
+                    Set<Path> loadedPaths,
+                    boolean expansionChanged) {
+                applySnapshot(requestedRoot, loaded, loadedPaths, expansionChanged);
+            }
+        };
     }
 
     /** The folder whose column holds the selected row, or null without a selection there. */
@@ -2886,16 +2708,6 @@ final class ProjectMapView extends VBox {
             return null;
         }
         return entry.parent();
-    }
-
-    private static String placeholderLabel(ProjectMapModel.PlaceholderKind kind, int remaining) {
-        return switch (kind) {
-            case MORE -> tr("project.map.row.more", remaining);
-            case EMPTY -> tr("project.map.row.emptyFolder");
-            case UNREADABLE -> tr("project.map.row.unreadableFolder");
-            case OVER_LIMIT -> tr("project.map.row.overLimit", ProjectMapModel.MAX_VISIBLE_ITEMS);
-            case NOT_RESPONDING -> tr("project.map.row.notResponding");
-        };
     }
 
     /** A load that outlasts {@link #LOADING_NOTICE_MILLIS} (a slow or remote folder) shows "Loading…". */
@@ -2914,35 +2726,12 @@ final class ProjectMapView extends VBox {
         surface.setLoadPending(false);
     }
 
-    private void applySnapshot(long requested, Path requestedRoot, ProjectMapModel.Snapshot loaded) {
-        if (disposed || requested != generation.get()) {
-            return;
-        }
-        loadFinished();
+    /** A load landed ({@link MapLoader}): the rows, the selection waiting for them, and what to report. */
+    private void applySnapshot(
+            Path requestedRoot, ProjectMapModel.Snapshot loaded, Set<Path> loadedPaths, boolean expansionChanged) {
         if (RemoteReadFailure.connectionClosed(requestedRoot)) {
             onStatus.accept(RemoteReadFailure.unreadable(requestedRoot)); // not "an empty project"
         }
-        snapshot = loaded;
-        Set<Path> loadedPaths = new HashSet<>();
-        for (ProjectMapModel.Entry entry : loaded.entries()) {
-            loadedPaths.add(entry.path());
-        }
-        boolean expansionChanged = false;
-        if (!loaded.entries().isEmpty()) {
-            if (!searching()) {
-                // Folders that did not load (renamed, deleted, replaced by a file) leave the manual set. One the
-                // overall limit left without a single row stays: it is drawn open with an "over the limit" stub
-                // and loads again when a column closes.
-                Set<Path> kept = ProjectMapModel.pruneExpansion(root, expanded, loaded);
-                if (!kept.equals(expanded)) {
-                    expanded.clear();
-                    expanded.addAll(kept);
-                    expansionChanged = true;
-                }
-            }
-            directoryLimits.keySet().retainAll(loaded.loadedDirectories());
-        }
-        revealPins.retainAll(loadedPaths);
         Path selectedBefore = surface.selectedPath();
         Set<Path> loadedFiles = new HashSet<>();
         for (ProjectMapModel.Entry entry : loaded.entries()) {
@@ -2981,16 +2770,12 @@ final class ProjectMapView extends VBox {
 
     /** After "+N more": follow the rows that arrived, or undo the raise when the overall limit gave none. */
     private void finishLoadMore(ProjectMapModel.Snapshot loaded, Set<Path> loadedPaths, @Nullable Path selectedBefore) {
-        Path directory = loadMoreDirectory;
-        loadMoreDirectory = null;
-        if (directory == null) {
+        MapLoader.Raised raised = mapLoader.finishLoadMore(loaded);
+        if (raised == null) {
             return;
         }
-        ProjectMapModel.DirectoryFacts facts = loaded.directories().get(directory);
-        if (facts == null || facts.loaded() <= loadMorePreviousLoaded) {
-            directoryLimits.put(directory, loadMorePreviousLimit);
-            return;
-        }
+        Path directory = raised.directory();
+        int previousLoaded = raised.previousLoaded();
         Path moreRow = directory
                 .resolve(ProjectMapModel.PLACEHOLDER_NAME)
                 .toAbsolutePath()
@@ -3009,7 +2794,7 @@ final class ProjectMapView extends VBox {
                 }
             }
             if (!rows.isEmpty()) {
-                surface.select(rows.get(Math.min(loadMorePreviousLoaded, rows.size() - 1)));
+                surface.select(rows.get(Math.min(previousLoaded, rows.size() - 1)));
             }
         }
     }
@@ -3043,9 +2828,10 @@ final class ProjectMapView extends VBox {
     /** Nothing is dropped silently: say when matches or folders did not fit the overall limit. */
     private void reportLimits(ProjectMapModel.Snapshot loaded, Set<Path> loadedPaths) {
         if (searching()) {
-            if (announceMatches && (!searchMatches.isEmpty() || searchMatchesPartial)) {
+            List<Path> opened = mapLoader.openedMatches();
+            if (announceMatches && (!opened.isEmpty() || searchMatchesPartial)) {
                 int shown = 0;
-                for (Path match : searchMatches) {
+                for (Path match : opened) {
                     if (loadedPaths.contains(match)) {
                         shown++;
                     }
@@ -3057,8 +2843,9 @@ final class ProjectMapView extends VBox {
                 }
             }
         } else if (loaded.capped() && (announceLimit || !wasCapped)) {
-            Path reading = dataLastRaised != null ? dataLastRaised : dataSelectedColumn();
-            if (reading != null && dataOnlyAncestorsOpen(reading)) {
+            Path raised = mapLoader.lastRaised();
+            Path reading = raised != null ? raised : dataSelectedColumn();
+            if (reading != null && mapLoader.onlyAncestorsOpen(reading)) {
                 // Closing a column would close the folder itself: its filter reaches the rest (A10).
                 Path name = reading.getFileName();
                 onStatus.accept(tr(
@@ -3072,16 +2859,6 @@ final class ProjectMapView extends VBox {
         announceMatches = false;
         announceLimit = false;
         wasCapped = loaded.capped();
-    }
-
-    /** Whether every open folder is {@code folder} or one of the folders that lead to it. */
-    private boolean dataOnlyAncestorsOpen(Path folder) {
-        for (Path open : expandedDirectories()) {
-            if (!folder.startsWith(open)) {
-                return false;
-            }
-        }
-        return true;
     }
 
     /** Removes a path that no longer resolves from the selection history, keeping the index on the selection. */
@@ -3135,26 +2912,9 @@ final class ProjectMapView extends VBox {
         if (path == null) {
             return;
         }
-        if (searching()) {
-            if (expandedDirectories().contains(path)) {
-                closeDuringSearch(path);
-            } else {
-                searchClosed.remove(path);
-                searchOpened.add(path);
-            }
-        } else {
-            Set<Path> nextExpansion = ProjectMapModel.toggleExpansion(root, expanded, path);
-            expanded.clear();
-            expanded.addAll(nextExpansion);
-        }
+        mapLoader.toggle(path);
         reloadForUser();
         onExpandedChanged.run();
-    }
-
-    private void closeDuringSearch(Path directory) {
-        searchOpened.removeIf(path -> path.startsWith(directory));
-        searchClosed.removeIf(path -> path.startsWith(directory));
-        searchClosed.add(directory);
     }
 
     /**
@@ -3163,33 +2923,14 @@ final class ProjectMapView extends VBox {
      * cache makes that cheap. A folder that loaded whole is filtered where it is.
      */
     private void truncatedColumnFilterChanged(@Nullable Path directory) {
-        Path path = ProjectMapModel.normalize(directory);
-        ProjectMapModel.DirectoryFacts facts =
-                path == null ? null : snapshot.directories().get(path);
-        if (facts == null) {
-            return;
-        }
-        int limit = Math.max(
-                ProjectMapModel.DIRECTORY_CHUNK, directoryLimits.getOrDefault(path, ProjectMapModel.DIRECTORY_CHUNK));
-        if (facts.truncated() || facts.loaded() > limit) {
-            reload();
-        }
+        mapLoader.columnFilterChanged(directory);
     }
 
     /** Raises one truncated directory's row limit by a chunk; the overall limit still applies. */
     private void loadMore(@Nullable Path directory) {
-        Path path = ProjectMapModel.normalize(directory);
-        if (path == null) {
-            return;
+        if (mapLoader.loadMore(directory)) {
+            reloadForUser();
         }
-        ProjectMapModel.DirectoryFacts facts = snapshot.directories().get(path);
-        loadMorePreviousLimit = directoryLimits.getOrDefault(path, ProjectMapModel.DIRECTORY_CHUNK);
-        loadMorePreviousLoaded = facts == null ? 0 : facts.loaded();
-        loadMoreDirectory = path;
-        dataLastRaised = path;
-        directoryLimits.put(
-                path, Math.max(loadMorePreviousLimit, loadMorePreviousLoaded) + ProjectMapModel.DIRECTORY_CHUNK);
-        reloadForUser();
     }
 
     private void closeColumn(Path parent) {
@@ -3201,11 +2942,7 @@ final class ProjectMapView extends VBox {
             closeStructure(normalized);
             return;
         }
-        if (searching()) {
-            closeDuringSearch(normalized);
-        } else {
-            expanded.removeIf(path -> path.startsWith(normalized));
-        }
+        mapLoader.close(normalized);
         cards.closeUnder(normalized);
         if (surface.selectionBelow(normalized)) { // a selection elsewhere stays where it is
             pendingSelection = normalized;
@@ -3243,6 +2980,7 @@ final class ProjectMapView extends VBox {
      * opening or an outline arriving needs no new listing.
      */
     private void showRows() {
+        ProjectMapModel.Snapshot snapshot = mapLoader.snapshot();
         List<ProjectMapModel.Entry> rows = structure.withStructure(snapshot.entries());
         Set<Path> open = new HashSet<>(snapshot.loadedDirectories());
         open.addAll(structure.openAmong(rows));
@@ -3684,18 +3422,8 @@ final class ProjectMapView extends VBox {
             return;
         }
         // Open the way to the target and leave every other open branch as it is.
-        Set<Path> chain = ProjectMapModel.ancestorsWithin(root, List.of(normalized));
-        if (searching()) {
-            searchClosed.removeIf(normalized::startsWith);
-            searchOpened.addAll(chain);
-        } else {
-            expanded.addAll(chain);
-        }
-        // Keep the target loaded even when it sorts beyond its folder's row limit.
-        revealPins.add(normalized);
-        while (revealPins.size() > MAX_REVEAL_PINS) {
-            revealPins.remove(revealPins.iterator().next());
-        }
+        // Kept loaded even when it sorts beyond its folder's row limit.
+        mapLoader.openTo(ProjectMapModel.ancestorsWithin(root, List.of(normalized)), normalized);
         pendingSelection = normalized;
         if (!navigatingHistory) {
             recordSelection(normalized); // as select() records a loaded target; dropped again if it never loads
