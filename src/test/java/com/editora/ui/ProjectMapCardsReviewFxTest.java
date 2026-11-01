@@ -698,7 +698,8 @@ class ProjectMapCardsReviewFxTest {
         assertEquals(
                 "T, () => void",
                 ProjectMapStructure.parameterTypes("function foo<T>(x: T, cb: () => void) {", "foo", "typescript"));
-        assertEquals("a, b int", ProjectMapStructure.parameterTypes("func add(a, b int) int {", "add", "go"));
+        assertEquals(
+                "…", ProjectMapStructure.parameterTypes("func add(a, b int) int {", "add", "go"), "no overloads in Go");
         assertEquals("char*", ProjectMapStructure.parameterTypes("int len(char *s) {", "len", "c"));
         assertNull(ProjectMapStructure.parameterTypes("  void wrapped(int a,", "wrapped", "java"), "goes on below");
         assertNull(ProjectMapStructure.parameterTypes("  readd(1);", "add", "java"), "not the name");
