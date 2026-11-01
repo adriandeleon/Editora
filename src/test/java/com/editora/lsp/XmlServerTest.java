@@ -260,4 +260,96 @@ class XmlServerTest {
                 new org.eclipse.lsp4j.CodeAction("Generate 'a.dtd' and bind with xml-model")));
         assertFalse(XmlServer.bindsWithDoctype(null));
     }
+
+    /** XML/pom review 4, B32: where a document link can be — a quoted value of the markup the offset is in. */
+    @Test
+    void aQuotedValueIsWhereALinkCanBe() {
+        String xsd = "<xs:include schemaLocation=\"other.xsd\"/>\n<a>text \"quoted\"</a>\n"
+                + "<!DOCTYPE a SYSTEM 'a.dtd'>\n<?xml-model href=\"g.rng\"?>";
+        assertTrue(XmlServer.inQuotedValue(xsd, xsd.indexOf("other.xsd") + 2));
+        assertTrue(XmlServer.inQuotedValue(xsd, xsd.indexOf("other.xsd")), "at the value's start");
+        assertTrue(XmlServer.inQuotedValue(xsd, xsd.indexOf("other.xsd") + 9), "at its end");
+        assertFalse(XmlServer.inQuotedValue(xsd, xsd.indexOf("schemaLocation") + 3), "the attribute's name");
+        assertFalse(XmlServer.inQuotedValue(xsd, xsd.indexOf("quoted")), "quotes in text content");
+        assertTrue(XmlServer.inQuotedValue(xsd, xsd.indexOf("a.dtd") + 1), "a DOCTYPE system id");
+        assertTrue(XmlServer.inQuotedValue(xsd, xsd.indexOf("g.rng") + 1), "an xml-model href");
+        assertFalse(XmlServer.inQuotedValue(xsd, 0));
+        assertFalse(XmlServer.inQuotedValue(xsd, xsd.length() + 1));
+    }
+
+    /** XML/pom review 4, B33: a link target that is a missing local file is its name, not a file to open. */
+    @Test
+    void aLinkToAMissingLocalFileIsItsName() throws Exception {
+        Path there = Files.writeString(dir.resolve("note.xsd"), "<xs:schema/>");
+        var found = XmlServer.linkTarget(there.toUri().toString(), WireUris.LOCAL);
+        assertNotNull(found.location());
+        assertEquals(there.toUri(), java.net.URI.create(found.location().getUri()));
+        var missing = XmlServer.linkTarget(dir.resolve("inc/nochap.xml").toUri().toString(), WireUris.LOCAL);
+        assertNull(missing.location());
+        assertEquals("nochap.xml", missing.missing());
+        assertFalse(XmlServer.linkTarget(dir.toUri().toString(), WireUris.LOCAL).present(), "a folder");
+        assertFalse(
+                XmlServer.linkTarget("https://example.com/a.xsd", WireUris.LOCAL)
+                        .present(),
+                "a web page");
+        assertFalse(XmlServer.linkTarget(null, WireUris.LOCAL).present());
+    }
+
+    /** XML/pom review 4, B35: {@code file://localhost/}, a query, and a {@code >} in another quoted attribute. */
+    @Test
+    void includeHrefEdgeCases(@TempDir Path dir) throws Exception {
+        Path lib = Files.writeString(dir.resolve("lib.xsl"), "<xsl:stylesheet/>");
+        String doc = dir.resolve("main.xsl").toUri().toString();
+        String abs = lib.toAbsolutePath().toString().replace('\\', '/');
+        assertEquals(
+                lib.toUri(),
+                java.net.URI.create(XmlServer.resolveInclude(
+                        doc, "file://localhost" + (abs.startsWith("/") ? "" : "/") + abs, WireUris.LOCAL)),
+                "RFC 8089's local host");
+        assertEquals(
+                lib.toUri(),
+                java.net.URI.create(XmlServer.resolveInclude(doc, "lib.xsl?v=1", WireUris.LOCAL)),
+                "a query");
+        assertEquals(
+                lib.toUri(),
+                java.net.URI.create(XmlServer.resolveInclude(doc, "lib.xsl?v=1#frag", WireUris.LOCAL)),
+                "a query and a fragment");
+
+        String xi = "<doc xmlns:xi=\"http://www.w3.org/2001/XInclude\">\n"
+                + "  <xi:include xpointer='a>b' href='x.xml'/>\n</doc>";
+        assertEquals("x.xml", XmlServer.includeHref(xi, xi.indexOf("x.xml") + 1), "a '>' in a quoted value");
+    }
+
+    /** XML/pom review 4, C33: the XSD generate fixes, and a root element in a namespace. */
+    @Test
+    void theXsdGenerateFixesAreLeftOutForANamespacedRoot() {
+        var xsi = new org.eclipse.lsp4j.CodeAction("Generate 'note.xsd' and bind with xsi:noNamespaceSchemaLocation");
+        var model = new org.eclipse.lsp4j.CodeAction("Generate 'note.xsd' and bind with xml-model");
+        var byData = new org.eclipse.lsp4j.CodeAction("Generate");
+        byData.setData(Map.of(
+                "participantId",
+                "org.eclipse.lemminx.extensions.contentmodel.participants.codeactions.nogrammarconstraints"
+                        + ".GenerateXMLModelWithXSDCodeActionResolver"));
+        assertTrue(XmlServer.generatesXsd(xsi));
+        assertTrue(XmlServer.generatesXsd(model));
+        assertTrue(XmlServer.generatesXsd(byData));
+        assertFalse(
+                XmlServer.generatesXsd(new org.eclipse.lsp4j.CodeAction("Generate 'note.dtd' and bind with DOCTYPE")));
+        assertFalse(
+                XmlServer.generatesXsd(new org.eclipse.lsp4j.CodeAction("Generate 'note.rng' and bind with RelaxNG")));
+        assertFalse(XmlServer.generatesXsd(null));
+
+        assertTrue(rootNs("<?xml version=\"1.0\"?>\n<note xmlns=\"urn:example:note\">\n  <to/>\n</note>"));
+        assertTrue(rootNs("<n:note xmlns:n='urn:example:note'><n:to/></n:note>"), "a prefixed root");
+        assertFalse(rootNs("<note>\n  <to xmlns=\"urn:x\"/>\n</note>"), "a namespace below the root only");
+        assertFalse(rootNs("<note xmlns=\"\" a='x>y'/>"), "the empty namespace is none");
+        assertFalse(
+                rootNs("<note xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"/>"), "only a prefix declared");
+    }
+
+    private static boolean rootNs(String text) {
+        int[] root = XmlGrammarBinding.rootName(text);
+        assertNotNull(root);
+        return XmlServer.rootInNamespace(text, root[0], root[1]);
+    }
 }

@@ -4925,12 +4925,16 @@ public final class LspManager {
             int line,
             int character,
             Consumer<List<Target>> cb) {
-        // XML: the grammar declaration instead of the element's own other tag, else the linked schema (B5, B10).
-        boolean xml = s != null && XmlServer.isXml(s.serverId());
-        LocationRequest request = xml ? XmlServer::definition : LanguageServerSession::definition;
+        // XML: the grammar declaration instead of the element's own other tag, else the linked schema (B5, B10);
+        // a pom on the Maven server is lemminx too, its own answer still first (XML/pom review 4, B34).
+        boolean xml = s != null && XmlServerSettings.isLemminx(s.serverId());
+        var missingLink = new java.util.concurrent.atomic.AtomicReference<@Nullable String>();
+        LocationRequest request = xml
+                ? (session, uri, pos) -> XmlServer.definition(session, uri, pos, missingLink::set)
+                : LanguageServerSession::definition;
         lastMissingInclude = null;
         Consumer<List<Target>> answer = xml && s != null && documentUri != null
-                ? notingMissingInclude(s, documentUri, new Position(line, character), cb)
+                ? notingMissingInclude(s, documentUri, new Position(line, character), missingLink, cb)
                 : cb;
         requestLocations(s, documentUri, line, character, request, answer, null);
     }
@@ -4978,14 +4982,23 @@ public final class LspManager {
 
     /** {@code cb}, after noting when nothing was found on an include href that names no file (C26). */
     private Consumer<List<Target>> notingMissingInclude(
-            LanguageServerSession s, String documentUri, Position pos, Consumer<List<Target>> cb) {
+            LanguageServerSession s,
+            String documentUri,
+            Position pos,
+            java.util.concurrent.atomic.AtomicReference<@Nullable String> missingLink,
+            Consumer<List<Target>> cb) {
         return targets -> {
-            lastMissingInclude = targets.isEmpty() ? XmlServer.missingInclude(s, documentUri, pos) : null;
+            String link = missingLink.get();
+            lastMissingInclude =
+                    !targets.isEmpty() ? null : link != null ? link : XmlServer.missingInclude(s, documentUri, pos);
             cb.accept(targets);
         };
     }
 
-    /** The file the last Go to Definition's include href named when it does not exist, or null (C26). */
+    /**
+     * The file the last Go to Definition's include href (C26) or document link (XML/pom review 4, B33) named when it
+     * does not exist, or null.
+     */
     private volatile @Nullable String lastMissingInclude;
 
     public @Nullable String lastMissingInclude() {
