@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.IntUnaryOperator;
@@ -59,7 +60,8 @@ import org.jspecify.annotations.Nullable;
  * directory, a catch-all folder such as Downloads, a temp folder, a filesystem root or a remote file system is
  * refused outright ({@link SiteRoots#isUnsafeDocRoot}). {@code /} and a folder URL serve that folder's {@code
  * index.html}. Files are streamed (with single-range {@code Range} support), not read whole: only HTML up to
- * {@link #MAX_INJECT_BYTES} (and live text) is held in memory, at most {@value #MAX_BUFFERED} responses at a time.
+ * {@link #MAX_INJECT_BYTES} (and live text) is held in memory, at most {@value #MAX_BUFFERED} responses at a time
+ * (a request that waits {@value #BUFFERED_WAIT_MILLIS} ms for its turn is answered 503).
  *
  * <p>Lifecycle is owned by {@code HtmlPreviewService} (one server per window). The pure helpers are unit-tested.
  */
@@ -83,6 +85,12 @@ public final class LivePreviewServer {
     /** At most this many responses are built in memory at once (HTML with the script, live text): E105. */
     static final int MAX_BUFFERED = 4;
 
+    /**
+     * How long a request waits for one of the {@link #MAX_BUFFERED} permits before it is answered 503: a permit is
+     * held while its body is written, so clients that stop reading must not stall every page for good (E202).
+     */
+    static final long BUFFERED_WAIT_MILLIS = 10_000;
+
     /** At most this many sites keep a listener; serving one more stops the least recently served. */
     static final int MAX_SITES = 32;
 
@@ -104,6 +112,9 @@ public final class LivePreviewServer {
 
     /** {@link #MAX_INJECT_BYTES}, lowered by tests. */
     volatile long injectCap = MAX_INJECT_BYTES;
+
+    /** {@link #BUFFERED_WAIT_MILLIS}, lowered by tests. */
+    volatile long bufferedWaitMillis = BUFFERED_WAIT_MILLIS;
 
     private @Nullable ExecutorService pool;
     private final Semaphore buffered = new Semaphore(MAX_BUFFERED);
@@ -399,12 +410,18 @@ public final class LivePreviewServer {
     /**
      * Sends a body built in memory, the live-reload {@code script} spliced in when non-null, holding one of {@link
      * #MAX_BUFFERED} permits while the body exists (so parallel requests for a big page cannot exhaust the heap).
-     * A null {@code contentType} means HTML read from disk: labelled UTF-8 only when its bytes are.
+     * One that gets no permit within {@link #bufferedWaitMillis} is answered 503 (E202): the permits may all be held
+     * by clients that stopped reading. A null {@code contentType} means HTML read from disk: labelled UTF-8 only
+     * when its bytes are.
      */
     private void buffered(HttpExchange ex, @Nullable String contentType, Body body, @Nullable String script)
             throws IOException {
         try {
-            buffered.acquire();
+            if (!buffered.tryAcquire(bufferedWaitMillis, TimeUnit.MILLISECONDS)) {
+                ex.getResponseHeaders().set("Retry-After", "1");
+                sendStatus(ex, 503); // busy, not broken: the page loads again once those clients read or go
+                return;
+            }
         } catch (InterruptedException stopping) {
             Thread.currentThread().interrupt();
             sendStatus(ex, 503);
