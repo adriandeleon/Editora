@@ -683,8 +683,7 @@ final class MapSurface extends Region {
         measuredLabelWidths.clear();
         expandedSnapshot = expanded == null ? Set.of() : Set.copyOf(expanded);
         clearNodeTooltip();
-        if (selected == null
-                || this.entries.stream().noneMatch(entry -> entry.path().equals(selected))) {
+        if (selected == null || !byPath.containsKey(selected)) {
             selected = this.entries.isEmpty() ? null : this.entries.getFirst().path();
         }
         snapshotStates();
@@ -1242,10 +1241,10 @@ final class MapSurface extends Region {
     void stateChanged() {
         snapshotStates();
         recomputeEmphasis();
-        entries.stream()
-                .filter(entry -> entry.path().equals(hovered))
-                .findFirst()
-                .ifPresent(entry -> nodeTooltip.setText(tooltipText(entry)));
+        ProjectMapModel.Entry hoveredEntry = hovered == null ? null : entryByPath.get(hovered);
+        if (hoveredEntry != null) {
+            nodeTooltip.setText(tooltipText(hoveredEntry));
+        }
         repaint();
         keepSelectionDrawn();
         updateAccessibleText();
@@ -1888,10 +1887,7 @@ final class MapSurface extends Region {
 
     void centerSelection() {
         flushPendingRepaint();
-        NodeBox box = boxes.stream()
-                .filter(candidate -> candidate.entry().path().equals(selected))
-                .findFirst()
-                .orElse(null);
+        NodeBox box = nodeBox(selected);
         if (box == null) {
             return;
         }
@@ -2044,8 +2040,7 @@ final class MapSurface extends Region {
             view.truncatedColumnFilterChanged(id.parent());
             repaint();
             updateAccessibleText(); // the column's count of drawn rows changed
-            if (selected != null
-                    && boxes.stream().noneMatch(box -> box.entry().path().equals(selected))) {
+            if (selected != null && nodeBox(selected) == null) {
                 boxes.stream()
                         .filter(box -> columnId(box.entry()).equals(id))
                         .findFirst()
@@ -2066,8 +2061,7 @@ final class MapSurface extends Region {
             columnShowHidden.put(id, selected);
             view.columnHiddenChanged(); // hidden rows are not loaded while off, so turning it on lists again
             repaint();
-            if (this.selected != null
-                    && boxes.stream().noneMatch(box -> box.entry().path().equals(this.selected))) {
+            if (this.selected != null && nodeBox(this.selected) == null) {
                 boxes.stream()
                         .filter(box -> columnId(box.entry()).equals(id))
                         .findFirst()
@@ -2381,6 +2375,10 @@ final class MapSurface extends Region {
         List<ProjectMapModel.Entry> laid = layoutLaidEntries();
         List<ProjectMapModel.Column> columns = ProjectMapModel.columnsById(
                 laid, columnQueries, columnShowHidden, narrowing ? emphasized : null, compactChains);
+        if (outputPaint) {
+            // Print, PDF and SVG show a whole folder by its first rows and "+N more" (Map review 4 D1).
+            columns = ProjectMapModel.canvasOutputColumns(columns, MapLoader::placeholderLabel);
+        }
         int narrowedTotal = 0;
         for (ProjectMapModel.Column column : columns) {
             narrowedTotal += column.narrowed();
@@ -2397,6 +2395,7 @@ final class MapSurface extends Region {
         List<Integer> anchorRows = new ArrayList<>(columns.size());
         List<Integer> anchorColumns = new ArrayList<>(columns.size());
         Map<Path, Integer> rowIndex = new HashMap<>();
+        Map<Path, Integer> firstRows = new HashMap<>(); // nodeBox: a path's first row, in O(1) (Map review 4 D3)
         Map<ProjectMapModel.ColumnId, Integer> columnIndex = new HashMap<>();
         Map<ProjectMapModel.ColumnId, Integer> levels = new HashMap<>();
         Map<Integer, Double> nextCrossEdge = new HashMap<>();
@@ -2526,6 +2525,7 @@ final class MapSurface extends Region {
                 double worldY = columnWorldY + headerHeight + (verticalFlow ? 0 : row * (rowHeight() + rowGap()));
                 NodeBox box = new NodeBox(column.entries().get(row), worldX, worldY, nodeWidth, rowHeight());
                 rowIndex.put(box.entry().path(), rowList.size());
+                firstRows.putIfAbsent(box.entry().path(), rowList.size());
                 rowList.add(box);
             }
             columnIndex.put(id, columnList.size());
@@ -2544,7 +2544,8 @@ final class MapSurface extends Region {
                 List.copyOf(rowList),
                 List.copyOf(anchorRows),
                 List.copyOf(anchorColumns),
-                narrowedTotal);
+                narrowedTotal,
+                java.util.Collections.unmodifiableMap(firstRows));
     }
 
     /**
@@ -3427,15 +3428,30 @@ final class MapSurface extends Region {
     }
 
     /**
+     * An elided label from {@link #elidedTitles}, computed and stored when missing (Map review 4 D5). Not
+     * {@code computeIfAbsent}: an affix cut falls back to {@link #elideMiddle}, which stores into the same map, and
+     * a nested {@code computeIfAbsent} on one {@code HashMap} throws {@code ConcurrentModificationException} mid-paint.
+     */
+    private String canvasElided(String key, java.util.function.Supplier<String> compute) {
+        String known = elidedTitles.get(key);
+        if (known != null) {
+            return known;
+        }
+        String value = compute.get();
+        if (elidedTitles.size() > 256) {
+            elidedTitles.clear(); // a zoom gesture asks for a new width on every step
+        }
+        elidedTitles.put(key, value);
+        return value;
+    }
+
+    /**
      * {@code text} cut to fit {@code room} at {@code fontSize} by taking characters out of its middle: a
      * long file name keeps its start and its extension, a chain its first and last folders.
      */
     private String elideMiddle(String text, double fontSize, double room) {
-        if (elidedTitles.size() > 256) {
-            elidedTitles.clear();
-        }
         String key = text + '\u0001' + (int) room + '\u0001' + (int) (fontSize * 8);
-        return elidedTitles.computeIfAbsent(key, ignored -> {
+        return canvasElided(key, () -> {
             int low = 0;
             int high = text.length();
             while (low < high) { // the most characters that still fit around the ellipsis
@@ -3481,9 +3497,6 @@ final class MapSurface extends Region {
         if (affixes == null || affixes[0] + affixes[1] == 0) {
             return elideMiddle(text, fontSize, room);
         }
-        if (elidedTitles.size() > 256) {
-            elidedTitles.clear();
-        }
         String key = text
                 + '\u0002'
                 + (int) room
@@ -3493,7 +3506,7 @@ final class MapSurface extends Region {
                 + affixes[0]
                 + ','
                 + affixes[1];
-        return elidedTitles.computeIfAbsent(key, ignored -> {
+        return canvasElided(key, () -> {
             // Below the length of its distinct part there is no such cut; above it, the longer the wider.
             int low = 0;
             while (low < text.length() && ProjectMapElision.distinctCut(text, affixes[0], affixes[1], low) == null) {
@@ -3535,11 +3548,8 @@ final class MapSurface extends Region {
 
     /** {@code text} cut to fit {@code room} at {@code fontSize}, ending in an ellipsis. */
     private String elide(String text, double fontSize, double room) {
-        if (elidedTitles.size() > 256) {
-            elidedTitles.clear(); // a zoom gesture asks for a new width on every step
-        }
         String key = text + '\u0000' + (int) room + '\u0000' + (int) (fontSize * 8);
-        return elidedTitles.computeIfAbsent(key, ignored -> {
+        return canvasElided(key, () -> {
             int low = 0;
             int high = text.length();
             while (low < high) { // the longest prefix that still fits with its ellipsis
@@ -5514,7 +5524,7 @@ final class MapSurface extends Region {
     }
 
     java.util.Optional<ProjectMapModel.Entry> selectedEntry() {
-        return entries.stream().filter(entry -> entry.path().equals(selected)).findFirst();
+        return java.util.Optional.ofNullable(selected == null ? null : entryByPath.get(selected));
     }
 
     void select(Path path) {
@@ -5737,7 +5747,7 @@ final class MapSurface extends Region {
     }
 
     boolean contains(Path path) {
-        return path != null && entries.stream().anyMatch(entry -> entry.path().equals(path));
+        return path != null && entryByPath.containsKey(path);
     }
 
     /**
@@ -5782,10 +5792,7 @@ final class MapSurface extends Region {
      * zoom bar and the overview are added by the cards themselves ({@link #cardChrome}). Reads the layout only.
      */
     MapCards.Site cardSite(Path path) {
-        NodeBox node = boxes.stream()
-                .filter(box -> box.entry().path().equals(path))
-                .findFirst()
-                .orElse(null);
+        NodeBox node = nodeBox(path);
         ColumnBox own = node == null
                 ? null
                 : columnBoxes.stream()
@@ -5996,14 +6003,25 @@ final class MapSurface extends Region {
         }
         ProjectMapModel.ColumnId id = columnId(current);
         boolean narrowing = hideUnmatched && filters != null && filters.active();
-        List<ProjectMapModel.Entry> drawn = List.of();
-        for (ProjectMapModel.Column column :
-                ProjectMapModel.columnsById(entries, columnQueries, columnShowHidden, narrowing ? emphasized : null)) {
-            if (column.id().equals(id)) {
-                drawn = column.entries().stream()
-                        .filter(row -> !row.isPlaceholder())
-                        .toList();
-                break;
+        List<ProjectMapModel.Entry> drawn = null;
+        if (!outputPaint) {
+            // The columns the layout draws (cached, and laid out for the paint anyway): not columnsById over every row
+            // again, which sorts a whole folder's 50,000 rows on each selection change (Map review 4 D3).
+            for (ColumnBox box : worldLayout().columns()) {
+                if (box.column().id().equals(id)) {
+                    drawn = canvasRealRows(box.column());
+                    break;
+                }
+            }
+        }
+        if (drawn == null) { // the root's own row, which the layout draws as the first column's title
+            drawn = List.of();
+            for (ProjectMapModel.Column column : ProjectMapModel.columnsById(
+                    entries, columnQueries, columnShowHidden, narrowing ? emphasized : null)) {
+                if (column.id().equals(id)) {
+                    drawn = canvasRealRows(column);
+                    break;
+                }
             }
         }
         int index = drawn.indexOf(current);
@@ -6019,6 +6037,10 @@ final class MapSurface extends Region {
                     + (int) drawn.stream().filter(row -> all.indexOf(row) < at).count();
         }
         return canvasRowText(current, position, drawn.size(), filtered, false);
+    }
+
+    private static List<ProjectMapModel.Entry> canvasRealRows(ProjectMapModel.Column column) {
+        return column.entries().stream().filter(row -> !row.isPlaceholder()).toList();
     }
 
     /**
@@ -6122,12 +6144,16 @@ final class MapSurface extends Region {
         return color(warningProbe, Color.web("#b08a00"));
     }
 
+    /**
+     * The row box of {@code path} in the last projection, or null. A lookup in the layout's index, not a scan:
+     * the paint asks for it per column header and per flash, and a whole folder lays out tens of thousands of
+     * rows (Map review 4 D3). {@link #boxes} is projected from {@link #projected}'s rows in their order.
+     */
     @Nullable
     NodeBox nodeBox(@Nullable Path path) {
-        return boxes.stream()
-                .filter(box -> box.entry().path().equals(path))
-                .findFirst()
-                .orElse(null);
+        WorldLayout world = projected;
+        Integer index = path == null || world == null ? null : world.firstRows().get(path);
+        return index == null || index >= boxes.size() ? null : boxes.get(index);
     }
 
     private boolean inViewport(NodeBox box, double width, double height) {
@@ -6156,7 +6182,8 @@ final class MapSurface extends Region {
             List<NodeBox> rows,
             List<Integer> anchorRows,
             List<Integer> anchorColumns,
-            int narrowed) {}
+            int narrowed,
+            Map<Path, Integer> firstRows) {}
 
     /**
      * Everything a world layout depends on. Lists and sets are the surface's own (replaced, never mutated,

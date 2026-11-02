@@ -46,6 +46,13 @@ final class ProjectMapModel {
      */
     static final int NEAR_VIEWPORT_ROWS = DIRECTORY_CHUNK;
 
+    /**
+     * The most rows whole folders list free of {@link #MAX_VISIBLE_ITEMS}, across all of them (Map review 4 D3): one
+     * 50,000-entry folder fits, but opening a second long one does not add up without bound. Past it a folder's rows
+     * are charged again, and once the overall limit is spent it ends in "+N more", as a remote root's folder does.
+     */
+    static final int MAX_FREE_ROWS = 60_000;
+
     /** File name of a placeholder row's synthetic path. Shown as-is by path-based chrome (breadcrumbs). */
     static final String PLACEHOLDER_NAME = "\u2026";
 
@@ -546,6 +553,7 @@ final class ProjectMapModel {
         }
         Set<Path> expanded = request.expanded();
         int budget = MAX_VISIBLE_ITEMS - 1; // the root row
+        int freeLeft = MAX_FREE_ROWS; // what whole folders may still list beyond their charged rows
         boolean capped = false;
 
         // Pinned chains first: every row between the root and a pinned path, charged once each.
@@ -722,9 +730,12 @@ final class ProjectMapModel {
                         continue; // beyond the row limit, and not a row the column's own filter is looking for
                     }
                     // A folder listed whole pays for the rows that can be near the viewport, then lists the rest
-                    // free (position 15). One the budget cut short before that stays cut: no gap in its rows.
-                    boolean free = request.wholeFolders() && charged >= NEAR_VIEWPORT_ROWS;
-                    if (!free) {
+                    // free (position 15). One the budget cut short before that stays cut: no gap in its rows. The
+                    // free rows of all whole folders together stop at MAX_FREE_ROWS (Map review 4 D3).
+                    boolean free = request.wholeFolders() && charged >= NEAR_VIEWPORT_ROWS && freeLeft > 0;
+                    if (free) {
+                        freeLeft--;
+                    } else {
                         if (budget - reservedTotal <= 0) {
                             capped = true; // what is left is the priority folders' share
                             continue;
@@ -904,6 +915,57 @@ final class ProjectMapModel {
             boolean compactChains) {
         List<Column> columns = columnsByIdUncompacted(entries, columnQueries, showHiddenByColumn, keep);
         return compactChains ? compactChains(columns, columnQueries) : columns;
+    }
+
+    /**
+     * The columns as Print, PDF and SVG lay them out (Map review 4 D1): a folder column longer than
+     * {@link #DIRECTORY_CHUNK} rows (a whole folder of a local root) is cut to its first chunk and a "+N more" row, as
+     * a remote root shows it, so a 50,000-file folder does not become hundreds of pages. A row another column hangs
+     * from stays, so open columns keep their place; structure columns stay whole. The total stays the folder's own.
+     */
+    static List<Column> canvasOutputColumns(List<Column> columns, Labels labels) {
+        Set<Path> anchors = new HashSet<>();
+        for (Column column : columns) {
+            if (column.parent() != null) {
+                anchors.add(column.parent());
+            }
+            anchors.addAll(column.chain());
+        }
+        List<Column> result = new ArrayList<>(columns.size());
+        for (Column column : columns) {
+            if (column.shownEntries() <= DIRECTORY_CHUNK
+                    || column.entries().stream().anyMatch(Entry::isSymbol)) {
+                result.add(column);
+                continue;
+            }
+            List<Entry> kept = new ArrayList<>(DIRECTORY_CHUNK + 1);
+            int real = 0;
+            int behind = 0;
+            Entry more = null;
+            for (Entry entry : column.entries()) {
+                if (entry.isPlaceholder()) {
+                    if (entry.isMore()) {
+                        more = entry;
+                        Placeholder placeholder = entry.placeholder();
+                        behind += placeholder == null ? 0 : placeholder.remaining();
+                    } else {
+                        kept.add(entry);
+                    }
+                } else if (real++ < DIRECTORY_CHUNK || anchors.contains(entry.path())) {
+                    kept.add(entry);
+                } else {
+                    behind++;
+                }
+            }
+            Path parent = more != null ? more.parent() : column.parent();
+            if (behind > 0 && parent != null) {
+                int depth = more != null ? more.depth() : column.depth();
+                kept.add(placeholder(parent, depth, PlaceholderKind.MORE, behind, labels));
+            }
+            result.add(new Column(
+                    column.depth(), column.parent(), kept, column.totalEntries(), column.narrowed(), column.chain()));
+        }
+        return List.copyOf(result);
     }
 
     private static List<Column> compactChains(List<Column> columns, @Nullable Map<ColumnId, String> columnQueries) {

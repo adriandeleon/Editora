@@ -2832,7 +2832,11 @@ final class ProjectMapView extends VBox {
         try {
             javafx.scene.SnapshotParameters parameters = new javafx.scene.SnapshotParameters();
             parameters.setTransform(javafx.scene.transform.Transform.scale(scale, scale));
-            parameters.setViewport(new javafx.geometry.Rectangle2D(0, 0, width * scale, height * scale));
+            // A node's snapshot is taken in its parent's coordinates, where the map area starts below the filter
+            // row and the breadcrumbs: the viewport starts there too, not at the parent's top (Map review 4 D2).
+            javafx.geometry.Point2D origin = canvasHost.localToParent(0, 0);
+            parameters.setViewport(new javafx.geometry.Rectangle2D(
+                    origin.getX() * scale, origin.getY() * scale, width * scale, height * scale));
             return canvasHost.snapshot(parameters, null);
         } finally {
             visible.forEach(Node::setVisible);

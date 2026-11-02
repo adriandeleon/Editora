@@ -153,4 +153,53 @@ class ProjectFileIndexEdgesTest {
         index.whenListed(other, ran::incrementAndGet);
         assertEquals(2, ran.get(), "a thread that is gone still answers the caller");
     }
+
+    @Test
+    void aChangeReportedWhileTheFirstListingRunsReachesTheList() throws Exception {
+        Path root = project();
+        Path late = root.resolve("src/Late.java");
+        index.builder = (where, now, cancelled) -> {
+            ProjectFileList listed = ProjectFileList.build(where, now, cancelled);
+            try {
+                Files.writeString(late, "class Late {}"); // created after the walk passed src/
+            } catch (IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+            index.changed(List.of(late)); // the watcher reports it while nothing is held yet
+            return listed;
+        };
+        ProjectFileList list = index.list(root);
+        assertNotNull(list);
+        drain();
+        assertTrue(
+                list.snapshot().files().contains("src/Late.java"),
+                list.snapshot().files().toString());
+    }
+
+    @Test
+    void aChangeReportedWhileAStaleListIsListedAgainReachesTheFreshList() throws Exception {
+        Path root = project();
+        assertNotNull(index.list(root));
+        Path late = root.resolve("src/Later.java");
+        index.builder = (where, now, cancelled) -> {
+            ProjectFileList listed = ProjectFileList.build(where, now, cancelled);
+            try {
+                Files.writeString(late, "class Later {}");
+            } catch (IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+            index.changed(List.of(late)); // queued while the stale list is still the one held
+            return listed;
+        };
+        index.markStale();
+        assertNotNull(
+                index.search(root, "later", ProjectIndex.Kinds.FILES, 10, ProjectIndex.Freshness.CURRENT, () -> false));
+        drain();
+        ProjectFileList fresh = index.heldForTest(root);
+        assertNotNull(fresh);
+        assertFalse(fresh.stale());
+        assertTrue(
+                fresh.snapshot().files().contains("src/Later.java"),
+                fresh.snapshot().files().toString());
+    }
 }
