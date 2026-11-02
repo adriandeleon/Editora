@@ -56,7 +56,7 @@
         <!-- Do not bump without reading docs/dependencies.md (sshd-osgi): 2.17+ changed
              SftpFileSystem.getDefaultDir() in a way RemoteFileSystems depends on, and 2.20.0 is wanted
              (CVE-2026-94002, SFTP client memory exhaustion). -->
-        <sshd.version>2.20.0</sshd.version>
+        <sshd.version>2.20.1</sshd.version>
         <!-- Bouncy Castle: MINA SSHD's EdDSA provider (ed25519 keys and host keys). See docs/dependencies.md. -->
         <bouncycastle.version>1.86</bouncycastle.version>
         <slf4j.version>2.0.20</slf4j.version>
