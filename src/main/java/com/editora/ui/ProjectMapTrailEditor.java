@@ -27,7 +27,8 @@ import static com.editora.i18n.Messages.tr;
  * A trail's editor (Map explore, position 2): a card over the map listing the trail's stops in order — title, file
  * and lines, and the note — with Move Up and Move Down (also Alt+↑ and Alt+↓), Remove (Delete), Rename… and Note…
  * for the selected stop, Rename Trail…, and Play from Here (Enter, or a double-click). Every change is written to the
- * trail's file at once ({@link ProjectMapTrails#write}). It is not a code card: it takes nothing from the card limit
+ * trail's file at once ({@link ProjectMapTrails#writeOver}), unless the file changed on disk since the card showed it:
+ * the card then shows the file as it is now and writes nothing. It is not a code card: it takes nothing from the card limit
  * and is never evicted. Its header drags it; Escape or × closes it.
  */
 final class ProjectMapTrailEditor extends VBox {
@@ -268,7 +269,8 @@ final class ProjectMapTrailEditor extends VBox {
         if (shown == null || shown.trail() == null) {
             return false;
         }
-        return trails.write(shown.name(), shown.trail().withStops(items));
+        // Written over the trail it showed only: one changed on disk meanwhile is shown again instead (review 4 A5).
+        return trails.writeOver(shown.name(), shown.trail(), shown.trail().withStops(items));
     }
 
     private void dragPressed(MouseEvent event) {

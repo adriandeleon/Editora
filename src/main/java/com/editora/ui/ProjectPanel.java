@@ -2661,6 +2661,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapView.exportPdf();
     }
 
+    /**
+     * {@code projectMap.trailNext}, {@code .trailPrevious} and {@code .trailClose} (review 4 A4): {@code 1} the playing
+     * trail's next stop, {@code -1} its previous one, {@code 0} closes it. False when the Map plays no trail.
+     */
+    public boolean mapTrailCommand(int delta) {
+        return isMapShowing() && mapView.trails.command(delta);
+    }
+
     /** One filesystem watcher event: what happened to which path (#677). */
     public record FsChange(Path path, FsKind kind) {}
 

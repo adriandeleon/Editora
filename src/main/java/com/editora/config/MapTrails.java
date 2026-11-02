@@ -24,7 +24,8 @@ import org.jspecify.annotations.Nullable;
  * <p>As with {@link SharedRunConfigs}, the files are the team's: a read never fails the caller — a file that is not
  * a trail is listed with the reason, and left as it is — and every write is atomic ({@link ConfigWriter}). A file from
  * a newer Editora ({@code version} above {@link #VERSION}) is read but never written, so this build cannot drop what
- * that one keeps in it.
+ * that one keeps in it; nor is a file this build would cut on its way back (more than {@link #MAX_STOPS} stops, or a
+ * field it does not know, as a hand-written trail may hold), Project Map review 4 A10.
  */
 public final class MapTrails {
 
@@ -40,6 +41,11 @@ public final class MapTrails {
     public static final int MAX_STOPS = 200;
 
     private static final ObjectMapper JSON = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+    /** The fields a trail and a stop are written with: anything else in a file is kept by keeping the file. */
+    private static final java.util.Set<String> TRAIL_FIELDS = java.util.Set.of("version", "title", "stops");
+
+    private static final java.util.Set<String> STOP_FIELDS =
+            java.util.Set.of("file", "declaration", "startLine", "endLine", "title", "note");
 
     private MapTrails() {}
 
@@ -93,7 +99,8 @@ public final class MapTrails {
 
     /**
      * A file of the trails folder: its {@code name} (the file name without {@code .json}), and either its trail or
-     * why it is not one ({@code problem}). {@code readOnly} for a file from a newer Editora.
+     * why it is not one ({@code problem}). {@code readOnly} for a file this build must not write — one from a newer
+     * Editora, or one it would cut (see {@link #read}) — and {@code problem} then says why.
      */
     public record Listed(
             String name,
@@ -112,9 +119,34 @@ public final class MapTrails {
         return projectRoot.resolve(SharedRunConfigs.DIR).resolve(FOLDER);
     }
 
-    /** The file a trail named {@code name} is kept in. */
+    /**
+     * The file a trail named {@code name} is kept in: {@code name.json} when the folder holds a file of that name — a
+     * listed trail's name is its file's, which a hand-named or renamed file ({@code Kubelet tour.json}) does not keep
+     * through {@link #fileName} (review 4 A3) — else the file-name-safe form of {@code name}.
+     */
     public static Path fileFor(Path projectRoot, String name) {
-        return folderFor(projectRoot).resolve(fileName(name) + SUFFIX);
+        Path folder = folderFor(projectRoot);
+        Path listed = listedFile(folder, name);
+        return listed != null ? listed : folder.resolve(fileName(name) + SUFFIX);
+    }
+
+    /** {@code name.json} in {@code folder} when it is a file there, for a {@code name} of one path segment; else null. */
+    private static @Nullable Path listedFile(Path folder, @Nullable String name) {
+        if (name == null
+                || name.isEmpty()
+                || name.equals(".")
+                || name.equals("..")
+                || name.indexOf('/') >= 0
+                || name.indexOf('\\') >= 0
+                || name.indexOf('\0') >= 0) {
+            return null;
+        }
+        try {
+            Path file = folder.resolve(name + SUFFIX);
+            return folder.equals(file.getParent()) && Files.isRegularFile(file) ? file : null;
+        } catch (java.nio.file.InvalidPathException unusable) {
+            return null;
+        }
     }
 
     /**
@@ -173,7 +205,11 @@ public final class MapTrails {
         return out;
     }
 
-    /** One trail file; never throws: a file that is not a trail comes back with its {@code problem}. */
+    /**
+     * One trail file; never throws: a file that is not a trail comes back with its {@code problem}. A trail from a newer
+     * Editora, or one that writing back would cut — more than {@link #MAX_STOPS} stops, or a field this build does not
+     * know — is read (it plays) but {@code readOnly}, with the reason as its {@code problem}.
+     */
     public static Listed read(Path file) {
         String fileName = file.getFileName() == null ? "" : file.getFileName().toString();
         String name = fileName.endsWith(SUFFIX) ? fileName.substring(0, fileName.length() - SUFFIX.length()) : fileName;
@@ -193,13 +229,49 @@ public final class MapTrails {
             if (trail.title().isBlank()) {
                 trail = trail.withTitle(name);
             }
-            return new Listed(name, file, trail, null, trail.version() > VERSION);
+            String kept = trail.version() > VERSION ? "version " + trail.version() : cut(node);
+            return new Listed(name, file, trail, kept, kept != null);
         } catch (IOException | RuntimeException malformed) {
             String reason =
                     malformed.getMessage() == null ? malformed.getClass().getSimpleName() : malformed.getMessage();
             int line = reason.indexOf('\n');
             return new Listed(name, file, null, line > 0 ? reason.substring(0, line) : reason, false);
         }
+    }
+
+    /**
+     * What writing {@code node} back as a {@link Trail} would lose — its stops past {@link #MAX_STOPS}, or the first
+     * field this build does not know — or null when nothing. Null stops are not counted: they hold nothing. Pure.
+     */
+    static @Nullable String cut(JsonNode node) {
+        String unknown = unknownField(node, TRAIL_FIELDS);
+        if (unknown != null) {
+            return "unknown field \"" + unknown + "\"";
+        }
+        JsonNode stops = node.get("stops");
+        if (stops == null || !stops.isArray()) {
+            return null;
+        }
+        if (stops.size() > MAX_STOPS) {
+            return stops.size() + " stops, more than " + MAX_STOPS;
+        }
+        for (JsonNode stop : stops) {
+            String field = stop.isObject() ? unknownField(stop, STOP_FIELDS) : null;
+            if (field != null) {
+                return "unknown field \"" + field + "\" in a stop";
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable String unknownField(JsonNode object, java.util.Set<String> known) {
+        for (java.util.Iterator<String> names = object.fieldNames(); names.hasNext(); ) {
+            String name = names.next();
+            if (!known.contains(name)) {
+                return name;
+            }
+        }
+        return null;
     }
 
     /** A file from a newer Editora, or one that is not a trail: writing it here would lose what it holds. */
@@ -215,11 +287,15 @@ public final class MapTrails {
      * file.
      */
     public static Path save(Path projectRoot, String name, Trail trail) throws IOException {
-        String stem = fileName(name);
-        if (stem.isEmpty()) {
-            throw new IOException("no usable file name in \"" + name + "\"");
+        Path folder = folderFor(projectRoot);
+        Path file = listedFile(folder, name); // a listed trail's own file, whatever its name (review 4 A3)
+        if (file == null) {
+            String stem = fileName(name);
+            if (stem.isEmpty()) {
+                throw new IOException("no usable file name in \"" + name + "\"");
+            }
+            file = folder.resolve(stem + SUFFIX);
         }
-        Path file = folderFor(projectRoot).resolve(stem + SUFFIX);
         refuseUnwritable(file);
         Files.createDirectories(file.getParent());
         Trail stored = new Trail(VERSION, trail.title(), trail.stops());
@@ -258,7 +334,7 @@ public final class MapTrails {
             throw new NotWritableException("not a trail: " + existing.problem());
         }
         if (existing.readOnly()) {
-            throw new NotWritableException("version " + existing.trail().version());
+            throw new NotWritableException(String.valueOf(existing.problem()));
         }
     }
 }
