@@ -1286,11 +1286,15 @@ final class ProjectMapView extends VBox {
             historyHead = HistoryHead.PLACE;
         }
         Path selected = bearingsResolve(current, stored.getSelected());
+        viewsRestoredSelection = null;
         if (selected != null && bearingsExists(selected)) {
             pendingSelection = ProjectMapStructure.isSymbolPath(selected) ? bearingsFileOf(selected) : selected;
         }
         if (stored.getZoom() > 0) {
             surface.bearingsViewport = new double[] {stored.getZoom(), stored.getOffsetX(), stored.getOffsetY()};
+            // The stored zoom and pan already frame the selection: it is selected when its row lands, not revealed
+            // as a place, whose zoom-out and pan would replace them (review 4 A1).
+            viewsRestoredSelection = pendingSelection;
         }
         bearingsPendingCards.clear();
         viewsCardThen.clear();
@@ -1391,6 +1395,17 @@ final class ProjectMapView extends VBox {
     private boolean viewsCardsAwaitRows;
     /** Where the views ask for a name or a note: the Map window's overlay, set by the panel. */
     OverlayInput.@Nullable Prompt viewsPrompt;
+    /**
+     * The selection a restart or a working set brought back with its own zoom and pan (review 4 A1): when its row
+     * lands it is selected, not revealed as a place. Compared by identity with {@code pendingSelection}, so any later
+     * selection asked for meanwhile is revealed as usual.
+     */
+    private @Nullable Path viewsRestoredSelection;
+
+    /** The map's columns on screen, {@code {x, y, w, h, 1}} in the map area's pixels (a stop's note keeps off them). */
+    List<double[]> viewsColumns() {
+        return surface.cardColumns();
+    }
 
     /** Where working sets and trails ask for a name or a note (the panel gives the Map window's own prompt). */
     void setViewsPrompt(OverlayInput.@Nullable Prompt prompt) {
@@ -1424,6 +1439,7 @@ final class ProjectMapView extends VBox {
             onClearSearch.run();
         }
         bearingsFlush(); // the folder's state as it was, before the set replaces it
+        trails.close(); // its stop's card closes with the others: the bar would name a card no longer there (A7)
         cards.closeAll();
         bearingsPendingCards.clear();
         viewsCardThen.clear();
@@ -1445,14 +1461,16 @@ final class ProjectMapView extends VBox {
     /**
      * Opens the card of {@code key} — a file, or a declaration below it — through the restart's path: once the map is
      * laid out with the file's row on it, and for a declaration once its file is outlined; placed beside its row.
-     * {@code then} gets the card, or null when a declaration is no longer in its file's outline.
+     * {@code then} gets the card, or null when a declaration is no longer in its file's outline. Returns what
+     * withdraws the request while the card still waits (it then never opens, and {@code then} is not called): a
+     * trail moving on before its stop's card landed (review 4 A2).
      */
-    void viewsShowCard(Path key, Consumer<@Nullable ProjectMapPreview> then) {
+    Runnable viewsShowCard(Path key, Consumer<@Nullable ProjectMapPreview> then) {
         Path current = root;
         String relative = current == null ? null : bearingsRelative(current, key);
         if (disposed || relative == null || relative.isEmpty()) {
             then.accept(null);
-            return;
+            return () -> {};
         }
         com.editora.config.ProjectMapState.Card card =
                 new com.editora.config.ProjectMapState.Card(relative, Double.NaN, Double.NaN, 0, 0, 1.0, false);
@@ -1463,6 +1481,13 @@ final class ProjectMapView extends VBox {
         } else {
             viewsCardsAwaitRows = true; // the first fit, or the load that brings the row, opens it
         }
+        return () -> viewsCancelCard(card);
+    }
+
+    /** Withdraws a card {@link #viewsShowCard} asked for and that has not opened yet. */
+    private void viewsCancelCard(com.editora.config.ProjectMapState.Card card) {
+        bearingsPendingCards.removeIf(pending -> pending == card);
+        viewsCardThen.remove(card);
     }
 
     /** A load landed: cards asked for before their rows were on the map open now, if the map is laid out. */
@@ -2214,6 +2239,10 @@ final class ProjectMapView extends VBox {
 
     /** Escape: close the open cards, else clear the search, else leave the map for the editor. */
     void escapePressed() {
+        // A playing trail closes first: its bar would otherwise outlive the cards Escape closes (review 4 A4).
+        if (trails.viewsEscape()) {
+            return;
+        }
         // Cards hidden by "Hide unmatched" or "Hide all open Personal Notes" are not on screen: leave them be.
         if (cards.closeVisible()) {
             return;
@@ -2981,12 +3010,15 @@ final class ProjectMapView extends VBox {
                     recordSelection(pendingSelection, historySearchAuto ? HistoryHead.LANDING : HistoryHead.PLACE);
                 }
                 // A search's first match, a reveal or a history step that had to be loaded is brought into
-                // view as one that was already loaded is (E1).
-                surface.revealAfterLoad(pendingSelection);
+                // view as one that was already loaded is (E1). A restored selection keeps its restored view (A1).
+                if (pendingSelection != viewsRestoredSelection) {
+                    surface.revealAfterLoad(pendingSelection);
+                }
             } else {
                 dropHistory(pendingSelection); // gone: it must not be selected if it ever reappears
             }
             pendingSelection = null;
+            viewsRestoredSelection = null;
         }
         searchResolveSymbol(); // a search landing on a declaration: its file's row may have just arrived
         viewsLoadLanded(); // a trail stop's card waiting for its row

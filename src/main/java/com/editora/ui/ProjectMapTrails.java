@@ -35,7 +35,13 @@ import static com.editora.i18n.Messages.tr;
  * stop's note stuck on as a sheet ({@link ProjectMapTrailNote}). The card opens through the path a restart's cards
  * take ({@link ProjectMapView#viewsShowCard}), so a stop played on a Map that has only just been given its folder
  * waits for its row and outline instead of opening nowhere. A stop whose file is gone says so; one whose declaration
- * is gone shows its lines in the file. A card a stop opened closes when the trail moves on.
+ * is gone shows its lines in the file. A card a stop opened closes when the trail moves on, unless the reader pinned
+ * it; one still waiting for its row when the trail moves on is never opened (review 4 A2, A6).
+ *
+ * <p>Keys while a trail plays (review 4 A4): Shortcut+→ and Shortcut+← step it from the map, the bar or a stop's note
+ * (not from a card's text, where they move by words), and Escape on the map closes it before any card; the commands
+ * {@code projectMap.trailNext}, {@code projectMap.trailPrevious} and {@code projectMap.trailClose} do the same from
+ * the palette or a key bound to them.
  *
  * <p>Edit opens a card listing the trail's stops ({@link ProjectMapTrailEditor}): reorder, remove, rename a stop or
  * the trail, change a stop's note, play from a stop. Every change is written at once. Local folders only.
@@ -56,6 +62,16 @@ final class ProjectMapTrails {
     private @Nullable ProjectMapPreview stopCard;
 
     private boolean stopCardOpened;
+    /** Withdraws the shown stop's card while it still waits for its row or outline (review 4 A2). */
+    private Runnable stopPending = () -> {};
+    /** The shown stop's card was closed some other way (its ×, a column closing): the bar offers it again (A7). */
+    private boolean stopCardGone;
+
+    private final javafx.beans.value.ChangeListener<javafx.scene.Parent> stopCardClosed = (obs, old, parent) -> {
+        if (parent == null) {
+            viewsStopCardClosed();
+        }
+    };
 
     private final HBox bar = new HBox(4);
     private final Button previous = new Button("‹");
@@ -107,6 +123,11 @@ final class ProjectMapTrails {
         position.getStyleClass().add("project-map-trail-bar-position");
         position.setMinWidth(Region.USE_PREF_SIZE);
         title.getStyleClass().add("project-map-trail-bar-title");
+        title.setOnMouseClicked(event -> {
+            if (stopCardGone && stop >= 0) {
+                showStop(stop); // the card closed under the bar: the title brings it back
+            }
+        });
         title.setMinWidth(0);
         title.setMaxWidth(420);
         HBox.setHgrow(title, Priority.ALWAYS);
@@ -120,6 +141,71 @@ final class ProjectMapTrails {
         });
         StackPane.setAlignment(bar, Pos.TOP_CENTER);
         StackPane.setMargin(bar, new Insets(8, 120, 0, 120));
+        view.viewsCanvasHost().addEventFilter(KeyEvent.KEY_PRESSED, this::viewsKeyPressed);
+    }
+
+    /** Shortcut+→ / Shortcut+← while a trail plays: its next or previous stop, unless the keys move a caret. */
+    private void viewsKeyPressed(KeyEvent event) {
+        int delta = keyStep(event);
+        if (delta == 0 || playing == null || movesCaret(event.getTarget())) {
+            return;
+        }
+        step(delta);
+        event.consume();
+    }
+
+    /** {@code 1} for Shortcut+→, {@code -1} for Shortcut+←, else 0 (no Alt, no Shift). Pure. */
+    static int keyStep(KeyEvent event) {
+        if (event.getEventType() != KeyEvent.KEY_PRESSED
+                || !event.isShortcutDown()
+                || event.isAltDown()
+                || event.isShiftDown()) {
+            return 0;
+        }
+        return switch (event.getCode()) {
+            case RIGHT, KP_RIGHT -> 1;
+            case LEFT, KP_LEFT -> -1;
+            default -> 0;
+        };
+    }
+
+    /** Whether {@code target} is in a text field or a card's text, where Shortcut+arrows move the caret by words. */
+    private static boolean movesCaret(@Nullable Object target) {
+        for (javafx.scene.Node node = target instanceof javafx.scene.Node n ? n : null;
+                node != null;
+                node = node.getParent()) {
+            if (node instanceof javafx.scene.control.TextInputControl
+                    || node instanceof org.fxmisc.richtext.GenericStyledArea<?, ?, ?>) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The trail commands ({@code projectMap.trailNext}, {@code .trailPrevious}, {@code .trailClose}): {@code 1} the
+     * next stop, {@code -1} the previous one, {@code 0} close. False when no trail is playing.
+     */
+    boolean command(int delta) {
+        if (playing == null) {
+            return false;
+        }
+        if (delta == 0) {
+            close();
+            view.focusMap();
+        } else {
+            step(delta);
+        }
+        return true;
+    }
+
+    /** Escape on the map: closes a playing trail (true) before anything else Escape closes. */
+    boolean viewsEscape() {
+        if (playing == null) {
+            return false;
+        }
+        close();
+        return true;
     }
 
     // --- the menu ---------------------------------------------------------------------------------------------
@@ -164,8 +250,7 @@ final class ProjectMapTrails {
             play.setMnemonicParsing(false);
             play.setOnAction(event -> play(trail.name(), 0));
             items.add(play);
-            MenuItem change =
-                    new MenuItem(trail.readOnly() ? tr("project.map.trails.readOnly", trail.label()) : trail.label());
+            MenuItem change = new MenuItem(readOnlyLabel(trail));
             change.setMnemonicParsing(false);
             change.setDisable(trail.readOnly());
             change.setOnAction(event -> edit(trail.name()));
@@ -176,6 +261,22 @@ final class ProjectMapTrails {
             items.add(edit);
         }
         menu.getItems().setAll(items);
+    }
+
+    /** An Edit item's text: the trail's label, and why it is read-only when it is (a newer Editora's, or cut). */
+    private static String readOnlyLabel(MapTrails.Listed trail) {
+        MapTrails.Trail read = trail.trail();
+        if (!trail.readOnly() || read == null) {
+            return trail.label();
+        }
+        return read.version() > MapTrails.VERSION
+                ? tr("project.map.trails.readOnly", trail.label())
+                : tr("project.map.trails.keptAsIs", trail.label(), String.valueOf(trail.problem()));
+    }
+
+    /** Why {@code listed} cannot be changed: why it is not a trail, or why it is kept as it is. */
+    private static String notWritable(MapTrails.Listed listed) {
+        return String.valueOf(listed.problem());
     }
 
     private static MenuItem disabled(String text) {
@@ -295,10 +396,7 @@ final class ProjectMapTrails {
         MapTrails.Listed listed = MapTrails.read(MapTrails.fileFor(root, name));
         MapTrails.Trail trail = listed.trail();
         if (trail == null || listed.readOnly()) {
-            view.onStatus.accept(tr(
-                    "project.map.status.trail.notWritable",
-                    listed.label(),
-                    trail == null ? listed.problem() : "version " + trail.version()));
+            view.onStatus.accept(tr("project.map.status.trail.notWritable", listed.label(), notWritable(listed)));
             return false;
         }
         if (trail.stops().size() >= MapTrails.MAX_STOPS) {
@@ -364,6 +462,25 @@ final class ProjectMapTrails {
             view.onStatus.accept(tr("project.map.status.trail.saveFailed", trail.title(), reason(failed)));
         }
         return false;
+    }
+
+    /**
+     * The editor's write (review 4 A5): writes {@code trail} as {@code name} only while the file still holds {@code
+     * expected}, the trail the editor last showed. When it changed on disk meanwhile (a pull, a checkout, a hand edit)
+     * nothing is written: the editor shows the file as it is now and the status line says so.
+     */
+    boolean writeOver(String name, MapTrails.Trail expected, MapTrails.Trail trail) {
+        Path root = root();
+        if (root == null) {
+            return false;
+        }
+        MapTrails.Listed now = MapTrails.read(MapTrails.fileFor(root, name));
+        if (!expected.equals(now.trail())) {
+            view.onStatus.accept(tr("project.map.status.trail.changedOnDisk", now.label()));
+            refreshed(now);
+            return false;
+        }
+        return write(name, trail);
     }
 
     /** Renames trail {@code name} to {@code to}; the new name's stem, or null when it was not renamed. */
@@ -516,7 +633,7 @@ final class ProjectMapTrails {
         }
         Path wanted = key;
         boolean wasOpen = view.cards.codeCard(wanted) != null;
-        view.viewsShowCard(wanted, card -> landed(ticket, index, target, file, wanted, card, wasOpen));
+        stopPending = view.viewsShowCard(wanted, card -> landed(ticket, index, target, file, wanted, card, wasOpen));
     }
 
     private void landed(
@@ -528,21 +645,38 @@ final class ProjectMapTrails {
             @Nullable ProjectMapPreview card,
             boolean wasOpen) {
         if (ticket != generation) {
-            return; // the trail moved on (or closed) while this stop's card was waiting
+            // The trail moved on (or closed) while this stop's card was waiting: a card it opened goes (A2).
+            if (card != null && !wasOpen && !view.cards.pinned(card)) {
+                view.cards.close(card);
+            }
+            return;
         }
+        stopPending = () -> {};
         if (card == null) {
             if (!key.equals(file)) {
                 // The declaration is gone from the outline: its lines in the file instead.
                 view.onStatus.accept(tr("project.map.status.trail.declarationGone", index + 1));
                 boolean fileOpen = view.cards.codeCard(file) != null;
-                view.viewsShowCard(file, opened -> landed(ticket, index, target, file, file, opened, fileOpen));
+                stopPending =
+                        view.viewsShowCard(file, opened -> landed(ticket, index, target, file, file, opened, fileOpen));
             }
             return;
         }
         stopCard = card;
         stopCardOpened = !wasOpen;
+        stopCardGone = false;
+        card.parentProperty().addListener(stopCardClosed);
         if (key.equals(file) && target.startLine() > 0) {
-            card.viewsRevealLines(target.startLine() - 1, target.endLine() - 1);
+            card.viewsRevealLines(target.startLine() - 1, target.endLine() - 1, () -> {
+                if (ticket == generation) {
+                    view.onStatus.accept(tr(
+                            "project.map.status.trail.linesPastEnd",
+                            index + 1,
+                            target.startLine(),
+                            target.endLine(),
+                            target.file()));
+                }
+            });
         }
         MapTrails.Listed shown = playing;
         int count = shown == null || shown.trail() == null
@@ -555,24 +689,52 @@ final class ProjectMapTrails {
                     tr("project.map.trails.note.header", index + 1, count),
                     target.note(),
                     target.startLine() - 1,
-                    view.cards::viewsConnectorsMoved);
+                    view.cards::viewsConnectorsMoved,
+                    view::viewsColumns);
             sheet.setAvoid(() -> bar.getParent() == null ? null : bar.getBoundsInParent());
             view.cards.viewsAttach(card, sheet);
         }
     }
 
-    /** The shown stop's note comes off its card; a card the trail opened closes. */
+    /**
+     * The shown stop's note comes off its card; a card the trail opened closes, unless the reader pinned it (A6), and
+     * one still waiting for its row is withdrawn (A2).
+     */
     private void leaveStop() {
+        stopPending.run();
+        stopPending = () -> {};
+        stopCardGone = false;
         ProjectMapPreview card = stopCard;
         stopCard = null;
         if (card == null) {
             return;
         }
+        card.parentProperty().removeListener(stopCardClosed);
         view.cards.viewsDetach(card);
-        if (stopCardOpened && view.cards.openCards().stream().anyMatch(open -> open.node() == card)) {
+        if (stopCardOpened
+                && !view.cards.pinned(card)
+                && view.cards.openCards().stream().anyMatch(open -> open.node() == card)) {
             view.cards.close(card);
         }
         stopCardOpened = false;
+    }
+
+    /** The shown stop's card closed by other means than the trail: the bar says so and offers it again (A7). */
+    private void viewsStopCardClosed() {
+        ProjectMapPreview card = stopCard;
+        if (card == null || card.getParent() != null) {
+            return;
+        }
+        card.parentProperty().removeListener(stopCardClosed);
+        stopCard = null;
+        stopCardOpened = false;
+        stopCardGone = true;
+        updateBar();
+    }
+
+    /** Whether the shown stop's card was closed under the bar (which then offers it again). For tests. */
+    boolean stopCardGone() {
+        return stopCardGone;
     }
 
     private void updateBar() {
@@ -585,8 +747,10 @@ final class ProjectMapTrails {
         MapTrails.Stop at = stops.get(Math.min(stop, count - 1));
         position.setText(tr("project.map.trails.bar.position", stop + 1, count));
         String name = stopTitle(at);
-        title.setText(name);
-        title.setTooltip(new javafx.scene.control.Tooltip(shown.label() + " — " + name));
+        title.setText(stopCardGone ? tr("project.map.trails.bar.cardClosed", name) : name);
+        title.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("gone"), stopCardGone);
+        title.setTooltip(new javafx.scene.control.Tooltip(
+                stopCardGone ? tr("project.map.trails.bar.cardClosedHelp") : shown.label() + " — " + name));
         previous.setDisable(stop <= 0);
         next.setDisable(stop >= count - 1);
         editButton.setDisable(shown.readOnly());
@@ -612,8 +776,12 @@ final class ProjectMapTrails {
     /** Close: the bar goes, the shown stop's note comes off (its card stays, as the user last saw it). */
     void close() {
         generation++;
+        stopPending.run(); // a stop card still waiting for its row is not opened after the trail closed (A2)
+        stopPending = () -> {};
+        stopCardGone = false;
         ProjectMapPreview card = stopCard;
         if (card != null) {
+            card.parentProperty().removeListener(stopCardClosed);
             view.cards.viewsDetach(card);
         }
         stopCard = null;
@@ -638,12 +806,7 @@ final class ProjectMapTrails {
         }
         MapTrails.Listed listed = MapTrails.read(MapTrails.fileFor(root, name));
         if (listed.trail() == null || listed.readOnly()) {
-            view.onStatus.accept(tr(
-                    "project.map.status.trail.notWritable",
-                    listed.label(),
-                    listed.trail() == null
-                            ? listed.problem()
-                            : "version " + listed.trail().version()));
+            view.onStatus.accept(tr("project.map.status.trail.notWritable", listed.label(), notWritable(listed)));
             return;
         }
         current = listed.name();

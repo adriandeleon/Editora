@@ -90,6 +90,7 @@ final class ProjectMapHelp {
         row = addRow(keys, row, key("pageUp") + " / " + key("pageDown"), "project.map.help.page");
         row = addRow(keys, row, "/", "project.map.help.columnFilter");
         row = addRow(keys, row, chord("alt", "←") + " / " + chord("alt", "→"), "project.map.help.history");
+        row = addRow(keys, row, chord("shortcut", "←") + " / " + chord("shortcut", "→"), "project.map.help.trailStep");
         row = addRow(keys, row, chord("shortcut", "0"), "project.map.help.fit");
         row = addRow(keys, row, "F2", "project.map.help.rename");
         row = addRow(keys, row, key("delete"), "project.map.help.delete");

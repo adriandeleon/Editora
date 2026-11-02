@@ -1885,6 +1885,10 @@ final class ProjectMapPreview extends StackPane {
     private java.util.function.Supplier<java.util.List<MenuItem>> viewsMenu = java.util.List::of;
     /** Lines a trail stop asked for before the text was laid out: {@code {first, last}}, 0-based file lines. */
     private int @Nullable [] viewsRevealPending;
+    /** What to run when the lines asked for are past the end of the file the card shows (review 4 A9). */
+    private Runnable viewsPastEnd = () -> {};
+    /** Whether the card's text has been laid out and coloured once: a line past its end is then known to be. */
+    private boolean viewsStyled;
 
     void setViewsMenu(java.util.function.@Nullable Supplier<java.util.List<MenuItem>> items) {
         viewsMenu = items == null ? java.util.List::of : items;
@@ -1896,22 +1900,46 @@ final class ProjectMapPreview extends StackPane {
      * shows its own lines and is left as it is.
      */
     void viewsRevealLines(int first, int last) {
+        viewsRevealLines(first, last, () -> {});
+    }
+
+    /**
+     * As {@link #viewsRevealLines(int, int)}; {@code pastEnd} runs instead when the file the card shows (all of it,
+     * not a truncated start) ends before line {@code first}, so the caller can say so (review 4 A9).
+     */
+    void viewsRevealLines(int first, int last, @Nullable Runnable pastEnd) {
         if (disposed || range != null) {
             return;
         }
         viewsRevealPending = null;
+        viewsPastEnd = pastEnd == null ? () -> {} : pastEnd;
         Range shown = new Range("", first, first, Math.max(first, last));
         if (openingPending >= 0 || !revealRange(shown)) {
+            if (openingPending < 0 && viewsStyled && viewsPastTheEnd(first)) {
+                viewsPastEnd.run();
+                return;
+            }
             viewsRevealPending = new int[] {first, Math.max(first, last)};
         }
     }
 
     private void viewsApplyPendingReveal() {
+        viewsStyled = true;
         int[] lines = viewsRevealPending;
         viewsRevealPending = null;
         if (lines != null && !disposed) {
-            revealRange(new Range("", lines[0], lines[0], lines[1]));
+            if (!revealRange(new Range("", lines[0], lines[0], lines[1])) && viewsPastTheEnd(lines[0])) {
+                viewsPastEnd.run();
+            }
         }
+    }
+
+    /** Whether 0-based line {@code first} is past the end of the whole file shown (never for a truncated start). */
+    private boolean viewsPastTheEnd(int first) {
+        return !disposed
+                && !truncatedShown
+                && frame.getCenter() == textPane
+                && (editor.getLength() == 0 || first >= editor.getParagraphs().size());
     }
 
     /**

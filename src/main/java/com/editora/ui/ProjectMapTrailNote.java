@@ -40,6 +40,9 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
     private double dy;
     private boolean fromLeft;
     private boolean placed;
+    /** The reader dragged the sheet: it keeps that spot and is never placed again. */
+    private boolean dragged;
+
     private boolean disposed;
     private double dragScreenX;
     private double dragScreenY;
@@ -47,13 +50,28 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
     private double dragLayoutY;
     /** What the sheet keeps below (the trail bar, in the map area's pixels), or null. */
     private java.util.function.Supplier<javafx.geometry.@Nullable Bounds> avoid = () -> null;
+    /** The columns on screen, {@code {x, y, w, h, …}} in the map area's pixels: the side covering less is taken. */
+    private final java.util.function.Supplier<java.util.List<double[]>> columns;
 
     ProjectMapTrailNote(
             ProjectMapPreview card, Pane host, String header, String note, int anchorLine, Runnable onMoved) {
+        this(card, host, header, note, anchorLine, onMoved, java.util.List::of);
+    }
+
+    /** {@code columns}: the map's columns on screen, which the sheet keeps off when a side has room (review 4 A8). */
+    ProjectMapTrailNote(
+            ProjectMapPreview card,
+            Pane host,
+            String header,
+            String note,
+            int anchorLine,
+            Runnable onMoved,
+            java.util.function.@Nullable Supplier<java.util.List<double[]>> columns) {
         this.card = card;
         this.host = host;
         this.anchorLine = anchorLine;
         this.onMoved = onMoved == null ? () -> {} : onMoved;
+        this.columns = columns == null ? java.util.List::of : columns;
         getStyleClass().addAll("project-map-sticky-note", "project-map-trail-note");
         setManaged(false);
         zoom.xProperty().bind(card.mapScaleProperty());
@@ -90,6 +108,18 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
         host.getChildren().add(this);
         applyCss();
         autosize();
+        follow();
+        // The card may still settle (its height, the room made for it) after it opened: the side is chosen once more
+        // where it then stands, unless the reader has dragged the sheet meanwhile.
+        javafx.application.Platform.runLater(this::viewsReplace);
+    }
+
+    /** Chooses the sheet's side again where the card stands now (not once the reader dragged it). */
+    private void viewsReplace() {
+        if (disposed || dragged || !placed) {
+            return;
+        }
+        placeSide();
         follow();
     }
 
@@ -128,22 +158,83 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
         // The gap between the sheet's near edge and the card, as place() keeps it: follow() puts the sheet back there.
         dx = fromLeft ? (card.getLayoutX() - x) / scale - WIDTH : (x - right) / scale;
         dy = (y - card.getLayoutY()) / scale;
+        dragged = true;
         relocate(x, y);
         onMoved.run();
         event.consume();
     }
 
-    /** Beside the card on the right, else the left (the side with room in the map area), level with its line. */
+    /**
+     * Beside the card on the right, else the left (the side with room in the map area), level with its line. When
+     * both sides have room, the one that covers less of the map's columns (review 4 A8): the note must not hide the
+     * rows the stop is about.
+     */
     private void place() {
+        double scale = card.mapScale();
+        double lineY = anchorLine < 0 ? Double.NaN : card.noteAnchorY(anchorLine);
+        dy = Double.isNaN(lineY) ? 0 : Math.max(0, (lineY - card.getLayoutY()) / scale - HEADER_MIDDLE);
+        placeSide();
+    }
+
+    /** The side alone, at the height already chosen: the card moved, or settled after it opened. */
+    private void placeSide() {
         double scale = card.mapScale();
         double left = card.getLayoutX();
         double right = left + card.getWidth() * scale;
         double width = (WIDTH + ProjectMapStickyNotes.OFFSET) * scale;
-        Side side = CardAttachment.side(left, right, width, host.getWidth(), false);
+        double sheetHeight = Math.max(getHeight(), prefHeight(WIDTH)) * scale;
+        Side side = viewsSide(
+                left,
+                right,
+                width,
+                host.getWidth(),
+                card.getLayoutY() + dy * scale,
+                sheetHeight,
+                WIDTH * scale,
+                columns.get());
         fromLeft = side == Side.LEFT;
         dx = side == Side.OVER ? -(WIDTH + ProjectMapStickyNotes.GAP) : ProjectMapStickyNotes.OFFSET;
-        double lineY = anchorLine < 0 ? Double.NaN : card.noteAnchorY(anchorLine);
-        dy = Double.isNaN(lineY) ? 0 : Math.max(0, (lineY - card.getLayoutY()) / scale - HEADER_MIDDLE);
+    }
+
+    /**
+     * The side of a card from {@code left} to {@code right} for a sheet {@code sheetWidth} wide and {@code height} tall
+     * at {@code y} that needs {@code room} beside the card: as {@link CardAttachment#side} picks it (the right first),
+     * except that when both sides have room the left is taken if it covers less of {@code columns}' area. Pure.
+     */
+    static Side viewsSide(
+            double left,
+            double right,
+            double room,
+            double panelWidth,
+            double y,
+            double height,
+            double sheetWidth,
+            java.util.List<double[]> columns) {
+        Side side = CardAttachment.side(left, right, room, panelWidth, false);
+        if (side != Side.RIGHT || left < room) {
+            return side;
+        }
+        double gap = room - sheetWidth;
+        double onRight = covered(right + gap, y, sheetWidth, height, columns);
+        double onLeft = covered(left - room, y, sheetWidth, height, columns);
+        return onLeft < onRight ? Side.LEFT : Side.RIGHT;
+    }
+
+    /** The area of {@code columns} a rectangle covers. Pure. */
+    private static double covered(double x, double y, double w, double h, java.util.List<double[]> columns) {
+        double area = 0;
+        for (double[] column : columns) {
+            double across = Math.min(x + w, column[0] + column[2]) - Math.max(x, column[0]);
+            double down = Math.min(y + h, column[1] + column[3]) - Math.max(y, column[1]);
+            if (across > 0 && down > 0) {
+                area += across * down;
+            }
+        }
+        return area;
+    }
+
+    private double sheetX(double scale) {
+        return fromLeft ? card.getLayoutX() - (dx + WIDTH) * scale : card.getLayoutX() + (card.getWidth() + dx) * scale;
     }
 
     private void follow() {
@@ -155,9 +246,11 @@ final class ProjectMapTrailNote extends VBox implements CardAttachment {
             place();
         }
         double scale = card.mapScale();
-        double x = fromLeft
-                ? card.getLayoutX() - (dx + WIDTH) * scale
-                : card.getLayoutX() + (card.getWidth() + dx) * scale;
+        double x = sheetX(scale);
+        if (placed && !dragged && host.getWidth() > 0 && (x < 0 || x + WIDTH * scale > host.getWidth())) {
+            placeSide(); // the card moved: the side it was given is now past the map area's edge
+            x = sheetX(scale);
+        }
         double y = card.getLayoutY() + dy * scale;
         javafx.geometry.Bounds bar = avoid.get();
         if (bar != null && x < bar.getMaxX() && x + WIDTH * scale > bar.getMinX() && y < bar.getMaxY() + 4) {

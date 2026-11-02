@@ -6203,6 +6203,13 @@
     -fx-font-weight: bold;
     -fx-padding: 0 6 0 6;
 }
+/* The stop's card was closed under the bar: the title offers it again (Map review 4 A7). */
+.project-map-trail-bar-title:gone {
+    -fx-font-weight: normal;
+    -fx-text-fill: -color-accent-fg;
+    -fx-underline: true;
+    -fx-cursor: hand;
+}
 .project-map-sticky-note.project-map-trail-note {
     -fx-background-color: -color-bg-default, -color-accent-subtle;
     -fx-border-color: -color-accent-muted;
