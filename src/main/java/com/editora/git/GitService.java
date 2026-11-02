@@ -190,6 +190,11 @@ public final class GitService {
      * gutter refresh would wait behind it. Read-only, so it needs no ordering against the other lanes.
      */
     private final ExecutorService historyExec = lane("git-history");
+    /**
+     * The Project Map's recent-changes reads ({@link #recentChanges}): a capped log that can take seconds on a large
+     * history, kept off the other lanes so it delays neither status nor the Git Log. Read-only.
+     */
+    private final ExecutorService activityExec = lane("git-activity");
     /** Serialises working-tree mutations across the two lanes ({@code pull} runs on the network lane). */
     private final ReentrantLock worktreeLock = new ReentrantLock();
     /** User commands currently running per lane; {@link #shutdown()} lets these finish instead of killing them. */
@@ -328,6 +333,24 @@ public final class GitService {
      */
     private static boolean isLocal(@Nullable Path dir) {
         return ExecTargets.runsHere(dir);
+    }
+
+    /**
+     * Whether a local {@code dir} is in a git working tree, by looking for {@code .git} (a folder, or the file a
+     * worktree or submodule has) up the tree — no process. A folder that is in none needs no {@code git} at all: on
+     * Windows a process started in it keeps the folder from being deleted while it runs. Remote folders say true
+     * (their git answers for itself).
+     */
+    static boolean mayBeRepository(Path dir) {
+        if (!isLocal(dir)) {
+            return true;
+        }
+        for (Path at = dir.toAbsolutePath(); at != null; at = at.getParent()) {
+            if (Files.exists(at.resolve(".git"))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Whether {@code p} is on this machine's own filesystem (so reading it is no network round trip). */
@@ -924,6 +947,216 @@ public final class GitService {
             List<Commit> posted = commits;
             Platform.runLater(() -> onResult.accept(posted));
         });
+    }
+
+    /**
+     * How often each file and folder below {@code root} changed in the last {@link GitRecentChanges#DAYS} days (the
+     * Project Map's "Show recent changes"): one streamed {@code git log --name-only}, capped as
+     * {@link GitRecentChanges} says, on a lane of its own so a long read never delays status or the Git Log. Kept per
+     * HEAD: asking again before a commit, checkout or pull costs one {@code rev-parse}. Posts
+     * {@link GitRecentChanges.Result#NONE} when {@code root} is not in a repository with commits, or git is missing.
+     * Posts on the FX thread.
+     */
+    public void recentChanges(Path root, Consumer<GitRecentChanges.Result> onResult) {
+        submit(activityExec, () -> {
+            GitRecentChanges.Result result = recentChangesNow(root);
+            Platform.runLater(() -> onResult.accept(result));
+        });
+    }
+
+    /** {@link #recentChanges} on the calling thread (a lane). */
+    GitRecentChanges.Result recentChangesNow(Path root) {
+        if (root == null || !mayBeRepository(root) || !gitAvailable(root)) {
+            return GitRecentChanges.Result.NONE;
+        }
+        ProcessRunner.Result rev = git(root, QUICK, "rev-parse", "HEAD", "--is-shallow-repository");
+        if (!rev.ok()) {
+            return GitRecentChanges.Result.NONE; // not a repository, or no commit yet
+        }
+        String[] lines = rev.out().strip().split("\\R");
+        String head = lines[0].strip();
+        boolean shallow = lines.length > 1 && lines[lines.length - 1].strip().equals("true");
+        String key = gitPath(root) + "\n" + head;
+        synchronized (recentChanges) {
+            GitRecentChanges.Result known = recentChanges.get(key);
+            if (known != null) {
+                return known;
+            }
+        }
+        GitRecentChanges.Parser parser = new GitRecentChanges.Parser(shallow);
+        List<String> args = new ArrayList<>();
+        args.add(GitSafety.LITERAL_PATHSPECS);
+        args.addAll(GitRecentChanges.logArgs(GitRecentChanges.DAYS));
+        ProcessRunner.Result r = ProcessRunner.runLines(
+                root,
+                GitRecentChanges.BUDGET,
+                backgroundArgv(root, args.toArray(String[]::new)),
+                READ_ENV,
+                parser::accept);
+        GitRecentChanges.Result result = parser.finish(head);
+        if (r.timedOut() || r.outTruncated()) {
+            parser.cutShort();
+            result = parser.finish(head);
+        } else if (!r.ok() && !result.truncated()) {
+            return noCommitsYet(r) ? GitRecentChanges.Result.NONE : GitRecentChanges.Result.failed(head, r.message());
+        }
+        synchronized (recentChanges) {
+            recentChanges.put(key, result);
+        }
+        return result;
+    }
+
+    /** The last few {@link #recentChanges} answers, by repository folder and HEAD. */
+    private final Map<String, GitRecentChanges.Result> recentChanges = new LinkedHashMap<>(4, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, GitRecentChanges.Result> eldest) {
+            return size() > 3;
+        }
+    };
+
+    /**
+     * The commit that last changed a file, or some of its lines: what a Project Map card's status line ends with
+     * (Map explore round, position 9).
+     *
+     * @param lines whether this is the last change of the lines asked for ({@code git log -L}) rather than the
+     *     file's, which is given when the line history did not answer in time
+     */
+    public record LastChange(String hash, String author, long epochSeconds, String subject, boolean lines) {}
+
+    /** How long {@code git log -L} may take for a card's lines before the file's last change is given instead. */
+    public static final Duration LINE_HISTORY_BUDGET = Duration.ofSeconds(2);
+
+    /** How long a folder's HEAD, as read for {@link #lastChange}, is trusted before it is read again. */
+    public static final long HEAD_TTL_NANOS = 3_000_000_000L;
+
+    /** {@link #lastChange} answers by HEAD, file and lines: a commit or checkout moves HEAD and asks again. */
+    private final Map<String, java.util.Optional<LastChange>> lastChanges = new LinkedHashMap<>(64, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, java.util.Optional<LastChange>> eldest) {
+            return size() > 512;
+        }
+    };
+
+    /** The HEAD last read in a folder, and when ({@link #nanoClock}). */
+    private record HeadRead(String head, long nanos) {}
+
+    private final Map<Path, HeadRead> heads = new ConcurrentHashMap<>();
+
+    /** How many {@code git log} runs {@link #lastChange} made. For tests. */
+    private final AtomicInteger lastChangeRuns = new AtomicInteger();
+
+    /**
+     * The last commit that changed {@code file} — with {@code startLine >= 0}, that changed its 0-based lines
+     * {@code startLine..endLine} ({@code git log -L}, given {@link #LINE_HISTORY_BUDGET}, else the file's) — or null
+     * when git is off, the file is not in a repository or has no commit yet. Read off the FX thread on the history
+     * lane and cached per HEAD; posted on the FX thread.
+     */
+    public void lastChange(Path file, int startLine, int endLine, Consumer<@Nullable LastChange> onResult) {
+        Path dir = file.toAbsolutePath().getParent();
+        if (dir == null) {
+            Platform.runLater(() -> onResult.accept(null));
+            return;
+        }
+        boolean queued = submit(historyExec, () -> {
+            LastChange found =
+                    mayBeRepository(dir) && gitAvailable(dir) ? readLastChange(dir, file, startLine, endLine) : null;
+            Platform.runLater(() -> onResult.accept(found));
+        });
+        if (!queued) {
+            Platform.runLater(() -> onResult.accept(null));
+        }
+    }
+
+    /** {@link #lastChange}'s read, on the history lane. */
+    private @Nullable LastChange readLastChange(Path dir, Path file, int startLine, int endLine) {
+        String head = headOf(dir);
+        if (head == null) {
+            return null; // not a repository, or no commit yet
+        }
+        Path fileName = file.getFileName();
+        String name = fileName == null ? "" : fileName.toString();
+        String key = head + "\0" + file.toAbsolutePath() + "\0" + startLine + "\0" + endLine;
+        synchronized (lastChanges) {
+            java.util.Optional<LastChange> known = lastChanges.get(key);
+            if (known != null) {
+                return known.orElse(null);
+            }
+        }
+        LastChange found = null;
+        if (startLine >= 0 && endLine >= startLine && !name.isEmpty()) {
+            lastChangeRuns.incrementAndGet();
+            ProcessRunner.Result r = git(
+                    dir,
+                    LINE_HISTORY_BUDGET,
+                    "log",
+                    "-1",
+                    "--no-patch",
+                    "--no-color",
+                    "--format=" + LAST_CHANGE_FORMAT,
+                    "-L" + (startLine + 1) + "," + (endLine + 1) + ":" + name);
+            found = r.ok() ? parseLastChange(r.out(), true) : null;
+        }
+        if (found == null) {
+            lastChangeRuns.incrementAndGet();
+            ProcessRunner.Result r = git(
+                    dir,
+                    QUICK,
+                    GitSafety.LITERAL_PATHSPECS,
+                    "log",
+                    "-1",
+                    "--no-color",
+                    "--format=" + LAST_CHANGE_FORMAT,
+                    "--",
+                    gitPath(file));
+            found = r.ok() ? parseLastChange(r.out(), false) : null;
+        }
+        synchronized (lastChanges) {
+            lastChanges.put(key, java.util.Optional.ofNullable(found));
+        }
+        return found;
+    }
+
+    /** {@code dir}'s HEAD commit, read at most once per {@link #HEAD_TTL_NANOS}; null when it has none. */
+    private @Nullable String headOf(Path dir) {
+        long now = nanoClock.getAsLong();
+        HeadRead known = heads.get(dir);
+        if (known == null || now - known.nanos() >= HEAD_TTL_NANOS) {
+            ProcessRunner.Result r = git(dir, QUICK, "rev-parse", "--verify", "--quiet", "HEAD");
+            if (heads.size() > 256) {
+                heads.clear();
+            }
+            known = new HeadRead(r.ok() ? r.out().strip() : "", now);
+            heads.put(dir, known);
+        }
+        return known.head().isEmpty() ? null : known.head();
+    }
+
+    /** How many {@code git log} runs {@link #lastChange} made so far. For tests. */
+    public int lastChangeRunsForTest() {
+        return lastChangeRuns.get();
+    }
+
+    /** Hash, author, author time (seconds) and subject, NUL-separated. */
+    static final String LAST_CHANGE_FORMAT = "%H%x00%an%x00%at%x00%s";
+
+    /** The first commit of a {@link #LAST_CHANGE_FORMAT} log, or null for none. Pure. */
+    static @Nullable LastChange parseLastChange(@Nullable String out, boolean lines) {
+        if (out == null) {
+            return null;
+        }
+        for (String line : out.split("\n")) {
+            String[] fields = line.split("\0", 4);
+            if (fields.length == 4 && fields[0].strip().length() >= 7) {
+                long when;
+                try {
+                    when = Long.parseLong(fields[2].strip());
+                } catch (NumberFormatException unreadable) {
+                    when = 0;
+                }
+                return new LastChange(fields[0].strip(), fields[1].strip(), when, fields[3].strip(), lines);
+            }
+        }
+        return null;
     }
 
     /**
@@ -3408,6 +3641,7 @@ public final class GitService {
         stop(exec, localCommands);
         stop(networkExec, networkCommands);
         historyExec.shutdownNow(); // reads only: nothing to leave half-done
+        activityExec.shutdownNow();
     }
 
     private static void stop(ExecutorService lane, AtomicInteger running) {

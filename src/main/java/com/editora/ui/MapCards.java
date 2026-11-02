@@ -124,6 +124,19 @@ final class MapCards {
 
         /** Pans the map (and the cards on it) by {@code dx, dy} pixels. */
         void panBy(double dx, double dy);
+
+        /**
+         * Selects the declaration at {@code declaration} in the Map's own Structure column of {@code file}, opening the
+         * columns that lead to it (Map explore round, position 8). False when the file's row is not on the map.
+         */
+        default boolean showInStructure(Path file, Path declaration) {
+            return false;
+        }
+
+        /** Views (trails): what a code card's menu adds at its end, built each time it opens. */
+        default List<javafx.scene.control.MenuItem> viewsCardMenu(ProjectMapPreview card) {
+            return List.of();
+        }
     }
 
     /**
@@ -147,6 +160,8 @@ final class MapCards {
     private final Host host;
     private final ProjectMapStructure structure;
     private final Pane canvasHost;
+    /** Linked reference cards: the result cards a card's question opened, and the edges to them (explore 5). */
+    final MapCardLinks links;
 
     final Canvas previewConnectorCanvas = new Canvas(1, 1);
     /** Each code card's connector as last drawn, by key. For tests. */
@@ -158,10 +173,18 @@ final class MapCards {
     private final Map<ProjectMapPreview, ProjectMapStickyNotes> stickyNotes = new java.util.IdentityHashMap<>();
     /** The Structure columns stuck on file cards (their Structure button). */
     final Map<ProjectMapPreview, ProjectMapCardStructure> cardStructures = new java.util.IdentityHashMap<>();
+    /** Views (trails): a trail stop's note, stuck on the stop's card while the trail plays there. */
+    private final Map<ProjectMapPreview, CardAttachment> viewsAttachments = new java.util.IdentityHashMap<>();
     /** The Overview card, when open (review 3 B4): not counted against the limit and never evicted. */
     private @Nullable ProjectMapOverviewCard overviewCard;
     /** When each open card was last used (pressed, focused, scrolled or opened); the oldest is evicted. */
     private final Map<Region, Long> cardTouches = new java.util.IdentityHashMap<>();
+    /** The pinned code cards: never evicted (Map explore round, position 7). */
+    private final Set<Region> pinnedCards = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    /** The last Git request each card made: an older answer is dropped (position 9). */
+    private final Map<ProjectMapPreview, Long> cardsGitRequests = new java.util.IdentityHashMap<>();
+
+    private long cardsGitSequence;
 
     private long cardTouchSequence;
     private final javafx.animation.PauseTransition cardRefresh =
@@ -211,14 +234,113 @@ final class MapCards {
         cardRefresh.setOnFinished(event -> refreshCards(false));
         cardDiskRefresh.setOnFinished(event -> refreshCards(false));
         cardPoll.setOnFinished(event -> refreshCards(true));
+        links = new MapCardLinks(linksCards(), structure, canvasHost, previewConnectorCanvas);
+    }
+
+    /** What the linked reference cards need of the cards. */
+    private MapCardLinks.Cards linksCards() {
+        return new MapCardLinks.Cards() {
+            @Override
+            public @Nullable Path root() {
+                return host.root();
+            }
+
+            @Override
+            public @Nullable ProjectMapPreview openDeclaration(ProjectMapStructure.Node node) {
+                return previewSymbol(symbolEntry(node), null);
+            }
+
+            @Override
+            public @Nullable ProjectMapPreview openFile(Path file) {
+                return previewFile(file.toAbsolutePath().normalize(), file);
+            }
+
+            @Override
+            public boolean isOpen(ProjectMapPreview card) {
+                return !disposed && cardTouches.containsKey(card);
+            }
+
+            @Override
+            public void touch(ProjectMapPreview card) {
+                touchCard(card, false);
+            }
+
+            @Override
+            public void status(String message) {
+                host.status(message);
+            }
+
+            @Override
+            public void connectorsMoved() {
+                MapCards.this.connectorsMoved();
+            }
+
+            @Override
+            public Color accent() {
+                return host.accent();
+            }
+
+            @Override
+            public List<double[]> columns() {
+                return host.columns();
+            }
+
+            @Override
+            public void openAt(Path file, int line) {
+                host.openAt(file, line);
+            }
+        };
+    }
+
+    // --- Linked reference cards (explore 5) ----------------------------------------------------------
+
+    /** Where Show References / Callers as Cards find their places; null takes the menu items away. */
+    void setLinkSource(MapCardLinks.@Nullable Source source) {
+        links.setSource(source);
+        previews.values().forEach(card -> card.setLinkActions(source == null ? null : this::showLinks));
+    }
+
+    /** Whether Show References / Callers as Cards are offered. */
+    boolean linksAvailable() {
+        return links.available();
+    }
+
+    /**
+     * Show References / Callers as Cards from {@code card}: of its declaration for a declaration card, else of what
+     * stands at the file's 0-based {@code line} and {@code column}.
+     */
+    void showLinks(ProjectMapPreview card, MapCardLinks.Kind kind, int line, int column) {
+        Path file = card.path();
+        if (file == null || !cardTouches.containsKey(card)) {
+            return;
+        }
+        ProjectMapPreview.Range shown = card.range();
+        ProjectMapPreview.Content content = host.content(file);
+        String text = content != null && content.open() ? content.text() : null;
+        MapCardLinks.Request request = shown != null
+                ? new MapCardLinks.Request(
+                        kind, file, shown.line(), -1, ProjectMapView.followName(shown.symbol()), text)
+                : new MapCardLinks.Request(kind, file, line, column, null, text);
+        touchCard(card, true);
+        links.show(card, request);
+    }
+
+    /** Show References / Callers as Cards from a declaration row: its card opens and asks. */
+    void showLinks(ProjectMapModel.Entry symbolRow, MapCardLinks.Kind kind) {
+        ProjectMapPreview card = previewSymbol(symbolRow, null);
+        ProjectMapPreview.Range shown = card == null ? null : card.range();
+        if (card != null && shown != null) {
+            showLinks(card, kind, shown.line(), -1);
+        }
     }
 
     // --- API ------------------------------------------------------------------------------------------------
 
     /**
      * Opens (or brings up and focuses) the card of {@code file}, shown whole, with a Structure button when its language
-     * can be outlined. Returns the card.
+     * can be outlined. Returns the card, or null when every open card is pinned (the status line says so).
      */
+    @Nullable
     ProjectMapPreview openFileCard(Path file) {
         return previewFile(file.toAbsolutePath().normalize(), file);
     }
@@ -255,9 +377,76 @@ final class MapCards {
         return card;
     }
 
+    /**
+     * Views (trails): opens (or brings up) the code card of {@code key} — a file, or a declaration of an outlined file
+     * — placed beside its row as a click places it. Null when a declaration is not in its file's outline.
+     */
+    @Nullable
+    ProjectMapPreview viewsOpenCard(Path key) {
+        if (ProjectMapStructure.isSymbolPath(key)) {
+            ProjectMapStructure.Node node = structure.node(key);
+            return node == null ? null : previewSymbol(symbolEntry(node), null);
+        }
+        return previewFile(key.toAbsolutePath().normalize(), key);
+    }
+
+    /**
+     * Views (trails): sticks {@code stuck} on {@code card} — one per card, replacing (and disposing) any earlier one
+     * — until {@link #viewsDetach} or the card closes. It moves, rises and closes with the card like its other
+     * attachments.
+     */
+    void viewsAttach(ProjectMapPreview card, CardAttachment stuck) {
+        CardAttachment old = viewsAttachments.put(card, stuck);
+        if (old != null && old != stuck) {
+            old.dispose();
+        }
+        stuck.raise();
+        connectorsMoved();
+    }
+
+    /** Views (trails): takes what {@link #viewsAttach} stuck on {@code card} off it. */
+    void viewsDetach(ProjectMapPreview card) {
+        CardAttachment old = viewsAttachments.remove(card);
+        if (old != null) {
+            old.dispose();
+            connectorsMoved();
+        }
+    }
+
+    /** Views (trails): the attachment {@link #viewsAttach} stuck on {@code card}, or null. */
+    @Nullable
+    CardAttachment viewsAttachment(ProjectMapPreview card) {
+        return viewsAttachments.get(card);
+    }
+
+    /** Views (trails): an attachment moved; the connectors are drawn again once for the pulse. */
+    void viewsConnectorsMoved() {
+        connectorsMoved();
+    }
+
     /** Opens (or brings up) the note card of a file or folder, when it has Personal Notes and notes are on. */
     void openNoteCard(Path path) {
         previewNotes(path);
+    }
+
+    /**
+     * A row's Personal Notes badge (Map explore round, position 11): a file's opens its code card with its sticky notes
+     * out, the one way a file's notes are shown; a folder's opens its note card.
+     */
+    void openNotes(Path path, boolean file) {
+        if (!file) {
+            previewNotes(path);
+            return;
+        }
+        ProjectMapPreview card = openFileCard(path);
+        if (card != null) {
+            card.setNotesShown(true);
+        }
+    }
+
+    /** Whether the card is pinned (position 7). */
+    boolean pinned(Region card) {
+        return pinnedCards.contains(card);
     }
 
     /** The code card open under {@code key} (a file's path or a declaration row's), or null. */
@@ -580,7 +769,9 @@ final class MapCards {
             card.setSymbolMissing(false);
             card.setRange(rangeOf(node.symbol()));
             updateCardNotes(card); // the declaration's lines may hold other notes now
+            cardsUpdateStepping(card);
         }
+        links.outlineChanged(file); // a question waiting to group its places by declaration
     }
 
     /** Preview and note cards of a renamed file, or of files under a renamed folder, follow it (C21). */
@@ -616,6 +807,7 @@ final class MapCards {
                 }
             }
             previews.put(key, card);
+            cardsRequestLastChange(card);
             moved = true;
         }
         for (Map.Entry<Path, ProjectMapNotePreview> entry : List.copyOf(notePreviews.entrySet())) {
@@ -666,6 +858,16 @@ final class MapCards {
                 : null;
     }
 
+    /** The path a code card is open under now, or null when it is not open. */
+    private @Nullable Path cardsKey(ProjectMapPreview card) {
+        for (Map.Entry<Path, ProjectMapPreview> entry : previews.entrySet()) {
+            if (entry.getValue() == card) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
     /** The path a card is open under now (a declaration card follows its declaration), else {@code fallback}. */
     private Path cardKeyOf(ProjectMapPreview card, Path fallback) {
         for (Map.Entry<Path, ProjectMapPreview> entry : previews.entrySet()) {
@@ -696,6 +898,7 @@ final class MapCards {
                 files.add(file);
             }
         }
+        files.addAll(links.outlineFiles());
         return files;
     }
 
@@ -724,8 +927,14 @@ final class MapCards {
             return existing;
         }
         Path file = symbol.file();
+        if (!makeRoomForCard(cardGroupOwner(file))) {
+            host.status(tr("status.projectMap.allCardsPinned", MAX_OPEN_PREVIEWS));
+            return null;
+        }
         ProjectMapPreview preview = createPreview(key);
         preview.setOnOpenAt((path, line) -> host.openAt(path, line));
+        preview.setOnStep(direction -> cardsStep(preview, direction));
+        preview.setOnShowInStructure(() -> cardsShowInStructure(preview));
         preview.setOnOpenNarrowed(() -> {
             ProjectMapStructure.Node node = structure.node(cardKeyOf(preview, key));
             ProjectMapModel.Symbol current = node == null ? symbol : node.symbol();
@@ -750,17 +959,23 @@ final class MapCards {
                                 parentWidth,
                                 parentHeight));
         updateCardNotes(preview);
+        cardsUpdateStepping(preview);
+        cardsRequestLastChange(preview);
         scheduleCardRefresh();
         return preview;
     }
 
     /** A file's card under its normalized path {@code selected}, showing {@code shown} (the row's own path). */
-    private ProjectMapPreview previewFile(Path selected, Path shown) {
+    private @Nullable ProjectMapPreview previewFile(Path selected, Path shown) {
         return previewFile(selected, shown, null);
     }
 
-    /** {@link #previewFile(Path, Path)}, placed by {@code placed} when given (a card brought back, B6). */
-    private ProjectMapPreview previewFile(Path selected, Path shown, ProjectMapPreview.@Nullable Placement placed) {
+    /**
+     * {@link #previewFile(Path, Path)}, placed by {@code placed} when given (a card brought back, B6). Null when every
+     * open card is pinned: the status line says to unpin one.
+     */
+    private @Nullable ProjectMapPreview previewFile(
+            Path selected, Path shown, ProjectMapPreview.@Nullable Placement placed) {
         ProjectMapPreview preview = previews.get(selected);
         if (preview != null) {
             touchCard(preview, true);
@@ -768,6 +983,10 @@ final class MapCards {
                 preview.focusContent();
             }
             return preview;
+        }
+        if (!makeRoomForCard(null)) {
+            host.status(tr("status.projectMap.allCardsPinned", MAX_OPEN_PREVIEWS));
+            return null;
         }
         preview = createPreview(selected);
         preview.setStructureAvailable(structure.supports(selected)); // as the row has its Structure icon
@@ -787,6 +1006,7 @@ final class MapCards {
                                 parentWidth,
                                 parentHeight));
         updateCardNotes(preview);
+        cardsRequestLastChange(preview);
         scheduleCardRefresh(); // starts following the buffer when the card mirrors one
         return preview;
     }
@@ -807,7 +1027,10 @@ final class MapCards {
         if (values.isEmpty()) {
             return;
         }
-        makeRoomForCard(null);
+        if (!makeRoomForCard(null)) {
+            host.status(tr("status.projectMap.allCardsPinned", MAX_OPEN_PREVIEWS));
+            return;
+        }
         ProjectMapNotePreview preview = new ProjectMapNotePreview((note, body) -> {
             ProjectPanel.MarkerActions actions = notePreviewActions;
             if (actions != null) {
@@ -852,6 +1075,7 @@ final class MapCards {
         preview.setOnContentZoomed(zoom -> cardTextZoom = zoom);
         preview.setMarkerActions(previewMarkerActions);
         preview.setFollowActions(followActions);
+        preview.setLinkActions(links.available() ? this::showLinks : null);
         preview.setOnClose(() -> closePreview(preview));
         preview.setOnActivate(() -> touchCard(preview, true));
         preview.setOnTouch(() -> touchCard(preview, false));
@@ -867,9 +1091,17 @@ final class MapCards {
                 column.focus();
             }
         });
+        preview.setOnPinned(pinned -> {
+            if (pinned) {
+                pinnedCards.add(preview);
+            } else {
+                pinnedCards.remove(preview);
+            }
+        });
         preview.setNotesSuppressed(host.hideOpenNotes());
         preview.setOnShowSuppressedNotes(() -> host.showOpenNotes()); // the Notes button asks for them
         preview.setOnMoveToFreeSpace(() -> cardMoveToFreeSpace(preview, path));
+        preview.setViewsMenu(() -> host.viewsCardMenu(preview));
         preview.setOnTextShown(() -> {
             updateCardNotes(preview); // stored notes are found again in the new text
             restyleCardStructure(preview);
@@ -924,6 +1156,11 @@ final class MapCards {
         if (notes != null) {
             stuck.add(notes);
         }
+        stuck.addAll(links.attachments(card)); // the edges of its questions' answers
+        CardAttachment views = viewsAttachments.get(card);
+        if (views != null) {
+            stuck.add(views);
+        }
         return stuck;
     }
 
@@ -931,6 +1168,8 @@ final class MapCards {
     private List<CardAttachment> allAttachments() {
         List<CardAttachment> all = new ArrayList<>(cardStructures.values());
         all.addAll(stickyNotes.values());
+        all.addAll(links.allAttachments());
+        all.addAll(viewsAttachments.values());
         return all;
     }
 
@@ -1058,6 +1297,135 @@ final class MapCards {
         touchCard(card, false);
         if (!card.revealRange(rangeOf(node.symbol()))) {
             previewSymbol(symbolEntry(node));
+        }
+    }
+
+    // --- Map explore round, cards: declaration stepping, Show in Structure, Git context ------------------------
+
+    /** Every declaration of {@code file}'s outline, depth-first: the order ‹ › step through (position 8). */
+    private List<ProjectMapStructure.Node> cardsDeclarations(@Nullable Path file) {
+        List<ProjectMapStructure.Node> all = new ArrayList<>();
+        if (file != null) {
+            cardsFlatten(structure.view(file).roots(), all);
+        }
+        return all;
+    }
+
+    private static void cardsFlatten(List<ProjectMapStructure.Node> nodes, List<ProjectMapStructure.Node> out) {
+        for (ProjectMapStructure.Node node : nodes) {
+            out.add(node);
+            cardsFlatten(node.children(), out);
+        }
+    }
+
+    /** Where a declaration card's key stands among its file's declarations, or -1. */
+    private static int cardsIndexOf(List<ProjectMapStructure.Node> declarations, Path key) {
+        for (int i = 0; i < declarations.size(); i++) {
+            if (declarations.get(i).path().equals(key)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Tells a declaration card whether its file has a declaration before and after the one it shows. */
+    private void cardsUpdateStepping(ProjectMapPreview card) {
+        Path key = cardsKey(card);
+        if (key == null || !ProjectMapStructure.isSymbolPath(key)) {
+            card.setDeclarationStepping(false, false);
+            return;
+        }
+        List<ProjectMapStructure.Node> declarations = cardsDeclarations(structure.fileOf(key));
+        int at = cardsIndexOf(declarations, key);
+        card.setDeclarationStepping(at > 0, at >= 0 && at < declarations.size() - 1);
+    }
+
+    /**
+     * A declaration card's ‹ or › (Alt+Page Up / Alt+Page Down): the card shows the previous or next declaration of
+     * its file where it stands, under that declaration's key. Another card open on that declaration closes: it would
+     * show the same lines twice.
+     */
+    void cardsStep(ProjectMapPreview card, int direction) {
+        Path key = cardsKey(card);
+        if (disposed || key == null || !ProjectMapStructure.isSymbolPath(key)) {
+            return;
+        }
+        List<ProjectMapStructure.Node> declarations = cardsDeclarations(structure.fileOf(key));
+        int at = cardsIndexOf(declarations, key);
+        int next = at + (direction < 0 ? -1 : 1);
+        if (at < 0 || next < 0 || next >= declarations.size()) {
+            return;
+        }
+        ProjectMapStructure.Node target = declarations.get(next);
+        ProjectMapPreview other = previews.get(target.path());
+        if (other != null && other != card) {
+            closePreview(other);
+        }
+        previews.remove(key);
+        previews.put(target.path(), card);
+        card.showDeclaration(rangeOf(target.symbol()));
+        touchCard(card, false);
+        updateCardNotes(card);
+        cardsUpdateStepping(card);
+        cardsRequestLastChange(card);
+        repaintPreviewConnectors(); // its connector now meets the new declaration's row
+    }
+
+    /**
+     * A declaration card's Show in Structure (position 8): its row is selected in its file's Structure column — the
+     * file card's column when that card has it out, else the Map's own column of the file (opened, with the columns
+     * that lead to it), else the file card's, which is opened for it.
+     */
+    void cardsShowInStructure(ProjectMapPreview card) {
+        Path key = cardsKey(card);
+        Path file = key == null ? null : structure.fileOf(key);
+        if (disposed || key == null || file == null) {
+            return;
+        }
+        ProjectMapPreview fileCard = previews.get(file);
+        ProjectMapCardStructure column = fileCard == null ? null : cardStructures.get(fileCard);
+        if (fileCard != null && column != null) {
+            touchCard(fileCard, true);
+            column.select(key);
+            return;
+        }
+        if (host.showInStructure(file, key)) {
+            return;
+        }
+        ProjectMapPreview opened = fileCard != null ? fileCard : openFileCard(file);
+        if (opened == null || !opened.structureAvailable()) {
+            return;
+        }
+        opened.setStructureShown(true);
+        ProjectMapCardStructure shown = cardStructures.get(opened);
+        if (shown != null) {
+            shown.select(key);
+        }
+    }
+
+    /**
+     * Asks Git, off the FX thread, for the last change of what {@code card} shows — its file, or a declaration card's
+     * lines — for the end of its status line (position 9). Cached per HEAD by the Git service; a later ask wins.
+     */
+    private void cardsRequestLastChange(ProjectMapPreview card) {
+        ProjectMapPreview.FollowActions actions = followActions;
+        Path file = card.path();
+        if (actions == null || file == null || disposed) {
+            return;
+        }
+        ProjectMapPreview.Range range = card.range();
+        long ask = ++cardsGitSequence;
+        cardsGitRequests.put(card, ask);
+        try {
+            actions.lastChange(
+                    file, range == null ? -1 : range.startLine(), range == null ? -1 : range.endLine(), change -> {
+                        Long latest = cardsGitRequests.get(card);
+                        if (latest != null && latest == ask && file.equals(card.path())) {
+                            card.setLastChange(change);
+                        }
+                    });
+        } catch (RuntimeException failed) {
+            ProjectMapLog.unexpected("asking Git for a card's last change", failed);
         }
     }
 
@@ -1279,12 +1647,13 @@ final class MapCards {
      * keeps. A group's file card goes only after its declaration cards (the oldest of them first), and {@code
      * keep} — the file card whose column a new declaration card comes from — never goes (review 3, C1).
      */
-    private void makeRoomForCard(@Nullable ProjectMapPreview keep) {
+    private boolean makeRoomForCard(@Nullable ProjectMapPreview keep) {
         while (previews.size() + notePreviews.size() >= MAX_OPEN_PREVIEWS) {
-            Region oldest = oldestCard(card -> card != keep && card != overviewCard);
+            // A pinned card never goes (Map explore round, position 7).
+            Region oldest = oldestCard(card -> card != keep && card != overviewCard && !pinnedCards.contains(card));
             if (oldest instanceof ProjectMapPreview code && cardStructures.containsKey(code)) {
                 Set<ProjectMapPreview> members = cardGroupMembers(code);
-                Region member = oldestCard(members::contains);
+                Region member = oldestCard(card -> members.contains(card) && !pinnedCards.contains(card));
                 if (member != null) {
                     oldest = member; // its owner waits until the cards it keeps are gone
                 }
@@ -1294,9 +1663,19 @@ final class MapCards {
             } else if (oldest instanceof ProjectMapNotePreview note) {
                 closeNotePreview(note);
             } else {
-                return;
+                return false; // every card that could go is pinned: the new one is refused
             }
         }
+        return true;
+    }
+
+    /**
+     * Whether one more card fits under the shared limit, closing the least recently used unpinned card when it must;
+     * false when every card that could go is pinned. For a caller that opens its own cards through {@link
+     * #createPreview}.
+     */
+    boolean roomForCard() {
+        return makeRoomForCard(null);
     }
 
     /** The least recently used open card among those {@code wanted} accepts, or null. */
@@ -1385,7 +1764,8 @@ final class MapCards {
                     || current instanceof ProjectMapNotePreview
                     || current instanceof ProjectMapOverviewCard
                     || current.getStyleClass().contains("project-map-sticky-note")
-                    || current.getStyleClass().contains("project-map-card-structure")) {
+                    || current.getStyleClass().contains("project-map-card-structure")
+                    || current.getStyleClass().contains("project-map-link-more")) {
                 return true;
             }
         }
@@ -1437,8 +1817,15 @@ final class MapCards {
         boolean focused = focusReturnsFrom(preview);
         previews.entrySet().removeIf(entry -> entry.getValue() == preview);
         cardTouches.remove(preview);
+        pinnedCards.remove(preview);
+        cardsGitRequests.remove(preview);
         closeCardNotes(preview);
         closeCardStructure(preview);
+        links.cardClosed(preview); // its edges, and the edge to it from the card it was found from
+        CardAttachment views = viewsAttachments.remove(preview);
+        if (views != null) {
+            views.dispose();
+        }
         if (canvasHost != null) {
             canvasHost.getChildren().remove(preview);
         }
@@ -1452,11 +1839,15 @@ final class MapCards {
         cardPoll.stop();
         cardDiskRefresh.stop();
         cardTouches.clear();
+        pinnedCards.clear();
+        cardsGitRequests.clear();
         List<ProjectMapPreview> open = List.copyOf(previews.values());
         previews.clear();
         List<CardAttachment> stuck = allAttachments();
         stickyNotes.clear();
+        viewsAttachments.clear();
         stuck.forEach(CardAttachment::dispose);
+        links.closeAll();
         cardStructures.clear();
         for (ProjectMapPreview preview : open) {
             if (canvasHost != null) {
@@ -1502,7 +1893,8 @@ final class MapCards {
             return;
         }
         List<ProjectMapPreview> closing = previews.entrySet().stream()
-                .filter(entry -> cardOrphaned(root, entry.getKey(), shown))
+                // A linked result card stays while the card it was found from does (explore 5).
+                .filter(entry -> cardOrphaned(root, entry.getKey(), shown) && !links.isResult(entry.getValue()))
                 .map(Map.Entry::getValue)
                 .toList();
         closing.forEach(this::closePreview);
@@ -1577,6 +1969,7 @@ final class MapCards {
         }
         if (!polled) {
             refreshNoteCards();
+            previews.values().forEach(this::cardsRequestLastChange); // a commit moved HEAD: cached per HEAD
         }
         if (mirrors && host.onScreen()) { // a closed window's cards are refreshed when it shows again
             cardPoll.playFromStart();
@@ -1691,14 +2084,17 @@ final class MapCards {
             double parentWidth,
             double parentHeight) {
         Site site = host.site(path);
-        Site beside = site.row() == null ? cardStructureSite(path) : null;
+        Site linked = links.besideSource(path); // a result card goes beside the card it was found from
+        Site beside = linked != null ? linked : site.row() == null ? cardStructureSite(path) : null;
         if (beside != null) {
             site = beside;
         }
         double margin = ProjectMapPreview.EDGE_MARGIN;
         double roomWidth = parentWidth - margin * 2;
         double roomHeight = parentHeight - margin * 2;
-        double fullWidth = cardBounded(width, minimumWidth, roomWidth);
+        // A result card is narrower, so that six fit around the card they were found from.
+        double wanted = linked != null ? Math.min(width, MapCardLinks.CARD_WIDTH * cardScale(preview)) : width;
+        double fullWidth = cardBounded(wanted, Math.min(minimumWidth, wanted), roomWidth);
         double fullHeight = cardBounded(height, minimumHeight, roomHeight);
         List<double[]> chrome = host.chrome();
         if (site.row() == null) {

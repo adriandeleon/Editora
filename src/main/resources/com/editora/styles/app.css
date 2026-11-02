@@ -1585,7 +1585,6 @@
 }
 .project-map-filter-chip,
 .project-map-type-filter,
-.project-map-flow-filter,
 .project-map-filter-clear {
     -fx-font-size: 0.85em;
 }
@@ -1625,18 +1624,15 @@
 .project-map-filter-clear:hover {
     -fx-text-fill: -color-fg-default;
 }
-/* The selectors are as wide as their widest value and no wider: "Type:" / "Flow:" moved to the tooltip
+/* The type selector is as wide as its widest value and no wider: "Type:" moved to the tooltip
    and accessible name, and the theme's roomy combo insets are trimmed to the chips' scale. */
-.project-map-type-filter,
-.project-map-flow-filter {
+.project-map-type-filter {
     -fx-padding: 0;
 }
-.project-map-type-filter > .list-cell,
-.project-map-flow-filter > .list-cell {
+.project-map-type-filter > .list-cell {
     -fx-padding: 3 2 3 8;
 }
-.project-map-type-filter > .arrow-button,
-.project-map-flow-filter > .arrow-button {
+.project-map-type-filter > .arrow-button {
     -fx-padding: 0 6 0 4;
 }
 .project-map-host {
@@ -1908,6 +1904,30 @@
 .project-map-preview-structure:selected {
     -fx-background-color: -color-accent-muted;
 }
+/* A pinned card's pin (Map explore round, position 7): lit, as the Structure button is while its column is out. */
+.project-map-preview-pin:selected {
+    -fx-background-color: -color-accent-muted;
+}
+/* A declaration card's ‹ ›: the previous and next declaration of its file (position 8). */
+.project-map-preview-step {
+    -fx-padding: 2 3 2 3;
+}
+/* The find bar under a card's title bar (position 6). */
+.project-map-preview-find {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-color: transparent transparent -color-border-default transparent;
+}
+.project-map-preview-find-field {
+    -fx-font-size: 11px;
+    -fx-padding: 2 6 2 6;
+}
+.project-map-preview-find-field:missing {
+    -fx-background-color: -color-danger-subtle;
+}
+.project-map-preview-find-count {
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-muted;
+}
 /* A file card's Structure column, stuck beside it: the Map's Structure columns' violet over an opaque background,
    so the map never shows through. */
 .project-map-card-structure {
@@ -1962,6 +1982,36 @@
 .project-map-card-structure-line {
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 10px;
+}
+/* Linked reference cards: an edge's label, at the middle of the line from a result card to the card it was found
+   from, and the "+N more" chip under that card. A label found by name only is dashed, as its edge is. */
+.project-map-link-label {
+    -fx-padding: 1 6 1 6;
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-accent-fg;
+    -fx-background-color: -color-bg-default, -color-accent-subtle;
+    -fx-background-radius: 8;
+    -fx-border-color: -color-accent-muted;
+    -fx-border-radius: 8;
+    -fx-border-width: 1;
+}
+.project-map-link-label.by-name {
+    -fx-border-style: segments(4, 3);
+    -fx-font-style: italic;
+}
+.project-map-link-more {
+    -fx-padding: 2 8 2 8;
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-accent-fg;
+    -fx-background-color: -color-bg-default, -color-accent-subtle;
+    -fx-background-radius: 10;
+    -fx-border-color: -color-accent-muted;
+    -fx-border-radius: 10;
+    -fx-cursor: hand;
+}
+.project-map-link-more:hover,
+.project-map-link-more:focused {
+    -fx-background-color: -color-bg-default, -color-accent-muted;
 }
 /* A code card's Personal Notes, one sticky sheet per note beside it, in the note card's amber family. Some
    themes' warning tints are translucent: each sits on the opaque background so the map never shows through. */
@@ -2034,6 +2084,9 @@
 .project-map-probe-olive { -fx-fill: -state-olive; }
 .project-map-probe-violet { -fx-fill: -state-violet; }
 .project-map-probe-structure { -fx-fill: -state-violet; }
+/* "Show recent changes" (Map explore): a hot row's tint and heat meter. The hottest tint keeps the label at 4.5:1
+   and muted ink at 3:1, and the meter stands 3:1 off its row, in every bundled theme (StyleContrastTest). */
+.project-map-probe-heat { -fx-fill: -state-amber; }
 .project-tree .tree-cell {
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;
@@ -6126,4 +6179,56 @@
 }
 .encryption-banner .hyperlink {
     -fx-text-fill: -state-red;
+}
+
+/* Map explore, views: a trail's bar over the map, a stop's note sheet (the accent family, so it never reads as one
+   of the user's Personal Notes) and the trail editor card. */
+.project-map-trail-bar {
+    -fx-background-color: -color-bg-overlay;
+    -fx-background-radius: 6;
+    -fx-border-color: -color-accent-muted;
+    -fx-border-radius: 6;
+    -fx-border-width: 1;
+    -fx-padding: 2 4 2 4;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.28), 10, 0.1, 0, 3);
+}
+.project-map-trail-bar-button {
+    -fx-padding: 1 6 1 6;
+}
+.project-map-trail-bar-position {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-trail-bar-title {
+    -fx-font-weight: bold;
+    -fx-padding: 0 6 0 6;
+}
+.project-map-sticky-note.project-map-trail-note {
+    -fx-background-color: -color-bg-default, -color-accent-subtle;
+    -fx-border-color: -color-accent-muted;
+}
+.project-map-trail-note > .project-map-sticky-note-header {
+    -fx-background-color: -color-accent-muted;
+}
+.project-map-trail-note-body {
+    -fx-padding: 6 8 8 8;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-trail-editor {
+    -fx-padding: 8;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.42), 22, 0.16, 0, 7);
+}
+.project-map-trail-editor-header {
+    -fx-cursor: move;
+}
+.project-map-trail-editor-title {
+    -fx-font-weight: bold;
+}
+.project-map-trail-editor-where {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
+.project-map-trail-editor-note {
+    -fx-font-size: 11px;
+    -fx-font-style: italic;
 }

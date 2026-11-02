@@ -125,9 +125,9 @@ class ProjectPanelSearchTest {
 
         // Superseded before it started (it sat in the queue behind another walk): nothing is listed at all.
         assertEquals(List.of(), ProjectPanel.search(root, "needle", false, none, () -> true));
-        // Superseded part-way: it gives up at the next directory rather than visiting the other 25.
+        // Superseded part-way: the listing gives up at its next check rather than visiting the other folders.
         List<Path> partial = ProjectPanel.search(root, "needle", false, none, () -> asked.incrementAndGet() > 5);
         assertEquals(List.of(), partial);
-        assertEquals(6, asked.get());
+        assertTrue(asked.get() < 30, "asked " + asked.get() + " times: not once per folder to the end");
     }
 }

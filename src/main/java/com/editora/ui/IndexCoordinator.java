@@ -789,8 +789,41 @@ final class IndexCoordinator {
         }
     }
 
+    /**
+     * Where Search Everywhere's file rows come from: the Project panel's project index, the list and the ranking
+     * the Map search and the tree's filter use (Map refactor stage 2). Without one, this index's own walk.
+     */
+    private @Nullable ProjectIndex fileIndex;
+
+    void setFileIndex(@Nullable ProjectIndex index) {
+        fileIndex = index;
+    }
+
+    /**
+     * {@link #ensureBuilt}, then the project index's file list too, so Search Everywhere's file rows are there: runs
+     * {@code then} exactly once, at once when both are in hand.
+     */
+    void ensureSearchable(Runnable then) {
+        ensureBuilt(() -> {
+            ProjectIndex files = fileIndex;
+            Path root = ops.projectRoot();
+            if (files == null || root == null || !isEnabled()) {
+                then.run();
+            } else {
+                files.whenListed(root, then);
+            }
+        });
+    }
+
     /** Search Everywhere's file rows for {@code query}: the name, then its folder relative to the root. */
     List<com.editora.search.SearchEverywhere.Item> fileItems(String query) {
+        ProjectIndex files = fileIndex;
+        if (files != null) {
+            Path root = ops.projectRoot();
+            return !isEnabled() || query == null || query.isBlank() || root == null
+                    ? List.of()
+                    : fileItems(files.searchListed(root, query, ProjectIndex.Kinds.FILES, 40), query);
+        }
         List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
         for (FileHit hit : searchFiles(query, 40)) {
             String name = hit.file().getFileName().toString();
@@ -799,6 +832,31 @@ final class IndexCoordinator {
                     : "";
             out.add(new com.editora.search.SearchEverywhere.Item(
                     com.editora.search.SearchEverywhere.Kind.FILE, name, parent, hit.score(), hit.file()));
+        }
+        return out;
+    }
+
+    /**
+     * The project index's answer as Search Everywhere's rows, in its order. A row's score only orders it in its
+     * group ({@link com.editora.search.SearchEverywhere#merge} sorts by score): the group competes with commands and
+     * symbols on the best fuzzy score of its paths, as it did, and each row after the first scores one less.
+     */
+    static List<com.editora.search.SearchEverywhere.Item> fileItems(ProjectMapSearchResult found, String query) {
+        int best = com.editora.search.FuzzyMatch.NO_SCORE;
+        for (ProjectMapSearchResult.Match match : found.matches()) {
+            best = Math.max(best, com.editora.search.FuzzyMatch.scoreOfPath(match.relativePath(), query));
+        }
+        int top = best == com.editora.search.FuzzyMatch.NO_SCORE ? 0 : best;
+        List<com.editora.search.SearchEverywhere.Item> out = new ArrayList<>();
+        for (ProjectMapSearchResult.Match match : found.matches()) {
+            String rel = match.relativePath();
+            int slash = rel.lastIndexOf('/');
+            out.add(new com.editora.search.SearchEverywhere.Item(
+                    com.editora.search.SearchEverywhere.Kind.FILE,
+                    match.label(),
+                    slash < 0 ? "" : rel.substring(0, slash),
+                    top - out.size(),
+                    match.path()));
         }
         return out;
     }

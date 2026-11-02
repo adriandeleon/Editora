@@ -85,7 +85,8 @@ at the same depth. This keeps parallel work visible without merging unrelated su
 column.
 
 The default flow is left to right (`ProjectMapView.DEFAULT_FLOW`), the direction the breadcrumb and
-the Tree read in. The flow selector also supports right to left, top to bottom, and bottom to top. It
+the Tree read in. The ⋯ menu's **Flow** submenu (it left the filter row in the Map explore round, position 17)
+also offers right to left, top to bottom, and bottom to top. It
 changes column placement, connector direction, and the meaning of the arrow keys together. Changing
 flow clears manual column offsets and locks, then auto-fits the new layout. The last selected flow is
 stored in workspace state and restored when the editor is reopened. Right-to-left was the default
@@ -116,11 +117,16 @@ right-to-left to left-to-right once (`ConfigMigrations.resetRightToLeftMapFlow`)
 | Shift + mouse wheel | Pan horizontally |
 | Alt + mouse wheel | Pan vertically |
 | Drag a column header | Move that column independently unless it is locked; it stops at its parent column |
-| Click a column lock | Prevent or allow accidental header dragging |
+| Click a column lock | Prevent or allow accidental header dragging. The lock shows only while its column is hovered, one of its controls has the keyboard, or it is locked (`MapSurface.canvasLockShown`; it keeps its place, so nothing moves when it appears) |
 | Click a column close button | Close that branch and all of its descendant columns |
+| Row menu → **Close Other Branches** | Close every column, folder or Structure, that is not on the way to that row; a folder row keeps its own column. Offered while such a column is open |
+| Options (⋯) menu → **Collapse All** | Close every column but the first and the ones on the way to the selection (`ProjectMapView.canvasCloseOthers`, `MapLoader.canvasCloseOthers`); cards opened from the closed columns close with them. "Nothing to collapse" when only those are open |
 | Options (⋯) menu → **Open cards** | List the open cards, the most recently used first; one brings its card into the middle of the map area with the keyboard in it |
 | Options (⋯) menu → **Print…** | Open the standard print preview for the complete map layout |
-| Options (⋯) menu → **PDF…** | Export the complete map layout using the configured PDF page size |
+| Options (⋯) menu → **PDF…** | Export the complete map layout using the configured PDF page size; its names are searchable text |
+| Options (⋯) menu → **Export ▸ PNG…** | Save the map as it is on screen at 2× (cards and connectors, not the zoom bar, overview or notices), at most 8,192 px a side |
+| Options (⋯) menu → **Export ▸ SVG…** | Save the whole map as Print/PDF lays it out, every row name and column title as SVG text |
+| Editor tab menu / Project tree menu → **Reveal in Map** | Open the Map window (or bring it forward) and select that file or folder, beside Reveal in File Manager |
 | Click **?** | Show what the Map is for and its pointer, cards and notes, keyboard, search ("where am I" included: Reveal Active File, Always select opened file, Project overview) and filter models in a popover (key names in the user's language, modifiers as the platform writes them) |
 | Click or drag in the overview | Centre the view on that point of the map, clamped to the map's bounds; a press on a card's mark brings that card into view |
 
@@ -171,7 +177,10 @@ after a card was placed only widens it where it stands, by at most 120 columns a
 a card the user moved keeps its position and one the user resized keeps its size.
 
 Up to eight cards remain open, code and note cards together; a ninth replaces the least recently used
-one. Pressing a card, moving keyboard focus into it and scrolling it all count as use, and so does any use of what
+one that is not pinned. A code card's **pin** (in its title bar, and **Pin Card** / **Unpin Card** in its menu)
+keeps it from ever being the one closed; when every card that could go is pinned, a new card is refused and the
+Map's status line says "All 8 cards are pinned: unpin one to open another" (`MapCards.makeRoomForCard` answers
+false; `roomForCard()` is the same check for a caller that builds its own cards). Pressing a card, moving keyboard focus into it and scrolling it all count as use, and so does any use of what
 is stuck on it — focus or a key in its Structure column, focus in a sticky note. Eviction works on groups: a file
 card with its Structure column out keeps the declaration cards of its file, goes only after them (the oldest of
 them first), and never while one of its declarations is being opened (`MapCards.makeRoomForCard`), so reading a
@@ -183,7 +192,9 @@ A preview uses current unsaved text when the file is already open; otherwise it 
 the JavaFX application thread, decoded as the editor would open it (BOM, then the `.editorconfig`
 charset, then UTF-8 with a single-byte fallback instead of U+FFFD) and with `\n` line endings. It is
 visibly marked read-only, has independent text/image zoom controls, and renders common bitmap image
-formats as well as syntax-highlighted text. Card text is set in the editor's font family and size
+formats as well as syntax-highlighted text. Its lock says what a card is for: "Preview — read only; Open to edit"
+(tooltip and accessible text), and the ? popover's Cards section opens with one sentence: cards are for a glance
+beside the map, the editor for reading and editing. Card text is set in the editor's font family and size
 (published on the editor window with the console and Diff fonts, `ProjectMapPreview.EDITOR_FONT_KEY`, and
 followed by that window's Map), and a new card opens at the −/+ text
 zoom last used on a card of the same Map. A file over the 160,000-character highlighting cap has its first
@@ -198,6 +209,31 @@ action promotes the previewed file to a normal editor tab. A file card cut at th
 file it holds ("Showing lines 1–7,515 of 9,135", or "Showing the first N lines" when the rest is not counted: past
 64 MB on disk, or an open buffer past 4,000,000 characters) and ends in a last line, "— Preview ends here; Open to
 read the rest —", which opens the file when clicked.
+
+**Find in a card.** Find typed in a focused card (`find.show`: Ctrl+F, Cmd+F, Emacs `C-s`), or the menu's **Find in
+Card…**, opens a find bar under its title bar: a field (a one-line selection is what it looks for), "k of N", ‹ ›
+and **Aa** (match case). Typing selects the first match from where the find began; Enter and Shift+Enter, F3 and
+Shift+F3 (`find.next` / `find.previous`), and `C-s` / `C-r` again in the field step through the matches, wrapping.
+It searches the text the card shows (a declaration card's lines), at most 10,000 matches counted. Escape closes the
+bar first and leaves the match selected; the next Escape closes the card. The find commands go through
+`KeyDispatcher.HANDLED_COMMANDS`, so they follow the keymap and never reach the editor's own find.
+
+**Title bar.** Title, lock, status, then a declaration card's ‹ ›, −/+, the pin, Structure (file cards), Notes,
+Open and ×. The title keeps room for the file's name (a declaration card's: up to its parameters), at most half
+the card (review 3, C11), and takes whatever the buttons leave up to its whole text before the status gets any;
+the status gives way first and is read in full from its tooltip. When even an empty status leaves too little room,
+optional buttons go in turn (`fitTitleBar`): −/+ (also when they would leave the status under 140 px), the pin
+unless pressed, ‹ ›, then Notes unless pressed. The menu has each of them.
+
+**Git context.** A card's status ends with "Last change: <author>, <relative date>" — a file card's file's last
+commit (`git log -1 -- <file>`), a declaration card's lines' (`git log -1 -L<start>,<end>:<file>`, given 2 s, else the
+file's) — with the subject and short hash in the status's tooltip, saying whether it is the lines' or the file's
+change. `GitService.lastChange` runs on the Git service's history lane, never on the FX thread, and caches each
+answer by HEAD, file and lines; HEAD is read at most every 3 s per folder, so a commit or checkout is followed on the
+next card refresh. Asked when a card opens, steps, follows a rename, and on every card refresh that is not the
+once-a-second poll; nothing outside a repository, with Git off (`ProjectTreeFileActions.gitLastChange`), or for an
+uncommitted file. The card menu adds **Annotate** (the editor's blame of the file, at a declaration card's
+declaration) beside **Show Git History**.
 
 An open preview is kept current without being moved or re-scrolled: a card that mirrors an open buffer
 looks for edits once a second while the Map is on screen and replaces only the range that changed (a buffer
@@ -229,7 +265,38 @@ right-clicked) and run the command there (`FileActions.followCode` → `FileWork
 editor window comes forward; Go to Related File typed in a card, and the menu's **Related Test / Subject**, reveal
 the file's test or subject on the Map (`search.RelatedFiles` names, looked up beside it and in the Map's file list;
 several are offered in a menu under the breadcrumb), and Show Git History typed in a card, or its menu's item, is
-the card's file's. A declaration row's menu has the same items at the declaration, with the caret on its name. Cards share two `project-map-preview-loader` threads that time out when idle, each
+the card's file's. A declaration row's menu has the same items at the declaration, with the caret on its name.
+
+**Linked reference cards** (explore position 5, `MapCardLinks`, `ProjectMapLinkSearch`). A code card's menu and a
+declaration row's menu (the Map's Structure columns and a card's) have **Show References as Cards** and **Show
+Callers as Cards**. A declaration card (or row, whose card opens first) asks about its declaration, its name found on
+its line; a file card asks about the name under the menu's place. The answer:
+
+- **From a language server** when one already runs for the file's language in this window, at the deepest session
+  root that holds it (`LspManager.runsFor`). The file is *lent* to that session (`LspManager.lendDocument`: a
+  `didOpen` under an opener of its own, so an editor tab opening or closing the file meanwhile keeps its own hold,
+  and `didClose` only when nothing holds it) for `textDocument/references` (usages only, as Find Usages asks) or
+  `prepareCallHierarchy` + `callHierarchy/incomingCalls`, and given back with the answer. No editor tab is opened,
+  the editor window is not raised, and nothing starts a server.
+- **By name** otherwise, and when the server does not answer that request: the name as a whole word in the
+  project's files of the same language (the Map's `ProjectIndex` list), for callers only where `(` follows; at most
+  20,000 files, 1 MB each, 2,000 places, 2 s (then the status line says it stopped early). The declaration itself,
+  and other declarations of that name (by the outline), are left out. The status line says no server answered.
+
+The places are grouped by the deepest declaration of their file's outline that holds them (the outlines of the
+first 12 files are read, waiting at most 4 s; places past them, or outside every declaration, group by file), in
+path and line order. The first six groups open as declaration cards (a file group: a file card scrolled to the
+place) **beside the card asked from** (`MapCards.drawnPlacement` takes that card as the row), at most 460 px wide
+and kept at that width, each joined to it by an **edge**: a line from the result card to the card asked from with an
+arrow at that end, and a label at its middle — "calls", "references", or "by name" (the line dashed), with "· N"
+for more than one place. The rest are listed by a **"+N more"** chip on the card's top edge; picking one opens its
+card with its edge. The edges of one question are an `MapCardLinks.EdgeSet`, a `CardAttachment` of the card asked
+from: drawn with the other connectors once per pulse, closed with that card; a result card closed or evicted takes
+its edge away. Labels sit just above the connector canvas, under every card. Each result card's accessible name
+and title tooltip end with what joins it ("total(App) calls App.java › add(int) (2 call sites)"), cleared when the
+edge goes; the chip's accessible text names what it lists. Asking the same card the same question again replaces
+its edges (the cards stay); a result card is never closed by the orphan check while the card it was found from is
+open. Cards share two `project-map-preview-loader` threads that time out when idle, each
 card's reads still in order; a card created before its host has a size waits for the size, not on `runLater`.
 
 Context menus use JavaFX auto-hide plus a next-pulse owner-scene press filter. This mirrors the
@@ -237,9 +304,12 @@ other Project menus and ensures a click elsewhere closes the menu even on platfo
 native popup grab misses the press.
 
 Files and folders with one or more bookmarks or Personal Notes show compact, independently colored
-indicators in both the Tree and Map. Personal Notes indicators are interactive: they open a separate editable note card attached to the same
-file or folder row by a connector. A note card and the code preview of the same file open and close
-independently, under the shared limit above. The options
+indicators in both the Tree and Map. Personal Notes indicators are interactive, and a file's notes are shown one
+way (explore round, position 11): a file row's badge, and its menu's **Personal Notes**, open the file's code card
+with its sticky notes out (`MapCards.openNotes`, below); a folder row's open the folder's editable note card,
+attached to its row by a connector. The note card of a file remains only as the list a code card's "+K more notes"
+sheet opens. A note card and the code preview of the same file open and close independently, under the shared
+limit above. The options
 menu's default-off “Hide all open Personal Notes” item temporarily hides those cards without closing them.
 A note card saves an edit on focus loss, Shortcut+Enter or close, comparing against the body the store
 last held. It follows the store: when notes change elsewhere it adopts the new bodies (an edit in
@@ -353,6 +423,26 @@ its bookmark and note actions off. Text that arrives before the outline is not c
 follows its declaration line when lines were added or removed above it, and otherwise holds the new text,
 still showing the old lines, until the outline says where the declaration went. No language server is started
 for a closed file; a declaration card the workspace brought back (below) waits for its file's outline.
+
+**Outlines of files with no tab from a running server** (explore round, position 10). When a server for a closed
+file's language already runs in this window, on a root that holds the file, past its handshake and with document
+symbols (`LspManager.outlinesClosedFile`), the file is read as above and lent to that session for one
+`documentSymbol` request (`LspManager.closedFileSymbols` over `lendDocument`, the loan the linked cards use too),
+the loan ending when the answer is in; a file some window has open is asked about as it is, so its unsaved text is
+never replaced, and a tab opened meanwhile keeps it open. The server's outline replaces the
+heuristic one; the heuristic one is shown if the server has not answered within 1.5 s (and replaced when it does),
+answers with nothing, fails, or takes over 8 s. A file past 1,000,000 characters or cut at the read cap is outlined
+by the heuristic only. The server is asked again only when the file changed on disk (or once, when a server starts
+after the file was first outlined). The wiring is `ProjectPanel.shareIndexes` → `ProjectMapStructure.ClosedFileSymbols`.
+
+**Declaration cards step.** A declaration card's ‹ › (and Alt+Page Up / Alt+Page Down, claimed through
+`DECLARATION_CARD_KEYS`, and the menu's **Previous / Next Declaration**) show the previous or next declaration of the
+same file, depth-first through its outline (`MapCards.cardsStep`), in the same card where it stands: the card is
+re-keyed to that declaration, its title, lines and gutter follow, its notes and Git context are read again, and
+another card already open on that declaration closes. The menu's **Show in Structure** selects its row in the file's
+Structure column: the file card's column when that card has it out, else the Map's own Structure column of the file
+(opened, with the columns of the declarations that hold it, and the row revealed — `Host.showInStructure`), else
+the file card's, which is opened for it.
 A file card whose file can be outlined has a **Structure** button in its title bar, before Notes. It sticks a
 **Structure column** beside the card (`ProjectMapCardStructure`): the same outline as the Map's Structure column,
 as an indented list in the same violet tint, with a lone top-level type opened. Each label is coloured as the
@@ -479,7 +569,8 @@ The options (⋯) menu in the navigation row holds **Compact rows** (default off
 `setCompactRows`, review 3 B15: 26-unit rows 4 apart instead of 32 and 9, and a column shows its filter, Show hidden
 and lock only while it is hovered, holds the selection or the keyboard, or has a filter, a Show hidden of its own or a
 lock — such a card grows upward by the controls' band, into the gap before it, so its rows never move), **Hide
-ignored and generated** (default off, `isHideIgnored()` / `setHideIgnored`, see Filters), **Project overview**
+ignored and generated** (default off, `isHideIgnored()` / `setHideIgnored`, see Filters), **Show recent changes**
+(default off, `isShowRecentChanges()` / `setShowRecentChanges`, see Activity below), **Project overview**
 (the Overview card, see below), **Compact folder chains** (see the user model), the
 default-on **Keep current zoom** and **Focus new column** options (`isKeepZoom()` / `isFocusNewColumn()` and their
 setters on the view), and the default-on **Single-click opens files** (`isSingleClickOpens()` /
@@ -488,8 +579,9 @@ folder therefore preserves the user's scale and brings the new column in from it
 when it fits beside the row that opened it, otherwise its header and first rows together with that row.
 Either effect can be disabled independently; disabling zoom preservation restores auto-fit on expansion.
 
-The filter row holds only filters and wraps instead of truncating; the selectors show their value alone
-("Source", "Left → Right") and carry the "Type:" / "Flow:" form as tooltip and accessible name. Breadcrumbs
+The filter row holds only filters and wraps instead of truncating; the type selector shows its value alone
+("Source") and carries the "Type:" form as tooltip and accessible name. The flow is in ⋯ → **Flow** (radio items,
+`canvasFlow()` / `canvasFlowItem(flow)`); the ⋯ menu also holds **Collapse All** and **Export ▸ PNG… / SVG…**. Breadcrumbs
 that do not fit collapse their middle into one "…" (whose tooltip lists the hidden folders) and keep the
 root and the last two crumbs. A crumb shows its name as written — mnemonic parsing is off, so `zz_generated.go`
 keeps its underscore (review 3 E4). A new selection replaces only the crumbs after the part its trail shares with
@@ -560,6 +652,18 @@ looked at again on the search thread; a created folder of more than 5,000 entrie
 regain marks the list stale, and the next search answers from it and lists again in the background, re-running
 the query when the list changed). On a 31,000-file repository the listing takes about 0.2 s and a query 6–15
 ms. A query that is still queued behind a newer keystroke is dropped unanswered.
+
+The list and the ranking below are the **project index** (`ProjectIndex`, refactor stage 2), implemented by
+`ProjectFileIndex` over `ProjectFileList`: it holds the lists of the roots in use (the Project's, and the Map's
+when it shows another folder; at most two) and is shared by three searches that keep their own UI. The Map
+search asks it for files and folders and answers from a stale list at once (`Freshness.AS_LISTED`). Search
+Everywhere's file rows (`IndexCoordinator.fileItems`, after `ensureSearchable` has the Project root listed) ask it
+for files only, from the list in hand on the FX thread, in the Map's order; a row's score only keeps that order
+and lets the file group compete with commands and symbols on its best path score as before (the symbol corpus
+is still the symbol index's own walk). The Project tree's filter asks it for the best 300 files and lists a stale
+list again first (`Freshness.CURRENT`), as its old per-keystroke walk always saw the disk; so it now finds files
+beyond the walk's 20,000 entries and 25 levels, ranks source before tests and project code before vendored code,
+and never lists `.git`.
 
 What a query asks for (`ProjectMapSearch.Query`): a name matches file and folder names (a folder only when
 the query is in its name as written, not scattered); a query with `/` is matched against the relative path
@@ -643,9 +747,59 @@ modification time, and relevant open, unsaved, or Git status from the loaded
 snapshot — preceded, over the eye, a chevron or a note badge, by what a click there does. Hover does no
 filesystem work.
 
+### Working sets and trails (Map explore, views)
+
+**Working sets** are named views of the Map, per workspace (`projectMapWorkingSets`, workspace schema v29,
+`config.ProjectMapWorkingSet`: a name and a `ProjectMapState`). ⋯ → **Working sets** ▸ *Save Current As…* asks for a
+name in the Map window's prompt and saves `bearingsState()` under it — the folders opened by hand, the selection, the
+zoom and pan, and the open code cards with their place, size, text zoom and Structure column — without the
+Back/Forward places. A name already used in the folder (ignoring case) replaces that set where it stands; a folder
+keeps at most 30. One item per set of the folder the Map shows (sets of other folders are kept but not listed) shows
+it again, and *Delete* ▸ removes one. Showing a set goes through the restart's path (`ProjectMapView.viewsApply`):
+the search is cleared, every card closes, the open folders become the set's, `bearingsRestore` brings back the
+selection (one more Back/Forward place), the surface fits again with the set's zoom and pan
+(`MapSurface.viewsRefit`), and the cards open once the map is laid out, a declaration card once its file's outline
+is in — what no longer exists is dropped, as after a restart. Local folders only (`bearingsState()` is null for a
+remote root).
+
+**Trails** are guided tours kept in the project, `.editora/map-trails/<name>.json` (`config.MapTrails`), so a team
+commits them next to `.editora/settings.json` and `.editora/run-configurations.json`. A trail is `{version, title,
+stops}`; a stop is `{file, declaration, startLine, endLine, title, note}` — `file` relative to the project with `/`,
+`declaration` the Map's declaration path below that file (`""` for the whole file), 1-based inclusive lines. The
+file name is the trail's name made safe on every OS (`MapTrails.fileName`: blanks to `-`, no `/\:*?"<>|`, no
+leading dot). Every write is atomic (`ConfigWriter.writeAtomic`). A file that is not a trail is listed with its
+reason ("broken (unreadable)", disabled) and never overwritten; a file whose `version` is newer than this build's is
+played but not edited or written (`MapTrails.NotWritableException`).
+
+⋯ → **Trails** ▸ *New Trail…* writes an empty trail and opens its editor; *Add This Card as a Stop* (also at the end of
+a code card's menu, `MapCards.Host.viewsCardMenu`) asks for the stop's note and appends the card used last (or the
+card whose menu it is): its file, its declaration for a declaration card, and its lines — a declaration's, else the
+selected lines, else the lines in sight (`ProjectMapPreview.viewsStopLines`). With no current trail, New Trail… comes
+first. *Play <name>* per trail, and *Edit* ▸ per trail.
+
+Playing (`ProjectMapTrails`) puts a bar at the top of the map area — ‹ *Stop 3 of 9* › the stop's title, Edit, × —
+above the cards (Escape in it closes it). Each stop reveals its file (`revealPath`) and opens its card through the
+restart's path (`ProjectMapView.viewsShowCard`: a `ProjectMapState.Card` with no place joins `bearingsPendingCards`,
+and opens beside its row once the map is laid out with the row on it — at the first fit on a Map that has only just
+been given its folder, else when the load that brings the row lands — and for a declaration once its file's outline
+is in). A whole-file card scrolls to the stop's lines and selects them (`ProjectMapPreview.viewsRevealLines`, applied
+after the opening line once the text is coloured). The note is stuck on the card as a read-only sheet in the accent
+colour (`ProjectMapTrailNote`, a `CardAttachment` held by `MapCards.viewsAttach`), tied to the stop's first line,
+moving, zooming, hiding and closing with the card. A stop whose file is gone says so in the status line and leaves
+the bar on it; a declaration no longer in the outline shows the stop's lines in the file instead. Moving on detaches
+the note and closes the card if the trail opened it; × closes the bar and detaches the note, leaving the card.
+
+*Edit* opens `ProjectMapTrailEditor`, a card over the map (not counted against the card limit): the stops in order
+with title, file:lines and note; Move Up / Move Down (Alt+↑/↓), Remove (Delete), Rename…, Note…, Play from Here
+(Enter, double-click) and Rename Trail… (which moves the file). Each change is written at once.
+
+A restart's declaration card, and a trail's declaration stop, wait for a real outline: `ProjectMapStructure.ensure`
+holds a LOADING placeholder at once, and `bearingsRestoreDeclarations` now skips it instead of dropping the card as
+gone.
+
 ## Layout and rendering
 
-`ProjectMapView.MapSurface` owns the canvas coordinate system. Node and column geometry is computed
+`MapSurface` owns the canvas coordinate system. Node and column geometry is computed
 in world coordinates (`computeWorldLayout`) and cached on everything it depends on (`LayoutKey`: the rows,
 column filters and Show hidden choices, what Hide unmatched keeps, flow, zoom, manual offsets, marker sets,
 font and the chain option), so a pan, a hover or a new selection only projects it through zoom and pan into
@@ -682,8 +836,22 @@ texture at 4,096 px by default, so a page is assembled from renders of at most 2
 denser screen). Output always uses a light palette (`outputPalette`, plus looked-up colour overrides
 for the rasterized row icons), whatever the live theme; it preserves the active flow, filters, open
 branches, compacted chains, the root as the first column's title and manual column positions, and omits the interactive column controls, the overview, focus and hover;
-`outputPaint` is set while it paints, which also collapses every header to its title line. Labels
-are bitmap, so the PDF is not searchable.
+`outputPaint` is set while it paints, which also collapses every header to its title line. The labels are
+pixels in the page images, so `renderOutput` also hands back, per page, each row's whole name and each column's
+title where the image draws it (`ProjectMapOutput.Label`, in image pixels); the PDF lays them over the picture as
+invisible text (text render mode 3, as an OCR'd scan carries its text: `ImagePdfWriter.writePages` with
+`TextBox`es, Inter embedded as a subset, the system fallback fonts for other scripts, each name stretched to the
+width the picture gives it). A viewer's Find, selection and copy reach the names; the page looks the same. Print
+does not need the text and leaves it out.
+
+**Export ▸ PNG…** snapshots the map area (`canvasViewImage`) at 2× with the zoom bar, overview, loading and
+no-match notices hidden for the shot. **Export ▸ SVG…** (`MapSurface.canvasSvg`, written by the pure
+`ProjectMapSvg`) lays the map out as output does and writes every column card with its title and count, every row
+(name cut as painted where it differs from its siblings, the whole name as its `<title>`, a mark for its kind,
+dimmed when ignored) and the connectors as cubic curves, in world units and the output's light palette. Both ask
+for the file with a Save dialog over the Map window (`canvasExportChooser`, named `<folder>-map.png|svg`, in the
+project folder) and write it off the FX thread through a temporary sibling (`canvasExportWriter`); the status line
+says where it went.
 
 Column cards are content-sized rather than uniform. For each branch column, the map measures every
 loaded entry name at the drawing font and reserves enough width for the full label, icon, status
@@ -760,13 +928,54 @@ never opens it by itself), which marks it seen and tells `setOnOverviewSeen`; �
 again with the facts worked out afresh. Its first line is the one-time orientation subtitle: what a column is, where
 to search, and that ? lists every key.
 
+### Activity: recent changes and owners (Map explore positions 3, 4)
+
+`ProjectMapActivity` holds what the Map shows of a project's activity. **Recent changes**: the ⋯ option **Show
+recent changes** (default off) tints each row by the commits of the last 90 days that touched it. The history is one
+streamed `git log --since=90.days --no-merges --no-renames --name-only --relative -- .` run in the Map's root
+(`GitService.recentChanges`, on the service's own `git-activity` lane, so a long read delays neither status nor the
+Git Log; the panel passes the window's service with `ProjectPanel.setMapGit`). `GitRecentChanges.Parser` (pure) counts
+each file's commits, each folder's (a commit once per folder, however many of its files it touched) and each folder's
+own files' (`direct`), and keeps the newest commit's author and time. The read is capped at 10,000 commits, 150,000
+file lines and 20 s; past a cap the newest part is kept and flagged truncated. The answer is kept per repository and
+HEAD (the last three), and every Git status push asks again, which costs one `rev-parse` while HEAD has not moved.
+Merges are left out. In a shallow clone the grafted boundary commits are skipped: git lists their whole tree as
+added, so a `--depth 1` clone (the Kubernetes and Spring fixtures) would show every file as changed once; such a clone
+shows no heat, and the Overview card says where its history stops. `--since` walks commits by committer date and
+stops at the first older one, as `git log` always does, so a history with backdated commits on top is cut there.
+
+A row's heat step (`heatLevel`, 0–4) compares its count with the busiest file (a file) or the busiest folder at its
+depth (a folder) on a log scale. The fill mixes `-state-amber` (probe `project-map-probe-heat`) in by
+`HEAT_TINT` (5–18%), less where a theme needs it so the label keeps 4.5:1 and muted ink 3:1 (`tinted`; Editora's own
+themes get the full tint), on unselected rows only; a heat meter along the row's foot, a quarter of the row's width
+per step, carries the heat on selected rows too (in the on-accent ink on the focused selection) and stands 3:1 off its
+fill (`meterInk`). Faded and dimmed rows keep their heat under the dimming. The tooltip adds "N commits in 90 days ·
+last: author, when".
+
+**Owners** (`ProjectMapOwners`): a GitHub-style `CODEOWNERS` (the first of `.github/`, the root and `docs/`; the last
+matching line wins; gitignore-like patterns, a trailing `/*` owning that folder's own files only, a line without owners
+leaving the path unowned) and Kubernetes-style `OWNERS` files (`approvers` and `reviewers`, top-level or under the
+`".*"` filter; the nearest folder's file that names someone wins). A `CODEOWNERS` line comes first, then `OWNERS`.
+No network and no GitHub API: aliases and teams show as written. Each shown row's owners are worked out on the
+activity worker (each folder's `OWNERS` read once) and its tooltip says "Owners: … (file)", and "Reviewers: …" when an
+`OWNERS` file names others.
+
+**The Overview card** gains **Most changed (90 days)**: the six folders whose own files were changed by the most
+commits (vendored and dependency folders and the root's own files left out; the history is read for the card even
+with the option off), and **Owners**: the project's and those of the top-level folders someone else owns.
+
 ## Architecture and data flow
 
 ```mermaid
 flowchart LR
     ProjectPanel[ProjectPanel] -->|root, query, Git and editor state| View[ProjectMapView]
-    View -->|background request plus generation| Model[ProjectMapModel]
-    Model -->|bounded entry snapshot| View
+    View --> Loader[MapLoader]
+    Loader -->|background request plus generation| Model[ProjectMapModel]
+    Model -->|listings| Listings[ListingService]
+    Model -->|bounded entry snapshot| Loader
+    Loader -->|snapshot still current| View
+    ProjectPanel -->|search| Index[ProjectIndex over ProjectFileList]
+    Index -->|ranked matches| View
     View --> Surface[MapSurface Canvas]
     View --> Preview[ProjectMapPreview]
     View -->|open files and declarations| Structure[ProjectMapStructure]
@@ -782,26 +991,40 @@ Responsibilities are split as follows:
   open state and its persistence, the filesystem watcher (watching the tree's and the map's open folders
   together), root, editor state, Git state, open-file action, and construction of the traditional context
   menu. It keeps the Map's own root (`mapRoot`, pinned in the No Project window), forwards the hidden-files
-  setting, reports in-app renames and moves (`pathRenamed`), and runs the Map's search over its file list
-  (`ProjectFileList`, `ProjectMapSearch`).
+  setting, reports in-app renames and moves (`pathRenamed`), and runs the Map's search over the project index
+  (`ProjectIndex`, below).
 - `ProjectMapWindow` owns only the stage: building it, mirroring the editor window's look, placement from
   the remembered bounds and maximized state (or large and centred on the editor window), telling the view
   when it starts and stops showing (`ProjectMapView.setShowing`), closing with the editor window, and
   telling a close by the user (remembered) from one by the editor window or the project (not).
-- `ProjectMapView` owns expansion (manual and per-search), row limits, selection history, breadcrumbs,
-  global controls, async reloads, the deferred print/PDF job, and the bounded collection of floating
-  cards: opening, placement, eviction, refresh scheduling, and closing the cards of a folder that is no
-  longer expanded.
+- `ProjectMapView` owns the search's landing and results, selection history, breadcrumbs, global controls, the
+  deferred print/PDF job, and the floating cards through `MapCards`; it is `MapLoader`'s host.
+- `MapLoader` (refactor stage 2) owns what is listed and the listing: expansion (manual and per-search), row
+  limits and "+N more", the reveal pins, the remembered roots, the request it builds from them, the background
+  load and its generation, and the pruning of a snapshot that lands. Its background and UI executors and the
+  listing clock are given, so `MapLoaderTest` drives superseded loads and renames during a load step by step.
+- `ListingService` owns the directory listings: the cache of watched folders, the timeout and the one listing
+  per folder, the remote reuse and the regain check (formerly `ProjectMapModel.Listings`).
 - `ProjectMapModel` is JavaFX-free. It loads bounded snapshots with per-directory facts, maintains
   independent branch expansions, groups entries by owning parent, applies ordering and filters,
   classifies file types, and determines emphasized ancestor paths.
-- `ProjectMapView.MapSurface` owns paint, layout, transforms, hit-testing, pointer/keyboard input,
-  column controls, icon snapshots, and accessibility text. The surface has the `PARENT` role (a plain group, not
-  a tree: it has no item nodes) and its accessible TEXT names the selection with its kind, open / unsaved / Git /
-  bookmark / Personal Notes / Structure states, the folder that holds it (relative to the root) and its place
-  among the rows its column draws (not those a filter took out, nor a "+N more" row); while a search stands, a
-  match also says "match k of N" (and "partial search"). Every change is announced with
-  `notifyAccessibleAttributeChanged`, as are the results strip's count and the status line (review 3 B11).
+- `MapSurface` (the view's inner class until refactor stage 2; it reaches the view through its `view` field)
+  owns paint, layout, transforms, hit-testing, pointer/keyboard input,
+  column controls, icon snapshots, and accessibility text. The surface has the `PARENT` role and its accessible
+  TEXT names the selection with its kind, open / unsaved / Git / bookmark / Personal Notes / Structure states,
+  the folder that holds it (relative to the root) and its place among the rows its column draws (not those a
+  filter took out, nor a "+N more" row); while a search stands, a match also says "match k of N" (and "partial
+  search"). Every change is announced with `notifyAccessibleAttributeChanged`, as are the results strip's count
+  and the status line (review 3 B11). Since the Map explore round (position 14, which reverses review 2's
+  position 7) one child, `MapAccessibleRows`, is a `TREE_VIEW` of the rows drawn in the viewport: one virtual
+  `TREE_ITEM` node per row on screen, named like the selection's summary without the folder ("README.md, file,
+  3 of 12, unsaved"), with SELECTED, EXPANDED, LEAF, DISCLOSURE_LEVEL, its parent and children among the rows on
+  screen, and its screen BOUNDS; REQUEST_FOCUS selects the row, FIRE does what a click does, EXPAND / COLLAPSE
+  open or close its folder or Structure column. The surface's FOCUS_ITEM is the selected row's node. The rows
+  are handed over once per paint while a screen reader listens (`Platform.isAccessibilityActive()`), and when one
+  asks for the children otherwise; columns off screen are skipped whole, so the work follows the screen (about
+  0.3 ms for a screen of rows over 1,200). A row keeps its node while it stays on screen; a node that leaves
+  the scene disposes its peer.
 - `ProjectMapPreview` owns one bounded read-only RichTextFX card, off-thread file loading and syntax
   highlighting, in-place refresh, drag/resize behavior, and promotion to an editor tab.
 - `ProjectMapStructure` owns the structure columns: which files and declarations have one open, the
@@ -830,7 +1053,8 @@ it is what opens the window.
 ## Threading, bounds, and lifecycle
 
 Filesystem listing runs on the single daemon `project-map-loader` executor, whose thread starts on the first
-load (the executor object exists with the view).
+load (the executor object exists with the view); `MapLoader` submits to it and hands results back on the FX
+thread.
 Each request captures the root, the expanded set, the hidden-files rules, the row limits and the pinned
 paths. An atomic generation is checked when a queued request starts and between directories, so a burst of
 requests lists the folders once, and obsolete results never reach the FX thread. A request made after
@@ -844,7 +1068,7 @@ sorts among the files). A load
 that outlasts 200 ms shows a "Loading…" label over the canvas, and an empty map reads "Loading…" rather than
 "No project items" while its first load is in flight.
 
-Listings go through `ProjectMapModel.Listings`. A folder the Project watcher follows (`ProjectPanel` hands
+Listings go through `ListingService`. A folder the Project watcher follows (`ProjectPanel` hands
 the watched set to `setWatchedDirectories` after every watch sync) keeps its sorted listing between loads,
 so opening a folder lists only that folder. A watcher event for a folder (`refresh(directories)`), a file
 rewritten there or saved by Editora (`listingsChanged`), and an in-app file operation (`refresh()`,
@@ -855,7 +1079,7 @@ taken within 2 s of the folder's last change, which a coarse clock could hide). 
 Editora's own windows — a file opened from the Map raises its editor window, Escape leaves the Map, a dialog
 closes — is not a regain at all (`StartupFocus` follows every stage's focus: a gain within 250 ms of another
 stage's loss is a move), unless Editora came back from another program through another of its windows since
-that window last refreshed. A remote folder has no local watcher: its listing is reused for 30 s (`Listings.REMOTE_TTL_MILLIS`) and dropped by an in-app change or a real regain, so a click does not cost one SFTP round trip per open folder. Each listing runs
+that window last refreshed. A remote folder has no local watcher: its listing is reused for 30 s (`ListingService.REMOTE_TTL_MILLIS`) and dropped by an in-app change or a real regain, so a click does not cost one SFTP round trip per open folder. Each listing runs
 on a worker (at most `MAX_LISTING_THREADS`, 4, at once) with a 10 s timeout: a folder that does not answer
 holds a "Not responding" stub (nothing below it is forgotten). Its listing stays the folder's only one until
 it ends: through any number of invalidations its next loads say "Not responding" at once, without waiting
@@ -864,11 +1088,22 @@ invalidation joins a listing begun before it and lists again once that one has e
 
 `ProjectMapModel.load` reads only the root and the expanded directories, under two limits:
 
-- **per directory**, `DIRECTORY_CHUNK` (300) rows. A longer directory ends in a "+N more…" row; activating
-  it (click, Enter, or the arrow that expands) raises that directory's limit by another chunk, and a selection
-  on it moves to the first row that arrived. The breadcrumb never ends in a placeholder: its trail stops at the
-  folder.
-- **overall**, `MAX_VISIBLE_ITEMS` (1,200) real rows. Pinned paths — the search's matches and a revealed
+- **per directory**: on a local root a column lists its whole folder, up to `WHOLE_FOLDER_LIMIT` (50,000)
+  entries (`Request.wholeFolders`, set by `MapLoader.canvasWholeFolders`, Map explore position 15), so a
+  5,000-file folder scrolls end to end; a folder of files on a link-counting Linux file system is listed by name
+  only and its rows carry no size or time (`Entry.size() < 0`), which the tooltip reads for the one row it
+  describes. A remote root keeps `DIRECTORY_CHUNK` (300) rows: a longer directory ends in a "+N more…" row;
+  activating it (click, Enter, or the arrow that expands) raises that directory's limit by another chunk, and a
+  selection on it moves to the first row that arrived. The breadcrumb never ends in a placeholder: its trail
+  stops at the folder.
+- **overall**, `MAX_VISIBLE_ITEMS` (1,200) real rows. A folder listed whole is charged at most
+  `NEAR_VIEWPORT_ROWS` (300, a screen of rows at the smallest zoom that draws them) — the rows that can be near
+  the viewport, which is what the surface draws, names and hit-tests — and lists the rest free; one the budget
+  cut short before that keeps its first rows and "+N more", with no gap. A column of more than 512 rows takes
+  its width from its 96 longest names (`canvasWidestCandidates`), so its first layout measures a hundred labels.
+  Measured headless (software pipeline, a shared machine): the k8s fixture's 1,473-entry corpus folder is
+  revealed (listed, laid out, shown) in 0.25–0.5 s, a full paint takes 4–10 ms and a pan with its paint 0.8–1.4 ms
+  on average; a 5,000-file folder beside a 900-file one: 0.07–0.16 s, 3.5–6 ms and 2–3 ms. Pinned paths — the search's matches and a revealed
   file — are charged first, with the rows that lead to them, wherever they sort. Then the priority folders
   (`Request.priority`: the column the selection is in, and the folder whose rows "+N more" raised last)
   reserve their rows up to their row limit, so the folder being read keeps its rows when another column opens;
@@ -936,7 +1171,10 @@ window's bounds (`projectMapWindowBounds`, v24) and maximized state (`projectMap
 flow, and the two navigation options; v27 also adds `projectMapSingleClickOpens`,
 `projectMapCompactChains` and `projectMapFollowActiveFile` for three ⋯ options; v28 adds `projectMapState` (above)
 and `projectMapCompactRows`, `projectMapHideIgnored` and `projectMapOverviewSeen` for the review-3 ⋯ options, written
-through the view's change callbacks (`setOnCompactRowsChanged`, `setOnHideIgnoredChanged`, `setOnOverviewSeen`). The
+through the view's change callbacks (`setOnCompactRowsChanged`, `setOnHideIgnoredChanged`, `setOnOverviewSeen`). v29 adds
+`projectMapWorkingSets`, the named views of ⋯ → Working sets (see *Working sets and trails*),
+`projectMapShowRecentChanges` for ⋯ "Show recent changes", and a kept card's `pinned`; trails are files of the
+project, not workspace state. The
 status/type filters are not persisted.
 
 The Map recovers from every failure it meets (an empty listing, an unmarked row, no outline, a card left
@@ -972,6 +1210,10 @@ The focused coverage lives in:
   key ownership, content-sized columns, hidden toggles, directional layouts and arrow semantics,
   complete-map output snapshots and live viewport restoration,
   movable/locked columns, overview navigation, and wheel zoom;
+- `ProjectMapLinksTest` for linked reference cards' grouping, edge text, ends and accessible descriptions, and the
+  name match; `ProjectMapLinksFxTest` for callers and references from a fake language server with the file lent and
+  given back and no editor opened, the by-name answer with dashed "by name" edges, the "+N more" chip, result cards
+  outliving the orphan check, and an `@name` Map search through the real `IndexCoordinator`;
 - `ProjectMapStructureTest` for which files get a Structure icon, declaration path segments, a card's lines
   (block, doc comment, headings, field), and the order of a structure column;
 - `ProjectMapStructureFxTest` for the Structure icon, nested columns and the lone-class rule, declaration cards
@@ -987,8 +1229,17 @@ The focused coverage lives in:
   labelled blocks and Fit below 40%, compact rows and controls on demand, the Overview card, module badges and folder
   tooltips, dimmed and hidden ignored rows, crumbs with underscores, the help's search section, and the elision,
   ignore rules and project facts as pure functions;
+- `GitRecentChangesTest`, `GitServiceRecentChangesTest` (a small repository with real history, a subfolder root,
+  the cache per HEAD, shallow clones), `ProjectMapOwnersTest`, `ProjectMapActivityTest` and `ProjectMapActivityFxTest`
+  for recent changes and owners: counts, caps, heat steps, the tint and meter in Editora Light and Dark and on the
+  selection, tooltips and the Overview card's sections; `StyleContrastTest` holds the tint's floors in every theme;
 - `ProjectMapNoteCardFxTest`, `ProjectMapPreviewCardFxTest`, `ProjectMapPreviewMenuEscapeFxTest` and
   `ProjectMapStickyNotesTest` for note cards, code cards, a card menu's Escape, and sticky notes;
+- `ProjectMapCardsExploreFxTest` / `ProjectMapCardsExploreTest` for the explore round's cards: find in a card, a
+  pinned card and the refused ninth, declaration stepping and Show in Structure (card and Map columns), a card's Git
+  context and its cache per HEAD, closed-file outlines from a running server (and the heuristic fallback and wait),
+  a file's notes on its code card, and the glance text and title bar at the minimum width; `GitServiceLastChangeTest`
+  and `LspClosedFileSymbolsFxTest` (no running server: nothing asked, nothing started);
 - `ProjectMapWindowReviewFxTest` for the pinned root in the No Project window, the Map returning with its
   project, cards and row states across a close and reopen, the theme mirror, a maximized window, New Folder
   and Rename from the Map, an unreadable folder's status line, Reveal Active File and its option, a card's
@@ -1008,6 +1259,13 @@ The focused coverage lives in:
   across edits, overloads and deletion, re-anchored notes, placement, sticky-note overflow and counts,
   outlines in more languages, keyboard move and resize, binary and large files, the editor font, and the
   shared loader threads;
+- `ProjectMapViewsFxTest` for working sets (saved, listed for their folder only, replaced by name, shown again with
+  their folders, selection, zoom and cards, deleted) and trails (made from a file card's selected lines and a
+  declaration card through the card menu, played on a Map that has only just been given its folder, the note sheet,
+  stepping closing the card the trail opened, a malformed trail and a stop whose file is gone, the editor's reorder,
+  remove, retitle, note and rename), and a restart's declaration card waiting for its outline; `MapTrailsTest` for
+  the trail files (layout, malformed and newer files, rename, safe names) and `WorkspaceStateV29Test` for the sets in
+  the workspace;
 - `ProjectMapMessagesTest` that every `project.map.*` string is used, and `ProjectMapLogTest` for the
   debug-log record of a failure the Map recovers from.
 

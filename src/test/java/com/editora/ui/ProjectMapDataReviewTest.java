@@ -12,7 +12,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import com.editora.ui.ProjectMapModel.Entry;
-import com.editora.ui.ProjectMapModel.Listings;
 import com.editora.ui.ProjectMapModel.PlaceholderKind;
 import com.editora.ui.ProjectMapModel.Request;
 import com.editora.ui.ProjectMapModel.Snapshot;
@@ -207,7 +206,7 @@ class ProjectMapDataReviewTest {
         Path watched = folderWithFiles(root, "watched", 3);
         Path unwatched = folderWithFiles(root, "unwatched", 3);
         Set<Path> expanded = Set.of(root, watched, unwatched);
-        try (Listings listings = new Listings(5_000, null)) {
+        try (ListingService listings = new ListingService(5_000, null)) {
             listings.setWatched(Set.of(root, watched));
             ProjectMapModel.load(new Request(root, expanded, false), listings);
             assertEquals(3, listings.listedForTest.get(), "every folder is listed the first time");
@@ -235,7 +234,7 @@ class ProjectMapDataReviewTest {
     void aCachedListingThatLacksAnOpenFolderIsListedAgainBeforeTheWatcherCatchesUp() throws Exception {
         Path root = root();
         folderWithFiles(root, "old", 2);
-        try (Listings listings = new Listings(5_000, null)) {
+        try (ListingService listings = new ListingService(5_000, null)) {
             listings.setWatched(Set.of(root));
             ProjectMapModel.load(new Request(root, Set.of(root), false), listings);
             assertTrue(listings.cached(root, false));
@@ -261,7 +260,7 @@ class ProjectMapDataReviewTest {
         CountDownLatch recovered = new CountDownLatch(1);
         java.util.concurrent.atomic.AtomicInteger slowListings = new java.util.concurrent.atomic.AtomicInteger();
         Set<Path> expanded = Set.of(root, slow, fine, inside);
-        try (Listings listings = new Listings(300, directory -> {
+        try (ListingService listings = new ListingService(300, directory -> {
             if (directory.equals(slow)) {
                 slowListings.incrementAndGet();
                 try {

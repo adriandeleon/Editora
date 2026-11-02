@@ -433,6 +433,22 @@ public final class PdfExportService {
             boolean landscape,
             Path out,
             Consumer<Result> onResult) {
+        exportFxPages(pages, pointsPerPixel, pageSize, landscape, java.util.List.of(), out, onResult);
+    }
+
+    /**
+     * As above, with {@code texts.get(i)} written over page {@code i} as invisible text, so the PDF is
+     * searchable (see {@link ImagePdfWriter#writePages(java.util.List, double, String, boolean, java.util.List,
+     * Path)}).
+     */
+    public void exportFxPages(
+            java.util.List<Image> pages,
+            double pointsPerPixel,
+            String pageSize,
+            boolean landscape,
+            java.util.List<java.util.List<ImagePdfWriter.TextBox>> texts,
+            Path out,
+            Consumer<Result> onResult) {
         submit(onResult, () -> {
             Result result;
             try {
@@ -446,7 +462,7 @@ public final class PdfExportService {
                 if (converted.isEmpty()) {
                     throw new IllegalStateException("nothing to export (the map produced no image)");
                 }
-                ImagePdfWriter.writePages(converted, pointsPerPixel, pageSize, landscape, out);
+                ImagePdfWriter.writePages(converted, pointsPerPixel, pageSize, landscape, texts, out);
                 result = new Result(true, "");
             } catch (Throwable e) {
                 LOG.log(java.util.logging.Level.SEVERE, "JavaFX image PDF export failed", e);
