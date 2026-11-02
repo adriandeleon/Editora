@@ -41,6 +41,14 @@ final class WindowCommandRegistrar {
         }
     }
 
+    /** Steps ({@code ±1}) or closes ({@code 0}) the Project Map's playing trail; says so when none plays. */
+    private void projectMapTrail(int delta) {
+        ProjectPanel panel = host.projectPanel();
+        if (panel == null || !panel.mapTrailCommand(delta)) {
+            host.setStatus(tr("status.projectMap.noTrail"));
+        }
+    }
+
     interface Host {
         WindowChromeCoordinator chrome();
 
@@ -977,6 +985,10 @@ final class WindowCommandRegistrar {
         // The Project Map's two toolbar buttons as commands, so the palette and the keymaps reach them.
         host.registry().register(Command.of("projectMap.print", () -> projectMapOutput(true)));
         host.registry().register(Command.of("projectMap.exportPdf", () -> projectMapOutput(false)));
+        // A playing trail's stops (review 4 A4); on the map, Shortcut+→ / Shortcut+← and Escape do the same.
+        host.registry().register(Command.of("projectMap.trailNext", () -> projectMapTrail(1)));
+        host.registry().register(Command.of("projectMap.trailPrevious", () -> projectMapTrail(-1)));
+        host.registry().register(Command.of("projectMap.trailClose", () -> projectMapTrail(0)));
         host.registry().register(Command.of("markwhen.toggleView", host.previews()::toggleMarkwhenView));
         host.registry().register(Command.of("structured.toggleView", host.previews()::toggleStructuredView));
         // Two file-type-agnostic view-mode toggles replace the former per-type view.toggle*Preview palette

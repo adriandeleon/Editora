@@ -261,6 +261,11 @@ final class MapCards {
             }
 
             @Override
+            public @Nullable ProjectMapPreview card(Path key) {
+                return previews.get(key);
+            }
+
+            @Override
             public void touch(ProjectMapPreview card) {
                 touchCard(card, false);
             }
@@ -449,6 +454,11 @@ final class MapCards {
         return pinnedCards.contains(card);
     }
 
+    /** Whether {@code card} is still open. For tests. */
+    boolean isOpenForTest(Region card) {
+        return cardTouches.containsKey(card);
+    }
+
     /** The code card open under {@code key} (a file's path or a declaration row's), or null. */
     @Nullable
     ProjectMapPreview codeCard(Path key) {
@@ -596,7 +606,11 @@ final class MapCards {
         closeAllPreviews();
     }
 
-    /** Closes the cards of files at or under {@code directory} (its column closed). */
+    /**
+     * Closes the cards of files at or under {@code directory} (its column closed, Collapse All, Close Other Branches),
+     * but not a pinned card nor a linked result card, which the orphan check keeps while its source card is open
+     * (review 4, D4).
+     */
     void closeUnder(Path directory) {
         closePreviewsUnder(directory);
     }
@@ -606,8 +620,10 @@ final class MapCards {
      * or "Hide all open Personal Notes" are not on screen and stay.
      */
     boolean closeVisible() {
-        List<ProjectMapPreview> cards =
-                previews.values().stream().filter(ProjectMapPreview::isVisible).toList();
+        // A pinned card is kept until its own × or Escape in it closes it (review 4, position 3).
+        List<ProjectMapPreview> cards = previews.values().stream()
+                .filter(card -> card.isVisible() && !pinnedCards.contains(card))
+                .toList();
         List<ProjectMapNotePreview> notes = notePreviews.values().stream()
                 .filter(ProjectMapNotePreview::isVisible)
                 .toList();
@@ -1142,6 +1158,7 @@ final class MapCards {
             if (card instanceof ProjectMapPreview code) {
                 attachments(code).forEach(CardAttachment::raise); // what is stuck on it stays on it
             }
+            links.linksRaiseChips(); // a "+N more" chip is never under a card (review 4, C3)
         }
     }
 
@@ -1358,9 +1375,21 @@ final class MapCards {
         }
         ProjectMapStructure.Node target = declarations.get(next);
         ProjectMapPreview other = previews.get(target.path());
+        if (other != null && other != card && pinnedCards.contains(other)) {
+            // The declaration is open on a pinned card, which is kept (review 4, position 3): the keyboard goes there,
+            // and this card, unless pinned too, closes rather than show the same lines twice.
+            touchCard(other, true);
+            other.focusContent();
+            if (!pinnedCards.contains(card)) {
+                closePreview(card);
+            }
+            return;
+        }
         if (other != null && other != card) {
             closePreview(other);
         }
+        // What the card's questions found was about the declaration it showed (review 4, C5).
+        List<ProjectMapPreview> results = links.cardChanged(card);
         previews.remove(key);
         previews.put(target.path(), card);
         card.showDeclaration(rangeOf(target.symbol()));
@@ -1368,6 +1397,7 @@ final class MapCards {
         updateCardNotes(card);
         cardsUpdateStepping(card);
         cardsRequestLastChange(card);
+        linksCloseResults(results);
         repaintPreviewConnectors(); // its connector now meets the new declaration's row
     }
 
@@ -1650,10 +1680,15 @@ final class MapCards {
     private boolean makeRoomForCard(@Nullable ProjectMapPreview keep) {
         while (previews.size() + notePreviews.size() >= MAX_OPEN_PREVIEWS) {
             // A pinned card never goes (Map explore round, position 7).
-            Region oldest = oldestCard(card -> card != keep && card != overviewCard && !pinnedCards.contains(card));
+            // Nor, while an answer opens its result cards, the card it was asked from or its other results (C4).
+            Region oldest = oldestCard(card -> card != keep
+                    && card != overviewCard
+                    && !pinnedCards.contains(card)
+                    && !links.linksKeepsWhileOpening(card));
             if (oldest instanceof ProjectMapPreview code && cardStructures.containsKey(code)) {
                 Set<ProjectMapPreview> members = cardGroupMembers(code);
-                Region member = oldestCard(card -> members.contains(card) && !pinnedCards.contains(card));
+                Region member = oldestCard(card ->
+                        members.contains(card) && !pinnedCards.contains(card) && !links.linksKeepsWhileOpening(card));
                 if (member != null) {
                     oldest = member; // its owner waits until the cards it keeps are gone
                 }
@@ -1811,8 +1846,8 @@ final class MapCards {
     }
 
     private void closePreview(ProjectMapPreview preview) {
-        if (preview == null) {
-            return;
+        if (preview == null || !cardTouches.containsKey(preview)) {
+            return; // closed already (with the card it was found from, say)
         }
         boolean focused = focusReturnsFrom(preview);
         previews.entrySet().removeIf(entry -> entry.getValue() == preview);
@@ -1821,7 +1856,8 @@ final class MapCards {
         cardsGitRequests.remove(preview);
         closeCardNotes(preview);
         closeCardStructure(preview);
-        links.cardClosed(preview); // its edges, and the edge to it from the card it was found from
+        // Its edges, and the edge to it from the card it was found from; the result cards it opened go with it.
+        List<ProjectMapPreview> results = links.cardClosed(preview);
         CardAttachment views = viewsAttachments.remove(preview);
         if (views != null) {
             views.dispose();
@@ -1832,6 +1868,19 @@ final class MapCards {
         preview.dispose();
         repaintPreviewConnectors();
         focusReturnToMap(focused);
+        linksCloseResults(results);
+    }
+
+    /**
+     * Closes the result cards an answer opened, once the card it was asked from closed or stepped (review 4, C11):
+     * not a pinned one, nor one another open card's answer still holds.
+     */
+    private void linksCloseResults(List<ProjectMapPreview> results) {
+        for (ProjectMapPreview result : results) {
+            if (cardTouches.containsKey(result) && !pinnedCards.contains(result) && !links.isResult(result)) {
+                closePreview(result);
+            }
+        }
     }
 
     private void closeAllPreviews() {
@@ -1871,6 +1920,8 @@ final class MapCards {
         List<ProjectMapPreview> closing = previews.entrySet().stream()
                 .filter(entry -> entry.getKey().startsWith(directory))
                 .map(Map.Entry::getValue)
+                // Pins mean keep (review 4, D4); a result card goes with the card it was found from.
+                .filter(card -> !pinnedCards.contains(card) && !links.isResult(card))
                 .toList();
         closing.forEach(this::closePreview);
         List<ProjectMapNotePreview> closingNotes = notePreviews.entrySet().stream()
@@ -1893,8 +1944,11 @@ final class MapCards {
             return;
         }
         List<ProjectMapPreview> closing = previews.entrySet().stream()
-                // A linked result card stays while the card it was found from does (explore 5).
-                .filter(entry -> cardOrphaned(root, entry.getKey(), shown) && !links.isResult(entry.getValue()))
+                // A linked result card stays while the card it was found from does (explore 5), a pinned card always
+                // (review 4, position 3).
+                .filter(entry -> cardOrphaned(root, entry.getKey(), shown)
+                        && !links.isResult(entry.getValue())
+                        && !pinnedCards.contains(entry.getValue()))
                 .map(Map.Entry::getValue)
                 .toList();
         closing.forEach(this::closePreview);

@@ -171,21 +171,22 @@ class MapCardLinksFxTest {
             FxTestSupport.runOnFx(() -> {
                 assertTrue(h.cards().linksAvailable());
                 h.cards().showLinks(readme, MapCardLinks.Kind.CALLERS, 0, 6);
-                assertEquals(tr("project.map.links.findingCallers", "README.md"), h.last(), "no name yet: the file");
+                assertEquals(
+                        tr("project.map.links.findingCallersUnnamed"), h.last(), "no name yet, nor a file's (C12)");
                 MapCardLinks.Request first = h.source().asked.getFirst();
                 assertNull(first.name());
                 assertEquals(6, first.column());
                 h.cards().showLinks(readme, MapCardLinks.Kind.CALLERS, 0, 6); // asked again: the first is stale
                 h.cards().showLinks(readme, MapCardLinks.Kind.REFERENCES, 0, 6);
-                assertEquals(tr("project.map.links.findingReferences", "README.md"), h.last());
+                assertEquals(tr("project.map.links.findingReferencesUnnamed"), h.last());
 
                 h.source().answer(0, answer(List.of(new MapCardLinks.Hit(text, 2, 11, 1, null)), false, null));
                 assertTrue(h.links().setsForTest(readme).isEmpty(), "an answer to an older question is dropped");
 
                 h.source().answer(1, new MapCardLinks.Answer(List.of(), MapCardLinks.Via.SERVER, false, null, null));
-                assertEquals(tr("project.map.links.noCallers", ""), h.last());
-                h.source().answer(2, MapCardLinks.Answer.none(MapCardLinks.Via.NAME, "No server ran."));
-                assertEquals("No server ran. " + tr("project.map.links.noReferences", ""), h.last());
+                assertEquals(tr("project.map.links.noCallersUnnamed"), h.last(), "no empty name in the text");
+                h.source().answer(2, MapCardLinks.Answer.none(MapCardLinks.Via.NAME, "No server ran.", "go"));
+                assertEquals("No server ran. " + tr("project.map.links.noReferences", "go"), h.last());
 
                 h.cards().showLinks(readme, MapCardLinks.Kind.CALLERS, 0, 6);
                 h.cards().close(readme);
@@ -374,7 +375,7 @@ class MapCardLinksFxTest {
                         List.of("calls"),
                         set.labelsForTest().stream().map(Label::getText).toList());
                 assertTrue(
-                        h.said().contains(tr("project.map.links.foundCallers", 1, "helper", 1, 0)),
+                        h.said().contains(tr("project.map.links.foundCallersChip", 1, "helper", 1, 0)),
                         h.said().toString());
             });
         }
@@ -425,8 +426,12 @@ class MapCardLinksFxTest {
 
             fake.failEverything = true;
             MapCardLinks.Answer failed = ask(search, root, MapCardLinks.Kind.REFERENCES, app, 1, 6);
-            assertTrue(failed.hits().isEmpty());
+            assertEquals(MapCardLinks.Via.NAME, failed.via(), "a server that failed: matched by name (review 4, C6)");
+            assertEquals(
+                    List.of(app, use),
+                    failed.hits().stream().map(MapCardLinks.Hit::file).toList());
             assertTrue(failed.note().startsWith("The language server did not answer ("), failed.note());
+            assertTrue(failed.note().endsWith("so the name was matched."), failed.note());
             fake.failEverything = false;
 
             MapCardLinks.Answer python = ask(search, root, MapCardLinks.Kind.CALLERS, script, 0, 4);

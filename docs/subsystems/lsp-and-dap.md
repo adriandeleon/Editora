@@ -76,7 +76,11 @@ debug session runs inside its jdtls, so `DapManager` retains that session until 
 A file no editor tab has open can be *lent* to the session that already runs for it (`LspManager.lendDocument`,
 for the Project Map's linked reference cards): a `didOpen` under an opener of its own, so the file-keyed requests
 (references, call hierarchy, …) reach that server, and a `didClose` when the handle is run and nothing else holds
-the document. It starts no server and opens no editor; `runsFor(file)` says whether one runs.
+the document. Overlapping loans of one file (a closed-file outline and a links question) share the first loan's
+opener and count: `didClose` goes only when the last of them ends (Map review 4, C13). It starts no server and opens
+no editor; `runsFor(file)` says whether one runs. `prepareCallHierarchy` and `callHierarchyChildren` take an optional
+`onError`, as `references` does, so a failed or timed-out request is not read as "no callers" (the session's
+futures no longer turn a failure into an empty list).
 
 [`lsp/LspManager`](../../src/main/java/com/editora/lsp/LspManager.java) is the UI-facing facade
 (mirrors `MermaidService`). It keys sessions by `serverId + " " + root.toUri()` — **not** by

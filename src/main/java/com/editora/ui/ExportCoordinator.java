@@ -558,6 +558,9 @@ final class ExportCoordinator {
 
     /** What the user should know about how the map met the page, or null when it simply fitted. Pure. */
     static @Nullable String projectMapOutputNote(ProjectMapOutputPlan.Plan plan) {
+        if (plan.pageCapped()) { // the map needed more pages than one output makes (Map review 4 D1)
+            return tr("status.projectMap.outputCapped", plan.pages().size());
+        }
         if (plan.detailReduced()) {
             return tr("status.projectMap.outputCannotKeepDetail", plan.pages().size());
         }

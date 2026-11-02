@@ -91,6 +91,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Project Map: pins, linked cards and trails after Map review 4.**
+  - A pinned card stays until you close it with its own ×: Collapse All, Close Other Branches, closing its folder,
+    Escape on the map, the orphan check and a trail moving on all leave it open.
+  - Result cards from Show References / Callers as Cards close with the card they were asked from (unless pinned),
+    open at the call with the name selected, and put the code nearest the declaration first, tests last. Stepping
+    the asked card to another declaration ends its question.
+  - Ctrl+→ / Ctrl+← (Cmd on macOS) step a playing trail from the map, its bar or a note, and Escape ends the trail
+    before it closes cards. New commands: Project Map: Next Trail Stop, Previous Trail Stop, Close Trail. Showing a
+    working set ends a playing trail.
+  - Print, PDF and SVG show a long folder by its first 300 rows and "+N more", and one print or PDF makes at most 40
+    pages. Whole folders list at most 60,000 rows between them.
+  - Turning on Show recent changes says on the Map's status line why nothing is tinted (a shallow clone, no Git
+    history, a quiet or failed read) or that only the newest commits were read. Recent changes follow renamed files.
+    Most changed counts commits to each folder's own files and leaves out generated, vendored, ignored and deleted
+    folders.
 - **Search Everywhere and the Project tree filter use the Project Map's file list.** One list of the project's files,
   kept current as you work, and one ranking: the name as typed first, then the project's own source, then vendored
   code, then tests. Deep and very large projects are searched completely (the tree filter no longer stops at 20,000
@@ -138,6 +153,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
 
 ### Fixed
+
+- **Project Map: the explore round's features (Map review 4).**
+  - Print or PDF with a long folder open no longer freezes Editora (27 s and 1,613 pages for a 50,000-file folder;
+    now 10 pages in under half a second). Paint with 50,000-file folders open stays at a few milliseconds.
+  - Export ▸ PNG no longer has a blank band at the top or loses the bottom of the view.
+  - Show References / Callers as Cards: Go methods group under their method, so other types' same-named methods are
+    not counted as callers; the "+N more" button is no longer hidden under the result cards; a question no longer
+    evicts its own first results when cards are pinned (places that get no card are listed under "+N more"); a
+    failed or timed-out call hierarchy is no longer reported as "No callers found" — the name is matched instead.
+  - F3 / Shift+F3 in a card's find field step through matches in every keymap (in Emacs they started a macro).
+  - Recent changes and Most changed follow a pull, checkout or commit made on a clean tree; files whose names hold
+    `"` or `\` and submodule rows show their heat; a deep folder is never hotter than its parent; edited owner
+    files are read again; a read that timed out is tried again and the window follows the date.
+  - Owners: an OWNERS file that names only reviewers shows them as reviewers and takes the owners from the nearest
+    folder above. GitLab CODEOWNERS (`.gitlab/CODEOWNERS`, section default owners) is read. The Overview no longer
+    cuts a folder name to "…" beside a long owner list.
+  - A card's "Last change" no longer names a shallow clone's single commit, and stays right for a declaration below
+    uncommitted edits.
+  - Trails: stepping on or closing before a stop's card appeared no longer leaves it open; a hand-named trail file
+    (`Kubelet tour.json`) plays, edits and takes stops; the trail editor no longer writes over a trail changed on
+    disk; a trail with more than 200 stops or unknown fields is read-only instead of cut; a stop past its file's end
+    says so; a closed stop card can be reopened from the bar; a stop's note avoids covering the map's columns.
+  - A working set (and a restart) brings back its exact zoom and pan on a large project.
+  - Language servers: overlapping loans of one file no longer close it on the server while it is still asked about.
+  - A file created while the project's file list was being built no longer goes missing from the Map search,
+    Search Everywhere and the tree filter.
 
 - **HTML Live Preview: a file's old name kept serving its editor text (HTML review 3).**
   - After Save As, Encrypt File or a rename (tab menu or Project tree, a file or a whole folder), the preview kept

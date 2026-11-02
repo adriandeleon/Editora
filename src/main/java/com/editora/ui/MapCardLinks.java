@@ -108,7 +108,12 @@ final class MapCardLinks {
 
         /** Nothing found, with why. */
         static Answer none(Via via, @Nullable String note) {
-            return new Answer(List.of(), via, false, note, null);
+            return none(via, note, null);
+        }
+
+        /** Nothing found for {@code name}, with why (review 4, C12: the status names what was asked about). */
+        static Answer none(Via via, @Nullable String note, @Nullable String name) {
+            return new Answer(List.of(), via, false, note, name);
         }
     }
 
@@ -148,6 +153,10 @@ final class MapCardLinks {
         /** Whether {@code card} is still open. */
         boolean isOpen(ProjectMapPreview card);
 
+        /** The code card open under {@code key}, or null (review 4: a card open before the question is not its own). */
+        @Nullable
+        ProjectMapPreview card(Path key);
+
         /** Counts as use of {@code card}: it is not the one evicted to make room for its results. */
         void touch(ProjectMapPreview card);
 
@@ -180,6 +189,8 @@ final class MapCardLinks {
     private final List<Pending> pending = new ArrayList<>();
     /** Result cards to place beside the card they were asked from, by key, until placed. */
     private final Map<Path, ProjectMapPreview> placeBeside = new HashMap<>();
+    /** The answer whose result card is opening now: its card and its other results are not evicted for it (C4). */
+    private @Nullable EdgeSet filling;
 
     MapCardLinks(Cards cards, ProjectMapStructure structure, Pane canvasHost, Node connectorLayer) {
         this.cards = cards;
@@ -212,12 +223,17 @@ final class MapCardLinks {
         asked.computeIfAbsent(from, ignored -> new java.util.EnumMap<>(Kind.class))
                 .put(request.kind(), id);
         String name = request.name();
-        String what = name == null || name.isBlank() ? com.editora.config.PathDisplay.fileName(request.file()) : name;
-        cards.status(tr(
-                request.kind() == Kind.CALLERS
-                        ? "project.map.links.findingCallers"
-                        : "project.map.links.findingReferences",
-                what));
+        boolean callers = request.kind() == Kind.CALLERS;
+        // A file card's name is found only once its text is read: until then the status names no file (C12).
+        cards.status(
+                name == null || name.isBlank()
+                        ? tr(
+                                callers
+                                        ? "project.map.links.findingCallersUnnamed"
+                                        : "project.map.links.findingReferencesUnnamed")
+                        : tr(
+                                callers ? "project.map.links.findingCallers" : "project.map.links.findingReferences",
+                                name));
         answering.find(root, request, answer -> answered(from, request, id, answer));
     }
 
@@ -228,9 +244,10 @@ final class MapCardLinks {
         }
         String name = answer.name() != null ? answer.name() : request.name();
         if (answer.hits().isEmpty()) {
-            String none = tr(
-                    request.kind() == Kind.CALLERS ? "project.map.links.noCallers" : "project.map.links.noReferences",
-                    name == null ? "" : name);
+            boolean callers = request.kind() == Kind.CALLERS;
+            String none = name == null || name.isBlank()
+                    ? tr(callers ? "project.map.links.noCallersUnnamed" : "project.map.links.noReferencesUnnamed")
+                    : tr(callers ? "project.map.links.noCallers" : "project.map.links.noReferences", name);
             String note = answer.note();
             cards.status(note == null ? none : note + " " + none);
             return;
@@ -322,15 +339,23 @@ final class MapCardLinks {
                 file -> waiting.outlined.contains(file) ? outlineOf(file) : null,
                 root);
         Path fromKey = from.range() == null ? from.path() : null;
-        groups = groups.stream()
-                .filter(group -> !group.key().equals(fromKey) && !isCardOf(from, group))
-                .toList();
+        groups = linksRank(
+                groups.stream()
+                        .filter(group -> !group.key().equals(fromKey) && !isCardOf(from, group))
+                        .toList(),
+                waiting.request.file(),
+                root);
         EdgeSet set = replaceSet(from, waiting.request.kind(), waiting.answer.via(), waiting.name);
         int opened = 0;
+        boolean refused = false;
         for (Group group : groups) {
-            if (opened < MAX_CARDS) {
-                if (set.open(group)) {
+            if (opened < MAX_CARDS && !refused) {
+                Opened done = set.open(group);
+                if (done == Opened.OPENED) {
                     opened++;
+                } else if (done == Opened.REFUSED) {
+                    refused = true; // no room (pinned cards): it and every later place go on the chip (C4)
+                    set.more.add(group);
                 }
             } else {
                 set.more.add(group);
@@ -340,16 +365,73 @@ final class MapCardLinks {
         int total = groups.stream().mapToInt(Group::count).sum();
         String summary = tr(
                 waiting.request.kind() == Kind.CALLERS
-                        ? "project.map.links.foundCallers"
-                        : "project.map.links.foundReferences",
+                        ? "project.map.links.foundCallersChip"
+                        : "project.map.links.foundReferencesChip",
                 total,
                 waiting.name == null ? "" : waiting.name,
                 groups.size(),
                 set.more.size());
         String note = waiting.answer.note();
         String partial = waiting.answer.partial() ? " " + tr("project.map.links.partial") : "";
-        cards.status((note == null ? "" : note + " ") + summary + partial);
+        String noRoom = refused ? " " + tr("project.map.links.noRoom") : "";
+        cards.status((note == null ? "" : note + " ") + summary + noRoom + partial);
         cards.connectorsMoved();
+    }
+
+    /**
+     * The groups in the order their cards open (review 4, C9): those outside test folders and test files before the
+     * rest (unless the question was asked from a test), then nearest the asked file's folder — the most path
+     * segments in common — then in path and line order. A popular name's first cards are the code beside it, not
+     * whatever the file walk met first. Pure.
+     */
+    static List<Group> linksRank(List<Group> groups, Path asked, @Nullable Path root) {
+        boolean fromTest = linksLooksLikeTest(relative(root, asked));
+        Path near = asked.getParent();
+        List<Group> ranked = new ArrayList<>(groups);
+        ranked.sort(Comparator.comparingInt(
+                        (Group group) -> !fromTest && linksLooksLikeTest(relative(root, group.file())) ? 1 : 0)
+                .thenComparingInt(group -> -linksShared(near, group.file().getParent())));
+        return ranked; // a stable sort: path and line order within each rank
+    }
+
+    /** How many leading path segments {@code a} and {@code b} share (0 when either is null). Pure. */
+    static int linksShared(@Nullable Path a, @Nullable Path b) {
+        if (a == null || b == null) {
+            return 0;
+        }
+        int shared = 0;
+        int count = Math.min(a.getNameCount(), b.getNameCount());
+        while (shared < count && a.getName(shared).equals(b.getName(shared))) {
+            shared++;
+        }
+        return shared;
+    }
+
+    /** Folder names that hold tests. */
+    private static final Set<String> TEST_FOLDERS =
+            Set.of("test", "tests", "__tests__", "spec", "specs", "testdata", "testing");
+
+    /**
+     * Whether a project-relative path ({@code /}-separated) looks like a test: a folder named for tests on the way, or
+     * a file named {@code FooTest.java}, {@code foo_test.go}, {@code test_foo.py}, {@code foo.test.ts},
+     * {@code foo.spec.js}. Pure.
+     */
+    static boolean linksLooksLikeTest(String relative) {
+        String[] parts = relative.replace('\\', '/').split("/");
+        for (int i = 0; i < parts.length - 1; i++) {
+            if (TEST_FOLDERS.contains(parts[i].toLowerCase(java.util.Locale.ROOT))) {
+                return true;
+            }
+        }
+        String name = parts.length == 0 ? "" : parts[parts.length - 1];
+        int dot = name.indexOf('.');
+        String base = dot > 0 ? name.substring(0, dot) : name;
+        String rest = dot > 0 ? name.substring(dot) : "";
+        return base.length() > 4 && (base.endsWith("Test") || base.endsWith("Tests") || base.endsWith("Spec"))
+                || base.endsWith("_test")
+                || base.startsWith("test_")
+                || rest.startsWith(".test.")
+                || rest.startsWith(".spec.");
     }
 
     /** Whether {@code group} is the very declaration {@code from} shows (a recursive call, the declaration itself). */
@@ -411,24 +493,33 @@ final class MapCardLinks {
         return List.copyOf(byKey.values());
     }
 
-    /** The deepest declaration among {@code roots} (and their children) whose lines hold {@code line}, or null. */
+    /**
+     * The innermost declaration among {@code roots} and all their descendants whose own lines hold {@code line} — the
+     * one starting nearest above it, then the shortest — or null. The whole outline is searched, not only inside
+     * parents that hold the line: a Go type's lines are its struct's, and its methods, listed under it, lie outside
+     * them (review 4, C1).
+     */
     static ProjectMapStructure.@Nullable Node enclosing(List<ProjectMapStructure.Node> roots, int line) {
         ProjectMapStructure.Node found = null;
-        List<ProjectMapStructure.Node> level = roots;
-        while (level != null) {
-            ProjectMapStructure.Node inside = null;
-            for (ProjectMapStructure.Node node : level) {
-                ProjectMapModel.Symbol symbol = node.symbol();
-                int start = Math.min(symbol.startLine(), symbol.line());
-                if (start <= line && line <= Math.max(symbol.endLine(), symbol.line())) {
-                    inside = node; // the last that holds it: a later sibling starts nearer the line
+        int foundStart = Integer.MIN_VALUE;
+        int foundEnd = Integer.MAX_VALUE;
+        java.util.ArrayDeque<ProjectMapStructure.Node> todo = new java.util.ArrayDeque<>(roots);
+        while (!todo.isEmpty()) {
+            ProjectMapStructure.Node node = todo.pop();
+            ProjectMapModel.Symbol symbol = node.symbol();
+            int start = Math.min(symbol.startLine(), symbol.line());
+            int end = Math.max(symbol.endLine(), symbol.line());
+            if (start <= line && line <= end && (start > foundStart || start == foundStart && end <= foundEnd)) {
+                found = node; // a tie goes to the later, deeper one: a child listed after its parent
+                foundStart = start;
+                foundEnd = end;
+            }
+            List<ProjectMapStructure.Node> children = node.children();
+            if (children != null) {
+                for (int i = children.size() - 1; i >= 0; i--) {
+                    todo.push(children.get(i));
                 }
             }
-            if (inside == null) {
-                break;
-            }
-            found = inside;
-            level = inside.children();
         }
         return found;
     }
@@ -437,10 +528,11 @@ final class MapCardLinks {
     private EdgeSet replaceSet(ProjectMapPreview from, Kind kind, Via via, @Nullable String name) {
         Map<Kind, EdgeSet> of = sets.computeIfAbsent(from, ignored -> new java.util.EnumMap<>(Kind.class));
         EdgeSet old = of.remove(kind);
+        EdgeSet set = new EdgeSet(from, kind, via, name);
         if (old != null) {
+            old.owned.stream().filter(cards::isOpen).forEach(set.owned::add); // asked again: still its cards
             old.dispose();
         }
-        EdgeSet set = new EdgeSet(from, kind, via, name);
         of.put(kind, set);
         return set;
     }
@@ -458,12 +550,52 @@ final class MapCardLinks {
         return all;
     }
 
-    /** {@code card} closed: its edge sets go, and any question it asked is forgotten. */
-    void cardClosed(ProjectMapPreview card) {
+    /**
+     * {@code card} closed: its edge sets go, any question it asked is forgotten, and the edge to it from another
+     * card's answer goes. Returns the result cards its answers opened, which close with it unless pinned (review 4,
+     * C11: they no longer linger until an unrelated reload closes them all at once).
+     */
+    List<ProjectMapPreview> cardClosed(ProjectMapPreview card) {
+        List<ProjectMapPreview> results = linksEndQuestions(card);
+        for (Map<Kind, EdgeSet> of : sets.values()) {
+            for (EdgeSet set : of.values()) {
+                set.owned.remove(card);
+                set.linksDropEdge(card);
+            }
+        }
+        placeBeside.values().removeIf(from -> from == card);
+        return results;
+    }
+
+    /**
+     * {@code card} now shows another declaration (‹ › stepping, review 4 C5): what its questions found was about the
+     * declaration it showed, so their edges go and the result cards they opened are returned to be closed, as when it
+     * closes; and the edge another card's answer drew to it goes with its link text, though it stays that answer's
+     * card (it closes with that answer's card).
+     */
+    List<ProjectMapPreview> cardChanged(ProjectMapPreview card) {
+        List<ProjectMapPreview> results = linksEndQuestions(card);
+        for (Map<Kind, EdgeSet> of : sets.values()) {
+            for (EdgeSet set : of.values()) {
+                set.linksDropEdge(card);
+            }
+        }
+        cards.connectorsMoved();
+        return results;
+    }
+
+    /** Ends the questions asked from {@code card}: their edge sets go; the result cards they opened are returned. */
+    private List<ProjectMapPreview> linksEndQuestions(ProjectMapPreview card) {
         asked.remove(card);
+        List<ProjectMapPreview> results = new ArrayList<>();
         Map<Kind, EdgeSet> of = sets.remove(card);
         if (of != null) {
-            of.values().forEach(EdgeSet::dispose);
+            for (EdgeSet set : of.values()) {
+                set.owned.stream()
+                        .filter(result -> result != card && cards.isOpen(result) && !results.contains(result))
+                        .forEach(results::add);
+                set.dispose();
+            }
         }
         pending.removeIf(waiting -> {
             if (waiting.from == card) {
@@ -472,7 +604,26 @@ final class MapCardLinks {
             }
             return false;
         });
-        placeBeside.values().removeIf(from -> from == card);
+        return results;
+    }
+
+    /**
+     * Whether a card being opened now for an answer may not be evicted to make room: the card that answer was asked
+     * from and the answer's other results (review 4, C4: a question no longer evicts its own first results).
+     */
+    boolean linksKeepsWhileOpening(Region card) {
+        EdgeSet set = filling;
+        return set != null && (card == set.from || set.owned.contains(card) || set.linksTargets(card));
+    }
+
+    /** Puts every open answer's "+N more" chip back above the cards (one rose or opened over it: C3). */
+    void linksRaiseChips() {
+        sets.values()
+                .forEach(of -> of.values().forEach(set -> {
+                    if (set.chip.isVisible() || !set.more.isEmpty()) {
+                        set.chip.toFront();
+                    }
+                }));
     }
 
     /** Every card closed (a root change, the window's dispose). */
@@ -492,7 +643,7 @@ final class MapCardLinks {
         }
         for (Map<Kind, EdgeSet> of : sets.values()) {
             for (EdgeSet set : of.values()) {
-                if (set.edges.stream().anyMatch(edge -> edge.target == card)) {
+                if (set.owned.contains(card) || set.linksTargets(card)) {
                     return true;
                 }
             }
@@ -511,6 +662,15 @@ final class MapCardLinks {
         }
         double[] drawn = MapCards.drawnBounds(from);
         return new MapCards.Site(drawn, drawn, drawn, cards.columns());
+    }
+
+    /** How opening a result card went. */
+    enum Opened {
+        OPENED,
+        /** No room: every card that could go is pinned or holds this answer. */
+        REFUSED,
+        /** Nothing to open: the card asked from closed, or the place is that card. */
+        SKIPPED
     }
 
     /** One edge: a result card, what joins it to the card asked from, and its label. */
@@ -538,6 +698,8 @@ final class MapCardLinks {
         final List<Edge> edges = new ArrayList<>();
         final List<Group> more = new ArrayList<>();
         final Button chip = new Button();
+        /** The result cards this answer opened (not those open before it): they close with its card (C11). */
+        final Set<ProjectMapPreview> owned = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
 
         EdgeSet(ProjectMapPreview from, Kind kind, Via via, @Nullable String name) {
             this.from = from;
@@ -553,29 +715,42 @@ final class MapCardLinks {
             canvasHost.getChildren().add(chip);
         }
 
-        /** Opens the card of {@code group} beside the card asked from, with its edge; false when none opened. */
-        boolean open(Group group) {
+        /** Opens the card of {@code group} beside the card asked from, with its edge, and says how that went. */
+        Opened open(Group group) {
             ProjectMapStructure.Node node = group.declaration();
             if (!cards.isOpen(from)) {
-                return false;
+                return Opened.SKIPPED;
             }
+            boolean existed = cards.card(group.key()) != null;
             placeBeside.put(group.key(), from);
             ProjectMapPreview card;
-            if (node != null) {
-                card = cards.openDeclaration(node);
-            } else {
-                card = cards.openFile(group.file());
-                if (card != null) {
-                    // At its place now, or — a new card — once its text is shown and its opening line applied,
-                    // which would otherwise move the caret off the place (as a trail stop's lines wait).
-                    card.viewsRevealLines(group.line(), group.line());
-                }
+            EdgeSet outer = filling;
+            filling = this; // the card asked from and this answer's cards are not the ones evicted for it (C4)
+            try {
+                card = node != null ? cards.openDeclaration(node) : cards.openFile(group.file());
+            } finally {
+                filling = outer;
+            }
+            if (card != null && card != from) {
+                // At the place itself — the call or the use, selected as find selects a match — now, or once a new
+                // card's text is shown and its opening line applied (C2: a declaration card opened at its top).
+                card.linksRevealPlace(
+                        group.line(),
+                        name == null || name.isBlank()
+                                ? null
+                                : ProjectMapLinkSearch.namePattern(name, kind == Kind.CALLERS));
             }
             cards.touch(from); // used: never the card evicted to make room for the next result
             boolean placedHere = !placeBeside.containsKey(group.key()); // a new card, placed beside it
             placeBeside.remove(group.key());
-            if (card == null || card == from) {
-                return false;
+            if (card == null) {
+                return Opened.REFUSED;
+            }
+            if (card == from) {
+                return Opened.SKIPPED;
+            }
+            if (!existed) {
+                owned.add(card);
             }
             if (placedHere) {
                 card.keepPlacedWidth();
@@ -592,7 +767,24 @@ final class MapCardLinks {
             // Under every card, as the edge itself is: a label never covers a card's text.
             canvasHost.getChildren().add(layer < 0 ? canvasHost.getChildren().size() : layer + 1, edge.label);
             edges.add(edge);
-            return true;
+            return Opened.OPENED;
+        }
+
+        /** Whether an edge of this answer runs to {@code card}. */
+        boolean linksTargets(Region card) {
+            return edges.stream().anyMatch(edge -> edge.target == card);
+        }
+
+        /** Takes the edge to {@code card} away, with its label and the card's link text. */
+        void linksDropEdge(ProjectMapPreview card) {
+            edges.removeIf(edge -> {
+                if (edge.target != card) {
+                    return false;
+                }
+                canvasHost.getChildren().remove(edge.label);
+                card.setLinkDescription(null);
+                return true;
+            });
         }
 
         void updateChip() {
@@ -602,6 +794,9 @@ final class MapCardLinks {
                     more.size(),
                     name == null ? "" : name));
             chip.setVisible(!more.isEmpty() && from.isVisible());
+            if (!more.isEmpty()) {
+                chip.toFront(); // over the result cards that just opened (C3)
+            }
             cards.connectorsMoved();
         }
 
@@ -619,7 +814,10 @@ final class MapCardLinks {
                 item.setMnemonicParsing(false);
                 item.setOnAction(event -> {
                     more.remove(group);
-                    open(group);
+                    if (open(group) == Opened.REFUSED) {
+                        more.addFirst(group); // no room: it stays listed (C4)
+                        cards.status(tr("project.map.links.noRoom"));
+                    }
                     updateChip();
                 });
                 menu.getItems().add(item);
@@ -719,6 +917,9 @@ final class MapCardLinks {
 
         @Override
         public void dispose() {
+            if (filling == this) {
+                filling = null;
+            }
             canvasHost.getChildren().remove(chip);
             edges.forEach(edge -> {
                 canvasHost.getChildren().remove(edge.label);

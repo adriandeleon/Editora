@@ -37,6 +37,20 @@ final class ProjectFileIndex implements ProjectIndex {
     private final List<ProjectFileList> lists = new ArrayList<>();
 
     /**
+     * One per list being made now: the paths reported meanwhile, replayed onto that list once it is held (Map review
+     * 4 D6). A walk may already have passed the folder a change is in. Guarded by {@code this}.
+     */
+    private final List<List<Path>> reportedWhileListing = new ArrayList<>();
+
+    /** How a root is listed: {@link ProjectFileList#build}; a test's walk can report a change part-way. */
+    interface Builder {
+        @Nullable
+        ProjectFileList build(Path root, ProjectFileList.Settings settings, BooleanSupplier cancelled);
+    }
+
+    Builder builder = ProjectFileList::build;
+
+    /**
      * @param executor the thread lists are made and changed on (the Project panel's search thread)
      * @param ui where {@link #whenListed} callbacks run (the FX thread)
      * @param settings the Project settings that shape a list, read at each use
@@ -129,9 +143,39 @@ final class ProjectFileIndex implements ProjectIndex {
         if (known != null) {
             return known;
         }
-        ProjectFileList built = ProjectFileList.build(root, now, closed);
-        if (built != null) {
-            keep(built, null);
+        return listAndKeep(root, now, null);
+    }
+
+    /**
+     * Lists {@code root} and holds the list in place of {@code replacing} (when that is still held; else the list is
+     * dropped), with the changes reported while it was being listed applied to it. Null when the owner went away or
+     * {@code replacing} was replaced meanwhile.
+     */
+    private @Nullable ProjectFileList listAndKeep(
+            Path root, ProjectFileList.Settings now, @Nullable ProjectFileList replacing) {
+        List<Path> reported = new ArrayList<>();
+        synchronized (this) {
+            reportedWhileListing.add(reported);
+        }
+        ProjectFileList built = null;
+        List<Path> missed;
+        try {
+            built = builder.build(root, now, closed);
+        } finally {
+            synchronized (this) {
+                reportedWhileListing.remove(reported);
+                missed = List.copyOf(reported);
+                if (built != null) {
+                    if (replacing != null && !lists.contains(replacing)) {
+                        built = null; // gone, or replaced by a list for other settings
+                    } else {
+                        keep(built, replacing);
+                    }
+                }
+            }
+        }
+        if (built != null && !missed.isEmpty()) {
+            built.changed(missed); // a change the walk may have passed; held now, so later ones reach it themselves
         }
         return built;
     }
@@ -184,11 +228,10 @@ final class ProjectFileIndex implements ProjectIndex {
 
     /** Lists {@code stale}'s root again; the fresh list, or null when it was replaced or the owner went away. */
     private @Nullable ProjectFileList relist(ProjectFileList stale) {
-        ProjectFileList fresh = ProjectFileList.build(stale.root(), stale.settings(), closed);
-        if (fresh == null || !holds(stale)) {
-            return null; // gone, or replaced by a list for other settings
+        ProjectFileList fresh = listAndKeep(stale.root(), stale.settings(), stale);
+        if (fresh == null) {
+            return null;
         }
-        keep(fresh, stale);
         if (!fresh.snapshot().equals(stale.snapshot())) {
             onRelisted.accept(fresh.root());
         }
@@ -210,12 +253,19 @@ final class ProjectFileIndex implements ProjectIndex {
      * touches the disk). Any thread.
      */
     void changed(Collection<Path> paths) {
-        List<ProjectFileList> held = all();
-        if (held.isEmpty() || paths.isEmpty()) {
+        if (paths.isEmpty()) {
             return;
         }
         List<Path> copy = List.copyOf(paths);
-        submit(() -> held.forEach(list -> list.changed(copy)));
+        boolean held;
+        synchronized (this) {
+            reportedWhileListing.forEach(reported -> reported.addAll(copy)); // replayed onto the list being made
+            held = !lists.isEmpty();
+        }
+        if (held) {
+            // The lists held when the task runs, not now: a relist may have replaced one meanwhile (D6).
+            submit(() -> all().forEach(list -> list.changed(copy)));
+        }
     }
 
     /** Something changed that no event reported (a focus regain, lost events): every list is listed again soon. */

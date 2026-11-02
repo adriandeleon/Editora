@@ -1433,6 +1433,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     public void setGitStatus(java.util.Map<Path, com.editora.git.GitFileStatus> byPath) {
         java.util.Map<Path, com.editora.git.GitFileStatus> given = byPath == null ? java.util.Map.of() : byPath;
         if (given.equals(gitStatus) && java.util.Objects.equals(root, gitStatusRoot)) {
+            mapView.activityGitRefreshed(); // a commit or pull on a clean tree still moves HEAD: one rev-parse
             return; // an unchanged status (most Git refreshes): no ancestor walk, no tree redraw, no Map push
         }
         gitStatusRoot = root;
@@ -2658,6 +2659,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** {@code projectMap.exportPdf}: what the map's PDF… button does. */
     public void exportMapPdf() {
         mapView.exportPdf();
+    }
+
+    /**
+     * {@code projectMap.trailNext}, {@code .trailPrevious} and {@code .trailClose} (review 4 A4): {@code 1} the playing
+     * trail's next stop, {@code -1} its previous one, {@code 0} closes it. False when the Map plays no trail.
+     */
+    public boolean mapTrailCommand(int delta) {
+        return isMapShowing() && mapView.trails.command(delta);
     }
 
     /** One filesystem watcher event: what happened to which path (#677). */

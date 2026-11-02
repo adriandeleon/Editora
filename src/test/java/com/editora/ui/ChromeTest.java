@@ -438,7 +438,13 @@ class ChromeTest {
 
     @Test
     void theProjectMapCommandsNeedTheMapOnScreen() {
-        for (String id : new String[] {"projectMap.print", "projectMap.exportPdf"}) {
+        for (String id : new String[] {
+            "projectMap.print",
+            "projectMap.exportPdf",
+            "projectMap.trailNext",
+            "projectMap.trailPrevious",
+            "projectMap.trailClose"
+        }) {
             assertTrue(Chrome.contextEnabled(id, printing(false, false, false, true)), id + " needs no buffer");
             Chrome.PaletteContext treeMode = printing(true, true, true, false);
             assertFalse(Chrome.contextEnabled(id, treeMode), id);

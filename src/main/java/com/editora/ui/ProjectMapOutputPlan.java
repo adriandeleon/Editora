@@ -45,6 +45,15 @@ final class ProjectMapOutputPlan {
     /** Image pixels per paper point (96 dpi) under which small text stops being readable. */
     static final double MIN_PIXELS_PER_POINT = 96.0 / 72.0;
 
+    /**
+     * The most pages one output makes (Map review 4 D1): a map that needs more at readable labels is shrunk until it
+     * fits on this many, and says so ({@link Plan#pageCapped()}), rather than painting hundreds of pages.
+     */
+    static final int MAX_PAGES = 40;
+
+    /** How many smaller scales are tried before the cap falls back to an even grid. */
+    private static final int CAP_TRIES = 8;
+
     /** A page cut may move back by at most this share of a page to land in a gap. */
     private static final double CUT_SEARCH_SHARE = 0.4;
 
@@ -75,8 +84,20 @@ final class ProjectMapOutputPlan {
      * @param columns pages across, including any left out because nothing falls on them
      * @param rows pages down, counted the same way
      * @param detailReduced the budgets forced a resolution under {@link #MIN_PIXELS_PER_POINT}
+     * @param pageCapped the map needed more than {@link #MAX_PAGES} pages at readable labels and was shrunk to fit
      */
-    record Plan(List<Cell> pages, double paperScale, double renderScale, int columns, int rows, boolean detailReduced) {
+    record Plan(
+            List<Cell> pages,
+            double paperScale,
+            double renderScale,
+            int columns,
+            int rows,
+            boolean detailReduced,
+            boolean pageCapped) {
+
+        Plan(List<Cell> pages, double paperScale, double renderScale, int columns, int rows, boolean detailReduced) {
+            this(pages, paperScale, renderScale, columns, rows, detailReduced, false);
+        }
 
         /** More than one page (the grid's empty cells are left out, so this counts pages, not cells). */
         boolean tiled() {
@@ -99,6 +120,46 @@ final class ProjectMapOutputPlan {
      * area in points. {@code obstacles} are the column cards and rows a page cut should avoid crossing.
      */
     static Plan plan(Box content, List<Box> obstacles, double pageWidth, double pageHeight) {
+        Plan readable = readablePlan(content, obstacles, pageWidth, pageHeight);
+        if (readable.pages().size() <= MAX_PAGES) {
+            return readable;
+        }
+        // Too many pages: shrink until they fit on MAX_PAGES. Pages grow with the square of the scale, give or take
+        // the cuts that move back to a gap, so each try aims a little under the cap.
+        double scale = readable.paperScale();
+        Plan smaller = readable;
+        for (int attempt = 0; attempt < CAP_TRIES; attempt++) {
+            scale *= Math.sqrt((double) MAX_PAGES / smaller.pages().size()) * 0.95;
+            smaller = planAt(content, obstacles, pageWidth, pageHeight, scale, scale);
+            if (smaller.pages().size() <= MAX_PAGES) {
+                return capped(smaller);
+            }
+        }
+        // An even grid of whole pages, no cut moved to a gap: its page count is known before it is planned.
+        double width = Math.max(1, content.width());
+        double height = Math.max(1, content.height());
+        double usableWidth = pageWidth > 0 ? pageWidth : width;
+        double usableHeight = pageHeight > 0 ? pageHeight : height;
+        while (Math.ceil(width * scale / usableWidth - EPSILON) * Math.ceil(height * scale / usableHeight - EPSILON)
+                > MAX_PAGES) {
+            scale *= 0.9;
+        }
+        return capped(planAt(content, List.of(), pageWidth, pageHeight, scale, scale));
+    }
+
+    private static Plan capped(Plan plan) {
+        return new Plan(
+                plan.pages(),
+                plan.paperScale(),
+                plan.renderScale(),
+                plan.columns(),
+                plan.rows(),
+                plan.detailReduced(),
+                true);
+    }
+
+    /** The plan at readable labels: one page, or as few pages as {@value #TOLERATED_LABEL_POINTS} pt labels allow. */
+    private static Plan readablePlan(Box content, List<Box> obstacles, double pageWidth, double pageHeight) {
         Plan readable = planAt(content, obstacles, pageWidth, pageHeight, MIN_PAPER_SCALE);
         if (readable.pages().size() <= 1) {
             return readable;
@@ -118,12 +179,23 @@ final class ProjectMapOutputPlan {
     /** {@link #plan} with labels kept at least {@code minPaperScale} × {@link #LABEL_SIZE} pt tall. */
     private static Plan planAt(
             Box content, List<Box> obstacles, double pageWidth, double pageHeight, double minPaperScale) {
+        return planAt(content, obstacles, pageWidth, pageHeight, minPaperScale, MAX_PAPER_SCALE);
+    }
+
+    /** As above, and never above {@code maxPaperScale} (the page cap's smaller scales). */
+    private static Plan planAt(
+            Box content,
+            List<Box> obstacles,
+            double pageWidth,
+            double pageHeight,
+            double minPaperScale,
+            double maxPaperScale) {
         double width = Math.max(1, content.width());
         double height = Math.max(1, content.height());
         double usableWidth = pageWidth > 0 ? pageWidth : width;
         double usableHeight = pageHeight > 0 ? pageHeight : height;
         double fit = Math.min(usableWidth / width, usableHeight / height);
-        double paperScale = Math.min(MAX_PAPER_SCALE, Math.max(minPaperScale, fit));
+        double paperScale = Math.min(Math.min(MAX_PAPER_SCALE, maxPaperScale), Math.max(minPaperScale, fit));
 
         double[] columnCuts = {content.x(), content.x() + width};
         double[] rowCuts = {content.y(), content.y() + height};
