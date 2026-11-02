@@ -31,7 +31,7 @@ class ProjectMapCanvasReview4Test {
 
     @Test
     void outputCutsALongFolderToItsFirstChunkKeepsTheRowsColumnsHangFromAndCountsTheRest() {
-        Path root = Path.of("/r");
+        Path root = Path.of("/r").toAbsolutePath(); // C:\r on Windows, as the model makes it
         Path big = root.resolve("big");
         List<ProjectMapModel.Entry> entries = new ArrayList<>();
         entries.add(new ProjectMapModel.Entry(root, null, 0, true));
@@ -73,7 +73,7 @@ class ProjectMapCanvasReview4Test {
 
     @Test
     void anExistingPlusNMoreIsFoldedIntoTheOneTheOutputAdds() {
-        Path root = Path.of("/r");
+        Path root = Path.of("/r").toAbsolutePath(); // C:\r on Windows, as the model makes it
         List<ProjectMapModel.Entry> entries = new ArrayList<>();
         entries.add(new ProjectMapModel.Entry(root, null, 0, true));
         for (int i = 0; i < 500; i++) {
