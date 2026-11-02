@@ -242,6 +242,8 @@ class ProjectMapNavReviewFxTest {
     @Test
     void loadingMoreContinuesFromTheFirstNewRowAndTheTrailNeverEndsInAPlaceholder() throws Exception {
         try (Harness h = open(350)) {
+            FxTestSupport.runOnFx(() -> FxTestSupport.<MapLoader>field(h.view(), "mapLoader").canvasWholeFolders =
+                    folder -> false); // "+N more" is a remote root's way since Map explore 15
             Path moreRow = h.many().resolve(ProjectMapModel.PLACEHOLDER_NAME);
             FxTestSupport.runOnFx(() -> h.view().revealPath(h.item(0)));
             waitForFx(() -> contains(h.surface(), moreRow));
@@ -532,6 +534,7 @@ class ProjectMapNavReviewFxTest {
                                 tr("project.map.menu.preview"),
                                 tr("project.map.menu.showStructure"),
                                 tr("project.map.menu.personalNotes"),
+                                tr("project.map.menu.closeOtherBranches"), // a's column is open (Map explore 13)
                                 "Rename"),
                         labels,
                         "README is in the first column (the root's children), which has no close button");
@@ -625,7 +628,7 @@ class ProjectMapNavReviewFxTest {
     void theHelpPopoverCoversTheWholeModelInTheUsersLanguage() throws Exception {
         try (Harness h = open(0)) {
             FxTestSupport.runOnFx(() -> {
-                List<String> text = labels((Parent) FxTestSupport.call(h.view(), "buildHelp", new Class<?>[0]));
+                List<String> text = labels((Parent) ProjectMapHelp.build());
                 for (String key : List.of(
                         "project.map.help.intro",
                         "project.map.help.cards",
@@ -646,7 +649,7 @@ class ProjectMapNavReviewFxTest {
             try {
                 FxTestSupport.runOnFx(() -> {
                     Messages.init("de");
-                    List<String> text = labels((Parent) FxTestSupport.call(h.view(), "buildHelp", new Class<?>[0]));
+                    List<String> text = labels((Parent) ProjectMapHelp.build());
                     assertTrue(text.contains("Eingabe / Leertaste"), "key names in German: " + text);
                     assertTrue(text.contains("Bild auf / Bild ab"));
                     assertFalse(text.contains("Enter / Space"));

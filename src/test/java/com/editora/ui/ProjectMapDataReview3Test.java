@@ -18,7 +18,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.editora.ui.ProjectMapModel.Entry;
 import com.editora.ui.ProjectMapModel.Labels;
-import com.editora.ui.ProjectMapModel.Listings;
 import com.editora.ui.ProjectMapModel.PlaceholderKind;
 import com.editora.ui.ProjectMapModel.Request;
 import com.editora.ui.ProjectMapModel.Snapshot;
@@ -53,7 +52,7 @@ class ProjectMapDataReview3Test {
         CountDownLatch recovered = new CountDownLatch(1);
         AtomicInteger slowListings = new AtomicInteger();
         Set<Path> expanded = Set.of(root, slow, root.resolve("fine"));
-        try (Listings listings = new Listings(300, directory -> {
+        try (ListingService listings = new ListingService(300, directory -> {
             if (directory.equals(slow)) {
                 slowListings.incrementAndGet();
                 awaitQuietly(release);
@@ -93,7 +92,7 @@ class ProjectMapDataReview3Test {
         AtomicInteger mostAtOnce = new AtomicInteger();
         Set<Path> expanded = Set.of(root, folder);
         ExecutorService loads = Executors.newFixedThreadPool(2);
-        try (Listings listings = new Listings(5_000, directory -> {
+        try (ListingService listings = new ListingService(5_000, directory -> {
             if (directory.equals(folder)) {
                 mostAtOnce.accumulateAndGet(concurrent.incrementAndGet(), Math::max);
                 if (listingsOfFolder.incrementAndGet() == 1) {
@@ -138,7 +137,7 @@ class ProjectMapDataReview3Test {
             Files.setLastModifiedTime(folder, longAgo); // settled: the listing comes well after the last change
         }
         Set<Path> expanded = Set.of(root, quiet, busy);
-        try (Listings listings = new Listings(5_000, null)) {
+        try (ListingService listings = new ListingService(5_000, null)) {
             listings.setWatched(expanded);
             ProjectMapModel.load(new Request(root, expanded, false), listings);
             assertEquals(3, listings.listedForTest.get());
@@ -170,7 +169,7 @@ class ProjectMapDataReview3Test {
         Path fresh = folderWithFiles(root, "fresh", 2); // its time is now: a change in this tick could hide
         Set<Path> expanded = Set.of(root, fresh);
         Files.setLastModifiedTime(root, FileTime.fromMillis(System.currentTimeMillis() - 60_000));
-        try (Listings listings = new Listings(5_000, null)) {
+        try (ListingService listings = new ListingService(5_000, null)) {
             listings.setWatched(expanded);
             ProjectMapModel.load(new Request(root, expanded, false), listings);
             listings.revalidateAll();
@@ -224,18 +223,16 @@ class ProjectMapDataReview3Test {
                         && Set.of("ext4", "tmpfs", "xfs").contains(store),
                 "a file system that counts subfolders in a folder's link count");
         Set<Path> expanded = Set.of(root, corpus);
-        try (Listings listings = new Listings(5_000, null)) {
+        try (ListingService listings = new ListingService(5_000, null)) {
             listings.setWatched(expanded);
             Snapshot snapshot = ProjectMapModel.load(new Request(root, expanded, false), listings);
             List<Entry> rows = childrenOf(snapshot, corpus).stream()
                     .filter(row -> !row.isPlaceholder())
                     .toList();
             assertEquals(ProjectMapModel.DIRECTORY_CHUNK, rows.size());
-            assertTrue(rows.stream().allMatch(row -> row.size() >= 0), "a shown row has its size");
-            assertEquals(
-                    700 - ProjectMapModel.DIRECTORY_CHUNK,
-                    listings.unreadForTest(corpus, false),
-                    "the rows past the limit were never read");
+            // Since Map explore position 15 a row of such a folder stays name-only: the tooltip reads its size.
+            assertTrue(rows.stream().allMatch(row -> row.size() < 0 && !row.directory()), "a shown row is not read");
+            assertEquals(700, listings.unreadForTest(corpus, false), "no child was read, shown or not");
         }
     }
 
@@ -245,7 +242,7 @@ class ProjectMapDataReview3Test {
         Path corpus = folderWithFiles(root, "corpus", 400);
         Path sub = Files.createDirectory(corpus.resolve("zz-sub"));
         Set<Path> expanded = Set.of(root, corpus);
-        try (Listings listings = new Listings(5_000, null)) {
+        try (ListingService listings = new ListingService(5_000, null)) {
             listings.setWatched(expanded);
             Snapshot snapshot = ProjectMapModel.load(new Request(root, expanded, false), listings);
             List<Entry> rows = childrenOf(snapshot, corpus);
@@ -315,7 +312,7 @@ class ProjectMapDataReview3Test {
 
     @Test
     void sizesUseTheLocalesDecimalSeparator() throws Exception {
-        Class<?> surface = Class.forName("com.editora.ui.ProjectMapView$MapSurface");
+        Class<?> surface = Class.forName("com.editora.ui.MapSurface");
         java.lang.reflect.Method format = surface.getDeclaredMethod("formatSize", long.class, Locale.class);
         format.setAccessible(true);
         assertEquals("1,5 KiB", format.invoke(null, 1536L, Locale.GERMANY));

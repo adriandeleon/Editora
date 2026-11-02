@@ -491,6 +491,13 @@ final class ProjectMapCardStructure implements CardAttachment {
         ProjectMapStructure.Node was = selectedNode();
         Path selected = was == null ? null : was.path();
         sync(tree.getRoot(), view, view.roots());
+        Path waiting = pendingSelect;
+        if (waiting != null && view.problem() != ProjectMapStructure.Problem.LOADING) {
+            if (select(waiting)) {
+                selected = null; // selected just now
+            }
+            pendingSelect = null; // not in the outline that came: nothing more to wait for
+        }
         if (selected == null && tree.isFocused() && tree.getSelectionModel().isEmpty()) {
             focus(); // put there by key before the outline arrived: the first row is where reading starts
         }
@@ -631,6 +638,39 @@ final class ProjectMapCardStructure implements CardAttachment {
             }
         }
         return false;
+    }
+
+    /** A declaration to select once the outline that lists it arrives (see {@link #select}). */
+    private @Nullable Path pendingSelect;
+
+    /**
+     * Selects the declaration at {@code path}, expanding the rows that hold it, scrolls it into sight and puts the
+     * keyboard there: a declaration card's Show in Structure (Map explore round, position 8). Before the outline is in
+     * it waits for it. Whether the row was found.
+     */
+    boolean select(Path path) {
+        for (Path holder = path.getParent(); holder != null; holder = holder.getParent()) {
+            if (ProjectMapStructure.isSymbolPath(holder)) {
+                expanded.add(holder);
+            }
+        }
+        sync(tree.getRoot(), view, view.roots());
+        TreeItem<Row> item = find(tree.getRoot(), path);
+        if (item == null) {
+            pendingSelect = path;
+            return false;
+        }
+        pendingSelect = null;
+        for (TreeItem<Row> holder = item.getParent(); holder != null; holder = holder.getParent()) {
+            holder.setExpanded(true);
+        }
+        tree.getSelectionModel().select(item);
+        int row = tree.getRow(item);
+        if (row >= 0) {
+            tree.scrollTo(Math.max(0, row - 2));
+        }
+        tree.requestFocus();
+        return true;
     }
 
     /** Puts the keyboard on the list. */

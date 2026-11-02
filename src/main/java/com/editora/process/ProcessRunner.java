@@ -294,6 +294,16 @@ public final class ProcessRunner {
         return decoded(runRaw(workingDir, timeout, command, Map.of(), null, false, false, stopAfter));
     }
 
+    /** {@link #runLines(Path, Duration, List, java.util.function.Predicate)} with {@code extraEnv} in effect. */
+    public static Result runLines(
+            @Nullable Path workingDir,
+            Duration timeout,
+            List<String> command,
+            Map<String, String> extraEnv,
+            java.util.function.Predicate<String> stopAfter) {
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, null, false, false, stopAfter));
+    }
+
     /**
      * Bytes in, bytes out: feeds {@code stdin} (may be null) to the child and returns its raw stdout — for a
      * filter whose output is not text, or is text that must not pass through a String on its way (GnuPG's

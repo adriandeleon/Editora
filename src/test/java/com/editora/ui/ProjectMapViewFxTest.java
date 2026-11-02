@@ -22,7 +22,6 @@ import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.CheckMenuItem;
-import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
@@ -941,7 +940,7 @@ class ProjectMapViewFxTest {
                 pinRef.set(pin);
                 assertTrue(filter.isVisible());
                 assertTrue(showHidden.isVisible());
-                assertTrue(pin.isVisible());
+                assertFalse(pin.isVisible(), "the lock waits for the column to be in use (Map explore, 17)");
             });
             FxTestSupport.runOnFx(() -> {}); // let the initial fit settle before testing interactive zoom
             FxTestSupport.runOnFx(() -> {
@@ -971,7 +970,7 @@ class ProjectMapViewFxTest {
             FxTestSupport.runOnFx(() -> {
                 assertTrue(filterRef.get().isVisible());
                 assertTrue(showHiddenRef.get().isVisible());
-                assertTrue(pinRef.get().isVisible());
+                assertFalse(pinRef.get().isVisible(), "not hovered, focused or locked");
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
@@ -1057,11 +1056,11 @@ class ProjectMapViewFxTest {
                         .getChildren()
                         .contains(editorScroll));
                 javafx.scene.control.Label readOnly = FxTestSupport.field(preview, "readOnly");
-                // A lock, named for screen readers and in its tooltip (review 3, C11).
-                assertEquals(tr("project.map.preview.readOnly"), readOnly.getAccessibleText());
+                // A lock, named for screen readers and in its tooltip (review 3, C11), saying what a card is for: a
+                // glance, with Open to edit (Map explore round, position 12).
+                assertEquals(tr("project.map.preview.glance"), readOnly.getAccessibleText());
                 assertEquals(
-                        tr("project.map.preview.readOnly"),
-                        readOnly.getTooltip().getText());
+                        tr("project.map.preview.glance"), readOnly.getTooltip().getText());
                 Button zoomIn = FxTestSupport.field(preview, "zoomIn");
                 zoomIn.fire();
                 assertTrue((double) FxTestSupport.field(preview, "contentZoom") > 1.0);
@@ -1401,8 +1400,10 @@ class ProjectMapViewFxTest {
                         List.of(
                                 tr("project.map.preview.copyAll"), // nothing selected: Copy takes it all
                                 tr("editmenu.selectAll"),
+                                tr("project.map.preview.find"), // explore round: find in the card
                                 tr("editmenu.addBookmark"),
                                 tr("editmenu.addNote"),
+                                tr("project.map.preview.pin.menu"), // and pin it
                                 tr("project.map.preview.moveToFreeSpace")),
                         menu.getItems().stream()
                                 .filter(item -> !(item instanceof javafx.scene.control.SeparatorMenuItem))
@@ -1751,20 +1752,20 @@ class ProjectMapViewFxTest {
                                 new ProjectMapModel.Entry(java, src, 2, false)),
                         Set.of(root, src));
 
-                @SuppressWarnings("unchecked")
-                ComboBox<ProjectMapView.FlowDirection> flow = FxTestSupport.field(mapView, "flowFilter");
-                assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, flow.getValue(), "the default flow");
+                assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, mapView.canvasFlow(), "the default flow");
                 assertTrue(origin(boxFor(surface, java), "x") > origin(boxFor(surface, src), "x"));
 
                 mapView.setRememberedFlow("RIGHT_TO_LEFT", ignored -> {});
-                assertEquals(ProjectMapView.FlowDirection.RIGHT_TO_LEFT, flow.getValue(), "a stored flow is kept");
+                assertEquals(ProjectMapView.FlowDirection.RIGHT_TO_LEFT, mapView.canvasFlow(), "a stored flow is kept");
                 assertTrue(origin(boxFor(surface, java), "x") < origin(boxFor(surface, src), "x"));
 
-                flow.setValue(ProjectMapView.FlowDirection.TOP_TO_BOTTOM);
+                mapView.canvasFlowItem(ProjectMapView.FlowDirection.TOP_TO_BOTTOM)
+                        .fire();
                 assertTrue(origin(boxFor(surface, java), "y") > origin(boxFor(surface, src), "y"));
                 assertTrue(origin(boxFor(surface, src), "x") > origin(boxFor(surface, docs), "x"));
 
-                flow.setValue(ProjectMapView.FlowDirection.BOTTOM_TO_TOP);
+                mapView.canvasFlowItem(ProjectMapView.FlowDirection.BOTTOM_TO_TOP)
+                        .fire();
                 assertTrue(origin(boxFor(surface, java), "y") < origin(boxFor(surface, src), "y"));
             });
         } finally {

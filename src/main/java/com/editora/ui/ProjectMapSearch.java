@@ -104,6 +104,11 @@ final class ProjectMapSearch {
         boolean blank() {
             return text.isBlank();
         }
+
+        /** The same query asking for files only (Search Everywhere's file group, the tree's filter). */
+        Query onlyFiles() {
+            return new Query(raw, text, symbols, true, false, path);
+        }
     }
 
     /** Whether {@code raw} asks for declarations ({@code @name}). */
@@ -158,7 +163,13 @@ final class ProjectMapSearch {
      */
     static @Nullable ProjectMapSearchResult search(
             Path root, ProjectFileList.Snapshot list, String raw, int max, BooleanSupplier cancelled) {
-        Query query = Query.parse(raw);
+        return search(root, list, Query.parse(raw), max, cancelled);
+    }
+
+    /** As above, for a query already read (one narrowed to files by {@link Query#filesOnly}). */
+    static @Nullable ProjectMapSearchResult search(
+            Path root, ProjectFileList.Snapshot list, Query query, int max, BooleanSupplier cancelled) {
+        String raw = query.raw();
         if (query.blank() || query.symbols()) {
             return new ProjectMapSearchResult(raw, List.of(), 0, list.truncated());
         }

@@ -13,7 +13,6 @@ import java.util.Set;
 
 import com.editora.search.GitignoreFilter;
 import com.editora.search.ProjectFileList;
-import com.editora.ui.ProjectMapModel.Listings;
 import com.editora.ui.ProjectMapModel.Request;
 import com.editora.ui.ProjectMapSearchResult.Kind;
 import com.editora.ui.ProjectMapSearchResult.Match;
@@ -58,10 +57,12 @@ class ProjectMapSearchReview3Test {
                 wanted.add(Files.createFile(deep.resolve("types.go")));
             }
         }
-        ProjectPanel.SearchResult old =
+        // The tree's filter searches the same complete list since the refactor's stage 2 (its old walk stopped at
+        // 20,000 entries visited and found none of these).
+        ProjectPanel.SearchResult tree =
                 ProjectPanel.searchRanked(root, "types.go", false, GitignoreFilter.NONE, () -> false);
-        assertTrue(old.partial(), "the tree filter's bounded walk still stops short (it is the tree's, not the Map's)");
-        assertTrue(old.matches().isEmpty(), "and it saw none of the deep files: " + old.matches());
+        assertFalse(tree.partial(), "the tree filter sees the whole project too");
+        assertEquals(Set.copyOf(wanted), Set.copyOf(tree.matches()), "and finds every deep types.go");
 
         ProjectFileList list = ProjectFileList.build(root, DEFAULT, () -> false);
         assertNotNull(list);
@@ -321,16 +322,15 @@ class ProjectMapSearchReview3Test {
             Path folder = Files.createDirectories(root.resolve("src"));
             Files.writeString(folder.resolve("a.txt"), "a");
             Set<Path> expanded = Set.of(root, folder);
-            try (Listings listings = new Listings(0, null)) {
-                long[] now = {1_000_000};
-                listings.remoteClockMillisForTest = () -> now[0];
+            long[] now = {1_000_000};
+            try (ListingService listings = new ListingService(0, null, () -> now[0])) {
                 listings.setWatched(Set.of()); // nothing on this machine watches a remote folder
                 ProjectMapModel.load(new Request(root, expanded, false), listings);
                 int first = listings.listedForTest.get();
                 assertEquals(2, first);
                 ProjectMapModel.load(new Request(root, expanded, false), listings);
                 assertEquals(first, listings.listedForTest.get(), "a click soon after lists nothing again");
-                now[0] += ProjectMapModel.Listings.REMOTE_TTL_MILLIS + 1;
+                now[0] += ListingService.REMOTE_TTL_MILLIS + 1;
                 ProjectMapModel.load(new Request(root, expanded, false), listings);
                 assertEquals(first + 2, listings.listedForTest.get(), "after 30 s the folders are listed again");
                 listings.invalidateAll(); // an in-app change or a focus regain

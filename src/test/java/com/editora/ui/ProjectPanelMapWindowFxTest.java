@@ -9,7 +9,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.CheckMenuItem;
-import javafx.scene.control.ComboBox;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.Region;
@@ -151,15 +150,14 @@ class ProjectPanelMapWindowFxTest {
             FxTestSupport.runOnFx(() -> {
                 r.panel.setRememberedMapState(() -> state, saves::incrementAndGet);
 
-                ComboBox<ProjectMapView.FlowDirection> flow = FxTestSupport.field(map(r), "flowFilter");
                 CheckMenuItem keepZoom = FxTestSupport.field(map(r), "keepZoomOnOpen");
-                assertEquals(ProjectMapView.FlowDirection.TOP_TO_BOTTOM, flow.getValue());
+                assertEquals(ProjectMapView.FlowDirection.TOP_TO_BOTTOM, map(r).canvasFlow());
                 assertTrue(keepZoom.isSelected());
                 assertEquals(0, saves.get(), "restoring what was stored is not a change to store");
 
-                // What picking an entry from the dropdown does: the value changes and the control fires its action.
-                flow.getSelectionModel().select(ProjectMapView.FlowDirection.RIGHT_TO_LEFT);
-                flow.fireEvent(new javafx.event.ActionEvent());
+                // What picking an entry from ⋯ → Flow does.
+                map(r).canvasFlowItem(ProjectMapView.FlowDirection.RIGHT_TO_LEFT)
+                        .fire();
                 assertEquals("RIGHT_TO_LEFT", state.getProjectMapFlow());
                 assertEquals(1, saves.get());
 
@@ -192,13 +190,13 @@ class ProjectPanelMapWindowFxTest {
             FxTestSupport.runOnFx(() -> {
                 r.panel.setRememberedMapState(() -> state, () -> {});
                 assertFalse(r.panel.isMapShowing());
-                ComboBox<ProjectMapView.FlowDirection> flow = FxTestSupport.field(map(r), "flowFilter");
-                assertEquals(ProjectMapView.DEFAULT_FLOW, flow.getValue());
+                assertEquals(ProjectMapView.DEFAULT_FLOW, map(r).canvasFlow());
 
                 // With nobody to tell, a flow change is simply applied.
                 r.panel.setRememberedMapFlow(null, null);
-                flow.setValue(ProjectMapView.FlowDirection.BOTTOM_TO_TOP);
-                assertEquals(ProjectMapView.FlowDirection.BOTTOM_TO_TOP, flow.getValue());
+                map(r).canvasFlowItem(ProjectMapView.FlowDirection.BOTTOM_TO_TOP)
+                        .fire();
+                assertEquals(ProjectMapView.FlowDirection.BOTTOM_TO_TOP, map(r).canvasFlow());
             });
         }
     }

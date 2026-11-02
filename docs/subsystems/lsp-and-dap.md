@@ -73,6 +73,10 @@ the user's home directory or at a filesystem root is ignored: a dotfiles `~/.git
 whole home directory. One root → one server process, shared by every file beneath it. A session with no open
 document is evicted after a grace period unless something holds a lease on it (`LspManager.retain`): a Java
 debug session runs inside its jdtls, so `DapManager` retains that session until the debug session ends.
+A file no editor tab has open can be *lent* to the session that already runs for it (`LspManager.lendDocument`,
+for the Project Map's linked reference cards): a `didOpen` under an opener of its own, so the file-keyed requests
+(references, call hierarchy, …) reach that server, and a `didClose` when the handle is run and nothing else holds
+the document. It starts no server and opens no editor; `runsFor(file)` says whether one runs.
 
 [`lsp/LspManager`](../../src/main/java/com/editora/lsp/LspManager.java) is the UI-facing facade
 (mirrors `MermaidService`). It keys sessions by `serverId + " " + root.toUri()` — **not** by

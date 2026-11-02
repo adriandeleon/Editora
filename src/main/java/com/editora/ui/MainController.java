@@ -1485,15 +1485,15 @@ public class MainController implements com.editora.mcp.McpBridge {
             diffCoordinator.refreshOpenDiffs();
             fileWorkflows.checkRemoteExternalChanges(changes); // reported by a remote folder's host
         });
-        // The watcher's raw events reach the language servers (didChangeWatchedFiles): no stale models (#677).
-        panel.setFsChangeSink(lspCoordinator::watchedFilesChanged);
+        panel.setFsChangeSink(lspCoordinator::watchedFilesChanged); // didChangeWatchedFiles: no stale models (#677)
+        panel.setMapGit(git.service()); // the Map's recent changes, on the service's own activity lane
         panel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         panel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         panel.setFileActions(ProjectTreeFileActions.of(this, this::localHistoryEnabled));
         panel.setMarkerActions(new ProjectTreeMarkerActions(bookmarkCoordinator, notesCoordinator));
         panel.setMapOpenActions(this::openAndNavigate, this::openNarrowedFromMap);
         panel.setMapServerSymbols(file -> structurePanel == null ? null : structurePanel.serverSymbolsFor(file));
-        panel.setMapSymbolSearch(new ProjectMapSymbolSearch(indexCoordinator, lspManager)::find); // "@name"
+        panel.shareIndexes(indexCoordinator, lspManager); // "@name" in the Map; Search Everywhere's files
         panel.setSimpleMode(chrome::simpleModeActive);
         panel.setShowHidden(config.getSettings().isProjectShowHidden());
         panel.setRespectGitignore(config.getSettings().isSearchRespectGitignore());
@@ -5923,7 +5923,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void ensureIndex(Runnable then) {
-            indexCoordinator.ensureBuilt(then);
+            indexCoordinator.ensureSearchable(then); // the symbol index and the project index's files
         }
 
         @Override

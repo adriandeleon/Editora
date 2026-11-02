@@ -120,8 +120,9 @@ them to the cap. An unreadable directory is stepped over rather than ending the 
 Bounds: `MAX_FILE_BYTES` (2 MB — a generated bundle is not worth the scan) and `MAX_VISIT` (50,000
 files). The cap counts files the index **keeps**, never ignored ones, and reaching it is reported in
 the status bar (`status.index.truncated`) rather than leaving a partial index that looks complete. A
-file whose language has no declaration rules (`DeclarationScanner.supports`) is listed for Search
-Everywhere but never read.
+file whose language has no declaration rules (`DeclarationScanner.supports`) is listed but never read.
+The walk's file list still serves Related File and the HTML page lookups (`searchFiles`, `filesMatching`); Search
+Everywhere's file rows come from the Project panel's project index instead (below).
 
 Gated by `Settings.symbolIndex` (on by default) and off in Simple UI mode; disabling it clears the
 in-memory index rather than merely hiding it.
@@ -160,6 +161,14 @@ superseded or not. While a walk is in flight the popup lists what needs no corpu
 commands) and parks a single callback, which refilters from the *live* field when the walk lands.
 Dropping the callback on those exits is what once left the empty-query list on screen under a typed
 query, with Enter running its first row.
+
+**File rows come from the project index** (`ProjectIndex`, Project Map refactor stage 2): the Project panel's
+file list of the project, kept current from the watcher, ranked as the Project Map and the tree's filter rank it
+(`ProjectMapSearch`: how the name answers the query, the case typed, the project's own source before vendored
+code and tests, then the path's fuzzy score). `IndexCoordinator.ensureSearchable` is `ensureBuilt` plus that list
+(listed off the FX thread on first use, the callback once, as above); `fileItems` then ranks the list in hand on
+the FX thread. A row's score only keeps that order through the merge: the group competes on its best path score,
+as it did, and each row after the first scores one less. The rows are gated by the index setting as before.
 
 **A command whose feature is switched off is listed, grayed, with an explanation** naming the
 setting that would enable it, exactly as the command palette does (#532). Hiding it is tidier in a

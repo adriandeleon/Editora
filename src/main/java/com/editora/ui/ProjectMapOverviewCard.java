@@ -60,6 +60,10 @@ final class ProjectMapOverviewCard extends StackPane {
     private Consumer<Path> onReveal = path -> {};
     private Consumer<Path> onOpen = path -> {};
     private @Nullable Path root;
+    /** The most changed folders and the owners (Map explore positions 3, 4), refilled as they arrive. */
+    private final VBox activityBox = new VBox(10);
+
+    private ProjectMapActivity.@Nullable Summary activity;
 
     private boolean placed;
     private double preferredWidth = DEFAULT_WIDTH;
@@ -149,6 +153,8 @@ final class ProjectMapOverviewCard extends StackPane {
         builds(content, facts);
         languages(content, facts);
         topFolders(content, facts);
+        content.add(activityBox);
+        activityFill();
         paths(content, "project.map.overview.entryPoints", facts.entryPoints(), facts.moreEntryPoints(), false);
         paths(content, "project.map.overview.tests", facts.testFolders(), 0, true);
         paths(content, "project.map.overview.docs", facts.docFolders(), 0, true);
@@ -266,6 +272,124 @@ final class ProjectMapOverviewCard extends StackPane {
         frame.resizeRelocate(0, 0, getWidth(), getHeight());
         double grip = 18;
         resizeGrip.resizeRelocate(Math.max(0, getWidth() - grip), Math.max(0, getHeight() - grip), grip, grip);
+    }
+
+    /** The project's recent history and owners: the card's "Most changed (90 days)" and "Owners" sections. */
+    void setActivity(ProjectMapActivity.Summary summary) {
+        activity = summary;
+        activityFill();
+    }
+
+    /** The headings of the activity sections shown, in order (for tests). */
+    List<String> activityHeadings() {
+        return activityBox.getChildren().stream()
+                .filter(node -> node.getStyleClass().contains("project-map-overview-heading"))
+                .map(node -> ((Label) node).getText())
+                .toList();
+    }
+
+    /** The texts of the activity sections, links and details, in order (for tests). */
+    List<String> activityTexts() {
+        List<String> texts = new ArrayList<>();
+        activityTexts(activityBox, texts);
+        return texts;
+    }
+
+    private static void activityTexts(javafx.scene.Parent parent, List<String> texts) {
+        for (Node child : parent.getChildrenUnmodifiable()) {
+            if (child instanceof javafx.scene.control.Labeled labeled) {
+                texts.add(labeled.getText());
+            } else if (child instanceof javafx.scene.Parent inner) {
+                activityTexts(inner, texts);
+            }
+        }
+    }
+
+    private void activityFill() {
+        List<Node> content = new ArrayList<>();
+        ProjectMapActivity.Summary summary = activity;
+        if (summary != null && summary.hasHistory()) {
+            activityMostChanged(content, summary);
+        }
+        if (summary != null && !summary.owners().isEmpty()) {
+            activityOwners(content, summary.owners());
+        }
+        activityBox.getChildren().setAll(content);
+        activityBox.setVisible(!content.isEmpty());
+        activityBox.setManaged(!content.isEmpty());
+    }
+
+    private void activityMostChanged(List<Node> content, ProjectMapActivity.Summary summary) {
+        content.add(heading(tr("project.map.activity.mostChanged")));
+        com.editora.git.GitRecentChanges.Result changes = summary.changes();
+        if (summary.reading()) {
+            content.add(text(tr("project.map.activity.reading"), "project-map-overview-muted"));
+            return;
+        }
+        if (!changes.problem().isEmpty()) {
+            content.add(text(tr("project.map.activity.failed", changes.problem()), "project-map-overview-muted"));
+            return;
+        }
+        String boundary = activityDate(changes.boundaryEpochSeconds());
+        if (summary.mostChanged().isEmpty()) {
+            content.add(text(
+                    changes.shallow() && changes.boundaryEpochSeconds() > 0
+                            ? tr("project.map.activity.shallowEmpty", boundary)
+                            : tr("project.map.activity.noChanges"),
+                    "project-map-overview-muted"));
+            return;
+        }
+        Path base = root;
+        long now = System.currentTimeMillis() / 1000;
+        VBox rows = new VBox(1);
+        for (ProjectMapActivity.Hot hot : summary.mostChanged()) {
+            Button link = link(hot.folder() + "/", base == null ? null : base.resolve(hot.folder()));
+            link.setTextOverrun(javafx.scene.control.OverrunStyle.LEADING_ELLIPSIS); // a deep folder keeps its name
+            Label meta = text(
+                    tr(
+                            "project.map.activity.mostChangedLine",
+                            hot.stat().commits(),
+                            hot.stat().lastAuthor(),
+                            GitBlameCoordinator.relativeTimeLabel(hot.stat().lastEpochSeconds(), now)),
+                    "project-map-overview-muted");
+            meta.setPadding(new Insets(0, 0, 3, 4));
+            rows.getChildren().addAll(link, meta); // two lines: long paths and their counts never squeeze each other
+        }
+        content.add(rows);
+        if (changes.shallow() && changes.boundaryEpochSeconds() > 0) {
+            content.add(text(tr("project.map.activity.shallow", boundary), "project-map-overview-muted"));
+        }
+        if (changes.truncated()) {
+            content.add(
+                    text(tr("project.map.activity.truncated", count(changes.commits())), "project-map-overview-muted"));
+        }
+    }
+
+    private void activityOwners(List<Node> content, List<ProjectMapActivity.Owned> owners) {
+        content.add(heading(tr("project.map.activity.ownersHeading")));
+        Path base = root;
+        VBox rows = new VBox(1);
+        for (ProjectMapActivity.Owned owned : owners) {
+            Node name = owned.folder().isEmpty()
+                    ? text(tr("project.map.activity.project"), "project-map-overview-text")
+                    : link(owned.folder() + "/", base == null ? null : base.resolve(owned.folder()));
+            List<String> named = owned.owners().approvers().isEmpty()
+                    ? owned.owners().reviewers()
+                    : owned.owners().approvers();
+            Label meta = text(ProjectMapActivity.names(named), "project-map-overview-muted");
+            meta.setTooltip(new Tooltip(String.join("\n", ProjectMapActivity.ownerLines(owned.owners()))));
+            HBox row = new HBox(8, name, meta);
+            row.setAlignment(Pos.CENTER_LEFT);
+            rows.getChildren().add(row);
+        }
+        content.add(rows);
+    }
+
+    /** A commit time as the user's locale writes a date. */
+    private static String activityDate(long epochSeconds) {
+        return java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM)
+                .withLocale(FileHistoryPanel.locale())
+                .format(java.time.Instant.ofEpochSecond(epochSeconds).atZone(java.time.ZoneId.systemDefault()));
     }
 
     // --- sections -------------------------------------------------------------------------------------------

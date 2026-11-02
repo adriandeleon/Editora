@@ -1588,6 +1588,100 @@ public final class LspManager {
         };
     }
 
+    // --- Documents lent to a running server without an editor (Project Map linked cards) ------------
+
+    /** A document lent to {@code session} for requests no editor tab asked: how many loans hold it. */
+    private record Loan(LanguageServerSession session, int count) {}
+
+    /** The documents lent now, by document key (see {@link #lendDocument}). */
+    private final Map<String, Loan> lentDocuments = new ConcurrentHashMap<>();
+
+    /**
+     * Lends {@code file}, with {@code text} as its content, to the language server that already runs for it in this
+     * window, so a few requests can be asked about a file no editor tab has open — the Project Map's linked cards.
+     * Nothing is started and no editor is opened or raised. While lent, the requests that take a file (references,
+     * call hierarchy, …) reach that server for it. Returns the handle that ends the loan — the server hears
+     * {@code didClose} only once nothing else holds the document — a no-op one when an editor already has the file
+     * open on a server, and null when no running server serves the file. An editor opening or closing the file
+     * meanwhile keeps its own hold: the session counts who has a document open. FX thread.
+     */
+    public @Nullable Runnable lendDocument(Path file, String text) {
+        if (closed || !enabled || file == null || !servable(file)) {
+            return null;
+        }
+        String key = uri(file);
+        if (sessionByDocUri.containsKey(key)) {
+            return () -> {};
+        }
+        LanguageServerSession session = runningSessionFor(file);
+        if (session == null) {
+            return null;
+        }
+        Object opener = new Object();
+        cancelEviction(session);
+        lentDocuments.merge(key, new Loan(session, 1), (held, more) -> new Loan(held.session(), held.count() + 1));
+        // Another window's editor may hold the document on this (shared) session already: its text is the one the
+        // server knows, unsaved edits and all. Opening it again would send the disk text over it as a change, so the
+        // loan only routes requests to the session and leaves the document as that editor has it.
+        boolean heldElsewhere = session.isOpen(key);
+        if (!heldElsewhere) {
+            String name = file.getFileName() == null ? "" : file.getFileName().toString();
+            String language = com.editora.text.LanguageRegistry.forFileName(name);
+            session.didOpen(
+                    key, LspServerRegistry.protocolLanguageId(language, file), text == null ? "" : text, opener);
+        }
+        java.util.concurrent.atomic.AtomicBoolean ended = new java.util.concurrent.atomic.AtomicBoolean();
+        return () -> {
+            if (ended.compareAndSet(false, true)) {
+                lentDocuments.computeIfPresent(
+                        key, (k, held) -> held.count() > 1 ? new Loan(held.session(), held.count() - 1) : null);
+                if (!heldElsewhere) {
+                    session.didClose(key, opener);
+                }
+                maybeScheduleEviction(session);
+            }
+        };
+    }
+
+    /** Whether a language server that serves {@code file} runs in this window (or has it open); starts nothing. */
+    public boolean runsFor(@Nullable Path file) {
+        return file != null && servable(file) && (sessionFor(file) != null || runningSessionFor(file) != null);
+    }
+
+    /** True if {@code file}'s server is ready and answers {@code textDocument/references}. */
+    public boolean supportsReferences(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        var caps = s == null ? null : s.capabilities();
+        var provider = caps == null ? null : caps.getReferencesProvider();
+        return provider != null && (provider.isRight() || Boolean.TRUE.equals(provider.getLeft()));
+    }
+
+    /**
+     * The session of this window, started and initialised, that would serve {@code file}: its language's server at
+     * the deepest root that holds it. Null when there is none; nothing is started.
+     */
+    private @Nullable LanguageServerSession runningSessionFor(Path file) {
+        String name = file.getFileName() == null ? "" : file.getFileName().toString();
+        String serverId = LspServerRegistry.serverIdFor(com.editora.text.LanguageRegistry.forFileName(name));
+        if (serverId == null) {
+            return null;
+        }
+        String prefix = sessionKeyPrefix(serverId);
+        LanguageServerSession best = null;
+        for (Map.Entry<String, LanguageServerSession> entry : sessionsByRoot.entrySet()) {
+            LanguageServerSession s = entry.getValue();
+            Path sessionRoot = s.root();
+            if (entry.getKey().startsWith(prefix)
+                    && !s.isDisposed()
+                    && s.isInitialized()
+                    && com.editora.config.PathKeys.isAtOrUnder(file, sessionRoot)
+                    && (best == null || sessionRoot.getNameCount() > best.root().getNameCount())) {
+                best = s;
+            }
+        }
+        return best;
+    }
+
     /** Starts the idle-eviction timer for {@code session} if it no longer serves any open document. */
     private void maybeScheduleEviction(LanguageServerSession session) {
         if (sessionByDocUri.containsValue(session) || retained.containsKey(session)) {
@@ -2847,7 +2941,16 @@ public final class LspManager {
     }
 
     private @Nullable LanguageServerSession sessionFor(@Nullable Path file) {
-        return file == null ? null : sessionByDocUri.get(uri(file));
+        if (file == null) {
+            return null;
+        }
+        String key = uri(file);
+        LanguageServerSession open = sessionByDocUri.get(key);
+        if (open != null || lentDocuments.isEmpty()) {
+            return open;
+        }
+        Loan loan = lentDocuments.get(key);
+        return loan == null ? null : loan.session(); // lent for a request with no editor (see lendDocument)
     }
 
     // --- Request errors (a broken server must not look like a quiet one; Maven review C2) ---------
@@ -4213,6 +4316,54 @@ public final class LspManager {
             List<SymbolNode> symbols = error == null && result != null ? DocumentSymbolMapper.map(result) : List.of();
             Platform.runLater(() -> cb.accept(symbols));
         });
+    }
+
+    /** How long the Project Map waits for a running server's outline of a file with no tab. */
+    static final java.time.Duration CLOSED_FILE_OUTLINE_TIMEOUT = java.time.Duration.ofSeconds(8);
+
+    /**
+     * Whether the server that already runs in this window for {@code file} ({@link #runsFor}) answers the
+     * document-symbol outline: the Project Map's Structure columns for a file with no tab (Map explore round, position
+     * 10). Never starts a server.
+     */
+    public boolean outlinesClosedFile(@Nullable Path file) {
+        if (closed || !enabled || file == null || !servable(file)) {
+            return false;
+        }
+        LanguageServerSession s = runningSessionFor(file);
+        return s != null && documentSymbolProvider(s.capabilities());
+    }
+
+    /**
+     * The document-symbol outline of {@code text}, the content of {@code file}, from the server {@link
+     * #outlinesClosedFile} names. A file no window has open is lent to it for this request ({@link #lendDocument}) and
+     * the loan ends when the answer is in; a file another window has open on that session is asked about as it is, so
+     * its unsaved text is never replaced by the disk's. {@code cb} gets the symbols on the FX thread, or null when no
+     * such server runs, it fails or it takes longer than {@link #CLOSED_FILE_OUTLINE_TIMEOUT}. Never starts a server.
+     * FX thread.
+     */
+    public void closedFileSymbols(Path file, String text, Consumer<@Nullable List<SymbolNode>> cb) {
+        LanguageServerSession s = outlinesClosedFile(file) ? runningSessionFor(file) : null;
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        String uri = uri(file);
+        Runnable loan = s.isOpen(uri) ? () -> {} : lendDocument(file, text);
+        if (loan == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        s.documentSymbol(uri)
+                .orTimeout(CLOSED_FILE_OUTLINE_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)
+                .whenComplete((result, error) -> {
+                    List<SymbolNode> symbols =
+                            error == null && result != null ? DocumentSymbolMapper.map(result) : null;
+                    Platform.runLater(() -> {
+                        loan.run(); // didClose once nothing else holds the document
+                        cb.accept(symbols);
+                    });
+                });
     }
 
     /**

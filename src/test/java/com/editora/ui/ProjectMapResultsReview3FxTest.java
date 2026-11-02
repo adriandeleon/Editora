@@ -211,6 +211,8 @@ class ProjectMapResultsReview3FxTest {
         }
         ProjectPanel panel = openPanel();
         ProjectMapView view = FxTestSupport.field(panel, "mapView");
+        FxTestSupport.runOnFx(() -> FxTestSupport.<MapLoader>field(view, "mapLoader").canvasWholeFolders =
+                folder -> false); // "+N more" is a remote root's way since Map explore 15
         Region surface = FxTestSupport.field(view, "surface");
 
         search(panel, "zneedle");
