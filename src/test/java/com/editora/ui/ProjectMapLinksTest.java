@@ -144,10 +144,10 @@ class ProjectMapLinksTest {
         assertEquals(
                 "run() names add, matched by name (1 place)",
                 MapCardLinks.edgeDescription(MapCardLinks.Kind.REFERENCES, MapCardLinks.Via.NAME, "run()", "add", 1));
-        assertEquals("add: 3 calls from 2 callers.", tr("project.map.links.foundCallers", 3, "add", 2, 0));
+        assertEquals("add: 3 calls from 2 callers.", tr("project.map.links.foundCallersChip", 3, "add", 2, 0));
         assertEquals(
-                "add: 9 references in 8 places; 2 more listed under the card.",
-                tr("project.map.links.foundReferences", 9, "add", 8, 2));
+                "add: 9 references in 8 places; 2 more listed by the card’s “+2 more” button.",
+                tr("project.map.links.foundReferencesChip", 9, "add", 8, 2));
     }
 
     @Test
@@ -222,5 +222,100 @@ class ProjectMapLinksTest {
                 "Java files only; the declaration itself is left out when grouped");
         assertFalse(answer.partial());
         assertTrue(answer.hits().stream().noneMatch(hit -> hit.file().toString().endsWith(".md")));
+    }
+
+    // --- Map review 4: links ------------------------------------------------------------------------------------
+
+    @Test
+    void aGoMethodListedUnderItsTypeIsTheDeclarationThatHoldsItsLinesThoughTheTypesLinesDoNot() {
+        Path file = root.resolve("fake_runtime.go");
+        // As the Go outline has it: a type whose lines are its struct's, its methods under it, further down.
+        ProjectMapStructure.Node syncPod =
+                node(file.resolve("…sFakeRuntime~0"), file, "(*FakeRuntime).SyncPod(…)", 261, 261, 270);
+        ProjectMapStructure.Node killPod =
+                node(file.resolve("…sFakeRuntime~0"), file, "(*FakeRuntime).KillPod(…)", 280, 280, 290);
+        ProjectMapStructure.Node type = node(file, file, "FakeRuntime", 46, 46, 81, syncPod, killPod);
+        assertEquals(syncPod, MapCardLinks.enclosing(List.of(type), 265), "review 4, C1: was the file");
+        assertEquals(type, MapCardLinks.enclosing(List.of(type), 50));
+        assertNull(MapCardLinks.enclosing(List.of(type), 100));
+
+        // By name, another type's SyncPod is another declaration of the name: not a caller.
+        Path kubelet = root.resolve("kubelet.go");
+        MapCardLinks.Request asked =
+                new MapCardLinks.Request(MapCardLinks.Kind.CALLERS, kubelet, 10, 5, "SyncPod", null);
+        List<MapCardLinks.Group> groups = MapCardLinks.group(
+                List.of(new MapCardLinks.Hit(file, 261, 22, 1, null), new MapCardLinks.Hit(file, 285, 4, 1, null)),
+                MapCardLinks.Via.NAME,
+                asked,
+                "SyncPod",
+                path -> path.equals(file) ? List.of(type) : null,
+                root);
+        assertEquals(
+                List.of("(*FakeRuntime).KillPod(…)"),
+                groups.stream().map(MapCardLinks.Group::label).toList());
+    }
+
+    @Test
+    void groupsOpenCodeNearTheAskedFileFirstAndTestsLast() {
+        Path asked = root.resolve("core/src/main/java/a/Bean.java");
+        List<MapCardLinks.Group> groups = List.of(
+                group(root.resolve("other/src/main/java/z/Far.java")),
+                group(root.resolve("core/src/test/java/a/BeanTest.java")),
+                group(root.resolve("core/src/main/java/a/Near.java")),
+                group(root.resolve("core/src/main/java/b/Sibling.java")));
+        assertEquals(
+                List.of("Near.java", "Sibling.java", "Far.java", "BeanTest.java"),
+                MapCardLinks.linksRank(groups, asked, root).stream()
+                        .map(MapCardLinks.Group::label)
+                        .toList());
+        assertEquals(
+                "BeanTest.java",
+                MapCardLinks.linksRank(groups, root.resolve("core/src/test/java/a/Other.java"), root)
+                        .getFirst()
+                        .label(),
+                "asked from a test, tests are not put last");
+
+        assertTrue(MapCardLinks.linksLooksLikeTest("core/src/test/java/a/X.java"));
+        assertTrue(MapCardLinks.linksLooksLikeTest("pkg/kubelet/kubelet_test.go"));
+        assertTrue(MapCardLinks.linksLooksLikeTest("tests/test_api.py"));
+        assertTrue(MapCardLinks.linksLooksLikeTest("web/app.spec.ts"));
+        assertTrue(MapCardLinks.linksLooksLikeTest("a/FooTest.java"));
+        assertFalse(MapCardLinks.linksLooksLikeTest("a/Test.java"));
+        assertFalse(MapCardLinks.linksLooksLikeTest("a/Latest.java"));
+        assertFalse(MapCardLinks.linksLooksLikeTest("pkg/kubelet/kubelet.go"));
+    }
+
+    @Test
+    void aNameMatchReadsTheAskedFilesFolderAndModuleFirstAndTestsLast() {
+        List<String> listed = List.of(
+                "web/src/test/java/w/WebTest.java",
+                "web/src/main/java/w/Web.java",
+                "core/src/test/java/a/BeanTest.java",
+                "core/src/main/java/b/Sibling.java",
+                "core/src/main/java/a/Near.java",
+                "README.md");
+        assertEquals(
+                List.of(
+                        "core/src/main/java/a/Near.java",
+                        "core/src/main/java/b/Sibling.java",
+                        "web/src/main/java/w/Web.java",
+                        "core/src/test/java/a/BeanTest.java",
+                        "web/src/test/java/w/WebTest.java"),
+                ProjectMapLinkSearch.linksScanOrder(
+                        listed, "java", root, root.resolve("core/src/main/java/a/Bean.java")),
+                "review 4, C9: the cap samples the code around the declaration");
+        assertEquals(
+                List.of(
+                        "web/src/test/java/w/WebTest.java",
+                        "web/src/main/java/w/Web.java",
+                        "core/src/test/java/a/BeanTest.java",
+                        "core/src/main/java/b/Sibling.java",
+                        "core/src/main/java/a/Near.java"),
+                ProjectMapLinkSearch.linksScanOrder(listed, "java", root, null),
+                "with no asked file: list order");
+    }
+
+    private MapCardLinks.Group group(Path file) {
+        return new MapCardLinks.Group(file, null, file.getFileName().toString(), 0, 1);
     }
 }

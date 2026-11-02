@@ -178,15 +178,20 @@ a card the user moved keeps its position and one the user resized keeps its size
 
 Up to eight cards remain open, code and note cards together; a ninth replaces the least recently used
 one that is not pinned. A code card's **pin** (in its title bar, and **Pin Card** / **Unpin Card** in its menu)
-keeps it from ever being the one closed; when every card that could go is pinned, a new card is refused and the
+means keep (Map review 4, position 3): a pinned card survives every automatic close — eviction, its folder's
+column closing, Collapse All and Close Other Branches, the orphan check, Escape on the map, a trail leaving its stop,
+the card it was found from closing, and a declaration card stepping onto its declaration (the keyboard goes to the
+pinned card instead, and the stepping card closes unless pinned too); only its own × (or Escape in it) closes it,
+and a root change or a working set closes everything. When every card that could go is pinned, a new card is refused and the
 Map's status line says "All 8 cards are pinned: unpin one to open another" (`MapCards.makeRoomForCard` answers
 false; `roomForCard()` is the same check for a caller that builds its own cards). Pressing a card, moving keyboard focus into it and scrolling it all count as use, and so does any use of what
 is stuck on it — focus or a key in its Structure column, focus in a sticky note. Eviction works on groups: a file
 card with its Structure column out keeps the declaration cards of its file, goes only after them (the oldest of
 them first), and never while one of its declarations is being opened (`MapCards.makeRoomForCard`), so reading a
 file's declarations from its column by keyboard never closes the file card, its column and every card read so far. A folder's cards
-close when the folder stops being expanded, however it was collapsed, and all cards close when the root
-changes. Closing the Map window and opening it again keeps them where they were.
+close when the folder stops being expanded, however it was collapsed (but not a pinned card, nor a linked result
+card while the card it was found from is open: `MapCards.closeUnder` and the orphan check both keep them), and all
+cards close when the root changes. Closing the Map window and opening it again keeps them where they were.
 
 A preview uses current unsaved text when the file is already open; otherwise it reads the file off
 the JavaFX application thread, decoded as the editor would open it (BOM, then the `.editorconfig`
@@ -213,7 +218,9 @@ read the rest —", which opens the file when clicked.
 **Find in a card.** Find typed in a focused card (`find.show`: Ctrl+F, Cmd+F, Emacs `C-s`), or the menu's **Find in
 Card…**, opens a find bar under its title bar: a field (a one-line selection is what it looks for), "k of N", ‹ ›
 and **Aa** (match case). Typing selects the first match from where the find began; Enter and Shift+Enter, F3 and
-Shift+F3 (`find.next` / `find.previous`), and `C-s` / `C-r` again in the field step through the matches, wrapping.
+Shift+F3 (the field claims `f3` / `S-f3` through `KeyDispatcher.CLAIMED_KEYS`, so they step whatever the keymap
+binds them to — Emacs F3 records a macro elsewhere; review 4, C10), `find.next` / `find.previous`, and `C-s` / `C-r`
+again in the field step through the matches, wrapping.
 It searches the text the card shows (a declaration card's lines), at most 10,000 matches counted. Escape closes the
 bar first and leaves the match selected; the next Escape closes the card. The find commands go through
 `KeyDispatcher.HANDLED_COMMANDS`, so they follow the keymap and never reach the editor's own find.
@@ -286,21 +293,39 @@ its line; a file card asks about the name under the menu's place. The answer:
   project's files of the same language (the Map's `ProjectIndex` list), for callers only where `(` follows; at most
   20,000 files, 1 MB each, 2,000 places, 2 s (then the status line says it stopped early). The declaration itself,
   and other declarations of that name (by the outline), are left out. The status line says no server answered.
+  The files nearest the asked file are read first — its own folder, then its module's, then the rest, code before
+  tests unless it is a test itself (`ProjectMapLinkSearch.linksScanOrder`) — so a popular name's capped answer is
+  the code around the declaration (review 4, C9). A server that fails or times out (`prepareCallHierarchy`,
+  `incomingCalls`, `references` with an error callback) is not taken as "nothing there": the name is matched, and
+  the status says "The language server did not answer (…), so the name was matched." (C6). Until a file card's name
+  is known the status says "Finding callers…" (C12).
 
-The places are grouped by the deepest declaration of their file's outline that holds them (the outlines of the
-first 12 files are read, waiting at most 4 s; places past them, or outside every declaration, group by file), in
-path and line order. The first six groups open as declaration cards (a file group: a file card scrolled to the
-place) **beside the card asked from** (`MapCards.drawnPlacement` takes that card as the row), at most 460 px wide
+The places are grouped by the innermost declaration of their file's outline whose own lines hold them, searched
+over the whole outline — a Go method is listed under its type, whose lines are only the struct's (review 4, C1) —
+(the outlines of the first 12 files are read, waiting at most 4 s; places past them, or outside every declaration,
+group by file). The groups are ranked (`MapCardLinks.linksRank`): code before tests (unless asked from a test),
+then nearest the asked file's folder, then path and line order. The first six groups open as declaration cards (a
+file group: a file card) scrolled to the place, the name there selected as find selects a match — the call itself
+in a caller, found from the caller's first line (`ProjectMapPreview.linksRevealPlace`, review 4 C2) — **beside the card asked from** (`MapCards.drawnPlacement` takes that card as the row), at most 460 px wide
 and kept at that width, each joined to it by an **edge**: a line from the result card to the card asked from with an
 arrow at that end, and a label at its middle — "calls", "references", or "by name" (the line dashed), with "· N"
-for more than one place. The rest are listed by a **"+N more"** chip on the card's top edge; picking one opens its
-card with its edge. The edges of one question are an `MapCardLinks.EdgeSet`, a `CardAttachment` of the card asked
+for more than one place. The rest are listed by a **"+N more"** chip on the card's top edge (under the card when
+there is no room above it); picking one opens its card with its edge. The chip is kept above every card: it is
+raised once the result cards open and whenever any card rises (`MapCardLinks.linksRaiseChips`, C3), and the status
+says "N more listed by the card's “+N more” button". While an answer opens its cards, the card it was asked from
+and its other result cards are never the ones evicted for it; a place that finds no room (the other cards pinned)
+goes on the chip with every later one, and the status adds "No room for more cards: the others are pinned or show
+this answer." (C4). The edges of one question are an `MapCardLinks.EdgeSet`, a `CardAttachment` of the card asked
 from: drawn with the other connectors once per pulse, closed with that card; a result card closed or evicted takes
 its edge away. Labels sit just above the connector canvas, under every card. Each result card's accessible name
 and title tooltip end with what joins it ("total(App) calls App.java › add(int) (2 call sites)"), cleared when the
 edge goes; the chip's accessible text names what it lists. Asking the same card the same question again replaces
 its edges (the cards stay); a result card is never closed by the orphan check while the card it was found from is
-open. Cards share two `project-map-preview-loader` threads that time out when idle, each
+open. The result cards an answer opened (not cards that were open before it) **close with the card they were found
+from** — closed, evicted or closed with its column — unless pinned or still another open answer's (review 4,
+position 4 / C11). A declaration card that steps (‹ ›) ends its own questions: their edges go and the result cards
+they opened close, and an answer still pending is dropped; a result card that steps loses its edge and link text but
+stays its answer's card (`MapCardLinks.cardChanged`, C5). Cards share two `project-map-preview-loader` threads that time out when idle, each
 card's reads still in order; a card created before its host has a size waits for the size, not on `runLater`.
 
 Context menus use JavaFX auto-hide plus a next-pulse owner-scene press filter. This mirrors the
@@ -1280,8 +1305,11 @@ The focused coverage lives in:
   key ownership, content-sized columns, hidden toggles, directional layouts and arrow semantics,
   complete-map output snapshots and live viewport restoration,
   movable/locked columns, overview navigation, and wheel zoom;
-- `ProjectMapLinksTest` for linked reference cards' grouping, edge text, ends and accessible descriptions, and the
-  name match; `ProjectMapLinksFxTest` for callers and references from a fake language server with the file lent and
+- `ProjectMapLinksTest` for linked reference cards' grouping (a Go-shaped outline too), edge text, ends and
+  accessible descriptions, the ranking and the name match's read order; `MapCardLinksReview4FxTest` for review 4's
+  links fixes — a result card at the call, the chip over the result cards, pins against a question's places,
+  stepping, results closing with their source, pins surviving every automatic close, F3 in a card's find field
+  under Emacs, a failed call hierarchy matched by name, and overlapping loans; `ProjectMapLinksFxTest` for callers and references from a fake language server with the file lent and
   given back and no editor opened, the by-name answer with dashed "by name" edges, the "+N more" chip, result cards
   outliving the orphan check, and an `@name` Map search through the real `IndexCoordinator`;
 - `ProjectMapStructureTest` for which files get a Structure icon, declaration path segments, a card's lines

@@ -1590,8 +1590,11 @@ public final class LspManager {
 
     // --- Documents lent to a running server without an editor (Project Map linked cards) ------------
 
-    /** A document lent to {@code session} for requests no editor tab asked: how many loans hold it. */
-    private record Loan(LanguageServerSession session, int count) {}
+    /**
+     * A document lent to {@code session} for requests no editor tab asked: how many loans hold it, the opener the
+     * first of them opened it under, and whether another window's editor held it then (nothing was opened).
+     */
+    private record Loan(LanguageServerSession session, int count, Object opener, boolean heldElsewhere) {}
 
     /** The documents lent now, by document key (see {@link #lendDocument}). */
     private final Map<String, Loan> lentDocuments = new ConcurrentHashMap<>();
@@ -1617,26 +1620,42 @@ public final class LspManager {
         if (session == null) {
             return null;
         }
-        Object opener = new Object();
         cancelEviction(session);
-        lentDocuments.merge(key, new Loan(session, 1), (held, more) -> new Loan(held.session(), held.count() + 1));
-        // Another window's editor may hold the document on this (shared) session already: its text is the one the
-        // server knows, unsaved edits and all. Opening it again would send the disk text over it as a change, so the
-        // loan only routes requests to the session and leaves the document as that editor has it.
-        boolean heldElsewhere = session.isOpen(key);
-        if (!heldElsewhere) {
-            String name = file.getFileName() == null ? "" : file.getFileName().toString();
-            String language = com.editora.text.LanguageRegistry.forFileName(name);
-            session.didOpen(
-                    key, LspServerRegistry.protocolLanguageId(language, file), text == null ? "" : text, opener);
+        Loan earlier = lentDocuments.get(key);
+        if (earlier != null && earlier.session() == session) {
+            // Lent already (an outline loan and a question, two quick questions): this loan shares the first one's
+            // hold, and the server hears didClose only when the last of them ends — the first to end used to close
+            // it while the other still asked about it (Map review 4, C13).
+            lentDocuments.put(key, new Loan(session, earlier.count() + 1, earlier.opener(), earlier.heldElsewhere()));
+        } else {
+            // Another window's editor may hold the document on this (shared) session already: its text is the one
+            // the server knows, unsaved edits and all. Opening it again would send the disk text over it as a
+            // change, so the loan only routes requests to the session and leaves the document as that editor has it.
+            boolean heldElsewhere = session.isOpen(key);
+            Object opener = new Object();
+            lentDocuments.put(key, new Loan(session, 1, opener, heldElsewhere));
+            if (!heldElsewhere) {
+                String name =
+                        file.getFileName() == null ? "" : file.getFileName().toString();
+                String language = com.editora.text.LanguageRegistry.forFileName(name);
+                session.didOpen(
+                        key, LspServerRegistry.protocolLanguageId(language, file), text == null ? "" : text, opener);
+            }
         }
         java.util.concurrent.atomic.AtomicBoolean ended = new java.util.concurrent.atomic.AtomicBoolean();
         return () -> {
             if (ended.compareAndSet(false, true)) {
-                lentDocuments.computeIfPresent(
-                        key, (k, held) -> held.count() > 1 ? new Loan(held.session(), held.count() - 1) : null);
-                if (!heldElsewhere) {
-                    session.didClose(key, opener);
+                Loan held = lentDocuments.get(key);
+                if (held != null && held.session() == session) {
+                    if (held.count() > 1) {
+                        lentDocuments.put(
+                                key, new Loan(session, held.count() - 1, held.opener(), held.heldElsewhere()));
+                    } else {
+                        lentDocuments.remove(key);
+                        if (!held.heldElsewhere()) {
+                            session.didClose(key, held.opener());
+                        }
+                    }
                 }
                 maybeScheduleEviction(session);
             }
@@ -3752,9 +3771,28 @@ public final class LspManager {
         prepareCallHierarchyAt(file, null, line, character, cb);
     }
 
+    /**
+     * As above; {@code onError} (when given) hears a failed or timed-out request instead of {@code cb} hearing an
+     * empty list, which read as "No callers found" (Map review 4, C6; as {@link #references} has since Java B13).
+     */
+    public void prepareCallHierarchy(
+            Path file, int line, int character, Consumer<List<HierarchyNode>> cb, @Nullable Consumer<String> onError) {
+        prepareCallHierarchyAt(file, null, line, character, cb, onError);
+    }
+
     /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
     public void prepareCallHierarchyAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<HierarchyNode>> cb) {
+        prepareCallHierarchyAt(anchor, documentUri, line, character, cb, null);
+    }
+
+    private void prepareCallHierarchyAt(
+            Path anchor,
+            @Nullable String documentUri,
+            int line,
+            int character,
+            Consumer<List<HierarchyNode>> cb,
+            @Nullable Consumer<String> onError) {
         LanguageServerSession s = sessionFor(anchor);
         if (s == null) {
             Platform.runLater(() -> cb.accept(List.of()));
@@ -3762,6 +3800,11 @@ public final class LspManager {
         }
         s.prepareCallHierarchy(documentUri != null ? documentUri : uri(anchor), new Position(line, character))
                 .whenComplete((items, e) -> {
+                    if (e != null && onError != null) {
+                        String why = failureReason(e);
+                        Platform.runLater(() -> onError.accept(why));
+                        return;
+                    }
                     List<HierarchyNode> out = new ArrayList<>();
                     if (e == null && items != null) {
                         for (var i : items) {
@@ -3776,6 +3819,16 @@ public final class LspManager {
 
     /** The callers ({@code incoming=true}) or callees of a call-hierarchy node's {@code raw} item. */
     public void callHierarchyChildren(Path anchor, Object raw, boolean incoming, Consumer<List<HierarchyNode>> cb) {
+        callHierarchyChildren(anchor, raw, incoming, cb, null);
+    }
+
+    /** As above; {@code onError} (when given) hears a failed or timed-out request (Map review 4, C6). */
+    public void callHierarchyChildren(
+            Path anchor,
+            Object raw,
+            boolean incoming,
+            Consumer<List<HierarchyNode>> cb,
+            @Nullable Consumer<String> onError) {
         LanguageServerSession s = sessionFor(anchor);
         if (s == null || !(raw instanceof org.eclipse.lsp4j.CallHierarchyItem item)) {
             Platform.runLater(() -> cb.accept(List.of()));
@@ -3783,6 +3836,11 @@ public final class LspManager {
         }
         if (incoming) {
             s.incomingCalls(item).whenComplete((calls, e) -> {
+                if (e != null && onError != null) {
+                    String why = failureReason(e);
+                    Platform.runLater(() -> onError.accept(why));
+                    return;
+                }
                 List<HierarchyNode> out = new ArrayList<>();
                 if (e == null && calls != null) {
                     for (var c : calls) {

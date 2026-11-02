@@ -689,6 +689,7 @@ final class ProjectMapPreview extends StackPane {
         });
         addEventFilter(ScrollEvent.SCROLL, event -> {
             openingPending = -1; // the user's own scroll is not undone by the opening line
+            linksPlacePending = null; // nor by a linked card's place
             onTouch.run();
         });
         addEventFilter(KeyEvent.KEY_PRESSED, this::keyPressed);
@@ -711,6 +712,7 @@ final class ProjectMapPreview extends StackPane {
      */
     private void keyPressed(KeyEvent event) {
         openingPending = -1;
+        linksPlacePending = null;
         double[] step = geometryStep(event);
         if (step != null) {
             moveOrResizeBy(step);
@@ -838,6 +840,68 @@ final class ProjectMapPreview extends StackPane {
         if (!java.util.Objects.equals(linkDescription, description)) {
             linkDescription = description;
             updateRangeChrome();
+        }
+    }
+
+    // --- links: the place a result card was opened for (Map review 4, links group) ---
+
+    /** A place a result card is to show: the file's 0-based line and what marks the place from there on. */
+    private record LinksPlace(int fileLine, java.util.regex.@Nullable Pattern mark) {}
+
+    /** The place asked for before the card's text was shown and coloured, applied once it is. */
+    private @Nullable LinksPlace linksPlacePending;
+    /** Whether the card's text has been coloured once: a place shown since stays where it was put. */
+    private boolean linksStyled;
+
+    /**
+     * Linked cards (review 4, C2): scrolls the card — a file card or a declaration card — to the file's 0-based line
+     * {@code fileLine} and selects the first match of {@code mark} from that line on (the call or the use, as find
+     * selects a match), else that line, now if its text is laid out and again once it is coloured, which a new card's
+     * opening scroll would otherwise undo. The user's own scroll or key first cancels the wait.
+     */
+    void linksRevealPlace(int fileLine, java.util.regex.@Nullable Pattern mark) {
+        if (disposed) {
+            return;
+        }
+        LinksPlace place = new LinksPlace(fileLine, mark);
+        boolean shown = linksApplyPlace(place);
+        linksPlacePending = shown && linksStyled ? null : place;
+    }
+
+    private boolean linksApplyPlace(LinksPlace place) {
+        if (frame.getCenter() != textPane || editor.getLength() == 0) {
+            return false;
+        }
+        Range shown = range;
+        int paragraphs = editor.getParagraphs().size();
+        int line = place.fileLine() - (shown == null ? 0 : shown.startLine());
+        if (line >= paragraphs) {
+            return false; // past what the card holds (its read cap)
+        }
+        line = Math.max(0, line);
+        int start = editor.getAbsolutePosition(line, 0);
+        int end = editor.getAbsolutePosition(line, editor.getParagraph(line).length());
+        java.util.regex.Pattern mark = place.mark();
+        if (mark != null) {
+            java.util.regex.Matcher found = mark.matcher(editor.getText());
+            if (found.find(start)) {
+                start = found.start();
+                end = found.end();
+            }
+        }
+        editor.selectRange(start, end);
+        openingPending = -1;
+        int at = editor.offsetToPosition(start, TwoDimensional.Bias.Forward).getMajor();
+        editor.showParagraphAtTop(at <= 3 ? 0 : at - 3); // a few lines of what leads to it above it
+        return true;
+    }
+
+    private void linksApplyPendingPlace() {
+        LinksPlace place = linksPlacePending;
+        linksPlacePending = null;
+        linksStyled = true;
+        if (place != null && !disposed) {
+            linksApplyPlace(place);
         }
     }
 
@@ -2368,6 +2432,9 @@ final class ProjectMapPreview extends StackPane {
         findCase.setOnAction(event -> findStep(0));
         findClose.setOnAction(event -> closeFind());
         findField.textProperty().addListener((obs, old, now) -> findStep(0));
+        // F3 / Shift+F3 step through the matches whatever the keymap binds them to (Emacs: macro recording), as
+        // the spec promises (review 4, C10).
+        findField.getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, LINKS_FIND_KEYS);
         findField.addEventHandler(KeyEvent.KEY_PRESSED, event -> {
             if (event.getCode() == KeyCode.ENTER && !event.isControlDown() && !event.isMetaDown()) {
                 findStep(event.isShiftDown() ? -1 : 1);
@@ -2379,6 +2446,9 @@ final class ProjectMapPreview extends StackPane {
         });
         findBar.getChildren().setAll(findField, findCount, findPrevious, findNext, findCase, findClose);
     }
+
+    /** The keys the find field takes from the keymap: F3 and Shift+F3 step through the matches. */
+    static final java.util.Set<String> LINKS_FIND_KEYS = java.util.Set.of("f3", "S-f3");
 
     /** Whether the card's find bar is open. */
     boolean findShown() {
@@ -3512,6 +3582,7 @@ final class ProjectMapPreview extends StackPane {
             editor.showParagraphAtTop(line);
         }
         viewsApplyPendingReveal(); // a trail stop's lines, once the text can be scrolled
+        linksApplyPendingPlace(); // a linked card's place (review 4, C2)
     }
 
     private static boolean looksBinary(byte[] bytes) {

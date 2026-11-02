@@ -2441,18 +2441,20 @@ final class LanguageServerSession implements LanguageClient {
         return answer;
     }
 
-    /** Call-hierarchy anchor at a position ({@code textDocument/prepareCallHierarchy}) → items or empty. */
+    /**
+     * Call-hierarchy anchor at a position ({@code textDocument/prepareCallHierarchy}) → items or empty; a failed or
+     * timed-out request completes exceptionally, so a caller can tell it from "nothing there" (Map review 4, C6).
+     */
     CompletableFuture<List<org.eclipse.lsp4j.CallHierarchyItem>> prepareCallHierarchy(String uri, Position pos) {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
         var params = new org.eclipse.lsp4j.CallHierarchyPrepareParams(doc(uri), pos);
         return bounded(server().getTextDocumentService().prepareCallHierarchy(params))
-                .<List<org.eclipse.lsp4j.CallHierarchyItem>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
-                .exceptionally(t -> List.of());
+                .<List<org.eclipse.lsp4j.CallHierarchyItem>>thenApply(l -> l == null ? List.of() : List.copyOf(l));
     }
 
-    /** Incoming calls (callers) of a call-hierarchy item (#682). */
+    /** Incoming calls (callers) of a call-hierarchy item (#682); a failure completes exceptionally, as above. */
     CompletableFuture<List<org.eclipse.lsp4j.CallHierarchyIncomingCall>> incomingCalls(
             org.eclipse.lsp4j.CallHierarchyItem item) {
         if (!ready()) {
@@ -2461,8 +2463,7 @@ final class LanguageServerSession implements LanguageClient {
         return bounded(server().getTextDocumentService()
                         .callHierarchyIncomingCalls(new org.eclipse.lsp4j.CallHierarchyIncomingCallsParams(item)))
                 .<List<org.eclipse.lsp4j.CallHierarchyIncomingCall>>thenApply(
-                        l -> l == null ? List.of() : List.copyOf(l))
-                .exceptionally(t -> List.of());
+                        l -> l == null ? List.of() : List.copyOf(l));
     }
 
     /** Outgoing calls (callees) of a call-hierarchy item (#682). */

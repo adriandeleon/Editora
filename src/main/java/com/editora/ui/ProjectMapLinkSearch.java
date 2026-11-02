@@ -130,7 +130,11 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
         }
         String found = name;
         MapCardLinks.Request at = new MapCardLinks.Request(request.kind(), request.file(), line, column, found, text);
-        if (!askServer(at, text, answer)) {
+        // A server that fails or times out is not taken to mean "nothing there": the name is matched instead, and
+        // the status says the server did not answer (review 4, C6).
+        Consumer<String> failed =
+                why -> byName(root, at, language, tr("project.map.links.serverFailedByName", why), answer);
+        if (!askServer(at, text, answer, failed)) {
             String note = lsp != null && lsp.runsFor(request.file())
                     ? tr("project.map.links.serverCannot")
                     : tr("project.map.links.noServer");
@@ -142,7 +146,8 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
      * Asks the running server, the file lent to it while it answers. False when no server runs for the file or it
      * does not answer this request: the caller matches by name.
      */
-    private boolean askServer(MapCardLinks.Request at, String text, Consumer<MapCardLinks.Answer> answer) {
+    private boolean askServer(
+            MapCardLinks.Request at, String text, Consumer<MapCardLinks.Answer> answer, Consumer<String> failed) {
         LspManager servers = lsp;
         if (servers == null) {
             return false;
@@ -165,26 +170,42 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
             return false;
         }
         String name = at.name();
+        Consumer<String> failedThenReleased = why -> {
+            release.run();
+            failed.accept(why);
+        };
         if (callers) {
-            servers.prepareCallHierarchy(file, at.line(), at.column(), items -> {
-                if (items.isEmpty()) {
-                    release.run();
-                    answer.accept(new MapCardLinks.Answer(List.of(), MapCardLinks.Via.SERVER, false, null, name));
-                    return;
-                }
-                servers.callHierarchyChildren(file, items.getFirst().raw(), true, calls -> {
-                    release.run();
-                    List<MapCardLinks.Hit> hits = new ArrayList<>();
-                    for (LspManager.HierarchyNode caller : calls) {
-                        Path from = caller.file();
-                        if (from != null) { // a library's caller has no file on the map
-                            hits.add(new MapCardLinks.Hit(
-                                    from, caller.line(), caller.col(), caller.calls(), caller.name()));
+            servers.prepareCallHierarchy(
+                    file,
+                    at.line(),
+                    at.column(),
+                    items -> {
+                        if (items.isEmpty()) {
+                            release.run();
+                            answer.accept(
+                                    new MapCardLinks.Answer(List.of(), MapCardLinks.Via.SERVER, false, null, name));
+                            return;
                         }
-                    }
-                    answer.accept(new MapCardLinks.Answer(hits, MapCardLinks.Via.SERVER, false, null, name));
-                });
-            });
+                        servers.callHierarchyChildren(
+                                file,
+                                items.getFirst().raw(),
+                                true,
+                                calls -> {
+                                    release.run();
+                                    List<MapCardLinks.Hit> hits = new ArrayList<>();
+                                    for (LspManager.HierarchyNode caller : calls) {
+                                        Path from = caller.file();
+                                        if (from != null) { // a library's caller has no file on the map
+                                            hits.add(new MapCardLinks.Hit(
+                                                    from, caller.line(), caller.col(), caller.calls(), caller.name()));
+                                        }
+                                    }
+                                    answer.accept(
+                                            new MapCardLinks.Answer(hits, MapCardLinks.Via.SERVER, false, null, name));
+                                },
+                                failedThenReleased);
+                    },
+                    failedThenReleased);
         } else {
             servers.references(
                     file,
@@ -201,11 +222,7 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
                         }
                         answer.accept(new MapCardLinks.Answer(hits, MapCardLinks.Via.SERVER, false, null, name));
                     },
-                    why -> {
-                        release.run();
-                        answer.accept(MapCardLinks.Answer.none(
-                                MapCardLinks.Via.SERVER, tr("project.map.links.serverFailed", why)));
-                    });
+                    failedThenReleased);
         }
         return true;
     }
@@ -217,32 +234,38 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
         run(() -> {
             MapCardLinks.Answer found;
             try {
-                found = scan(root, name, language, at.kind() == MapCardLinks.Kind.CALLERS, note);
+                found = scan(root, name, language, at.kind() == MapCardLinks.Kind.CALLERS, note, at.file());
             } catch (RuntimeException failed) {
                 ProjectMapLog.unexpected("matching a declaration's name", failed);
-                found = MapCardLinks.Answer.none(MapCardLinks.Via.NAME, note);
+                found = MapCardLinks.Answer.none(MapCardLinks.Via.NAME, note, name);
             }
             MapCardLinks.Answer done = found;
             ui.execute(() -> answer.accept(done));
         });
     }
 
-    /** The name match itself. Blocking. */
-    MapCardLinks.Answer scan(Path root, String name, String language, boolean calls, String note) {
+    /** The name match itself, in the file list's order. Blocking. */
+    MapCardLinks.Answer scan(Path root, String name, String language, boolean calls, @Nullable String note) {
+        return scan(root, name, language, calls, note, null);
+    }
+
+    /**
+     * The name match itself, the files nearest {@code near} (the asked file) read first — its own folder, then its
+     * module's, then the rest, tests after the code — so that a popular name's capped answer is the code around the
+     * declaration rather than whatever the list met first (review 4, C9). Blocking.
+     */
+    MapCardLinks.Answer scan(
+            Path root, String name, String language, boolean calls, @Nullable String note, @Nullable Path near) {
         com.editora.search.ProjectFileList.Snapshot listed = files.snapshot(root);
         if (listed == null || name.isBlank()) {
-            return MapCardLinks.Answer.none(MapCardLinks.Via.NAME, note);
+            return MapCardLinks.Answer.none(MapCardLinks.Via.NAME, note, name.isBlank() ? null : name);
         }
         Pattern word = namePattern(name, calls);
         long deadline = clock.getAsLong() + BUDGET_MILLIS;
         List<MapCardLinks.Hit> hits = new ArrayList<>();
         boolean partial = listed.truncated();
         int read = 0;
-        for (String relative : listed.files()) {
-            String fileName = relative.substring(relative.lastIndexOf('/') + 1);
-            if (!language.equals(LanguageRegistry.forFileName(fileName))) {
-                continue;
-            }
+        for (String relative : linksScanOrder(listed.files(), language, root, near)) {
             Path file = root.resolve(relative);
             if (read++ >= MAX_FILES || hits.size() >= MAX_HITS || clock.getAsLong() > deadline) {
                 partial = true;
@@ -255,6 +278,46 @@ final class ProjectMapLinkSearch implements MapCardLinks.Source {
             matches(file, text, word, hits);
         }
         return new MapCardLinks.Answer(hits, MapCardLinks.Via.NAME, partial, note, name);
+    }
+
+    /**
+     * The listed files of {@code language} in the order a name match reads them: nearest {@code near}'s folder first
+     * (the most leading folders in common), code before tests unless {@code near} is a test, else in list order.
+     * Pure.
+     */
+    static List<String> linksScanOrder(List<String> listed, String language, Path root, @Nullable Path near) {
+        List<String> ofLanguage = new ArrayList<>();
+        for (String relative : listed) {
+            String fileName = relative.substring(relative.lastIndexOf('/') + 1);
+            if (language.equals(LanguageRegistry.forFileName(fileName))) {
+                ofLanguage.add(relative);
+            }
+        }
+        if (near == null || !near.startsWith(root)) {
+            return ofLanguage;
+        }
+        String nearRelative = com.editora.search.ProjectWalk.relativize(root, near);
+        String[] nearFolders = folders(nearRelative);
+        boolean fromTest = MapCardLinks.linksLooksLikeTest(nearRelative);
+        record Ranked(String relative, int test, int shared) {}
+        List<Ranked> ranked = new ArrayList<>(ofLanguage.size());
+        for (String relative : ofLanguage) {
+            String[] at = folders(relative);
+            int shared = 0;
+            while (shared < at.length && shared < nearFolders.length && at[shared].equals(nearFolders[shared])) {
+                shared++;
+            }
+            ranked.add(new Ranked(relative, !fromTest && MapCardLinks.linksLooksLikeTest(relative) ? 1 : 0, shared));
+        }
+        ranked.sort(java.util.Comparator.comparingInt(Ranked::test)
+                .thenComparing(java.util.Comparator.comparingInt(Ranked::shared).reversed()));
+        return ranked.stream().map(Ranked::relative).toList();
+    }
+
+    /** The folders of a {@code /}-separated relative path, without its file name. */
+    private static String[] folders(String relative) {
+        int slash = relative.lastIndexOf('/');
+        return slash < 0 ? new String[0] : relative.substring(0, slash).split("/");
     }
 
     /** Whole-word occurrences of a name; for {@code calls} only where a {@code (} follows. */
