@@ -313,6 +313,8 @@ final class MapSurface extends Region {
      * left out.
      */
     private boolean outputPaint;
+    /** Export ▸ PNG is taking its snapshot: the overview stays hidden ({@link #canvasHoldOverview}). */
+    private boolean canvasOverviewHeld;
 
     private Consumer<ProjectMapModel.Entry> onActivate = entry -> {};
     private Consumer<Path> onCloseColumn = path -> {};
@@ -3165,7 +3167,7 @@ final class MapSurface extends Region {
      */
     private void drawOverview(GraphicsContext ignored, double viewportWidth, double viewportHeight) {
         OverviewBox overview = overviewBox;
-        if (overview == null) {
+        if (overview == null || canvasOverviewHeld) {
             overviewCanvas.setVisible(false);
             return;
         }
@@ -3281,6 +3283,19 @@ final class MapSurface extends Region {
     /** The overview's own canvas, a child of the map area above the cards (see {@link #drawOverview}). */
     Node overviewLayer() {
         return overviewCanvas;
+    }
+
+    /**
+     * Keeps the overview hidden while Export ▸ PNG takes its snapshot: the snapshot's layout pass paints the map,
+     * and a paint shows the overview again (Map review 4 D2). Releasing it paints the overview back.
+     */
+    void canvasHoldOverview(boolean held) {
+        canvasOverviewHeld = held;
+        if (held) {
+            overviewCanvas.setVisible(false);
+        } else {
+            requestViewportRepaint();
+        }
     }
 
     /**

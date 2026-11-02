@@ -2850,7 +2850,6 @@ final class ProjectMapView extends VBox {
         }
         double scale = Math.min(CANVAS_PNG_SCALE, 8_192 / Math.max(width, height));
         List<Node> chrome = new ArrayList<>(canvasHost.lookupAll(".project-map-zoom"));
-        chrome.add(surface.overviewLayer());
         chrome.add(loadingLabel);
         chrome.add(noMatchesLabel);
         Map<Node, Boolean> visible = new HashMap<>();
@@ -2858,6 +2857,7 @@ final class ProjectMapView extends VBox {
             visible.put(node, node.isVisible());
             node.setVisible(false);
         }
+        surface.canvasHoldOverview(true);
         try {
             javafx.scene.SnapshotParameters parameters = new javafx.scene.SnapshotParameters();
             parameters.setTransform(javafx.scene.transform.Transform.scale(scale, scale));
@@ -2869,6 +2869,7 @@ final class ProjectMapView extends VBox {
             return canvasHost.snapshot(parameters, null);
         } finally {
             visible.forEach(Node::setVisible);
+            surface.canvasHoldOverview(false);
         }
     }
 

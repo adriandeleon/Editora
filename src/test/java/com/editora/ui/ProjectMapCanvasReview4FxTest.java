@@ -186,6 +186,33 @@ class ProjectMapCanvasReview4FxTest {
         }
     }
 
+    @Test
+    void aPaintWhileThePngIsTakenLeavesTheOverviewOut() throws Exception {
+        Path project = project();
+        Path src = Files.createDirectory(project.resolve("src"));
+        for (int i = 0; i < 150; i++) {
+            Files.writeString(src.resolve(String.format("Main%03d.java", i)), "class M {}");
+        }
+        Path last = src.resolve("Main149.java");
+        try (Harness h = open(project, 900, 640, true)) {
+            FxTestSupport.runOnFx(() -> h.view().revealPath(last));
+            waitForFx(() -> idle(h) && last.equals(selected(h)));
+            settle(h);
+            javafx.scene.canvas.Canvas overview = FxTestSupport.field(h.surface(), "overviewCanvas");
+            FxTestSupport.runOnFx(() -> {
+                FxTestSupport.invoke(h.surface(), "paintNow");
+                assertTrue(overview.isVisible(), "a 150-row column runs off-screen: the overview is shown");
+                // The export's snapshot runs a layout pass, and a paint in it used to show the overview again.
+                FxTestSupport.call(h.surface(), "canvasHoldOverview", new Class<?>[] {boolean.class}, true);
+                FxTestSupport.invoke(h.surface(), "paintNow");
+                assertFalse(overview.isVisible(), "a paint during the export keeps the overview out of the PNG");
+                FxTestSupport.call(h.surface(), "canvasHoldOverview", new Class<?>[] {boolean.class}, false);
+                assertNotNull(h.view().canvasViewImage());
+            });
+            waitForFx(overview::isVisible); // and it is back on screen after the export
+        }
+    }
+
     private static double distance(Color a, Color b) {
         return Math.max(
                 Math.abs(a.getRed() - b.getRed()),
