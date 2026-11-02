@@ -981,8 +981,7 @@ final class MapCards {
                                 ProjectMapPreview.MIN_WIDTH,
                                 ProjectMapPreview.MIN_HEIGHT,
                                 parentWidth,
-                                parentHeight,
-                                true));
+                                parentHeight));
         updateCardNotes(preview);
         cardsUpdateStepping(preview);
         cardsRequestLastChange(preview);
@@ -1029,8 +1028,7 @@ final class MapCards {
                                 ProjectMapPreview.MIN_WIDTH,
                                 ProjectMapPreview.MIN_HEIGHT,
                                 parentWidth,
-                                parentHeight,
-                                true));
+                                parentHeight));
         updateCardNotes(preview);
         cardsRequestLastChange(preview);
         scheduleCardRefresh(); // starts following the buffer when the card mirrors one
@@ -1085,8 +1083,7 @@ final class MapCards {
                 ProjectMapNotePreview.MIN_WIDTH,
                 ProjectMapNotePreview.MIN_HEIGHT,
                 canvasHost.getWidth(),
-                canvasHost.getHeight(),
-                true);
+                canvasHost.getHeight());
         preview.showNotes(selected, values, placement);
         updateCardVisibility();
     }
@@ -2103,8 +2100,8 @@ final class MapCards {
     /**
      * The one placement path for code and note cards: beside the row's column when there is room for the
      * card's minimum size, otherwise over the map inside the panel, then shifted or cascaded clear of the
-     * cards already open — of those in view; one dragged or panned off the panel takes no room. The map is not panned
-     * here (see the overload with {@code mayPan}). Sizes in and out are the card's own, unzoomed; the room is found
+     * cards already open — of those in view; one dragged or panned off the panel takes no room. The map
+     * itself is never panned to make room. Sizes in and out are the card's own, unzoomed; the room is found
      * for the card as drawn at its zoom.
      */
     ProjectMapPreview.Placement previewPlacement(
@@ -2116,25 +2113,6 @@ final class MapCards {
             double minimumHeight,
             double parentWidth,
             double parentHeight) {
-        return previewPlacement(
-                preview, path, width, height, minimumWidth, minimumHeight, parentWidth, parentHeight, false);
-    }
-
-    /**
-     * {@link #previewPlacement}, for a new card when {@code mayPan}: with no room for it past its row's column the way
-     * the map flows, the map is panned back just enough (as revealing a column pans it), so the card opens on its
-     * flow side instead of behind its row (Map card flow).
-     */
-    ProjectMapPreview.Placement previewPlacement(
-            Region preview,
-            Path path,
-            double width,
-            double height,
-            double minimumWidth,
-            double minimumHeight,
-            double parentWidth,
-            double parentHeight,
-            boolean mayPan) {
         double scale = cardScale(preview);
         ProjectMapPreview.Placement drawn = drawnPlacement(
                 preview,
@@ -2144,8 +2122,7 @@ final class MapCards {
                 minimumWidth * scale,
                 minimumHeight * scale,
                 parentWidth,
-                parentHeight,
-                mayPan);
+                parentHeight);
         return new ProjectMapPreview.Placement(
                 drawn.x(), drawn.y(), drawn.width() / scale, drawn.height() / scale, drawn.growLeft());
     }
@@ -2156,8 +2133,8 @@ final class MapCards {
      * panel, scored by how much of the columns, the zoom bar, the overview and the other cards it would cover (see
      * {@link #cardOverlapCost}). The columns that lead to the row weigh most, and so does the band where the row's
      * next column — its folder's, or its file's Structure column — would open — and by where it stands against the
-     * way the map flows ({@link #cardFlowCost}). A new card ({@code mayPan}) with no room on its flow side pans the map
-     * back for it ({@link #cardFlowPan}); nothing else pans.
+     * way the map flows ({@link #cardFlowCost}). The map is never panned: with no room on its flow side, a card takes
+     * the side of its column.
      */
     private ProjectMapPreview.Placement drawnPlacement(
             Region preview,
@@ -2167,8 +2144,7 @@ final class MapCards {
             double minimumWidth,
             double minimumHeight,
             double parentWidth,
-            double parentHeight,
-            boolean mayPan) {
+            double parentHeight) {
         Site site = host.site(path);
         Site linked = links.besideSource(path); // a result card goes beside the card it was found from
         Site beside = linked != null ? linked : site.row() == null ? cardStructureSite(path) : null;
@@ -2200,25 +2176,6 @@ final class MapCards {
         }
         // The way the map flows from this row: a card opens past the row's column that way, as its next column would.
         double[] forward = cardFlowForward(path, beside, linked != null);
-        if (mayPan
-                && forward != null
-                && cardFlowPan(
-                        site,
-                        cardFlowKeep(path, site, beside),
-                        forward,
-                        fullWidth,
-                        fullHeight,
-                        minimumWidth,
-                        minimumHeight,
-                        parentWidth,
-                        parentHeight)) {
-            // The map, and the cards on it (a card's Structure column with its card), moved: where the row is now.
-            Site moved = beside != null ? cardStructureSite(path) : host.site(path);
-            if (moved == null || moved.row() == null) {
-                return new ProjectMapPreview.Placement(margin, margin, fullWidth, fullHeight);
-            }
-            site = moved;
-        }
         List<double[]> obstacles = new ArrayList<>(site.obstacles());
         obstacles.addAll(chrome); // the zoom bar and the overview: never covered when anything else will do
         List<Region> cards = new ArrayList<>(previews.values());
@@ -2304,6 +2261,27 @@ final class MapCards {
                     minimumWidth,
                     1);
         }
+        // Beside the row's column itself, across the flow and level with the row, cut to the room there: where a card
+        // goes when its flow side has no room, as the map is never panned for it. Along the flow it may slide as far
+        // as it stays level with the row, to clear what is in the way (the zoom bar, the overview, other cards).
+        if (forward != null && beside == null) {
+            for (double along :
+                    cardSideLevels(row, horizontal ? fullWidth : fullHeight, horizontal ? 0 : 1, obstacles)) {
+                if (horizontal) {
+                    double aboveHeight = Math.min(fullHeight, column[1] - gap - margin);
+                    cardSpot(spots, along, column[1] - gap - aboveHeight, fullWidth, aboveHeight, minimumHeight, 0);
+                    double belowY = column[1] + column[3] + gap;
+                    double belowHeight = Math.min(fullHeight, parentHeight - margin - belowY);
+                    cardSpot(spots, along, belowY, fullWidth, belowHeight, minimumHeight, 0);
+                } else {
+                    double leftWidth = Math.min(fullWidth, column[0] - gap - margin);
+                    cardSpot(spots, column[0] - gap - leftWidth, along, leftWidth, fullHeight, minimumWidth, 1);
+                    double rightX = column[0] + column[2] + gap;
+                    double rightWidth = Math.min(fullWidth, parentWidth - margin - rightX);
+                    cardSpot(spots, rightX, along, rightWidth, fullHeight, minimumWidth, 1);
+                }
+            }
+        }
         // Any free part of the panel: the card against each obstacle's edges, and against the panel's.
         java.util.TreeSet<Double> xs = new java.util.TreeSet<>(List.of(margin, parentWidth - fullWidth - margin));
         java.util.TreeSet<Double> ys = new java.util.TreeSet<>(List.of(margin, parentHeight - fullHeight - margin));
@@ -2363,6 +2341,10 @@ final class MapCards {
         }
         double[] best = null;
         double bestCost = Double.MAX_VALUE;
+        // The row's own column and the columns that lead to it: a spot over them weighs as behind, so the way the map
+        // flows never buys covering the path to the row.
+        List<double[]> leading =
+                obstacles.stream().filter(o -> o[4] == 4 || o[4] == 6).toList();
         for (double[] spot : clamped) {
             double x = spot[0];
             double y = spot[1];
@@ -2375,7 +2357,7 @@ final class MapCards {
                     + distance * 0.5
                     - w * h * 0.05
                     + Math.max(0, fullWidth - w) * h * 0.1
-                    + cardFlowCost(x, y, w, h, column, forward) * fullWidth * fullHeight;
+                    + cardFlowWeight(x, y, w, h, column, forward, leading) * fullWidth * fullHeight;
             if (cost < bestCost) {
                 bestCost = cost;
                 best = new double[] {x, y, w, h};
@@ -2384,7 +2366,9 @@ final class MapCards {
         if (best == null) {
             return new ProjectMapPreview.Placement(margin, margin, fullWidth, fullHeight);
         }
-        boolean growLeft = horizontal && best[0] + best[2] <= row[0];
+        // Before its row (or, in a flow down or up the panel, left of the row's column): widened text grows leftwards,
+        // away from the column, rather than back over it.
+        boolean growLeft = best[0] + best[2] <= (horizontal ? row[0] : column[0]);
         return new ProjectMapPreview.Placement(best[0], best[1], best[2], best[3], growLeft);
     }
 
@@ -2409,74 +2393,6 @@ final class MapCards {
     }
 
     /**
-     * Pans the map back when a card has no room past its row's column the way the map flows (and past the band its row's
-     * next column would open in): just enough for the card, or for its minimum, and never so far that {@code keep} — the
-     * row's column, and beside a card's Structure column the card too — leaves the panel. Whether it panned.
-     */
-    private boolean cardFlowPan(
-            Site site,
-            double[] keep,
-            double[] forward,
-            double fullWidth,
-            double fullHeight,
-            double minimumWidth,
-            double minimumHeight,
-            double parentWidth,
-            double parentHeight) {
-        double[] column = site.column();
-        double[] row = site.row();
-        if (row == null) {
-            return false;
-        }
-        boolean alongX = forward[0] != 0;
-        int way = (int) (alongX ? forward[0] : forward[1]);
-        int axis = alongX ? 0 : 1;
-        double margin = ProjectMapPreview.EDGE_MARGIN;
-        double gap = COLUMN_GAP;
-        double start = way > 0 ? column[axis] + column[axis + 2] + gap : column[axis] - gap;
-        for (double[] o : site.obstacles()) {
-            // The band the row's next column opens in (weight 3), level with the row: the card goes past it.
-            boolean level = o[1 - axis] < row[1 - axis] + row[3 - axis] && o[1 - axis] + o[3 - axis] > row[1 - axis];
-            if (o[4] == 3 && level) {
-                start = way > 0 ? Math.max(start, o[axis] + o[axis + 2] + gap) : Math.min(start, o[axis] - gap);
-            }
-        }
-        double panel = alongX ? parentWidth : parentHeight;
-        double need = alongX ? fullWidth : fullHeight;
-        double least = Math.min(alongX ? minimumWidth : minimumHeight, need);
-        double room = way > 0 ? panel - margin - start : start - margin;
-        if (room >= need) {
-            return false;
-        }
-        // Back no further than keeps the row's column (and a Structure column's card) on the panel.
-        double most = way > 0 ? keep[axis] - margin : panel - margin - (keep[axis] + keep[axis + 2]);
-        double pan = Math.min(need - room, Math.max(0, most));
-        if (pan <= 0.5 || room + pan < least) {
-            return false;
-        }
-        host.panBy(alongX ? -way * pan : 0, alongX ? 0 : -way * pan);
-        return true;
-    }
-
-    /**
-     * What a pan for a new card must keep on the panel, {@code {x, y, w, h}}: the row's column; beside a file card's
-     * Structure column, that column and the card it is stuck on.
-     */
-    private double[] cardFlowKeep(Path path, Site site, @Nullable Site beside) {
-        double[] column = site.column();
-        ProjectMapCardStructure stuck = beside == null ? null : cardStructureOf(structure.fileOf(path));
-        if (stuck == null) {
-            return column;
-        }
-        double[] card = drawnBounds(stuck.card());
-        double left = Math.min(column[0], card[0]);
-        double top = Math.min(column[1], card[1]);
-        double right = Math.max(column[0] + column[2], card[0] + card[2]);
-        double bottom = Math.max(column[1] + column[3], card[1] + card[3]);
-        return new double[] {left, top, right - left, bottom - top};
-    }
-
-    /**
      * What a spot costs for where it stands against the way the card flows from its row, in parts of the card's area:
      * nothing past the row's column that way, a quarter beside it, half behind it, where the columns that lead to the
      * row are. Zero without a way ({@code forward} null). Pure. (Map card flow)
@@ -2495,6 +2411,16 @@ final class MapCards {
         boolean ahead = way > 0 ? from >= end - slack : to <= start + slack;
         boolean behind = way > 0 ? to <= start + slack : from >= end - slack;
         return ahead ? 0 : behind ? FLOW_BEHIND : FLOW_BESIDE;
+    }
+
+    /**
+     * {@link #cardFlowCost}, but as behind for a spot that covers any of {@code path} (the row's column and the columns
+     * that lead to it): a card over them is in the way of the row however it stands against the flow.
+     */
+    private static double cardFlowWeight(
+            double x, double y, double w, double h, double[] column, double @Nullable [] forward, List<double[]> path) {
+        double flow = cardFlowCost(x, y, w, h, column, forward);
+        return flow > 0 && cardOverlapCost(x, y, w, h, path) > 0 ? FLOW_BEHIND : flow;
     }
 
     /** {@link #cardFlowCost} beside the row's column (above or below it across the flow), per card area. */
@@ -2540,6 +2466,22 @@ final class MapCards {
         if ((axis == 1 ? w : h) >= minimum && w > 0 && h > 0) {
             spots.add(new double[] {x, y, w, h});
         }
+    }
+
+    /**
+     * Where along {@code axis} a card {@code size} long may start and still stand level with {@code row}: centred on
+     * it, flush with either end of it, and against each obstacle's edges where that keeps it level. (Map card flow)
+     */
+    private static List<Double> cardSideLevels(double[] row, double size, int axis, List<double[]> obstacles) {
+        double start = row[axis];
+        double end = row[axis] + row[axis + 2];
+        List<Double> levels = new ArrayList<>(List.of(start + (end - start - size) / 2, start, end - size));
+        for (double[] o : obstacles) {
+            levels.add(o[axis] - size - COLUMN_GAP);
+            levels.add(o[axis] + o[axis + 2] + COLUMN_GAP);
+        }
+        levels.removeIf(level -> level > end || level + size < start);
+        return levels;
     }
 
     private static double cardBounded(double requested, double minimum, double available) {

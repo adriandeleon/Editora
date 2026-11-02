@@ -698,7 +698,8 @@ class ProjectMapCardsFxTest {
                 card.relocate(card.getLayoutX() - 40, card.getLayoutY() + 25);
                 assertEquals(before - 40, sheets.get(0).getLayoutX(), 0.5);
 
-                // The card's Structure column takes its place beside the card; the sheets step past it.
+                // The card's Structure column takes its place beside the card; the sheets step past it. (The card may
+                // be nudged clear for the column; the sheets go with it.)
                 assertTrue(card.structureAvailable());
                 card.setStructureShown(true);
                 Map<ProjectMapPreview, ProjectMapCardStructure> columns =
@@ -713,7 +714,14 @@ class ProjectMapCardsFxTest {
                             "a sheet stands clear of the Structure column");
                 }
                 card.setStructureShown(false);
-                assertEquals(before - 40, sheets.get(0).getLayoutX(), 0.5, "and back when it is taken off");
+                double left = card.getLayoutX();
+                double right = left + card.getWidth() * scale;
+                for (Region sheet : stickies(map)) {
+                    double sheetLeft = sheet.getLayoutX();
+                    assertTrue(
+                            sheetLeft >= right - 0.5 || sheetLeft + ProjectMapStickyNotes.WIDTH * scale <= left + 0.5,
+                            "and back beside the card when it is taken off");
+                }
 
                 // A sheet saves an edit as a note card does, and a blank one comes back.
                 TextArea editor = (TextArea)
