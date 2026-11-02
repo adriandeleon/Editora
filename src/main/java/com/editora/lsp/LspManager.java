@@ -225,6 +225,7 @@ public final class LspManager {
         typeScriptTypeAcquisition = typeAcquisition;
         nodePathSetting = node;
         if (changed) {
+            availableCache.clear(); // an npm server's program may be in (or gone with) that Node.js's folder (A203)
             shutdownServer(TypeScriptServer.SERVER_ID);
         }
     }
@@ -1240,8 +1241,9 @@ public final class LspManager {
             return;
         }
         List<String> command = LspServerRegistry.commandFor(serverId, commands);
+        String node = nodePathSetting;
         detectExec.submit(() -> {
-            boolean ok = available(serverId, command);
+            boolean ok = available(serverId, com.editora.install.NpmServerBins.resolve(serverId, command, node));
             availableCache.put(serverId, ok);
             Platform.runLater(() -> {
                 if (!closed) {
@@ -1264,8 +1266,9 @@ public final class LspManager {
         Map<String, String> one = new java.util.HashMap<>();
         one.put(serverId, command);
         List<String> argv = LspServerRegistry.commandFor(serverId, one);
+        String node = nodePathSetting;
         detectExec.submit(() -> {
-            boolean ok = available(serverId, argv);
+            boolean ok = available(serverId, com.editora.install.NpmServerBins.resolve(serverId, argv, node));
             Platform.runLater(() -> {
                 if (!closed) {
                     onResult.accept(ok);
@@ -2356,7 +2359,8 @@ public final class LspManager {
                             resolvedSpec.command(),
                             remoteEnvironment,
                             exe -> JavaServerEnvironment.isRemoteJdtlsLauncher(root, exe))
-                    : resolvedSpec.command();
+                    // an npm -g server in the Settings Node.js's own folder, off PATH (HTML review 3, A203)
+                    : com.editora.install.NpmServerBins.resolve(serverId, resolvedSpec.command(), nodeSetting);
             if (!remote && XmlServerSettings.isLemminx(serverId)) {
                 // A Java lemminx (the pom server's, or XML's fallback) keeps lemminx-maven's artifact store under
                 // user.home: Editora's, not the passwd home the JVM would read (review D14).

@@ -2337,10 +2337,9 @@ final class LspCoordinator {
 
     /**
      * Re-runs {@link #applySupport} when this window's project has changed since it last ran and the new
-     * project resolves to different server commands or enables; true when it did.
-     *
-     * <p>A window learns its project after {@code init} has already configured the manager, so without
-     * this the first buffer would launch the previous project's (or the global) command.
+     * project resolves to different server commands or enables; true when it did. A window learns its project
+     * after {@code init} has already configured the manager, so without this the first buffer would launch the
+     * previous project's (or the global) command, and the HTML servers get the project's {@code html} object.
      */
     private boolean overridesReapplied() {
         offerInterruptedEdits(); // a window learns its project late; asks once per root
@@ -2349,6 +2348,7 @@ final class LspCoordinator {
             return false;
         }
         appliedProjectRoot = root;
+        html.applySettings(projectSettings().getHtml()); // at open, its ignored keys said too (HTML review 3 A201)
         if (projectOverrideSignature().equals(appliedProjectOverrides)) {
             return false;
         }

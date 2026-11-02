@@ -8,7 +8,9 @@ import static com.editora.i18n.Messages.tr;
  * Settings → LSP, the HTML card's own rows: the HTML server's formatting, completion and validation settings (HTML
  * review A4, B10). Built here so that {@link SettingsWindow} stays under the file-size limit; the rows are its own
  * kinds, keyed {@code lsp.html.*}. A project's {@code .editora/settings.json} may lay an {@code html} object (VS
- * Code's key names) over them.
+ * Code's key names) over them. The quotes an attribute gets after its {@code =} are not here but under Settings →
+ * Editor, beside "Auto-close tags": a typed {@code =} follows them with the server off too (HTML review 3 C204), and
+ * completion still reads the same value.
  */
 final class SettingsHtmlRows {
 
@@ -18,8 +20,8 @@ final class SettingsHtmlRows {
     private static final String FORMAT_WORDS = "format formatting wrap line length width column attributes align"
             + " force preserve pre code textarea unformatted content keep verbatim whitespace editorconfig";
 
-    private static final String CODE_WORDS = "completion attribute quotes double single empty validate validation"
-            + " embedded script javascript style css problems diagnostics";
+    private static final String CODE_WORDS =
+            "validate validation embedded script javascript style css problems diagnostics";
 
     private SettingsHtmlRows() {}
 
@@ -70,16 +72,7 @@ final class SettingsHtmlRows {
                 c,
                 cat,
                 tr("settings.lsp.html.group.code"),
-                WORDS + CODE_WORDS + titles("attributeQuotes", "validateScripts", "validateStyles"));
-        w.choiceRow(
-                c,
-                cat,
-                "lsp.html.attributeQuotes",
-                true,
-                Settings.HTML_ATTRIBUTE_QUOTES,
-                Settings::getHtmlAttributeQuotes,
-                Settings::setHtmlAttributeQuotes,
-                WORDS + "completion attribute quotes double single empty value");
+                WORDS + CODE_WORDS + titles("validateScripts", "validateStyles"));
         w.switchRow(
                 c,
                 cat,

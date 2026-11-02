@@ -154,9 +154,36 @@ public final class HtmlElements {
      * {@code {{^x}}}, {@code {{! … }}}, or Go/Hugo {@code {{ if }}}, {@code {{ else }}}, {@code {{ end }}}. A plain
      * {@code {{ value }}} (Angular, Vue) is only a value and does not count. The markup check does not look for
      * unclosed elements in such text, and the built-in formatter leaves it alone.
+     *
+     * <p>Syntax a page only shows or holds as data does not count (HTML review 3 C207): the content of comments,
+     * scripts (an Underscore {@code <script type="text/template">} too), styles, {@code <pre>}, {@code <code>} and
+     * {@code <textarea>}, as on a page that documents Jinja.
      */
     public static boolean hasTemplateSyntax(CharSequence text) {
         String s = text.toString();
+        return syntaxIn(s) && syntaxIn(withoutShownCode(s));
+    }
+
+    /** Elements whose content is shown or kept as written, not run by a template engine on the page. */
+    private static final Set<String> SHOWN_CODE = Set.of("pre", "code", "textarea", "xmp", "listing", "plaintext");
+
+    /**
+     * {@code s} with the content of its comments, scripts, styles and {@link #SHOWN_CODE} elements blanked out
+     * (line breaks kept). The same length as {@code s}.
+     */
+    static String withoutShownCode(String s) {
+        char[] out = s.toCharArray();
+        for (HtmlRegions.Region r : HtmlRegions.scan(s, false, s.length(), SHOWN_CODE, Set.of())) {
+            for (int i = r.start(); i < r.end(); i++) {
+                if (out[i] != '\n') {
+                    out[i] = ' ';
+                }
+            }
+        }
+        return new String(out);
+    }
+
+    private static boolean syntaxIn(String s) {
         return paired(s, "{%", "%}", false)
                 || paired(s, "{#", "#}", true) // on one line: a JavaScript class body "{#field" is not one
                 || paired(s, "<%", "%>", false)
@@ -165,6 +192,24 @@ public final class HtmlElements {
 
     private static final java.util.regex.Pattern MUSTACHE_BLOCK = java.util.regex.Pattern.compile(
             "\\{\\{~?-?\\s*(?:[#/^!]|(?:else|end|if|range|with|define|block|unless|each)\\b)");
+
+    /**
+     * Angular template syntax (HTML review 3 C201): a control-flow block (<code>@if (…) {</code>, <code>@for (…) {</code>,
+     * <code>@switch (…) {</code>, <code>@defer {</code>), a structural directive ({@code *ngIf=}) or a property, event or two-way
+     * binding ({@code [value]="…"}, {@code (click)="…"}, {@code [(ngModel)]="…"}) in a start tag.
+     */
+    private static final java.util.regex.Pattern ANGULAR = java.util.regex.Pattern.compile(
+            "@(?:if|for|switch)\\s*\\([^\\n]*\\)\\s*\\{|@defer\\b[^\\n]*\\{|\\s\\*ng[A-Z]\\w*\\s*="
+                    + "|\\s(?:\\[\\(?[A-Za-z][\\w.:-]*\\)?]|\\([A-Za-z][\\w.:-]*\\))\\s*=\\s*[\"']");
+
+    /**
+     * Whether {@code text} uses Angular template syntax outside its comments, scripts, styles and shown code (see
+     * {@link #ANGULAR}): an Angular component template, which the Angular compiler reads, not the browser.
+     */
+    public static boolean hasAngularSyntax(CharSequence text) {
+        String s = text.toString();
+        return ANGULAR.matcher(s).find() && ANGULAR.matcher(withoutShownCode(s)).find();
+    }
 
     /** Whether {@code open} occurs with a {@code close} after it (on the same line when {@code sameLine}). */
     private static boolean paired(String s, String open, String close, boolean sameLine) {

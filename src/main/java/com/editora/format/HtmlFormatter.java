@@ -6,6 +6,7 @@ import java.util.Locale;
 import java.util.Set;
 
 import com.editora.text.HtmlElements;
+import com.editora.text.HtmlRegions;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -13,8 +14,10 @@ import org.jspecify.annotations.Nullable;
  * sanitizer: a run of text and inline elements ({@code <b>}, {@code <a>}, {@code <span>}…) stays on one line, beside
  * the block tag that holds it — every element that is not a {@link HtmlElements#BLOCK} is inline, custom elements
  * included. The contents of {@code <pre>}, {@code <textarea>} and their kin ({@link HtmlElements#VERBATIM}), comments,
- * and tags are copied exactly; a {@code <script>}'s or {@code <style>}'s lines move with its start tag, their relative
- * indentation kept. Only whitespace changes. Void elements ({@code <br>}, {@code <img>}, {@code <meta>}…) and
+ * and tags are copied exactly; a {@code <style>}'s or a JavaScript or JSON {@code <script>}'s lines move with its start
+ * tag, their relative indentation kept, and any other script (an HTML template, {@code text/x-template}) is copied
+ * exactly too (HTML review 3 C210). In an Angular template ({@link HtmlElements#hasAngularSyntax}) a control-flow
+ * block's lines (<code>@if (…) {</code> … <code>}</code>) indent one level, as their elements do. Only whitespace changes. Void elements ({@code <br>}, {@code <img>}, {@code <meta>}…) and
  * declarations ({@code <!doctype>}) open no level, and the usual omitted end tags ({@code <li>}, {@code <p>},
  * {@code <td>}…) close themselves.
  *
@@ -115,10 +118,20 @@ public final class HtmlFormatter {
 
         private final int limit;
 
+        /** An Angular template: its <code>@if (…) {</code> … <code>}</code> blocks indent ({@link #document} only). */
+        private final boolean angular;
+
+        /** The Angular blocks open at this point. */
+        private int blocks;
+
+        /** Braces opened by other text (an i18n ICU expression, a multi-line interpolation): their {@code }} closes no block. */
+        private int otherBraces;
+
         Writer(String s, String indent, boolean document) {
             this.s = s;
             this.indent = indent;
             this.document = document;
+            this.angular = document && HtmlElements.hasAngularSyntax(s);
             this.limit = 3 * s.length() + 4096 + (document ? s.length() * indent.length() : 0);
             this.out = new StringBuilder(s.length() + s.length() / 4);
         }
@@ -177,8 +190,9 @@ public final class HtmlFormatter {
                         return null;
                     }
                     String content = s.substring(i, close);
-                    // A script's or a style's code moves with its start tag; a <pre>'s text stays as written (C107).
-                    out.append("script".equals(name) || "style".equals(name) ? rebased(content) : content);
+                    // A script's or a style's code moves with its start tag; a <pre>'s text stays as written (C107),
+                    // and so does an HTML template's in a <script type="text/x-template"> (HTML review 3 C210).
+                    out.append(movesWithItsTag(tag, name) ? rebased(content) : content);
                     open.removeLast(); // pushed by openTag
                     out.append(s, close, closeEnd);
                     if (lineOwner >= open.size()) {
@@ -189,6 +203,75 @@ public final class HtmlFormatter {
                 }
             }
             return out.toString();
+        }
+
+        /** Whether the content of the verbatim element {@code tag} opens is code that moves with it. */
+        private static boolean movesWithItsTag(String tag, String name) {
+            if ("style".equals(name)) {
+                return true;
+            }
+            if (!"script".equals(name)) {
+                return false;
+            }
+            HtmlRegions.Kind kind = HtmlRegions.scriptKindOf(tag);
+            return kind == HtmlRegions.Kind.SCRIPT || kind == HtmlRegions.Kind.DATA;
+        }
+
+        /** The depth the next line is indented to: the open elements, and the open Angular blocks. */
+        private int depth() {
+            return open.size() + blocks;
+        }
+
+        /** An Angular block's opening line: <code>@if (a) {</code>, <code>} @else {</code>, <code>@defer {</code>. */
+        private static final java.util.regex.Pattern NG_OPEN =
+                java.util.regex.Pattern.compile("^(?:}\\s*)?@[A-Za-z]+\\b.*\\{$");
+
+        /**
+         * Text with a line of an Angular block in it: each line written on its own, a line that starts with a
+         * <code>}</code> one level out and one that opens a block followed by lines one level in.
+         */
+        private boolean angularText(String text) {
+            if (!angular || text.indexOf('{') < 0 && text.indexOf('}') < 0) {
+                return false;
+            }
+            boolean any = false;
+            for (String line : text.split("\n", -1)) {
+                String core = line.strip();
+                any |= NG_OPEN.matcher(core).matches() || core.startsWith("}") && !core.startsWith("}}");
+            }
+            if (!any) {
+                return false;
+            }
+            int from = 0;
+            while (from < text.length()) {
+                int nl = text.indexOf('\n', from);
+                int to = nl < 0 ? text.length() : nl + 1;
+                String core = text.substring(from, to).strip();
+                boolean opens = NG_OPEN.matcher(core).matches();
+                boolean closes = core.startsWith("}") && !core.startsWith("}}") && otherBraces == 0;
+                if (closes && blocks > 0) {
+                    blocks--;
+                }
+                plainText(text.substring(from, to));
+                if (opens) {
+                    blocks++;
+                } else if (!closes) {
+                    otherBraces = Math.max(0, otherBraces + braceBalance(core));
+                }
+                from = to;
+            }
+            return true;
+        }
+
+        /** {@code {} minus {@code }} in {@code line}, not counting {@code {{ … }}} interpolation delimiters. */
+        static int braceBalance(String line) {
+            String rest = line.replace("{{", "").replace("}}", "");
+            int balance = 0;
+            for (int i = 0; i < rest.length(); i++) {
+                char c = rest.charAt(i);
+                balance += c == '{' ? 1 : c == '}' ? -1 : 0;
+            }
+            return balance;
         }
 
         /** Whether the construct {@code [from, to)} has no whitespace on either side: it is part of a word. */
@@ -395,6 +478,12 @@ public final class HtmlFormatter {
         }
 
         private void text(String text) {
+            if (!angularText(text)) {
+                plainText(text);
+            }
+        }
+
+        private void plainText(String text) {
             int a = 0;
             int b = text.length();
             while (a < b && Character.isWhitespace(text.charAt(a))) {
@@ -444,7 +533,7 @@ public final class HtmlFormatter {
             if (piece.indexOf('\n') < 0) {
                 return piece;
             }
-            String pad = indent.repeat(open.size());
+            String pad = indent.repeat(depth());
             String[] lines = piece.split("\n", -1);
             StringBuilder b = new StringBuilder(lines[0].stripTrailing());
             for (int k = 1; k < lines.length; k++) {
@@ -460,12 +549,12 @@ public final class HtmlFormatter {
         /** Appends text or a phrasing element to the current line, or starts a line for it. */
         private void inline(String piece) {
             if (breakPending && last != Last.NOTHING) {
-                newline(open.size()); // the author broke the line here: so does the formatted text
+                newline(depth()); // the author broke the line here: so does the formatted text
                 lineOwner = -1;
             } else if (last == Last.INLINE) {
                 out.append(pendingSpace);
             } else if (last != Last.BLOCK_OPEN) {
-                newline(open.size());
+                newline(depth());
                 lineOwner = -1;
             }
             clearBreak();
@@ -475,7 +564,7 @@ public final class HtmlFormatter {
         }
 
         private void ownLine(String construct) {
-            newline(open.size());
+            newline(depth());
             out.append(construct);
             lineOwner = -1;
             last = Last.CLOSED;
@@ -501,7 +590,7 @@ public final class HtmlFormatter {
             if (inline) {
                 inline(tag);
             } else {
-                newline(open.size());
+                newline(depth());
                 out.append(tag);
                 pendingSpace = "";
                 lineOwner = isVoid ? -1 : open.size();
@@ -525,7 +614,7 @@ public final class HtmlFormatter {
             }
             if (HtmlElements.isInline(name)) {
                 if (blockInside) {
-                    newline(open.size()); // "<select><option>a</select>": the end tag lines up with its start tag
+                    newline(depth()); // "<select><option>a</select>": the end tag lines up with its start tag
                     out.append(tag);
                     lineOwner = -1;
                     last = Last.INLINE;
@@ -537,7 +626,7 @@ public final class HtmlFormatter {
             if (ownsLine && !breakPending && (last == Last.INLINE || last == Last.BLOCK_OPEN)) {
                 out.append(tag); // "<h1>Not Found</h1>" stays on one line
             } else {
-                newline(open.size());
+                newline(depth());
                 out.append(tag);
             }
             pendingSpace = "";

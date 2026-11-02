@@ -185,8 +185,14 @@ public final class HtmlCaretRegion {
         return at >= from && s.indexOf(close, at + open.length()) < 0;
     }
 
+    /**
+     * A character of an attribute name as {@link #quotesAfterEquals} reads it: a name character, Vue and Alpine's
+     * {@code @}, and the brackets, parentheses, {@code *} and {@code #} of Angular's {@code [value]},
+     * {@code (click)}, {@code [(ngModel)]}, {@code *ngIf} and {@code #ref} (HTML review 3 C209), which the HTML
+     * tokenizer reads as part of the name too.
+     */
     private static boolean isAttributeNameChar(char c) {
-        return isNameChar(c) || c == '@';
+        return isNameChar(c) || c == '@' || c == '[' || c == ']' || c == '(' || c == ')' || c == '*' || c == '#';
     }
 
     /**

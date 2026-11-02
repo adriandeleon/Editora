@@ -174,9 +174,90 @@ class HtmlMarkupCheckRealWorldTest {
                 </html>
                 """);
         assertEquals(List.of(), problems(index, root));
-        Path relative = write("static-site/page.html", "<img src=\"img/a.png\"><img src=\"../../outside.png\">");
+    }
+
+    @Test
+    void angularComponentTemplatesCloseComponentsWithASlashAndLinkFromTheApp() throws IOException {
+        // HTML review 3 C201, reviewer C's Angular 17 app (rw/angular), trimmed.
+        write("angular.json", "{}");
+        write(
+                "src/index.html",
+                "<!doctype html>\n<html><head><base href=\"/\"></head><body><app-root></app-root>"
+                        + "</body></html>\n");
+        write("src/assets/logo.svg", "<svg/>");
+        write("public/favicon.ico", "");
+        Path app = write("src/app/app.component.html", """
+                <app-header />
+                <main class="content">
+                  @if (user(); as u) {
+                    <app-profile [user]="u" (logout)="onLogout()" />
+                    <p>Welcome back, {{ u.name }}!</p>
+                  } @else {
+                    <app-login-form (submitted)="login($event)"></app-login-form>
+                  }
+                  <ul>
+                    @for (item of items(); track item.id) {
+                      <li [class.done]="item.done" (click)="toggle(item)">{{ item.title }}</li>
+                    } @empty {
+                      <li>No items</li>
+                    }
+                  </ul>
+                  <mat-icon svgIcon="home" />
+                  <router-outlet />
+                  <section>
+                </main>
+                <app-footer />
+                """);
+        assertEquals(List.of("UNCLOSED section"), problems(app, root), "a real unclosed element is still found");
+        Path header = write("src/app/header/header.component.html", """
+                <header class="toolbar">
+                  <img width="40" alt="Angular Logo" src="assets/logo.svg" />
+                  <img src="favicon.ico"><img src="assets/gone.svg">
+                  <button mat-icon-button *ngIf="loggedIn" (click)="menu.toggle()">
+                    <mat-icon>menu</mat-icon>
+                  </button>
+                  <input type="text" [(ngModel)]="query" #box placeholder="Search" />
+                </header>
+                """);
+        assertEquals(List.of("MISSING_FILE assets/gone.svg"), problems(header, root), "src/assets, public/");
+        Path plain = write("src/app/widget.html", "<div><app-chip /></div>\n");
+        assertEquals(List.of(), problems(plain, root), "below an angular.json");
+        Path page = write("plain/page.html", "<div><my-el /></div>\n");
+        assertEquals(
+                List.of("UNCLOSED my-el"),
+                problems(page, root.resolve("plain")),
+                "a plain page keeps flagging <my-el />");
+        assertTrue(HtmlMarkupCheck.isAngular("<b (click)=\"go()\">x</b>", null, null, null), "by its syntax");
+        assertFalse(
+                HtmlMarkupCheck.isAngular("<pre>&lt;b (click)=\"go()\"&gt;</pre><!-- @if (a) { -->", null, null, null),
+                "syntax a page only shows");
+    }
+
+    @Test
+    void aPlainStaticSiteDoesNotFindPageRelativeLinksInAssetsOrPublic() throws IOException {
+        // HTML review 3 C208, reviewer C's rw/static-site.
+        write("assets/css/style.css", "");
+        write("assets/img/logo.png", "");
+        write("public/img/hero.png", "");
+        Path index = write("index.html", """
+                <!DOCTYPE html>
+                <html><head><link rel="stylesheet" href="css/style.css"></head>
+                <body><img src="img/logo.png"><img src="assets/img/logo.png"><img src="/img/hero.png"></body></html>
+                """);
+        assertEquals(
+                List.of("MISSING_FILE css/style.css", "MISSING_FILE img/logo.png"),
+                problems(index, root),
+                "assets/ is not served at the root, and public/ only for a root-relative link");
+        Path post = write("blog/post.html", "<img src=\"img/hero.png\"><img src=\"../assets/img/logo.png\">\n");
+        assertEquals(List.of("MISSING_FILE img/hero.png"), problems(post, root));
+        write("hugo.toml", "");
         write("static/img/a.png", "");
-        assertEquals(List.of("MISSING_FILE ../../outside.png"), problems(relative, root));
+        Path page = write("page.html", "<img src=\"img/a.png\"><img src=\"../../outside.png\">");
+        assertEquals(List.of("MISSING_FILE ../../outside.png"), problems(page, root), "a build marker at the root");
+        assertEquals(
+                List.of("MISSING_FILE img/hero.png"),
+                problems(post, root),
+                "even then a subfolder page's link is below its own folder");
     }
 
     @Test

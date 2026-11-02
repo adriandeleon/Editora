@@ -189,4 +189,78 @@ class HtmlFormatterTest {
                 HtmlFormatter.format("<div><style>a{}\n  b{}</style></div>\n", "  "),
                 "code on the start tag's line stays there; an end tag after code stays after it");
     }
+
+    /**
+     * HTML review 3 C210: an HTML template in a {@code <script type="text/x-template">} is copied as written (its
+     * {@code <pre>} kept), where only JavaScript, JSON and CSS move with their start tag; and an Angular template's
+     * {@code @if}/{@code @for} blocks keep their level (reviewer C's rw/angular app.component.html).
+     */
+    @Test
+    void htmlTemplateScriptsStayAsWrittenAndAngularBlocksIndent() {
+        String template = "<div>\n<script type=\"text/x-template\" id=\"t\">\n      <pre>\n  keep\n    this\n</pre>\n"
+                + "</script>\n</div>\n";
+        assertEquals(
+                "<div>\n  <script type=\"text/x-template\" id=\"t\">\n      <pre>\n  keep\n    this\n</pre>\n</script>\n"
+                        + "</div>\n",
+                HtmlFormatter.format(template, "  "));
+        assertEquals(
+                "<div>\n  <script type=\"module\">\n    go();\n  </script>\n  <script type=\"application/ld+json\">\n"
+                        + "    {}\n  </script>\n</div>\n",
+                HtmlFormatter.format(
+                        "<div>\n<script type=\"module\">\ngo();\n</script>\n<script type=\"application/ld+json\">\n{}\n"
+                                + "</script>\n</div>\n",
+                        "  "),
+                "JavaScript and JSON still move");
+
+        String angular = """
+                <app-header />
+                <main class="content">
+                  @if (user(); as u) {
+                    <app-profile [user]="u" (logout)="onLogout()" />
+                    <p>Welcome back, {{ u.name }}!</p>
+                  } @else {
+                    <app-login-form (submitted)="login($event)"></app-login-form>
+                  }
+                  <ul>
+                    @for (item of items(); track item.id) {
+                      <li [class.done]="item.done" (click)="toggle(item)">{{ item.title }}</li>
+                    } @empty {
+                      <li>No items</li>
+                    }
+                  </ul>
+                  @defer {
+                    <big-chart />
+                  }
+                  <router-outlet />
+                </main>
+                <app-footer />
+                """;
+        assertEquals(angular, HtmlFormatter.format(angular, "  "), "an indented Angular template is left as it is");
+        String flat = angular.lines().map(String::strip).collect(java.util.stream.Collectors.joining("\n")) + "\n";
+        assertEquals(angular, HtmlFormatter.format(flat, "  "), "and a flat one indented by its blocks");
+        String inline = "<ul>\n<li>@if (a) {<b>x</b>}</li>\n<li>y</li>\n</ul>\n";
+        assertEquals(
+                "<ul>\n  <li>@if (a) {<b>x</b>}</li>\n  <li>y</li>\n</ul>\n",
+                HtmlFormatter.format(inline, "  "),
+                "a block on one line opens no level");
+    }
+
+    /** A <code>}</code> line that closes an i18n ICU expression or an interpolation closes no Angular block. */
+    @Test
+    void anIcuExpressionsClosingBraceInsideABlockClosesNoBlock() {
+        String icu = """
+                <app-x />
+                @if (show) {
+                  <span i18n>
+                    {count, plural, =0 {none} other {many}
+                    }
+                  </span>
+                  <p>{{ total(
+                    a) }}</p>
+                  <p>after</p>
+                }
+                <p>out</p>
+                """;
+        assertEquals(icu, HtmlFormatter.format(icu, "  "), "an indented page is left as it is (idempotent)");
+    }
 }

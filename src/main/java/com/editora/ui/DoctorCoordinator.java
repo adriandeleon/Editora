@@ -887,13 +887,19 @@ final class DoctorCoordinator {
 
         // System ----------------------------------------------------------------------------------
         DoctorCheck prereqs = DoctorCheck.checking("prereqs", "system", tr("doctor.label.prereqs"), "");
+        String installNode = s.getNodePath();
         specs.add(probe(prereqs, base -> {
             List<String> found = new ArrayList<>();
             List<String> missing = new ArrayList<>();
-            prereq(found, missing, "npm", List.of("npm"), null);
+            List<String> fromSettings = new ArrayList<>(); // the Settings Node.js and npm beside it: Install uses them
+            boolean npmThere = com.editora.install.NpmServerBins.settingsNpm(installNode) != null;
+            settingsPrereq(found, missing, fromSettings, "npm", npmThere);
             prereq(found, missing, "python", List.of("python3"), List.of("python"));
             prereq(found, missing, "tar", List.of("tar"), null);
-            prereq(found, missing, "node", List.of("node"), null);
+            settingsPrereq(found, missing, fromSettings, "node", nodeChosen(installNode));
+            if (!fromSettings.isEmpty()) { // named as such (HTML review 3, A206)
+                found.add(tr("doctor.prereqs.fromSettingsNode", String.join(", ", fromSettings)));
+            }
             String detail = String.join(", ", found);
             return missing.isEmpty()
                     ? base.ok(detail)
@@ -1109,7 +1115,9 @@ final class DoctorCoordinator {
                         DoctorNeeds.serverNeeded(serverId, needs.openServers(), needs.rootServers(), configured);
                 return needed ? base.missing("doctor.tip.notConfigured") : base.optional("doctor.tip.notConfigured");
             }
-            String path = DoctorProbes.resolvedPath(argv);
+            // an npm -g server may be in the Settings Node.js's own folder, off PATH (HTML review 3, A203)
+            String path =
+                    DoctorProbes.resolvedPath(com.editora.install.NpmServerBins.resolve(serverId, argv, nodeSetting));
             if (path.isEmpty()) {
                 boolean needed =
                         DoctorNeeds.serverNeeded(serverId, needs.openServers(), needs.rootServers(), configured);
@@ -1587,6 +1595,19 @@ final class DoctorCoordinator {
             }
             return path.isEmpty() ? base.optional("doctor.tip.runOptional", fileKind) : base.ok(path);
         });
+    }
+
+    /**
+     * As {@link #prereq} for {@code name} on PATH, else from the Node.js chosen in Settings when {@code inSettings}
+     * (its own, or npm beside it), which then goes to {@code fromSettings} (HTML review 3, A206).
+     */
+    private static void settingsPrereq(
+            List<String> found, List<String> missing, List<String> fromSettings, String name, boolean inSettings) {
+        if (DoctorProbes.onPath(List.of(name))) {
+            found.add(name);
+        } else {
+            (inSettings ? fromSettings : missing).add(name);
+        }
     }
 
     private static void prereq(

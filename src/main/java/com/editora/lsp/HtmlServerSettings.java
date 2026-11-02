@@ -338,10 +338,13 @@ public record HtmlServerSettings(
     /**
      * A formatting request's options for the HTML server: {@code indent}'s, plus the document's own wrap column, which
      * the server lays over the settings it cached for the document — its {@code .editorconfig} may have changed
-     * since — and {@code endWithNewline: false} (B104: Editora keeps the final newline itself).
+     * since — and {@code endWithNewline: false} (B104: Editora keeps the final newline itself). Nor is it sent
+     * {@code insertFinalNewline}: the server then added the line break as an edit of its own, and an already formatted
+     * page under {@code insert_final_newline = true} read "Document formatted" with an undo step (HTML review 3, A205).
      */
     public org.eclipse.lsp4j.FormattingOptions formattingOptions(FormattingIndent indent) {
         org.eclipse.lsp4j.FormattingOptions options = indent.options();
+        options.remove("insertFinalNewline");
         if (section(indent).get("format") instanceof Map<?, ?> format
                 && format.get("wrapLineLength") instanceof Number n) {
             options.putNumber("wrapLineLength", n);

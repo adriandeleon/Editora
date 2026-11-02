@@ -176,6 +176,39 @@ final class HtmlPreviewCoordinator {
         }
     }
 
+    /**
+     * {@code buffer}'s file is now its path, no longer {@code old} (Save As, Encrypt File, a Save As rolled back):
+     * nothing is served under the old name from the editor any more, the globe follows the new name, and the new
+     * path is served as any edited file is — unless it is encrypted (E201).
+     */
+    void pathChanged(EditorBuffer buffer, @Nullable Path old) {
+        if (old != null) {
+            service.moved(old);
+        }
+        ensureControl(buffer);
+        onBufferEdited(buffer);
+    }
+
+    /**
+     * A rename or move on disk ({@code old} → {@code target}: a file, or a folder and the files under it), after
+     * this window's buffers were re-pointed: as {@link #pathChanged}, for every buffer now at or under {@code
+     * target}.
+     */
+    void renamed(Path old, Path target) {
+        service.moved(old);
+        Path moved = target.toAbsolutePath().normalize();
+        host.forEachBuffer(b -> {
+            Path p = b.getPath();
+            // a remote tab's path is on another file system: its startsWith(a local path) throws
+            if (p != null
+                    && p.getFileSystem() == moved.getFileSystem()
+                    && p.toAbsolutePath().normalize().startsWith(moved)) {
+                ensureControl(b);
+                onBufferEdited(b);
+            }
+        });
+    }
+
     /** Stops the HTTP server + worker (window dispose). */
     void shutdown() {
         service.shutdown();

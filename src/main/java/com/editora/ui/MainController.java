@@ -2009,6 +2009,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // The saved HTTP responses follow the file (or every .http file under a moved folder), shown or not: the
         // tree's rename never reached the history, so closing the tab or quitting lost it.
         httpClient.onFileMoved(old, target);
+        htmlPreview.renamed(old, target); // nothing served from the editor under the old name (E201); globes
         requestSave();
         setStatus(tr("status.renamedTo", target.getFileName()));
     }
@@ -5369,18 +5370,18 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void invalidatePendingWritesInOtherWindows(Path root, List<String> pathspecs) {
-            if (windowManager != null) {
-                windowManager.invalidatePendingGitWrites(MainController.this, root, pathspecs);
-            }
+            if (windowManager != null) windowManager.invalidatePendingGitWrites(MainController.this, root, pathspecs);
+        }
+
+        @Override
+        public boolean errorInAnotherWindow(String message) { // a git failure after this window closed (A204)
+            return windowManager != null && windowManager.errorInAnotherWindow(MainController.this, message);
         }
 
         @Override
         public void reloadAllFromDiskSilently() {
-            if (windowManager != null) {
-                windowManager.reloadAllFromDiskSilentlyAcrossWindows();
-            } else {
-                MainController.this.reloadAllFromDiskSilently();
-            }
+            if (windowManager != null) windowManager.reloadAllFromDiskSilentlyAcrossWindows();
+            else MainController.this.reloadAllFromDiskSilently();
         }
 
         @Override
@@ -8950,7 +8951,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         onProjectFileRenamed(old, target); // every window: path, EditorConfig, LSP, tab, path-keyed session state
         previews.ensurePreviewControls(buffer); // a rename to/from .md/.mmd flips previewability
-        htmlPreview.ensureControl(buffer); // a rename to/from .html flips the browser globe
         logViewer.ensureControl(buffer); // a rename to/from .log flips the log control
         if (recentFiles != null) {
             recentFiles.add(target);

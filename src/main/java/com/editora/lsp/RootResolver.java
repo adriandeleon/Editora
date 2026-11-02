@@ -106,6 +106,21 @@ public final class RootResolver {
         return com.editora.web.SiteRoots.looseRoot(abs, home);
     }
 
+    /**
+     * The folder a root-relative link ({@code /css/site.css}) on the HTML page {@code file} starts from: the root the
+     * HTML server's workspace has for it — the project root for a page in the project, else its markers' root or its
+     * site's ({@link #siteRoot}) — so Go to Definition and the markup check with LSP off agree with the server and the
+     * markup check it runs for a page outside the project too (HTML review 3, A202). A page on another machine keeps
+     * {@code projectRoot}: no marker probing over the network. File reads only.
+     */
+    public static @Nullable Path htmlRoot(@Nullable Path projectRoot, @Nullable Path file) {
+        if (file == null || com.editora.vfs.Vfs.isRemote(file)) {
+            return projectRoot;
+        }
+        Path resolved = resolveTiered(projectRoot, file, LspServerRegistry.rootMarkerTiersForServer("html"));
+        return resolved == null ? projectRoot : siteRoot(resolved, file, projectRoot);
+    }
+
     /** A marker root that makes a workspace: not the home folder, nor above it, nor a filesystem root. */
     private static boolean usableMarker(@Nullable Path markerRoot, @Nullable Path home) {
         if (markerRoot == null || tooBroad(markerRoot, home)) {

@@ -379,6 +379,49 @@ class DoctorCatalogFxTest {
         assertTrue(loop.restartable() && loop.reinstallable(), "Restart and Install… both offered");
     }
 
+    /**
+     * HTML review 3 A206/A203: with no npm or node on PATH, the Node.js chosen in Settings (npm beside it) satisfies the
+     * installer's prerequisites, named as such, and an npm server its npm installed is found in its folder.
+     */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS) // POSIX launchers
+    void theSettingsNodeJsCountsForTheInstallerAndItsServers(@TempDir Path dir) throws Exception {
+        var cached = com.editora.process.ProcessRunner.class.getDeclaredField("cachedPath");
+        cached.setAccessible(true);
+        Object saved = cached.get(null);
+        Path path = Files.createDirectories(dir.resolve("path"));
+        executable(path.resolve("python3"), "#!/bin/sh\n");
+        executable(path.resolve("tar"), "#!/bin/sh\n");
+        Path bin = Files.createDirectories(dir.resolve("node-v24/bin"));
+        executable(bin.resolve("node"), "#!/bin/sh\n");
+        executable(bin.resolve("npm"), "#!/bin/sh\n");
+        Path yaml = executable(bin.resolve("yaml-language-server"), "#!/bin/sh\n");
+        cached.set(null, path.toString());
+        try {
+            Host host = new Host();
+            Ops ops = new Ops();
+            ops.servers = List.of("yaml");
+            ops.argv.put("yaml", List.of("yaml-language-server", "--stdio"));
+            DoctorCheck without = spec(specs(host, ops), "prereqs").probe().get();
+            assertEquals(DoctorStatus.WARN, without.status());
+            assertEquals(List.of("npm, node"), without.tipArgs());
+            DoctorCheck absent = spec(specs(host, ops), "lsp.yaml").probe().get();
+            assertTrue(absent.status() != DoctorStatus.OK, "nothing chosen: not found (" + absent.detail() + ")");
+
+            host.settings.setNodePath(bin.resolve("node").toString());
+            DoctorCheck with = spec(specs(host, ops), "prereqs").probe().get();
+            assertEquals(DoctorStatus.OK, with.status(), with.tipKey());
+            assertEquals(
+                    "python, tar, " + com.editora.i18n.Messages.tr("doctor.prereqs.fromSettingsNode", "npm, node"),
+                    with.detail());
+            DoctorCheck server = spec(specs(host, ops), "lsp.yaml").probe().get();
+            assertEquals(DoctorStatus.OK, server.status(), server.tipKey());
+            assertTrue(server.detail().contains(yaml.toString()), server.detail());
+        } finally {
+            cached.set(null, saved);
+        }
+    }
+
     private static List<DoctorService.CheckSpec> specs(Host host, Ops ops) throws Exception {
         DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, ops));
         return FxTestSupport.callOnFx(doctor::buildSpecs);

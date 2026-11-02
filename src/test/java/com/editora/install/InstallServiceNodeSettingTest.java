@@ -141,7 +141,12 @@ class InstallServiceNodeSettingTest {
         Path bin = Files.createDirectories(dir.resolve("node-v24/bin"));
         Files.writeString(bin.resolve("node"), "");
         Path seen = dir.resolve("seen.txt");
-        Path npm = Files.writeString(bin.resolve("npm"), "#!/bin/sh\necho \"$0 $1|$PATH\" > '" + seen + "'\nexit 0\n");
+        // like npm -g with this Node.js: the server's program lands in its bin folder (Install checks it is found)
+        Path program = bin.resolve("yaml-language-server");
+        Path npm = Files.writeString(
+                bin.resolve("npm"),
+                "#!/bin/sh\necho \"$0 $1|$PATH\" > '" + seen + "'\nprintf '#!/bin/sh\\n' > '" + program
+                        + "'\nchmod +x '" + program + "'\nexit 0\n");
         assertTrue(npm.toFile().setExecutable(true));
         InstallService service = new InstallService();
         try {
@@ -153,6 +158,7 @@ class InstallServiceNodeSettingTest {
             assertTrue(result.ok(), result.message());
             String line = Files.readString(seen).strip();
             assertTrue(line.startsWith(npm + " install|" + bin + java.io.File.pathSeparator), line);
+            assertTrue(Files.isExecutable(program), "npm put the server beside the chosen Node.js");
         } finally {
             service.shutdown();
         }

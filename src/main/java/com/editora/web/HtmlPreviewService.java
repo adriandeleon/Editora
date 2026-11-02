@@ -211,6 +211,23 @@ public final class HtmlPreviewService {
         }
     }
 
+    /**
+     * {@code old} — a file, or a folder and everything under it — no longer names what the editor holds: it was
+     * saved as another name, encrypted (Encrypt File), renamed or moved. The editor text served under it goes, so
+     * the old address answers from disk (or 404) and never again with text the buffer now keeps elsewhere, an
+     * encrypted file's plaintext above all (E201). The site reloads: its file set changed.
+     */
+    public void moved(Path old) {
+        if (old.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
+            return; // a remote file is never served, and comparing it with local paths throws
+        }
+        Path p = normalized(old);
+        boolean dropped = live.keySet().removeIf(k -> k.startsWith(p));
+        if (dropped || serves(p)) {
+            server.changed(p);
+        }
+    }
+
     /** {@code file} changed on disk (it was saved): it is served from there, and its site reloads. */
     public void changedOnDisk(Path file) {
         Path p = normalized(file);

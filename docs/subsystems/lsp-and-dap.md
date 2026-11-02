@@ -128,7 +128,8 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
 - **The HTML server's `html` section** (`lsp/HtmlServerSettings`, Settings → LSP, the HTML card) is VS Code's
   defaults — the server has none of its own, and with `{}` its formatter protected only `script`, so Format
   Document re-spaced every `<pre>` and `<textarea>` — with the user's values (wrap column, wrap attributes, content
-  kept as written, attribute quotes, embedded script/style validation), `autoClosingTags` from Editora's own
+  kept as written, attribute quotes — whose row is under Settings → Editor beside Auto-close tags, since a typed `=`
+  follows it with the server off too — embedded script/style validation), `autoClosingTags` from Editora's own
   auto-close switch whatever the project says (so completion does not offer a closer Editora already typed), and a
   project's `html` object from `.editora/settings.json` (VS Code's key names, nested or dotted, and top-level
   `html.*` keys as `.vscode/settings.json` writes them; known keys of the right type only, the rest named once on

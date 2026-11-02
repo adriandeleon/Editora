@@ -87,8 +87,11 @@ final class HtmlLspAids {
                         && (buffer.getPath() == null || HtmlMarkupLint.applies(buffer.getPath())),
                 (text, done) -> {
                     Path file = buffer.getPath();
-                    Path root = ops.lspProjectRoot();
-                    CompletableFuture.supplyAsync(() -> HtmlMarkupLint.marks(text, file, root), CHECKS)
+                    Path project = ops.lspProjectRoot(); // a page outside it: its site's root, as the server's (A202)
+                    CompletableFuture.supplyAsync(
+                                    () -> HtmlMarkupLint.marks(
+                                            text, file, com.editora.lsp.RootResolver.htmlRoot(project, file)),
+                                    CHECKS)
                             .exceptionally(t -> List.of())
                             .thenAccept(marks -> Platform.runLater(() -> done.accept(marks)));
                 }));

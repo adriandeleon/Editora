@@ -362,4 +362,31 @@ class RootResolverTest {
         assertEquals(
                 downloads.resolve("site"), RootResolver.siteRoot(dsite, dpost, null, home), "not all of Downloads");
     }
+
+    /**
+     * HTML review 3 A202: the root a page's {@code /…} links start from is its server's — the project's for a page in
+     * the project, the page's own site's for one outside it, a marker's when one roots it.
+     */
+    @Test
+    void anHtmlPagesRootIsItsServersRoot(@TempDir Path tmp) throws IOException {
+        Path project = Files.createDirectories(tmp.resolve("project"));
+        Path inProject = Files.writeString(
+                Files.createDirectories(project.resolve("pages")).resolve("a.html"), "");
+        assertEquals(project, RootResolver.htmlRoot(project, inProject));
+
+        Path other = Files.createDirectories(tmp.resolve("other"));
+        Files.writeString(other.resolve("index.html"), "");
+        Path loose =
+                Files.writeString(Files.createDirectories(other.resolve("sub")).resolve("page.html"), "");
+        assertEquals(other, RootResolver.htmlRoot(project, loose), "its own site, not the project");
+        assertEquals(other, RootResolver.htmlRoot(null, loose), "no project");
+
+        Path app = Files.createDirectories(tmp.resolve("app"));
+        Files.writeString(app.resolve("package.json"), "{}");
+        Path marked =
+                Files.writeString(Files.createDirectories(app.resolve("src")).resolve("index.html"), "");
+        assertEquals(app, RootResolver.htmlRoot(project, marked), "a marker roots it");
+
+        assertEquals(project, RootResolver.htmlRoot(project, null), "an untitled page: the project's");
+    }
 }

@@ -139,6 +139,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HTML Live Preview: a file's old name kept serving its editor text (HTML review 3).**
+  - After Save As, Encrypt File or a rename (tab menu or Project tree, a file or a whole folder), the preview kept
+    serving the buffer's text at the old address until the preview was turned off — for Encrypt File, the
+    plaintext, including edits never saved in plaintext, and a previewed page's open tab reloaded into it. The old
+    address now answers from disk (404 once the old file is gone), the new name is served as any edited file is,
+    and an encrypted file's text is never served.
+  - Clients that requested a big page and stopped reading it could stall every page of every previewed site with
+    no time limit; a page now waits at most 10 seconds for its turn and is then answered "503 Service Unavailable".
+  - A browser launcher whose `TryExec` is a path (typical for AppImage and `/opt` browsers) was offered after the
+    browser was removed; it is now offered only while that path is an executable file.
+- **HTML editing (HTML review 3).**
+  - Angular component templates are no longer full of false warnings: in a `*.component.html`, a page below an
+    `angular.json`, or one that uses Angular syntax, `<app-header />` closes the element, and a component's
+    `assets/…` image is found in the app's `src/` (or `public/`) folder. A plain page still flags `<my-el />`.
+  - Template syntax a page only shows — in `<pre>`, `<code>`, `<textarea>`, a comment, or an Underscore
+    `<script type="text/template">` — no longer switches off the page's unclosed-element check and Format.
+  - The missing-file check no longer accepts any file under `assets/`, nor a page-relative link found under
+    `public/` or `static/` on a plain static site: those folders count for root-relative links, or when the project
+    has a build tool (`package.json`, `vite.config.*`, `angular.json`, Hugo's config…).
+  - Toggle Comment in a `.mustache` file makes the line an HTML comment with each tag a comment tag
+    (`{{name}}` → `{{!name}}`), since Mustache's `{{! }}` ends at the first `}}`; uncommenting restores it.
+  - Toggle Comment on an ERB/EJS block that holds a comment of your own (`<%# note %>`) round-trips: commenting
+    gives it a second `#`, so uncommenting gives your comment back instead of turning it into code.
+  - "Quotes after a typed or completed =" moved to Settings → Editor, beside Auto-close tags, where it can be
+    changed with language servers off; it says it also decides what a typed `=` brings.
+  - A typed `=` after Angular's `(click)`, `[value]`, `[(ngModel)]` or `*ngIf` brings its quotes, as Vue's
+    `@click` does.
+  - Tab and Enter keep the brace rules in an inline script of more than about 250 lines, and in a script whose
+    strings hold `'<style>'` or `'<pre>'`.
+  - With the HTML server on, Format Document on a Django/Jinja/Hugo page is refused too ("Not formatted: this page
+    uses template syntax"), as it is with the server off.
+  - The built-in formatter keeps an HTML template script (`text/x-template`) and its `<pre>` exactly as written, and
+    indents Angular `@if`/`@for`/`@defer` blocks instead of flattening them.
 - **Project Map: a declaration card from the last session was dropped on restart** while its file's outline was still
   loading; it now waits for the outline.
 - **GNOME Software's page for the installed Editora shows its version and can remove it.** The
@@ -205,6 +238,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name (`zz_generated.openapi.go` read `zzgenerated.openapi.go`).
 - **Structure: Kubernetes' `core/v1/types.go` outline stopped at `NodeAddress`**; files past the card's 400,000-character
   display limit are now outlined whole.
+- **HTML and the npm language servers (HTML review 3: server).**
+  - A project's `html` settings (`.editora/settings.json`) apply as soon as its window opens a page, and the
+    "Not used from .editora/settings.json" notice appears then; before, both waited for some Settings change.
+  - Go to Definition on a `/…` link in a page outside the window's project starts from that page's own site, as
+    its language server and the markup check do; it opened the project's same-named file. With LSP off, the markup
+    check of such a page uses the same root.
+  - Format Document on an already formatted page under `insert_final_newline = true` says "Already formatted" and
+    leaves no undo step.
+  - A server Install put in the Settings Node.js's own folder with `npm install -g` (YAML, Pyright, Bash,
+    TypeScript, Dockerfile, TOML, Astro) is found there: detection, Doctor, the launch and the banner look in that
+    folder after PATH. When npm puts it somewhere Editora does not look, Install says where instead of "installed".
+  - Doctor's Installer Prerequisites counts the Node.js chosen in Settings and npm beside it, named as such.
+  - A git push, pull or commit that fails after its window closed is said in another open window — its status line
+    and message log, as an unread error naming the project — instead of nowhere; with no other window, the Debug
+    Log has it.
 - **HTML templates (HTML review 2: templates).**
   - The markup check no longer flags Django, Jinja, Jekyll, Hugo, Handlebars or ERB pages saved as `.html`, nor
     header/footer partials in `templates/`, `_layouts/`, `partials/` and similar folders: their branches are not

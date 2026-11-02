@@ -324,6 +324,11 @@ class AutoCloseTagsFxTest {
         assertEquals("<b {{x=|}}>", typeAt(htmlBuffer("<b {{x}}>"), 6, "="));
         assertEquals("<b <% x=| %>>", typeAt(htmlBuffer("<b <% x %>>"), 7, "="));
         assertEquals("<b {{x}} c=\"|\">", typeAt(htmlBuffer("<b {{x}} c>"), 10, "="), "after a closed one: as usual");
+        // HTML review 3 C209: Angular's bindings get quotes, as Vue's @click does.
+        assertEquals("<button (click)=\"|\">", typeAt(htmlBuffer("<button (click)>"), 15, "="));
+        assertEquals("<input [(ngModel)]=\"q|\">", typeAt(htmlBuffer("<input [(ngModel)]>"), 18, "=q"));
+        assertEquals("<li *ngIf=\"|\">", typeAt(htmlBuffer("<li *ngIf>"), 9, "="));
+        assertEquals("<button @click=\"|\">", typeAt(htmlBuffer("<button @click>"), 14, "="));
         try {
             TagTyping.setAttributeQuotes("singlequotes");
             assertEquals("<p id='|'></p>", typeAt(htmlBuffer("<p id></p>"), 5, "="));

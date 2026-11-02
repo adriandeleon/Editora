@@ -946,6 +946,27 @@ public class WindowManager {
         }
     }
 
+    /**
+     * Reports {@code message}, a failure from the window of {@code from} that has closed since, in another open window
+     * — the focused one when it is one of them — as an unread error on its status line and in its message log
+     * (HTML review 3, A204). False when no other window is showing.
+     */
+    boolean errorInAnotherWindow(MainController from, String message) {
+        Holder to = null;
+        for (Holder holder : List.copyOf(windows)) {
+            if (holder.controller() != from
+                    && holder.stage().isShowing()
+                    && (to == null || holder.stage().isFocused())) {
+                to = holder;
+            }
+        }
+        if (to == null) {
+            return false;
+        }
+        to.controller().setError(message);
+        return true;
+    }
+
     void reloadAllFromDiskSilentlyAcrossWindows() {
         for (Holder holder : List.copyOf(windows)) {
             holder.controller().reloadAllFromDiskSilently();

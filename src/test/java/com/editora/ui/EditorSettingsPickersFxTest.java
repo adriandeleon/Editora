@@ -84,6 +84,77 @@ class EditorSettingsPickersFxTest {
         return FxTestSupport.field(settingsWindow, name);
     }
 
+    private static void typeKey(org.fxmisc.richtext.CodeArea area, String ch) {
+        javafx.event.Event.fireEvent(
+                area,
+                new javafx.scene.input.KeyEvent(
+                        javafx.scene.input.KeyEvent.KEY_TYPED,
+                        ch,
+                        ch,
+                        javafx.scene.input.KeyCode.UNDEFINED,
+                        false,
+                        false,
+                        false,
+                        false));
+    }
+
+    /** {@code buffer}'s text after an {@code =} typed at {@code caret}, with the caret shown as {@code |}. */
+    private static String typeEquals(EditorBuffer buffer, String text, int caret) {
+        buffer.setContent(text);
+        org.fxmisc.richtext.CodeArea area = FxTestSupport.field(buffer, "area");
+        area.moveTo(caret);
+        typeKey(area, "=");
+        String now = buffer.getContent();
+        int at = area.getCaretPosition();
+        return now.substring(0, at) + "|" + now.substring(at);
+    }
+
+    /**
+     * HTML review 3 C204: the quotes a typed {@code =} brings are chosen under Settings → Editor, beside Auto-close
+     * tags, and can be changed with language servers off (the default), where the row used to be greyed out on the
+     * LSP page.
+     */
+    @Test
+    void theQuotesATypedEqualsBringsAreChosenOnTheEditorPageWithLspOff() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            settings.setLspSupport(false);
+            settings.setAutoCloseTags(true);
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setLanguageOverride("html");
+            FxTestSupport.call(
+                    controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, buffer, true);
+            settingsWindow.show(FxTestSupport.field(controller, "stage"));
+            try {
+                settingsWindow.showDoctorTarget("editor", FxTestSupport.field(controller, "stage"));
+                java.util.Map<String, javafx.scene.control.Control> controls = settingsControl("settingControls");
+                assertFalse(controls.containsKey("lsp.html.attributeQuotes"), "not on the LSP page any more");
+                @SuppressWarnings("unchecked")
+                ComboBox<String> quotes = (ComboBox<String>) controls.get("htmlAttributeQuotes");
+                java.util.Map<Object, javafx.scene.layout.Region> pages = settingsControl("pages");
+                javafx.scene.layout.Region editorPage = pages.get(SettingsWindow.Category.EDITOR);
+                boolean onEditorPage = false;
+                for (javafx.scene.Node n = quotes; n != null; n = n.getParent()) {
+                    onEditorPage |= n == editorPage;
+                }
+                assertTrue(onEditorPage, "on the Editor page");
+                assertFalse(quotes.isDisabled(), "changeable with language servers off");
+                assertTrue(
+                        SettingsRig.texts(editorPage).contains(tr("settings.htmlAttributeQuotes")),
+                        "titled for what it does");
+
+                assertEquals("<p id=\"|\"></p>", typeEquals(buffer, "<p id></p>", 5));
+                quotes.setValue("empty");
+                assertEquals("empty", settings.getHtmlAttributeQuotes());
+                assertEquals("<p id=|></p>", typeEquals(buffer, "<p id></p>", 5), "No quotes: a typed = alone");
+                quotes.setValue("singlequotes");
+                assertEquals("<p id='|'></p>", typeEquals(buffer, "<p id></p>", 5));
+            } finally {
+                settings.setHtmlAttributeQuotes(null);
+                com.editora.editor.TagTyping.setAttributeQuotes(null);
+            }
+        });
+    }
+
     @Test
     void theTabWidthPickerOpensOnTheWidthInForceAndAppliesTheChoiceEverywhere() throws Exception {
         FxTestSupport.runOnFx(() -> {
