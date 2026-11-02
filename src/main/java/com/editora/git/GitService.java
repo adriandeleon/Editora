@@ -951,9 +951,10 @@ public final class GitService {
 
     /**
      * How often each file and folder below {@code root} changed in the last {@link GitRecentChanges#DAYS} days (the
-     * Project Map's "Show recent changes"): one streamed {@code git log --name-only}, capped as
+     * Project Map's "Show recent changes"): one streamed {@code git log -M --name-status}, capped as
      * {@link GitRecentChanges} says, on a lane of its own so a long read never delays status or the Git Log. Kept per
-     * HEAD: asking again before a commit, checkout or pull costs one {@code rev-parse}. Posts
+     * HEAD and day (the window moves at midnight): asking again before a commit, checkout or pull costs one
+     * {@code rev-parse}. A read cut by the time budget is not kept, so the next ask tries again. Posts
      * {@link GitRecentChanges.Result#NONE} when {@code root} is not in a repository with commits, or git is missing.
      * Posts on the FX thread.
      */
@@ -976,7 +977,7 @@ public final class GitService {
         String[] lines = rev.out().strip().split("\\R");
         String head = lines[0].strip();
         boolean shallow = lines.length > 1 && lines[lines.length - 1].strip().equals("true");
-        String key = gitPath(root) + "\n" + head;
+        String key = gitPath(root) + "\n" + head + "\n" + activityDay.getAsLong();
         synchronized (recentChanges) {
             GitRecentChanges.Result known = recentChanges.get(key);
             if (known != null) {
@@ -988,11 +989,7 @@ public final class GitService {
         args.add(GitSafety.LITERAL_PATHSPECS);
         args.addAll(GitRecentChanges.logArgs(GitRecentChanges.DAYS));
         ProcessRunner.Result r = ProcessRunner.runLines(
-                root,
-                GitRecentChanges.BUDGET,
-                backgroundArgv(root, args.toArray(String[]::new)),
-                READ_ENV,
-                parser::accept);
+                root, recentChangesBudget, backgroundArgv(root, args.toArray(String[]::new)), READ_ENV, parser::accept);
         GitRecentChanges.Result result = parser.finish(head);
         if (r.timedOut() || r.outTruncated()) {
             parser.cutShort();
@@ -1000,10 +997,29 @@ public final class GitService {
         } else if (!r.ok() && !result.truncated()) {
             return noCommitsYet(r) ? GitRecentChanges.Result.NONE : GitRecentChanges.Result.failed(head, r.message());
         }
+        if (r.timedOut()) {
+            return result; // a busy machine, not this history: the next ask reads it again (Map review 4, B9)
+        }
         synchronized (recentChanges) {
             recentChanges.put(key, result);
         }
         return result;
+    }
+
+    /** Today, as the {@link #recentChanges} cache keys it. */
+    private volatile java.util.function.LongSupplier activityDay =
+            () -> java.time.LocalDate.now().toEpochDay();
+
+    private volatile Duration recentChangesBudget = GitRecentChanges.BUDGET;
+
+    /** For tests: the day {@link #recentChanges} answers are kept for; null for today. */
+    public void setActivityDayForTest(java.util.function.@Nullable LongSupplier day) {
+        activityDay = day == null ? () -> java.time.LocalDate.now().toEpochDay() : day;
+    }
+
+    /** For tests: how long a {@link #recentChanges} read may run; null for {@link GitRecentChanges#BUDGET}. */
+    public void setRecentChangesBudgetForTest(@Nullable Duration budget) {
+        recentChangesBudget = budget == null ? GitRecentChanges.BUDGET : budget;
     }
 
     /** The last few {@link #recentChanges} answers, by repository folder and HEAD. */
@@ -1020,8 +1036,20 @@ public final class GitService {
      *
      * @param lines whether this is the last change of the lines asked for ({@code git log -L}) rather than the
      *     file's, which is given when the line history did not answer in time
+     * @param shallow whether the answer is a shallow clone's boundary commit: git names it for anything older than
+     *     the clone's history, so the real last change is not known (Map review 4, C7)
      */
-    public record LastChange(String hash, String author, long epochSeconds, String subject, boolean lines) {}
+    public record LastChange(
+            String hash, String author, long epochSeconds, String subject, boolean lines, boolean shallow) {
+
+        public LastChange(String hash, String author, long epochSeconds, String subject, boolean lines) {
+            this(hash, author, epochSeconds, subject, lines, false);
+        }
+
+        LastChange asShallow() {
+            return new LastChange(hash, author, epochSeconds, subject, lines, true);
+        }
+    }
 
     /** How long {@code git log -L} may take for a card's lines before the file's last change is given instead. */
     public static final Duration LINE_HISTORY_BUDGET = Duration.ofSeconds(2);
@@ -1037,8 +1065,11 @@ public final class GitService {
         }
     };
 
-    /** The HEAD last read in a folder, and when ({@link #nanoClock}). */
-    private record HeadRead(String head, long nanos) {}
+    /**
+     * The HEAD last read in a folder, and when ({@link #nanoClock}); in a shallow clone, its boundary commits (from
+     * {@code .git/shallow}), which stand for all the history the clone does not have.
+     */
+    private record HeadRead(String head, long nanos, Set<String> boundaries) {}
 
     private final Map<Path, HeadRead> heads = new ConcurrentHashMap<>();
 
@@ -1048,8 +1079,11 @@ public final class GitService {
     /**
      * The last commit that changed {@code file} — with {@code startLine >= 0}, that changed its 0-based lines
      * {@code startLine..endLine} ({@code git log -L}, given {@link #LINE_HISTORY_BUDGET}, else the file's) — or null
-     * when git is off, the file is not in a repository or has no commit yet. Read off the FX thread on the history
-     * lane and cached per HEAD; posted on the FX thread.
+     * when git is off, the file is not in a repository or has no commit yet. The lines are the file's on disk: when it
+     * has uncommitted edits they are mapped through {@code git diff HEAD} to HEAD's lines first, and lines that are
+     * all new give the file's last change (Map review 4, C8). In a shallow clone, a boundary commit is flagged
+     * {@link LastChange#shallow()}. Read off the FX thread on the history lane and cached per HEAD; posted on the FX
+     * thread.
      */
     public void lastChange(Path file, int startLine, int endLine, Consumer<@Nullable LastChange> onResult) {
         Path dir = file.toAbsolutePath().getParent();
@@ -1067,14 +1101,29 @@ public final class GitService {
         }
     }
 
+    /** {@link #lastChange} on the calling thread. For tests. */
+    @Nullable
+    LastChange lastChangeNow(Path file, int startLine, int endLine) {
+        Path dir = file.toAbsolutePath().getParent();
+        return dir != null && mayBeRepository(dir) && gitAvailable(dir)
+                ? readLastChange(dir, file, startLine, endLine)
+                : null;
+    }
+
     /** {@link #lastChange}'s read, on the history lane. */
     private @Nullable LastChange readLastChange(Path dir, Path file, int startLine, int endLine) {
-        String head = headOf(dir);
-        if (head == null) {
+        HeadRead read = headOf(dir);
+        if (read == null) {
             return null; // not a repository, or no commit yet
         }
+        String head = read.head();
         Path fileName = file.getFileName();
         String name = fileName == null ? "" : fileName.toString();
+        if (startLine >= 0 && endLine >= startLine && !name.isEmpty()) {
+            int[] atHead = linesAtHead(dir, file, startLine, endLine);
+            startLine = atHead == null ? -1 : atHead[0];
+            endLine = atHead == null ? -1 : atHead[1];
+        }
         String key = head + "\0" + file.toAbsolutePath() + "\0" + startLine + "\0" + endLine;
         synchronized (lastChanges) {
             java.util.Optional<LastChange> known = lastChanges.get(key);
@@ -1110,25 +1159,133 @@ public final class GitService {
                     gitPath(file));
             found = r.ok() ? parseLastChange(r.out(), false) : null;
         }
+        if (found != null && read.boundaries().contains(found.hash())) {
+            found = found.asShallow();
+        }
         synchronized (lastChanges) {
             lastChanges.put(key, java.util.Optional.ofNullable(found));
         }
         return found;
     }
 
-    /** {@code dir}'s HEAD commit, read at most once per {@link #HEAD_TTL_NANOS}; null when it has none. */
-    private @Nullable String headOf(Path dir) {
+    /**
+     * {@code dir}'s HEAD commit (and, in a shallow clone, its boundary commits), read at most once per
+     * {@link #HEAD_TTL_NANOS}; null when it has none.
+     */
+    private @Nullable HeadRead headOf(Path dir) {
         long now = nanoClock.getAsLong();
         HeadRead known = heads.get(dir);
         if (known == null || now - known.nanos() >= HEAD_TTL_NANOS) {
-            ProcessRunner.Result r = git(dir, QUICK, "rev-parse", "--verify", "--quiet", "HEAD");
+            ProcessRunner.Result r = git(
+                    dir,
+                    QUICK,
+                    "rev-parse",
+                    "--is-shallow-repository",
+                    "--git-path",
+                    "shallow",
+                    "--verify",
+                    "--quiet",
+                    "HEAD");
+            String[] lines = r.ok() ? r.out().strip().split("\\R") : new String[0];
+            String head = lines.length == 3 ? lines[2].strip() : "";
+            Set<String> boundaries = Set.of();
+            if (lines.length == 3 && lines[0].strip().equals("true")) {
+                boundaries = shallowBoundaries(dir.resolve(lines[1].strip()));
+            }
             if (heads.size() > 256) {
                 heads.clear();
             }
-            known = new HeadRead(r.ok() ? r.out().strip() : "", now);
+            known = new HeadRead(head, now, boundaries);
             heads.put(dir, known);
         }
-        return known.head().isEmpty() ? null : known.head();
+        return known.head().isEmpty() ? null : known;
+    }
+
+    /** The commits listed in a shallow clone's {@code shallow} file; none when it cannot be read. */
+    private static Set<String> shallowBoundaries(Path shallowFile) {
+        try {
+            Set<String> hashes = new java.util.HashSet<>();
+            for (String line : Files.readAllLines(shallowFile)) {
+                if (!line.isBlank()) {
+                    hashes.add(line.strip());
+                }
+            }
+            return Set.copyOf(hashes);
+        } catch (IOException | RuntimeException unreadable) {
+            return Set.of();
+        }
+    }
+
+    /**
+     * The 0-based lines {@code startLine..endLine} of {@code file} on disk as lines of HEAD's version: unchanged when
+     * the file has no uncommitted edits, mapped through {@code git diff -U0 HEAD} when it has, null when they are all
+     * new (no line history to ask for).
+     */
+    private int @Nullable [] linesAtHead(Path dir, Path file, int startLine, int endLine) {
+        ProcessRunner.Result diff = git(
+                dir,
+                QUICK,
+                GitSafety.LITERAL_PATHSPECS,
+                "diff",
+                "-U0",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-renames",
+                "HEAD",
+                "--",
+                gitPath(file));
+        if (!diff.ok() || diff.out().isBlank()) {
+            return new int[] {startLine, endLine}; // clean (or unknown: asked as it is)
+        }
+        List<int[]> hunks = diffHunks(diff.out());
+        int first = headLine(hunks, startLine + 1, true);
+        int last = headLine(hunks, endLine + 1, false);
+        return first > last || first < 1 ? null : new int[] {first - 1, last - 1};
+    }
+
+    private static final Pattern HUNK = Pattern.compile("^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@");
+
+    /** A {@code git diff -U0}'s hunks as {@code {oldStart, oldCount, newStart, newCount}}, in order. Pure. */
+    static List<int[]> diffHunks(String diff) {
+        List<int[]> hunks = new ArrayList<>();
+        for (String line : diff.split("\n")) {
+            Matcher m = HUNK.matcher(line);
+            if (m.find()) {
+                hunks.add(new int[] {
+                    Integer.parseInt(m.group(1)),
+                    m.group(2) == null ? 1 : Integer.parseInt(m.group(2)),
+                    Integer.parseInt(m.group(3)),
+                    m.group(4) == null ? 1 : Integer.parseInt(m.group(4))
+                });
+            }
+        }
+        return hunks;
+    }
+
+    /**
+     * The 1-based working-tree {@code line} as a line of HEAD's version, through {@code hunks} ({@link #diffHunks}). A
+     * line inside a change maps to the change's first old line when it starts a range ({@code start}), else to its
+     * last. Pure.
+     */
+    static int headLine(List<int[]> hunks, int line, boolean start) {
+        int delta = 0;
+        for (int[] hunk : hunks) {
+            int oldStart = hunk[0];
+            int oldCount = hunk[1];
+            int newStart = hunk[2];
+            int newCount = hunk[3];
+            if (line < (newCount > 0 ? newStart : newStart + 1)) {
+                break;
+            }
+            if (newCount > 0 && line < newStart + newCount) {
+                if (start) {
+                    return oldCount > 0 ? oldStart : oldStart + 1;
+                }
+                return oldCount > 0 ? oldStart + oldCount - 1 : oldStart;
+            }
+            delta += oldCount - newCount;
+        }
+        return line + delta;
     }
 
     /** How many {@code git log} runs {@link #lastChange} made so far. For tests. */

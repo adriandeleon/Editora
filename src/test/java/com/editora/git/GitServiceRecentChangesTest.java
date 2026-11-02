@@ -115,6 +115,42 @@ public class GitServiceRecentChangesTest {
     }
 
     @Test
+    void aMovedFileKeepsItsHistoryAndItsNewFolderTheCount() throws Exception {
+        // Map review 4 B2: hot.go moves; its five earlier commits in the window stay with it.
+        Files.createDirectories(repo.resolve("pkg/moved"));
+        git(repo, null, "mv", "pkg/hot/hot.go", "pkg/moved/hot.go");
+        commit(repo, 1, "Ada Lovelace", "move hot");
+        GitRecentChanges.Result result = service.recentChangesNow(repo);
+        assertEquals(7, result.stat("pkg/moved/hot.go", false).commits(), "six before the move, and the move");
+        assertNull(result.stat("pkg/hot/hot.go", false), "the old path no longer has a history of its own");
+        assertEquals(7, result.direct().get("pkg/moved").commits());
+        assertEquals(1, result.direct().get("pkg/hot").commits(), "only warm.go's commit is still pkg/hot's");
+    }
+
+    @Test
+    void theAnswerIsKeptForADayAndATimedOutReadIsNotKept() {
+        // Map review 4 B9: "in 90 days" moves with the date; a read cut by a busy machine is tried again.
+        long[] day = {20_000};
+        service.setActivityDayForTest(() -> day[0]);
+        GitRecentChanges.Result first = service.recentChangesNow(repo);
+        assertSame(first, service.recentChangesNow(repo));
+        day[0]++;
+        GitRecentChanges.Result tomorrow = service.recentChangesNow(repo);
+        assertNotSame(first, tomorrow, "a new day reads the window again");
+        assertEquals(first.commits(), tomorrow.commits());
+
+        day[0]++;
+        service.setRecentChangesBudgetForTest(Duration.ofNanos(1));
+        GitRecentChanges.Result cut = service.recentChangesNow(repo);
+        assertTrue(cut.truncated(), "cut by the budget");
+        service.setRecentChangesBudgetForTest(null);
+        GitRecentChanges.Result again = service.recentChangesNow(repo);
+        assertNotSame(cut, again, "the cut read was not kept");
+        assertFalse(again.truncated());
+        assertEquals(first.commits(), again.commits());
+    }
+
+    @Test
     void aShallowCloneSaysWhereItsHistoryStops() throws Exception {
         Path one = temp.resolve("depth1");
         git(temp, null, "clone", "-q", "--depth", "1", repo.toUri().toString(), one.toString());
