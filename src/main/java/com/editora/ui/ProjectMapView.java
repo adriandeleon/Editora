@@ -3460,6 +3460,12 @@ final class ProjectMapView extends VBox {
             }
 
             @Override
+            public boolean reverseFlow() {
+                return surface.flowDirection == FlowDirection.RIGHT_TO_LEFT
+                        || surface.flowDirection == FlowDirection.BOTTOM_TO_TOP;
+            }
+
+            @Override
             public boolean narrowsAway(Path file) {
                 return surface.narrowsAway(file);
             }
