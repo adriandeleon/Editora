@@ -172,15 +172,17 @@ its lines weighs more than shorter). Each spot is also tried cut short of the zo
 card's minimum, so a new card does not open with its last lines under them. Each spot also weighs where it stands
 against the way the map flows (`MapCards.cardFlowCost`, Map card flow): nothing past the row's column the way the map
 flows (right of it left to right, left of it right to left, below it top to bottom, above it bottom to top), a
-quarter of the card's area beside it, half behind it, over the columns that lead to the row; and spots level with the
+quarter of the card's area beside it, half behind it, over the columns that lead to the row — and as much for any
+spot that covers the row's column or those columns, so the flow never buys covering the path to the row; and spots
+level with the
 row are tried past whatever stands on the flow side (the band the row's next column would open in, a column already
 open there). A declaration card opened from a file card's Structure column flows away from the card: past the column,
 on the side the column stands, level with its row. Linked result cards go around the card they were found from and
-weigh no flow. **A new card may pan the map** (`MapCards.cardFlowPan`): with no room for it past its row's column
-the way the map flows (past the next column's band), the map — and the cards on it — pans back just enough for the
-card, or for its minimum, as revealing a column does, but never so far that the row's column (and, beside a card's
-Structure column, that card) leaves the panel. A card brought back by a restart or a working set, the Overview card,
-**Move to Free Space** and a card moved for its Structure column never pan. A card is never smaller
+weigh no flow. **Placement never pans the map**: with no room past the row's column the way the map flows, the
+card takes the side of the column — beside it across the flow (above or below it left to right or right to left, left
+or right of it down or up the panel), cut to the room there down to its minimum, and slid along the row as far as it
+stays level with it to clear the zoom bar, the overview and other cards. A card left of its column widens leftwards
+when its text arrives, in every flow, rather than back over the column. A card is never smaller
 than its minimum (340 × 220 for code, 300 × 180 for notes) unless the panel itself is. Text that arrives
 after a card was placed only widens it where it stands, by at most 120 columns and never past the panel
 (a card already partly out of view is never narrowed);
