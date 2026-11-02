@@ -663,7 +663,10 @@ and lets the file group compete with commands and symbols on its best path score
 is still the symbol index's own walk). The Project tree's filter asks it for the best 300 files and lists a stale
 list again first (`Freshness.CURRENT`), as its old per-keystroke walk always saw the disk; so it now finds files
 beyond the walk's 20,000 entries and 25 levels, ranks source before tests and project code before vendored code,
-and never lists `.git`.
+and never lists `.git`. A change reported while a list is being made (the first listing, or a stale list listed
+again) is recorded and applied to that list once it is held, and a queued change is applied to the lists held when
+it runs, not when it was reported (Map review 4 D6): before, one reported during the first listing was dropped, and
+one reported during a relist reached only the list being replaced.
 
 What a query asks for (`ProjectMapSearch.Query`): a name matches file and folder names (a folder only when
 the query is in its name as written, not scattered); a query with `/` is matched against the relative path
@@ -827,7 +830,16 @@ falls on are left out. Labels may go down to 6 pt (in quarter-point steps, the l
 that saves a page, so a map just over one page wide is shrunk a little rather than split. The status bar
 says when the map was scaled down, or how many pages it was split across. A per-page dimension
 cap (8,192 px) and a total pixel budget (12 Mpx) remain as a safety net; a map that cannot keep 96 dpi
-inside them is still output, with a warning that small labels may be unreadable.
+inside them is still output, with a warning that small labels may be unreadable. One output makes at most
+`MAX_PAGES` (40) pages (Map review 4 D1): the plan is made before anything is painted, and a map that needs more at
+readable labels is shrunk until it fits on 40 (`Plan.pageCapped`, a few smaller scales, then an even grid), and the
+status line says so (`status.projectMap.outputCapped`). Output never lists a long folder whole: a folder column
+longer than `DIRECTORY_CHUNK` (300) rows — a whole folder of a local root — is laid out with its first 300 rows and
+a "+N more" row, as a remote root shows it (`ProjectMapModel.canvasOutputColumns`, used by the layout while
+`outputPaint` is set; Print, PDF and SVG alike). A row another column hangs from (an open folder, a file with its
+structure open) stays, so open columns keep their place; the header still counts the whole folder ("301/5000").
+With a 5,000-file folder open, PDF went from 162 pages at reduced resolution in 0.7–0.9 s on the FX thread to a few
+readable pages; a 50,000-file one from 1,613 pages and 27 s to the same.
 
 `MapSurface.renderOutput` paints each page on an off-scene `Canvas` — `paint()` draws on the `canvas`
 field, which points at it for the duration — so the live Canvas, pan, zoom and hover state are never
@@ -845,7 +857,9 @@ width the picture gives it). A viewer's Find, selection and copy reach the names
 does not need the text and leaves it out.
 
 **Export ▸ PNG…** snapshots the map area (`canvasViewImage`) at 2× with the zoom bar, overview, loading and
-no-match notices hidden for the shot. **Export ▸ SVG…** (`MapSurface.canvasSvg`, written by the pure
+no-match notices hidden for the shot. A node's snapshot is taken in its parent's coordinates, so the viewport starts
+at the map area's place below the filter row and breadcrumbs (`canvasHost.localToParent(0, 0)`), not at the top
+of the view (Map review 4 D2: the PNG had a blank band on top and lost the bottom of the view). **Export ▸ SVG…** (`MapSurface.canvasSvg`, written by the pure
 `ProjectMapSvg`) lays the map out as output does and writes every column card with its title and count, every row
 (name cut as painted where it differs from its siblings, the whole name as its `<title>`, a mark for its kind,
 dimmed when ignored) and the connectors as cubic curves, in world units and the output's light palette. Both ask
@@ -1099,7 +1113,17 @@ invalidation joins a listing begun before it and lists again once that one has e
 - **overall**, `MAX_VISIBLE_ITEMS` (1,200) real rows. A folder listed whole is charged at most
   `NEAR_VIEWPORT_ROWS` (300, a screen of rows at the smallest zoom that draws them) — the rows that can be near
   the viewport, which is what the surface draws, names and hit-tests — and lists the rest free; one the budget
-  cut short before that keeps its first rows and "+N more", with no gap. A column of more than 512 rows takes
+  cut short before that keeps its first rows and "+N more", with no gap. The free rows of all whole folders
+  together stop at `MAX_FREE_ROWS` (60,000; Map review 4 D3): one 50,000-entry folder fits, a second long one
+  lists what is left, then its rows are charged again and it ends in "+N more" once the overall limit is spent. The
+  surface still lays out a box per row, so each lookup by path (`nodeBox`, which the paint asks per column header
+  and per flash; `selectedEntry`, `contains`) goes through an index built with the layout (`WorldLayout.firstRows`,
+  `entryByPath`) instead of a scan of every row, and the selection's screen-reader summary counts its column in
+  the layout's columns rather than grouping and sorting every row again. Measured headless with a 50,000-file folder
+  open: a paint 3–7 ms (was 9–60), a pan with its paint 4–5 ms on average; with two 50,000-file folders and a 5,000
+  one open the snapshot holds 61,201 rows (was 105,007) and a paint takes 2.5–3.5 ms. Opening the 50,000-file folder
+  still costs one layout of all its rows on the FX thread (0.25–0.5 s, mostly the column sort); revealing another row
+  of it afterwards takes 40–100 ms. A column of more than 512 rows takes
   its width from its 96 longest names (`canvasWidestCandidates`), so its first layout measures a hundred labels.
   Measured headless (software pipeline, a shared machine): the k8s fixture's 1,473-entry corpus folder is
   revealed (listed, laid out, shown) in 0.25–0.5 s, a full paint takes 4–10 ms and a pan with its paint 0.8–1.4 ms
