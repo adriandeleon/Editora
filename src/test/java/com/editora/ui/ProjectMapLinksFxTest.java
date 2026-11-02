@@ -183,10 +183,7 @@ class ProjectMapLinksFxTest {
             List<Label> labels = callers.labelsForTest();
             cards.close(source);
             assertTrue(labels.stream().noneMatch(host.getChildren()::contains), "its edges close with it");
-            assertEquals(2, resultCards(cards, caller).size(), "the result cards stay");
-            assertFalse(
-                    resultCards(cards, caller).getFirst().getAccessibleText().contains("calls"),
-                    "and no longer say they are joined to it");
+            assertEquals(List.of(), resultCards(cards, caller), "and the result cards it opened (review 4, C11)");
         });
     }
 
