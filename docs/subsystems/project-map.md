@@ -493,10 +493,11 @@ files match".
 | `Home` / `End` | Select the first or last row of the selected row's column (`Shift-Home`: the first column's first row) |
 | Typing a name | Type-ahead in the column: the next row whose name starts with the typed letters; a 1 s pause starts again, and the same letter again steps to the next row with that initial |
 | `Alt-Left` / `Alt-Right` | Move backward or forward through the places visited; right-click either button for the list |
+| Shortcut + `Left` / `Right` | While a trail plays: its previous or next stop (review 4 A4) |
 | `/` | Focus and select the selected column's filter text |
 | Shortcut + `0` | Fit all visible columns |
 | `F3` / `Shift-F3` | Step to the next / previous match of the Map's search |
-| `Escape` | Close the open preview and note cards; otherwise clear the Map's search query (the selection stays where the search took you; one `Alt-Left` returns to where it was before the search); otherwise return focus to the editor (in the editor window) |
+| `Escape` | Close a playing trail; otherwise close the open preview and note cards; otherwise clear the Map's search query (the selection stays where the search took you; one `Alt-Left` returns to where it was before the search); otherwise return focus to the editor (in the editor window) |
 
 Single sibling steps (perpendicular arrows, `Ctrl-N` / `Ctrl-P`) wrap around the column; page moves do
 not. `/` is matched by the character typed rather than the key, so it works where the slash is a
@@ -759,7 +760,10 @@ it again, and *Delete* ▸ removes one. Showing a set goes through the restart's
 the search is cleared, every card closes, the open folders become the set's, `bearingsRestore` brings back the
 selection (one more Back/Forward place), the surface fits again with the set's zoom and pan
 (`MapSurface.viewsRefit`), and the cards open once the map is laid out, a declaration card once its file's outline
-is in — what no longer exists is dropped, as after a restart. Local folders only (`bearingsState()` is null for a
+is in — what no longer exists is dropped, as after a restart. A set (or a restart) that brings back a zoom and pan
+selects its selection when the row lands without revealing it as a place (`viewsRestoredSelection`): the reveal's
+zoom-out to 70% and its pan would replace the stored view on a tree whose path to the row does not fit (review 4
+A1); any selection asked for later is revealed as usual. Showing a set closes a playing trail first. Local folders only (`bearingsState()` is null for a
 remote root).
 
 **Trails** are guided tours kept in the project, `.editora/map-trails/<name>.json` (`config.MapTrails`), so a team
@@ -767,9 +771,14 @@ commits them next to `.editora/settings.json` and `.editora/run-configurations.j
 stops}`; a stop is `{file, declaration, startLine, endLine, title, note}` — `file` relative to the project with `/`,
 `declaration` the Map's declaration path below that file (`""` for the whole file), 1-based inclusive lines. The
 file name is the trail's name made safe on every OS (`MapTrails.fileName`: blanks to `-`, no `/\:*?"<>|`, no
-leading dot). Every write is atomic (`ConfigWriter.writeAtomic`). A file that is not a trail is listed with its
-reason ("broken (unreadable)", disabled) and never overwritten; a file whose `version` is newer than this build's is
-played but not edited or written (`MapTrails.NotWritableException`).
+leading dot). A trail is known by its file's name, which a hand-named or renamed file keeps as it is
+(`Kubelet tour.json`): `MapTrails.fileFor` and `save` take `<name>.json` when the folder holds it and the safe stem
+only for a new name (review 4 A3). Every write is atomic (`ConfigWriter.writeAtomic`). A file that is not a trail is
+listed with its reason ("broken (unreadable)", disabled) and never overwritten; a file whose `version` is newer than
+this build's, or one this build would cut when it writes it back — more than 200 stops, or a field it does not know
+at the top or in a stop (`MapTrails.cut`; a null stop does not count) — is played but not edited or written
+(`MapTrails.NotWritableException`; Edit ▸ reads "<name> (from a newer Editora)" or "<name> (read-only: <why>)",
+review 4 A10).
 
 ⋯ → **Trails** ▸ *New Trail…* writes an empty trail and opens its editor; *Add This Card as a Stop* (also at the end of
 a code card's menu, `MapCards.Host.viewsCardMenu`) asks for the stop's note and appends the card used last (or the
@@ -778,7 +787,12 @@ selected lines, else the lines in sight (`ProjectMapPreview.viewsStopLines`). Wi
 first. *Play <name>* per trail, and *Edit* ▸ per trail.
 
 Playing (`ProjectMapTrails`) puts a bar at the top of the map area — ‹ *Stop 3 of 9* › the stop's title, Edit, × —
-above the cards (Escape in it closes it). Each stop reveals its file (`revealPath`) and opens its card through the
+above the cards (Escape in it closes it). From the keyboard (review 4 A4), Shortcut+→ / Shortcut+← step the trail
+from the map, the bar or a note sheet (a filter on the map area; not from a text field or a card's text, where they
+move by words — Alt+arrows stay the map's history and a card's move), and Escape on the map closes the trail before
+it closes any card (`ProjectMapView.escapePressed`). The commands `projectMap.trailNext`, `projectMap.trailPrevious`
+and `projectMap.trailClose` do the same from the palette or a key bound to them (no default binding: Ctrl+→ is a
+word move in every editor keymap); they say "no trail is playing" otherwise. Each stop reveals its file (`revealPath`) and opens its card through the
 restart's path (`ProjectMapView.viewsShowCard`: a `ProjectMapState.Card` with no place joins `bearingsPendingCards`,
 and opens beside its row once the map is laid out with the row on it — at the first fit on a Map that has only just
 been given its folder, else when the load that brings the row lands — and for a declaration once its file's outline
@@ -786,12 +800,20 @@ is in). A whole-file card scrolls to the stop's lines and selects them (`Project
 after the opening line once the text is coloured). The note is stuck on the card as a read-only sheet in the accent
 colour (`ProjectMapTrailNote`, a `CardAttachment` held by `MapCards.viewsAttach`), tied to the stop's first line,
 moving, zooming, hiding and closing with the card. A stop whose file is gone says so in the status line and leaves
-the bar on it; a declaration no longer in the outline shows the stop's lines in the file instead. Moving on detaches
-the note and closes the card if the trail opened it; × closes the bar and detaches the note, leaving the card.
+the bar on it; a declaration no longer in the outline shows the stop's lines in the file instead; a whole-file stop
+whose lines are past the end of the (untruncated) file says so in the status line (review 4 A9). Moving on detaches
+the note and closes the card if the trail opened it, unless the reader pinned it (review 4 A6); a stop's card still
+waiting for its row or outline when the trail moves on or closes is withdrawn from `bearingsPendingCards`
+(`viewsShowCard` returns the withdrawal) and never opens (A2); × closes the bar and detaches the note, leaving the
+card. When the stop's card closes some other way (its ×, a column closing), the bar's title reads "<stop> (card
+closed)" and a click on it shows the stop again (A7). The note sheet takes the right of its card, else the left, and
+when both have room the side covering less of the map's columns (`ProjectMapTrailNote.viewsSide`, A8).
 
 *Edit* opens `ProjectMapTrailEditor`, a card over the map (not counted against the card limit): the stops in order
 with title, file:lines and note; Move Up / Move Down (Alt+↑/↓), Remove (Delete), Rename…, Note…, Play from Here
-(Enter, double-click) and Rename Trail… (which moves the file). Each change is written at once.
+(Enter, double-click) and Rename Trail… (which moves the file). Each change is written at once, over the trail the
+editor last showed only (`ProjectMapTrails.writeOver`): when the file changed on disk meanwhile (a pull, a checkout,
+a hand edit) nothing is written, the editor shows the file as it is now and the status line says so (review 4 A5).
 
 A restart's declaration card, and a trail's declaration stop, wait for a real outline: `ProjectMapStructure.ensure`
 holds a LOADING placeholder at once, and `bearingsRestoreDeclarations` now skips it instead of dropping the card as
@@ -1265,7 +1287,9 @@ The focused coverage lives in:
   stepping closing the card the trail opened, a malformed trail and a stop whose file is gone, the editor's reorder,
   remove, retitle, note and rename), and a restart's declaration card waiting for its outline; `MapTrailsTest` for
   the trail files (layout, malformed and newer files, rename, safe names) and `WorkspaceStateV29Test` for the sets in
-  the workspace;
+  the workspace; `ProjectMapViewsReview4FxTest` and `MapTrailsReview4Test` for review 4's views fixes (a set's and a
+  restart's zoom and pan on a deep tree, quick stepping, hand-named and cut trail files, the trail keys and commands,
+  the stale editor, pinned and closed stop cards, the note's side, lines past the end);
 - `ProjectMapMessagesTest` that every `project.map.*` string is used, and `ProjectMapLogTest` for the
   debug-log record of a failure the Map recovers from.
 
