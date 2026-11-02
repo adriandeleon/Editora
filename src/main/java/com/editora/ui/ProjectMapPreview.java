@@ -2515,6 +2515,10 @@ final class ProjectMapPreview extends StackPane {
         if (change == null) {
             lastChangeText = "";
             lastChangeTip = "";
+        } else if (change.shallow()) {
+            // The clone's cut, not a change: what changed it last is older than the history here (Map review 4 C7).
+            lastChangeText = tr("project.map.preview.lastChangeShallow");
+            lastChangeTip = tr("project.map.preview.lastChangeShallowTip");
         } else {
             long now = System.currentTimeMillis() / 1000;
             String when = GitLogPanel.relativeDate(change.epochSeconds(), "", now);

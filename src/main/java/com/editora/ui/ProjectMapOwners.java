@@ -13,12 +13,14 @@ import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Who owns a file or folder of the project, from the project's own files (Map explore position 4): a GitHub-style
- * {@code CODEOWNERS} (the first of {@code .github/}, the root and {@code docs/}, as GitHub reads them; the last
- * matching line wins) and Kubernetes-style {@code OWNERS} files (their {@code approvers} and {@code reviewers},
- * top-level or under the {@code ".*"} filter; the nearest folder's file that names someone wins). A path that a
- * {@code CODEOWNERS} line matches takes that line; otherwise its {@code OWNERS}. No network, no GitHub API: alias
- * and team names are shown as written.
+ * Who owns a file or folder of the project, from the project's own files (Map explore position 4): a GitHub- or
+ * GitLab-style {@code CODEOWNERS} (the first of {@code .github/}, the root, {@code docs/} and {@code .gitlab/}; the
+ * last matching line wins, within each GitLab {@code [Section]}, whose default owners go to its owner-less lines,
+ * and the sections' owners together; Map review 4, B6) and Kubernetes-style {@code OWNERS} files (their
+ * {@code approvers} and {@code reviewers}, top-level or under the {@code ".*"} filter; the nearest folder's file that
+ * names someone wins, and when it names only reviewers the approvers come from the nearest file above that names
+ * some, as approval bubbles up there; B3). A path that a {@code CODEOWNERS} line matches takes that line; otherwise
+ * its {@code OWNERS}. No network, no GitHub API: alias and team names are shown as written.
  *
  * <p>{@link #owners} reads {@code OWNERS} files as it walks up (each folder's at most once): call it off the FX
  * thread, from one thread at a time. The parsing and matching are pure.
@@ -26,53 +28,96 @@ import org.jspecify.annotations.Nullable;
 final class ProjectMapOwners {
 
     /** The places GitHub looks for {@code CODEOWNERS}, in its order. */
-    static final List<String> CODEOWNERS_PLACES = List.of(".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS");
+    static final List<String> CODEOWNERS_PLACES =
+            List.of(".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS", ".gitlab/CODEOWNERS");
     /** A name no file has, standing for the project's root when CODEOWNERS lines are matched. */
     private static final String PROJECT_PROBE = "\u0000";
     /** The largest owner file read. */
     private static final long MAX_READ = 512 * 1024;
 
-    /** Who owns a path: approvers (or CODEOWNERS' owners) and reviewers, and the file that says so (root-relative). */
-    record Owners(List<String> approvers, List<String> reviewers, String source) {
+    /**
+     * Who owns a path: approvers (or CODEOWNERS' owners) and reviewers, the file that names the approvers and the one
+     * that names the reviewers (root-relative; the same file unless the nearest {@code OWNERS} names only reviewers).
+     * No approvers: only reviewers are known, and {@code source} is empty.
+     */
+    record Owners(List<String> approvers, List<String> reviewers, String source, String reviewersSource) {
         Owners {
             approvers = List.copyOf(approvers);
             reviewers = List.copyOf(reviewers);
         }
+
+        Owners(List<String> approvers, List<String> reviewers, String source) {
+            this(approvers, reviewers, source, source);
+        }
     }
 
-    /** One {@code CODEOWNERS} line: its pattern as a regular expression, and its owners (none: explicitly unowned). */
-    record Rule(String pattern, Pattern regex, boolean directoryOnly, boolean nested, List<String> owners) {}
+    /**
+     * One {@code CODEOWNERS} line: its pattern as a regular expression, and its owners (none: explicitly unowned);
+     * {@code section} numbers its GitLab section (0: before any).
+     */
+    record Rule(
+            String pattern, Pattern regex, boolean directoryOnly, boolean nested, List<String> owners, int section) {}
+
+    /** A GitLab section header: {@code [Name]}, {@code ^[Optional]}, {@code [Name][2]}, then its default owners. */
+    private static final Pattern SECTION = Pattern.compile("^\\^?\\[([^\\]]+)\\](?:\\[\\d+\\])?(.*)$");
 
     private final @Nullable List<Rule> codeowners;
     private final String codeownersSource;
     private final Function<String, @Nullable String> read;
     /** Each folder's own {@code OWNERS} verdict by root-relative path; {@link #NONE} for no file or nobody named. */
     private final Map<String, Object> folderOwners = new HashMap<>();
+    /** Every owner file looked for, by root-relative path, with what it held then (null: no such file). */
+    private final Map<String, @Nullable String> seen;
 
     private static final Object NONE = new Object();
 
     private ProjectMapOwners(
-            @Nullable String codeownersText, String codeownersSource, Function<String, @Nullable String> read) {
+            @Nullable String codeownersText,
+            String codeownersSource,
+            Function<String, @Nullable String> read,
+            Map<String, @Nullable String> seen) {
         this.codeowners = codeownersText == null ? null : parseCodeowners(codeownersText);
         this.codeownersSource = codeownersSource;
         this.read = read;
+        this.seen = seen;
     }
 
     /** The owner files of {@code root}: its {@code CODEOWNERS} now, its {@code OWNERS} files as they are asked for. */
     static ProjectMapOwners load(Path root) {
-        Function<String, @Nullable String> read = rel -> read(root, rel);
+        return load(rel -> read(root, rel));
+    }
+
+    /** {@link #load(Path)} over files given by root-relative path. */
+    static ProjectMapOwners load(Function<String, @Nullable String> read) {
+        Map<String, @Nullable String> seen = new HashMap<>();
         for (String place : CODEOWNERS_PLACES) {
             String text = read.apply(place);
+            seen.put(place, text);
             if (text != null) {
-                return new ProjectMapOwners(text, place, read);
+                return new ProjectMapOwners(text, place, read, seen);
             }
         }
-        return new ProjectMapOwners(null, "", read);
+        return new ProjectMapOwners(null, "", read, seen);
     }
 
     /** For tests: {@code CODEOWNERS} text (or null) and the owner files by root-relative path. */
     static ProjectMapOwners of(@Nullable String codeowners, Function<String, @Nullable String> files) {
-        return new ProjectMapOwners(codeowners, CODEOWNERS_PLACES.getFirst(), files);
+        return new ProjectMapOwners(codeowners, CODEOWNERS_PLACES.getFirst(), files, new HashMap<>());
+    }
+
+    /**
+     * Whether an owner file these rules read (or looked for and did not find) in one of {@code folders}
+     * (root-relative) now reads differently: the rules are stale and should be loaded again (Map review 4, B9).
+     * Reads those files again.
+     */
+    boolean changedIn(java.util.Collection<String> folders) {
+        for (Map.Entry<String, @Nullable String> file : new ArrayList<>(seen.entrySet())) {
+            if (folders.contains(parent(file.getKey()))
+                    && !java.util.Objects.equals(read.apply(file.getKey()), file.getValue())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -85,21 +130,45 @@ final class ProjectMapOwners {
         if (rules != null) {
             // The project itself is owned as a file at its top would be: by the "*" default, not by "/pkg/".
             String asked = rel.isEmpty() ? PROJECT_PROBE : rel;
+            java.util.Set<Integer> decided = new java.util.HashSet<>();
+            java.util.LinkedHashSet<String> named = new java.util.LinkedHashSet<>();
+            List<Integer> order = new ArrayList<>();
+            Map<Integer, List<String>> bySection = new HashMap<>();
             for (int i = rules.size() - 1; i >= 0; i--) {
                 Rule rule = rules.get(i);
-                if (matches(rule, asked, directory && !rel.isEmpty())) {
-                    return rule.owners().isEmpty() ? null : new Owners(rule.owners(), List.of(), codeownersSource);
+                // The last match wins within a section; each GitLab section adds its own (GitHub has one section).
+                if (!decided.contains(rule.section()) && matches(rule, asked, directory && !rel.isEmpty())) {
+                    decided.add(rule.section());
+                    order.add(rule.section());
+                    bySection.put(rule.section(), rule.owners());
                 }
+            }
+            if (!decided.isEmpty()) {
+                order.sort(null); // file order
+                for (int section : order) {
+                    named.addAll(bySection.getOrDefault(section, List.of()));
+                }
+                return named.isEmpty() ? null : new Owners(List.copyOf(named), List.of(), codeownersSource);
             }
         }
         String folder = directory ? rel : parent(rel);
+        Owners reviewersOnly = null;
         while (true) {
             Owners found = folderOwners(folder);
-            if (found != null) {
+            if (found != null && reviewersOnly == null && !found.approvers().isEmpty()) {
                 return found;
             }
+            if (found != null && reviewersOnly == null) {
+                reviewersOnly = found; // reviewers here; approval bubbles up to the nearest file with approvers
+            } else if (found != null
+                    && reviewersOnly != null
+                    && !found.approvers().isEmpty()) {
+                return new Owners(found.approvers(), reviewersOnly.reviewers(), found.source(), reviewersOnly.source());
+            }
             if (folder.isEmpty()) {
-                return null;
+                return reviewersOnly == null
+                        ? null
+                        : new Owners(List.of(), reviewersOnly.reviewers(), "", reviewersOnly.source());
             }
             folder = parent(folder);
         }
@@ -112,6 +181,7 @@ final class ProjectMapOwners {
         }
         String source = folder.isEmpty() ? "OWNERS" : folder + "/OWNERS";
         String text = read.apply(source);
+        seen.put(source, text);
         Owners owners = text == null ? null : parseOwnersFile(text, source);
         folderOwners.put(folder, owners == null ? NONE : owners);
         return owners;
@@ -119,27 +189,53 @@ final class ProjectMapOwners {
 
     // --- CODEOWNERS ------------------------------------------------------------------------------------------
 
-    /** The rules of a {@code CODEOWNERS} file, in file order. Comments, blank lines and GitLab sections are skipped. */
+    /**
+     * The rules of a {@code CODEOWNERS} file, in file order. Comments and blank lines are skipped. A GitLab section
+     * header ({@code [Name] @default-owners}) starts a section: its lines without owners take its default owners, and
+     * sections of the same name (any case) are one.
+     */
     static List<Rule> parseCodeowners(String text) {
         List<Rule> rules = new ArrayList<>();
+        Map<String, Integer> sections = new HashMap<>();
+        Map<Integer, List<String>> sectionDefaults = new HashMap<>();
+        int section = 0;
+        List<String> defaults = List.of();
         for (String raw : text.split("\\R")) {
             String line = stripComment(raw).strip();
-            if (line.isEmpty() || line.startsWith("[") || line.startsWith("^[")) {
+            if (line.isEmpty()) {
+                continue;
+            }
+            java.util.regex.Matcher header = SECTION.matcher(line);
+            if (header.matches()) {
+                String name = header.group(1).strip().toLowerCase(java.util.Locale.ROOT);
+                Integer known = sections.get(name);
+                section = known != null ? known : sections.size() + 1;
+                sections.putIfAbsent(name, section);
+                List<String> named = ownersIn(header.group(2).strip().split("\\s+"), 0);
+                if (!named.isEmpty()) {
+                    sectionDefaults.put(section, named);
+                }
+                defaults = sectionDefaults.getOrDefault(section, List.of()); // a repeated header keeps its defaults
                 continue;
             }
             String[] parts = line.split("\\s+");
-            List<String> owners = new ArrayList<>();
-            for (int i = 1; i < parts.length; i++) {
-                if (parts[i].contains("@")) {
-                    owners.add(parts[i]);
-                }
-            }
-            Rule rule = rule(parts[0], owners);
+            List<String> owners = ownersIn(parts, 1);
+            Rule rule = rule(parts[0], owners.isEmpty() ? defaults : owners, section);
             if (rule != null) {
                 rules.add(rule);
             }
         }
         return rules;
+    }
+
+    private static List<String> ownersIn(String[] parts, int from) {
+        List<String> owners = new ArrayList<>();
+        for (int i = from; i < parts.length; i++) {
+            if (parts[i].contains("@")) {
+                owners.add(parts[i]);
+            }
+        }
+        return owners;
     }
 
     private static String stripComment(String line) {
@@ -157,6 +253,10 @@ final class ProjectMapOwners {
      * not those of its subfolders, as GitHub documents.
      */
     static @Nullable Rule rule(String pattern, List<String> owners) {
+        return rule(pattern, owners, 0);
+    }
+
+    private static @Nullable Rule rule(String pattern, List<String> owners, int section) {
         String body = pattern;
         boolean nested = !body.endsWith("/*");
         boolean directoryOnly = body.endsWith("/");
@@ -187,7 +287,7 @@ final class ProjectMapOwners {
                 regex.append(Pattern.quote(String.valueOf(c)));
             }
         }
-        return new Rule(pattern, Pattern.compile(regex.toString()), directoryOnly, nested, owners);
+        return new Rule(pattern, Pattern.compile(regex.toString()), directoryOnly, nested, owners, section);
     }
 
     /** Whether {@code rule} applies to the path at root-relative {@code rel}: to it, or to a folder above it. */

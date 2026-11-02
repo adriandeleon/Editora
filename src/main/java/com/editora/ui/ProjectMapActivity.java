@@ -14,6 +14,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.BiConsumer;
+import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -66,9 +67,16 @@ final class ProjectMapActivity {
         }
     }
 
-    /** What the worker derives from one read: each depth's busiest folder and file, and the most changed folders. */
+    /**
+     * What the worker derives from one read: each depth's busiest folder and the busiest file, each folder's heat step,
+     * and the most changed folders.
+     */
     private record Derived(
-            GitRecentChanges.Result changes, int maxFile, Map<Integer, Integer> maxFolder, List<Hot> hot) {}
+            GitRecentChanges.Result changes,
+            int maxFile,
+            Map<Integer, Integer> maxFolder,
+            Map<String, Integer> folderLevels,
+            List<Hot> hot) {}
 
     private final Runnable onChanged;
     private final Executor ui;
@@ -90,8 +98,16 @@ final class ProjectMapActivity {
     private @Nullable ProjectMapOwners rules;
 
     private Function<Path, ProjectMapOwners> ownerSource = ProjectMapOwners::load;
+    /** Which of a root's folders the Overview may list as most changed (Map review 4, B2 and B4); worker only. */
+    private Function<Path, BiPredicate<String, List<String>>> mostChangedFilter = ProjectMapActivity::activityListable;
+
     private final Map<Path, ProjectMapOwners.Owners> owners = new HashMap<>();
-    private final Set<Path> ownersAsked = new HashSet<>();
+    /** The rows whose owners were asked for, and whether each is a folder. */
+    private final Map<Path, Boolean> ownersAsked = new HashMap<>();
+    /** Told why "Show recent changes" shows nothing, or shows a cut window, once it is turned on (B11). */
+    private Consumer<String> onExplain = message -> {};
+
+    private boolean explainPending;
     private List<Owned> overviewOwners = List.of();
     private List<String> overviewOwnerFolders = List.of();
 
@@ -122,6 +138,16 @@ final class ProjectMapActivity {
         workerOverride = work;
     }
 
+    /** For tests: which folders of a root the Overview may list as most changed; null for the real check. */
+    void setMostChangedFilterForTest(@Nullable Function<Path, BiPredicate<String, List<String>>> filter) {
+        mostChangedFilter = filter == null ? ProjectMapActivity::activityListable : filter;
+    }
+
+    /** Where to say why the turned-on option shows no heat, or a cut window (the Map's status line). */
+    void setOnExplain(@Nullable Consumer<String> sink) {
+        onExplain = sink == null ? message -> {} : sink;
+    }
+
     /** Forgets everything about the previous root; the history is read again when it is wanted. */
     void setRoot(@Nullable Path next) {
         generation++;
@@ -144,6 +170,7 @@ final class ProjectMapActivity {
             return;
         }
         heatOn = on;
+        explainPending = on;
         if (on) {
             read(); // the HEAD may have moved while it was off: one rev-parse when it did not
         }
@@ -196,6 +223,7 @@ final class ProjectMapActivity {
         }
         reading = true;
         long expected = generation;
+        Function<Path, BiPredicate<String, List<String>>> filter = mostChangedFilter;
         reader.accept(base, result -> {
             if (generation != expected) {
                 return;
@@ -206,7 +234,7 @@ final class ProjectMapActivity {
                 return;
             }
             work(() -> {
-                Derived computed = derive(result);
+                Derived computed = derive(result, filter.apply(base));
                 ui.execute(() -> {
                     if (generation != expected) {
                         return;
@@ -225,6 +253,36 @@ final class ProjectMapActivity {
             readAgain = false;
             read();
         }
+        if (!reading && explainPending) {
+            explainPending = false;
+            String why = explain(changes());
+            if (heatOn && why != null) {
+                onExplain.accept(why);
+            }
+        }
+    }
+
+    /**
+     * Why "Show recent changes" shows no heat for {@code changes} — no history, a failed read, a shallow clone, a quiet
+     * window — or that its window was cut short; null when it shows the whole window (Map review 4, B11).
+     */
+    static @Nullable String explain(GitRecentChanges.Result changes) {
+        if (changes.head().isEmpty()) {
+            return tr("project.map.activity.noHistory");
+        }
+        if (!changes.problem().isEmpty()) {
+            return tr("project.map.activity.failed", changes.problem());
+        }
+        if (changes.commits() == 0) {
+            return changes.shallow() && changes.boundaryEpochSeconds() > 0
+                    ? tr(
+                            "project.map.activity.shallowEmpty",
+                            ProjectMapOverviewCard.activityDate(changes.boundaryEpochSeconds()))
+                    : tr("project.map.activity.noChanges");
+        }
+        return changes.truncated()
+                ? tr("project.map.activity.truncated", ProjectMapOverviewCard.count(changes.commits()))
+                : null;
     }
 
     private void readWithService(Path base, Consumer<GitRecentChanges.Result> then) {
@@ -236,8 +294,13 @@ final class ProjectMapActivity {
         service.recentChanges(base, then);
     }
 
-    /** Each depth's busiest folder and the busiest file, and the folders whose own files changed most. Pure. */
-    private static Derived derive(GitRecentChanges.Result changes) {
+    /**
+     * Each depth's busiest folder and the busiest file, each folder's heat step, and the folders whose own files
+     * changed most (those {@code listable} allows). A folder's step is never above its parent's (Map review 4, B5,
+     * position 7): each depth is scaled against its own busiest folder, and deep, sparse levels have tiny maxima, so a
+     * one-commit folder far down would otherwise show full heat beside cooler parents.
+     */
+    private static Derived derive(GitRecentChanges.Result changes, BiPredicate<String, List<String>> listable) {
         int maxFile = 0;
         for (GitRecentChanges.Stat stat : changes.files().values()) {
             maxFile = Math.max(maxFile, stat.commits());
@@ -248,15 +311,42 @@ final class ProjectMapActivity {
                 maxFolder.merge(depth(rel), stat.commits(), Math::max);
             }
         });
-        return new Derived(changes, maxFile, Map.copyOf(maxFolder), mostChanged(changes, MOST_CHANGED));
+        List<String> folders = new ArrayList<>(changes.folders().keySet());
+        folders.sort(Comparator.comparingInt(ProjectMapActivity::depth));
+        Map<String, Integer> levels = new HashMap<>(folders.size() * 2);
+        for (String rel : folders) {
+            GitRecentChanges.Stat stat = changes.folders().get(rel);
+            if (!rel.isEmpty() && stat != null) {
+                int own = level(stat.commits(), maxFolder.getOrDefault(depth(rel), 0));
+                levels.put(rel, Math.min(own, activityParentLevel(levels, rel)));
+            }
+        }
+        return new Derived(
+                changes,
+                maxFile,
+                Map.copyOf(maxFolder),
+                Map.copyOf(levels),
+                mostChanged(changes, MOST_CHANGED, listable));
+    }
+
+    /** The heat step of {@code rel}'s parent folder in {@code levels}; the top for a top-level folder. */
+    private static int activityParentLevel(Map<String, Integer> levels, String rel) {
+        int slash = rel.lastIndexOf('/');
+        return slash < 0 ? LEVELS : levels.getOrDefault(rel.substring(0, slash), LEVELS);
+    }
+
+    /** {@link #mostChanged(GitRecentChanges.Result, int, Predicate)} with every folder listable. Pure. */
+    static List<Hot> mostChanged(GitRecentChanges.Result changes, int max) {
+        return mostChanged(changes, max, (rel, files) -> true);
     }
 
     /**
      * The folders whose own files (not their subfolders') were changed by the most commits, the project's root files
      * and vendored or dependency folders left out (a dependency bump touches thousands of files: it is not where the
-     * work is); ties go to the more recent. Pure.
+     * work is), and those {@code listable} refuses (asked with the folder and its own changed files, only for the
+     * candidates, best first); ties go to the more recent. Pure but for {@code listable}.
      */
-    static List<Hot> mostChanged(GitRecentChanges.Result changes, int max) {
+    static List<Hot> mostChanged(GitRecentChanges.Result changes, int max, BiPredicate<String, List<String>> listable) {
         List<Hot> all = new ArrayList<>();
         changes.direct().forEach((rel, stat) -> {
             if (!rel.isEmpty() && !vendored(rel)) {
@@ -268,7 +358,50 @@ final class ProjectMapActivity {
                 .thenComparing(Comparator.comparingLong((Hot hot) -> hot.stat().lastEpochSeconds())
                         .reversed())
                 .thenComparing(Hot::folder));
-        return List.copyOf(all.subList(0, Math.min(max, all.size())));
+        Map<String, List<String>> own = new HashMap<>();
+        if (!all.isEmpty()) {
+            for (String file : changes.files().keySet()) {
+                int slash = file.lastIndexOf('/');
+                own.computeIfAbsent(slash < 0 ? "" : file.substring(0, slash), key -> new ArrayList<>())
+                        .add(file);
+            }
+        }
+        List<Hot> kept = new ArrayList<>(max);
+        for (Hot hot : all) {
+            if (kept.size() >= max) {
+                break;
+            }
+            if (listable.test(hot.folder(), own.getOrDefault(hot.folder(), List.of()))) {
+                kept.add(hot);
+            }
+        }
+        return List.copyOf(kept);
+    }
+
+    /**
+     * Which folders of {@code base} the Overview may list as most changed: those that still exist (a moved folder's
+     * history went with its files, B2) and that are not dimmed — generated, vendored or ignored, by name or by the
+     * root's {@code .gitattributes} and {@code .gitignore} — nor hold only such files among those that changed (B4).
+     * Touches the disk: worker only.
+     */
+    private static BiPredicate<String, List<String>> activityListable(Path base) {
+        ProjectMapIgnored ignored = ProjectMapIgnored.load(base);
+        return (rel, files) -> {
+            Path folder = base.resolve(rel);
+            try {
+                if (!java.nio.file.Files.isDirectory(folder) || ignored.classify(folder, true) != null) {
+                    return false;
+                }
+                for (String file : files) {
+                    if (ignored.classify(base.resolve(file), false) == null) {
+                        return true; // one file of its own is the project's code
+                    }
+                }
+                return files.isEmpty();
+            } catch (RuntimeException unreadable) {
+                return false;
+            }
+        };
     }
 
     /**
@@ -285,12 +418,21 @@ final class ProjectMapActivity {
         if (rel == null || rel.isEmpty()) {
             return 0;
         }
+        if (directory) {
+            Integer folder = known.folderLevels().get(rel);
+            if (folder != null) {
+                return folder;
+            }
+        }
         GitRecentChanges.Stat stat = known.changes().stat(rel, directory);
         if (stat == null) {
             return 0;
         }
-        int max = directory ? known.maxFolder().getOrDefault(depth(rel), 0) : known.maxFile();
-        return level(stat.commits(), max);
+        if (directory) { // a submodule, which git counts as one entry (B12): a folder's scale, under its parent's step
+            int own = level(stat.commits(), known.maxFolder().getOrDefault(depth(rel), stat.commits()));
+            return Math.min(own, activityParentLevel(known.folderLevels(), rel));
+        }
+        return level(stat.commits(), known.maxFile());
     }
 
     /** {@code commits} against {@code max} as a step from 1 to {@link #LEVELS}; 0 for none. Pure. */
@@ -326,7 +468,9 @@ final class ProjectMapActivity {
         }
         Map<Path, Boolean> asked = new HashMap<>();
         for (ProjectMapModel.Entry entry : entries) {
-            if (entry.isPlaceholder() || entry.isSymbol() || !ownersAsked.add(entry.path())) {
+            if (entry.isPlaceholder()
+                    || entry.isSymbol()
+                    || ownersAsked.putIfAbsent(entry.path(), entry.directory()) != null) {
                 continue;
             }
             asked.put(entry.path(), entry.directory());
@@ -370,21 +514,82 @@ final class ProjectMapActivity {
         asked.addAll(folders);
         long expected = generation;
         work(() -> {
-            ProjectMapOwners loaded = rulesFor(base);
-            List<Owned> found = new ArrayList<>();
-            ProjectMapOwners.Owners project = loaded.owners("", true);
-            for (String folder : asked) {
-                ProjectMapOwners.Owners owner = loaded.owners(folder, true);
-                // A folder owned as the project is (CODEOWNERS' "*" line) adds nothing to the project's own line.
-                if (owner != null && (folder.isEmpty() || !owner.equals(project))) {
-                    found.add(new Owned(folder, owner));
-                }
-            }
+            List<Owned> found = activityOwned(rulesFor(base), asked);
             ui.execute(() -> {
                 if (generation == expected) {
                     overviewOwners = List.copyOf(found);
                     onChanged.run();
                 }
+            });
+        });
+    }
+
+    /** The Overview's owner rows for {@code asked} ({@code ""} first). Worker only. */
+    private static List<Owned> activityOwned(ProjectMapOwners loaded, List<String> asked) {
+        List<Owned> found = new ArrayList<>();
+        ProjectMapOwners.Owners project = loaded.owners("", true);
+        for (String folder : asked) {
+            ProjectMapOwners.Owners owner = loaded.owners(folder, true);
+            // A folder owned as the project is (CODEOWNERS' "*" line) adds nothing to the project's own line.
+            if (owner != null && (folder.isEmpty() || !owner.equals(project))) {
+                found.add(new Owned(folder, owner));
+            }
+        }
+        return found;
+    }
+
+    /**
+     * Files in {@code directories} were written or came and went (the Project watcher, a save in Editora): when an
+     * owner file there now reads differently, the owner rules are read again and every row's owners worked out anew,
+     * replacing the old ones in one go (Map review 4, B9). The check runs on the worker.
+     */
+    void ownerFilesMayHaveChanged(Collection<Path> directories) {
+        Path base = root;
+        if (base == null || (ownersAsked.isEmpty() && overviewOwnerFolders.isEmpty())) {
+            return; // no owners were worked out yet: the next ask reads the files as they are
+        }
+        Set<String> folders = new HashSet<>();
+        for (Path directory : directories) {
+            String rel = relative(base, directory);
+            if (rel != null) {
+                folders.add(rel);
+            }
+        }
+        if (folders.isEmpty()) {
+            return;
+        }
+        Map<Path, Boolean> asked = Map.copyOf(ownersAsked);
+        List<String> overview = overviewOwnerFolders;
+        long expected = generation;
+        work(() -> {
+            ProjectMapOwners known = rules;
+            if (known == null || !base.equals(rulesRoot) || !known.changedIn(folders)) {
+                return;
+            }
+            rules = null;
+            ProjectMapOwners loaded = rulesFor(base);
+            Map<Path, ProjectMapOwners.Owners> found = new HashMap<>();
+            asked.forEach((path, directory) -> {
+                String rel = relative(base, path);
+                ProjectMapOwners.Owners owner = rel == null ? null : loaded.owners(rel, directory);
+                if (owner != null) {
+                    found.put(path, owner);
+                }
+            });
+            List<String> overviewAsked = new ArrayList<>();
+            overviewAsked.add("");
+            overviewAsked.addAll(overview);
+            List<Owned> owned = overview.isEmpty() ? List.of() : activityOwned(loaded, overviewAsked);
+            ui.execute(() -> {
+                if (generation != expected) {
+                    return;
+                }
+                owners.clear();
+                owners.putAll(found);
+                if (!overview.isEmpty()) {
+                    overviewOwners = List.copyOf(owned);
+                }
+                onChanged.run();
             });
         });
     }
@@ -492,12 +697,20 @@ final class ProjectMapActivity {
      */
     static List<String> ownerLines(ProjectMapOwners.Owners owners) {
         List<String> lines = new ArrayList<>(2);
-        List<String> named = owners.approvers().isEmpty() ? owners.reviewers() : owners.approvers();
-        lines.add(tr("project.map.activity.owners", names(named), owners.source()));
-        if (!owners.approvers().isEmpty()
-                && !owners.reviewers().isEmpty()
-                && !owners.reviewers().equals(owners.approvers())) {
-            lines.add(tr("project.map.activity.reviewers", names(owners.reviewers())));
+        if (owners.approvers().isEmpty()) {
+            // Reviewers are not owners: an OWNERS file naming only reviewers says so (Map review 4, B3).
+            lines.add(tr("project.map.activity.reviewersFrom", names(owners.reviewers()), owners.reviewersSource()));
+            return lines;
+        }
+        lines.add(tr("project.map.activity.owners", names(owners.approvers()), owners.source()));
+        if (!owners.reviewers().isEmpty() && !owners.reviewers().equals(owners.approvers())) {
+            lines.add(
+                    owners.reviewersSource().equals(owners.source())
+                            ? tr("project.map.activity.reviewers", names(owners.reviewers()))
+                            : tr(
+                                    "project.map.activity.reviewersFrom",
+                                    names(owners.reviewers()),
+                                    owners.reviewersSource()));
         }
         return lines;
     }

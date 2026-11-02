@@ -477,6 +477,7 @@ final class ProjectMapView extends VBox {
             onHideIgnoredChanged.accept(selected);
         });
         layoutOverviewItem.setOnAction(event -> openOverview());
+        activity.setOnExplain(message -> onStatus.accept(message)); // why no heat shows (Map review 4 B11)
         activityRecentChangesOption.selectedProperty().addListener((obs, old, selected) -> {
             activity.setHeat(selected);
             onShowRecentChangesChanged.accept(selected);
@@ -2066,10 +2067,18 @@ final class ProjectMapView extends VBox {
         return false;
     }
 
-    void setGitStatus(Map<Path, GitFileStatus> status) {
-        // A refresh may follow a commit, checkout or pull: the recent changes are asked for again (one rev-parse).
+    /**
+     * A Git refresh came in, whether or not the status changed: it may follow a commit, checkout or pull, which on a
+     * clean tree moves HEAD and changes no status (Map review 4, B1). The recent changes are asked for again (one
+     * rev-parse while HEAD has not moved).
+     */
+    void activityGitRefreshed() {
         activity.setOverviewWanted(cards.overviewCard() != null);
         activity.headMaybeMoved();
+    }
+
+    void setGitStatus(Map<Path, GitFileStatus> status) {
+        activityGitRefreshed();
         Map<Path, GitFileStatus> given = status == null ? Map.of() : status;
         if (given.equals(dataGitStatusGiven) && java.util.Objects.equals(root, dataGitStatusRoot)) {
             return; // every Git refresh (a tab switch, a save, a focus regain) pushes the status, mostly unchanged
@@ -2143,6 +2152,7 @@ final class ProjectMapView extends VBox {
 
     /** The Project watcher saw entries come or go in {@code directories}: those are listed again, the rest kept. */
     void refresh(java.util.Collection<Path> directories) {
+        activity.ownerFilesMayHaveChanged(directories);
         mapLoader.refresh(directories);
         scheduleCardRefresh();
     }
@@ -2152,6 +2162,7 @@ final class ProjectMapView extends VBox {
      * listing reads them again, but nothing is reloaded for it now.
      */
     void listingsChanged(java.util.Collection<Path> directories) {
+        activity.ownerFilesMayHaveChanged(directories); // an edited CODEOWNERS or OWNERS (Map review 4 B9)
         mapLoader.listingsChanged(directories);
     }
 

@@ -4711,11 +4711,13 @@ final class MapSurface extends Region {
         }
         com.editora.git.GitRecentChanges.Stat stat = view.activity.stat(entry.path(), entry.directory());
         if (stat != null) {
+            com.editora.git.GitRecentChanges.Result read = view.activity.changes();
             lines.add(tr(
-                    "project.map.activity.commits",
+                    read.truncated() ? "project.map.activity.commitsNewest" : "project.map.activity.commits",
                     stat.commits(),
                     stat.lastAuthor(),
-                    GitBlameCoordinator.relativeTimeLabel(stat.lastEpochSeconds(), System.currentTimeMillis() / 1000)));
+                    GitBlameCoordinator.relativeTimeLabel(stat.lastEpochSeconds(), System.currentTimeMillis() / 1000),
+                    read.commits())); // a capped read is the newest N commits, not 90 days (Map review 4 B11)
         }
         ProjectMapOwners.Owners owners = view.activity.owners(entry.path());
         if (owners != null) {
