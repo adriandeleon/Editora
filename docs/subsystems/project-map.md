@@ -230,7 +230,11 @@ commit (`git log -1 -- <file>`), a declaration card's lines' (`git log -1 -L<sta
 file's) — with the subject and short hash in the status's tooltip, saying whether it is the lines' or the file's
 change. `GitService.lastChange` runs on the Git service's history lane, never on the FX thread, and caches each
 answer by HEAD, file and lines; HEAD is read at most every 3 s per folder, so a commit or checkout is followed on the
-next card refresh. Asked when a card opens, steps, follows a rename, and on every card refresh that is not the
+next card refresh. The lines are the file's on disk: when it has uncommitted edits they are mapped to HEAD's lines
+through `git diff -U0 HEAD` first (`GitService.diffHunks`/`headLine`), and lines that are all new give the file's last
+change. In a shallow clone an answer that is a boundary commit (listed in `.git/shallow`) is flagged `shallow` and the
+status reads "Last change: before this shallow clone's history" instead of naming the clone's commit (Map review 4,
+C7, C8). Asked when a card opens, steps, follows a rename, and on every card refresh that is not the
 once-a-second poll; nothing outside a repository, with Git off (`ProjectTreeFileActions.gitLastChange`), or for an
 uncommitted file. The card menu adds **Annotate** (the editor's blame of the file, at a declaration card's
 declaration) beside **Show Git History**.
@@ -932,37 +936,57 @@ to search, and that ? lists every key.
 
 `ProjectMapActivity` holds what the Map shows of a project's activity. **Recent changes**: the ⋯ option **Show
 recent changes** (default off) tints each row by the commits of the last 90 days that touched it. The history is one
-streamed `git log --since=90.days --no-merges --no-renames --name-only --relative -- .` run in the Map's root
+streamed `git log --since=90.days --no-merges -M --name-status --relative -- .` run in the Map's root
 (`GitService.recentChanges`, on the service's own `git-activity` lane, so a long read delays neither status nor the
 Git Log; the panel passes the window's service with `ProjectPanel.setMapGit`). `GitRecentChanges.Parser` (pure) counts
 each file's commits, each folder's (a commit once per folder, however many of its files it touched) and each folder's
-own files' (`direct`), and keeps the newest commit's author and time. The read is capped at 10,000 commits, 150,000
-file lines and 20 s; past a cap the newest part is kept and flagged truncated. The answer is kept per repository and
-HEAD (the last three), and every Git status push asks again, which costs one `rev-parse` while HEAD has not moved.
+own files' (`direct`), and keeps the newest commit's author and time. A rename keeps the file's history: the log
+runs newest first, so a `R old new` line is seen before the old path's older commits, which are then credited to the
+newest path (through every later rename), and so to the folders it is in now. Names git quotes (a `"`, a `\` or a
+control character in them) are unquoted, and a folder row that git tracks as one entry (a submodule) has that entry's
+count (Map review 4, B2, B7, B12). The read is capped at 10,000 commits, 150,000 file lines and 20 s; past a cap the
+newest part is kept and flagged truncated, and tooltips then say "N commits in the newest 10,000". The answer is kept
+per repository, HEAD and day (the last three; a read cut by the 20 s budget is not kept), and every Git refresh asks
+again, which costs one `rev-parse` while HEAD has not moved: `ProjectPanel.setGitStatus` calls
+`ProjectMapView.activityGitRefreshed` even when the status did not change, since a commit, checkout or pull on a clean
+tree moves HEAD without changing it (B1, B9).
 Merges are left out. In a shallow clone the grafted boundary commits are skipped: git lists their whole tree as
 added, so a `--depth 1` clone (the Kubernetes and Spring fixtures) would show every file as changed once; such a clone
 shows no heat, and the Overview card says where its history stops. `--since` walks commits by committer date and
 stops at the first older one, as `git log` always does, so a history with backdated commits on top is cut there.
 
 A row's heat step (`heatLevel`, 0–4) compares its count with the busiest file (a file) or the busiest folder at its
-depth (a folder) on a log scale. The fill mixes `-state-amber` (probe `project-map-probe-heat`) in by
+depth (a folder) on a log scale; a folder's step is never above its parent's, so a deep folder with one commit does
+not show full heat beside cooler parents (B5, position 7). The fill mixes `-state-amber` (probe `project-map-probe-heat`) in by
 `HEAT_TINT` (5–18%), less where a theme needs it so the label keeps 4.5:1 and muted ink 3:1 (`tinted`; Editora's own
 themes get the full tint), on unselected rows only; a heat meter along the row's foot, a quarter of the row's width
 per step, carries the heat on selected rows too (in the on-accent ink on the focused selection) and stands 3:1 off its
 fill (`meterInk`). Faded and dimmed rows keep their heat under the dimming. The tooltip adds "N commits in 90 days ·
-last: author, when".
+last: author, when". Turning the option on when it can show nothing — no history (Git off, not a repository), a
+failed read, a shallow clone, a quiet window — or only a capped window says why once on the Map's status line
+(`ProjectMapActivity.explain`, B11).
 
-**Owners** (`ProjectMapOwners`): a GitHub-style `CODEOWNERS` (the first of `.github/`, the root and `docs/`; the last
-matching line wins; gitignore-like patterns, a trailing `/*` owning that folder's own files only, a line without owners
-leaving the path unowned) and Kubernetes-style `OWNERS` files (`approvers` and `reviewers`, top-level or under the
-`".*"` filter; the nearest folder's file that names someone wins). A `CODEOWNERS` line comes first, then `OWNERS`.
-No network and no GitHub API: aliases and teams show as written. Each shown row's owners are worked out on the
-activity worker (each folder's `OWNERS` read once) and its tooltip says "Owners: … (file)", and "Reviewers: …" when an
-`OWNERS` file names others.
+**Owners** (`ProjectMapOwners`): a GitHub- or GitLab-style `CODEOWNERS` (the first of `.github/`, the root, `docs/`
+and `.gitlab/`; the last matching line wins; gitignore-like patterns, a trailing `/*` owning that folder's own files
+only, a line without owners leaving the path unowned; a GitLab `[Section] @owners` header gives its owner-less lines
+its default owners, same-named sections are one, and each matching section adds its owners, B6) and Kubernetes-style
+`OWNERS` files (`approvers` and `reviewers`, top-level or under the `".*"` filter; the nearest folder's file that names
+someone wins, and when it names only reviewers the approvers come from the nearest file above that names some, where
+approval bubbles up; B3). A `CODEOWNERS` line comes first, then `OWNERS`. No network and no GitHub API: aliases and
+teams show as written. Each shown row's owners are worked out on the activity worker (each folder's `OWNERS` read
+once) and its tooltip says "Owners: … (file)", and "Reviewers: …" when an `OWNERS` file names others, with its own
+file when that differs; reviewers are never shown as "Owners:". When a watcher event or a save touches a folder whose
+owner file the rules read (or looked for), that file is read again and, if it changed, every row's owners and the
+Overview's are worked out anew (`ownerFilesMayHaveChanged`, B9).
 
 **The Overview card** gains **Most changed (90 days)**: the six folders whose own files were changed by the most
-commits (vendored and dependency folders and the root's own files left out; the history is read for the card even
-with the option off), and **Owners**: the project's and those of the top-level folders someone else owns.
+commits, each line saying "N commits to its own files" (it differs from the folder's tooltip, which counts its
+subfolders too; B10). Left out are vendored and dependency folders, the root's own files, folders that no longer
+exist, and folders the Map dims (generated, vendored or ignored, by name, `.gitattributes` or `.gitignore`) or whose
+own changed files are all dimmed (B2, B4); the history is read for the card even with the option off. **Owners**
+lists the project's and those of the top-level folders someone else owns, each on two lines (the folder, then its
+owners), so a long owner list never squeezes the folder's name (B8); a folder known only by reviewers says
+"Reviewers: …".
 
 ## Architecture and data flow
 
@@ -1230,9 +1254,12 @@ The focused coverage lives in:
   tooltips, dimmed and hidden ignored rows, crumbs with underscores, the help's search section, and the elision,
   ignore rules and project facts as pure functions;
 - `GitRecentChangesTest`, `GitServiceRecentChangesTest` (a small repository with real history, a subfolder root,
-  the cache per HEAD, shallow clones), `ProjectMapOwnersTest`, `ProjectMapActivityTest` and `ProjectMapActivityFxTest`
-  for recent changes and owners: counts, caps, heat steps, the tint and meter in Editora Light and Dark and on the
-  selection, tooltips and the Overview card's sections; `StyleContrastTest` holds the tint's floors in every theme;
+  the cache per HEAD and day, a timed-out read, a moved file, shallow clones), `GitServiceLastChangeRepoTest` (a
+  card's last change with uncommitted lines and in shallow clones), `ProjectMapOwnersTest`, `ProjectMapActivityTest`,
+  `ProjectMapActivityFxTest` and `ProjectMapActivityReview4FxTest` for recent changes and owners: counts, renames,
+  quoted names, submodules, caps, heat steps and the parent clamp, the tint and meter in Editora Light and Dark and on
+  the selection, tooltips, GitLab sections, reviewers-only OWNERS, owner files edited, a clean-tree commit, the status
+  explanation and the Overview card's sections; `StyleContrastTest` holds the tint's floors in every theme;
 - `ProjectMapNoteCardFxTest`, `ProjectMapPreviewCardFxTest`, `ProjectMapPreviewMenuEscapeFxTest` and
   `ProjectMapStickyNotesTest` for note cards, code cards, a card menu's Escape, and sticky notes;
 - `ProjectMapCardsExploreFxTest` / `ProjectMapCardsExploreTest` for the explore round's cards: find in a card, a

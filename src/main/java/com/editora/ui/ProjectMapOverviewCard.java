@@ -347,7 +347,7 @@ final class ProjectMapOverviewCard extends StackPane {
             link.setTextOverrun(javafx.scene.control.OverrunStyle.LEADING_ELLIPSIS); // a deep folder keeps its name
             Label meta = text(
                     tr(
-                            "project.map.activity.mostChangedLine",
+                            "project.map.activity.mostChangedOwn", // its own files, not its tooltip's total (B10)
                             hot.stat().commits(),
                             hot.stat().lastAuthor(),
                             GitBlameCoordinator.relativeTimeLabel(hot.stat().lastEpochSeconds(), now)),
@@ -370,23 +370,31 @@ final class ProjectMapOverviewCard extends StackPane {
         Path base = root;
         VBox rows = new VBox(1);
         for (ProjectMapActivity.Owned owned : owners) {
-            Node name = owned.folder().isEmpty()
-                    ? text(tr("project.map.activity.project"), "project-map-overview-text")
-                    : link(owned.folder() + "/", base == null ? null : base.resolve(owned.folder()));
-            List<String> named = owned.owners().approvers().isEmpty()
-                    ? owned.owners().reviewers()
-                    : owned.owners().approvers();
-            Label meta = text(ProjectMapActivity.names(named), "project-map-overview-muted");
+            Node name;
+            if (owned.folder().isEmpty()) {
+                name = text(tr("project.map.activity.project"), "project-map-overview-text");
+            } else {
+                Button link = link(owned.folder() + "/", base == null ? null : base.resolve(owned.folder()));
+                link.setTextOverrun(javafx.scene.control.OverrunStyle.LEADING_ELLIPSIS);
+                name = link;
+            }
+            Label meta = text(
+                    owned.owners().approvers().isEmpty() // reviewers are not owners (Map review 4 B3)
+                            ? tr(
+                                    "project.map.activity.reviewers",
+                                    ProjectMapActivity.names(owned.owners().reviewers()))
+                            : ProjectMapActivity.names(owned.owners().approvers()),
+                    "project-map-overview-muted");
             meta.setTooltip(new Tooltip(String.join("\n", ProjectMapActivity.ownerLines(owned.owners()))));
-            HBox row = new HBox(8, name, meta);
-            row.setAlignment(Pos.CENTER_LEFT);
-            rows.getChildren().add(row);
+            meta.setPadding(new Insets(0, 0, 3, 4));
+            // Two lines, as Most changed: a long owner list never squeezes the folder's name to "…" (B8).
+            rows.getChildren().addAll(name, meta);
         }
         content.add(rows);
     }
 
     /** A commit time as the user's locale writes a date. */
-    private static String activityDate(long epochSeconds) {
+    static String activityDate(long epochSeconds) {
         return java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.MEDIUM)
                 .withLocale(FileHistoryPanel.locale())
                 .format(java.time.Instant.ofEpochSecond(epochSeconds).atZone(java.time.ZoneId.systemDefault()));
@@ -523,7 +531,7 @@ final class ProjectMapOverviewCard extends StackPane {
         return label;
     }
 
-    private static String count(int value) {
+    static String count(int value) {
         return NumberFormat.getIntegerInstance(FileHistoryPanel.locale()).format(value);
     }
 

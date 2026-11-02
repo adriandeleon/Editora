@@ -222,4 +222,108 @@ class ProjectMapOwnersTest {
               - area/kubelet
               - sig/node
             """;
+
+    // --- Map review 4 -------------------------------------------------------------------------------------
+
+    @Test
+    void aReviewersOnlyOwnersFileNamesReviewersAndTheApproversComeFromAbove() {
+        // B3: k8s pkg/apis/abac/OWNERS has only reviewers; approval bubbles up to pkg/apis/OWNERS.
+        Map<String, String> files = Map.of(
+                "pkg/apis/OWNERS", "approvers:\n  - api-approvers\nreviewers:\n  - api-reviewers\n",
+                "pkg/apis/abac/OWNERS", "reviewers:\n  - sig-auth-authorizers-approvers\n  - sig-auth-reviewers\n",
+                "lone/OWNERS", "reviewers:\n  - only-reviewers\n");
+        ProjectMapOwners owners = ProjectMapOwners.of(null, files::get);
+        ProjectMapOwners.Owners abac = owners.owners("pkg/apis/abac/types.go", false);
+        assertEquals(List.of("api-approvers"), abac.approvers(), "the nearest approvers, from above");
+        assertEquals("pkg/apis/OWNERS", abac.source());
+        assertEquals(List.of("sig-auth-authorizers-approvers", "sig-auth-reviewers"), abac.reviewers());
+        assertEquals("pkg/apis/abac/OWNERS", abac.reviewersSource());
+        assertEquals(
+                List.of(
+                        Messages.tr("project.map.activity.owners", "api-approvers", "pkg/apis/OWNERS"),
+                        Messages.tr(
+                                "project.map.activity.reviewersFrom",
+                                "sig-auth-authorizers-approvers, sig-auth-reviewers",
+                                "pkg/apis/abac/OWNERS")),
+                ProjectMapActivity.ownerLines(abac));
+
+        ProjectMapOwners.Owners lone = owners.owners("lone/x.go", false);
+        assertTrue(lone.approvers().isEmpty(), "no approvers anywhere above");
+        assertEquals(
+                List.of(Messages.tr("project.map.activity.reviewersFrom", "only-reviewers", "lone/OWNERS")),
+                ProjectMapActivity.ownerLines(lone),
+                "reviewers are never shown as owners");
+
+        ProjectMapOwners.Owners apis = owners.owners("pkg/apis/x.go", false);
+        assertEquals(
+                List.of(
+                        Messages.tr("project.map.activity.owners", "api-approvers", "pkg/apis/OWNERS"),
+                        Messages.tr("project.map.activity.reviewers", "api-reviewers")),
+                ProjectMapActivity.ownerLines(apis),
+                "one file with both: as before");
+    }
+
+    @Test
+    void gitLabSectionsGiveTheirDefaultOwnersAndCombine() {
+        // B6: a section's default owners go to its owner-less lines; each section adds its owners.
+        String text = """
+                * @everyone
+                [Frontend] @frontend-team
+                /app/frontend/
+                *.vue @vue-team
+
+                ^[Docs][2] @docs-team
+                /docs/
+                /docs/internal/ @internal
+
+                [frontend]
+                /app/legacy/
+                """;
+        ProjectMapOwners owners = ProjectMapOwners.of(text, rel -> null);
+        assertEquals(
+                List.of("@everyone", "@frontend-team"),
+                owners.owners("app/frontend/main.js", false).approvers(),
+                "the default section and Frontend's default");
+        assertEquals(
+                List.of("@everyone", "@vue-team"),
+                owners.owners("app/frontend/App.vue", false).approvers());
+        assertEquals(
+                List.of("@everyone", "@docs-team"),
+                owners.owners("docs/x.md", false).approvers());
+        assertEquals(
+                List.of("@everyone", "@internal"),
+                owners.owners("docs/internal/y.md", false).approvers());
+        assertEquals(
+                List.of("@everyone", "@frontend-team"),
+                owners.owners("app/legacy/z.js", false).approvers(),
+                "sections of the same name are one, with its defaults");
+        assertEquals(List.of("@everyone"), owners.owners("README.md", false).approvers());
+    }
+
+    @Test
+    void theGitLabPlaceIsReadAndOwnerFileEditsAreNoticed(@TempDir Path root) throws Exception {
+        Files.createDirectories(root.resolve(".gitlab"));
+        Files.writeString(root.resolve(".gitlab/CODEOWNERS"), "[Frontend] @frontend-team\n/app/frontend/\n");
+        Files.createDirectories(root.resolve("pkg/sub"));
+        Files.writeString(root.resolve("pkg/OWNERS"), "approvers:\n  - alice\n");
+        ProjectMapOwners owners = ProjectMapOwners.load(root);
+        assertEquals(
+                List.of("@frontend-team"),
+                owners.owners("app/frontend/App.vue", false).approvers());
+        assertEquals(
+                ".gitlab/CODEOWNERS",
+                owners.owners("app/frontend/App.vue", false).source());
+        assertEquals(List.of("alice"), owners.owners("pkg/sub/a.go", false).approvers());
+
+        // B9: only a folder whose owner file was read (or looked for) is checked, and only a real change counts.
+        assertFalse(owners.changedIn(List.of("pkg", "pkg/sub", ".gitlab")), "nothing changed");
+        Files.writeString(root.resolve("pkg/OWNERS"), "approvers:\n  - bob\n");
+        assertFalse(owners.changedIn(List.of("docs")), "not a folder these rules read");
+        assertTrue(owners.changedIn(List.of("pkg")), "an edited OWNERS");
+        Files.writeString(root.resolve("pkg/sub/OWNERS"), "approvers:\n  - cy\n");
+        assertTrue(owners.changedIn(List.of("pkg/sub")), "an OWNERS where none was");
+        Files.createDirectories(root.resolve(".github"));
+        Files.writeString(root.resolve(".github/CODEOWNERS"), "* @gh\n");
+        assertTrue(owners.changedIn(List.of(".github")), "a CODEOWNERS that now comes first");
+    }
 }

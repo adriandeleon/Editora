@@ -1433,6 +1433,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     public void setGitStatus(java.util.Map<Path, com.editora.git.GitFileStatus> byPath) {
         java.util.Map<Path, com.editora.git.GitFileStatus> given = byPath == null ? java.util.Map.of() : byPath;
         if (given.equals(gitStatus) && java.util.Objects.equals(root, gitStatusRoot)) {
+            mapView.activityGitRefreshed(); // a commit or pull on a clean tree still moves HEAD: one rev-parse
             return; // an unchanged status (most Git refreshes): no ancestor walk, no tree redraw, no Map push
         }
         gitStatusRoot = root;
