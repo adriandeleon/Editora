@@ -52,10 +52,12 @@ class PosixShellReapProcessTest {
 
     @Test
     void theStartTimeIsTheKernelsForThatPid(@TempDir Path dir) throws Exception {
-        // A command name may hold spaces and parentheses: only the last ") " ends it.
-        Path odd = Files.copy(Path.of("/bin/sleep"), dir.resolve("odd) n (x"));
+        // A command name may hold spaces and parentheses: only the last ") " ends it. A script takes its file's name
+        // as its command name; a copy of /bin/sleep would not do, as a multi-call coreutils (uutils, Ubuntu 26.04)
+        // picks the tool by that name and exits at once.
+        Path odd = Files.writeString(dir.resolve("odd) n (x"), "#!/bin/sh\nwhile :; do sleep 1; done\n");
         odd.toFile().setExecutable(true);
-        Process p = new ProcessBuilder(odd.toString(), "60").start();
+        Process p = new ProcessBuilder(odd.toString()).start();
         try {
             Ran ran = run(PosixShell.startTimeArgv(p.pid()));
 
