@@ -310,22 +310,44 @@ class ProjectMapCardsReview3FxTest {
     // --- C9 / E11 ---------------------------------------------------------------------------------------
 
     @Test
-    void aCardsStructureColumnChangesSideWhenItsCardIsDraggedToTheEdge() throws Exception {
+    void aCardsStructureColumnStaysOnItsRightWhenItsCardIsDraggedToTheEdge() throws Exception {
         Path big = writeBig();
         map = openMap();
         ProjectMapPreview card = openFileCard(big);
         ProjectMapCardStructure column = showStructure(card);
         FxTestSupport.runOnFx(() -> {
+            assertEquals(CardAttachment.Side.RIGHT, column.side(), "on the card's right");
             Region host = (Region) card.getParent();
             double width = card.getWidth() * card.mapScale();
             card.relocate(host.getWidth() - width - 10, card.getLayoutY()); // dragged against the right edge
             map.view().layout(); // the pulse's layout pass
-            assertEquals(CardAttachment.Side.LEFT, column.side(), "the column goes where it can be seen");
+            assertEquals(CardAttachment.Side.RIGHT, column.side(), "still on its right (Map Structure right)");
             double[] drawn = column.bounds();
-            assertTrue(drawn[0] >= 0 && drawn[0] + drawn[2] <= host.getWidth(), "inside the map area");
-            card.relocate(14, card.getLayoutY()); // and back against the left edge
+            assertTrue(drawn[0] >= card.getLayoutX() + width, "right of the card, past the map area if need be");
+            card.relocate(14, card.getLayoutY()); // and against the left edge
             map.view().layout();
             assertEquals(CardAttachment.Side.RIGHT, column.side());
+        });
+    }
+
+    @Test
+    void aStructureColumnOpenedOnACardAgainstTheRightEdgeStepsTheCardLeftToFit() throws Exception {
+        Path big = writeBig();
+        map = openMap();
+        ProjectMapPreview card = openFileCard(big);
+        FxTestSupport.runOnFx(() -> {
+            Region host = (Region) card.getParent();
+            card.relocate(host.getWidth() - card.getWidth() * card.mapScale() - 10, card.getLayoutY());
+        });
+        ProjectMapCardStructure column = showStructure(card);
+        FxTestSupport.runOnFx(() -> {
+            Region host = (Region) card.getParent();
+            double[] drawn = column.bounds();
+            assertEquals(CardAttachment.Side.RIGHT, column.side(), "on the card's right, not its left");
+            assertTrue(drawn[0] >= card.getLayoutX() + card.getWidth() * card.mapScale(), "right of the card");
+            assertTrue(
+                    drawn[0] + drawn[2] <= host.getWidth() - ProjectMapPreview.EDGE_MARGIN + 0.5,
+                    "inside the map area: the card stepped left for it");
         });
     }
 
