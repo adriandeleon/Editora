@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit;
 
 import javafx.application.Platform;
 
+import com.editora.i18n.Messages;
 import com.editora.process.ExecTargets;
 import com.editora.vfs.EmbeddedSftpFixture;
 import com.google.gson.JsonObject;
@@ -116,6 +117,7 @@ class RemoteDebugFxTest {
     @BeforeAll
     static void bootToolkit() throws Exception {
         FxToolkit.registerPrimaryStage();
+        Messages.init("en"); // the errors are matched in English, whichever test ran before in this JVM
     }
 
     @TempDir
