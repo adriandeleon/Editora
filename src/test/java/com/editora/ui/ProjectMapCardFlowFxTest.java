@@ -22,6 +22,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -217,7 +218,7 @@ class ProjectMapCardFlowFxTest {
                         tree.getSelectionModel().select(i);
                     }
                 }
-                tree.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, true, false, false, false));
+                tree.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false));
             });
             Path sub = FxTestSupport.callOnFx(() -> column.visibleRows().stream()
                     .map(ProjectMapCardStructure.Row::node)
@@ -266,7 +267,109 @@ class ProjectMapCardFlowFxTest {
         }
     }
 
+    @Test
+    void aDeclarationCardFollowsTheStructureColumnItWasLastAskedForFrom() throws Exception {
+        Path root = Files.createDirectories(temp.resolve("project"));
+        Path app = Files.writeString(root.resolve("App.java"), APP);
+        Fixture map = openMap(root, ProjectMapView.FlowDirection.LEFT_TO_RIGHT);
+        try {
+            waitFor(() -> nodeBox(map, app) != null, "App.java's row");
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    map.view(), "toggleStructure", new Class<?>[] {ProjectMapModel.Entry.class}, entry(map, app)));
+            Path sub = symbolRow(map, "sub");
+            FxTestSupport.runOnFx(() -> {
+                MapCards.Site site =
+                        (MapCards.Site) FxTestSupport.call(map.surface(), "cardSite", new Class<?>[] {Path.class}, sub);
+                FxTestSupport.call(
+                        map.surface(),
+                        "panBy",
+                        new Class<?>[] {double.class, double.class},
+                        40 - site.column()[0],
+                        0.0);
+                FxTestSupport.call(map.surface(), "setSelected", new Class<?>[] {Path.class}, app);
+                FxTestSupport.call(map.view(), "previewSelection", new Class<?>[] {Path.class}, app);
+            });
+            ProjectMapPreview file = waitForCard(map, app);
+            waitFor(() -> file.editor().getText().contains("return a + b;"), "the file card");
+            FxTestSupport.runOnFx(() -> file.setStructureShown(true));
+            waitFor(
+                    () -> structureOf(map, file) != null
+                            && structureOf(map, file).visibleRows().size() > 3,
+                    "rows");
+            ProjectMapCardStructure column = FxTestSupport.callOnFx(() -> structureOf(map, file));
+            enterOn(column, "sub");
+            ProjectMapPreview declaration = waitForCard(map, sub);
+            waitFor(() -> rowDrawn(column, sub), "the row drawn");
+            FxTestSupport.runOnFx(() -> assertConnectedTo(map, sub, column.rowBounds(sub), "the file card's column"));
+
+            // A click on the declaration's row in the Map's Structure column: the card goes beside that column, and
+            // its connector starts at that row.
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    map.view(), "activate", new Class<?>[] {ProjectMapModel.Entry.class}, entry(map, sub)));
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                Map<Path, ProjectMapPreview> previews = FxTestSupport.field(map.view(), "previews");
+                assertSame(declaration, previews.get(sub), "the same card, moved");
+                MapCards.Site site =
+                        (MapCards.Site) FxTestSupport.call(map.surface(), "cardSite", new Class<?>[] {Path.class}, sub);
+                assertNotNull(site.row(), "the declaration's row is on the map");
+                assertPast(
+                        ProjectMapView.FlowDirection.LEFT_TO_RIGHT,
+                        MapCards.drawnBounds(declaration),
+                        site.column(),
+                        site.row());
+                assertConnectedTo(map, sub, site.row(), "the Map's column");
+            });
+
+            // Asked for from the file card's column again: back beside that one.
+            enterOn(column, "sub");
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                double[] card = MapCards.drawnBounds(declaration);
+                double[] owner = MapCards.drawnBounds(file);
+                assertTrue(card[0] >= owner[0] + owner[2] - 1, "right of the file card again");
+                assertConnectedTo(map, sub, column.rowBounds(sub), "the file card's column again");
+            });
+        } finally {
+            FxTestSupport.runOnFx(map.view()::dispose);
+        }
+    }
+
     // --- helpers ---
+
+    /** Enter on the row of {@code label} in a file card's Structure column: the declaration's own card. */
+    private static void enterOn(ProjectMapCardStructure column, String label) throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            var tree = column.tree();
+            for (int i = 0; i < tree.getExpandedItemCount(); i++) {
+                ProjectMapStructure.Node node = tree.getTreeItem(i).getValue().node();
+                if (node != null && node.symbol().label().startsWith(label)) {
+                    tree.getSelectionModel().select(i);
+                }
+            }
+            tree.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false));
+        });
+    }
+
+    private static boolean rowDrawn(ProjectMapCardStructure column, Path key) {
+        try {
+            return FxTestSupport.callOnFx(() -> column.rowBounds(key)) != null;
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** Asserts the connector of {@code key}'s card starts at the row box {@code row}, on its middle. */
+    private static void assertConnectedTo(Fixture map, Path key, double[] row, String what) {
+        assertNotNull(row, what + ": the row is drawn");
+        Map<Path, MapCards.PreviewConnector> connectors = FxTestSupport.field(map.view(), "previewConnectors");
+        MapCards.PreviewConnector connector = connectors.get(key);
+        assertNotNull(connector, what + ": a connector");
+        String where = what + ": connector " + connector + " row " + List.of(row[0], row[1], row[2], row[3]);
+        assertEquals(row[1] + row[3] / 2, connector.startY(), 1, where);
+        assertTrue(
+                Math.abs(connector.startX() - row[0]) < 1 || Math.abs(connector.startX() - row[0] - row[2]) < 1, where);
+    }
 
     private record Fixture(ProjectMapView view, Scene scene, Region surface) {}
 

@@ -40,8 +40,8 @@ import static com.editora.i18n.Messages.tr;
  * The Structure column of one Project Map file card: the file's declarations, as the Map's own Structure column
  * lists them, stuck beside the card. It belongs to the card — it moves, resizes and zooms with it and closes with
  * it — so it works wherever the file's row is, filtered or scrolled off the map included. A declaration clicked
- * (or Enter on it) scrolls the card to its lines and marks them, as an outline beside a code view moves the view;
- * Shift+click or Shift+Enter opens its own declaration card. The outline is the Map's
+ * (or Enter on it) opens its own declaration card beside the column, as a row of the Map's Structure column does;
+ * Shift+click or Shift+Enter scrolls the card to its lines and marks them instead. The outline is the Map's
  * ({@link ProjectMapStructure}); nothing is read here.
  */
 final class ProjectMapCardStructure implements CardAttachment {
@@ -97,8 +97,8 @@ final class ProjectMapCardStructure implements CardAttachment {
     private Side side = Side.RIGHT;
 
     /**
-     * @param onReveal scrolls the card to a declaration and marks its lines (a click, Enter)
-     * @param onPreview opens (or brings up) the card of a declaration (Shift+click, Shift+Enter, the menu)
+     * @param onReveal scrolls the card to a declaration and marks its lines (Shift+click, Shift+Enter)
+     * @param onPreview opens (or brings up) the card of a declaration (a click, Enter, the menu)
      * @param menuFor a declaration's menu, as its row's in the Map's Structure column
      * @param onActivate the column was used: it is use of the card
      * @param onMoved the column moved, showed or hid, or its list scrolled (connectors must follow)
@@ -204,9 +204,9 @@ final class ProjectMapCardStructure implements CardAttachment {
             if (event.getCode() == KeyCode.ENTER && !event.isShortcutDown() && !event.isAltDown()) {
                 ProjectMapStructure.Node node = selectedNode();
                 if (node != null) {
-                    // The column is the card's outline: Enter moves the card; Shift+Enter opens the declaration's
-                    // own card, as Shift+Enter on a Map row opens a row's card (review 3, E8).
-                    (event.isShiftDown() ? onPreview : onReveal).accept(node);
+                    // Enter opens the declaration's own card beside the column, as the Map's Structure column
+                    // does; Shift+Enter moves the card itself to it instead (review 3, E8; Map Structure previews).
+                    (event.isShiftDown() ? onReveal : onPreview).accept(node);
                     event.consume();
                 }
             }
@@ -777,7 +777,7 @@ final class ProjectMapCardStructure implements CardAttachment {
                         || onDisclosure(event)) {
                     return;
                 }
-                (event.isShiftDown() ? onPreview : onReveal).accept(node);
+                (event.isShiftDown() ? onReveal : onPreview).accept(node);
                 event.consume();
             });
         }

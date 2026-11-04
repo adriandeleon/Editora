@@ -92,7 +92,7 @@ class ProjectMapCardsReview3FxTest {
             int index = i;
             FxTestSupport.runOnFx(() -> {
                 key(column.tree(), KeyCode.DOWN, false);
-                key(column.tree(), KeyCode.ENTER, true); // Shift+Enter: the declaration's own card
+                key(column.tree(), KeyCode.ENTER, false); // Enter: the declaration's own card
             });
             await("declaration card " + index, () -> previews().size() == Math.min(8, index + 2));
         }
@@ -124,7 +124,7 @@ class ProjectMapCardsReview3FxTest {
         for (int i = 0; i < 7; i++) {
             FxTestSupport.runOnFx(() -> {
                 key(column.tree(), KeyCode.DOWN, false);
-                key(column.tree(), KeyCode.ENTER, true);
+                key(column.tree(), KeyCode.ENTER, false);
             });
         }
         await("eight cards", () -> previews().size() == 8);
@@ -137,35 +137,42 @@ class ProjectMapCardsReview3FxTest {
     // --- E8 ---------------------------------------------------------------------------------------------
 
     @Test
-    void aClickOrEnterInACardsStructureColumnScrollsTheCardToTheDeclarationAndShiftOpensItsCard() throws Exception {
+    void aClickOrEnterInACardsStructureColumnOpensTheDeclarationsCardAndShiftScrollsTheCardToIt() throws Exception {
         Path big = writeBig();
         map = openMap();
         ProjectMapPreview card = openFileCard(big);
         ProjectMapCardStructure column = showStructure(card);
-        int line = lineOf(source(), "int m9(");
+        String before = FxTestSupport.callOnFx(() -> card.editor().getSelectedText());
         FxTestSupport.runOnFx(() -> {
             column.focus();
             clickRow(column, "m9(int)", false);
         });
-        await("the card scrolled to m9", () -> firstVisible(card) <= line && line <= lastVisible(card));
+        await(
+                "a click opens the declaration's own card (Map Structure previews)",
+                () -> previews().size() == 2);
         FxTestSupport.runOnFx(() -> {
-            assertEquals(1, previews().size(), "no declaration card was opened");
-            String selected = card.editor().getSelectedText();
-            assertTrue(selected.startsWith("    int m9(int a) {"), selected);
-            assertTrue(selected.strip().endsWith("}"), "the declaration's lines are marked: " + selected);
+            assertEquals(before, card.editor().getSelectedText(), "the file card is left as it was");
             selectRow(column, "m2(int)");
             key(column.tree(), KeyCode.ENTER, false);
         });
-        int second = lineOf(source(), "int m2(");
-        await("Enter scrolls too", () -> firstVisible(card) <= second && second <= lastVisible(card));
+        await("so does Enter", () -> previews().size() == 3);
+        int line = lineOf(source(), "int m5(");
         FxTestSupport.runOnFx(() -> {
-            assertEquals(1, previews().size());
             assertTrue(column.contains(map.scene().getFocusOwner()), "the keyboard stays in the column");
+            clickRow(column, "m5(int)", true);
+        });
+        await("Shift+click scrolls the card to m5", () -> firstVisible(card) <= line && line <= lastVisible(card));
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(3, previews().size(), "no declaration card was opened");
+            String selected = card.editor().getSelectedText();
+            assertTrue(selected.startsWith("    int m5(int a) {"), selected);
+            assertTrue(selected.strip().endsWith("}"), "the declaration's lines are marked: " + selected);
+            selectRow(column, "m7(int)");
             key(column.tree(), KeyCode.ENTER, true);
         });
-        await("Shift+Enter opens the declaration's card", () -> previews().size() == 2);
-        FxTestSupport.runOnFx(() -> clickRow(column, "m5(int)", true));
-        await("so does Shift+click", () -> previews().size() == 3);
+        int second = lineOf(source(), "int m7(");
+        await("Shift+Enter scrolls too", () -> firstVisible(card) <= second && second <= lastVisible(card));
+        FxTestSupport.runOnFx(() -> assertEquals(3, previews().size()));
     }
 
     // --- D7 ---------------------------------------------------------------------------------------------
@@ -550,7 +557,7 @@ class ProjectMapCardsReview3FxTest {
         }
 
         @Override
-        public javafx.scene.control.ContextMenu symbolMenu(ProjectMapModel.Entry entry) {
+        public javafx.scene.control.ContextMenu symbolMenu(ProjectMapModel.Entry entry, Runnable preview) {
             return new javafx.scene.control.ContextMenu();
         }
 
