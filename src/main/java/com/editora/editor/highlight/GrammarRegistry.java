@@ -335,7 +335,8 @@ public final class GrammarRegistry {
         mapExtensions("source.go", "go");
         mapExtensions("source.cs", "cs", "csx");
         mapExtensions("text.html.markdown", "md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdx", "rmd", "qmd");
-        mapExtensions("source.json", "json", "jsonc", "json5", "ipynb"); // a Jupyter notebook is JSON
+        // a Jupyter notebook is JSON; a VS Code workspace file is JSON with comments (JS review A102)
+        mapExtensions("source.json", "json", "jsonc", "json5", "ipynb", "code-workspace");
         mapExtensions("source.css", "css");
         mapExtensions("text.html.basic", "html", "htm", "xhtml");
         // HTML templates (HTML review C7): coloured as HTML, the template tags as text.
