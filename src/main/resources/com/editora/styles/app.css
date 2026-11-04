@@ -4781,6 +4781,7 @@
 .debug-panel .debug-start:hover .icon-line { -fx-stroke: -state-green; }
 /* A frame without source to show (the JDK, a library, a lambda proxy) — muted, like IntelliJ's library frames. */
 .debug-panel .debug-frame-name.debug-frame-nosource { -fx-fill: -color-fg-muted; }
+.debug-panel .debug-frame-name.debug-frame-fold { -fx-font-style: italic; }
 /* The empty call stack's "how to start" hint (review C22). */
 .debug-panel .debug-empty-hint { -fx-text-fill: -color-fg-muted; -fx-padding: 8; }
 .debug-panel .debug-start:disabled { -fx-opacity: 0.5; }

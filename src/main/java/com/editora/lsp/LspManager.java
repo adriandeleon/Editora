@@ -7356,7 +7356,7 @@ public final class LspManager {
 
     /** Folders that hold no Java sources a move could need edits for, whatever their place. */
     private static final java.util.Set<String> NOT_SOURCES =
-            java.util.Set.of("node_modules", ".git", ".svn", ".hg", ".gradle", ".idea");
+            com.editora.search.DependencyDirs.with(".git", ".svn", ".hg", ".gradle", ".idea");
 
     /** Build output folders, skipped only beside a build file: elsewhere they are packages (seventh review BR3). */
     private static final java.util.Set<String> BUILD_OUTPUTS = java.util.Set.of("target", "build", "out");

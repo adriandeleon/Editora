@@ -667,6 +667,8 @@ final class DoctorCoordinator {
                     "lsp")));
         }
         specs.add(pythonFormatterRow(needs)); // Format Document on .py works with the language server off too
+        specs.addAll(JsToolDoctorRows.rows( // the project's own ESLint, Prettier and Biome (they need no server)
+                ops.projectRoot(), host.projectScope().trustSnapshot(), s.isEslintEnabled(), s.getJsFormatter()));
 
         // Debugging -------------------------------------------------------------------------------
         if (ops.debugFeatureEnabled()) {
@@ -737,27 +739,37 @@ final class DoctorCoordinator {
                     if (server.isEmpty()) {
                         return base.missing("doctor.tip.missingInstallable", "js-debug");
                     }
-                    // The Node.js that runs js-debug: the Debugging setting's, else node on PATH (as a launch does).
+                    // The Node.js that runs js-debug: the Node.js setting's, else node on PATH (as a launch does);
+                    // one too old is replaced by the newest nvm Node.js or PATH's, as a launch does (review D101).
                     String node = com.editora.run.NodeRuntimes.resolveLocal(null, null, "", nodeSetting)
                             .executable();
                     DoctorProbes.Presence nodeP = DoctorProbes.version(List.of(node));
                     if (!nodeP.present()) {
                         return base.missing("doctor.tip.missing", node);
                     }
-                    if (com.editora.dap.JsLaunch.runsAdapter(nodeP.version()) && jsPin != null) {
+                    String runner = com.editora.dap.JsAdapterNode.choose(
+                            node, nodeP.version(), com.editora.dap.JsAdapterNode.localFallbacks(), c -> {
+                                DoctorProbes.Presence p = DoctorProbes.version(List.of(c));
+                                return p.present() ? p.version() : null;
+                            });
+                    String runnerVersion = node.equals(runner)
+                            ? nodeP.version()
+                            : runner == null
+                                    ? ""
+                                    : DoctorProbes.version(List.of(runner)).version();
+                    String jsDebugVersion = PinnedVersions.jsDebugServerVersion(server.get());
+                    String detail = (jsDebugVersion == null ? "" : "js-debug " + jsDebugVersion + " · ")
+                            + server.get()
+                            + " · Node.js "
+                            + runnerVersion
+                            + (runner != null && !node.equals(runner) ? " (" + runner + ")" : "");
+                    if (runner != null && jsPin != null) {
                         // Update is offered for Editora's copy only: a configured js-debug path keeps winning.
                         return pinnedRow(
-                                base,
-                                jsPin,
-                                config,
-                                List.of(server.get().toString()),
-                                null,
-                                null,
-                                server.get() + " · Node.js " + nodeP.version(),
-                                false);
+                                base, jsPin, config, List.of(server.get().toString()), null, null, detail, false);
                     }
-                    return com.editora.dap.JsLaunch.runsAdapter(nodeP.version())
-                            ? base.ok(server.get() + " · Node.js " + nodeP.version())
+                    return runner != null
+                            ? base.ok(detail)
                             : base.warn(
                                     server.get().toString(),
                                     "doctor.tip.jsDebugOldNode",

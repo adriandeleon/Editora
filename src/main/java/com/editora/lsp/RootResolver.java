@@ -349,8 +349,8 @@ public final class RootResolver {
     }
 
     /** Folders whose name says they hold no build of the user's: dependencies, build output, VCS metadata. */
-    private static final java.util.Set<String> SKIPPED_FOLDERS = java.util.Set.of(
-            "node_modules", "target", "build", "out", "dist", ".git", ".idea", ".editora", ".gradle", ".mvn");
+    private static final java.util.Set<String> SKIPPED_FOLDERS = com.editora.search.DependencyDirs.with(
+            "target", "build", "out", "dist", ".git", ".idea", ".editora", ".gradle", ".mvn");
 
     /**
      * The directories at most {@code depth} levels below {@code root} (the root itself included) that hold

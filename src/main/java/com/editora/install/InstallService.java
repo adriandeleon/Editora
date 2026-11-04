@@ -1331,6 +1331,10 @@ public final class InstallService {
 
     private void installTarball(Step s, Path configDir) throws Exception {
         byte[] tgz = download(resolveDownloadUrl(s));
+        String refused = InstallCatalog.checksumProblem(s.id(), tgz, InstallCatalog.JS_DEBUG_SHA256);
+        if (refused != null) {
+            throw new InstallException(refused);
+        }
         Path tmpFile = Files.createTempFile("editora-dl", ".tar.gz");
         Path dest = configDir.resolve(s.destSubpath());
         try {

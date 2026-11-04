@@ -724,4 +724,15 @@ class InstallCatalogTest {
         assertEquals("@scope/name", InstallCatalog.packageName("@scope/name"));
         assertEquals("typescript", InstallCatalog.packageName("typescript@6"));
     }
+
+    @Test
+    void aJsDebugDownloadIsRefusedUnlessItsChecksumIsThePinnedOne() {
+        byte[] data = "tarball".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String good = InstallCatalog.sha256Hex(data);
+        org.junit.jupiter.api.Assertions.assertNull(InstallCatalog.checksumProblem("js-debug", data, good));
+        org.junit.jupiter.api.Assertions.assertNull(InstallCatalog.checksumProblem("js-debug", data, null));
+        org.junit.jupiter.api.Assertions.assertNull(InstallCatalog.checksumProblem("other", data, "00"));
+        String bad = InstallCatalog.checksumProblem("js-debug", data, "00");
+        org.junit.jupiter.api.Assertions.assertTrue(bad != null && bad.contains(good), String.valueOf(bad));
+    }
 }

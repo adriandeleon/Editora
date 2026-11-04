@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JavaScript and TypeScript: ESLint, Prettier/Biome and actions on save.** A project's own ESLint (from
+  `node_modules`, with an `eslint.config.*`, `.eslintrc*` or `package.json` `eslintConfig`) now checks JS/TS files
+  when they are shown, after a pause in typing and on save; its problems join the TypeScript server's (source
+  `eslint`) in the squiggles, the counter and the Problems window. Its fixes and suggestions are in Code Actions, and
+  **ESLint: Fix All Problems** applies every automatic fix. Format Document uses the project's Prettier (when the
+  project uses it) or Biome (with a `biome.json`), else the TypeScript server as before (Settings → LSP → TypeScript
+  → Formatter); a selection is formatted by Prettier's range. Organize imports, ESLint fixes and format can run after
+  an explicit save, as one undo step. All of them run only in trusted folders; an untrusted one says so once, with
+  Trust Folder. Doctor shows the project's ESLint, Prettier and Biome.
 - **The Linux downloads are signed.** Every `.deb`, `.rpm`, `.AppImage` and `.tar.gz` has an OpenPGP
   signature beside it (`.asc`), by the key attached to the release as `editora-signing-key.asc` — the
   same key that signs Termina's and Torrenta's. The `.rpm` and `.deb` are signed inside as well, for

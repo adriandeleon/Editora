@@ -1812,6 +1812,14 @@ final class DebugCoordinator {
         dapManager.setJsProjectRoot(ops.projectRoot()); // a JavaScript file's Node.js, package root, workspace
         dapManager.setJsNodeArgs(nodeArgs);
         dapManager.setJsProgram(null); // the file itself, not a configuration's planned launch
+        if ("javascript".equals(language) && com.editora.process.ExecTargets.runsHere(path)) {
+            // Planned exactly as Run plans it (review D104, D106): the same Node.js, flags, environment and
+            // folder — and for a TypeScript file whatever Run runs for it (tsx, or the compiled file).
+            Path launchedJs = path;
+            relaunch = () -> relaunchFor(launchedJs, again -> launchBuffer(again, nodeArgs));
+            debugJsFile(path, fileArgs, nodeArgs);
+            return;
+        }
         // Re-anchor closed files' breakpoints first (off-thread) so the initial setBreakpoints arms them too.
         boolean java = "java".equals(language);
         Path projectRoot = java ? JavaProjectRoot.find(path) : null;
@@ -3050,6 +3058,48 @@ final class DebugCoordinator {
                         return;
                     }
                     startJsProgram(script, program, name);
+                });
+    }
+
+    /**
+     * Debug on a local JavaScript or TypeScript file: planned by {@link NodeRunLauncher} as Run plans it, then split
+     * into js-debug's launch ({@link NodeDebugConfigs#fromRunPlan}). A plan js-debug cannot launch — a shebang
+     * naming Deno or Bun — falls back to the file under the resolved Node.js.
+     */
+    private void debugJsFile(Path file, List<String> fileArgs, List<String> nodeArgs) {
+        String problem = com.editora.dap.JsLaunch.launchProblemKey(String.valueOf(file.getFileName()), null);
+        if (problem != null) {
+            host.setStatus(tr(problem, "?")); // JSX/TSX: Node.js cannot run it, whatever its version
+            return;
+        }
+        NodeRunLauncher.plan(
+                new NodeRunLauncher.Spec(
+                        file,
+                        ops.projectRoot(),
+                        "",
+                        host.settings().getNodePath(),
+                        fileArgs,
+                        nodeArgs,
+                        false,
+                        Map.of(),
+                        null),
+                ready -> {
+                    if (ready.plan().error() != null) {
+                        host.setStatus(tr(ready.plan().error()));
+                        return;
+                    }
+                    var program = NodeDebugConfigs.fromRunPlan(
+                            ready.plan().argv(), file.toString(), ready.plan().env(), ready.dir());
+                    if (program == null || !NodeDebugConfigs.debuggableRuntime(program.runtime())) {
+                        withClosedBreakpoints(
+                                () -> dapManager.startLaunch(file, "javascript", this::pickMainClass, "", null));
+                        return;
+                    }
+                    dapManager.setProgramArgs(List.of());
+                    dapManager.setJsNodeArgs(List.of());
+                    dapManager.setJsProgram(program);
+                    withClosedBreakpoints(
+                            () -> dapManager.startLaunch(file, "javascript", this::pickMainClass, "", null));
                 });
     }
 

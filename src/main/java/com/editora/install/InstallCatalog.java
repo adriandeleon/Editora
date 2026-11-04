@@ -175,9 +175,32 @@ public final class InstallCatalog {
     /**
      * The vscode-js-debug release Editora installs: pinned, not "latest" (review D16) — a new release can raise the
      * Node.js it needs or move its entry point under users, so a newer one is adopted deliberately, after testing.
-     * No checksum: GitHub publishes none for the release asset.
+     * Its download is refused unless its SHA-256 is {@link #JS_DEBUG_SHA256}.
      */
     public static final String JS_DEBUG_VERSION = "v1.117.0";
+
+    /**
+     * The SHA-256 of {@link #JS_DEBUG_VERSION}'s {@code js-debug-dap-v*.tar.gz}, as the release's asset
+     * {@code digest} lists it ({@code gh api repos/microsoft/vscode-js-debug/releases/tags/<v> --jq '.assets[].digest'});
+     * null skips the check. Raise it together with the version.
+     */
+    public static final @Nullable String JS_DEBUG_SHA256 =
+            "ad8d04ede9d4b75cc290fd5438a65047a06f786d04f604b6112485b36f090772";
+
+    /**
+     * Why a downloaded release asset of step {@code stepId} is refused, or null: js-debug's must have the pinned
+     * {@code expected} checksum (none expected: anything goes).
+     */
+    public static @Nullable String checksumProblem(String stepId, byte[] data, @Nullable String expected) {
+        if (!"js-debug".equals(stepId) || expected == null || expected.isBlank()) {
+            return null;
+        }
+        String actual = sha256Hex(data);
+        return actual.equalsIgnoreCase(expected.strip())
+                ? null
+                : stepId + ": the download does not match its pinned checksum (expected " + expected + ", got " + actual
+                        + ") — not installed";
+    }
 
     /** GitHub release metadata for {@link #JS_DEBUG_VERSION} (the {@code js-debug-dap-v*.tar.gz} asset). */
     public static final String JS_DEBUG_RELEASES_API =

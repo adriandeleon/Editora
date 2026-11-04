@@ -853,9 +853,8 @@ final class BuildCoordinator {
             ops.openConsole();
         }
         String label = String.join(" ", taskArgs);
-        // npm's tab is named after the manager that runs (pnpm, yarn, bun), not always "npm".
-        String tabName =
-                tool == BuildTool.NPM ? com.editora.run.MissingProgram.baseName(runArgv.get(0)) : tool.displayName();
+        // npm's tab is the Package Scripts window's: the header line names the manager that runs (JS review E108).
+        String tabName = tool == BuildTool.NPM ? tr("toolwindow.npm") : tool.displayName();
         panel.started(this, tabName, label, tool.outputStyle(), this::stop);
         if (tree != null) {
             tree.setRunning(true);

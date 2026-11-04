@@ -137,11 +137,24 @@ final class DebugPanelText {
         for (DapModels.ThreadInfo t : all) {
             if (t.id() == stoppedId) {
                 out.addFirst(t);
-            } else if (!isJvmThread(t)) {
+            } else if (!isJvmThread(t) && !(all.size() > 1 && isPackageManagerThread(t))) {
                 out.add(t);
             }
         }
         return out;
+    }
+
+    private static final java.util.regex.Pattern PACKAGE_MANAGER_THREAD =
+            java.util.regex.Pattern.compile("^(?:npm|npx|pnpm|yarn|bun)(?:\\.cmd)? \\[\\d+\\]$");
+
+    /**
+     * Whether {@code t} is the package manager js-debug attached to while it starts a script ({@code npm [4242]}):
+     * it runs no code of the user's, so beside the script's own process it only crowds the dropdown (review D109).
+     */
+    static boolean isPackageManagerThread(DapModels.ThreadInfo t) {
+        return t != null
+                && t.name() != null
+                && PACKAGE_MANAGER_THREAD.matcher(t.name().strip()).matches();
     }
 
     /**

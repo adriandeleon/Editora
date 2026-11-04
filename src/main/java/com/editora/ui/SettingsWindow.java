@@ -7105,7 +7105,7 @@ public class SettingsWindow {
                                 case "python" -> "debugpy";
                                 default -> "js-debug";
                             })
-                    .install(() -> installSupport(dbg.id()));
+                    .install(() -> installSupport("javascript".equals(dbg.id()) ? "js-debug" : dbg.id())); // D111
             debugStatusLabels.put(dbg.id(), status);
             installButtons.put("debug:" + dbg.id(), status.installButton());
             String title = tr(dbg.commandLabelKey());
@@ -7191,14 +7191,10 @@ public class SettingsWindow {
                         () -> config.getSettings().getJsDebugPath(),
                         cb -> {
                             if (dapManager != null) {
-                                // installed, whether or not switched on (review D13): its path and the Node.js
-                                dapManager.detectJsInstalled((server, node) -> cb.accept(
-                                        server != null && node != null,
-                                        server == null
-                                                ? ""
-                                                : node == null
-                                                        ? tr("settings.debug.jsNoNode")
-                                                        : tr("settings.debug.jsFound", node, server)));
+                                // installed, whether or not switched on (review D13): its version and the Node.js
+                                dapManager.detectJsInstalled(js -> cb.accept(
+                                        js.server() != null && js.nodeVersion() != null,
+                                        ToolStatusRow.jsDebugDetail(js)));
                             } else {
                                 cb.accept(false, "");
                             }
@@ -7319,6 +7315,7 @@ public class SettingsWindow {
                 Settings::isTypescriptTypeAcquisition,
                 Settings::setTypescriptTypeAcquisition,
                 words + "types npm automatic type acquisition download @types");
+        SettingsJsToolRows.add(this, c); // ESLint, Prettier/Biome and the actions on save (JS review F)
     }
 
     /** The ShellCheck / shfmt status lines on the Bash card, by tool id. */

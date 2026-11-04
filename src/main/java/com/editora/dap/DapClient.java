@@ -1159,11 +1159,31 @@ public final class DapClient implements IDebugProtocolClient {
                             sourcePath(f.getSource(), paths),
                             f.getLine() - 1, // back to 0-based line
                             f.getColumn(),
-                            sourceUri(f.getSource())));
+                            sourceUri(f.getSource()),
+                            frameHint(f)));
                 }
             }
             return out;
         });
+    }
+
+    /** A frame's {@link DapModels.StackFrameInfo#hint} from the adapter's presentation hints. */
+    static String frameHint(StackFrame f) {
+        if (f.getPresentationHint() != null) {
+            switch (f.getPresentationHint()) {
+                case LABEL -> {
+                    return DapModels.HINT_LABEL;
+                }
+                case SUBTLE -> {
+                    return DapModels.HINT_SUBTLE;
+                }
+                default -> {}
+            }
+        }
+        Source src = f.getSource();
+        return src != null && src.getPresentationHint() == org.eclipse.lsp4j.debug.SourcePresentationHint.DEEMPHASIZE
+                ? DapModels.HINT_SUBTLE
+                : "";
     }
 
     /**

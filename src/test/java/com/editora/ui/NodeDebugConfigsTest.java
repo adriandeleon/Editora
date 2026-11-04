@@ -8,7 +8,9 @@ import com.editora.dap.DapManager;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Debug on node / npm run configurations starts the program as Run does. */
 class NodeDebugConfigsTest {
@@ -45,5 +47,31 @@ class NodeDebugConfigsTest {
         assertEquals("", p.program());
         assertEquals(List.of(), p.args());
         assertNull(NodeDebugConfigs.forPackageManager(List.of(), Path.of("/p"), Map.of()));
+    }
+
+    @Test
+    void aTypeScriptSourceRunAsItsCompiledFileSplitsThere() {
+        List<String> argv = List.of("/n/node", "--enable-source-maps", "/p/dist/main.js", "a");
+        assertEquals(2, NodeDebugConfigs.programIndex(argv, "/p/src/main.ts"));
+        var program = NodeDebugConfigs.fromRunPlan(argv, "/p/src/main.ts", Map.of(), Path.of("/p"));
+        assertEquals("/p/dist/main.js", program.program());
+        assertEquals(List.of("/n/node", "--enable-source-maps"), program.runtime());
+        assertEquals(List.of("a"), program.args());
+        assertEquals(-1, NodeDebugConfigs.programIndex(List.of("node", "/p/dist/other.js"), "/p/src/main.ts"));
+        // tsx runs the source itself
+        assertEquals(
+                1,
+                NodeDebugConfigs.programIndex(List.of("/p/node_modules/.bin/tsx", "/p/src/main.ts"), "/p/src/main.ts"));
+    }
+
+    @Test
+    void jsDebugLaunchesNodeAndNodeBasedRunnersOnly() {
+        assertTrue(NodeDebugConfigs.debuggableRuntime(List.of("/usr/bin/node", "--no-warnings")));
+        assertTrue(NodeDebugConfigs.debuggableRuntime(List.of("/p/node_modules/.bin/tsx")));
+        assertTrue(NodeDebugConfigs.debuggableRuntime(List.of("C:\\p\\node_modules\\.bin\\tsx.cmd")));
+        assertTrue(NodeDebugConfigs.debuggableRuntime(List.of("ts-node")));
+        assertFalse(NodeDebugConfigs.debuggableRuntime(List.of("deno", "run")));
+        assertFalse(NodeDebugConfigs.debuggableRuntime(List.of("/usr/local/bin/bun")));
+        assertFalse(NodeDebugConfigs.debuggableRuntime(List.of()));
     }
 }

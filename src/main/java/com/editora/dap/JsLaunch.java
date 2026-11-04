@@ -1,5 +1,6 @@
 package com.editora.dap;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -162,37 +163,65 @@ public final class JsLaunch {
                     + "This Environment was initialized without a V8::Inspector\\s*$"));
 
     /**
+     * Node's warning that {@code node --test} under an inspector runs its files one at a time — said on every Debug
+     * Test at Caret, and nothing the user can act on — and the hint line Node prints after a warning.
+     */
+    private static final Pattern TEST_CONCURRENCY_WARNING = Pattern.compile(
+            "^\\(node:\\d+\\) Warning: Using the inspector with --test forces running at a concurrency of 1\\..*$");
+
+    private static final Pattern TRACE_WARNINGS_HINT =
+            Pattern.compile("^\\(Use `node --trace-warnings \\.\\.\\.` to show where the warning was created\\)\\s*$");
+
+    /**
      * {@code text} without the inspector's own lines ("Debugger attached.", "Waiting for the debugger to
      * disconnect...", …), which reach a program's stderr under a debugger. Other text is kept as it came, line
      * endings included; {@code text} itself when nothing was removed.
      */
     public static String withoutInspectorNoise(String text) {
-        if (text == null || text.isEmpty()) {
-            return text;
-        }
-        StringBuilder out = new StringBuilder(text.length());
-        boolean removed = false;
-        int start = 0;
-        while (start < text.length()) {
-            int nl = text.indexOf('\n', start);
-            int end = nl < 0 ? text.length() : nl + 1;
-            String line = text.substring(start, end);
-            String bare = line.replace("\r", "").replace("\n", "");
-            boolean noise = false;
-            for (Pattern p : INSPECTOR_NOISE) {
-                if (p.matcher(bare).matches()) {
-                    noise = true;
-                    break;
+        return new InspectorNoise().filter(text);
+    }
+
+    /**
+     * {@link #withoutInspectorNoise} over a session's whole output, which arrives a line at a time: it also drops
+     * the {@code --test} concurrency warning and the "(Use `node --trace-warnings ...`" line right after it.
+     */
+    public static final class InspectorNoise {
+        private boolean afterTestWarning;
+
+        public String filter(String text) {
+            if (text == null || text.isEmpty()) {
+                return text;
+            }
+            StringBuilder out = new StringBuilder(text.length());
+            boolean removed = false;
+            int start = 0;
+            while (start < text.length()) {
+                int nl = text.indexOf('\n', start);
+                int end = nl < 0 ? text.length() : nl + 1;
+                String line = text.substring(start, end);
+                String bare = line.replace("\r", "").replace("\n", "");
+                boolean noise = false;
+                for (Pattern p : INSPECTOR_NOISE) {
+                    if (p.matcher(bare).matches()) {
+                        noise = true;
+                        break;
+                    }
                 }
+                boolean hint =
+                        afterTestWarning && TRACE_WARNINGS_HINT.matcher(bare).matches();
+                boolean warning = TEST_CONCURRENCY_WARNING.matcher(bare).matches();
+                if (!bare.isEmpty()) {
+                    afterTestWarning = warning;
+                }
+                if (noise || warning || hint) {
+                    removed = true;
+                } else {
+                    out.append(line);
+                }
+                start = end;
             }
-            if (noise) {
-                removed = true;
-            } else {
-                out.append(line);
-            }
-            start = end;
+            return removed ? out.toString() : text;
         }
-        return removed ? out.toString() : text;
     }
 
     /** A breakpoint condition js-debug could not compile: the condition, the 1-based line, and its reason. */
@@ -341,6 +370,65 @@ public final class JsLaunch {
             out.addAll(more);
         }
         return out;
+    }
+
+    /**
+     * The compiled file js-debug runs instead of TypeScript source {@code source} — it does that for a project
+     * whose source maps lead back to the source — read from the command line it asked Editora to start
+     * ({@code argv}, relative words against {@code cwd}): a script with the same name and a JavaScript extension.
+     * Null when the source itself (or nothing like it) runs.
+     */
+    public static @Nullable Path compiledInstead(@Nullable Path source, @Nullable Path cwd, List<String> argv) {
+        if (source == null || source.getFileName() == null || argv == null) {
+            return null;
+        }
+        String name = source.getFileName().toString();
+        if (!name.matches("(?i).*\\.(?:[cm]?ts|tsx)$")) {
+            return null;
+        }
+        String stem = name.substring(0, name.indexOf('.') < 0 ? name.length() : name.indexOf('.'));
+        for (int i = 1; i < argv.size(); i++) {
+            String word = argv.get(i);
+            if (word == null || word.startsWith("-") || !word.matches("(?i).*\\.[cm]?js$")) {
+                continue;
+            }
+            Path p;
+            try {
+                p = Path.of(word);
+            } catch (java.nio.file.InvalidPathException e) {
+                continue;
+            }
+            if (!p.isAbsolute() && cwd != null) {
+                p = cwd.resolve(p).normalize();
+            }
+            Path fn = p.getFileName();
+            String other = fn == null ? "" : fn.toString();
+            int dot = other.indexOf('.');
+            if ((dot < 0 ? other : other.substring(0, dot)).equals(stem)) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether compiled file {@code built} is older than its source — it was not rebuilt after the last edit, so the
+     * program runs code that is not in the editor. {@code modified} reads a file's last-modified time (empty when it
+     * cannot).
+     */
+    public static boolean builtIsStale(
+            Path source, Path built, java.util.function.Function<Path, Optional<java.time.Instant>> modified) {
+        Optional<java.time.Instant> src = modified.apply(source);
+        Optional<java.time.Instant> out = modified.apply(built);
+        return src.isPresent() && out.isPresent() && out.get().isBefore(src.get());
+    }
+
+    /**
+     * {@code FORCE_COLOR=1} unless {@code NO_COLOR} is set — what Run gives a Node.js program, so a debugged one
+     * prints the same colours (the Debug console draws them, review D104).
+     */
+    public static Map<String, String> colourEnvironment(@Nullable String noColor) {
+        return noColor != null && !noColor.isEmpty() ? Map.of() : Map.of("FORCE_COLOR", "1");
     }
 
     private static boolean notBlank(String s) {

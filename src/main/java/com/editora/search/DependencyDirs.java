@@ -22,6 +22,18 @@ public final class DependencyDirs {
 
     private DependencyDirs() {}
 
+    /**
+     * {@link #NAMES} plus a caller's own folder names ({@code target}, {@code .venv}, {@code vendor}…), dependency
+     * folders first: every list of "folders to skip" takes its dependency folders from here, so a new one (a
+     * {@code bower_components}, a {@code jspm_packages}) is added once instead of in nine places (JS review E110).
+     */
+    public static Set<String> with(String... more) {
+        java.util.LinkedHashSet<String> all =
+                new java.util.LinkedHashSet<>(NAMES.stream().sorted().toList());
+        all.addAll(List.of(more));
+        return java.util.Collections.unmodifiableSet(all);
+    }
+
     /** Whether the directory at root-relative {@code relDir} ('/'-separated) is a dependency folder. */
     public static boolean isDependencyDir(String relDir) {
         if (relDir == null || relDir.isEmpty()) {
@@ -30,6 +42,21 @@ public final class DependencyDirs {
         String trimmed = relDir.endsWith("/") ? relDir.substring(0, relDir.length() - 1) : relDir;
         int slash = trimmed.lastIndexOf('/');
         return NAMES.contains(trimmed.substring(slash + 1));
+    }
+
+    /** Whether root-relative {@code relPath} ('/'-separated) lies inside a dependency folder at any depth. */
+    public static boolean inDependencyDir(String relPath) {
+        if (relPath == null) {
+            return false;
+        }
+        int start = 0;
+        for (int slash = relPath.indexOf('/'); slash >= 0; slash = relPath.indexOf('/', start)) {
+            if (NAMES.contains(relPath.substring(start, slash))) {
+                return true;
+            }
+            start = slash + 1;
+        }
+        return false;
     }
 
     /**
