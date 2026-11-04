@@ -803,6 +803,25 @@ final class BuildCoordinator {
         if (!allowRun(root)) {
             return;
         }
+        if (tool == BuildTool.NPM) {
+            // npm runs on the Node.js Run File would pick here (.nvmrc, the setting, PATH): its folder goes first
+            // on PATH, and the npm beside it runs (review C101). Which Node is a disk question: planned off FX.
+            NpmRunSupport.prepare(root, ops.projectRoot(), host.settings().getNodePath(), argv, npm -> {
+                if (!isRunning()) {
+                    launchNow(root, npm.argv(), taskArgs, toggleArgs, npm);
+                }
+            });
+            return;
+        }
+        launchNow(root, argv, taskArgs, toggleArgs, null);
+    }
+
+    private void launchNow(
+            Path root,
+            List<String> argv,
+            List<String> taskArgs,
+            List<String> toggleArgs,
+            com.editora.run.@Nullable NpmLaunch npm) {
         lastRoot = root;
         lastTaskArgs = taskArgs;
         lastToggleArgs = toggleArgs;
@@ -853,10 +872,10 @@ final class BuildCoordinator {
                                 com.editora.process.ExecTargets.remoteTool(root, "jdk.home"))
                         : com.editora.run.JdkToolchain.environment(
                                 host.settings().getMavenJdkHome(), com.editora.process.ProcessRunner.augmentedPath());
-        if (tool == BuildTool.NPM) {
-            environment = NpmRunSupport.environment(System.getenv("NO_COLOR"));
+        if (npm != null) {
+            environment = npm.env();
             long generation = ++runtimeGeneration;
-            com.editora.run.RuntimeProbe.probe(runArgv, root, environment, version -> {
+            com.editora.run.RuntimeProbe.probe(npm.probe(), root, environment, version -> {
                 if (generation == runtimeGeneration) {
                     panel.setRuntime(BuildCoordinator.this, version); // the Node (or Bun) the script runs under
                 }

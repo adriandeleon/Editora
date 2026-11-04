@@ -455,7 +455,8 @@ class BuildCoordinatorFxTest {
         FxTestSupport.runOnFx(() -> c.runTask(List.of("run", "build"), List.of()));
 
         assertEquals(0, ops.promptCount, "argv[0] is the user's own tool and the manifest runs nothing itself");
-        assertEquals(1, ops.openConsoleCount, "and the run proceeds as before");
+        // npm picks its Node off the FX thread first (review C101), then starts.
+        waitUntil(() -> ops.openConsoleCount == 1, "and the run proceeds as before");
     }
 
     @Test

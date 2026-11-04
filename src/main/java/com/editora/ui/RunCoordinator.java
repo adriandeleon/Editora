@@ -528,11 +528,22 @@ final class RunCoordinator {
                     List.of(),
                     com.editora.build.NpmPackageManager.overrideApplies(override, detected.manager()) ? override : "",
                     detected.manager());
-            launchReason = detected.reason(); // "pnpm-lock.yaml": what a not-found message names
-            java.util.Map<String, String> npmEnv = new java.util.LinkedHashMap<>(
-                    NpmRunSupport.environment(elsewhere ? null : System.getenv("NO_COLOR")));
-            npmEnv.putAll(env);
-            streamRun(cfg.name(), cwd, ScriptRunCommand.npm(manager, cfg.target(), args), npmEnv, script);
+            // On the Node.js Run File would pick here, as the Package Scripts window runs it (review C101).
+            NpmRunSupport.prepare(
+                    cwd,
+                    ops.projectRoot(),
+                    host.settings().getNodePath(),
+                    ScriptRunCommand.npm(manager, cfg.target(), args),
+                    npm -> {
+                        java.util.Map<String, String> npmEnv = new java.util.LinkedHashMap<>(npm.env());
+                        if (env.containsKey("NO_COLOR")) {
+                            npmEnv.remove("FORCE_COLOR"); // the configuration asks for no colour
+                        }
+                        npmEnv.putAll(env);
+                        launchReason = detected.reason(); // "pnpm-lock.yaml": what a not-found message names
+                        runtimeCommand = npm.probe();
+                        streamRun(cfg.name(), cwd, npm.argv(), npmEnv, script);
+                    });
             return;
         }
         if (!ScriptRunCommand.SHELL.equals(cfg.type())) {

@@ -21,8 +21,8 @@ import org.jspecify.annotations.Nullable;
  * <p>Order, first match wins:
  * <ol>
  *   <li>the run configuration's Interpreter field;</li>
- *   <li>the version a {@code .nvmrc} or {@code .node-version} names, from the file's folder up to the package
- *       root, when nvm has that version installed ({@code $NVM_DIR/versions/node/v<version>/bin/node}, nvm's
+ *   <li>the version a {@code .nvmrc} or {@code .node-version} names, from the file's folder up to the project
+ *       root (with no project, the package root), when nvm has that version installed ({@code $NVM_DIR/versions/node/v<version>/bin/node}, nvm's
  *       folder being {@code $NVM_DIR}, else {@code $XDG_CONFIG_HOME/nvm} when that exists, else {@code ~/.nvm})
  *       — a project's own pin beats the global setting;</li>
  *   <li>the user's setting (Settings → Build Tools → Node.js);</li>
@@ -402,11 +402,11 @@ public final class NodeRuntimes {
     // ------------------------------------------------------------------------------------------------- internals
 
     private static Optional<Path> versionFile(Inputs in, Path file, Path home) {
-        Path stop = packageRoot(file, in.projectRoot(), home, in.isFile())
-                .orElse(
-                        in.projectRoot() == null
-                                ? null
-                                : in.projectRoot().toAbsolutePath().normalize());
+        // Up to the project root (a monorepo keeps its .nvmrc at the top, above each member's package.json);
+        // with no project, up to the package root.
+        Path stop = in.projectRoot() != null
+                ? in.projectRoot().toAbsolutePath().normalize()
+                : packageRoot(file, null, home, in.isFile()).orElse(null);
         Path dir = file.toAbsolutePath().normalize().getParent();
         int levels = 0;
         while (dir != null && levels++ < 32) {

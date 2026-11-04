@@ -25,6 +25,49 @@ final class NpmRunSupport {
     }
 
     /**
+     * Plans an npm / pnpm / yarn / bun run of {@code managerArgv} in {@code root} on the Node.js Run File would
+     * pick there ({@link com.editora.run.NodeRuntimes}: a project's {@code .nvmrc}, the Node.js setting, PATH) and
+     * hands it to {@code onReady} on the FX thread. Which Node is a disk and PATH question, so a local run is
+     * planned off the FX thread; on a remote host, WSL or a container the host's own PATH decides (no Node here).
+     */
+    static void prepare(
+            Path root,
+            @Nullable Path projectRoot,
+            String nodeSetting,
+            java.util.List<String> managerArgv,
+            Consumer<com.editora.run.NpmLaunch> onReady) {
+        if (!com.editora.process.ExecTargets.runsHere(root)) {
+            onReady.accept(com.editora.run.NpmLaunch.plan(managerArgv, null, null, false, false, p -> false));
+            return;
+        }
+        String noColor = System.getenv("NO_COLOR");
+        Thread.ofVirtual().name("npm-node").start(() -> {
+            com.editora.run.NpmLaunch launch = planLocal(root, projectRoot, nodeSetting, managerArgv, noColor);
+            Platform.runLater(() -> onReady.accept(launch));
+        });
+    }
+
+    /** The blocking part of {@link #prepare}. Not on the FX thread. */
+    static com.editora.run.NpmLaunch planLocal(
+            Path root,
+            @Nullable Path projectRoot,
+            String nodeSetting,
+            java.util.List<String> managerArgv,
+            @Nullable String noColor) {
+        com.editora.run.NodeRuntimes.NodeRuntime node =
+                com.editora.run.NodeRuntimes.resolveLocal(root.resolve("package.json"), projectRoot, "", nodeSetting);
+        return com.editora.run.NpmLaunch.plan(
+                managerArgv,
+                node,
+                com.editora.process.ProcessRunner.augmentedPath(),
+                System.getProperty("os.name", "")
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .startsWith("windows"),
+                noColor != null && !noColor.isEmpty(),
+                Files::isRegularFile);
+    }
+
+    /**
      * What to say when {@code executable} could not start because it is not installed — with why a package
      * manager was chosen ({@code reason}, e.g. {@code pnpm-lock.yaml}) — or null for any other failure.
      */
