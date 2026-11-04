@@ -1828,6 +1828,11 @@ public final class LspManager {
         return exiting.get(sessionKey(serverId, root));
     }
 
+    /** TEST SEAM — {@code serverId}'s availability as if probed, so a re-detection answers it without a probe. */
+    void cacheAvailabilityForTest(String serverId, boolean available) {
+        availableCache.put(serverId, available);
+    }
+
     /** TEST SEAM — the session serving {@code file}, so a test can play the server's side of it. */
     @Nullable
     LanguageServerSession sessionForTest(Path file) {

@@ -1073,8 +1073,6 @@ class LspCoordinatorCommandsFxTest {
     @Test
     void aCrashedServerIsRestartedUntilItKeepsCrashing() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);
-        fx.run(() -> fx.coordinator.applySupport()); // the settings as applied, before anything crashes
-        fx.settle(); // whatever that apply restarts has started before the background tab opens on it
         EditorBuffer background = FxTestSupport.callOnFx(EditorBuffer::new);
         Path other = file("Background.java", "class Background {}\n");
         FxTestSupport.runOnFx(() -> {
@@ -1087,6 +1085,12 @@ class LspCoordinatorCommandsFxTest {
         });
         fx.settle();
         assertTrue(fx.manager.isManaged(other));
+        // The settings as applied before anything crashes: the baseline the "unrelated apply" check below compares
+        // against (JS review B112). An apply re-probes the servers, and a CI runner has no jdtls, so the probe is
+        // answered for the fixture's fake Java server first.
+        LspTestHooks.cacheAvailability(fx.manager, "java", true);
+        fx.run(() -> fx.coordinator.applySupport());
+        fx.settle();
 
         int sessions = fx.fakes.size();
         FxTestSupport.runOnFx(() -> LspTestHooks.simulateServerDeath(fx.manager, b.getPath()));
