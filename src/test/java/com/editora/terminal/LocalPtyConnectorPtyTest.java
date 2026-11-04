@@ -40,8 +40,23 @@ class LocalPtyConnectorPtyTest {
                     program.waitFor(1_500 + 5_000, TimeUnit.MILLISECONDS),
                     "a program that ignores the polite signals is killed after the grace period");
         } finally {
-            program.destroyForcibly();
+            killForGood(program);
         }
+    }
+
+    /**
+     * Kills {@code program} and everything it started, by pid, and waits for it to go. Its {@code destroyForcibly}
+     * alone did not end it on a macOS runner when the assertion above had failed: the shell lived on, and the
+     * common-pool threads waiting in its {@code onExit()} starved every DapClient test later in that JVM (seen on
+     * PRs 1321 and 1423).
+     */
+    private static void killForGood(Process program) throws InterruptedException {
+        ProcessHandle.of(program.pid()).ifPresent(h -> {
+            h.descendants().forEach(ProcessHandle::destroyForcibly);
+            h.destroyForcibly();
+        });
+        program.destroyForcibly();
+        program.waitFor(5, TimeUnit.SECONDS);
     }
 
     @Test
