@@ -260,5 +260,8 @@ class ConfigFileTypeTest {
     void workspaceFilesAndBunLockAreJson() {
         org.junit.jupiter.api.Assertions.assertEquals("json", LanguageRegistry.forFileName("app.code-workspace"));
         org.junit.jupiter.api.Assertions.assertEquals("json", LanguageRegistry.forFileName("bun.lock"));
+        var grammars = com.editora.editor.highlight.GrammarRegistry.shared();
+        org.junit.jupiter.api.Assertions.assertTrue(grammars.hasGrammarFor("app.code-workspace"), "coloured as JSON");
+        org.junit.jupiter.api.Assertions.assertTrue(grammars.hasGrammarFor("bun.lock"), "coloured as JSON");
     }
 }
