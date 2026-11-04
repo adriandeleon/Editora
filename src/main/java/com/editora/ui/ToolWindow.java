@@ -74,6 +74,18 @@ public final class ToolWindow {
         this.iconSupplier = iconSupplier;
         this.contentSupplier = content;
         this.commandId = commandId;
+        this.firstOpenShare = defaultFirstOpenShare(id);
+    }
+
+    /**
+     * The first-open share of the bottom windows that show a program's output: at the default strip height the
+     * Run console showed three lines, Test Results two rows and Output four (JS review C106).
+     */
+    static double defaultFirstOpenShare(String id) {
+        return switch (id == null ? "" : id) {
+            case "run", "testResults", "buildOutput" -> 0.36;
+            default -> 0;
+        };
     }
 
     public String getId() {
