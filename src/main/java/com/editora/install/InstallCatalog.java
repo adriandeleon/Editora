@@ -180,10 +180,12 @@ public final class InstallCatalog {
     public static final String JS_DEBUG_VERSION = "v1.117.0";
 
     /**
-     * The SHA-256 of {@link #JS_DEBUG_VERSION}'s {@code js-debug-dap-v*.tar.gz}, taken when the version is pinned
-     * (GitHub publishes none of its own); null skips the check. Raise it together with the version.
+     * The SHA-256 of {@link #JS_DEBUG_VERSION}'s {@code js-debug-dap-v*.tar.gz}, as the release's asset
+     * {@code digest} lists it ({@code gh api repos/microsoft/vscode-js-debug/releases/tags/<v> --jq '.assets[].digest'});
+     * null skips the check. Raise it together with the version.
      */
-    public static final @Nullable String JS_DEBUG_SHA256 = null;
+    public static final @Nullable String JS_DEBUG_SHA256 =
+            "ad8d04ede9d4b75cc290fd5438a65047a06f786d04f604b6112485b36f090772";
 
     /**
      * Why a downloaded release asset of step {@code stepId} is refused, or null: js-debug's must have the pinned
