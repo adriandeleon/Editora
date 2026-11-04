@@ -1073,6 +1073,7 @@ class LspCoordinatorCommandsFxTest {
     @Test
     void aCrashedServerIsRestartedUntilItKeepsCrashing() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);
+        fx.run(() -> fx.coordinator.applySupport()); // the settings as applied, before anything crashes
         EditorBuffer background = FxTestSupport.callOnFx(EditorBuffer::new);
         Path other = file("Background.java", "class Background {}\n");
         FxTestSupport.runOnFx(() -> {
@@ -1124,6 +1125,12 @@ class LspCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> fx.coordinator.syncBuffer(b));
         fx.settle();
         assertEquals(afterLoop, fx.fakes.size(), "a crash-looped server is not restarted by a tab");
+        // …nor by a settings apply that changes nothing it could have lacked: a theme, a font (JS review B112)…
+        FxTestSupport.runOnFx(() -> fx.coordinator.applySupport());
+        fx.settle();
+        FxTestSupport.runOnFx(() -> fx.coordinator.syncBuffer(b));
+        fx.settle();
+        assertEquals(afterLoop, fx.fakes.size(), "an unrelated settings apply does not restart a crash loop");
         // …until the user asks for it.
         fx.run(() -> fx.coordinator.restartServers());
         assertTrue(fx.manager.isManaged(b.getPath()), "Restart Language Servers starts it again");

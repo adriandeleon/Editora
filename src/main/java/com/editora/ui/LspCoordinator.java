@@ -1673,10 +1673,14 @@ final class LspCoordinator {
      * init and on every settings apply.
      */
     void applySupport() {
-        startBlocked.clear(); // a settings change (an install, a trust decision) may be what the server lacked
-        failingServers.clear();
-        crashedServers.clear();
-        refusedServers.clear();
+        String trouble = troubleSignature();
+        if (!trouble.equals(appliedTrouble)) { // an install, a trust decision, a command: not a theme (JS B112)
+            appliedTrouble = trouble;
+            startBlocked.clear(); // a settings change (an install, a trust decision) may be what the server lacked
+            failingServers.clear();
+            crashedServers.clear();
+            refusedServers.clear();
+        }
         boolean on = ops.lspFeatureEnabled(); // effective: off in Simple UI mode
         // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
         // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
@@ -2351,6 +2355,18 @@ final class LspCoordinator {
     }
 
     /** Everything a re-configure depends on: the project's effective commands and enables, as one string. */
+    /** What a crashed, refused or blocked server may have lacked; only its change retries them ({@link #applySupport}). */
+    private String troubleSignature() {
+        com.editora.config.ConfigManager config = ops.config();
+        return ops.lspFeatureEnabled() + "|" + new java.util.TreeMap<>(effectiveCommands()) + "|"
+                + host.settings().isTypescriptTypeAcquisition() + "|"
+                + host.settings().getNodePath() + "|"
+                + lspManager.detectionGeneration() + "|" + projectOverrideSignature() + "|"
+                + (config == null ? "" : config.getTrustStore().trustedRoots());
+    }
+
+    private @Nullable String appliedTrouble;
+
     private String projectOverrideSignature() {
         StringBuilder signature = new StringBuilder();
         for (String serverId : LspServerCommands.SERVER_IDS) {

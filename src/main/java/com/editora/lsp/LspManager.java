@@ -971,6 +971,16 @@ public final class LspManager {
      *  in-app install drops a server onto PATH / into the config dir without changing its command. */
     public void invalidateDetection() {
         availableCache.clear();
+        detectionGeneration.incrementAndGet();
+    }
+
+    /** Counts {@link #invalidateDetection} calls (an install ends with one): a server may now be fixed (B112). */
+    private final java.util.concurrent.atomic.AtomicLong detectionGeneration =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    /** See {@link #detectionGeneration}. */
+    public long detectionGeneration() {
+        return detectionGeneration.get();
     }
 
     /**
