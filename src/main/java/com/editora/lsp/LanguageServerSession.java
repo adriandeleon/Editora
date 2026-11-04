@@ -3575,6 +3575,18 @@ final class LanguageServerSession implements LanguageClient {
             saidNoTsLibs = true;
             LOG.warning("[" + serverId + "] " + message.getMessage() + " (Doctor's HTML row says how to fix it)");
         }
+        if (TypeScriptServer.SERVER_ID.equals(serverId)
+                && !disposed
+                && TypeScriptServer.tsserverDied(message.getMessage())) {
+            // typescript-language-server outlives its tsserver and then answers everything empty: no diagnostics,
+            // hover, outline or colours, and nothing said so (JS review B102). Ending it makes this the crash it is:
+            // restarted (within the crash-loop cap) and said in the status line.
+            LOG.warning("[" + serverId + "] " + message.getMessage() + " — restarting the server");
+            Process p = process;
+            if (p != null) {
+                p.destroy();
+            }
+        }
         if (type == org.eclipse.lsp4j.MessageType.Error && importError(message.getMessage())) {
             lastErrorLog = firstLine(message.getMessage());
         }

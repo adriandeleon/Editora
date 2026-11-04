@@ -259,6 +259,26 @@ public final class TypeScriptServer {
         return null;
     }
 
+    private static final Pattern TSSERVER_EXITED =
+            Pattern.compile("\\[tsserver\\] Exited\\. Code: (\\S+?)\\.? Signal: (\\S+)");
+
+    /**
+     * Whether {@code logMessage} is typescript-language-server saying its tsserver died — {@code [tsserver] Exited.
+     * Code: null. Signal: SIGKILL}, or a non-zero code (out of memory) — rather than ended normally. Pure.
+     */
+    public static boolean tsserverDied(@Nullable String logMessage) {
+        if (logMessage == null) {
+            return false;
+        }
+        Matcher m = TSSERVER_EXITED.matcher(logMessage);
+        if (!m.find()) {
+            return false;
+        }
+        String code = m.group(1);
+        String signal = m.group(2).replaceAll("[.,;]+$", "");
+        return !"null".equals(signal) || !"0".equals(code);
+    }
+
     /** The code-action kinds asked for explicitly: the server returns its source actions only when asked. */
     public static final List<String> CODE_ACTION_KINDS = List.of("quickfix", "refactor", "source");
 }

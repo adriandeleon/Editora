@@ -89,6 +89,17 @@ class TypeScriptServerTest {
         assertEquals("7.0.2", TypeScriptServer.sdkVersion(pkg.resolve("tsserver.js")));
     }
 
+    /** typescript-language-server outlives a killed tsserver; its log line is how Editora knows (JS review B102). */
+    @Test
+    void aKilledOrFailedTsserverIsSeenInTheServersLog() {
+        assertTrue(
+                TypeScriptServer.tsserverDied("[lspserver] [tsclient] [tsserver] Exited. Code: null. Signal: SIGKILL"));
+        assertTrue(TypeScriptServer.tsserverDied("[tsserver] Exited. Code: 134. Signal: null"));
+        assertFalse(TypeScriptServer.tsserverDied("[tsserver] Exited. Code: 0. Signal: null"));
+        assertFalse(TypeScriptServer.tsserverDied("Using Typescript version (user-setting) 5.9.3"));
+        assertFalse(TypeScriptServer.tsserverDied(null));
+    }
+
     @Test
     void editorasOwnTypescriptComesBeforeTheOneBesideTheServer(@TempDir Path dir) throws Exception {
         Path global = dir.resolve("lib/node_modules");
