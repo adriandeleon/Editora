@@ -387,9 +387,21 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     setGraphic(null);
                     return;
                 }
+                if (StackFolding.isFold(f)) {
+                    // Runtime/library frames folded away (review D105): one muted row, clicked to show them.
+                    Text fold = new Text(tr("debugpanel.foldedFrames", f.line()));
+                    fold.getStyleClass().addAll("debug-frame-name", "debug-frame-nosource", "debug-frame-fold");
+                    setGraphic(new TextFlow(fold));
+                    return;
+                }
                 Text name = new Text(DebugPanelText.frameName(f.name()));
                 name.getStyleClass().add("debug-frame-name");
                 TextFlow flow = new TextFlow(name);
+                if (com.editora.dap.DapModels.HINT_LABEL.equals(f.hint())) {
+                    name.getStyleClass().addAll("debug-frame-nosource", "debug-frame-fold"); // "await": a label
+                    setGraphic(flow);
+                    return;
+                }
                 if (!hasSource.test(f)) {
                     name.getStyleClass().add("debug-frame-nosource"); // the JDK, a library, a lambda proxy
                 }
@@ -408,6 +420,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         stack.setPlaceholder(stackHint);
         stack.getSelectionModel().selectedItemProperty().addListener((o, a, f) -> {
             if (f != null && !settingStack) {
+                if (StackFolding.isFold(f)) {
+                    // Shows the folded frames, keeping the frame that was selected selected.
+                    javafx.application.Platform.runLater(() -> expandFrames(a));
+                    return;
+                }
                 reportFrame(f);
             }
         });
@@ -419,7 +436,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 e -> pressedOn[0] = stack.getSelectionModel().getSelectedItem());
         stack.setOnMouseClicked(e -> {
             DapModels.StackFrameInfo f = stack.getSelectionModel().getSelectedItem();
-            if (f != null && f == pressedOn[0] && e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+            if (f != null
+                    && f == pressedOn[0]
+                    && !StackFolding.isFold(f)
+                    && e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
                 reportFrame(f);
             }
         });
@@ -428,7 +448,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         stack.setOnContextMenuRequested(e -> {
             DapModels.StackFrameInfo f = stack.getSelectionModel().getSelectedItem();
             List<javafx.scene.control.MenuItem> items =
-                    f == null ? List.of() : actions.stackMenuItems(f, List.copyOf(stack.getItems()));
+                    f == null || StackFolding.isFold(f) ? List.of() : actions.stackMenuItems(f, allFrames);
             stackMenu.getItems().setAll(items);
             if (!items.isEmpty()) {
                 stackMenu.show(stack, e.getScreenX(), e.getScreenY());
@@ -820,6 +840,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             sessionFile = "";
             setRuntime(null);
             stack.getItems().clear();
+            allFrames = List.of();
             variables.setRoot(idleRoot());
             setThreads(List.of(), -1);
             selectedFrameId = -1;
@@ -977,21 +998,46 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** As {@link #setCallStack(List)}, selecting frame {@code selected} — the topmost one that has source. */
     public void setCallStack(List<DapModels.StackFrameInfo> frames, int selected) {
         int index = Math.max(0, Math.min(selected, frames.size() - 1));
+        allFrames = List.copyOf(frames);
+        framesExpanded = false;
+        showFrames(index);
+        if (!frames.isEmpty()) {
+            reportFrame(frames.get(index));
+        }
+    }
+
+    /** Every frame of the stack shown, folded rows included in {@link StackFolding} form or not. */
+    private List<DapModels.StackFrameInfo> allFrames = List.of();
+
+    /** Whether the user unfolded this stack's runtime frames (until the next stop). */
+    private boolean framesExpanded;
+
+    /** Lists {@link #allFrames} — folded unless {@link #framesExpanded} — with frame {@code index} selected. */
+    private void showFrames(int index) {
+        StackFolding.Shown shown = StackFolding.fold(allFrames, index, framesExpanded);
         settingStack = true;
         try {
-            stack.getItems().setAll(frames);
-            if (!frames.isEmpty()) {
-                stack.getSelectionModel().clearAndSelect(index);
-                if (index > 0) {
-                    stack.scrollTo(index - 1); // the selected frame in view, with the one it was called from
+            stack.getItems().setAll(shown.rows());
+            if (!shown.rows().isEmpty()) {
+                int row = shown.selectedRow();
+                stack.getSelectionModel().clearAndSelect(row);
+                if (row > 0) {
+                    stack.scrollTo(row - 1); // the selected frame in view, with the one it was called from
                 }
             }
         } finally {
             settingStack = false;
         }
-        if (!frames.isEmpty()) {
-            reportFrame(frames.get(index));
+    }
+
+    /** A fold row was chosen: every frame is listed, {@code previous} (the frame selected before) still selected. */
+    private void expandFrames(DapModels.@Nullable StackFrameInfo previous) {
+        if (framesExpanded) {
+            return;
         }
+        framesExpanded = true;
+        int index = previous == null ? 0 : Math.max(0, allFrames.indexOf(previous));
+        showFrames(index);
     }
 
     /**
