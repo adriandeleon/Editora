@@ -818,6 +818,20 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         boolean running = state == DapManager.State.RUNNING;
         boolean active = state != DapManager.State.INACTIVE;
+        runToken++;
+        if (running) {
+            // A step's stop comes within a moment, and the stack stays meanwhile (no flicker). A program still
+            // running after that ran on — a Step out of a callback into code it skips — and the old stack,
+            // variables and "(paused)" no longer describe it (review D107).
+            long token = runToken;
+            javafx.animation.PauseTransition later = new javafx.animation.PauseTransition(STALE_STOP_DELAY);
+            later.setOnFinished(e -> {
+                if (token == runToken && lastState == DapManager.State.RUNNING) {
+                    clearStaleStop();
+                }
+            });
+            later.play();
+        }
         // Green play = Start when idle, Continue when paused; Pause is its complement while running.
         start.setDisable(preparing || !(state == DapManager.State.INACTIVE || suspended));
         pause.setDisable(!running);
@@ -841,6 +855,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             setRuntime(null);
             stack.getItems().clear();
             allFrames = List.of();
+            stoppedIn = "";
             variables.setRoot(idleRoot());
             setThreads(List.of(), -1);
             selectedFrameId = -1;
@@ -884,7 +899,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                         : tr("debugpanel.state.exceptionNamed", stoppedException))
                 : lastState == DapManager.State.INACTIVE && exitCode != null
                         ? tr("debugpanel.state.exited", exitCode)
-                        : tr("debugpanel.state." + lastState.name().toLowerCase(java.util.Locale.ROOT));
+                        : lastState == DapManager.State.SUSPENDED
+                                        && !stoppedIn.isEmpty()
+                                        && !stoppedIn.equals(sessionFile)
+                                // Stopped in a child process or worker, not the session's own file (review D109).
+                                ? tr("debugpanel.state.suspendedIn", stoppedIn)
+                                : tr("debugpanel.state." + lastState.name().toLowerCase(java.util.Locale.ROOT));
         if (breakpointsMuted) {
             state = state + " · " + tr("debugpanel.muted");
         }
@@ -962,6 +982,29 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         refreshStatus();
     }
 
+    /** How long a resumed program runs before the last stop's stack and variables are cleared. */
+    static final javafx.util.Duration STALE_STOP_DELAY = javafx.util.Duration.millis(600);
+
+    /** Counts state changes, so a pending stale-stop clear knows it was overtaken. */
+    private long runToken;
+
+    /** The program runs on: no stack, the Watches alone, and no thread marked "(paused)". */
+    private void clearStaleStop() {
+        stack.getItems().clear();
+        allFrames = List.of();
+        variables.setRoot(idleRoot());
+        selectedFrameId = -1;
+        settingThreads = true;
+        try {
+            stoppedThreadId = -1;
+            DapModels.ThreadInfo shown = threads.getValue();
+            threads.setValue(null);
+            threads.setValue(shown); // redrawn without "(paused)"
+        } finally {
+            settingThreads = false;
+        }
+    }
+
     /** Fills the thread dropdown and selects {@code currentThreadId} without re-fetching its stack. */
     public void setThreads(List<DapModels.ThreadInfo> list, int currentThreadId) {
         settingThreads = true;
@@ -1001,10 +1044,20 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         allFrames = List.copyOf(frames);
         framesExpanded = false;
         showFrames(index);
+        java.nio.file.Path at = frames.isEmpty() ? null : frames.get(index).file();
+        String in =
+                at == null || at.getFileName() == null ? "" : at.getFileName().toString();
+        if (!in.equals(stoppedIn)) {
+            stoppedIn = in;
+            refreshStatus();
+        }
         if (!frames.isEmpty()) {
             reportFrame(frames.get(index));
         }
     }
+
+    /** The file of the frame the program stopped in ("" when none), named when it is not the session's file. */
+    private String stoppedIn = "";
 
     /** Every frame of the stack shown, folded rows included in {@link StackFolding} form or not. */
     private List<DapModels.StackFrameInfo> allFrames = List.of();
