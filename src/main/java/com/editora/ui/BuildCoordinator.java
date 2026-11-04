@@ -879,7 +879,10 @@ final class BuildCoordinator {
             long generation = ++runtimeGeneration;
             com.editora.run.RuntimeProbe.probe(npm.probe(), root, environment, version -> {
                 if (generation == runtimeGeneration) {
-                    panel.setRuntime(BuildCoordinator.this, version); // the Node (or Bun) the script runs under
+                    // the Node (or Bun) the script runs under, and on hover why that Node.js
+                    panel.setRuntime(
+                            BuildCoordinator.this,
+                            NodeRunLauncher.withSource(version, NodeRunLauncher.source(npm.node())));
                 }
             });
         }
@@ -891,6 +894,10 @@ final class BuildCoordinator {
                 if (npm != null) {
                     // Which manager and which npm ran: the header's command line is gone once the run ends.
                     panel.appendOutput(BuildCoordinator.this, "$ " + commandLine, false);
+                    String pin = NodeRunLauncher.pinNotice(npm.node());
+                    if (pin != null) {
+                        panel.appendOutput(BuildCoordinator.this, pin, false);
+                    }
                 }
             }
 

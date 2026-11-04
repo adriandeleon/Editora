@@ -95,7 +95,7 @@ class HtmlInstallUiTest {
         assertEquals("doctor.tip.nodeMissingServers", DoctorCoordinator.nodeServersTip(one));
         assertEquals("doctor.tip.nodeMissingServersMany", DoctorCoordinator.nodeServersTip(several));
         assertTrue(tr("doctor.tip.nodeMissingServersMany", "node", several).contains("language servers need it"));
-        assertTrue(tr("doctor.tip.serverNeedsNode").contains("Settings → Debugging → JavaScript"));
+        assertTrue(tr("doctor.tip.serverNeedsNode").contains("Settings → Build Tools → Node.js"));
         assertTrue(
                 tr("install.banner.webServerNoNpm", "HTML", "npm").contains("beside the Node.js chosen in Settings"));
     }

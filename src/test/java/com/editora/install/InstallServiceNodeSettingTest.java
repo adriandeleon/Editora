@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * HTML review 2 A105: the Node.js chosen in Settings → Debugging → JavaScript counts for Install. npm is looked for
+ * HTML review 2 A105: the Node.js chosen in Settings → Build Tools → Node.js counts for Install. npm is looked for
  * beside it, the npm install runs with its bin folder first on PATH (npm's own {@code #!/usr/bin/env node}), and the
  * Node.js version a server's floor is checked against is that one's.
  */

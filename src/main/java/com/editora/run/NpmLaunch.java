@@ -31,8 +31,10 @@ import org.jspecify.annotations.Nullable;
  * @param argv the command line to start
  * @param env variables to set on top of the inherited (augmented) environment
  * @param probe the launch whose {@code --version} the runtime chip shows
+ * @param node the Node.js the scripts run on (why it was chosen, a pin nvm lacks), or null when not chosen here
  */
-public record NpmLaunch(List<String> argv, Map<String, String> env, List<String> probe) {
+public record NpmLaunch(
+        List<String> argv, Map<String, String> env, List<String> probe, NodeRuntimes.@Nullable NodeRuntime node) {
 
     /**
      * Plans the launch.
@@ -78,7 +80,7 @@ public record NpmLaunch(List<String> argv, Map<String, String> env, List<String>
             }
         }
         List<String> probe = bun || node == null ? List.copyOf(argv) : node.command();
-        return new NpmLaunch(List.copyOf(argv), Map.copyOf(env), List.copyOf(probe));
+        return new NpmLaunch(List.copyOf(argv), Map.copyOf(env), List.copyOf(probe), node);
     }
 
     /** Whether {@code exe} is a bare program name (looked up on PATH), not a path. */

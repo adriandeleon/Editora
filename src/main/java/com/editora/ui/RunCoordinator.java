@@ -561,6 +561,8 @@ final class RunCoordinator {
                         npmEnv.putAll(env);
                         launchReason = detected.reason(); // "pnpm-lock.yaml": what a not-found message names
                         runtimeCommand = npm.probe();
+                        pendingRuntimeSource = NodeRunLauncher.source(npm.node());
+                        addConsoleNotice(NodeRunLauncher.pinNotice(npm.node()));
                         pendingCommandLine = true; // which manager ran: pnpm, yarn, the npm beside the Node
                         streamRun(cfg.name(), cwd, npm.argv(), npmEnv, script);
                     });
@@ -2354,7 +2356,8 @@ final class RunCoordinator {
         }
         Path dir = chdir(plan.chdir(), ready.dir(), com.editora.vfs.Vfs.isRemote(ready.dir()));
         if (dir != null) {
-            pendingDeploySummary = ready.notice(); // "Running the built dist/index.js (from src/index.ts)"
+            addConsoleNotice(ready.notice()); // "Running the compiled dist/index.js (built from src/index.ts)"
+            pendingRuntimeSource = ready.source(); // the chip's tooltip says why this Node.js
             if (ready.route() == com.editora.run.TsRunRoute.Kind.PLAIN
                     && com.editora.run.NodeRunPlan.isTypeScript(ready.target())) {
                 pendingOutputWatcher = tsImportHint();
@@ -2588,6 +2591,16 @@ final class RunCoordinator {
     /** Set by an npm configuration: the next run's console starts with its command line, as a script's does. */
     private boolean pendingCommandLine;
 
+    /** Adds {@code line} to what the next run's console shows first (after a deploy's summary), unless null. */
+    private void addConsoleNotice(@Nullable String line) {
+        if (line != null) {
+            pendingDeploySummary = pendingDeploySummary == null ? line : pendingDeploySummary + "\n" + line;
+        }
+    }
+
+    /** Why the next run's Node.js was chosen ({@code .nvmrc, via nvm}): shown on the runtime chip's tooltip. */
+    private @Nullable String pendingRuntimeSource;
+
     /** As above; {@code script} is the file being run (saved before a Rerun), null for a Java launch. */
     private void streamRun(
             @Nullable String label,
@@ -2599,6 +2612,7 @@ final class RunCoordinator {
             terminalRun = false;
             runtimeCommand = null;
             pendingCommandLine = false;
+            pendingRuntimeSource = null;
             pendingDeploySummary = null; // the console's extras do not apply to a Terminal tab
             pendingOutputWatcher = null;
             pendingRerun = null;
@@ -2608,6 +2622,8 @@ final class RunCoordinator {
         lastRunScript = script;
         boolean commandLineFirst = pendingCommandLine;
         pendingCommandLine = false;
+        String runtimeSource = pendingRuntimeSource;
+        pendingRuntimeSource = null;
         String reason = launchReason;
         launchReason = "";
         TestStream tests = pendingTestStream;
@@ -2636,7 +2652,7 @@ final class RunCoordinator {
         }
         List<String> runtime = runtimeCommand != null ? runtimeCommand : command;
         runtimeCommand = null;
-        showRuntime(runtime, workingDir, env);
+        showRuntime(runtime, workingDir, env, runtimeSource);
         host.setStatus(tr("status.run.started", label));
         service.runInDir(workingDir, command, env, new RunService.Listener() {
             @Override
@@ -2754,12 +2770,16 @@ final class RunCoordinator {
      * the way the launch runs it (its folder, so its host, and its environment). An answer that arrives after
      * a newer run started is dropped.
      */
-    private void showRuntime(List<String> command, @Nullable Path workingDir, java.util.Map<String, String> env) {
+    private void showRuntime(
+            List<String> command,
+            @Nullable Path workingDir,
+            java.util.Map<String, String> env,
+            @Nullable String source) {
         long generation = ++runtimeGeneration;
         panel().setRuntime(null);
         com.editora.run.RuntimeProbe.probe(command, workingDir, env, version -> {
             if (generation == runtimeGeneration) {
-                panel().setRuntime(version);
+                panel().setRuntime(NodeRunLauncher.withSource(version, source));
             }
         });
     }

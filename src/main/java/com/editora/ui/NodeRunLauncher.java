@@ -62,13 +62,45 @@ final class NodeRunLauncher {
      *     {@code .ts}): where the program starts in {@code plan.argv()}
      * @param notice a line for the console before the program's output (which file runs, a stale build), or null
      * @param route how a TypeScript file runs ({@link TsRunRoute.Kind#PLAIN} for everything else)
+     * @param source why this Node.js was chosen ({@code .nvmrc, via nvm}), for the runtime chip; null on a host
      */
     record Ready(
             NodeRunPlan plan,
             @Nullable Path dir,
             String target,
             @Nullable String notice,
-            com.editora.run.TsRunRoute.Kind route) {}
+            com.editora.run.TsRunRoute.Kind route,
+            @Nullable String source) {}
+
+    /** Why {@code node} was chosen, in the user's words ({@code .nvmrc, via nvm}); null when unknown. */
+    static @Nullable String source(NodeRuntimes.@Nullable NodeRuntime node) {
+        return node == null ? null : com.editora.doctor.NodeRuntimeRow.reason(node);
+    }
+
+    /**
+     * The console line for a version file that asks for a Node.js nvm does not have, or null: the run goes on
+     * with another Node, and says which (review C105).
+     */
+    static @Nullable String pinNotice(NodeRuntimes.@Nullable NodeRuntime node) {
+        if (node == null || node.unmetVersion() == null) {
+            return null;
+        }
+        return tr(
+                "run.console.nodePinMissing",
+                String.valueOf(node.versionFile()),
+                node.unmetVersion(),
+                com.editora.doctor.NodeRuntimeRow.reason(node));
+    }
+
+    /** {@code version} with "Chosen from: {@code source}" under its banner, for the chip's tooltip. */
+    static com.editora.run.@Nullable RuntimeVersion withSource(
+            com.editora.run.@Nullable RuntimeVersion version, @Nullable String source) {
+        if (version == null || source == null || source.isBlank()) {
+            return version;
+        }
+        String detail = version.detail().isBlank() ? "" : version.detail() + "\n";
+        return new com.editora.run.RuntimeVersion(version.label(), detail + tr("run.runtimeSource", source));
+    }
 
     private static final Duration VERSION_TIMEOUT = Duration.ofSeconds(10);
 
@@ -137,7 +169,11 @@ final class NodeRunLauncher {
                 spec.userEnv(),
                 here ? p -> Files.isExecutable(Path.of(p)) : null,
                 loaderFlags));
-        return new Ready(plan, dir, target, notice, route);
+        String pin = here ? pinNotice(runtime) : null;
+        if (pin != null) {
+            notice = notice == null ? pin : pin + "\n" + notice;
+        }
+        return new Ready(plan, dir, target, notice, route, here ? source(runtime) : null);
     }
 
     /** {@code file} relative to {@code dir} when below it, else the whole path ('/'-separated for the console). */

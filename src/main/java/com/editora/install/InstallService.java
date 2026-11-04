@@ -104,7 +104,7 @@ public final class InstallService {
         this.jdkHome = jdkHome == null ? () -> "" : jdkHome;
     }
 
-    /** The Node.js chosen in Settings → Debugging → JavaScript (blank = none): npm installs run with it (A105). */
+    /** The Node.js chosen in Settings → Build Tools → Node.js (blank = none): npm installs run with it (A105). */
     private volatile java.util.function.Supplier<String> nodeSetting = () -> "";
 
     /**
@@ -1215,7 +1215,7 @@ public final class InstallService {
             if (!npmProgramFound.test(serverId)) {
                 throw new InstallException(s.id() + ": npm installed it, but Editora does not find "
                         + NpmServerBins.defaultProgram(serverId) + " — npm put it in " + npmGlobalBin()
-                        + ". Add that folder to PATH, or choose the Node.js there in Settings → Debugging → JavaScript,"
+                        + ". Add that folder to PATH, or choose the Node.js there in Settings → Build Tools → Node.js,"
                         + " then try again");
             }
         }

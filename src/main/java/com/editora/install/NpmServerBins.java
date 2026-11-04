@@ -10,7 +10,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Where an npm-installed language server's program is found besides PATH: the bin folder of the Node.js chosen in
- * Settings → Debugging → JavaScript. Install runs {@code npm install -g} with the npm beside that Node.js (HTML review
+ * Settings → Build Tools → Node.js. Install runs {@code npm install -g} with the npm beside that Node.js (HTML review
  * 2, A105), and a global install lands in that Node.js's own folder, which need not be on PATH — so detection, Doctor,
  * the launch and Install's "already installed" all look there too, after PATH (HTML review 3, A203).
  */
