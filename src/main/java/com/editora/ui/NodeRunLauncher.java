@@ -121,7 +121,9 @@ final class NodeRunLauncher {
                 : remoteRuntime(file, spec.configured());
         Path dir = spec.workingDir() != null
                 ? spec.workingDir()
-                : here ? NodeRuntimes.workingDirectory(file, spec.projectRoot()) : file.getParent();
+                : here
+                        ? NodeRuntimes.workingDirectory(file, spec.projectRoot())
+                        : hostPackageRoot(file, spec.projectRoot());
         String name = file.getFileName() == null ? "" : file.getFileName().toString();
         String firstLine = RunCoordinator.firstLine(file);
         String version = null;
@@ -174,6 +176,21 @@ final class NodeRunLauncher {
             notice = notice == null ? pin : pin + "\n" + notice;
         }
         return new Ready(plan, dir, target, notice, route, here ? source(runtime) : null);
+    }
+
+    /**
+     * On a remote host, WSL or a container: the package root as there, read through the file's own file system
+     * (a few file checks, off the FX thread), so a program runs from the same folder as it does here (review
+     * C109); the file's folder when there is none or the host cannot be asked.
+     */
+    static @Nullable Path hostPackageRoot(Path file, @Nullable Path projectRoot) {
+        try {
+            Path root = projectRoot != null && projectRoot.getFileSystem() == file.getFileSystem() ? projectRoot : null;
+            return NodeRuntimes.packageRoot(file, root, null, Files::isRegularFile)
+                    .orElse(file.getParent());
+        } catch (RuntimeException e) {
+            return file.getParent();
+        }
     }
 
     /** {@code file} relative to {@code dir} when below it, else the whole path ('/'-separated for the console). */
