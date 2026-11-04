@@ -176,6 +176,23 @@ final class ToolStatusRow {
         }
     }
 
+    /**
+     * The Debugging card's detail for vscode-js-debug (review D108): its version and the Node.js that runs it —
+     * "1.117.0 · Node.js v24.18.1" — short enough that neither is cut off; the path is in Doctor. "" when it was
+     * not found.
+     */
+    static String jsDebugDetail(com.editora.dap.DapManager.JsDebugInstall js) {
+        if (js.server() == null) {
+            return "";
+        }
+        String node = js.nodeVersion();
+        if (node == null) {
+            return tr("settings.debug.jsNoNode");
+        }
+        String version = js.serverVersion();
+        return version == null ? tr("settings.debug.jsFoundNode", node) : tr("settings.debug.jsFound", version, node);
+    }
+
     /** Where the command's program is (the configured path, or the PATH entry) — a lookup, no process — or "". */
     static String pathOf(List<String> argv) {
         return com.editora.doctor.DoctorProbes.resolvedPath(argv);

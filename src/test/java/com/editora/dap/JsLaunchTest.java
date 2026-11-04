@@ -168,4 +168,52 @@ class JsLaunchTest {
         assertEquals(Optional.empty(), JsLaunch.testNameAt(src, 0));
         assertEquals("adds \\(two\\) \\$1\\.0", JsLaunch.literalPattern("adds (two) $1.0"));
     }
+
+    @Test
+    void theCompiledFileJsDebugRunsInsteadOfATypeScriptSourceIsFound() {
+        Path src = Path.of("/p/src/main.ts");
+        Path cwd = Path.of("/p");
+        assertEquals(
+                Path.of("/p/dist/main.js"),
+                JsLaunch.compiledInstead(src, cwd, List.of("/n/node", "--enable-source-maps", "./dist/main.js", "x")));
+        assertEquals(
+                Path.of("/q/out/main.mjs"), JsLaunch.compiledInstead(src, cwd, List.of("node", "/q/out/main.mjs")));
+        assertNull(JsLaunch.compiledInstead(src, cwd, List.of("node", "./src/main.ts")), "the source itself runs");
+        assertNull(JsLaunch.compiledInstead(src, cwd, List.of("node", "./dist/other.js")), "another program");
+        assertNull(JsLaunch.compiledInstead(Path.of("/p/app.js"), cwd, List.of("node", "./app.js")), "not TypeScript");
+    }
+
+    @Test
+    void aBuiltFileOlderThanItsSourceIsStale() {
+        Path src = Path.of("main.ts");
+        Path out = Path.of("main.js");
+        java.time.Instant t = java.time.Instant.parse("2026-11-03T10:00:00Z");
+        Map<Path, java.time.Instant> times = Map.of(src, t, out, t.minusSeconds(60));
+        assertTrue(JsLaunch.builtIsStale(src, out, p -> Optional.ofNullable(times.get(p))));
+        Map<Path, java.time.Instant> fresh = Map.of(src, t, out, t.plusSeconds(1));
+        assertFalse(JsLaunch.builtIsStale(src, out, p -> Optional.ofNullable(fresh.get(p))));
+        assertFalse(JsLaunch.builtIsStale(src, out, p -> Optional.empty()), "unknown times: no warning");
+    }
+
+    @Test
+    void aDebuggedProgramGetsRunsColoursUnlessNoColorIsSet() {
+        assertEquals(Map.of("FORCE_COLOR", "1"), JsLaunch.colourEnvironment(null));
+        assertEquals(Map.of("FORCE_COLOR", "1"), JsLaunch.colourEnvironment(""));
+        assertEquals(Map.of(), JsLaunch.colourEnvironment("1"));
+    }
+
+    @Test
+    void theTestConcurrencyWarningAndItsHintAreDroppedAcrossEvents() {
+        JsLaunch.InspectorNoise noise = new JsLaunch.InspectorNoise();
+        assertEquals(
+                "",
+                noise.filter("(node:4242) Warning: Using the inspector with --test forces running at a concurrency"
+                        + " of 1. Use the inspectPort option to run with concurrency\n"));
+        assertEquals("", noise.filter("(Use `node --trace-warnings ...` to show where the warning was created)\n"));
+        assertEquals("✔ adds (2ms)\n", noise.filter("✔ adds (2ms)\n"));
+        // The same hint after any other warning is the user's to read.
+        String other = "(node:1) [DEP0040] DeprecationWarning: punycode\n"
+                + "(Use `node --trace-warnings ...` to show where the warning was created)\n";
+        assertEquals(other, noise.filter(other));
+    }
 }

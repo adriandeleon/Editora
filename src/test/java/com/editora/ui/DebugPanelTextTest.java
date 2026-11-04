@@ -89,4 +89,20 @@ class DebugPanelTextTest {
                 "the line and the frame's tab plain, the frame itself a link");
         assertNull(DebugConsoleStyle.spans("plain output\n", null), "plain text needs no spans");
     }
+
+    /** Review D109: the package manager an npm-script debug starts from is not listed beside the script. */
+    @Test
+    void thePackageManagerProcessIsNotListedBesideTheScript() {
+        var npm = new com.editora.dap.DapModels.ThreadInfo(0, "npm [95039]");
+        var srv = new com.editora.dap.DapModels.ThreadInfo(1, "srv.js [95077]");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of(srv), DebugPanelText.visibleThreads(java.util.List.of(srv, npm), 1));
+        // Alone, or stopped in, it stays.
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of(npm), DebugPanelText.visibleThreads(java.util.List.of(npm), -1));
+        org.junit.jupiter.api.Assertions.assertEquals(
+                java.util.List.of(npm, srv), DebugPanelText.visibleThreads(java.util.List.of(srv, npm), 0));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                DebugPanelText.isPackageManagerThread(new com.editora.dap.DapModels.ThreadInfo(2, "npm-check.js [7]")));
+    }
 }

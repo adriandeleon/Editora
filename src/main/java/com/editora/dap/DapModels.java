@@ -29,16 +29,40 @@ public final class DapModels {
             @Nullable Path file,
             int line,
             int column,
-            @Nullable String sourceUri) {
+            @Nullable String sourceUri,
+            String hint) {
+        /**
+         * {@code hint}: {@link #HINT_SUBTLE} for a frame the adapter de-emphasizes (js-debug's {@code skipFiles}:
+         * Node's own modules), {@link #HINT_LABEL} for a row that only labels the stack (an {@code await} between
+         * async frames), {@link #HINT_FOLD} for the row standing for frames folded away; "" otherwise.
+         */
+        public StackFrameInfo {
+            hint = hint == null ? "" : hint;
+        }
+
+        public StackFrameInfo(
+                int id, String name, @Nullable Path file, int line, int column, @Nullable String sourceUri) {
+            this(id, name, file, line, column, sourceUri, "");
+        }
+
         public StackFrameInfo(int id, String name, Path file, int line, int column) {
             this(id, name, file, line, column, null);
         }
 
         /** This frame at another (0-based) line — the line it is shown on in an edited document. */
         public StackFrameInfo atLine(int newLine) {
-            return new StackFrameInfo(id, name, file, newLine, column, sourceUri);
+            return new StackFrameInfo(id, name, file, newLine, column, sourceUri, hint);
         }
     }
+
+    /** {@link StackFrameInfo#hint} of a de-emphasized frame (library or runtime code the user does not step into). */
+    public static final String HINT_SUBTLE = "subtle";
+
+    /** {@link StackFrameInfo#hint} of a label row, such as js-debug's {@code await} between async frames. */
+    public static final String HINT_LABEL = "label";
+
+    /** {@link StackFrameInfo#hint} of the row standing for folded frames; its {@code line} is how many. */
+    public static final String HINT_FOLD = "fold";
 
     /** A variable scope of a stack frame (e.g. "Local", "Static"); {@code variablesReference} fetches its
      *  variables. */

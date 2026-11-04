@@ -58,6 +58,19 @@ public final class RunService {
     private volatile boolean interruptOnStop;
 
     /**
+     * Whether the program's stderr goes into the same pipe as its stdout ({@code 2>&1}), so its lines arrive in
+     * the order it wrote them. Two pipes are read by two threads, and which one is read first is a race: a
+     * script that wrote out, err, out, err showed them reordered in 28 of 30 runs (review D102). The price is
+     * that stderr is no longer told apart (not red). On this machine only.
+     */
+    private volatile boolean mergeErrorStream;
+
+    /** Sets {@link #mergeErrorStream} for the next start. */
+    public void setMergeErrorStream(boolean merge) {
+        this.mergeErrorStream = merge;
+    }
+
+    /**
      * The bounded, batched stdout/stderr pump shared with {@code build.BuildService}. A program's console
      * drops its oldest queued lines when the UI cannot keep up (the newest output is what matters, and the
      * program is never slowed down), and flushes a line that stops short of a newline so a prompt shows.
@@ -290,7 +303,8 @@ public final class RunService {
         try {
             process = remote
                     ? startRemote(workingDir, command, env)
-                    : com.editora.process.BusyExecutable.start(processBuilder(workingDir, command, env));
+                    : com.editora.process.BusyExecutable.start(
+                            processBuilder(workingDir, command, env).redirectErrorStream(mergeErrorStream));
             // Track it: the JVM shutdown hook + the orphan reaper only know about tracked processes, so an
             // untracked long-lived program (a dev server) outlived the app and wasn't reaped on the next launch.
             com.editora.process.ProcessRegistry.track(process);

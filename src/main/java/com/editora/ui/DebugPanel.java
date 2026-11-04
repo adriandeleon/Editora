@@ -387,9 +387,21 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     setGraphic(null);
                     return;
                 }
+                if (StackFolding.isFold(f)) {
+                    // Runtime/library frames folded away (review D105): one muted row, clicked to show them.
+                    Text fold = new Text(tr("debugpanel.foldedFrames", f.line()));
+                    fold.getStyleClass().addAll("debug-frame-name", "debug-frame-nosource", "debug-frame-fold");
+                    setGraphic(new TextFlow(fold));
+                    return;
+                }
                 Text name = new Text(DebugPanelText.frameName(f.name()));
                 name.getStyleClass().add("debug-frame-name");
                 TextFlow flow = new TextFlow(name);
+                if (com.editora.dap.DapModels.HINT_LABEL.equals(f.hint())) {
+                    name.getStyleClass().addAll("debug-frame-nosource", "debug-frame-fold"); // "await": a label
+                    setGraphic(flow);
+                    return;
+                }
                 if (!hasSource.test(f)) {
                     name.getStyleClass().add("debug-frame-nosource"); // the JDK, a library, a lambda proxy
                 }
@@ -408,6 +420,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         stack.setPlaceholder(stackHint);
         stack.getSelectionModel().selectedItemProperty().addListener((o, a, f) -> {
             if (f != null && !settingStack) {
+                if (StackFolding.isFold(f)) {
+                    // Shows the folded frames, keeping the frame that was selected selected.
+                    javafx.application.Platform.runLater(() -> expandFrames(a));
+                    return;
+                }
                 reportFrame(f);
             }
         });
@@ -419,7 +436,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 e -> pressedOn[0] = stack.getSelectionModel().getSelectedItem());
         stack.setOnMouseClicked(e -> {
             DapModels.StackFrameInfo f = stack.getSelectionModel().getSelectedItem();
-            if (f != null && f == pressedOn[0] && e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+            if (f != null
+                    && f == pressedOn[0]
+                    && !StackFolding.isFold(f)
+                    && e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
                 reportFrame(f);
             }
         });
@@ -428,7 +448,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         stack.setOnContextMenuRequested(e -> {
             DapModels.StackFrameInfo f = stack.getSelectionModel().getSelectedItem();
             List<javafx.scene.control.MenuItem> items =
-                    f == null ? List.of() : actions.stackMenuItems(f, List.copyOf(stack.getItems()));
+                    f == null || StackFolding.isFold(f) ? List.of() : actions.stackMenuItems(f, allFrames);
             stackMenu.getItems().setAll(items);
             if (!items.isEmpty()) {
                 stackMenu.show(stack, e.getScreenX(), e.getScreenY());
@@ -784,9 +804,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** Updates the toolbar/status to reflect the session state and enables the right controls. */
     public void setState(DapManager.State state) {
+        boolean wasRunning = lastState == DapManager.State.RUNNING;
         lastState = state;
         if (state == DapManager.State.STARTING) {
             exitCode = null; // a new session: the last one's outcome is no longer what the status says
+            ansiParsers.clear(); // and none of its colours is still on
         }
         if (state != DapManager.State.SUSPENDED) {
             exception = null;
@@ -797,6 +819,22 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         boolean running = state == DapManager.State.RUNNING;
         boolean active = state != DapManager.State.INACTIVE;
+        if (!(running && wasRunning)) {
+            runToken++; // a continued event while it runs (js-debug stepping through skipped code) is no change
+        }
+        if (running && !wasRunning) {
+            // A step's stop comes within a moment, and the stack stays meanwhile (no flicker). A program still
+            // running after that ran on — a Step out of a callback into code it skips — and the old stack,
+            // variables and "(paused)" no longer describe it (review D107).
+            long token = runToken;
+            javafx.animation.PauseTransition later = new javafx.animation.PauseTransition(STALE_STOP_DELAY);
+            later.setOnFinished(e -> {
+                if (token == runToken && lastState == DapManager.State.RUNNING) {
+                    clearStaleStop();
+                }
+            });
+            later.play();
+        }
         // Green play = Start when idle, Continue when paused; Pause is its complement while running.
         start.setDisable(preparing || !(state == DapManager.State.INACTIVE || suspended));
         pause.setDisable(!running);
@@ -819,6 +857,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             sessionFile = "";
             setRuntime(null);
             stack.getItems().clear();
+            allFrames = List.of();
+            stoppedIn = "";
             variables.setRoot(idleRoot());
             setThreads(List.of(), -1);
             selectedFrameId = -1;
@@ -862,7 +902,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                         : tr("debugpanel.state.exceptionNamed", stoppedException))
                 : lastState == DapManager.State.INACTIVE && exitCode != null
                         ? tr("debugpanel.state.exited", exitCode)
-                        : tr("debugpanel.state." + lastState.name().toLowerCase(java.util.Locale.ROOT));
+                        : lastState == DapManager.State.SUSPENDED
+                                        && !stoppedIn.isEmpty()
+                                        && !stoppedIn.equals(sessionFile)
+                                // Stopped in a child process or worker, not the session's own file (review D109).
+                                ? tr("debugpanel.state.suspendedIn", stoppedIn)
+                                : tr("debugpanel.state." + lastState.name().toLowerCase(java.util.Locale.ROOT));
         if (breakpointsMuted) {
             state = state + " · " + tr("debugpanel.muted");
         }
@@ -940,6 +985,29 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         refreshStatus();
     }
 
+    /** How long a resumed program runs before the last stop's stack and variables are cleared. */
+    static final javafx.util.Duration STALE_STOP_DELAY = javafx.util.Duration.millis(600);
+
+    /** Counts state changes, so a pending stale-stop clear knows it was overtaken. */
+    private long runToken;
+
+    /** The program runs on: no stack, the Watches alone, and no thread marked "(paused)". */
+    private void clearStaleStop() {
+        stack.getItems().clear();
+        allFrames = List.of();
+        variables.setRoot(idleRoot());
+        selectedFrameId = -1;
+        settingThreads = true;
+        try {
+            stoppedThreadId = -1;
+            DapModels.ThreadInfo shown = threads.getValue();
+            threads.setValue(null);
+            threads.setValue(shown); // redrawn without "(paused)"
+        } finally {
+            settingThreads = false;
+        }
+    }
+
     /** Fills the thread dropdown and selects {@code currentThreadId} without re-fetching its stack. */
     public void setThreads(List<DapModels.ThreadInfo> list, int currentThreadId) {
         settingThreads = true;
@@ -976,21 +1044,56 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** As {@link #setCallStack(List)}, selecting frame {@code selected} — the topmost one that has source. */
     public void setCallStack(List<DapModels.StackFrameInfo> frames, int selected) {
         int index = Math.max(0, Math.min(selected, frames.size() - 1));
+        allFrames = List.copyOf(frames);
+        framesExpanded = false;
+        showFrames(index);
+        java.nio.file.Path at = frames.isEmpty() ? null : frames.get(index).file();
+        String in =
+                at == null || at.getFileName() == null ? "" : at.getFileName().toString();
+        if (!in.equals(stoppedIn)) {
+            stoppedIn = in;
+            refreshStatus();
+        }
+        if (!frames.isEmpty()) {
+            reportFrame(frames.get(index));
+        }
+    }
+
+    /** The file of the frame the program stopped in ("" when none), named when it is not the session's file. */
+    private String stoppedIn = "";
+
+    /** Every frame of the stack shown, folded rows included in {@link StackFolding} form or not. */
+    private List<DapModels.StackFrameInfo> allFrames = List.of();
+
+    /** Whether the user unfolded this stack's runtime frames (until the next stop). */
+    private boolean framesExpanded;
+
+    /** Lists {@link #allFrames} — folded unless {@link #framesExpanded} — with frame {@code index} selected. */
+    private void showFrames(int index) {
+        StackFolding.Shown shown = StackFolding.fold(allFrames, index, framesExpanded);
         settingStack = true;
         try {
-            stack.getItems().setAll(frames);
-            if (!frames.isEmpty()) {
-                stack.getSelectionModel().clearAndSelect(index);
-                if (index > 0) {
-                    stack.scrollTo(index - 1); // the selected frame in view, with the one it was called from
+            stack.getItems().setAll(shown.rows());
+            if (!shown.rows().isEmpty()) {
+                int row = shown.selectedRow();
+                stack.getSelectionModel().clearAndSelect(row);
+                if (row > 0) {
+                    stack.scrollTo(row - 1); // the selected frame in view, with the one it was called from
                 }
             }
         } finally {
             settingStack = false;
         }
-        if (!frames.isEmpty()) {
-            reportFrame(frames.get(index));
+    }
+
+    /** A fold row was chosen: every frame is listed, {@code previous} (the frame selected before) still selected. */
+    private void expandFrames(DapModels.@Nullable StackFrameInfo previous) {
+        if (framesExpanded) {
+            return;
         }
+        framesExpanded = true;
+        int index = previous == null ? 0 : Math.max(0, allFrames.indexOf(previous));
+        showFrames(index);
     }
 
     /**
@@ -1399,11 +1502,38 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (text == null) {
             return;
         }
-        text = DebugValues.stripAnsi(text); // colour codes of a logger / Node script are not text to read
         String style = "stderr".equals(category)
                 ? "run-stderr" // the program's stderr in red
                 : DapManager.COMMAND_CATEGORY.equals(category) ? "run-command" : null; // Editora's own lines, muted
-        appender.append(text, DebugConsoleStyle.spans(text, style));
+        if (DapManager.COMMAND_CATEGORY.equals(category) || text.indexOf('\u001b') < 0 && !ansiOpen(category)) {
+            text = DebugValues.stripAnsi(text);
+            appender.append(text, DebugConsoleStyle.spans(text, style));
+            return;
+        }
+        // The program's colours, drawn as the Run console draws them (review D104); the parser keeps a colour
+        // that is still on across output events, per stream.
+        com.editora.run.AnsiText.Chunk chunk = ansiParser(category).feed(text);
+        String shown = chunk.text();
+        if (shown.indexOf(com.editora.run.AnsiText.CLEAR_SCREEN) >= 0) {
+            shown = shown.replace(String.valueOf(com.editora.run.AnsiText.CLEAR_SCREEN), "");
+            appender.append(shown, DebugConsoleStyle.spans(shown, style)); // no colours rather than wrong ones
+            return;
+        }
+        appender.append(shown, DebugConsoleStyle.spans(shown, style, chunk.runs()));
+    }
+
+    /** One ANSI parser per output category, so a colour left on in stdout does not tint stderr. */
+    private final java.util.Map<String, com.editora.run.AnsiText.Parser> ansiParsers = new java.util.HashMap<>();
+
+    private com.editora.run.AnsiText.Parser ansiParser(String category) {
+        return ansiParsers.computeIfAbsent(
+                category == null ? "" : category, c -> new com.editora.run.AnsiText.Parser());
+    }
+
+    /** Whether a colour the program turned on in {@code category} is still on. */
+    private boolean ansiOpen(String category) {
+        com.editora.run.AnsiText.Parser p = ansiParsers.get(category == null ? "" : category);
+        return p != null && p.active();
     }
 
     /**
