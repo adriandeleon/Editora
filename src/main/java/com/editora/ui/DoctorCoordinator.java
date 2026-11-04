@@ -1553,7 +1553,7 @@ final class DoctorCoordinator {
         String setting = s.getNodePath();
         DoctorCheck row = DoctorCheck.checking(
                         "run.node", "run", tr("doctor.label.node"), setting.isBlank() ? "node" : setting)
-                .withSettings("debug");
+                .withSettings("buildTools"); // the Node.js card on Build Tools (review E102)
         return probe(row, base -> {
             boolean local = com.editora.vfs.Vfs.isLocal(root);
             com.editora.run.NodeRuntimes.NodeRuntime node = com.editora.run.NodeRuntimes.resolveLocal(

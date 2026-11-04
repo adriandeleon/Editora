@@ -112,6 +112,19 @@ class BundledTemplatesTest {
         assertEquals("^6.0.0", pkg.path("devDependencies").path("typescript").asText());
     }
 
+    /**
+     * Its sources import {@code ./greet.js} (NodeNext), which plain Node cannot map to {@code greet.ts}: start and
+     * test go through tsx, which Run also uses when the project has it (JS review C102).
+     */
+    @Test
+    void theNodeTypescriptProjectRunsItsSourcesThroughTsx(@TempDir Path tmp) throws Exception {
+        var pkg = new ObjectMapper()
+                .readTree(rendered(tmp, bundled(tmp, "node-typescript-project")).get("package.json"));
+        assertTrue(pkg.path("devDependencies").has("tsx"));
+        assertEquals("tsx src/index.ts", pkg.path("scripts").path("start").asText());
+        assertTrue(pkg.path("scripts").path("test").asText().startsWith("node --import tsx --test "));
+    }
+
     @Test
     void theHttpRequestsParseWithTheirChecksAndBothEnvironmentsResolve(@TempDir Path tmp) throws Exception {
         Map<String, String> files = rendered(tmp, bundled(tmp, "http-requests"));

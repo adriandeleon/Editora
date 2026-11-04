@@ -303,6 +303,11 @@ public final class RunConfigurationsWindow {
             interpreterOptions.setPromptText(tr(com.editora.run.RunConfigPrompts.interpreterOptions(value)));
             workingDir.setPromptText(tr(com.editora.run.RunConfigPrompts.workingDir(value)));
             target.setPromptText(tr(com.editora.run.RunConfigPrompts.target(value)));
+            beforeLaunch.setPromptText(tr(com.editora.run.RunConfigPrompts.beforeLaunch(value)));
+            List<String> labels = com.editora.run.RunConfigPrompts.labels(value);
+            relabel(form, targetRow, tr(labels.get(0)));
+            relabel(form, interpreter, tr(labels.get(1)));
+            relabel(form, interpreterOptions, tr(labels.get(2)));
         };
         java.util.function.Supplier<RunConfiguration> fromForm = () -> new RunConfiguration(
                 name.getText(),
@@ -637,6 +642,16 @@ public final class RunConfigurationsWindow {
                 if (node instanceof Label && java.util.Objects.equals(GridPane.getRowIndex(node), row)) {
                     show(node, !disabled);
                 }
+            }
+        }
+    }
+
+    /** Sets the text of the label in {@code control}'s row. */
+    private static void relabel(GridPane form, javafx.scene.Node control, String text) {
+        Integer row = GridPane.getRowIndex(control);
+        for (javafx.scene.Node node : form.getChildren()) {
+            if (node instanceof Label label && java.util.Objects.equals(GridPane.getRowIndex(node), row)) {
+                label.setText(text);
             }
         }
     }

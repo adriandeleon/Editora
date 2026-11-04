@@ -99,7 +99,12 @@ class NodeRunPlanTest {
     void aTestFileRunsNodeTestWithTheTapReporterAndNoProgramArguments() {
         NodeRunPlan plan = NodeRunPlan.plan(request("a.test.js", null, null, true));
         assertEquals(
-                List.of("/nvm/v24/bin/node", "--enable-source-maps", "--test", "--test-reporter=tap", "/p/a.test.js"),
+                java.util.stream.Stream.of(
+                                List.of("/nvm/v24/bin/node", "--enable-source-maps", "--test"),
+                                NodeRunPlan.TEST_REPORTERS,
+                                List.of("/p/a.test.js"))
+                        .flatMap(List::stream)
+                        .toList(),
                 plan.argv());
     }
 
@@ -166,5 +171,24 @@ class NodeRunPlanTest {
         for (String p : List.of("java", "bash", "make", "")) {
             assertFalse(NodeRunPlan.interruptsOnStop(p), p);
         }
+    }
+
+    @Test
+    void tsxLoaderFlagsSkipTheTypeStrippingCheck() {
+        NodeRunPlan p = NodeRunPlan.plan(new NodeRunPlan.Request(
+                "/p/src/index.ts",
+                "index.ts",
+                List.of("a"),
+                null,
+                new NodeRuntimes.NodeRuntime(List.of("/n/node"), NodeRuntimes.Source.PATH, null),
+                false,
+                "v20.11.0",
+                List.of(),
+                false,
+                false,
+                java.util.Map.of(),
+                null,
+                List.of("--import", "tsx")));
+        assertEquals(List.of("/n/node", "--enable-source-maps", "--import", "tsx", "/p/src/index.ts", "a"), p.argv());
     }
 }

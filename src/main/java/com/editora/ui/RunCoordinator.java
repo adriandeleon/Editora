@@ -273,6 +273,14 @@ final class RunCoordinator {
     interface TestStream {
         void line(String text, boolean stderr);
 
+        /**
+         * How the Run console shows a line: as stderr ({@code true}), as stdout ({@code false}), or not at all
+         * ({@code null}) — a node:test run reads TAP on stdout and shows the readable spec report from stderr.
+         */
+        default @Nullable Boolean console(String text, boolean stderr) {
+            return stderr;
+        }
+
         /** The run ended: its exit code, or {@code -1} when it was stopped or could not start. */
         void exit(int code);
     }
@@ -496,6 +504,17 @@ final class RunCoordinator {
                 reportIncomplete(cfg, "status.run.configNeedsTarget"); // a target that is no valid path
                 return;
             }
+            String missing = elsewhere
+                    ? null
+                    : com.editora.run.MissingProgram.missingInterpreter(
+                            cfg.interpreter(), p -> java.nio.file.Files.isRegularFile(java.nio.file.Path.of(p)));
+            if (missing != null) {
+                // The configuration's own Interpreter names a file that is not there: say so and open the form,
+                // rather than "Node.js was not found (node) — set it in Settings" (review C104).
+                host.setStatus(tr("status.run.configInterpreterMissing", cfg.name(), missing));
+                ops.editConfiguration(cfg.name());
+                return;
+            }
             List<String> nodeOptions;
             try {
                 nodeOptions = ProgramArgs.parse(cfg.interpreterOptions());
@@ -528,11 +547,25 @@ final class RunCoordinator {
                     List.of(),
                     com.editora.build.NpmPackageManager.overrideApplies(override, detected.manager()) ? override : "",
                     detected.manager());
-            launchReason = detected.reason(); // "pnpm-lock.yaml": what a not-found message names
-            java.util.Map<String, String> npmEnv = new java.util.LinkedHashMap<>(
-                    NpmRunSupport.environment(elsewhere ? null : System.getenv("NO_COLOR")));
-            npmEnv.putAll(env);
-            streamRun(cfg.name(), cwd, ScriptRunCommand.npm(manager, cfg.target(), args), npmEnv, script);
+            // On the Node.js Run File would pick here, as the Package Scripts window runs it (review C101).
+            NpmRunSupport.prepare(
+                    cwd,
+                    ops.projectRoot(),
+                    host.settings().getNodePath(),
+                    ScriptRunCommand.npm(manager, cfg.target(), args),
+                    npm -> {
+                        java.util.Map<String, String> npmEnv = new java.util.LinkedHashMap<>(npm.env());
+                        if (env.containsKey("NO_COLOR")) {
+                            npmEnv.remove("FORCE_COLOR"); // the configuration asks for no colour
+                        }
+                        npmEnv.putAll(env);
+                        launchReason = detected.reason(); // "pnpm-lock.yaml": what a not-found message names
+                        runtimeCommand = npm.probe();
+                        pendingRuntimeSource = NodeRunLauncher.source(npm.node());
+                        addConsoleNotice(NodeRunLauncher.pinNotice(npm.node()));
+                        pendingCommandLine = true; // which manager ran: pnpm, yarn, the npm beside the Node
+                        streamRun(cfg.name(), cwd, npm.argv(), npmEnv, script);
+                    });
             return;
         }
         if (!ScriptRunCommand.SHELL.equals(cfg.type())) {
@@ -2323,8 +2356,32 @@ final class RunCoordinator {
         }
         Path dir = chdir(plan.chdir(), ready.dir(), com.editora.vfs.Vfs.isRemote(ready.dir()));
         if (dir != null) {
+            addConsoleNotice(ready.notice()); // "Running the compiled dist/index.js (built from src/index.ts)"
+            pendingRuntimeSource = ready.source(); // the chip's tooltip says why this Node.js
+            if (ready.route() == com.editora.run.TsRunRoute.Kind.PLAIN
+                    && com.editora.run.NodeRunPlan.isTypeScript(ready.target())) {
+                pendingOutputWatcher = tsImportHint();
+            }
             streamRun(label, dir, plan.argv(), plan.env(), script);
         }
+    }
+
+    /**
+     * Watches a TypeScript file run on plain Node for the {@code ERR_MODULE_NOT_FOUND} of a {@code ./x.js} import
+     * that means {@code x.ts} — Node cannot map it — and says once how to run such a project (review C102).
+     */
+    private java.util.function.BiConsumer<String, Boolean> tsImportHint() {
+        boolean[] said = {false};
+        return (line, stderr) -> {
+            if (!said[0]
+                    && stderr
+                    && com.editora.run.TsRunRoute.missingJsImport(line, java.nio.file.Files::isRegularFile)
+                            .isPresent()) {
+                said[0] = true;
+                panel().appendNotice(tr("run.console.tsJsImportHint"));
+                host.setStatus(tr("run.console.tsJsImportHint"));
+            }
+        };
     }
 
     /** The buffer's first line (at most 512 characters), where a shebang would be. */
@@ -2531,6 +2588,19 @@ final class RunCoordinator {
      */
     private @Nullable List<String> runtimeCommand;
 
+    /** Set by an npm configuration: the next run's console starts with its command line, as a script's does. */
+    private boolean pendingCommandLine;
+
+    /** Adds {@code line} to what the next run's console shows first (after a deploy's summary), unless null. */
+    private void addConsoleNotice(@Nullable String line) {
+        if (line != null) {
+            pendingDeploySummary = pendingDeploySummary == null ? line : pendingDeploySummary + "\n" + line;
+        }
+    }
+
+    /** Why the next run's Node.js was chosen ({@code .nvmrc, via nvm}): shown on the runtime chip's tooltip. */
+    private @Nullable String pendingRuntimeSource;
+
     /** As above; {@code script} is the file being run (saved before a Rerun), null for a Java launch. */
     private void streamRun(
             @Nullable String label,
@@ -2541,6 +2611,8 @@ final class RunCoordinator {
         if (terminalRun) {
             terminalRun = false;
             runtimeCommand = null;
+            pendingCommandLine = false;
+            pendingRuntimeSource = null;
             pendingDeploySummary = null; // the console's extras do not apply to a Terminal tab
             pendingOutputWatcher = null;
             pendingRerun = null;
@@ -2548,6 +2620,10 @@ final class RunCoordinator {
             return;
         }
         lastRunScript = script;
+        boolean commandLineFirst = pendingCommandLine;
+        pendingCommandLine = false;
+        String runtimeSource = pendingRuntimeSource;
+        pendingRuntimeSource = null;
         String reason = launchReason;
         launchReason = "";
         TestStream tests = pendingTestStream;
@@ -2576,7 +2652,7 @@ final class RunCoordinator {
         }
         List<String> runtime = runtimeCommand != null ? runtimeCommand : command;
         runtimeCommand = null;
-        showRuntime(runtime, workingDir, env);
+        showRuntime(runtime, workingDir, env, runtimeSource);
         host.setStatus(tr("status.run.started", label));
         service.runInDir(workingDir, command, env, new RunService.Listener() {
             @Override
@@ -2585,7 +2661,7 @@ final class RunCoordinator {
                 if (deploySummary != null) {
                     panel().showCommandLine(deploySummary); // started() cleared it: the deploy comes first
                 }
-                if (script != null || tests != null) {
+                if (script != null || tests != null || commandLineFirst) {
                     // Which interpreter ran, and how: the first thing to check when a script behaves oddly.
                     panel().showCommandLine(commandLine);
                 }
@@ -2593,7 +2669,10 @@ final class RunCoordinator {
 
             @Override
             public void onOutput(String line, boolean stderr) {
-                panel().appendOutput(line, stderr);
+                Boolean shown = tests == null ? Boolean.valueOf(stderr) : tests.console(line, stderr);
+                if (shown != null) {
+                    panel().appendOutput(line, shown);
+                }
                 if (tests != null) {
                     tests.line(line, stderr);
                 }
@@ -2604,7 +2683,10 @@ final class RunCoordinator {
 
             @Override
             public void onPartialOutput(String text, boolean stderr) {
-                panel().appendPartialOutput(text, stderr);
+                Boolean shown = tests == null ? Boolean.valueOf(stderr) : tests.console(text, stderr);
+                if (shown != null) {
+                    panel().appendPartialOutput(text, shown);
+                }
             }
 
             @Override
@@ -2688,12 +2770,16 @@ final class RunCoordinator {
      * the way the launch runs it (its folder, so its host, and its environment). An answer that arrives after
      * a newer run started is dropped.
      */
-    private void showRuntime(List<String> command, @Nullable Path workingDir, java.util.Map<String, String> env) {
+    private void showRuntime(
+            List<String> command,
+            @Nullable Path workingDir,
+            java.util.Map<String, String> env,
+            @Nullable String source) {
         long generation = ++runtimeGeneration;
         panel().setRuntime(null);
         com.editora.run.RuntimeProbe.probe(command, workingDir, env, version -> {
             if (generation == runtimeGeneration) {
-                panel().setRuntime(version);
+                panel().setRuntime(NodeRunLauncher.withSource(version, source));
             }
         });
     }

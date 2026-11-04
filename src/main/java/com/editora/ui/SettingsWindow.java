@@ -5429,6 +5429,20 @@ public class SettingsWindow {
                 tr("settings.buildBeforeRun.hint"),
                 "java build before run debug compile maven gradle launch main class stale");
         for (BuildTool bt : BuildTool.enabled()) {
+            if (bt == BuildTool.NPM) {
+                // One Node.js for Run, npm scripts, Debug, the language servers and HTTP scripts (review E102):
+                // beside npm, never greyed out by another feature's switch.
+                Card nodeCard = card(p, "Node.js");
+                nodePathField.setPrefWidth(PATH_FIELD_WIDTH);
+                String node = tr("settings.debug.nodePath");
+                controlRow(
+                        nodeCard,
+                        Category.BUILD_TOOLS,
+                        node,
+                        tr("settings.debug.nodePath.hint"),
+                        new HBox(6, nodePathField, browseButton(node, nodePathField)),
+                        "node nodejs node.js runtime nvm nvmrc version run debug npm typescript executable path");
+            }
             Card c = card(p, bt.displayName());
             String kw = bt.id() + " build tool project detected enable command override toolbar";
             CheckBox enable = buildToolChecks.get(bt);
@@ -7078,16 +7092,11 @@ public class SettingsWindow {
                         "debug java exception breakpoint class type filter caught uncaught");
             }
             if ("javascript".equals(dbg.id())) {
-                // E6: one Node.js for everything Node in Editora, here beside the debugger that needs it.
-                nodePathField.setPrefWidth(PATH_FIELD_WIDTH);
-                String node = tr("settings.debug.nodePath");
-                controlRow(
-                        c,
-                        Category.DEBUG,
-                        node,
-                        tr("settings.debug.nodePath.hint"),
-                        new HBox(6, nodePathField, browseButton(node, nodePathField)),
-                        "node nodejs node.js runtime nvm nvmrc version run debug npm typescript executable path");
+                // The one Node.js setting lives on Build Tools, editable with debugging off (review E102).
+                Hyperlink nodeLink = new Hyperlink(tr("settings.debug.nodePathLink"));
+                nodeLink.setWrapText(true);
+                nodeLink.setOnAction(e -> sidebar.getSelectionModel().select(Category.BUILD_TOOLS));
+                cardRow(c, Category.DEBUG, nodeLink, "node nodejs node.js runtime path debug build tools");
             }
             // Install fetches what this language's support lacks — the adapter included — keyed on the adapter.
             ToolStatusRow status = new ToolStatusRow(

@@ -270,4 +270,18 @@ class NodeRuntimesTest {
         assertEquals("20", NodeRuntimes.firstLine("\n# comment\n  20  \nlts/*\n"));
         assertEquals("", NodeRuntimes.firstLine("\n\n"));
     }
+
+    @Test
+    void aMonoreposPinAboveTheMembersPackageJsonCounts() throws Exception {
+        Path home = tmp.resolve("home");
+        Path want = nvmVersion(home, "v20.11.1");
+        Path repo = tmp.resolve("repo");
+        file(repo.resolve("package.json"));
+        Files.writeString(repo.resolve(".nvmrc"), "20");
+        file(repo.resolve("packages/a/package.json"));
+        Path script = file(repo.resolve("packages/a/src/x.js"));
+        assertEquals(
+                List.of(want.toString()),
+                NodeRuntimes.resolve(in(script, repo, "", "", home, null)).command());
+    }
 }

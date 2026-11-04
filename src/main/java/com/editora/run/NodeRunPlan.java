@@ -24,7 +24,7 @@ import org.jspecify.annotations.Nullable;
  *   <li><b>TypeScript.</b> Plain Node strips types from 22.18 / 23.6 on; an older Node gets {@link #NEEDS_STRIP}
  *       instead of a confusing syntax error. An unknown version runs (the program says what is wrong).</li>
  *   <li><b>Flags.</b> {@code --enable-source-maps}, so a compiled file's stack names its source; a test file
- *       gets {@code --test --test-reporter=tap}, which Test Results reads.</li>
+ *       gets {@code --test} with {@link #TEST_REPORTERS} (TAP for Test Results, spec for the console).</li>
  *   <li><b>Environment.</b> {@code FORCE_COLOR=1} — the Run console draws colours — unless {@code NO_COLOR} is
  *       set; the shebang's {@code env NAME=value} lines; the configuration's variables last (they win).</li>
  * </ul>
@@ -44,6 +44,21 @@ public record NodeRunPlan(
     public static final String NEEDS_STRIP = "status.run.nodeNeedsTypeStripping";
 
     public static final String SOURCE_MAPS = "--enable-source-maps";
+
+    /**
+     * A test run's two reporters: TAP on stdout, which Test Results reads, and node's readable spec report on
+     * stderr, which the Run console shows instead of TAP's YAML (review C108).
+     */
+    public static final List<String> TEST_REPORTERS = List.of(
+            "--test-reporter=tap",
+            "--test-reporter-destination=stdout",
+            "--test-reporter=spec",
+            "--test-reporter-destination=stderr");
+
+    /** Whether {@code argv} is a test run with {@link #TEST_REPORTERS} (TAP on stdout, spec on stderr). */
+    public static boolean splitReporters(List<String> argv) {
+        return argv != null && argv.containsAll(TEST_REPORTERS);
+    }
 
     /** The editor languages Run File treats as Node programs (JSX/TSX need a bundler: not here). */
     public static boolean isNodeLanguage(String language) {
@@ -117,6 +132,8 @@ public record NodeRunPlan(
      * @param noColor whether {@code NO_COLOR} is set where the program runs
      * @param userEnv a run configuration's variables (they win)
      * @param existsHere for a run on this machine, whether an absolute interpreter path exists; null on a host
+     * @param loaderFlags Node flags that load a TypeScript runner ({@code --import tsx}, {@link TsRunRoute}); with
+     *     them a TypeScript file runs on any Node tsx supports, so the type-stripping check is skipped
      */
     public record Request(
             String target,
@@ -130,11 +147,43 @@ public record NodeRunPlan(
             boolean test,
             boolean noColor,
             Map<String, String> userEnv,
-            @Nullable Predicate<String> existsHere) {
+            @Nullable Predicate<String> existsHere,
+            List<String> loaderFlags) {
         public Request {
             args = args == null ? List.of() : List.copyOf(args);
             nodeOptions = nodeOptions == null ? List.of() : List.copyOf(nodeOptions);
             userEnv = userEnv == null ? Map.of() : userEnv;
+            loaderFlags = loaderFlags == null ? List.of() : List.copyOf(loaderFlags);
+        }
+
+        /** Without loader flags: plain Node. */
+        public Request(
+                String target,
+                String fileName,
+                List<String> args,
+                @Nullable String firstLine,
+                NodeRuntimes.NodeRuntime runtime,
+                boolean fromConfiguration,
+                @Nullable String version,
+                List<String> nodeOptions,
+                boolean test,
+                boolean noColor,
+                Map<String, String> userEnv,
+                @Nullable Predicate<String> existsHere) {
+            this(
+                    target,
+                    fileName,
+                    args,
+                    firstLine,
+                    runtime,
+                    fromConfiguration,
+                    version,
+                    nodeOptions,
+                    test,
+                    noColor,
+                    userEnv,
+                    existsHere,
+                    List.of());
         }
     }
 
@@ -163,7 +212,7 @@ public record NodeRunPlan(
             flags.clear();
             flags.addAll(r.nodeOptions());
         }
-        if (!otherRunner && isTypeScript(r.fileName()) && r.version() != null) {
+        if (!otherRunner && r.loaderFlags().isEmpty() && isTypeScript(r.fileName()) && r.version() != null) {
             if (NodeRuntimes.parseVersion(r.version()).isPresent() && !NodeRuntimes.stripsTypes(r.version())) {
                 return new NodeRunPlan(List.of(), Map.of(), null, NEEDS_STRIP);
             }
@@ -174,9 +223,10 @@ public record NodeRunPlan(
                 argv.add(SOURCE_MAPS);
             }
             argv.addAll(flags);
+            argv.addAll(r.loaderFlags());
             if (r.test()) {
                 argv.add("--test");
-                argv.add("--test-reporter=tap");
+                argv.addAll(TEST_REPORTERS);
             }
         }
         argv.add(r.target());

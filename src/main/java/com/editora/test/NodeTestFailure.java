@@ -93,6 +93,40 @@ public record NodeTestFailure(
                 suite);
     }
 
+    /**
+     * A file-level failure whose YAML says only {@code test failed}: its message is the first error line of the
+     * {@code #} diagnostics printed before it ({@code Error [ERR_MODULE_NOT_FOUND]: Cannot find module …}), its
+     * stack those lines; {@code yaml}'s location is kept.
+     */
+    public static NodeTestFailure fromDiagnostics(List<String> diagnostics, NodeTestFailure yaml) {
+        String message = null;
+        for (String d : diagnostics) {
+            String t = d.strip();
+            if (t.matches("^(?:[A-Z]\\w*)?(?:Error|Exception)\\b.*:.*") || t.startsWith("Error")) {
+                message = t;
+                break;
+            }
+        }
+        if (message == null) {
+            message = diagnostics.stream()
+                    .map(String::strip)
+                    .filter(t -> !t.isEmpty())
+                    .findFirst()
+                    .orElse(null);
+        }
+        StringBuilder stack = new StringBuilder();
+        for (String d : diagnostics) {
+            if (d.strip().startsWith("at ")) {
+                stack.append("    ").append(d.strip()).append('\n');
+            }
+        }
+        if (yaml.stack() != null) {
+            stack.insert(0, yaml.stack());
+        }
+        return new NodeTestFailure(
+                message, yaml.type(), stack.isEmpty() ? null : stack.toString(), yaml.file(), yaml.line(), false);
+    }
+
     /** The {@code key: value} pairs of a block, block scalars joined with newlines, quotes removed. */
     static Map<String, String> yamlValues(List<String> lines) {
         Map<String, String> out = new LinkedHashMap<>();

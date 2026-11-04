@@ -849,7 +849,7 @@ class DoctorCatalogFxTest {
 
         List<DoctorService.CheckSpec> specs = specs(host, ops);
         DoctorService.CheckSpec nodeSpec = spec(specs, "run.node");
-        assertEquals("debug", nodeSpec.placeholder().settingsKey(), "the Node.js field is on the Debugging page");
+        assertEquals("buildTools", nodeSpec.placeholder().settingsKey(), "the Node.js card is on Build Tools (E102)");
         DoctorCheck row = nodeSpec.probe().get();
         assertEquals(DoctorStatus.OK, row.status());
         assertEquals("v24.99.0 — " + node + " (Node.js setting)", row.detail());

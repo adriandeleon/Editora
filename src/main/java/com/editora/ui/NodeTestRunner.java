@@ -17,7 +17,8 @@ import static com.editora.i18n.Messages.tr;
 
 /**
  * Runs a Node.js test file's tests — the ▶ of a {@code *.test.js}, {@code *.spec.ts} or {@code test/…} file —
- * as {@code node --test --test-reporter=tap <file>} in the Run console, its results read into Test Results
+ * as {@code node --test <file>} with TAP on stdout (read into Test Results) and node's spec report on stderr (shown
+ * in the Run console)
  * (the spec reporter is read too, should a shebang or option change the reporter). Rerun, Rerun Failed and
  * Rerun This Test come back here and filter by the test's exact name ({@link NodeTestNames}).
  */
@@ -77,10 +78,17 @@ final class NodeTestRunner {
         boolean[] launchFailed = {false};
         TestResultParser[] parser = {null};
         List<String> sniff = new java.util.ArrayList<>();
+        // TAP on stdout for the tree, node's spec report on stderr for the console (review C108).
+        boolean split = com.editora.run.NodeRunPlan.splitReporters(ready.plan().argv());
         RunCoordinator.TestStream hooks = new RunCoordinator.TestStream() {
             @Override
+            public @Nullable Boolean console(String text, boolean stderr) {
+                return !split ? Boolean.valueOf(stderr) : stderr ? Boolean.FALSE : null;
+            }
+
+            @Override
             public void line(String text, boolean stderr) {
-                if (!shown[0]) {
+                if (!shown[0] || (split && stderr)) {
                     return;
                 }
                 if (parser[0] == null) {
@@ -165,9 +173,11 @@ final class NodeTestRunner {
     }
 
     private static List<String> names(List<TestNode> nodes) {
-        return nodes.stream()
+        List<String> names = nodes.stream()
                 .map(TestNode::methodName)
                 .filter(java.util.Objects::nonNull)
                 .toList();
+        // A row for a whole file (it failed to load) has no test name to filter by: rerun the file.
+        return names.stream().anyMatch(TapParser::isFileResult) ? List.of() : names;
     }
 }

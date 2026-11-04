@@ -3049,7 +3049,7 @@ final class DebugCoordinator {
                     }
                     var program = NodeDebugConfigs.fromRunPlan(
                             ready.plan().argv(),
-                            com.editora.process.ExecTargets.forPath(script).toTargetPath(script),
+                            ready.target(), // the compiled .js when that runs instead of a .ts
                             ready.plan().env(),
                             ready.dir());
                     if (program == null) {

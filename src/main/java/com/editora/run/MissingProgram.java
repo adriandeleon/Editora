@@ -1,6 +1,7 @@
 package com.editora.run;
 
 import java.util.Locale;
+import java.util.function.Predicate;
 
 import org.jspecify.annotations.Nullable;
 
@@ -54,6 +55,36 @@ public final class MissingProgram {
             case "bun", "bunx" -> new Message("status.run.bunMissing", name);
             default -> null;
         };
+    }
+
+    /**
+     * A run configuration's Interpreter when it names a file by its path and that file does not exist (a bare
+     * name is looked up on PATH at launch and reported then); else null.
+     */
+    public static @Nullable String missingInterpreter(@Nullable String interpreter, Predicate<String> isFile) {
+        if (interpreter == null || interpreter.isBlank()) {
+            return null;
+        }
+        String exe;
+        if (!interpreter.strip().matches(".*\\s.*")) {
+            exe = interpreter.strip(); // one word: taken as written (a Windows path's backslashes are not escapes)
+        } else {
+            try {
+                java.util.List<String> tokens = ProgramArgs.commandLine(interpreter.strip());
+                exe = tokens.isEmpty() ? "" : tokens.get(0);
+            } catch (IllegalArgumentException e) {
+                exe = interpreter.strip();
+            }
+        }
+        boolean path = exe.indexOf('/') >= 0 || exe.indexOf('\\') >= 0;
+        if (!path) {
+            return null;
+        }
+        try {
+            return isFile.test(exe) ? null : exe;
+        } catch (RuntimeException e) {
+            return exe;
+        }
     }
 
     /** A message key and its arguments. */
