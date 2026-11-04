@@ -154,6 +154,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Project Map: Emacs keys in sticky notes.** A sticky note on a preview card, and a folder's or file's note card,
+  now move the caret with the keymap's keys — `C-f`, `C-b`, `C-n`, `C-p`, `C-a`, `C-e`, `M-f`, `M-b` and the rest in
+  the Emacs keymap — as the Personal Notes box in the editor does. Only the text box's own keys used to work there
+  (on Windows and Linux `C-a` selected all).
 - **Project Map: cards open the way the map flows.** A new preview or declaration card opens past its row's column
   the way the map flows — right of it left to right, left of it right to left, below it top to bottom, above it bottom
   to top. With no room there it opens beside the column, level with its row; the map never pans for it. A file card's
