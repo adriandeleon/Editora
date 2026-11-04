@@ -460,8 +460,13 @@ final class IndexCoordinator {
             host.setStatus(tr("status.definition.noName"));
             return true;
         }
-        Symbol local = nearestDeclaration(
-                DeclarationScanner.scan(b.getContent(), b.getLanguage()), name, a.getCurrentParagraph());
+        // JavaScript/TypeScript: a parameter or local in an enclosing scope first, as a reader resolves it (A105).
+        int scoped =
+                com.editora.index.JsLocals.declarationOf(b.getContent(), a.getCaretPosition(), name, b.getLanguage());
+        Symbol local = scoped >= 0
+                ? localSymbol(b.getContent(), scoped, name)
+                : nearestDeclaration(
+                        DeclarationScanner.scan(b.getContent(), b.getLanguage()), name, a.getCurrentParagraph());
         if (local != null) {
             if (b.getPath() != null) {
                 ops.openAndGoto(b.getPath(), local.line(), local.column());
@@ -492,6 +497,17 @@ final class IndexCoordinator {
             }
         });
         return true;
+    }
+
+    /** A symbol at {@code offset} of {@code text}, for jumping to a declaration found by offset. */
+    private static Symbol localSymbol(String text, int offset, String name) {
+        int line = 0;
+        int lineStart = 0;
+        for (int i = text.indexOf('\n'); i >= 0 && i < offset; i = text.indexOf('\n', i + 1)) {
+            line++;
+            lineStart = i + 1;
+        }
+        return new Symbol(name, com.editora.index.SymbolKind.VARIABLE, line, offset - lineStart, "");
     }
 
     /**
