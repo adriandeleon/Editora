@@ -548,15 +548,19 @@ public final class SearchService {
         return DependencyDirs.namedBy(include) ? loaded.withoutDependencyPruning() : loaded;
     }
 
-    /** Collects the on-disk candidates through the shared pruned walk; true when the tree was not fully covered. */
-    private boolean collect(
+    /**
+     * Collects the on-disk candidates through the shared pruned walk; true when the tree was not fully covered
+     * (the file cap, or a folder that could not be read). A file over {@link #MAX_FILE_BYTES} is skipped without
+     * counting as a cut: ripgrep's {@code --max-filesize} skips it the same way, and a built {@code dist/*.min.js}
+     * made every walker search in a JavaScript project end "(truncated)" with nothing left out (JS review E106).
+     */
+    static boolean collect(
             Path root,
             Set<Path> out,
             GitignoreFilter gitignore,
             List<String> exclude,
             Set<Path> openKeys,
             BooleanSupplier cancelled) {
-        boolean[] oversize = {false};
         ProjectWalk.Outcome walked = ProjectWalk.walk(
                 root,
                 new ProjectWalk.Options(MAX_DEPTH, MAX_FILES_SCANNED, gitignore, cancelled),
@@ -575,14 +579,13 @@ public final class SearchService {
                             return ProjectWalk.Verdict.SKIP; // in-memory content uses no disk budget
                         }
                         if (attrs.size() > MAX_FILE_BYTES) {
-                            oversize[0] = true;
                             return ProjectWalk.Verdict.SKIP;
                         }
                         out.add(file);
                         return ProjectWalk.Verdict.ACCEPT;
                     }
                 });
-        return walked.truncated() || oversize[0] || walked.unreadable() > 0;
+        return walked.truncated() || walked.unreadable() > 0;
     }
 
     private boolean cancelled(Channel channel, long generation) {
