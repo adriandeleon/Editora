@@ -99,7 +99,12 @@ class NodeRunPlanTest {
     void aTestFileRunsNodeTestWithTheTapReporterAndNoProgramArguments() {
         NodeRunPlan plan = NodeRunPlan.plan(request("a.test.js", null, null, true));
         assertEquals(
-                List.of("/nvm/v24/bin/node", "--enable-source-maps", "--test", "--test-reporter=tap", "/p/a.test.js"),
+                java.util.stream.Stream.of(
+                                List.of("/nvm/v24/bin/node", "--enable-source-maps", "--test"),
+                                NodeRunPlan.TEST_REPORTERS,
+                                List.of("/p/a.test.js"))
+                        .flatMap(List::stream)
+                        .toList(),
                 plan.argv());
     }
 

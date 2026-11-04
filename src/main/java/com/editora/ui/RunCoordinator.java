@@ -273,6 +273,14 @@ final class RunCoordinator {
     interface TestStream {
         void line(String text, boolean stderr);
 
+        /**
+         * How the Run console shows a line: as stderr ({@code true}), as stdout ({@code false}), or not at all
+         * ({@code null}) — a node:test run reads TAP on stdout and shows the readable spec report from stderr.
+         */
+        default @Nullable Boolean console(String text, boolean stderr) {
+            return stderr;
+        }
+
         /** The run ended: its exit code, or {@code -1} when it was stopped or could not start. */
         void exit(int code);
     }
@@ -2627,7 +2635,10 @@ final class RunCoordinator {
 
             @Override
             public void onOutput(String line, boolean stderr) {
-                panel().appendOutput(line, stderr);
+                Boolean shown = tests == null ? Boolean.valueOf(stderr) : tests.console(line, stderr);
+                if (shown != null) {
+                    panel().appendOutput(line, shown);
+                }
                 if (tests != null) {
                     tests.line(line, stderr);
                 }
@@ -2638,7 +2649,10 @@ final class RunCoordinator {
 
             @Override
             public void onPartialOutput(String text, boolean stderr) {
-                panel().appendPartialOutput(text, stderr);
+                Boolean shown = tests == null ? Boolean.valueOf(stderr) : tests.console(text, stderr);
+                if (shown != null) {
+                    panel().appendPartialOutput(text, shown);
+                }
             }
 
             @Override

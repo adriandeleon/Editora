@@ -24,7 +24,7 @@ import org.jspecify.annotations.Nullable;
  *   <li><b>TypeScript.</b> Plain Node strips types from 22.18 / 23.6 on; an older Node gets {@link #NEEDS_STRIP}
  *       instead of a confusing syntax error. An unknown version runs (the program says what is wrong).</li>
  *   <li><b>Flags.</b> {@code --enable-source-maps}, so a compiled file's stack names its source; a test file
- *       gets {@code --test --test-reporter=tap}, which Test Results reads.</li>
+ *       gets {@code --test} with {@link #TEST_REPORTERS} (TAP for Test Results, spec for the console).</li>
  *   <li><b>Environment.</b> {@code FORCE_COLOR=1} — the Run console draws colours — unless {@code NO_COLOR} is
  *       set; the shebang's {@code env NAME=value} lines; the configuration's variables last (they win).</li>
  * </ul>
@@ -44,6 +44,21 @@ public record NodeRunPlan(
     public static final String NEEDS_STRIP = "status.run.nodeNeedsTypeStripping";
 
     public static final String SOURCE_MAPS = "--enable-source-maps";
+
+    /**
+     * A test run's two reporters: TAP on stdout, which Test Results reads, and node's readable spec report on
+     * stderr, which the Run console shows instead of TAP's YAML (review C108).
+     */
+    public static final List<String> TEST_REPORTERS = List.of(
+            "--test-reporter=tap",
+            "--test-reporter-destination=stdout",
+            "--test-reporter=spec",
+            "--test-reporter-destination=stderr");
+
+    /** Whether {@code argv} is a test run with {@link #TEST_REPORTERS} (TAP on stdout, spec on stderr). */
+    public static boolean splitReporters(List<String> argv) {
+        return argv != null && argv.containsAll(TEST_REPORTERS);
+    }
 
     /** The editor languages Run File treats as Node programs (JSX/TSX need a bundler: not here). */
     public static boolean isNodeLanguage(String language) {
@@ -211,7 +226,7 @@ public record NodeRunPlan(
             argv.addAll(r.loaderFlags());
             if (r.test()) {
                 argv.add("--test");
-                argv.add("--test-reporter=tap");
+                argv.addAll(TEST_REPORTERS);
             }
         }
         argv.add(r.target());

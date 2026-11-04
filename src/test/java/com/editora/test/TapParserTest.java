@@ -194,4 +194,55 @@ class TapParserTest {
         TestNode root = parse("\u001B[32mok 1 - green\u001B[0m");
         assertEquals(1, root.childById(TapParser.SUITE).children().size());
     }
+
+    /** JS review C103: a file that fails to load says why, under its own name. */
+    @Test
+    void aFileThatFailsToLoadShowsItsErrorUnderItsName() {
+        TestNode root = parse(
+                "TAP version 13",
+                "# node:internal/modules/esm/resolve:271",
+                "#     throw new ERR_MODULE_NOT_FOUND(",
+                "# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/p/src/greet.js' imported from /p/src/a.test.ts",
+                "#     at finalizeResolution (node:internal/modules/esm/resolve:271:11)",
+                "#     at \\#cachedDefaultResolve (node:internal/modules/esm/loader:701:20)",
+                "# Node.js v24.18.1",
+                "# Subtest: /p/src/a.test.ts",
+                "not ok 1 - /p/src/a.test.ts",
+                "  ---",
+                "  duration_ms: 48.1",
+                "  type: 'test'",
+                "  location: '/p/src/a.test.ts:1:1'",
+                "  failureType: 'testCodeFailure'",
+                "  error: 'test failed'",
+                "  code: 'ERR_TEST_FAILURE'",
+                "  ...",
+                "1..1",
+                "# tests 1",
+                "# fail 1");
+        TestNode suite = root.childById(TapParser.SUITE);
+        assertEquals(1, suite.children().size());
+        TestNode file = suite.children().get(0);
+        assertEquals("a.test.ts", file.displayName());
+        assertEquals(TestStatus.FAILED, file.status());
+        assertTrue(
+                file.failureMessage().startsWith("Error [ERR_MODULE_NOT_FOUND]: Cannot find module"),
+                file.failureMessage());
+        assertTrue(file.stackTrace().contains("at #cachedDefaultResolve"), file.stackTrace());
+        assertTrue(TapParser.isFileResult("/p/src/a.test.ts"));
+        assertTrue(TapParser.isFileResult("C:\\p\\a.test.js"));
+        assertFalse(TapParser.isFileResult("adds a.js"));
+    }
+
+    @Test
+    void aTestsOwnLogLinesAreNotTakenForAnError() {
+        TestNode root = parse(
+                "TAP version 13",
+                "# log from a test",
+                "# Subtest: fails",
+                "not ok 1 - fails",
+                "  ---",
+                "  error: 'boom'",
+                "  ...");
+        assertEquals("boom", root.childById(TapParser.SUITE).children().get(0).failureMessage());
+    }
 }
