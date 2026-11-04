@@ -90,6 +90,35 @@ class TypeScriptServerTest {
     }
 
     @Test
+    void editorasOwnTypescriptComesBeforeTheOneBesideTheServer(@TempDir Path dir) throws Exception {
+        Path global = dir.resolve("lib/node_modules");
+        Path cli = global.resolve("typescript-language-server/lib/cli.mjs");
+        Files.createDirectories(cli.getParent());
+        Files.writeString(cli, "");
+        Path beside = Files.createDirectories(global.resolve("typescript/lib"));
+        Files.writeString(beside.getParent().resolve("package.json"), "{ \"version\": \"6.0.3\" }");
+        Files.writeString(beside.resolve("tsserver.js"), "");
+        var onBeside = TypeScriptServer.sdk(cli, null);
+        assertEquals(beside.resolve("tsserver.js"), onBeside.tsserver());
+        assertFalse(onBeside.own());
+        assertFalse(onBeside.suitable(), "TypeScript 6 leaves @types/node out (JS review B101)");
+        Path own = Files.createDirectories(dir.resolve("cfg/plugins/lsp/typescript/node_modules/typescript/lib"));
+        Files.writeString(own.getParent().resolve("package.json"), "{ \"version\": \"5.9.3\" }");
+        Files.writeString(own.resolve("tsserver.js"), "");
+        var onOwn = TypeScriptServer.sdk(cli, own.resolve("tsserver.js"));
+        assertEquals(own.resolve("tsserver.js"), onOwn.tsserver());
+        assertTrue(onOwn.own());
+        assertTrue(onOwn.suitable());
+        assertEquals("6.0.3", onOwn.besideVersion());
+        // a TypeScript 7 beside the server and no own copy: nothing to run
+        Files.delete(beside.resolve("tsserver.js"));
+        assertFalse(TypeScriptServer.sdk(cli, null).found());
+        // the start choice takes the own one even then (LspManager.typeScriptChoice passes it as the installed one)
+        var choice = TypeScriptServer.choose(null, null, own.resolve("tsserver.js"), "7.0.2", false);
+        assertEquals(TypeScriptServer.Outcome.INSTALLED, choice.outcome());
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void initializationOptionsNameTheTsserverAndTurnTypeAcquisitionOffByDefault() {
         Map<String, Object> o = TypeScriptServer.initializationOptions(INSTALLED, false, false);

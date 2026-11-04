@@ -121,6 +121,37 @@ public final class TypeScriptServer {
         return executable == null || executable.getParent() == null ? null : findTsserver(executable.getParent(), null);
     }
 
+    /**
+     * The TypeScript the server runs outside a trusted folder of its own, as Settings and Doctor show it:
+     * {@code tsserver} (null: none it can run), its {@code version}, whether it is Editora's own copy ({@code own}),
+     * and the version of the {@code typescript} package beside the server ({@code besideVersion}, "" when none),
+     * which may have no tsserver (TypeScript 7).
+     */
+    public record Sdk(@Nullable Path tsserver, String version, boolean own, String besideVersion) {
+        /** Whether the server can start on it. */
+        public boolean found() {
+            return tsserver != null;
+        }
+
+        /** Whether it is one that leaves the server as it should be: a tsserver and TypeScript 5's types (B101). */
+        public boolean suitable() {
+            return com.editora.install.TypeScriptServerInstall.suitable(version, tsserver != null);
+        }
+    }
+
+    /**
+     * {@link Sdk} for the server whose executable (links followed) is {@code executable}, with Editora's own
+     * TypeScript ({@code ownTsserver}, null: not installed) first, as {@link LspManager} chooses it. File reads.
+     */
+    public static Sdk sdk(@Nullable Path executable, @Nullable Path ownTsserver) {
+        String beside = installedPackageVersion(executable);
+        if (ownTsserver != null) {
+            return new Sdk(ownTsserver, sdkVersion(ownTsserver), true, beside);
+        }
+        Path tsserver = installedTsserver(executable);
+        return new Sdk(tsserver, tsserver == null ? "" : sdkVersion(tsserver), false, beside);
+    }
+
     /** The version of the {@code typescript} package beside the server (any version, tsserver or not), or "". */
     public static String installedPackageVersion(@Nullable Path executable) {
         if (executable == null || executable.getParent() == null) {

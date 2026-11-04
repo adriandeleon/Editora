@@ -1044,7 +1044,8 @@ final class LspCoordinator {
                 refusal.kind() == com.editora.lsp.StartRefusal.Kind.NO_JAVA_FOR_SERVER
                         ? serverProgram(serverId)
                         : serverLabel(serverId),
-                refusal);
+                refusal,
+                ops.lspProjectRoot() != null);
         if (refusal.kind() == com.editora.lsp.StartRefusal.Kind.XML_LOADS_MAVEN) {
             refusedServers.put(serverId, said); // Doctor and Settings say so too, not "found" and "OK" (review 4, A32)
         }
@@ -1056,15 +1057,18 @@ final class LspCoordinator {
     /** Servers Editora would not start with their command (the lemminx-maven guard), by id → what the status said. */
     private final Map<String, String> refusedServers = new java.util.HashMap<>();
 
-    /** The status-line words for a {@link com.editora.lsp.StartRefusal}. */
-    static String startRefusedMessage(String server, com.editora.lsp.StartRefusal refusal) {
+    /** The status-line words for a {@link com.editora.lsp.StartRefusal}; only a project can be trusted (B111). */
+    static String startRefusedMessage(String server, com.editora.lsp.StartRefusal refusal, boolean project) {
         return switch (refusal.kind()) {
             case SERVER_REFUSED -> tr("status.lsp.startRefused", server, refusal.detail());
             case NO_TYPESCRIPT ->
                 refusal.detail().isBlank()
                         ? tr("status.lsp.tsNoSdk")
                         : tr("status.lsp.tsSdkWithoutTsserver", refusal.detail());
-            case UNTRUSTED_TYPESCRIPT -> tr("status.lsp.tsSdkUntrusted", tr("command.lsp.trustProjectSettings"));
+            case UNTRUSTED_TYPESCRIPT ->
+                project
+                        ? tr("status.lsp.tsSdkUntrusted", tr("command.lsp.trustProjectSettings"))
+                        : tr("status.lsp.tsSdkUntrustedNoProject");
             case NO_JAVA_FOR_SERVER -> tr("status.lsp.javaTooOld", server, refusal.detail());
             case XML_LOADS_MAVEN -> tr("status.lsp.xmlLoadsMaven", server);
         };
@@ -2006,6 +2010,9 @@ final class LspCoordinator {
             String own = com.editora.install.MavenServerInstall.effectiveCommand(raw, configDir);
             return own.isBlank() ? raw : com.editora.lsp.JvmServerCommand.withJdk(own, jdk);
         }
+        if (com.editora.install.TypeScriptServerInstall.SERVER_ID.equals(serverId)) {
+            return com.editora.install.TypeScriptServerInstall.effectiveCommand(raw, configDir); // JS review B104
+        }
         return "xml".equals(serverId)
                 ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir, jdk)
                 : com.editora.install.WebServerInstall.effectiveCommand(serverId, raw, configDir); // HTML A2
@@ -2169,6 +2176,7 @@ final class LspCoordinator {
         lspManager.setTypeScriptSettings(s.isInlayHints(), s.isCodeLens());
         com.editora.config.ConfigManager config = ops.config();
         lspManager.setLooseRoot(config == null ? null : config.getConfigDir().resolve(LOOSE_ROOT));
+        lspManager.setOwnTypeScriptConfigDir(config == null ? null : config.getConfigDir()); // JS review B101
     }
 
     /** The shared root of loose JavaScript/TypeScript (and XML) files, under the config folder. */

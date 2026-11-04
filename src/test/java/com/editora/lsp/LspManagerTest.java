@@ -167,6 +167,17 @@ class LspManagerTest {
         assertNull(LspManager.initOptionsFor("astro", List.of()), "no SDK, no options: the server is not started");
     }
 
+    /** Editora's own TypeScript (never a global one npm -g replaced) serves astro-ls in an untrusted folder (B104). */
+    @Test
+    void editorasOwnTypescriptSdkServesAstroWhereTheFolderIsNotTrusted() throws Exception {
+        java.nio.file.Path folder = java.nio.file.Files.createDirectories(tempDir.resolve("site"));
+        java.nio.file.Path own = java.nio.file.Files.createDirectories(tempDir.resolve("own/lib"));
+        assertEquals(own, LspManager.astroTypeScriptSdk(folder, null, List.of(), own));
+        // a trusted folder's own SDK still comes first
+        java.nio.file.Path project = typeScriptSdkIn(folder, "typescript.js");
+        assertEquals(project, LspManager.astroTypeScriptSdk(folder, folder, List.of(), own));
+    }
+
     /** astro-ls runs the JavaScript in the SDK directory, so an untrusted folder must not supply it. */
     @Test
     void anUntrustedFolderDoesNotSupplyTheAstroTypeScriptSdk() throws Exception {

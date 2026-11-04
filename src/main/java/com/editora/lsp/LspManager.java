@@ -274,6 +274,14 @@ public final class LspManager {
     public @Nullable Path looseRoot() {
         return looseRoot;
     }
+
+    /** The config dir whose own TypeScript (TypeScriptServerInstall) the TypeScript and Astro servers prefer. */
+    private volatile @Nullable Path ownTypeScriptConfigDir;
+
+    /** Sets the config dir Editora's own TypeScript is installed under (JS review B101); null: none. */
+    public void setOwnTypeScriptConfigDir(@Nullable Path configDir) {
+        ownTypeScriptConfigDir = configDir;
+    }
     /** jdtls {@code initializationOptions.bundles} — the java-debug plugin jar(s) that enable debugging.
      *  Applied only to the java server, at {@code initialize}; empty = no debug bundle. */
     private volatile List<String> debugBundles = List.of();
@@ -2437,8 +2445,10 @@ public final class LspManager {
                 Platform.runLater(() -> onStartWithheld.accept(serverId, root));
                 return;
             }
+            Path ownTs = ownTypeScriptConfigDir;
             Path astroTsdk = ASTRO_SERVER_ID.equals(serverId) && !remote
-                    ? astroTypeScriptSdk(root, sdkCeiling, startCommand)
+                    ? astroTypeScriptSdk(
+                            root, sdkCeiling, startCommand, com.editora.install.TypeScriptServerInstall.ownSdk(ownTs))
                     : null;
             if (ASTRO_SERVER_ID.equals(serverId) && astroTsdk == null) {
                 // astro-ls cannot initialize without a TypeScript SDK, and the only one on offer belongs
@@ -2451,7 +2461,12 @@ public final class LspManager {
             }
             Path tsserver = null;
             if (TypeScriptServer.SERVER_ID.equals(serverId) && !remote) {
-                TypeScriptServer.Choice choice = typeScriptChoice(root, sdkCeiling, startCommand, loose);
+                TypeScriptServer.Choice choice = typeScriptChoice(
+                        root,
+                        sdkCeiling,
+                        startCommand,
+                        loose,
+                        com.editora.install.TypeScriptServerInstall.ownTsserver(ownTs));
                 if (!choice.starts()) {
                     // Not a crash and not worth retrying: the same start would only fail (or run a folder's code).
                     endHere(session);
@@ -6263,13 +6278,23 @@ public final class LspManager {
      */
     static TypeScriptServer.Choice typeScriptChoice(
             Path root, @Nullable Path trustedCeiling, List<String> command, boolean loose) {
+        return typeScriptChoice(root, trustedCeiling, command, loose, null);
+    }
+
+    /**
+     * {@link #typeScriptChoice(Path, Path, List, boolean)} where Editora's own TypeScript ({@code ownTsserver}, null:
+     * not installed) comes before the one beside the server: that one is often a TypeScript 6 or 7 a user installed
+     * globally, where Node.js types go missing or there is no tsserver at all (JS review B101).
+     */
+    static TypeScriptServer.Choice typeScriptChoice(
+            Path root, @Nullable Path trustedCeiling, List<String> command, boolean loose, @Nullable Path ownTsserver) {
         Path trusted = trustedCeiling == null || loose ? null : TypeScriptServer.findTsserver(root, trustedCeiling);
         Path any = loose ? null : TypeScriptServer.findTsserver(root, null);
         Path executable = typeScriptServerExecutable(command);
         return TypeScriptServer.choose(
                 trusted,
                 any,
-                TypeScriptServer.installedTsserver(executable),
+                ownTsserver != null ? ownTsserver : TypeScriptServer.installedTsserver(executable),
                 TypeScriptServer.installedPackageVersion(executable),
                 loose);
     }
@@ -6351,11 +6376,20 @@ public final class LspManager {
      * "can't find TypeScript" error; an untrusted one gets {@code null} — the server is not started.
      */
     static @Nullable Path astroTypeScriptSdk(Path root, @Nullable Path trustedCeiling, List<String> command) {
+        return astroTypeScriptSdk(root, trustedCeiling, command, null);
+    }
+
+    /** As above, with Editora's own TypeScript SDK ({@code ownSdk}, null: none) before the one beside astro-ls (B104). */
+    static @Nullable Path astroTypeScriptSdk(
+            Path root, @Nullable Path trustedCeiling, List<String> command, @Nullable Path ownSdk) {
         if (trustedCeiling != null) {
             Path projectSdk = findTypeScriptSdk(root, trustedCeiling);
             if (projectSdk != null) {
                 return projectSdk;
             }
+        }
+        if (ownSdk != null) {
+            return ownSdk;
         }
         if (command != null && !command.isEmpty()) {
             List<String> resolved = ProcessRunner.resolveExecutable(command);
