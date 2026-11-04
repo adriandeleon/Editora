@@ -1329,9 +1329,17 @@ public final class InstallService {
         }
     }
 
+    /** The SHA-256 a js-debug tarball must have ({@link InstallCatalog#JS_DEBUG_SHA256}); a test supplies its own. */
+    private @Nullable String jsDebugSha256 = InstallCatalog.JS_DEBUG_SHA256;
+
+    /** Test seam: the checksum a test's own js-debug tarball has. */
+    void setJsDebugSha256ForTest(@Nullable String sha256) {
+        this.jsDebugSha256 = sha256;
+    }
+
     private void installTarball(Step s, Path configDir) throws Exception {
         byte[] tgz = download(resolveDownloadUrl(s));
-        String refused = InstallCatalog.checksumProblem(s.id(), tgz, InstallCatalog.JS_DEBUG_SHA256);
+        String refused = InstallCatalog.checksumProblem(s.id(), tgz, jsDebugSha256);
         if (refused != null) {
             throw new InstallException(refused);
         }

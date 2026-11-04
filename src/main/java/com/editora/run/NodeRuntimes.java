@@ -54,7 +54,6 @@ public final class NodeRuntimes {
         PATH
     }
 
-    /** A resolved Node.js: {@code command} is the argv prefix (the executable, then any arguments given to it). */
     /**
      * A resolved Node.js.
      *

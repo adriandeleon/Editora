@@ -148,13 +148,6 @@ public final class RootResolver {
     }
 
     /**
-     * The outermost directory of the contiguous chain of {@code marker}-bearing folders that {@code root}
-     * belongs to: while the parent folder also holds {@code marker} (and is neither too broad nor outside
-     * {@code projectRoot}, when given and {@code root} lies in it), step up. A Maven reactor's module pom thus resolves to the reactor
-     * root — the same "contiguous chain" {@code MavenReactor} uses — and one server serves every module
-     * (Maven review C11). {@code root} itself is returned when it has no marker or no marker-bearing parent.
-     */
-    /**
      * The TypeScript server's root for a file whose markers chose {@code root}: widened to the outermost folder
      * above it that is a JS monorepo's root — a {@code package.json} with {@code "workspaces"}, a {@code
      * pnpm-workspace.yaml}, or a {@code tsconfig.json} with {@code "references"} — never to the home folder or above,
@@ -216,6 +209,13 @@ public final class RootResolver {
         }
     }
 
+    /**
+     * The outermost directory of the contiguous chain of {@code marker}-bearing folders that {@code root}
+     * belongs to: while the parent folder also holds {@code marker} (and is neither too broad nor outside
+     * {@code projectRoot}, when given and {@code root} lies in it), step up. A Maven reactor's module pom thus resolves to the reactor
+     * root — the same "contiguous chain" {@code MavenReactor} uses — and one server serves every module
+     * (Maven review C11). {@code root} itself is returned when it has no marker or no marker-bearing parent.
+     */
     public static Path outermostContiguous(Path root, String marker, @Nullable Path projectRoot) {
         String home = System.getProperty("user.home");
         return outermostContiguous(root, marker, projectRoot, home == null || home.isBlank() ? null : Path.of(home));

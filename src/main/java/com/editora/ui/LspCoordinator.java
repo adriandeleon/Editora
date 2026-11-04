@@ -2359,7 +2359,6 @@ final class LspCoordinator {
         return true;
     }
 
-    /** Everything a re-configure depends on: the project's effective commands and enables, as one string. */
     /** What a crashed, refused or blocked server may have lacked; only its change retries them ({@link #applySupport}). */
     private String troubleSignature() {
         com.editora.config.ConfigManager config = ops.config();
@@ -2372,6 +2371,7 @@ final class LspCoordinator {
 
     private @Nullable String appliedTrouble;
 
+    /** Everything a re-configure depends on: the project's effective commands and enables, as one string. */
     private String projectOverrideSignature() {
         StringBuilder signature = new StringBuilder();
         for (String serverId : LspServerCommands.SERVER_IDS) {

@@ -897,10 +897,11 @@ compose.yaml
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "tsc && node dist/index.js",
-    "test": "tsc && node --test \"dist/**/*.test.js\""
+    "start": "tsx src/index.ts",
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "devDependencies": {
+    "tsx": "^4.20.0",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
   }

@@ -148,7 +148,6 @@ public final class AutoClose {
         };
     }
 
-    /** Whether typing a quote should auto-insert its pair (avoid contractions / mid-word / closings). */
     /**
      * Whether an opening bracket typed before {@code next} gets its closer: at the end of the text or a line,
      * before whitespace, a closer, a separator or a quote ({@code ; : . , = } ] ) >}, and the closing quote of
@@ -159,6 +158,7 @@ public final class AutoClose {
         return next == 0 || Character.isWhitespace(next) || ";:.,=}])>\"'`".indexOf(next) >= 0;
     }
 
+    /** Whether typing a quote should auto-insert its pair (avoid contractions / mid-word / closings). */
     private static boolean shouldPairQuote(char prev, char next, char quote) {
         if (Character.isLetterOrDigit(prev) || prev == quote) {
             return false; // e.g. don't, identifier", or closing an existing string
