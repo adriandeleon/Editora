@@ -75,6 +75,7 @@ import com.editora.editor.highlight.CsvRainbow;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.HighlightDirty;
 import com.editora.editor.highlight.HighlightPass;
+import com.editora.editor.highlight.JsxContext;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.editor.http.HttpGutter;
 import com.editora.editor.http.HttpHooks;
@@ -1736,7 +1737,12 @@ public class EditorBuffer implements TabContent {
         // A collapsed header is commented together with its (then expanded) body.
         int[] span = folds.expandHeaderSpan(
                 a.getSelection().getStart(), a.getSelection().getEnd());
-        Commenter.Edit edit = Commenter.toggle(a.getText(), span[0], span[1], language, getPath());
+        int line = a.offsetToPosition(span[0], org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                .getMajor();
+        Commenter.Edit edit = JsxContext.lineInChildren(
+                        grammar, highlightLines, line, a.getParagraph(line).getText())
+                ? Commenter.toggle(a.getText(), span[0], span[1], JsxContext.COMMENT) // {/* */} in markup (A103)
+                : Commenter.toggle(a.getText(), span[0], span[1], language, getPath());
         if (edit == null) {
             return false;
         }
@@ -8806,7 +8812,11 @@ public class EditorBuffer implements TabContent {
         }
         applyCloserDedent(a, '\n'); // Enter finishes a closer keyword (fi, end, done): align it first
         caret = a.getCaretPosition();
-        Indenter.EnterEdit edit = IndentWindow.enterEdit(IndentKeys.doc(a), caret, language, indentUnit());
+        int par = a.getCurrentParagraph(); // Enter between JSX tags goes a level in (A104), else the usual rules
+        Indenter.EnterEdit jsx = JsxContext.enter(
+                grammar, highlightLines, par, a.getParagraph(par).getText(), a.getCaretColumn(), indentUnit());
+        Indenter.EnterEdit edit =
+                jsx != null ? jsx : IndentWindow.enterEdit(IndentKeys.doc(a), caret, language, indentUnit());
         a.replaceText(caret, caret, edit.insert());
         a.moveTo(caret + edit.caretOffset());
         a.requestFollowCaret();
