@@ -667,6 +667,8 @@ final class DoctorCoordinator {
                     "lsp")));
         }
         specs.add(pythonFormatterRow(needs)); // Format Document on .py works with the language server off too
+        specs.addAll(JsToolDoctorRows.rows( // the project's own ESLint, Prettier and Biome (they need no server)
+                ops.projectRoot(), host.projectScope().trustSnapshot(), s.isEslintEnabled(), s.getJsFormatter()));
 
         // Debugging -------------------------------------------------------------------------------
         if (ops.debugFeatureEnabled()) {

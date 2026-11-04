@@ -7310,6 +7310,7 @@ public class SettingsWindow {
                 Settings::isTypescriptTypeAcquisition,
                 Settings::setTypescriptTypeAcquisition,
                 words + "types npm automatic type acquisition download @types");
+        SettingsJsToolRows.add(this, c); // ESLint, Prettier/Biome and the actions on save (JS review F)
     }
 
     /** The ShellCheck / shfmt status lines on the Bash card, by tool id. */
