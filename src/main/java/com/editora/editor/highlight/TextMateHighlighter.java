@@ -737,6 +737,9 @@ public final class TextMateHighlighter {
     /** {@link #classify}'s answer for "this scope decides the token, and the token is unstyled". */
     private static final String PLAIN = "";
 
+    /** The class of JSX text ({@code <p>this</p>}): prose to spell check, not brackets to colour. */
+    public static final String JSX_TEXT = "jsx-text";
+
     /**
      * The style for a {@code storage.*} scope. Nearly every grammar reserves {@code storage} for declaration
      * keywords and modifiers ({@code class}, {@code const}, {@code static}, {@code fn}, primitive type words),
@@ -777,6 +780,14 @@ public final class TextMateHighlighter {
         }
         if (scope.startsWith("punctuation.definition.template-expression")) {
             return "keyword";
+        }
+        // JSX: the text between tags is page text, which spell check reads as it reads a string (JS/TS review
+        // A112); the code in a {…} there is code again. No theme colours the class: it looks as before.
+        if (scope.startsWith("meta.embedded.expression.tsx")) {
+            return PLAIN;
+        }
+        if (scope.startsWith("meta.jsx.children")) {
+            return JSX_TEXT;
         }
         if (scope.startsWith("constant.numeric")) {
             return "number";

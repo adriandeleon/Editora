@@ -632,6 +632,17 @@ class TextMateHighlighterTest {
     }
 
     @Test
+    void jsxTextIsMarkedForSpellCheckAndCodeInBracesIsNot() {
+        IGrammar js = GrammarRegistry.shared().forFileName("a.jsx");
+        String text = "const a = <p>Welcome back (again) {user.name}</p>;\n";
+        var spans = TextMateHighlighter.compute(text, js);
+        assertEquals(TextMateHighlighter.JSX_TEXT, styleAt(spans, text.indexOf("Welcome")));
+        assertEquals(TextMateHighlighter.JSX_TEXT, styleAt(spans, text.indexOf("(again")));
+        assertNull(styleAt(spans, text.indexOf(".name")), "the `.` of code in {…} is code, not page text");
+        assertEquals("keyword", styleAt(spans, 0));
+    }
+
+    @Test
     void javaScriptTemplateInterpolationsBuiltInPropertiesAndBigIntsGetTheirOwnColours() {
         IGrammar js = GrammarRegistry.shared().forFileName("a.js");
         String text = "const s = `a ${fn(x, {k: 1})} b`; n.length + 10n;\n";
