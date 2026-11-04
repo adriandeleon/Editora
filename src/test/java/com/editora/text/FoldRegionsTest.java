@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FoldRegionsTest {
@@ -368,5 +369,50 @@ class FoldRegionsTest {
         assertTrue(hasRegion(regions, 2, 3), "the then branch: " + regions);
         assertTrue(hasRegion(regions, 10, 11), "an object with no end marker: " + regions);
         assertTrue(regions.stream().noneMatch(r -> r.startLine() == 7), "a one-line def folds nothing");
+    }
+
+    @Test
+    void jsxElementsAndParenthesesFoldInJavaScript() {
+        String jsx = String.join(
+                "\n",
+                "function A({ items }) {", // 0
+                "  return (", // 1
+                "    <section className=\"todos\">", // 2
+                "      <ul>", // 3
+                "        {items.map((item) => (", // 4
+                "          <li key={item.id}>", // 5
+                "            {item.text}", // 6
+                "          </li>", // 7
+                "        ))}", // 8
+                "      </ul>", // 9
+                "      <p>Don't forget</p>", // 10
+                "      <Field", // 11
+                "        name=\"a\"", // 12
+                "      />", // 13
+                "    </section>", // 14
+                "  );", // 15
+                "}", // 16
+                "");
+        List<Region> regions = FoldRegions.detect(jsx, "javascriptreact");
+        assertTrue(hasRegion(regions, 1, 15), "return ( … ): " + regions);
+        assertTrue(hasRegion(regions, 2, 14), "<section> … </section>: " + regions);
+        assertTrue(hasRegion(regions, 3, 9), "<ul> … </ul>: " + regions);
+        assertTrue(hasRegion(regions, 5, 7), "<li> … </li> inside a callback: " + regions);
+        assertTrue(hasRegion(regions, 11, 13), "a self-closing tag written over lines: " + regions);
+        assertTrue(hasRegion(regions, 4, 8), "the map call: " + regions);
+        assertTrue(hasRegion(regions, 0, 16), "the function: " + regions);
+        assertEquals(regions.size(), new java.util.HashSet<>(regions).size(), "no region twice: " + regions);
+        assertTrue(FoldRegions.detect(jsx, "javascript").containsAll(regions), "a .js file reads JSX the same way");
+    }
+
+    @Test
+    void aTagOpenedAndClosedOnOneLineOpensNothing() {
+        assertEquals("ul", FoldRegions.jsxOpeningTag("<ul>"));
+        assertEquals("", FoldRegions.jsxOpeningTag("<>"));
+        assertEquals("Foo.Bar", FoldRegions.jsxOpeningTag("<Foo.Bar a={1}"));
+        assertNull(FoldRegions.jsxOpeningTag("<li>one</li>"));
+        assertNull(FoldRegions.jsxOpeningTag("<br />"));
+        assertNull(FoldRegions.jsxOpeningTag("a < b"));
+        assertNull(FoldRegions.jsxOpeningTag("</ul>"));
     }
 }

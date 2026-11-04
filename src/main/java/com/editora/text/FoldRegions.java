@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 
 import com.editora.editops.RegexLiterals;
 import com.editora.typst.TypstOutline;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Detects foldable regions in a document. A {@link Region} spans two or more lines and is collapsed
@@ -81,11 +82,9 @@ public final class FoldRegions {
                     "caddyfile",
                     "proto",
                     "graphql",
-                    "javascript",
                     "typescript",
-                    "javascriptreact",
-                    "typescriptreact",
                     "dot" -> braces(text, Syntax.of(language));
+            case "javascript", "javascriptreact", "typescriptreact" -> jsx(text, language);
             case "scala" -> scala(text);
             case "clojure" -> lisp(text);
             case "typst" -> typst(text);
@@ -473,9 +472,9 @@ public final class FoldRegions {
                 int end = syntax.literalEnd(text, i);
                 line += newlinesIn(text, i, end);
                 i = end;
-            } else if (c == '{' || c == '[') {
+            } else if (c == '{' || c == '[' || (c == '(' && syntax.regexLiterals())) {
                 stack.push(line);
-            } else if (c == '}' || c == ']') {
+            } else if (c == '}' || c == ']' || (c == ')' && syntax.regexLiterals())) {
                 if (!stack.isEmpty()) {
                     int start = stack.pop();
                     if (line > start) {
@@ -485,6 +484,60 @@ public final class FoldRegions {
             }
         }
         return out;
+    }
+
+    /**
+     * JavaScript, JSX and TSX: the brackets (parentheses too in a script, so {@code return (} … {@code );} and a
+     * wrapped call fold), plus every JSX element written over several lines, from its opening tag to the closing
+     * tag (or {@code />}) at the same indent — how formatted JSX is laid out (JS/TS review A107). Regions with the
+     * same lines are kept once.
+     */
+    static List<Region> jsx(String text, String language) {
+        java.util.LinkedHashSet<Region> out = new java.util.LinkedHashSet<>(braces(text, Syntax.of(language)));
+        String[] lines = text.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            String name = jsxOpeningTag(lines[i].strip());
+            if (name == null) {
+                continue;
+            }
+            int width = indentWidth(lines[i]);
+            for (int j = i + 1; j < lines.length; j++) {
+                String t = lines[j].strip();
+                if (t.isEmpty() || indentWidth(lines[j]) > width) {
+                    continue;
+                }
+                if (indentWidth(lines[j]) == width && (t.startsWith("</" + name + ">") || t.startsWith("/>"))) {
+                    out.add(new Region(i, j));
+                }
+                break;
+            }
+        }
+        return canonicalOrder(new ArrayList<>(out));
+    }
+
+    /**
+     * The tag a line opens and leaves open ({@code <ul>}, {@code <Foo.Bar a={1}}, {@code <>} = {@code ""}), or
+     * {@code null} when the line does not start with one or closes it again on the same line.
+     */
+    static @Nullable String jsxOpeningTag(String trimmed) {
+        if (trimmed.startsWith("<>")) {
+            return trimmed.contains("</>") ? null : "";
+        }
+        if (trimmed.length() < 2 || trimmed.charAt(0) != '<' || !Character.isLetter(trimmed.charAt(1))) {
+            return null;
+        }
+        int j = 1;
+        while (j < trimmed.length()
+                && (Character.isLetterOrDigit(trimmed.charAt(j)) || ".-_:$".indexOf(trimmed.charAt(j)) >= 0)) {
+            j++;
+        }
+        String name = trimmed.substring(1, j);
+        String code =
+                trimmed.endsWith(";") || trimmed.endsWith(",") ? trimmed.substring(0, trimmed.length() - 1) : trimmed;
+        if (code.endsWith("/>") || trimmed.contains("</" + name + ">")) {
+            return null;
+        }
+        return name;
     }
 
     // --- Scala (braces, and Scala 3's indentation-based blocks) ---
