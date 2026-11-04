@@ -476,12 +476,12 @@ class IndenterTest {
 
     @Test
     void aNewJavaScriptOrJsonFileIndentsTwoSpacesButEvidenceWins() {
-        assertEquals("  ", Indenter.detectUnit("", 4, "javascript"), "nothing indented yet: JS's own two");
-        assertEquals("  ", Indenter.detectUnit("class A {}\n", 4, "typescriptreact"));
-        assertEquals("  ", Indenter.detectUnit("{}\n", 4, "json"));
-        assertEquals("    ", Indenter.detectUnit("", 4, "java"), "other languages keep the tab size");
-        assertEquals("    ", Indenter.detectUnit("if (a) {\n    b();\n}\n", 4, "javascript"), "a 4-space file stays 4");
-        assertEquals("\t", Indenter.detectUnit("if (a) {\n\tb();\n}\n", 4, "typescript"));
-        assertEquals("   ", Indenter.unitFor("", 4, true, 3, "javascript"), "an EditorConfig indent_size wins");
+        assertEquals("  ", Indenter.unitOrLanguageDefault("", 4, "javascript"), "nothing indented yet: JS's own two");
+        assertEquals("  ", Indenter.unitOrLanguageDefault("class A {}\n", 4, "typescriptreact"));
+        assertEquals("  ", Indenter.unitOrLanguageDefault("{}\n", 4, "json"));
+        assertEquals("    ", Indenter.unitOrLanguageDefault("", 4, "java"), "other languages keep the tab size");
+        assertEquals("    ", Indenter.unitOrLanguageDefault("if (a) {\n    b();\n}\n", 4, "javascript"));
+        assertEquals("\t", Indenter.unitOrLanguageDefault("if (a) {\n\tb();\n}\n", 4, "typescript"));
+        assertEquals("    ", Indenter.detectUnit("", 4, "javascript"), "a caller's explicit tab size is kept");
     }
 }
