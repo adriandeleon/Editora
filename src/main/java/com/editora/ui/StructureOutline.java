@@ -259,6 +259,12 @@ final class StructureOutline {
             }
             symbolByLine.putIfAbsent(s.line(), s);
         }
+        String lang = src.language();
+        if (lang != null && (lang.startsWith("javascript") || lang.startsWith("typescript"))) {
+            // A JSX element (`<ul>`) is markup, not a declaration, now that a multi-line one folds too.
+            symbolByLine.values().removeIf(sym -> "tag".equals(sym.kind()));
+            scriptConstants(src.lineAt(), regions, symbolByLine, paras); // `const routes = {` … (A106)
+        }
         boolean haveSymbols = !symbolByLine.isEmpty();
         boolean brace = isBraceLanguage(src.language());
         if ("css".equals(src.language())) {
@@ -320,6 +326,33 @@ final class StructureOutline {
             rootNodes = pomLabelled(src.lineAt(), paras, rootNodes);
         }
         return rootNodes;
+    }
+
+    /** {@code const|let|var NAME = {} / [} / (}, exported or not: a variable whose value spans lines. */
+    private static final java.util.regex.Pattern SCRIPT_CONSTANT = java.util.regex.Pattern.compile(
+            "\\s*(?:export\\s+)?(?:declare\\s+)?(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*(?::[^=]*)?=\\s*[{\\[(]");
+
+    /**
+     * A JavaScript/TypeScript variable whose object, array or call spans lines ({@code const routes = {},
+     * {@code export const config = {} … {@code } satisfies X;}) heads a fold region but is no TextMate symbol, so
+     * the outline left it out with all its members. It gets a symbol of its own on its header line.
+     */
+    static void scriptConstants(
+            java.util.function.IntFunction<String> lineAt,
+            List<Region> regions,
+            Map<Integer, Symbol> symbols,
+            int lines) {
+        for (Region r : regions) {
+            int line = r.startLine();
+            if (line < 0 || line >= lines || symbols.containsKey(line)) {
+                continue;
+            }
+            String text = lineAt.apply(line);
+            java.util.regex.Matcher m = text == null ? null : SCRIPT_CONSTANT.matcher(text);
+            if (m != null && m.lookingAt()) {
+                symbols.put(line, new Symbol(line, m.group(1), "variable"));
+            }
+        }
     }
 
     /** A shell function's name: what `name()` or `function name` may declare, `::` and `-` included. */

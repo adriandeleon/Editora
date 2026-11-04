@@ -1327,8 +1327,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     }
 
     private static boolean isReturnTypeCandidate(String value) {
-        if (value == null || value.isBlank()) {
-            return false;
+        if (value == null || value.isBlank() || value.endsWith(".")) {
+            return false; // `module.exports.formatBytes = …`: a member access, no return type (A106)
         }
         return switch (value) {
             case "abstract",
