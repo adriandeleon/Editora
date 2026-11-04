@@ -389,18 +389,16 @@ final class FileWorkflowCoordinator {
     /** Disk reads/charset decoding for file opens. Virtual threads also keep remote-provider waits cheap. */
     final ExecutorService fileLoadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
-    /** A paragraph this wide makes RichTextFX layout pathological even when the file itself is small. */
+    /**
+     * A paragraph this wide makes RichTextFX layout pathological even when the file itself is small, so the file
+     * opens in long-line mode (no undo). Shorter long lines are left to the highlighter, which shows a long line
+     * in many colours plain (TextMateHighlighter.MAX_LONG_LINE_TOKENS), and a bundle of them opens in View mode
+     * ({@link com.editora.text.LongLineFiles}) — both keep undo.
+     */
     static final int LONG_LINE_FILE_CHARS = 64 * 1024;
 
-    /** A line at least this long counts toward {@link #LONG_LINES_FILE_CHARS}. */
-    static final int LONG_LINE_CHARS = 10_000;
-
-    /**
-     * So many characters in {@link #LONG_LINE_CHARS long} lines make a file long-lined too, though no one line
-     * reaches {@link #LONG_LINE_FILE_CHARS}: a minified bundle wrapped at ~19,000 characters (757 KB in 40 lines)
-     * held the FX thread 2.4 s laying out its styled paragraphs, and its tokenizing took ~30 s.
-     */
-    static final int LONG_LINES_FILE_CHARS = 200_000;
+    /** The file each buffer last loaded, so the first-open View mode is never applied again on a reload. */
+    private final Map<EditorBuffer, Path> viewFirstChecked = new java.util.WeakHashMap<>();
 
     /** Buffers whose tab shell exists but whose document has not reached the FX thread yet. FX-thread only. */
     final Set<EditorBuffer> loadingBuffers = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -984,15 +982,11 @@ final class FileWorkflowCoordinator {
     }
 
     /** Document shape computed while the decoded text is already in background-thread memory. */
-    record TextStats(int lines, int maxLineLength, long longLineChars) {
+    record TextStats(int lines, int maxLineLength) {
 
-        TextStats(int lines, int maxLineLength) {
-            this(lines, maxLineLength, 0);
-        }
-
-        /** Whether the file opens in long-line (large-file) mode: one giant line, or many long ones. */
+        /** Whether the file opens in long-line (large-file) mode: a line too wide for RichTextFX to lay out. */
         boolean longLined() {
-            return maxLineLength >= LONG_LINE_FILE_CHARS || longLineChars >= LONG_LINES_FILE_CHARS;
+            return maxLineLength >= LONG_LINE_FILE_CHARS;
         }
     }
 
@@ -1000,19 +994,16 @@ final class FileWorkflowCoordinator {
         int lines = 1;
         int lineLength = 0;
         int maxLineLength = 0;
-        long longLineChars = 0;
         for (int i = 0; i < text.length(); i++) {
             if (text.charAt(i) == '\n') {
                 lines++;
                 maxLineLength = Math.max(maxLineLength, lineLength);
-                longLineChars += lineLength >= LONG_LINE_CHARS ? lineLength : 0;
                 lineLength = 0;
             } else {
                 lineLength++;
             }
         }
-        longLineChars += lineLength >= LONG_LINE_CHARS ? lineLength : 0;
-        return new TextStats(lines, Math.max(maxLineLength, lineLength), longLineChars);
+        return new TextStats(lines, Math.max(maxLineLength, lineLength));
     }
 
     PreparedLoad prepareLoad(Path file, boolean sniffBinary) throws IOException {
@@ -1221,6 +1212,36 @@ final class FileWorkflowCoordinator {
     }
 
     /**
+     * The first time a buffer gets a very large, very-long-lined or minified file, it opens in View mode with the
+     * reason in the banner: typing there is slow (and, in the first two, cannot be undone), and such a file is
+     * rarely meant to be edited (E104). Enable Editing is one click away; a reload never puts it back.
+     */
+    private void applyViewFirst(EditorBuffer buffer, PreparedLoad load, int chars) {
+        Path name = load.file().getFileName();
+        com.editora.text.LongLineFiles.Reason reason = com.editora.text.LongLineFiles.viewFirst(
+                load.large(),
+                load.longLine(),
+                load.truncated(),
+                load.log(),
+                chars,
+                load.lines(),
+                com.editora.text.LanguageRegistry.forFileName(name == null ? "" : name.toString()));
+        if (load.file().equals(viewFirstChecked.put(buffer, load.file()))) {
+            return; // a reload of the file this buffer already shows
+        }
+        if (reason == null || buffer.isDirty() || buffer.isViewMode()) {
+            return;
+        }
+        buffer.setViewMode(
+                true,
+                switch (reason) {
+                    case LARGE -> tr("viewmode.reason.large", StatusBar.formatSize(load.size()));
+                    case LONG_LINE -> tr("viewmode.reason.longLine", load.maxLineLength());
+                    case MINIFIED -> tr("viewmode.reason.minified");
+                });
+    }
+
+    /**
      * The encoding the user chose for {@code file} (Reopen or Save with Encoding), or null. Safe on the
      * file-load worker: the map is concurrent.
      */
@@ -1352,6 +1373,7 @@ final class FileWorkflowCoordinator {
             host.logViewer().sniffLoaded(buffer, load.content()); // a log its name does not announce
         }
         String forgotten = applyChosenEncoding(buffer, load);
+        applyViewFirst(buffer, load, text.length());
         if (!load.truncated() && load.file() != null && load.file().getFileName() != null) {
             ShellFileNotice.offer(
                     buffer,

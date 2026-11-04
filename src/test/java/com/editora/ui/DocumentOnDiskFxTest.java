@@ -280,7 +280,20 @@ class DocumentOnDiskFxTest {
                 return loading;
             });
             assertTrue(tr("status.longLineFileTier", length).contains("undo"), "the tier message names undo");
+            // It opens for reading, the banner saying why, so a stray key cannot land unundoably (E104).
+            assertTrue(FxTestSupport.callOnFx(buffer::isViewMode), "a long-line file opens in View mode");
+            assertEquals(
+                    tr("viewmode.reason.longLine", length),
+                    FxTestSupport.callOnFx(() -> FxTestSupport.field(buffer, "viewModeReason")));
+            FxTestSupport.runOnFx(() -> buffer.setViewMode(false)); // Enable Editing
             assertTrue(FxTestSupport.callOnFx(buffer::isEditable));
+            StatusBar statusBar = FxTestSupport.field(fx.controller, "statusBar");
+            FxTestSupport.runOnFx(statusBar::refresh);
+            javafx.scene.control.Label readOnly = FxTestSupport.field(statusBar, "readOnly");
+            assertEquals(
+                    tr("statusbar.editableNoUndo"),
+                    FxTestSupport.callOnFx(readOnly::getText),
+                    "while it is editable, the status bar keeps saying undo is off (A108)");
 
             CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
             FxTestSupport.runOnFx(() -> {

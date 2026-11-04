@@ -388,6 +388,9 @@ public final class HighlightPass {
                 continue;
             }
             int lineStart = bounds.values[2 * index];
+            if (bounds.values[2 * index + 1] - lineStart >= TextMateHighlighter.BUDGETED_LINE) {
+                continue; // a long line keeps one plain run at most (TextMateHighlighter.MAX_LONG_LINE_TOKENS)
+            }
             int col = Math.min(Math.max(0, t.startChar()), bounds.values[2 * index + 1] - lineStart);
             int off = lineStart + col - fromOffset;
             if (off < cursor || off >= length) {

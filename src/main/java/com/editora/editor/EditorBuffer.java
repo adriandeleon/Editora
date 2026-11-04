@@ -378,11 +378,11 @@ public class EditorBuffer implements TabContent {
     /** Outermost tab content: a "View Mode" banner (top, read-only only) above {@link #viewHost}. */
     private final javafx.scene.layout.BorderPane outer = new javafx.scene.layout.BorderPane(viewHost);
     /** The MS-Word-style read-only banner (lazy); its "Enable Editing" runs {@link #onEnableEditing}. */
-    private @Nullable HBox viewModeBar;
+    private @Nullable ViewModeBar viewModeBar;
 
     private boolean viewModeBarVisible;
-
-    private @Nullable Button enableEditingButton;
+    /** Why this buffer is in View mode when it is not the general reason; cleared when editing is enabled. */
+    private @Nullable String viewModeReason;
     /** Expert-mode exit control hosted over this buffer's primary code viewport, when it is active. */
     private @Nullable Node expertExitControl;
 
@@ -392,7 +392,6 @@ public class EditorBuffer implements TabContent {
      */
     private final HBox cornerControls = cornerControlRow();
 
-    private @Nullable Label viewModeNote;
     /** When true, a non-writable-on-disk file offers "Edit as Administrator" instead of a dead-end note. */
     private boolean adminEditAvailable;
 
@@ -8083,7 +8082,14 @@ public class EditorBuffer implements TabContent {
      */
     public void setViewMode(boolean viewMode) {
         this.viewMode = viewMode;
+        viewModeReason = viewMode ? viewModeReason : null;
         applyEditable();
+    }
+
+    /** View mode, with the banner saying why ({@code reason}) instead of the general sentence. */
+    public void setViewMode(boolean viewMode, @Nullable String reason) {
+        viewModeReason = reason;
+        setViewMode(viewMode);
     }
 
     public boolean isViewMode() {
@@ -8159,25 +8165,23 @@ public class EditorBuffer implements TabContent {
     private void updateViewModeBar() {
         boolean show = viewMode && !hugeFile;
         if (show) {
-            if (viewModeBar == null) {
-                viewModeBar = buildViewModeBar();
-            }
-            Button editButton = enableEditingButton; // both built with the bar
-            Label note = viewModeNote;
-            if (editButton != null && note != null) {
-                boolean canEdit = path == null || (writableOnDisk != null ? writableOnDisk : Files.isWritable(path));
-                // A non-writable file offers "Edit as Administrator" when elevation is available (Linux/pkexec),
-                // instead of a dead-end "read-only on disk" note. Enabling editing routes the eventual Save
-                // through the elevated write.
-                boolean adminOffer = !canEdit && adminEditAvailable;
-                editButton.setText(tr(adminOffer ? "viewmode.editAsAdmin" : "viewmode.enableEditing"));
-                // A filtered log is a read-only subset whatever the mode: offering to edit it would do nothing.
-                boolean offer = (canEdit || adminOffer) && !logView.filtered();
-                editButton.setVisible(offer);
-                editButton.setManaged(offer);
-                note.setVisible(!canEdit && !adminOffer);
-                note.setManaged(!canEdit && !adminOffer);
-            }
+            ViewModeBar bar = viewModeBar != null ? viewModeBar : new ViewModeBar(() -> onEnableEditing.run());
+            viewModeBar = bar;
+            bar.setReason(viewModeReason);
+            Button editButton = bar.enableEditing();
+            Label note = bar.note();
+            boolean canEdit = path == null || (writableOnDisk != null ? writableOnDisk : Files.isWritable(path));
+            // A non-writable file offers "Edit as Administrator" when elevation is available (Linux/pkexec),
+            // instead of a dead-end "read-only on disk" note. Enabling editing routes the eventual Save
+            // through the elevated write.
+            boolean adminOffer = !canEdit && adminEditAvailable;
+            editButton.setText(tr(adminOffer ? "viewmode.editAsAdmin" : "viewmode.enableEditing"));
+            // A filtered log is a read-only subset whatever the mode: offering to edit it would do nothing.
+            boolean offer = (canEdit || adminOffer) && !logView.filtered();
+            editButton.setVisible(offer);
+            editButton.setManaged(offer);
+            note.setVisible(!canEdit && !adminOffer);
+            note.setManaged(!canEdit && !adminOffer);
         }
         viewModeBarVisible = show;
         refreshTopBars();
@@ -8197,7 +8201,7 @@ public class EditorBuffer implements TabContent {
             bars.add(installBar.node());
         }
         if (viewModeBarVisible && viewModeBar != null) {
-            bars.add(viewModeBar);
+            bars.add(viewModeBar.node());
         }
         bars.addAll(narrowView.bars()); // the narrowing banner, nearest the text: it describes the text
         if (logControl != null) {
@@ -8256,24 +8260,6 @@ public class EditorBuffer implements TabContent {
     /** The file notice's message while it is shown, else null. */
     public @Nullable String fileNoticeText() {
         return fileNoticeShown && fileNotice != null ? fileNotice.text() : null;
-    }
-
-    private HBox buildViewModeBar() {
-        Label title = new Label(tr("viewmode.title"));
-        title.getStyleClass().add("view-mode-title");
-        Label desc = new Label(tr("viewmode.desc"));
-        desc.getStyleClass().add("view-mode-desc");
-        javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
-        HBox.setHgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
-        enableEditingButton = new Button(tr("viewmode.enableEditing"));
-        enableEditingButton.getStyleClass().add("accent"); // AtlantaFX accent button — themed, not a hard yellow
-        enableEditingButton.setOnAction(e -> onEnableEditing.run());
-        viewModeNote = new Label(tr("viewmode.note"));
-        viewModeNote.getStyleClass().add("view-mode-note");
-        HBox bar = new HBox(10, title, desc, spacer, viewModeNote, enableEditingButton);
-        bar.getStyleClass().add("view-mode-bar");
-        bar.setAlignment(Pos.CENTER_LEFT);
-        return bar;
     }
 
     /**
