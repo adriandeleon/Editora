@@ -355,7 +355,9 @@ sheet opens. A note card and the code preview of the same file open and close in
 limit above. The options
 menu's default-off “Hide all open Personal Notes” item temporarily hides those cards without closing them.
 A note card saves an edit on focus loss, Shortcut+Enter or close, comparing against the body the store
-last held. It follows the store: when notes change elsewhere it adopts the new bodies (an edit in
+last held. Its text areas, and a sticky sheet's, take the configured keymap's caret moves and basic edits
+(`TextInputKeymap.installShared`: `C-f`, `C-b`, `C-n`, `C-p`, `C-a`, `C-e`, `M-f`, `M-b`, `C-k`… in the Emacs
+keymap), as the Notes box in the editor does. A note card follows the store: when notes change elsewhere it adopts the new bodies (an edit in
 progress is kept), and it closes when its notes are deleted. A blanked note is not a deletion — its text
 is restored and the status bar says so. Each note in it is headed, as its sticky sheet is, by its line or lines
 (the noted text as the tooltip); pressing the heading opens the file at the note. A folder's note has none.

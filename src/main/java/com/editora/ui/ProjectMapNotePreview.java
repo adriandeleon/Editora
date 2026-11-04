@@ -237,6 +237,8 @@ final class ProjectMapNotePreview extends StackPane {
             editor.setPrefRowCount(
                     Math.max(3, Math.min(8, note.body().lines().toList().size() + 1)));
             editor.getStyleClass().add("project-map-note-preview-editor");
+            // The configured keymap's caret moves and basic edits (Emacs C-f, C-n, C-a, M-f…), as the Notes box has.
+            com.editora.command.TextInputKeymap.installShared(editor);
             Row row = new Row(note, editor);
             javafx.scene.Node header = header(note);
             if (header != null) {
