@@ -9499,6 +9499,8 @@ final class LspCoordinator {
                 .addAll(
                         getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
                         getClass().getResource("/com/editora/styles/syntax.css").toExternalForm());
+        com.editora.editor.PopupSheets.followOwnerTheme(
+                box, area.getScene() == null ? null : area.getScene().getWindow());
 
         Popup popup = new Popup();
         popup.setAutoHide(true); // click outside / focus loss dismisses it
@@ -9909,6 +9911,8 @@ final class LspCoordinator {
                 .addAll(
                         getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
                         getClass().getResource("/com/editora/styles/syntax.css").toExternalForm());
+        com.editora.editor.PopupSheets.followOwnerTheme(
+                box, area.getScene() == null ? null : area.getScene().getWindow());
 
         if (signaturePopup != null) {
             signaturePopup.getContent().setAll(box);

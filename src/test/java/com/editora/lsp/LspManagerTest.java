@@ -1001,4 +1001,25 @@ class LspManagerTest {
             System.setProperty("user.home", saved);
         }
     }
+
+    /** The resolved signature leads the completion doc pane when it says more than the row's detail (JS B107). */
+    @Test
+    void theResolvedSignatureLeadsTheCompletionDocumentation() {
+        assertEquals(
+                "```typescript\n(method) Array<number>.at(index: number): number | undefined\n```\n\nReturns the item.",
+                LspManager.withResolvedDetail(
+                        null,
+                        "(method) Array<number>.at(index: number): number | undefined",
+                        "Returns the item.",
+                        "typescript"));
+        assertEquals(
+                "```typescript\nAuto import from './math.js'\nfunction multiply(a: number, b: number): number\n```",
+                LspManager.withResolvedDetail(
+                        "./math.js",
+                        "Auto import from './math.js'\nfunction multiply(a: number, b: number): number",
+                        null,
+                        "typescript"));
+        assertEquals("docs", LspManager.withResolvedDetail("String", "String", "docs", ""), "nothing new: as before");
+        assertNull(LspManager.withResolvedDetail(null, " ", null, ""));
+    }
 }

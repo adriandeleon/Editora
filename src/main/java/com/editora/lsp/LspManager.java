@@ -3165,10 +3165,30 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(existing));
             return;
         }
+        String before = item.getDetail();
+        String fence = TypeScriptServer.SERVER_ID.equals(s.serverId()) ? "typescript" : "";
         s.resolveCompletion(item).whenComplete((resolved, error) -> {
-            String doc = (error == null && resolved != null) ? documentationOf(resolved) : null;
+            String doc = (error == null && resolved != null)
+                    ? withResolvedDetail(before, resolved.getDetail(), documentationOf(resolved), fence)
+                    : null;
             Platform.runLater(() -> cb.accept(doc));
         });
+    }
+
+    /**
+     * {@code doc} led by the signature {@code completionItem/resolve} brought, as a fenced code block, when it says
+     * more than the item's own detail ({@code before}): typescript-language-server puts a member's signature, and an
+     * auto-import's "Auto import from './math.js'", only in the resolved {@code detail}, which the doc pane never
+     * showed (JS review B107). Null when there is neither. Pure.
+     */
+    static @Nullable String withResolvedDetail(
+            @Nullable String before, @Nullable String resolved, @Nullable String doc, String fence) {
+        String detail = resolved == null ? "" : resolved.strip();
+        if (detail.isEmpty() || detail.equals(before == null ? "" : before.strip())) {
+            return doc;
+        }
+        String block = "```" + fence + "\n" + detail + "\n```";
+        return doc == null || doc.isBlank() ? block : block + "\n\n" + doc;
     }
 
     /**
