@@ -2450,13 +2450,18 @@ final class ProjectMapView extends VBox {
 
     /** A declaration row's menu: its card, the file opened at it, the file opened narrowed to its block. */
     private ContextMenu symbolMenu(ProjectMapModel.Entry entry) {
+        return symbolMenu(entry, () -> previewSymbol(entry));
+    }
+
+    /** {@link #symbolMenu(ProjectMapModel.Entry)} whose Preview runs {@code previewAction}: a file card's column's. */
+    private ContextMenu symbolMenu(ProjectMapModel.Entry entry, Runnable previewAction) {
         ProjectMapModel.Symbol symbol = entry.symbol();
         ContextMenu menu = new ContextMenu();
         if (symbol == null) {
             return menu;
         }
         MenuItem preview = new MenuItem(tr("project.map.structure.preview"));
-        preview.setOnAction(event -> previewSymbol(entry));
+        preview.setOnAction(event -> previewAction.run());
         MenuItem openAt = new MenuItem(tr("project.map.structure.openAt"));
         openAt.setOnAction(event -> onOpenAt.accept(symbol.file(), symbol.line()));
         MenuItem openNarrowed = new MenuItem(tr("project.map.preview.openNarrowed"));
@@ -3528,8 +3533,8 @@ final class ProjectMapView extends VBox {
             }
 
             @Override
-            public ContextMenu symbolMenu(ProjectMapModel.Entry entry) {
-                return ProjectMapView.this.symbolMenu(entry);
+            public ContextMenu symbolMenu(ProjectMapModel.Entry entry, Runnable preview) {
+                return ProjectMapView.this.symbolMenu(entry, preview);
             }
 
             @Override

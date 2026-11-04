@@ -500,13 +500,22 @@ takes it past the map area's edge. Opened on a card near the right edge, the car
 fits inside the map area; when the column would still cover much — the map's columns (its row's own and those
 leading to it heaviest), the zoom bar and the overview, other cards and their attachments — the card moves where card
 and column together cover less, if there is such a spot (`MapCards.nudgeForColumn`). A click or Enter on a declaration
-scrolls the card to it and marks its lines (`ProjectMapPreview.revealRange`), as an outline beside a code view moves
-the view; Shift+click or Shift+Enter opens the declaration's own card, as a Map row's card; the right-click /
-Menu-key menu is the row's (Preview, Open at Declaration, Open Narrowed); the Structure window's Emacs moves
-(`C-n`, `C-p`, `C-f`, `C-b`) work in it; Escape or its × takes it off. A declaration card opened from it whose row is not on the map is
-placed beside the column, by the declaration's row in it, with a connector from that row (while it is scrolled
-into sight) as a Map row has to its card, and is kept by the orphan check while the column is
-out; taking the column off closes those cards, as closing the Map's column closes its rows' cards. The outline
+opens the declaration's own card beside the column, as a row of the Map's Structure column does (Map Structure
+previews); Shift+click or Shift+Enter scrolls the card to it instead and marks its lines
+(`ProjectMapPreview.revealRange`), as an outline beside a code view moves the view; the right-click / Menu-key menu
+is the row's (Preview — here opening the card beside this column —, Open at Declaration, Open Narrowed); the
+Structure window's Emacs moves (`C-n`, `C-p`, `C-f`, `C-b`) work in it; Escape or its × takes it off.
+
+A declaration card follows the Structure column it was last asked for from (`MapCards.cardColumnCards`, by card).
+One opened from a file card's column is placed beside that column, by the declaration's row in it, with a connector
+from that row (while it is scrolled into sight; else from its Map row, if any), and goes with the column: taking the
+column off, or closing the file's own row, closes it, as closing the Map's column closes its rows' cards. One opened
+from the Map's own Structure column (a row's click or Enter, a search landing) is placed beside that column with a
+connector from its row; it falls back to the file card's column — placement, connector and the orphan check's
+keeping — only while its row is not on the map. Asked for from the other column, an open card moves there
+(`MapCards.cardFollowColumn`, `ProjectMapPreview.placeAgain`: placed afresh at its size, as a new card), unless it is
+pinned, when only its connector moves. A card restored from the last session, a trail stop's or a linked result's
+keeps the fallback rule. The outline
 is held for as long as the column is out (`cardOutlineFiles`, kept by `ProjectMapStructure.prune`), follows the
 buffer or the file on disk, and an edit keeps what was expanded and selected. An outline change rebuilds the map's
 rows only when its file has a Structure column of the Map's own open (`ProjectMapStructure.setOnFileChanged`);

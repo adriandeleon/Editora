@@ -618,7 +618,7 @@ class ProjectMapCardsExploreFxTest {
         return FxTestSupport.callOnFx(() -> cardStructures().get(card));
     }
 
-    /** Opens the declaration card of {@code label} from a card's column, as its Shift+Enter does. */
+    /** Opens the declaration card of {@code label} from a card's column, as its Enter does. */
     private ProjectMapPreview openDeclaration(ProjectMapCardStructure column, String label) throws Exception {
         Path[] key = new Path[1];
         FxTestSupport.runOnFx(() -> {
@@ -629,7 +629,7 @@ class ProjectMapCardsExploreFxTest {
                     key[0] = node.path();
                     tree.getSelectionModel().select(i);
                     column.focus();
-                    key(tree, KeyCode.ENTER, true, false);
+                    key(tree, KeyCode.ENTER, false, false);
                     return;
                 }
             }

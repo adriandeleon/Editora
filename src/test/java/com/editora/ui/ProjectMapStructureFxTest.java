@@ -256,11 +256,11 @@ class ProjectMapStructureFxTest {
                 assertEquals(before - 30, column.bounds()[0], 0.5);
                 assertEquals(card.getLayoutY(), column.bounds()[1], 0.5);
 
-                // Shift+Enter on a declaration opens its card (Enter scrolls the file card to it: review 3, E8).
+                // Enter on a declaration opens its card (Shift+Enter scrolls the file card to it: review 3, E8).
                 selectRow(column, "add(int, int)");
                 column.tree()
                         .fireEvent(
-                                new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, true, false, false, false));
+                                new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.ENTER, false, false, false, false));
             });
             Path add = FxTestSupport.callOnFx(
                     () -> nodeNamed(column, "add(int, int)").path());
