@@ -148,4 +148,10 @@ class NodeModulesPruningTest {
         assertFalse(DependencyDirs.inDependencyDir("node_modules"), "the folder itself is not inside it");
         assertFalse(DependencyDirs.inDependencyDir("src/app.js"));
     }
+
+    @Test
+    void eachSkipListTakesItsDependencyFoldersFromOnePlace() {
+        assertEquals(List.of("node_modules", "target", ".git"), List.copyOf(DependencyDirs.with("target", ".git")));
+        assertTrue(DependencyDirs.with().containsAll(DependencyDirs.NAMES));
+    }
 }

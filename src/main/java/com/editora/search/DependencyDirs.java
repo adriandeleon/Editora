@@ -22,6 +22,18 @@ public final class DependencyDirs {
 
     private DependencyDirs() {}
 
+    /**
+     * {@link #NAMES} plus a caller's own folder names ({@code target}, {@code .venv}, {@code vendor}…), dependency
+     * folders first: every list of "folders to skip" takes its dependency folders from here, so a new one (a
+     * {@code bower_components}, a {@code jspm_packages}) is added once instead of in nine places (JS review E110).
+     */
+    public static Set<String> with(String... more) {
+        java.util.LinkedHashSet<String> all =
+                new java.util.LinkedHashSet<>(NAMES.stream().sorted().toList());
+        all.addAll(List.of(more));
+        return java.util.Collections.unmodifiableSet(all);
+    }
+
     /** Whether the directory at root-relative {@code relDir} ('/'-separated) is a dependency folder. */
     public static boolean isDependencyDir(String relDir) {
         if (relDir == null || relDir.isEmpty()) {
