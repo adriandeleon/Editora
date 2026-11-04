@@ -305,6 +305,8 @@ final class LspCoordinator {
     private final XmlFolderTrust xmlTrust;
 
     final HtmlLspAids html; // HTML links, the markup check and colour swatches (HTML review B6, D5, D9)
+    final EslintCoordinator eslint; // a JS/TS project's own ESLint: problems, fixes, Fix All (JS review F)
+    final JsFormatCoordinator jsFormat; // its Prettier/Biome for Format Document, and JS/TS actions on save (F)
     private final LibrarySources librarySourcesBar;
 
     private final WorkspaceFileOperations workspaceFiles;
@@ -370,6 +372,8 @@ final class LspCoordinator {
         this.ops = ops;
         this.xmlTrust = new XmlFolderTrust(this, host, lspManager, ops);
         this.html = new HtmlLspAids(host, lspManager, ops);
+        this.eslint = new EslintCoordinator(this, host, ops);
+        this.jsFormat = new JsFormatCoordinator(this, host, lspManager, ops, eslint);
         this.librarySourcesBar = new LibrarySources(lspManager, host::setStatus); // a decompiled tab's sources
         this.pythonInterpreters = new PythonInterpreterCoordinator(new PythonInterpreterCoordinator.Host() {
             @Override
@@ -1471,6 +1475,7 @@ final class LspCoordinator {
         // problems for files actually OPEN in Editora — otherwise the Problems window fills with whole-
         // workspace noise from a single open file.
         EditorBuffer buffer = bufferForLspPath(file);
+        diagnostics = eslint.joined(buffer, diagnostics); // a JS/TS file's ESLint problems join the server's
         if (buffer != null) {
             buffer.setLspDiagnostics(diagnostics);
             noteNonProjectFile(file, diagnostics);
@@ -2382,6 +2387,7 @@ final class LspCoordinator {
         applyBashIde();
         applyXmlSettings();
         html.settingsChanged(); // the HTML markup check switched on or off (D5)
+        eslint.settingsChanged(); // ESLint switched, or a folder trusted: checked again
         xmlTrust.trustChanged(); // a pom moves to or off lemminx-maven with its folder's trust (E1)
         appliedProjectRoot = ops.lspProjectRoot();
         offerInterruptedEdits();
@@ -3286,7 +3292,7 @@ final class LspCoordinator {
      */
     boolean formatPythonExternally() {
         pythonInterpreters.captureSnapshot();
-        return pythonFormat.formatActive() || xmlFormat.formatActive();
+        return pythonFormat.formatActive() || xmlFormat.formatActive() || jsFormat.formatActive();
     }
 
     /** For Doctor (FX thread): resolves, off the FX thread, the interpreter of the active Python file or project. */
@@ -3840,6 +3846,7 @@ final class LspCoordinator {
 
     /** Notifies the server of a save (didSave) for a managed file + refreshes pull-model diagnostics. */
     void notifyDocumentSaved(EditorBuffer buffer, String savedText) {
+        eslint.saved(buffer);
         if (buffer != null && buffer.getPath() != null && untitledLspPaths.containsKey(buffer)) {
             syncBuffer(buffer); // an untitled buffer saved: its file replaces the made-up document (B14)
             return;
@@ -3898,6 +3905,7 @@ final class LspCoordinator {
      * stale answer would be wrong for the new text. Never on autosave.
      */
     void afterUserSave(EditorBuffer buffer) {
+        jsFormat.afterUserSave(buffer); // JS/TS: organize imports, ESLint's fixes, format (JS review F)
         boolean cleanup = host.settings().isJavaCleanupOnSave();
         boolean organize = host.settings().isJavaOrganizeImportsOnSave();
         boolean format = host.settings().isJavaFormatOnSave();
@@ -4030,6 +4038,7 @@ final class LspCoordinator {
      *  opens+activates it if eligible. Called from {@code MainController.addBuffer}. */
     void wireBuffer(EditorBuffer buffer) {
         html.wire(buffer); // the HTML markup check for a page no server serves (D5)
+        eslint.wire(buffer); // checked when shown, after a pause in typing and on save
         // Debounced didChange sink + keep the Structure outline live as the document changes.
         buffer.getNode().addEventFilter(KeyEvent.KEY_PRESSED, event -> {
             if (event.getCode() == KeyCode.ESCAPE && buffer == host.activeBuffer()) {
@@ -6718,7 +6727,7 @@ final class LspCoordinator {
     }
 
     /** As {@link LspDocumentFacts#indent}, with the trim / final-newline rules saving applies to {@code buffer} (D3). */
-    private com.editora.lsp.FormattingIndent formatRequestIndent(EditorBuffer buffer) {
+    com.editora.lsp.FormattingIndent formatRequestIndent(EditorBuffer buffer) {
         com.editora.editorconfig.EditorConfigProperties rules = projectScope.saveRules(
                 host.settings().isEditorConfigSupport()
                         ? buffer.getEditorConfigProps()
@@ -6893,8 +6902,8 @@ final class LspCoordinator {
             if (b != host.activeBuffer()) {
                 return; // switched tabs while the server was thinking
             }
-            List<LspManager.CodeActionItem> items =
-                    com.editora.lsp.CodeActionKinds.arrange(all, item -> keep.test(serverId, item));
+            List<LspManager.CodeActionItem> items = com.editora.lsp.CodeActionKinds.arrange(
+                    eslint.withFixes(b, start.getMajor(), end.getMajor(), all), item -> keep.test(serverId, item));
             if (items.isEmpty()) {
                 host.setStatus(
                         loneCommand == null
@@ -7091,7 +7100,7 @@ final class LspCoordinator {
         if (runGeneratePrompt(path, item)) {
             return; // a jdtls generate prompt: we drive it, not the server (#741)
         }
-        if (runRefactorCommand(path, item) || xml.runsCodeAction(path, item)) {
+        if (runRefactorCommand(path, item) || xml.runsCodeAction(path, item) || eslint.runsCodeAction(item)) {
             return; // likewise a refactoring that asks the user where to, or what; or lemminx's binding wizard
         }
         applyCodeActionItem(path, item);
