@@ -143,6 +143,13 @@ public final class LspManager {
         all.forEach(m -> m.onInstallHold.accept(serverId, false));
     }
 
+    /** Every manager not closed yet, so a test run can close the ones its tests left open. */
+    static java.util.List<LspManager> openManagersForTest() {
+        synchronized (MANAGERS) {
+            return java.util.List.copyOf(MANAGERS);
+        }
+    }
+
     private volatile Map<String, LanguageServerSession> sharedServers = SHARED_SERVERS;
 
     /** This window's client on each session it uses: the primary one on a session it started. */
