@@ -167,4 +167,23 @@ class NodeRunPlanTest {
             assertFalse(NodeRunPlan.interruptsOnStop(p), p);
         }
     }
+
+    @Test
+    void tsxLoaderFlagsSkipTheTypeStrippingCheck() {
+        NodeRunPlan p = NodeRunPlan.plan(new NodeRunPlan.Request(
+                "/p/src/index.ts",
+                "index.ts",
+                List.of("a"),
+                null,
+                new NodeRuntimes.NodeRuntime(List.of("/n/node"), NodeRuntimes.Source.PATH, null),
+                false,
+                "v20.11.0",
+                List.of(),
+                false,
+                false,
+                java.util.Map.of(),
+                null,
+                List.of("--import", "tsx")));
+        assertEquals(List.of("/n/node", "--enable-source-maps", "--import", "tsx", "/p/src/index.ts", "a"), p.argv());
+    }
 }

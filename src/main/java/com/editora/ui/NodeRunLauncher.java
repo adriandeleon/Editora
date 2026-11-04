@@ -14,7 +14,10 @@ import com.editora.process.ProcessRunner;
 import com.editora.run.NodeRunPlan;
 import com.editora.run.NodeRuntimes;
 import com.editora.run.ProgramArgs;
+import com.editora.run.TsRunRoute;
 import org.jspecify.annotations.Nullable;
+
+import static com.editora.i18n.Messages.tr;
 
 /**
  * Plans a Node.js launch ({@link NodeRunPlan}) for {@code RunCoordinator}: Run File, a {@code node} run
@@ -50,8 +53,22 @@ final class NodeRunLauncher {
             Map<String, String> userEnv,
             @Nullable Path workingDir) {}
 
-    /** A ready launch: the plan and the folder it runs in. */
-    record Ready(NodeRunPlan plan, @Nullable Path dir) {}
+    /**
+     * A ready launch.
+     *
+     * @param plan what to run
+     * @param dir the folder it runs in
+     * @param target the file as the plan names it (the compiled {@code .js} when that runs instead of a
+     *     {@code .ts}): where the program starts in {@code plan.argv()}
+     * @param notice a line for the console before the program's output (which file runs, a stale build), or null
+     * @param route how a TypeScript file runs ({@link TsRunRoute.Kind#PLAIN} for everything else)
+     */
+    record Ready(
+            NodeRunPlan plan,
+            @Nullable Path dir,
+            String target,
+            @Nullable String notice,
+            com.editora.run.TsRunRoute.Kind route) {}
 
     private static final Duration VERSION_TIMEOUT = Duration.ofSeconds(10);
 
@@ -76,12 +93,38 @@ final class NodeRunLauncher {
         String name = file.getFileName() == null ? "" : file.getFileName().toString();
         String firstLine = RunCoordinator.firstLine(file);
         String version = null;
-        if (NodeRunPlan.isTypeScript(name)) {
+        Path runFile = file;
+        String notice = null;
+        List<String> loaderFlags = List.of();
+        TsRunRoute.Kind route = TsRunRoute.Kind.PLAIN;
+        boolean typeScript = NodeRunPlan.isTypeScript(name);
+        if (typeScript) {
             version = version(runtime, dir);
+            if (here && (firstLine == null || !firstLine.startsWith("#!"))) {
+                // The project's tsx, else the compiled file, else plain Node (review C102).
+                TsRunRoute chosen = TsRunRoute.choose(
+                        file,
+                        spec.projectRoot(),
+                        Files::isRegularFile,
+                        NodeRunLauncher::readSmall,
+                        NodeRunLauncher::modified);
+                route = chosen.kind();
+                if (route == TsRunRoute.Kind.TSX) {
+                    loaderFlags = TsRunRoute.tsxFlags(version);
+                } else if (route == TsRunRoute.Kind.BUILT) {
+                    runFile = chosen.target();
+                    name = String.valueOf(runFile.getFileName());
+                    notice = tr(
+                            chosen.stale() ? "run.console.builtFileStale" : "run.console.builtFile",
+                            relative(dir, runFile),
+                            relative(dir, file));
+                }
+            }
         }
         String noColor = here ? System.getenv("NO_COLOR") : null;
+        String target = ExecTargets.forPath(runFile).toTargetPath(runFile);
         NodeRunPlan plan = NodeRunPlan.plan(new NodeRunPlan.Request(
-                ExecTargets.forPath(file).toTargetPath(file),
+                target,
                 name,
                 spec.args(),
                 firstLine,
@@ -92,8 +135,35 @@ final class NodeRunLauncher {
                 spec.test(),
                 noColor != null && !noColor.isEmpty(),
                 spec.userEnv(),
-                here ? p -> Files.isExecutable(Path.of(p)) : null));
-        return new Ready(plan, dir);
+                here ? p -> Files.isExecutable(Path.of(p)) : null,
+                loaderFlags));
+        return new Ready(plan, dir, target, notice, route);
+    }
+
+    /** {@code file} relative to {@code dir} when below it, else the whole path ('/'-separated for the console). */
+    static String relative(@Nullable Path dir, Path file) {
+        try {
+            Path rel = dir != null && file.startsWith(dir) ? dir.relativize(file) : file;
+            return rel.toString().replace('\\', '/');
+        } catch (RuntimeException e) {
+            return file.toString();
+        }
+    }
+
+    private static java.util.Optional<String> readSmall(Path p) {
+        try {
+            return Files.size(p) > 256 * 1024 ? java.util.Optional.empty() : java.util.Optional.of(Files.readString(p));
+        } catch (java.io.IOException | RuntimeException e) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    private static long modified(Path p) {
+        try {
+            return Files.getLastModifiedTime(p).toMillis();
+        } catch (java.io.IOException | RuntimeException e) {
+            return 0;
+        }
     }
 
     /** A host's Node: the configuration's Interpreter, else the host's {@code node} tool, else its own node. */

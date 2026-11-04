@@ -2334,8 +2334,31 @@ final class RunCoordinator {
         }
         Path dir = chdir(plan.chdir(), ready.dir(), com.editora.vfs.Vfs.isRemote(ready.dir()));
         if (dir != null) {
+            pendingDeploySummary = ready.notice(); // "Running the built dist/index.js (from src/index.ts)"
+            if (ready.route() == com.editora.run.TsRunRoute.Kind.PLAIN
+                    && com.editora.run.NodeRunPlan.isTypeScript(ready.target())) {
+                pendingOutputWatcher = tsImportHint();
+            }
             streamRun(label, dir, plan.argv(), plan.env(), script);
         }
+    }
+
+    /**
+     * Watches a TypeScript file run on plain Node for the {@code ERR_MODULE_NOT_FOUND} of a {@code ./x.js} import
+     * that means {@code x.ts} — Node cannot map it — and says once how to run such a project (review C102).
+     */
+    private java.util.function.BiConsumer<String, Boolean> tsImportHint() {
+        boolean[] said = {false};
+        return (line, stderr) -> {
+            if (!said[0]
+                    && stderr
+                    && com.editora.run.TsRunRoute.missingJsImport(line, java.nio.file.Files::isRegularFile)
+                            .isPresent()) {
+                said[0] = true;
+                panel().appendNotice(tr("run.console.tsJsImportHint"));
+                host.setStatus(tr("run.console.tsJsImportHint"));
+            }
+        };
     }
 
     /** The buffer's first line (at most 512 characters), where a shebang would be. */
