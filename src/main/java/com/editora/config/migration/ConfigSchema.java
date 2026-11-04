@@ -356,7 +356,11 @@ public enum ConfigSchema {
                     // ("doublequotes"), htmlValidateScripts and htmlValidateStyles (on) — VS Code's defaults, which the
                     // server was never sent (HTML review B2, A4); htmlMarkupChecks (on), Editora's own unclosed-tag
                     // and missing-link checks (D5). Additive: absent is the default.
-                    Map.entry(154, (Migration) ConfigMigrations::identity)),
+                    Map.entry(154, (Migration) ConfigMigrations::identity),
+                    // v155→156: + eslintEnabled (on), eslintFixOnSave, jsFormatter ("auto"), jsFormatOnSave and
+                    // jsOrganizeImportsOnSave (off) — ESLint, Prettier/Biome and actions on save for JS/TS (JS/TS
+                    // review). Additive: absent is the default.
+                    Map.entry(155, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

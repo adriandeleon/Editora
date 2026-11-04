@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 155;
+    public static final int SCHEMA_VERSION = 156;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -609,6 +609,22 @@ public class Settings {
      * {@code npm install} against the registry into {@code ~/.cache/typescript}): off by default.
      */
     private boolean typescriptTypeAcquisition = false;
+    /**
+     * Run the project's own ESLint ({@code node_modules/.bin/eslint}) on JavaScript and TypeScript files of a
+     * trusted folder that has an ESLint configuration, and show its problems: on by default (it runs only there).
+     */
+    private boolean eslintEnabled = true;
+    /** After an explicit save of a JS/TS file, apply ESLint's fixes and save again if that changed it. Off by default. */
+    private boolean eslintFixOnSave;
+    /**
+     * What formats JavaScript and TypeScript: one of {@link #JS_FORMATTERS} — {@code auto} = the project's own
+     * Prettier or Biome when it has one (trusted folders), else the TypeScript server.
+     */
+    private String jsFormatter = "auto";
+    /** After an explicit save of a JS/TS file, format it and save again if that changed it. Off by default. */
+    private boolean jsFormatOnSave;
+    /** After an explicit save of a JS/TS file, organize its imports through the TypeScript server. Off by default. */
+    private boolean jsOrganizeImportsOnSave;
     /** Seconds one HTTP response handler may run before it is stopped (1–600). */
     private int httpScriptTimeoutSeconds = 10;
     /**
@@ -1212,6 +1228,49 @@ public class Settings {
 
     public void setTypescriptTypeAcquisition(boolean typescriptTypeAcquisition) {
         this.typescriptTypeAcquisition = typescriptTypeAcquisition;
+    }
+
+    /** The {@link #jsFormatter} values, the default first. */
+    public static final java.util.List<String> JS_FORMATTERS = java.util.List.of("auto", "prettier", "biome", "server");
+
+    public boolean isEslintEnabled() {
+        return eslintEnabled;
+    }
+
+    public void setEslintEnabled(boolean eslintEnabled) {
+        this.eslintEnabled = eslintEnabled;
+    }
+
+    public boolean isEslintFixOnSave() {
+        return eslintFixOnSave;
+    }
+
+    public void setEslintFixOnSave(boolean eslintFixOnSave) {
+        this.eslintFixOnSave = eslintFixOnSave;
+    }
+
+    public String getJsFormatter() {
+        return oneOf(jsFormatter, JS_FORMATTERS);
+    }
+
+    public void setJsFormatter(@Nullable String jsFormatter) {
+        this.jsFormatter = oneOf(jsFormatter, JS_FORMATTERS);
+    }
+
+    public boolean isJsFormatOnSave() {
+        return jsFormatOnSave;
+    }
+
+    public void setJsFormatOnSave(boolean jsFormatOnSave) {
+        this.jsFormatOnSave = jsFormatOnSave;
+    }
+
+    public boolean isJsOrganizeImportsOnSave() {
+        return jsOrganizeImportsOnSave;
+    }
+
+    public void setJsOrganizeImportsOnSave(boolean jsOrganizeImportsOnSave) {
+        this.jsOrganizeImportsOnSave = jsOrganizeImportsOnSave;
     }
 
     public String getHttpNodePath() {
