@@ -504,6 +504,17 @@ final class RunCoordinator {
                 reportIncomplete(cfg, "status.run.configNeedsTarget"); // a target that is no valid path
                 return;
             }
+            String missing = elsewhere
+                    ? null
+                    : com.editora.run.MissingProgram.missingInterpreter(
+                            cfg.interpreter(), p -> java.nio.file.Files.isRegularFile(java.nio.file.Path.of(p)));
+            if (missing != null) {
+                // The configuration's own Interpreter names a file that is not there: say so and open the form,
+                // rather than "Node.js was not found (node) — set it in Settings" (review C104).
+                host.setStatus(tr("status.run.configInterpreterMissing", cfg.name(), missing));
+                ops.editConfiguration(cfg.name());
+                return;
+            }
             List<String> nodeOptions;
             try {
                 nodeOptions = ProgramArgs.parse(cfg.interpreterOptions());
@@ -550,6 +561,7 @@ final class RunCoordinator {
                         npmEnv.putAll(env);
                         launchReason = detected.reason(); // "pnpm-lock.yaml": what a not-found message names
                         runtimeCommand = npm.probe();
+                        pendingCommandLine = true; // which manager ran: pnpm, yarn, the npm beside the Node
                         streamRun(cfg.name(), cwd, npm.argv(), npmEnv, script);
                     });
             return;
@@ -2573,6 +2585,9 @@ final class RunCoordinator {
      */
     private @Nullable List<String> runtimeCommand;
 
+    /** Set by an npm configuration: the next run's console starts with its command line, as a script's does. */
+    private boolean pendingCommandLine;
+
     /** As above; {@code script} is the file being run (saved before a Rerun), null for a Java launch. */
     private void streamRun(
             @Nullable String label,
@@ -2583,6 +2598,7 @@ final class RunCoordinator {
         if (terminalRun) {
             terminalRun = false;
             runtimeCommand = null;
+            pendingCommandLine = false;
             pendingDeploySummary = null; // the console's extras do not apply to a Terminal tab
             pendingOutputWatcher = null;
             pendingRerun = null;
@@ -2590,6 +2606,8 @@ final class RunCoordinator {
             return;
         }
         lastRunScript = script;
+        boolean commandLineFirst = pendingCommandLine;
+        pendingCommandLine = false;
         String reason = launchReason;
         launchReason = "";
         TestStream tests = pendingTestStream;
@@ -2627,7 +2645,7 @@ final class RunCoordinator {
                 if (deploySummary != null) {
                     panel().showCommandLine(deploySummary); // started() cleared it: the deploy comes first
                 }
-                if (script != null || tests != null) {
+                if (script != null || tests != null || commandLineFirst) {
                     // Which interpreter ran, and how: the first thing to check when a script behaves oddly.
                     panel().showCommandLine(commandLine);
                 }

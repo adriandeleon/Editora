@@ -856,7 +856,9 @@ final class BuildCoordinator {
         // Always names the folder: Rerun Last runs where the last build did, which may be a root whose tool
         // windows are no longer shown (review B21).
         Path rootName = root.toAbsolutePath().normalize().getFileName();
-        host.setStatus(tr("status.build.startedIn", tool.displayName(), label, String.valueOf(rootName)));
+        // npm's messages name the manager that runs ("pnpm finished successfully"), as its tab does.
+        String runName = tool == BuildTool.NPM ? tabName : tool.displayName();
+        host.setStatus(tr("status.build.startedIn", runName, label, String.valueOf(rootName)));
         // Maven and the Scala tools (sbt, Mill, Scala CLI) run on the JDK chosen in Settings, as Run does; Gradle
         // picks its own through its toolchains.
         boolean onSettingsJdk = tool == BuildTool.MAVEN
@@ -886,6 +888,10 @@ final class BuildCoordinator {
             public void onStart(String commandLine) {
                 panel.started(
                         BuildCoordinator.this, tabName, commandLine, tool.outputStyle(), BuildCoordinator.this::stop);
+                if (npm != null) {
+                    // Which manager and which npm ran: the header's command line is gone once the run ends.
+                    panel.appendOutput(BuildCoordinator.this, "$ " + commandLine, false);
+                }
             }
 
             @Override
@@ -929,10 +935,8 @@ final class BuildCoordinator {
                 }
                 host.setStatus(
                         stopped
-                                ? tr("status.build.stopped", tool.displayName())
-                                : code == 0
-                                        ? tr("status.build.ok", tool.displayName())
-                                        : tr("status.build.exit", tool.displayName(), code));
+                                ? tr("status.build.stopped", runName)
+                                : code == 0 ? tr("status.build.ok", runName) : tr("status.build.exit", runName, code));
                 runAfterStop();
                 if (!stopped && code > 0 && tool == BuildTool.NPM) {
                     // A script that failed because nothing is installed yet (a fresh clone, a new template):
@@ -950,7 +954,11 @@ final class BuildCoordinator {
                 outputWatcher = null;
                 stopRequested = false;
                 afterStop = null; // nothing ran, so nothing was stopped: a queued run would start from a failure
-                panel.failed(BuildCoordinator.this, message);
+                // "pnpm was not found. This project uses pnpm (package.json)…" in the header too, not the JDK's
+                // "Cannot run program …: error: 2" above the friendly line (review C104).
+                String friendly = NpmRunSupport.missingMessage(
+                        runArgv.get(0), message, detectedManager == null ? "" : detectedManager.reason());
+                panel.failed(BuildCoordinator.this, friendly != null ? friendly : message);
                 if (tree != null) {
                     tree.setRunning(false);
                 }
@@ -959,13 +967,11 @@ final class BuildCoordinator {
                 }
                 runtimeGeneration++; // nothing ran: drop the runtime chip and any late probe answer
                 panel.setRuntime(BuildCoordinator.this, null);
-                String friendly = NpmRunSupport.missingMessage(
-                        runArgv.get(0), message, detectedManager == null ? "" : detectedManager.reason());
                 if (friendly != null) {
                     panel.appendOutput(BuildCoordinator.this, friendly, true);
                     host.setStatus(friendly);
                 } else {
-                    host.setStatus(tr("status.build.failed", tool.displayName(), message));
+                    host.setStatus(tr("status.build.failed", runName, message));
                 }
             }
         });
