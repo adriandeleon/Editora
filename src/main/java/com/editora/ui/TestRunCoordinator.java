@@ -747,7 +747,7 @@ final class TestRunCoordinator implements TestRunHook {
     }
 
     /** Directory names that never hold a module, so the report-dir walk does not enter them. */
-    private static final Set<String> NOT_A_MODULE = Set.of("node_modules");
+    private static final Set<String> NOT_A_MODULE = com.editora.search.DependencyDirs.NAMES;
 
     /**
      * The {@code TEST-*.xml} files of every module's report directory under {@code root}.

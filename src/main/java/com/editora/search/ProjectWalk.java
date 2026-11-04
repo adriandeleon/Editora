@@ -230,7 +230,7 @@ public final class ProjectWalk {
         }
         int slash = relDir.lastIndexOf('/');
         String name = relDir.substring(slash + 1);
-        if (name.equals("node_modules")) {
+        if (DependencyDirs.NAMES.contains(name)) {
             return true;
         }
         if (!(name.equals("target") || name.equals("build") || name.equals("out"))) {

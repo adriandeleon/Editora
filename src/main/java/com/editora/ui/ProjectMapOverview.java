@@ -36,8 +36,8 @@ final class ProjectMapOverview {
     /** A build file name, and the build system it stands for. */
     static final Map<String, String> MARKERS = markers();
 
-    private static final Set<String> SKIPPED_SEGMENTS =
-            Set.of("vendor", "third_party", "third-party", "thirdparty", "node_modules", "testdata", "fixtures");
+    private static final Set<String> SKIPPED_SEGMENTS = com.editora.search.DependencyDirs.with(
+            "vendor", "third_party", "third-party", "thirdparty", "testdata", "fixtures");
     private static final Set<String> TEST_FOLDERS = Set.of("test", "tests", "testing", "__tests__", "spec", "e2e");
     private static final Set<String> DOC_FOLDERS = Set.of("docs", "doc", "documentation", "man");
     private static final Set<String> MAIN_EXTENSIONS =
