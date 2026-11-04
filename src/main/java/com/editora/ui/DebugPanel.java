@@ -804,6 +804,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** Updates the toolbar/status to reflect the session state and enables the right controls. */
     public void setState(DapManager.State state) {
+        boolean wasRunning = lastState == DapManager.State.RUNNING;
         lastState = state;
         if (state == DapManager.State.STARTING) {
             exitCode = null; // a new session: the last one's outcome is no longer what the status says
@@ -818,8 +819,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         boolean running = state == DapManager.State.RUNNING;
         boolean active = state != DapManager.State.INACTIVE;
-        runToken++;
-        if (running) {
+        if (!(running && wasRunning)) {
+            runToken++; // a continued event while it runs (js-debug stepping through skipped code) is no change
+        }
+        if (running && !wasRunning) {
             // A step's stop comes within a moment, and the stack stays meanwhile (no flicker). A program still
             // running after that ran on — a Step out of a callback into code it skips — and the old stack,
             // variables and "(paused)" no longer describe it (review D107).
