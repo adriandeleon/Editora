@@ -32,6 +32,21 @@ public final class DependencyDirs {
         return NAMES.contains(trimmed.substring(slash + 1));
     }
 
+    /** Whether root-relative {@code relPath} ('/'-separated) lies inside a dependency folder at any depth. */
+    public static boolean inDependencyDir(String relPath) {
+        if (relPath == null) {
+            return false;
+        }
+        int start = 0;
+        for (int slash = relPath.indexOf('/'); slash >= 0; slash = relPath.indexOf('/', start)) {
+            if (NAMES.contains(relPath.substring(start, slash))) {
+                return true;
+            }
+            start = slash + 1;
+        }
+        return false;
+    }
+
     /**
      * Whether one of the include globs names a dependency folder ({@code node_modules/**},
      * {@code **}{@code /node_modules/react/**}): the user asked to look inside, so nothing is skipped.

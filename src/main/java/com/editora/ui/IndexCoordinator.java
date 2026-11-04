@@ -655,35 +655,64 @@ final class IndexCoordinator {
         // files too, and this walk is already paying for the traversal. Doing it separately would mean a
         // second pass over the same tree for the same information.
         List<Path> files = new ArrayList<>();
-        ProjectWalk.Outcome outcome = ProjectWalk.walk(
-                root, new ProjectWalk.Options(Integer.MAX_VALUE, maxFiles, ignore, superseded), (p, rel, attrs) -> {
-                    // A symlink to a file is still a file to open (the walk reads attributes without
-                    // following links, so it reports the link itself).
-                    if (!attrs.isRegularFile() && !(attrs.isSymbolicLink() && Files.isRegularFile(p))) {
-                        return ProjectWalk.Verdict.SKIP;
-                    }
-                    files.add(p);
-                    String language = languageOf(p);
-                    // No declaration rules means no symbols whatever the file says: don't read 2 MB of a
-                    // lock file, an image or a minified bundle to learn that.
-                    if (!DeclarationScanner.supports(language)) {
-                        return ProjectWalk.Verdict.ACCEPT;
-                    }
-                    try {
-                        if (Files.size(p) > MAX_FILE_BYTES) { // of the target, when p is a link
-                            return ProjectWalk.Verdict.ACCEPT;
-                        }
-                        List<Symbol> symbols = DeclarationScanner.scan(Files.readString(p), language);
-                        if (!symbols.isEmpty()) {
-                            out.add(new Scanned(p, symbols));
-                        }
-                    } catch (IOException | RuntimeException ex) {
-                        // An unreadable or non-UTF-8 file is skipped, not fatal: the rest of the tree is
-                        // still worth indexing, and a navigation index has no business failing loudly.
-                    }
+        ProjectWalk.Visitor scan = (p, rel, attrs) -> {
+            // A symlink to a file is still a file to open (the walk reads attributes without
+            // following links, so it reports the link itself).
+            if (!attrs.isRegularFile() && !(attrs.isSymbolicLink() && Files.isRegularFile(p))) {
+                return ProjectWalk.Verdict.SKIP;
+            }
+            files.add(p);
+            String language = languageOf(p);
+            // No declaration rules means no symbols whatever the file says: don't read 2 MB of a
+            // lock file, an image or a minified bundle to learn that.
+            if (!DeclarationScanner.supports(language)) {
+                return ProjectWalk.Verdict.ACCEPT;
+            }
+            try {
+                if (Files.size(p) > MAX_FILE_BYTES) { // of the target, when p is a link
                     return ProjectWalk.Verdict.ACCEPT;
+                }
+                List<Symbol> symbols = DeclarationScanner.scan(Files.readString(p), language);
+                if (!symbols.isEmpty()) {
+                    out.add(new Scanned(p, symbols));
+                }
+            } catch (IOException | RuntimeException ex) {
+                // An unreadable or non-UTF-8 file is skipped, not fatal: the rest of the tree is
+                // still worth indexing, and a navigation index has no business failing loudly.
+            }
+            return ProjectWalk.Verdict.ACCEPT;
+        };
+        if (ignore.prunesDependencies()) {
+            ProjectWalk.Outcome outcome = ProjectWalk.walk(
+                    root, new ProjectWalk.Options(Integer.MAX_VALUE, maxFiles, ignore, superseded), scan);
+            return new Walked(List.copyOf(files), out, outcome.truncated());
+        }
+        // Dependency folders walked too ("Respect .gitignore" off): the project's own files first, then what the cap
+        // leaves for node_modules. In one walk node_modules came before src/ and took all 50,000 places (JS E107).
+        ProjectWalk.Outcome own = ProjectWalk.walk(
+                root,
+                new ProjectWalk.Options(Integer.MAX_VALUE, maxFiles, ignore, superseded),
+                new ProjectWalk.Visitor() {
+                    @Override
+                    public ProjectWalk.Verdict file(Path p, String rel, java.nio.file.attribute.BasicFileAttributes a) {
+                        return scan.file(p, rel, a);
+                    }
+
+                    @Override
+                    public boolean enter(Path dir, String rel) {
+                        return !com.editora.search.DependencyDirs.isDependencyDir(rel);
+                    }
                 });
-        return new Walked(List.copyOf(files), out, outcome.truncated());
+        if (own.truncated() || superseded.getAsBoolean()) {
+            return new Walked(List.copyOf(files), out, own.truncated());
+        }
+        ProjectWalk.Outcome deps = ProjectWalk.walk(
+                root,
+                new ProjectWalk.Options(Integer.MAX_VALUE, maxFiles - own.accepted(), ignore, superseded),
+                (p, rel, attrs) -> com.editora.search.DependencyDirs.inDependencyDir(rel)
+                        ? scan.file(p, rel, attrs)
+                        : ProjectWalk.Verdict.SKIP);
+        return new Walked(List.copyOf(files), out, deps.truncated());
     }
 
     /**
