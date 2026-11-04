@@ -146,6 +146,14 @@ class EslintPrettierFxTest {
             assertEquals("let x = 1\n", waitFor(() -> text(c), "let x = 1\n"::equals), "the project's Prettier");
             FxTestSupport.runOnFx(() -> c.activeBuffer().getArea().undo());
             assertEquals("let x=1\n", text(c), "one undo step takes the format back");
+
+            // Typing: checked again after the pause, with no save.
+            int calls = Files.readAllLines(log).size();
+            FxTestSupport.runOnFx(() -> c.activeBuffer().getArea().appendText("var z\n"));
+            List<LspDiagnostic> again = waitFor(() -> problemsOf(c, app), l -> l.size() == 1);
+            assertEquals(1, again.size());
+            assertEquals(1, again.get(0).startLine(), "the new line's var");
+            assertTrue(Files.readAllLines(log).size() > calls);
         }
     }
 
