@@ -163,6 +163,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JavaScript, TypeScript, Node.js and npm (JS/TS review).**
+  - **Which TypeScript runs.** Install now puts typescript-language-server 5.3.0 and TypeScript 5.9.3 in Editora's
+    own folder instead of `npm install -g`, so it no longer replaces your own `tsc`. TypeScript 6, which the last
+    release installed, leaves out `@types/node` unless a tsconfig lists it, so Node projects showed "Cannot find name
+    'process'" and plain JavaScript got `any` for every Node API. The status bar shows the TypeScript in use, and an
+    untrusted folder whose own TypeScript differs says so once.
+  - **One Node.js, really.** npm, pnpm, yarn and bun scripts now run on the Node.js that Run, Debug and the language
+    server use; they used whatever `node` was on the PATH. A project's `.nvmrc` or `.node-version` now wins over the
+    Node.js setting, `$NVM_DIR` is honoured, a version nvm lacks is named, and the runtime chip says where the version
+    came from. The Node.js setting moved to its own card on **Settings → Build Tools**; it was greyed out under
+    Debugging unless debugging was on.
+  - **TypeScript runs.** ▶ on a `.ts` file uses the project's tsx (`--import tsx`), else its compiled `outDir` file
+    (with a warning when that is older than the source), else plain Node with a hint; a `./x.js` import used to fail
+    with ERR_MODULE_NOT_FOUND, Editora's own template included. Debug starts a file exactly as Run does and prints the
+    real command line.
+  - **Language server.** Fix all, Add all missing imports and Remove unused are back in Code Actions on a line with a
+    problem. A dead tsserver restarts the server instead of leaving it silently empty. Moving or renaming a `.ts`/`.js`
+    file updates its imports. A monorepo opened without a project runs one server, not one per package. JS/TS files
+    keep their server up to 50,000 lines (was 10,000). The completion pane shows the signature. Dark popups no longer
+    draw code in light-theme colours. A settings change no longer restarts a server that kept crashing.
+  - **JSON.** `tsconfig.json`, `jsconfig.json`, `.eslintrc`, `.babelrc`, `.swcrc`, `.vscode/*.json` and
+    `*.code-workspace` allow comments and trailing commas; `package.json` and `tsconfig.json` are checked and completed
+    offline against bundled schemas.
+  - **Editing.** Typing in files with long lines no longer stalls (about 850 → 10 ms a key on 8,000-character lines);
+    such lines are shown plain instead of half-coloured. Minified, huge and very-long-line files open in View mode with
+    the reason; "Editable, No Undo" shows while undo is off. In JSX, Toggle Comment writes `{/* … */}`, Enter between
+    tags indents, and elements and `return (` fold. Without a server, Go to Definition finds parameters, locals and
+    imports. New JS/TS/JSON/YAML files indent 2 spaces. A typed bracket no longer pairs right before a word (all
+    languages). Related File pairs `.ts`, `.js` and `.d.ts`. Spell check reads JSX text.
+  - **Tests and consoles.** Test runs show Node's readable report in the Run console; a test file that fails to load
+    shows its error; skip/todo reasons are read. The Debug console keeps the program's output in order and in colour,
+    folds Node's internal frames, clears a stale stack after a step runs on, and names the file it stopped in. Run,
+    Output and Test Results open tall enough to read. Messages name the package manager that ran.
+  - **Debugger.** js-debug runs on a new enough Node.js even when the project's is older than 18. The attach command is
+    **Debug: Attach to Running Program…** (JVM or Node.js). The Debugging card's Install… installs vscode-js-debug
+    alone, and its download is checked against a pinned SHA-256. Settings and Doctor show the js-debug version.
+  - **Search and index.** Find in Files no longer says "(truncated)" because a large bundle was skipped. With Respect
+    .gitignore off, the index keeps the project's own files before `node_modules`. The npm window's commands, Output
+    tab and Settings text say **Package Scripts**.
 - **Project Map: Emacs keys in sticky notes.** A sticky note on a preview card, and a folder's or file's note card,
   now move the caret with the keymap's keys — `C-f`, `C-b`, `C-n`, `C-p`, `C-a`, `C-e`, `M-f`, `M-b` and the rest in
   the Emacs keymap — as the Personal Notes box in the editor does. Only the text box's own keys used to work there
