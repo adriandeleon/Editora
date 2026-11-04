@@ -150,10 +150,20 @@ public final class NodeRuntimes {
             this(file, projectRoot, configured, setting, home, isFile, readFile, listDir, onPath, null);
         }
 
-        /** The folder holding nvm's {@code versions/node}, or null with neither a home nor an nvm folder. */
-        @Nullable
-        Path nvmRoot() {
-            return nvmDir != null ? nvmDir : home == null ? null : home.resolve(".nvm");
+        /**
+         * The folders holding nvm's {@code versions/node}, the one {@code $NVM_DIR} names first, then {@code
+         * <home>/.nvm}: a machine whose {@code $NVM_DIR} points elsewhere (a CI image, a system-wide nvm) can still
+         * have versions in the home folder.
+         */
+        List<Path> nvmRoots() {
+            List<Path> roots = new ArrayList<>(2);
+            if (nvmDir != null) {
+                roots.add(nvmDir);
+            }
+            if (home != null && !home.resolve(".nvm").equals(nvmDir)) {
+                roots.add(home.resolve(".nvm"));
+            }
+            return roots;
         }
 
         /** Local inputs: the real file system, the user's home and Editora's augmented PATH. */
@@ -246,8 +256,7 @@ public final class NodeRuntimes {
      * PATH. Neither the setting nor a project's version file is consulted.
      */
     public static NodeRuntime resolveForTool(Inputs in, int minMajor) {
-        Path nvm = in.nvmRoot();
-        if (nvm != null) {
+        for (Path nvm : in.nvmRoots()) {
             Optional<Path> newest = in.listDir().apply(nvm.resolve("versions").resolve("node")).stream()
                     .filter(d -> parseVersion(String.valueOf(d.getFileName()))
                             .map(v -> v[0] >= minMajor)
@@ -433,11 +442,16 @@ public final class NodeRuntimes {
             return Optional.empty();
         }
         int parts = wanted.strip().replaceFirst("^v", "").split("\\.").length;
-        Path nvm = in.nvmRoot();
-        if (nvm == null) {
-            return Optional.empty();
+        for (Path nvm : in.nvmRoots()) {
+            Optional<Path> found = nvmNodeIn(in, nvm.resolve("versions").resolve("node"), want.get(), parts);
+            if (found.isPresent()) {
+                return found;
+            }
         }
-        Path versions = nvm.resolve("versions").resolve("node");
+        return Optional.empty();
+    }
+
+    private static Optional<Path> nvmNodeIn(Inputs in, Path versions, int[] want, int parts) {
         return in.listDir().apply(versions).stream()
                 .filter(d -> {
                     Optional<int[]> have = parseVersion(d.getFileName().toString());
@@ -445,7 +459,7 @@ public final class NodeRuntimes {
                         return false;
                     }
                     for (int i = 0; i < parts; i++) {
-                        if (have.get()[i] != want.get()[i]) {
+                        if (have.get()[i] != want[i]) {
                             return false;
                         }
                     }

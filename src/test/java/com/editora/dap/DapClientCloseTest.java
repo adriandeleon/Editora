@@ -22,13 +22,19 @@ class DapClientCloseTest {
         try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             Socket client = new Socket(InetAddress.getLoopbackAddress(), server.getLocalPort());
             try (Socket peer = server.accept()) {
-                CompletableFuture<Integer> read = CompletableFuture.supplyAsync(() -> {
-                    try (InputStream in = client.getInputStream()) {
-                        return in.read(); // blocks: the peer sends nothing
-                    } catch (java.io.IOException e) {
-                        return -2;
-                    }
-                });
+                // Its own thread, not the common pool: a read the close fails to free (slow on a loaded macOS
+                // runner) must not starve the pool the next DAP tests' clients complete their futures on.
+                CompletableFuture<Integer> read = new CompletableFuture<>();
+                Thread reader = Thread.ofPlatform()
+                        .daemon()
+                        .name("close-test-reader")
+                        .start(() -> {
+                            try (InputStream in = client.getInputStream()) {
+                                read.complete(in.read()); // blocks: the peer sends nothing
+                            } catch (java.io.IOException e) {
+                                read.complete(-2);
+                            }
+                        });
                 Thread.sleep(200); // the reader is in its read
                 long t0 = System.nanoTime();
 
@@ -40,6 +46,7 @@ class DapClientCloseTest {
                 assertTrue(peer.getInputStream().read() == -1, "the adapter was told: end of stream");
                 int got = read.get(5, TimeUnit.SECONDS);
                 assertTrue(got < 0, "the reader was freed: " + got);
+                reader.join(1_000);
             }
         }
     }

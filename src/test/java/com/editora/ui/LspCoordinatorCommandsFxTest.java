@@ -1074,6 +1074,7 @@ class LspCoordinatorCommandsFxTest {
     void aCrashedServerIsRestartedUntilItKeepsCrashing() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);
         fx.run(() -> fx.coordinator.applySupport()); // the settings as applied, before anything crashes
+        fx.settle(); // whatever that apply restarts has started before the background tab opens on it
         EditorBuffer background = FxTestSupport.callOnFx(EditorBuffer::new);
         Path other = file("Background.java", "class Background {}\n");
         FxTestSupport.runOnFx(() -> {
@@ -1084,6 +1085,7 @@ class LspCoordinatorCommandsFxTest {
             fx.coordinator.syncBuffer(background);
             fx.host.active = b;
         });
+        fx.settle();
         assertTrue(fx.manager.isManaged(other));
 
         int sessions = fx.fakes.size();

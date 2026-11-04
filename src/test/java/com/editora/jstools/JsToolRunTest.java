@@ -45,7 +45,8 @@ class JsToolRunTest {
                 inv.argv());
         assertEquals(ROOT, inv.dir());
         assertEquals("false", inv.env().get("ESLINT_USE_FLAT_CONFIG"), "an .eslintrc: ESLint 9 told to read it");
-        assertTrue(inv.env().get("PATH").startsWith("/n/bin" + File.pathSeparator), "the project's Node first");
+        assertTrue(
+                inv.env().get("PATH").startsWith(Path.of("/n/bin") + File.pathSeparator), "the project's Node first");
 
         var flat = new JsTools.EslintConfig(ROOT, ROOT.resolve("eslint.config.js"), true);
         var fix = JsToolRun.eslint(tool(JsTools.Kind.ESLINT, "e.js"), flat, FILE, NODE, null, true);
@@ -125,6 +126,6 @@ class JsToolRunTest {
     @Test
     void theEnvironmentAddsOnlyWhatItNeeds() {
         assertEquals(Map.of(), JsToolRun.env(null, null, "/usr/bin"));
-        assertEquals(Map.of("PATH", "/n"), JsToolRun.env(Path.of("/n"), null, ""));
+        assertEquals(Map.of("PATH", Path.of("/n").toString()), JsToolRun.env(Path.of("/n"), null, ""));
     }
 }

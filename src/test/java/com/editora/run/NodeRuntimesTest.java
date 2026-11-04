@@ -249,6 +249,36 @@ class NodeRuntimesTest {
     }
 
     @Test
+    void aVersionMissingFromNvmDirIsStillFoundInTheHomeFoldersNvm() throws Exception {
+        // A CI image sets $NVM_DIR to its own nvm; a version installed under ~/.nvm still counts.
+        Path home = tmp.resolve("home");
+        Path bin = home.resolve(".nvm/versions/node/v12.22.12/bin");
+        Files.createDirectories(bin);
+        Files.writeString(bin.resolve("node"), "");
+        Files.createDirectories(tmp.resolve("system-nvm/versions/node/v24.0.0/bin"));
+        Path proj = tmp.resolve("legacy");
+        Files.createDirectories(proj);
+        Files.writeString(proj.resolve(".nvmrc"), "12\n");
+        Path script = file(proj.resolve("app.js"));
+        Inputs base = in(script, proj, "", "", home, null);
+        Inputs withNvm = new Inputs(
+                base.file(),
+                base.projectRoot(),
+                "",
+                "",
+                home,
+                base.isFile(),
+                base.readFile(),
+                base.listDir(),
+                base.onPath(),
+                tmp.resolve("system-nvm"));
+        assertEquals(
+                List.of(bin.resolve("node").toString()),
+                NodeRuntimes.resolve(withNvm).command());
+        assertEquals(Source.VERSION_FILE, NodeRuntimes.resolve(withNvm).source());
+    }
+
+    @Test
     void aToolsNodeIgnoresTheSettingAndThePin() throws Exception {
         Path home = tmp.resolve("home");
         nvmVersion(home, "v16.20.0");
