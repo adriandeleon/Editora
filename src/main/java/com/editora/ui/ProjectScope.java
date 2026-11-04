@@ -105,6 +105,16 @@ final class ProjectScope {
                 && c.getTrustStore().isTrusted(r);
     }
 
+    /** A copy of the trust list, for a check made off the FX thread (Doctor's ESLint/Prettier rows). */
+    com.editora.config.TrustStore trustSnapshot() {
+        com.editora.config.TrustStore copy = new com.editora.config.TrustStore();
+        ConfigManager c = config.get();
+        if (c != null) {
+            copy.roots.putAll(c.getTrustStore().roots);
+        }
+        return copy;
+    }
+
     // --- effective values ----------------------------------------------------------------------------------------
 
     int tabSize(Settings user) {
