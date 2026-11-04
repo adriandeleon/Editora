@@ -193,6 +193,8 @@ final class ProjectMapStickyNotes implements CardAttachment {
 
             editor.getStyleClass().add("project-map-sticky-note-editor");
             editor.setWrapText(true);
+            // The configured keymap's caret moves and basic edits (Emacs C-f, C-n, C-a, M-f…), as the Notes box has.
+            com.editora.command.TextInputKeymap.installShared(editor);
             VBox.setVgrow(editor, Priority.ALWAYS);
             editor.focusedProperty().addListener((obs, was, focused) -> {
                 if (!focused) {

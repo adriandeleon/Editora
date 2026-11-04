@@ -115,8 +115,8 @@ final class MapCards {
 
         boolean isModified(Path file);
 
-        /** A declaration row's menu, as the Map's own Structure column gives it. */
-        ContextMenu symbolMenu(ProjectMapModel.Entry entry);
+        /** A declaration row's menu, as the Map's own Structure column gives it, with {@code preview} as its Preview. */
+        ContextMenu symbolMenu(ProjectMapModel.Entry entry, Runnable preview);
 
         /** The options menu's "Hide all open Personal Notes". */
         boolean hideOpenNotes();
@@ -189,6 +189,19 @@ final class MapCards {
     private final Map<Region, Long> cardTouches = new java.util.IdentityHashMap<>();
     /** The pinned code cards: never evicted (Map explore round, position 7). */
     private final Set<Region> pinnedCards = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /**
+     * Declaration cards last asked for from a file card's Structure column: they stand beside that column and their
+     * connector starts there, while one asked for from the Map's own Structure column follows that one (Map Structure
+     * previews).
+     */
+    private final Set<Region> cardColumnCards = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /** Which Structure column a declaration card was asked for from. */
+    private enum From {
+        MAP_COLUMN,
+        CARD_COLUMN
+    }
     /** The last Git request each card made: an older answer is dropped (position 9). */
     private final Map<ProjectMapPreview, Long> cardsGitRequests = new java.util.IdentityHashMap<>();
 
@@ -358,9 +371,12 @@ final class MapCards {
         return previewFile(file.toAbsolutePath().normalize(), file);
     }
 
-    /** Opens (or brings up and focuses) the card of a declaration row: its lines of its file. */
+    /**
+     * Opens (or brings up and focuses) the card of a declaration row: its lines of its file, beside the Map's
+     * Structure column, which an open card asked for from a file card's column moves to.
+     */
     void openDeclarationCard(ProjectMapModel.Entry symbolRow) {
-        previewSymbol(symbolRow);
+        previewSymbol(symbolRow, null, From.MAP_COLUMN);
     }
 
     /**
@@ -930,13 +946,18 @@ final class MapCards {
      * A declaration row: opens (or focuses) the card of its lines. The card reads and colours the whole file
      * and shows the declaration's block with its doc comment, numbered as the file numbers it.
      */
-    private void previewSymbol(ProjectMapModel.Entry entry) {
-        previewSymbol(entry, null);
-    }
-
-    /** {@link #previewSymbol(ProjectMapModel.Entry)}, placed by {@code placed} when given (a card brought back). */
     private @Nullable ProjectMapPreview previewSymbol(
             ProjectMapModel.Entry entry, ProjectMapPreview.@Nullable Placement placed) {
+        return previewSymbol(entry, placed, null);
+    }
+
+    /**
+     * A declaration row's card, placed by {@code placed} when given (a card brought back). {@code from} is the
+     * Structure column it was asked for from, which it stands beside and connects to; an open card asked for from the
+     * other column moves there. Null leaves where it belongs as it was.
+     */
+    private @Nullable ProjectMapPreview previewSymbol(
+            ProjectMapModel.Entry entry, ProjectMapPreview.@Nullable Placement placed, @Nullable From from) {
         ProjectMapModel.Symbol symbol = entry.symbol();
         if (symbol == null) {
             return null;
@@ -945,6 +966,9 @@ final class MapCards {
         ProjectMapPreview existing = previews.get(key);
         if (existing != null) {
             touchCard(existing, true);
+            if (from != null && (from == From.CARD_COLUMN) != cardColumnCards.contains(existing)) {
+                cardFollowColumn(existing, key, from);
+            }
             if (placed == null) {
                 existing.focusContent();
             }
@@ -956,6 +980,9 @@ final class MapCards {
             return null;
         }
         ProjectMapPreview preview = createPreview(key);
+        if (from == From.CARD_COLUMN) {
+            cardColumnCards.add(preview);
+        }
         preview.setOnOpenAt((path, line) -> host.openAt(path, line));
         preview.setOnStep(direction -> cardsStep(preview, direction));
         preview.setOnShowInStructure(() -> cardsShowInStructure(preview));
@@ -987,6 +1014,31 @@ final class MapCards {
         cardsRequestLastChange(preview);
         scheduleCardRefresh();
         return preview;
+    }
+
+    /**
+     * An open declaration card asked for from the other Structure column — the Map's or its file card's — goes
+     * beside that column, as a new card would, and its connector starts there (Map Structure previews). A pinned card
+     * keeps its place; only its connector moves.
+     */
+    private void cardFollowColumn(ProjectMapPreview card, Path key, From from) {
+        if (from == From.CARD_COLUMN) {
+            cardColumnCards.add(card);
+        } else {
+            cardColumnCards.remove(card);
+        }
+        if (!pinnedCards.contains(card)) {
+            card.placeAgain((width, height, parentWidth, parentHeight) -> previewPlacement(
+                    card,
+                    key,
+                    width,
+                    height,
+                    ProjectMapPreview.MIN_WIDTH,
+                    ProjectMapPreview.MIN_HEIGHT,
+                    parentWidth,
+                    parentHeight));
+        }
+        repaintPreviewConnectors();
     }
 
     /** A file's card under its normalized path {@code selected}, showing {@code shown} (the row's own path). */
@@ -1297,9 +1349,12 @@ final class MapCards {
                         node -> cardRevealDeclaration(card, node),
                         node -> {
                             touchCard(card, false); // the column's card is in use: never the one evicted
-                            previewSymbol(symbolEntry(node));
+                            previewSymbol(symbolEntry(node), null, From.CARD_COLUMN);
                         },
-                        node -> host.symbolMenu(symbolEntry(node)),
+                        node -> host.symbolMenu(symbolEntry(node), () -> {
+                            touchCard(card, false);
+                            previewSymbol(symbolEntry(node), null, From.CARD_COLUMN); // beside this column
+                        }),
                         () -> touchCard(card, false),
                         this::connectorsMoved,
                         () -> reserveBesideCard(card)));
@@ -1314,13 +1369,14 @@ final class MapCards {
     }
 
     /**
-     * A click or Enter on a declaration in a file card's Structure column: the card scrolls to the declaration and
-     * marks its lines (review 3, E8). A declaration past what the card shows opens its own card instead.
+     * A Shift+click or Shift+Enter on a declaration in a file card's Structure column: the card scrolls to the
+     * declaration and marks its lines (review 3, E8). A declaration past what the card shows opens its own card
+     * instead.
      */
     private void cardRevealDeclaration(ProjectMapPreview card, ProjectMapStructure.Node node) {
         touchCard(card, false);
         if (!card.revealRange(rangeOf(node.symbol()))) {
-            previewSymbol(symbolEntry(node));
+            previewSymbol(symbolEntry(node), null, From.CARD_COLUMN);
         }
     }
 
@@ -1828,6 +1884,7 @@ final class MapCards {
         previews.entrySet().removeIf(entry -> entry.getValue() == preview);
         cardTouches.remove(preview);
         pinnedCards.remove(preview);
+        cardColumnCards.remove(preview);
         cardsGitRequests.remove(preview);
         closeCardNotes(preview);
         closeCardStructure(preview);
@@ -1921,7 +1978,7 @@ final class MapCards {
         List<ProjectMapPreview> closing = previews.entrySet().stream()
                 // A linked result card stays while the card it was found from does (explore 5), a pinned card always
                 // (review 4, position 3).
-                .filter(entry -> cardOrphaned(root, entry.getKey(), shown)
+                .filter(entry -> cardOrphaned(root, entry.getKey(), entry.getValue(), shown)
                         && !links.isResult(entry.getValue())
                         && !pinnedCards.contains(entry.getValue()))
                 .map(Map.Entry::getValue)
@@ -1935,14 +1992,18 @@ final class MapCards {
     }
 
     /**
-     * {@link #orphaned}, except that a declaration card opened from a file card's Structure column stays while that
-     * column is out and the file's own row is still on the map.
+     * {@link #orphaned}, except that a declaration card stays while its file card's Structure column is out and the
+     * file's own row is still on the map. One asked for from that column goes with the column, whether or not its row
+     * is on the map, as one asked for from the Map's column goes with its row.
      */
-    private boolean cardOrphaned(Path root, Path key, Set<Path> shown) {
+    private boolean cardOrphaned(Path root, Path key, ProjectMapPreview card, Set<Path> shown) {
+        Path file = ProjectMapStructure.isSymbolPath(key) ? structure.fileOf(key) : null;
+        if (file != null && cardColumnCards.contains(card)) {
+            return cardStructureOf(file) == null || orphaned(root, file, shown);
+        }
         if (!orphaned(root, key, shown)) {
             return false;
         }
-        Path file = ProjectMapStructure.isSymbolPath(key) ? structure.fileOf(key) : null;
         return file == null || cardStructureOf(file) == null || orphaned(root, file, shown);
     }
 
@@ -2114,7 +2175,10 @@ final class MapCards {
             double parentHeight) {
         Site site = host.site(path);
         Site linked = links.besideSource(path); // a result card goes beside the card it was found from
-        Site beside = linked != null ? linked : site.row() == null ? cardStructureSite(path) : null;
+        // Beside a file card's Structure column when asked for from there, or when its row is not on the map.
+        Site beside = linked != null
+                ? linked
+                : site.row() == null || cardColumnCards.contains(preview) ? cardStructureSite(path) : null;
         if (beside != null) {
             site = beside;
         }
@@ -2596,14 +2660,15 @@ final class MapCards {
             if (!preview.isVisible() || preview.getWidth() <= 0 || preview.getHeight() <= 0) {
                 continue;
             }
-            // A declaration in a file card's Structure column is tied to its card from there, as a row is.
+            // A declaration card is tied to the Structure column it was asked for from: its file card's, else the
+            // Map's; the other one's row when that one's is not in sight.
             double[] row = cardStructureRow(entry.getKey());
-            if (row != null) {
+            double[] anchor = host.rowBox(entry.getKey());
+            if (row != null && (anchor == null || cardColumnCards.contains(preview))) {
                 previewConnectors.put(
                         entry.getKey(), drawPreviewConnector(g, row[0], row[1], row[2], row[3], true, preview));
                 continue;
             }
-            double[] anchor = host.rowBox(entry.getKey());
             if (anchor != null) {
                 previewConnectors.put(entry.getKey(), drawPreviewConnector(g, anchor, preview));
             }

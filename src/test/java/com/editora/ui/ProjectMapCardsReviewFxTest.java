@@ -9,6 +9,7 @@ import javafx.event.Event;
 import javafx.scene.Scene;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.TextArea;
 import javafx.scene.input.ContextMenuEvent;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -19,6 +20,7 @@ import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.command.KeyDispatcher;
 import com.editora.command.KeymapManager;
+import com.editora.command.TextInputKeymap;
 import com.editora.editor.notes.NoteDraft;
 import com.editora.ui.ProjectMapPreview.Content;
 import org.junit.jupiter.api.BeforeAll;
@@ -678,6 +680,65 @@ class ProjectMapCardsReviewFxTest {
             assertEquals(List.of("App.java:7"), opened);
             card.dispose();
         });
+    }
+
+    // ---- Map notes: a sticky note and a note card take the keymap's caret moves, as the Notes box does ----
+
+    @Test
+    void aStickyNoteAndANoteCardMoveTheCaretByTheKeymapsEmacsKeys() throws Exception {
+        try (Rig r = new Rig()) {
+            FxTestSupport.runOnFx(() -> {
+                KeymapManager before = TextInputKeymap.sharedKeymap();
+                KeymapManager emacs = new KeymapManager();
+                emacs.loadNamed("emacs");
+                TextInputKeymap.setShared(emacs);
+                try {
+                    r.card.showFile(Path.of("note.txt"), new Content("one\ntwo\n", false), null);
+                    r.host.layout();
+                    var onLine = note(com.editora.config.NoteScope.LINE, 0, 0, 0, "", "");
+                    ProjectMapStickyNotes stuck =
+                            new ProjectMapStickyNotes(r.card, r.host, (n, b) -> {}, () -> {}, () -> {}, () -> {});
+                    stuck.show(List.of(onLine));
+                    assertEmacsMoves((TextArea) r.host.lookup(".project-map-sticky-note-editor"));
+                    stuck.dispose();
+
+                    ProjectMapNotePreview card = new ProjectMapNotePreview((n, b) -> {});
+                    card.showNotes(
+                            Path.of("App.java"), List.of(onLine), new ProjectMapPreview.Placement(0, 0, 400, 300));
+                    javafx.scene.layout.VBox rows = FxTestSupport.field(card, "notes");
+                    assertEmacsMoves(rows.getChildren().stream()
+                            .filter(TextArea.class::isInstance)
+                            .map(TextArea.class::cast)
+                            .findFirst()
+                            .orElse(null));
+                    card.dispose();
+                } finally {
+                    TextInputKeymap.setShared(before);
+                }
+            });
+        }
+    }
+
+    /** C-e, C-a, C-n, C-f, C-b, C-p and M-f move the caret in {@code area}, and the keys are not typed. */
+    private static void assertEmacsMoves(TextArea area) {
+        assertNotNull(area, "the note's text area");
+        area.setText("alpha beta\ngamma");
+        area.positionCaret(0);
+        assertEquals(10, emacsKey(area, KeyCode.E, false), "C-e: line end");
+        assertEquals(0, emacsKey(area, KeyCode.A, false), "C-a: line start");
+        assertEquals(11, emacsKey(area, KeyCode.N, false), "C-n: next line");
+        assertEquals(12, emacsKey(area, KeyCode.F, false), "C-f: next character");
+        assertEquals(11, emacsKey(area, KeyCode.B, false), "C-b: previous character");
+        assertEquals(0, emacsKey(area, KeyCode.P, false), "C-p: previous line");
+        assertEquals(5, emacsKey(area, KeyCode.F, true), "M-f: end of the word");
+        assertEquals("alpha beta\ngamma", area.getText(), "nothing typed");
+    }
+
+    /** Sends C-{@code code} (M-{@code code} when {@code meta}) to {@code area}; the caret after it. */
+    private static int emacsKey(TextArea area, KeyCode code, boolean meta) {
+        KeyEvent press = new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, false, !meta, meta, false);
+        Event.fireEvent(area, press);
+        return area.getCaretPosition();
     }
 
     // ---- C4: declarations are labelled with their parameter types and keep their path across overloads ----

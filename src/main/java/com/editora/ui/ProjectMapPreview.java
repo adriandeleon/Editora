@@ -3650,6 +3650,21 @@ final class ProjectMapPreview extends StackPane {
         userSized = true;
     }
 
+    /**
+     * Places the card again by {@code resolver}, as a new card is placed, at the size it has: an open declaration
+     * card asked for from another Structure column goes beside that one (Map Structure previews).
+     */
+    void placeAgain(PlacementResolver resolver) {
+        if (disposed) {
+            return;
+        }
+        placementResolver = resolver;
+        placed = false;
+        placementPending = true;
+        userMoved = false;
+        ensurePlaced();
+    }
+
     /** A card brought back where it was (B6): nothing moves or resizes it for the user, as after a drag. */
     void keepRestoredGeometry() {
         userMoved = true;
