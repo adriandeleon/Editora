@@ -20,6 +20,19 @@ public final class RootResolver {
 
     private RootResolver() {}
 
+    /** Whether {@code dir} holds an Astro project's config ({@code astro.config.mjs}/{@code .ts}/{@code .js}/…). */
+    public static boolean hasAstroConfig(@Nullable Path dir) {
+        if (dir == null) {
+            return false;
+        }
+        for (String ext : List.of("mjs", "ts", "js", "mts", "cjs")) {
+            if (java.nio.file.Files.isRegularFile(dir.resolve("astro.config." + ext))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * The workspace root for {@code filePath}. Uses {@code projectRoot} when non-null; else the nearest
      * marker-bearing ancestor; else the file's parent directory (or the file itself if it has no parent).

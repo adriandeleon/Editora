@@ -2190,13 +2190,13 @@ final class LspCoordinator {
                 tr("dialog.lsp.trust.accept"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
         javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
                 javafx.scene.control.Alert.AlertType.WARNING,
-                tr("dialog.lsp.trust.body", root.toString(), String.join("\n", requests)),
+                TrustPromptText.body(root, requests), // a folder's own TypeScript said as such (JS review B110)
                 javafx.scene.control.ButtonType.CANCEL,
                 trust);
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.trust.title"));
         Path name = root.getFileName();
-        confirm.setHeaderText(tr("dialog.lsp.trust.header", name == null ? root.toString() : name.toString()));
+        confirm.setHeaderText(TrustPromptText.header(name == null ? root.toString() : name.toString(), requests));
         confirm.getDialogPane().setMinWidth(520);
         return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == trust;
     }
@@ -2262,7 +2262,9 @@ final class LspCoordinator {
                 }
             }
         };
-        look.accept(top);
+        if (com.editora.lsp.RootResolver.hasAstroConfig(top)) {
+            look.accept(top); // not in a folder without Astro: the prompt listed it there (JS review B110)
+        }
         host.forEachBuffer(b -> {
             if (lspPath(b) != null && ASTRO_SERVER_ID.equals(serverIdForBuffer(b))) {
                 look.accept(lspRootFor(b, ASTRO_SERVER_ID));
