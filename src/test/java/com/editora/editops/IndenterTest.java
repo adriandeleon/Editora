@@ -473,4 +473,15 @@ class IndenterTest {
         // The same line in Kotlin opens nothing: the rule is Scala's.
         assertEquals("\n", enterAtEnd("fun f(): Int =", "kotlin"));
     }
+
+    @Test
+    void aNewJavaScriptOrJsonFileIndentsTwoSpacesButEvidenceWins() {
+        assertEquals("  ", Indenter.detectUnit("", 4, "javascript"), "nothing indented yet: JS's own two");
+        assertEquals("  ", Indenter.detectUnit("class A {}\n", 4, "typescriptreact"));
+        assertEquals("  ", Indenter.detectUnit("{}\n", 4, "json"));
+        assertEquals("    ", Indenter.detectUnit("", 4, "java"), "other languages keep the tab size");
+        assertEquals("    ", Indenter.detectUnit("if (a) {\n    b();\n}\n", 4, "javascript"), "a 4-space file stays 4");
+        assertEquals("\t", Indenter.detectUnit("if (a) {\n\tb();\n}\n", 4, "typescript"));
+        assertEquals("   ", Indenter.unitFor("", 4, true, 3, "javascript"), "an EditorConfig indent_size wins");
+    }
 }
