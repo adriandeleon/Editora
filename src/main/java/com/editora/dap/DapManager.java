@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -2178,22 +2179,14 @@ public final class DapManager {
             workspace = projectRoot != null && file.toAbsolutePath().startsWith(projectRoot.toAbsolutePath())
                     ? projectRoot
                     : cwd;
-            env = Map.of();
+            env = JsLaunch.colourEnvironment(System.getenv("NO_COLOR")); // as Run (review D104)
         }
         boolean clientConsole = programConsole;
         Map<String, Object> launch = JsLaunch.request(
                 spec.launchType(), program, cwd.toString(), workspace.toString(), runtime, args, clientConsole, env);
         jsClientConsole = clientConsole;
-        if (clientConsole) {
-            // What runs, first in the console (muted), as for Python: which Node.js, with which arguments. (When
-            // js-debug starts the program it prints this line itself.)
-            List<String> words = new java.util.ArrayList<>(runtime);
-            if (program != null && !program.isBlank()) {
-                words.add(program);
-            }
-            words.addAll(args);
-            onOutput(epoch, com.editora.run.RunService.commandLine(words) + "\n", COMMAND_CATEGORY);
-        }
+        // The command line that runs is printed when js-debug asks Editora to start it (startDebuggee): js-debug may
+        // run another file than the one planned — a .ts source's compiled output (review D106).
         List<String> chip = runtime;
         JsAdapter adapter = startJsAdapter(server, adapterNode, epoch);
         if (adapter == null) {
@@ -2503,8 +2496,16 @@ public final class DapManager {
         }
         List<String> fallbacks = new ArrayList<>();
         fallbacks.add(adapterNode());
-        fallbacks.addAll(JsAdapterNode.localFallbacks());
+        fallbacks.addAll(adapterNodeFallbacks.get());
         return JsAdapterNode.choose(programNode, version, fallbacks, DapManager::nodeVersion);
+    }
+
+    /** Where js-debug's Node.js is looked for when the chosen one is too old; a test supplies its own. */
+    private volatile Supplier<List<String>> adapterNodeFallbacks = JsAdapterNode::localFallbacks;
+
+    /** Test seam for {@link #adapterNodeFallbacks}. */
+    void setAdapterNodeFallbacksForTest(Supplier<List<String>> fallbacks) {
+        this.adapterNodeFallbacks = fallbacks;
     }
 
     /** A started js-debug server: its process, the port it announced on this machine, and its stderr. */
@@ -2675,6 +2676,15 @@ public final class DapManager {
             (attach ? c.attach(request) : c.launch(request)).whenComplete((v, le) -> {
                 if (le != null) {
                     fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
+                } else if (attach && Boolean.FALSE.equals(request.get("continueOnAttach"))) {
+                    // A user's Node.js attach: nothing else says it worked, a running server prints nothing (D103).
+                    onOutput(
+                            epoch,
+                            tr(
+                                            "debug.js.attached",
+                                            request.getOrDefault("address", "127.0.0.1") + ":" + request.get("port"))
+                                    + "\n",
+                            COMMAND_CATEGORY);
                 }
             });
             Platform.runLater(() -> {
@@ -3668,8 +3678,11 @@ public final class DapManager {
         if (jsClientConsole && ("stdout".equals(category) || "stderr".equals(category))) {
             return null; // the program's own pipes carry it (startDebuggee); this is js-debug's copy
         }
-        return JsLaunch.withoutInspectorNoise(text);
+        return jsNoise.filter(text);
     }
+
+    /** The inspector's lines dropped from this session's output (reset per session). */
+    private volatile JsLaunch.InspectorNoise jsNoise = new JsLaunch.InspectorNoise();
 
     private void onTerminated(long epoch) {
         Platform.runLater(() -> {
@@ -3729,7 +3742,9 @@ public final class DapManager {
         }
         killDebuggee(); // a session has one program
         programStartedEpoch = epoch;
-        Debuggee program = new Debuggee(programTerminal, programTitle());
+        // A Node.js program's stdout and stderr share one pipe: two pipes read by two threads reordered its lines
+        // (review D102). Java and Python keep their red stderr.
+        Debuggee program = new Debuggee(programTerminal, programTitle(), jsSession);
         try {
             // The adapter names the folder as its machine does: on a remote file's host, a path there.
             Path file = debugFile;
@@ -3738,10 +3753,24 @@ public final class DapManager {
             if (dir == null && file != null && paths != DapPaths.LOCAL) {
                 dir = file.getParent(); // never this machine's folder of the same name
             }
+            if (jsSession && !program.inTerminal()) {
+                // What runs, first in the console (muted), as for Python: exactly what js-debug asked for, which
+                // for a compiled project's .ts source is its built .js (review D106).
+                onOutput(epoch, com.editora.run.RunService.commandLine(argv) + "\n", COMMAND_CATEGORY);
+                Path source = debugFile;
+                Path built = JsLaunch.compiledInstead(source, dir, argv);
+                if (built != null && source != null && JsLaunch.builtIsStale(source, built, DapManager::modifiedTime)) {
+                    // A notice, not stderr: js-debug's copies of the program's streams are dropped (jsOutput).
+                    onNotice(
+                            epoch,
+                            tr("debug.js.builtStale", String.valueOf(built.getFileName()), source.getFileName()),
+                            true);
+                }
+            }
             long pid = program.start(dir, argv, env, new Debuggee.Sink() {
                 @Override
                 public void output(String text, boolean stderr) {
-                    String shown = jsSession ? JsLaunch.withoutInspectorNoise(text) : text;
+                    String shown = jsSession ? jsNoise.filter(text) : text;
                     if (debuggee == program && isCurrent(epoch) && !shown.isEmpty()) {
                         listener.onOutput(shown, stderr ? "stderr" : "stdout");
                     }
@@ -3771,6 +3800,14 @@ public final class DapManager {
         } catch (java.io.IOException | RuntimeException e) {
             program.kill();
             started.completeExceptionally(e); // the adapter fails the launch with this, which reports it
+        }
+    }
+
+    private static Optional<java.time.Instant> modifiedTime(Path file) {
+        try {
+            return Optional.of(java.nio.file.Files.getLastModifiedTime(file).toInstant());
+        } catch (java.io.IOException | RuntimeException e) {
+            return Optional.empty();
         }
     }
 
@@ -3930,6 +3967,7 @@ public final class DapManager {
     }
 
     private long beginSession() {
+        jsNoise = new JsLaunch.InspectorNoise();
         Future<?> startup = startupTask;
         startupTask = null;
         if (startup != null) {

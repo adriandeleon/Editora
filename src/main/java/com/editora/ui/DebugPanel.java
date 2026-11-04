@@ -787,6 +787,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         lastState = state;
         if (state == DapManager.State.STARTING) {
             exitCode = null; // a new session: the last one's outcome is no longer what the status says
+            ansiParsers.clear(); // and none of its colours is still on
         }
         if (state != DapManager.State.SUSPENDED) {
             exception = null;
@@ -1399,11 +1400,38 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (text == null) {
             return;
         }
-        text = DebugValues.stripAnsi(text); // colour codes of a logger / Node script are not text to read
         String style = "stderr".equals(category)
                 ? "run-stderr" // the program's stderr in red
                 : DapManager.COMMAND_CATEGORY.equals(category) ? "run-command" : null; // Editora's own lines, muted
-        appender.append(text, DebugConsoleStyle.spans(text, style));
+        if (DapManager.COMMAND_CATEGORY.equals(category) || text.indexOf('\u001b') < 0 && !ansiOpen(category)) {
+            text = DebugValues.stripAnsi(text);
+            appender.append(text, DebugConsoleStyle.spans(text, style));
+            return;
+        }
+        // The program's colours, drawn as the Run console draws them (review D104); the parser keeps a colour
+        // that is still on across output events, per stream.
+        com.editora.run.AnsiText.Chunk chunk = ansiParser(category).feed(text);
+        String shown = chunk.text();
+        if (shown.indexOf(com.editora.run.AnsiText.CLEAR_SCREEN) >= 0) {
+            shown = shown.replace(String.valueOf(com.editora.run.AnsiText.CLEAR_SCREEN), "");
+            appender.append(shown, DebugConsoleStyle.spans(shown, style)); // no colours rather than wrong ones
+            return;
+        }
+        appender.append(shown, DebugConsoleStyle.spans(shown, style, chunk.runs()));
+    }
+
+    /** One ANSI parser per output category, so a colour left on in stdout does not tint stderr. */
+    private final java.util.Map<String, com.editora.run.AnsiText.Parser> ansiParsers = new java.util.HashMap<>();
+
+    private com.editora.run.AnsiText.Parser ansiParser(String category) {
+        return ansiParsers.computeIfAbsent(
+                category == null ? "" : category, c -> new com.editora.run.AnsiText.Parser());
+    }
+
+    /** Whether a colour the program turned on in {@code category} is still on. */
+    private boolean ansiOpen(String category) {
+        com.editora.run.AnsiText.Parser p = ansiParsers.get(category == null ? "" : category);
+        return p != null && p.active();
     }
 
     /**
