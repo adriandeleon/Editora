@@ -7096,7 +7096,7 @@ public class SettingsWindow {
                                 case "python" -> "debugpy";
                                 default -> "js-debug";
                             })
-                    .install(() -> installSupport(dbg.id()));
+                    .install(() -> installSupport("javascript".equals(dbg.id()) ? "js-debug" : dbg.id())); // D111
             debugStatusLabels.put(dbg.id(), status);
             installButtons.put("debug:" + dbg.id(), status.installButton());
             String title = tr(dbg.commandLabelKey());

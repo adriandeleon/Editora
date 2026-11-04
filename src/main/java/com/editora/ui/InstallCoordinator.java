@@ -119,12 +119,39 @@ final class InstallCoordinator {
      * ends up with the pinned or the latest version.
      */
     void installSupport(Lang lang, @Nullable String updateStep, java.util.function.Consumer<Boolean> onResult) {
+        installSupport(lang, updateStep, null, onResult);
+    }
+
+    /**
+     * A Settings "Install…" button: {@code typst} (the typst CLI), a language ({@code python}, {@code javascript},
+     * {@code mermaid}, else Java), or {@code js-debug} — the Debugging card's JavaScript row, which installs the
+     * debugger alone, not the TypeScript language server with it (review D111).
+     */
+    void installSettingsKey(String key) {
+        switch (key) {
+            case "typst" -> installTypstCli(); // the typst CLI (renderer), not an LSP server
+            case "js-debug" -> installSupport(Lang.JAVASCRIPT, null, "js-debug", ok -> {});
+            case "python" -> installSupport(Lang.PYTHON);
+            case "javascript" -> installSupport(Lang.JAVASCRIPT);
+            case "mermaid" -> installSupport(Lang.MERMAID);
+            default -> installSupport(Lang.JAVA);
+        }
+    }
+
+    /** As above; {@code onlyStep}, when given, is the one step of the language to install. */
+    void installSupport(
+            Lang lang,
+            @Nullable String updateStep,
+            @Nullable String onlyStep,
+            java.util.function.Consumer<Boolean> onResult) {
         if (installing.contains(lang)) {
             host.setStatus(tr("status.install.inProgress"));
             onResult.accept(false);
             return;
         }
-        List<Step> all = InstallCatalog.steps(lang);
+        List<Step> all = InstallCatalog.steps(lang).stream()
+                .filter(s -> onlyStep == null || s.id().equals(onlyStep))
+                .toList();
         List<Step> missing = all.stream()
                 .filter(s -> !stepInstalled(s) || s.id().equals(updateStep))
                 .toList();
