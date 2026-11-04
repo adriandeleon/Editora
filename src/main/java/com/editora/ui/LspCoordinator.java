@@ -2949,6 +2949,9 @@ final class LspCoordinator {
         if (resolved != null && "html".equals(serverId)) {
             return com.editora.lsp.RootResolver.siteRoot(resolved, file, ops.lspProjectRoot()); // `/` links (A6)
         }
+        if (resolved != null && com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)) {
+            return com.editora.lsp.RootResolver.typeScriptWorkspaceRoot(resolved, ops.lspProjectRoot()); // JS B106
+        }
         if (resolved != null && com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
             // A module pom's root is its reactor's: one lemminx-maven JVM per reactor, not per module (C11).
             return com.editora.lsp.RootResolver.outermostContiguous(resolved, "pom.xml", ops.lspProjectRoot());

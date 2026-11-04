@@ -389,4 +389,30 @@ class RootResolverTest {
 
         assertEquals(project, RootResolver.htmlRoot(project, null), "an untitled page: the project's");
     }
+
+    /** A JS monorepo opened with No Project is one TypeScript server, not one per package (JS review B106). */
+    @Test
+    void aPackageOfAJsMonorepoIsServedFromTheWorkspaceRoot(@org.junit.jupiter.api.io.TempDir Path dir)
+            throws Exception {
+        Path home = dir.resolve("home");
+        Path repo = java.nio.file.Files.createDirectories(home.resolve("repo/packages/a"));
+        Path root = home.resolve("repo");
+        java.nio.file.Files.writeString(
+                root.resolve("package.json"), "{ \"private\": true, \"workspaces\": [\"packages/*\"] }");
+        java.nio.file.Files.writeString(repo.resolve("tsconfig.json"), "{}");
+        assertEquals(root, RootResolver.typeScriptWorkspaceRoot(repo, null, home));
+        // pnpm and a solution-style tsconfig are workspace roots too; the home folder never is
+        Path pnpm = java.nio.file.Files.createDirectories(home.resolve("p/libs/x"));
+        java.nio.file.Files.writeString(home.resolve("p/pnpm-workspace.yaml"), "packages: ['libs/*']\n");
+        assertEquals(home.resolve("p"), RootResolver.typeScriptWorkspaceRoot(pnpm, null, home));
+        Path refs = java.nio.file.Files.createDirectories(home.resolve("s/apps/web"));
+        java.nio.file.Files.writeString(
+                home.resolve("s/tsconfig.json"), "{ \"files\": [], \"references\": [{ \"path\": \"apps/web\" }] }");
+        assertEquals(home.resolve("s"), RootResolver.typeScriptWorkspaceRoot(refs, null, home));
+        java.nio.file.Files.writeString(home.resolve("package.json"), "{ \"workspaces\": [] }");
+        Path lone = java.nio.file.Files.createDirectories(home.resolve("lone"));
+        assertEquals(lone, RootResolver.typeScriptWorkspaceRoot(lone, null, home), "not widened to the home folder");
+        // never outside the project
+        assertEquals(repo, RootResolver.typeScriptWorkspaceRoot(repo, repo, home));
+    }
 }

@@ -154,6 +154,68 @@ public final class RootResolver {
      * root — the same "contiguous chain" {@code MavenReactor} uses — and one server serves every module
      * (Maven review C11). {@code root} itself is returned when it has no marker or no marker-bearing parent.
      */
+    /**
+     * The TypeScript server's root for a file whose markers chose {@code root}: widened to the outermost folder
+     * above it that is a JS monorepo's root — a {@code package.json} with {@code "workspaces"}, a {@code
+     * pnpm-workspace.yaml}, or a {@code tsconfig.json} with {@code "references"} — never to the home folder or above,
+     * nor outside {@code projectRoot}. Each package with its own tsconfig was a server of its own, about 500 MB each,
+     * every one loading its neighbours again (JS review B106). File reads (a few small files per folder).
+     */
+    public static Path typeScriptWorkspaceRoot(Path root, @Nullable Path projectRoot) {
+        String home = System.getProperty("user.home");
+        String key = root + "\u0000" + projectRoot;
+        long now = System.nanoTime();
+        Widened known = WIDENED.get(key);
+        if (known != null && now - known.at() < WIDEN_TTL_NANOS) {
+            return known.root(); // asked on the FX thread for every sync of every tab: the reads are not repeated
+        }
+        Path widened =
+                typeScriptWorkspaceRoot(root, projectRoot, home == null || home.isBlank() ? null : Path.of(home));
+        if (WIDENED.size() > 512) {
+            WIDENED.clear();
+        }
+        WIDENED.put(key, new Widened(widened, now));
+        return widened;
+    }
+
+    private record Widened(Path root, long at) {}
+
+    private static final java.util.concurrent.ConcurrentHashMap<String, Widened> WIDENED =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final long WIDEN_TTL_NANOS = 10_000_000_000L;
+
+    static Path typeScriptWorkspaceRoot(Path root, @Nullable Path projectRoot, @Nullable Path home) {
+        Path start = root.toAbsolutePath().normalize();
+        Path top = projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
+        Path best = start;
+        for (Path dir = start.getParent(); dir != null; dir = dir.getParent()) {
+            if (tooBroad(dir, home) || (top != null && !dir.startsWith(top))) {
+                break;
+            }
+            if (workspaceRoot(dir)) {
+                best = dir;
+            }
+        }
+        return best;
+    }
+
+    private static boolean workspaceRoot(Path dir) {
+        return Files.isRegularFile(dir.resolve("pnpm-workspace.yaml"))
+                || fileMentions(dir.resolve("package.json"), "\"workspaces\"")
+                || fileMentions(dir.resolve("tsconfig.json"), "\"references\"");
+    }
+
+    private static boolean fileMentions(Path file, String word) {
+        try {
+            return Files.isRegularFile(file)
+                    && Files.size(file) < 512 * 1024
+                    && Files.readString(file).contains(word);
+        } catch (java.io.IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
     public static Path outermostContiguous(Path root, String marker, @Nullable Path projectRoot) {
         String home = System.getProperty("user.home");
         return outermostContiguous(root, marker, projectRoot, home == null || home.isBlank() ? null : Path.of(home));
