@@ -270,7 +270,7 @@ class BuildCoordinatorFxTest {
 
         FxTestSupport.runOnFx(() -> c.showActionsPopup());
         // It says where the file is broken (review C13): the parser's message after the tool's name.
-        String prefix = tr("status.build.malformedAt", disp(BuildTool.MAVEN), "");
+        String prefix = tr("status.build.malformedAt", "pom.xml", "");
         assertTrue(host.lastStatus.startsWith(prefix) && host.lastStatus.length() > prefix.length(), host.lastStatus);
     }
 
@@ -289,7 +289,7 @@ class BuildCoordinatorFxTest {
 
         FxTestSupport.runOnFx(() -> c.showActionsPopup());
         // It says where the file is broken (review C13): the parser's message after the tool's name.
-        String prefix = tr("status.build.malformedAt", disp(BuildTool.NPM), "");
+        String prefix = tr("status.build.malformedAt", "package.json", "");
         assertTrue(host.lastStatus.startsWith(prefix) && host.lastStatus.length() > prefix.length(), host.lastStatus);
     }
 
@@ -850,7 +850,7 @@ class BuildCoordinatorFxTest {
         javafx.scene.control.Label text = FxTestSupport.field(tree, "noticeLabel");
         javafx.scene.control.Hyperlink link = FxTestSupport.field(tree, "noticeLink");
         assertTrue(FxTestSupport.callOnFx(notice::isVisible), "the reason is shown in the window itself");
-        String prefix = tr("status.build.malformedAt", disp(BuildTool.MAVEN), "");
+        String prefix = tr("status.build.malformedAt", "pom.xml", "");
         assertTrue(text.getText().startsWith(prefix) && text.getText().length() > prefix.length(), text.getText());
         assertEquals(tr("buildtree.openBuildFile", "pom.xml"), link.getText());
         FxTestSupport.runOnFx(link::fire);

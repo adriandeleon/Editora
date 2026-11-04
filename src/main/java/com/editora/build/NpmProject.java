@@ -76,7 +76,9 @@ public record NpmProject(
         } catch (JsonProcessingException e) {
             var loc = e.getLocation();
             String where = loc == null ? "" : "line " + loc.getLineNr() + ", column " + loc.getColumnNr() + ": ";
-            throw new IllegalArgumentException(where + e.getOriginalMessage(), e);
+            // Jackson's "('}' (code 125))" says the same character twice: keep the readable half.
+            String what = String.valueOf(e.getOriginalMessage()).replaceAll(" \\(code -?\\d+\\)", "");
+            throw new IllegalArgumentException(where + what, e);
         } catch (Exception e) {
             throw new IllegalArgumentException("invalid package.json: " + e.getMessage(), e);
         }

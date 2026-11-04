@@ -219,12 +219,14 @@ final class BuildCoordinator {
         // root is real), so the tree must say the build file is broken rather than "no build tool detected".
         tree.setProvider(
                 provider,
-                markerRoot != null && provider == null ? tr("status.build.malformed", tool.displayName()) : null);
+                markerRoot != null && provider == null
+                        ? tr("status.build.malformed", tool.markers().get(0))
+                        : null);
         // The reason, with a way to the file — it used to appear only in the status bar after Show Actions.
         if (markerRoot != null && parseError != null && !parseError.isBlank()) {
             Path file = markerRoot.resolve(tool.markers().get(0));
             tree.setNotice(
-                    tr("status.build.malformedAt", tool.displayName(), parseError),
+                    tr("status.build.malformedAt", tool.markers().get(0), parseError),
                     tr("buildtree.openBuildFile", tool.markers().get(0)),
                     () -> ops.openFile(file));
         } else {
@@ -542,8 +544,8 @@ final class BuildCoordinator {
         if (provider == null || isMalformed()) {
             host.setStatus(
                     parseError == null || parseError.isBlank()
-                            ? tr("status.build.malformed", tool.displayName())
-                            : tr("status.build.malformedAt", tool.displayName(), parseError));
+                            ? tr("status.build.malformed", tool.markers().get(0))
+                            : tr("status.build.malformedAt", tool.markers().get(0), parseError));
             if (provider == null) {
                 return;
             }
@@ -595,8 +597,13 @@ final class BuildCoordinator {
                 if (finalParsed == null) {
                     host.setStatus(
                             finalError == null || finalError.isBlank()
-                                    ? tr("status.build.malformed", tool.displayName())
-                                    : tr("status.build.malformedAt", tool.displayName(), finalError));
+                                    ? tr(
+                                            "status.build.malformed",
+                                            tool.markers().get(0))
+                                    : tr(
+                                            "status.build.malformedAt",
+                                            tool.markers().get(0),
+                                            finalError));
                     return;
                 }
                 popupRoot = root;
