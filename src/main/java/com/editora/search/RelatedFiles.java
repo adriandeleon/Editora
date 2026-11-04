@@ -27,12 +27,22 @@ public final class RelatedFiles {
     /** Test-name affixes, in the order they are tried. */
     private static final List<String> TEST_SUFFIXES = List.of("Test", "Tests", "Spec", "IT", "_test", ".test", ".spec");
 
-    /** Implementation/header extension pairs, each direction listed. */
+    /** TypeScript declaration-file extensions, which have two parts. */
+    private static final List<String> DECLARATION_EXTENSIONS = List.of("d.ts", "d.mts", "d.cts");
+
+    /**
+     * Implementation/header extension pairs, each direction listed. A TypeScript source, the JavaScript compiled
+     * from it and its declaration file come first in theirs (JS/TS review A111), before the stylesheet groups.
+     */
     private static final List<List<String>> EXTENSION_GROUPS = List.of(
             List.of("c", "h"),
             List.of("cc", "hh"),
             List.of("cpp", "hpp", "hxx", "h"),
             List.of("m", "h"),
+            List.of("ts", "d.ts", "js"),
+            List.of("mts", "d.mts", "mjs"),
+            List.of("cts", "d.cts", "cjs"),
+            List.of("tsx", "jsx"),
             List.of("ts", "css", "scss", "html"),
             List.of("tsx", "css", "scss"),
             List.of("jsx", "css", "scss"),
@@ -52,13 +62,20 @@ public final class RelatedFiles {
         }
         String name = fileName.trim();
         int dot = name.lastIndexOf('.');
+        // A TypeScript declaration file's extension is two parts: `util.d.ts` is `util` + `d.ts`, not `util.d`.
+        String declaration = declarationExtension(name);
+        if (declaration != null) {
+            dot = name.length() - declaration.length() - 1;
+        }
         // A dotfile (".gitignore") is all base and no extension; a name with no dot likewise.
         String base = dot <= 0 ? name : name.substring(0, dot);
         String ext = dot <= 0 ? "" : name.substring(dot + 1);
 
         Set<String> out = new LinkedHashSet<>();
         String subject = testSubject(base);
-        if (subject != null) {
+        if (declaration != null) {
+            // Types for a module: no test of their own, so straight to the module and its source.
+        } else if (subject != null) {
             // We are in the test: its subject is by far the likeliest destination, so it leads.
             out.add(withExtension(subject, ext));
         } else {
@@ -136,6 +153,17 @@ public final class RelatedFiles {
         String lower = base.toLowerCase(Locale.ROOT);
         if (lower.startsWith("test_") && base.length() > 5) {
             return base.substring(5);
+        }
+        return null;
+    }
+
+    /** {@code d.ts}, {@code d.mts} or {@code d.cts} when {@code name} is a declaration file, else null. */
+    private static @Nullable String declarationExtension(String name) {
+        String lower = name.toLowerCase(Locale.ROOT);
+        for (String ext : DECLARATION_EXTENSIONS) {
+            if (lower.endsWith("." + ext) && lower.length() > ext.length() + 1) {
+                return name.substring(name.length() - ext.length());
+            }
         }
         return null;
     }

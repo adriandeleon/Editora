@@ -275,4 +275,10 @@ class SpellModeTest {
         assertEquals("see [the text](https://example.com)    x    ", SpellMode.HTML.prose(line));
         assertEquals("plain words", SpellMode.MARKDOWN.prose("plain words"));
     }
+
+    @Test
+    void codeChecksTheTextOfJsxMarkup() {
+        assertTrue(SpellMode.CODE.eligible(java.util.List.of("jsx-text")), "<p>Welcome back</p> is page text");
+        assertFalse(SpellMode.CODE.eligible(java.util.List.of()), "plain code still is not");
+    }
 }

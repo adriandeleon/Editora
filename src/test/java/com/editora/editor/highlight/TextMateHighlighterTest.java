@@ -565,8 +565,8 @@ class TextMateHighlighterTest {
         assertEquals("comment", styleAt(a.spans(), third), "so the comment opened above it is still open below");
         assertEquals("keyword", styleAt(a.spans(), text.indexOf("var x")), "and closes where it should");
 
-        // One character under the cap is tokenized as usual.
-        String under = unit.repeat(TextMateHighlighter.MAX_TOKENIZED_LINE / unit.length());
+        // Under the cap a line is tokenized as usual (one with few tokens: a dense one is shown plain anyway).
+        String under = "var s = 1; // " + "word ".repeat((TextMateHighlighter.MAX_TOKENIZED_LINE - 20) / 5);
         assertEquals("keyword", styleAt(TextMateHighlighter.compute(under, js), 0));
     }
 
@@ -590,8 +590,8 @@ class TextMateHighlighterTest {
     @Test
     void onceAPassHasSpentItsLongLineBudgetTheRemainingLongLinesArePlain() {
         IGrammar js = GrammarRegistry.shared().forFileName("a.js");
-        String unit = "var a=function(b){return b+\"s\"};";
-        String longLine = unit.repeat(TextMateHighlighter.BUDGETED_LINE / unit.length() + 1);
+        // A long line with few tokens (a long comment): one with many is shown plain whatever the budget.
+        String longLine = "var s = 1; // " + "word ".repeat(TextMateHighlighter.BUDGETED_LINE / 5);
         String text = longLine + "\n" + longLine + "\nvar short = 1;\n";
 
         // A zero budget: the first long line spends it, so the second is left plain; short lines are never
@@ -600,7 +600,7 @@ class TextMateHighlighterTest {
                 text, js, 0, null, () -> false, null, TextMateHighlighter.LINE_TIMEOUT, java.time.Duration.ZERO);
 
         assertEquals(text.length(), a.spans().length(), "the spans still cover the text exactly");
-        assertEquals("keyword", styleAt(a.spans(), 0), "the first long line is tokenized");
+        // (The first long line gets what is left, 1 ms: stopped part-way, it is shown plain rather than half-coloured.)
         assertNull(styleAt(a.spans(), longLine.length() + 1), "the second long line is over budget");
         assertEquals("keyword", styleAt(a.spans(), text.indexOf("var short")), "a short line still tokenizes");
 
@@ -608,6 +608,38 @@ class TextMateHighlighterTest {
         assertEquals(
                 "keyword",
                 styleAt(TextMateHighlighter.analyzeFrom(text, js, 0, null).spans(), longLine.length() + 1));
+    }
+
+    @Test
+    void aLongLineInManyColoursIsShownPlainButALongLineInFewKeepsThem() {
+        IGrammar js = GrammarRegistry.shared().forFileName("a.js");
+        // Minified code: a token every few characters, so thousands of colour runs RichTextFX would lay out
+        // again on every keystroke in the line.
+        String unit = "var a=function(b){return b+1};";
+        String dense = unit.repeat(TextMateHighlighter.BUDGETED_LINE / unit.length() + 1);
+        String prose = "var s = 1; // " + "word ".repeat(TextMateHighlighter.BUDGETED_LINE / 5);
+        String text = "/* open\n */\n" + dense + "\n" + prose + "\nvar after = `x`;\n";
+
+        var spans = TextMateHighlighter.compute(text, js);
+
+        int denseStart = text.indexOf(dense);
+        for (int offset : new int[] {denseStart, denseStart + 4, denseStart + dense.length() - 1}) {
+            assertNull(styleAt(spans, offset), "the dense long line is one plain run");
+        }
+        assertEquals("comment", styleAt(spans, text.indexOf("word")), "a long comment keeps its colour");
+        assertEquals("keyword", styleAt(spans, text.indexOf("var after")), "the grammar state carried on");
+        assertEquals("string", styleAt(spans, text.indexOf("`x`")));
+    }
+
+    @Test
+    void jsxTextIsMarkedForSpellCheckAndCodeInBracesIsNot() {
+        IGrammar js = GrammarRegistry.shared().forFileName("a.jsx");
+        String text = "const a = <p>Welcome back (again) {user.name}</p>;\n";
+        var spans = TextMateHighlighter.compute(text, js);
+        assertEquals(TextMateHighlighter.JSX_TEXT, styleAt(spans, text.indexOf("Welcome")));
+        assertEquals(TextMateHighlighter.JSX_TEXT, styleAt(spans, text.indexOf("(again")));
+        assertNull(styleAt(spans, text.indexOf(".name")), "the `.` of code in {…} is code, not page text");
+        assertEquals("keyword", styleAt(spans, 0));
     }
 
     @Test

@@ -119,4 +119,16 @@ class AutoCloseTest {
                 Action.INSERT_PAIR,
                 AutoClose.decide('\'', "val c = ", (char) 0, false, "scala").action());
     }
+
+    @Test
+    void aBracketPairsOnlyWhereItsCloserCanSit() {
+        assertEquals(Action.NONE, act('(', ' ', 'f', false), "before a word: `(` wraps it, no `()foo`");
+        assertEquals(Action.NONE, act('[', '=', '1', false), "before a number");
+        assertEquals(Action.INSERT_PAIR, act('(', 'f', (char) 0, false), "at the end");
+        assertEquals(Action.INSERT_PAIR, act('(', 'f', '\n', false), "at a line end");
+        assertEquals(Action.INSERT_PAIR, act('(', 'f', ' ', false), "before a space");
+        assertEquals(Action.INSERT_PAIR, act('(', '(', ')', false), "inside another pair");
+        assertEquals(Action.INSERT_PAIR, act('[', 'a', ';', false), "before a separator");
+        assertEquals(Action.WRAP_SELECTION, act('(', ' ', 'f', true), "a selection is still wrapped");
+    }
 }

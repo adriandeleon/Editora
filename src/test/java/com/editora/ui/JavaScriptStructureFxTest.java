@@ -66,19 +66,52 @@ class JavaScriptStructureFxTest {
 
     @Test
     void oneLineDeclarationsAreListedAndNothingBelowARegexIsLost() throws Exception {
-        List<String> rows = FxTestSupport.callOnFx(() -> {
+        assertEquals(
+                List.of("load()", "Cache", "  get()", "  create()", "twice()", "escapeTicks()", "Banner()", "main()"),
+                rows(SOURCE));
+    }
+
+    @Test
+    void multiLineObjectsAreListedJsxIsNotAndAnExportsTargetIsNoReturnType() throws Exception {
+        String source = String.join(
+                "\n",
+                "const routes = {",
+                "  health(req, res) {",
+                "    res.end('up');",
+                "  },",
+                "};",
+                "",
+                "export const config = {",
+                "  port: 3000,",
+                "};",
+                "",
+                "function Page() {",
+                "  return (",
+                "    <ul>",
+                "      <li>one</li>",
+                "    </ul>",
+                "  );",
+                "}",
+                "",
+                "module.exports.formatBytes = (n) => `${n} B`;",
+                "");
+        assertEquals(List.of("routes", "  health()", "config", "Page()", "formatBytes()"), rows(source));
+    }
+
+    private static List<String> rows(String source) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
             StructurePanel p = new StructurePanel();
             new Scene(new StackPane(p), 600, 400);
             EditorBuffer b = new EditorBuffer();
             b.setLanguageOverride("javascript");
-            b.setContent(SOURCE);
+            b.setContent(source);
             var field = EditorBuffer.class.getDeclaredField("symbols");
             field.setAccessible(true);
             field.set(
                     b,
-                    TextMateHighlighter.analyze(SOURCE, GrammarRegistry.shared().forLanguageName("javascript"))
+                    TextMateHighlighter.analyze(source, GrammarRegistry.shared().forLanguageName("javascript"))
                             .symbols());
-            b.getFoldManager().setServerRegions(FoldRegions.detect(SOURCE, "javascript"));
+            b.getFoldManager().setServerRegions(FoldRegions.detect(source, "javascript"));
             p.attach(b);
             @SuppressWarnings("unchecked")
             TreeView<Object> tree = (TreeView<Object>) FxTestSupport.<TreeView<?>>field(p, "tree");
@@ -86,9 +119,6 @@ class JavaScriptStructureFxTest {
             collect(tree, tree.getRoot(), "", out);
             return out;
         });
-        assertEquals(
-                List.of("load()", "Cache", "  get()", "  create()", "twice()", "escapeTicks()", "Banner()", "main()"),
-                rows);
     }
 
     private static void collect(TreeView<Object> tree, TreeItem<Object> parent, String indent, List<String> out) {

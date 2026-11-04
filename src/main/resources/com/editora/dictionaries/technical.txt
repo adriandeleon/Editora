@@ -648,6 +648,7 @@ droppable
 ellipsize
 ellipsized
 ellipsizing
+endregion
 esc
 frontmatter
 fullwidth

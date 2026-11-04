@@ -911,7 +911,8 @@ public final class Indenter {
      */
     public static String detectUnit(String text, int tabSize, @Nullable String language) {
         if (!"python".equals(language)) {
-            return detectUnit(text, tabSize);
+            String found = detectedUnit(text, tabSize);
+            return found != null ? found : " ".repeat(defaultIndentSize(language, tabSize));
         }
         // Python: only lines that start a statement vote. A PEP 8 hanging indent (`def f(` / 8 spaces of
         // arguments) or a docstring's text is not a block step, and enough of them made a 4-space file 8.
@@ -925,8 +926,27 @@ public final class Indenter {
         return detectUnit(statements.toString(), tabSize);
     }
 
+    /**
+     * Languages whose own convention is two spaces: JavaScript and TypeScript (Prettier, the bundled templates and
+     * snippets), JSON and YAML. A file of theirs with nothing indented yet — a new one — takes two, not the global
+     * tab size (JS/TS review A109). An EditorConfig {@code indent_size} still wins: it never reaches detection.
+     */
+    private static final java.util.Set<String> TWO_SPACE_LANGUAGES =
+            java.util.Set.of("javascript", "javascriptreact", "typescript", "typescriptreact", "json", "yaml");
+
+    /** The indent size for {@code language} when its text shows none: two for {@link #TWO_SPACE_LANGUAGES}. */
+    public static int defaultIndentSize(@Nullable String language, int tabSize) {
+        return language != null && TWO_SPACE_LANGUAGES.contains(language) ? 2 : Math.max(1, tabSize);
+    }
+
     /** {@link #detectUnit(String, int, String)} with no language: every indented line votes. */
     public static String detectUnit(String text, int tabSize) {
+        String found = detectedUnit(text, tabSize);
+        return found != null ? found : " ".repeat(Math.max(1, tabSize));
+    }
+
+    /** The unit {@code text}'s indented lines show, or {@code null} when none is indented (no evidence). */
+    private static @Nullable String detectedUnit(String text, int tabSize) {
         int limit = Math.min(text.length(), MAX_SCAN);
         int[] votes = null;
         boolean spaces = false;
@@ -963,17 +983,17 @@ public final class Indenter {
             }
             i = nl + 1;
         }
-        int size = Math.max(1, tabSize);
-        if (votes != null) {
-            int best = 0;
-            for (int step = 2; step <= 8; step++) {
-                if (votes[step] > votes[best] || (votes[step] == votes[best] && votes[step] > 0 && step == size)) {
-                    best = step;
-                }
-            }
-            size = best;
+        if (votes == null) {
+            return null; // nothing indented: the language's (or the global) default decides
         }
-        return " ".repeat(size); // no tab evidence → spaces (the VSCode/IntelliJ default)
+        int size = Math.max(1, tabSize);
+        int best = 0;
+        for (int step = 2; step <= 8; step++) {
+            if (votes[step] > votes[best] || (votes[step] == votes[best] && votes[step] > 0 && step == size)) {
+                best = step;
+            }
+        }
+        return " ".repeat(best); // no tab evidence → spaces (the VSCode/IntelliJ default)
     }
 
     /**

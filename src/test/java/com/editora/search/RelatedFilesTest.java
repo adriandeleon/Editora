@@ -114,4 +114,16 @@ class RelatedFilesTest {
                 RelatedFiles.testFor(java.nio.file.Path.of("/w/src/main/java/a.kt")));
         org.junit.jupiter.api.Assertions.assertNull(RelatedFiles.testFor(null));
     }
+
+    @Test
+    void typeScriptSourceCompiledJavaScriptAndDeclarationFilesPair() {
+        List<String> ts = RelatedFiles.candidates("util.ts");
+        assertTrue(ts.containsAll(List.of("util.test.ts", "util.d.ts", "util.js")), ts.toString());
+        assertTrue(ts.indexOf("util.d.ts") < ts.indexOf("util.css"), "the module's own files before styles: " + ts);
+        assertTrue(RelatedFiles.candidates("util.js").containsAll(List.of("util.ts", "util.d.ts")));
+        assertEquals(List.of("util.ts", "util.js"), RelatedFiles.candidates("util.d.ts"), "no `util.d.test.ts`");
+        assertEquals(List.of("index.mts", "index.mjs"), RelatedFiles.candidates("index.d.mts"));
+        assertTrue(RelatedFiles.candidates("lib.cjs").containsAll(List.of("lib.cts", "lib.d.cts")));
+        assertTrue(RelatedFiles.candidates("Button.tsx").contains("Button.jsx"));
+    }
 }

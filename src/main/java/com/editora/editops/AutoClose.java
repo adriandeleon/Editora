@@ -67,7 +67,8 @@ public final class AutoClose {
             return new Decision(Action.SKIP_OVER, typed); // type over the existing closer/quote
         }
         if (isOpener(typed)) {
-            return new Decision(Action.INSERT_PAIR, closerFor(typed));
+            // Only where a closer can sit: typing `(` to wrap `foo` gave `()foo` (JS/TS review A110).
+            return pairsBefore(next) ? new Decision(Action.INSERT_PAIR, closerFor(typed)) : Decision.NONE;
         }
         if (isQuote(typed) && shouldPairQuote(prev, next, typed)) {
             return new Decision(Action.INSERT_PAIR, typed);
@@ -148,6 +149,16 @@ public final class AutoClose {
     }
 
     /** Whether typing a quote should auto-insert its pair (avoid contractions / mid-word / closings). */
+    /**
+     * Whether an opening bracket typed before {@code next} gets its closer: at the end of the text or a line,
+     * before whitespace, a closer, a separator or a quote ({@code ; : . , = } ] ) >}, and the closing quote of
+     * the string being typed in) — VS Code's {@code autoCloseBefore}, plus quotes. Before a word or a number it
+     * would close nothing the user means.
+     */
+    static boolean pairsBefore(char next) {
+        return next == 0 || Character.isWhitespace(next) || ";:.,=}])>\"'`".indexOf(next) >= 0;
+    }
+
     private static boolean shouldPairQuote(char prev, char next, char quote) {
         if (Character.isLetterOrDigit(prev) || prev == quote) {
             return false; // e.g. don't, identifier", or closing an existing string

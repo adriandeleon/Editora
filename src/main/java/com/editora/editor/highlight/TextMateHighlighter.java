@@ -58,6 +58,14 @@ public final class TextMateHighlighter {
      */
     static final Duration LONG_LINE_BUDGET = Duration.ofMillis(500);
 
+    /**
+     * A {@link #BUDGETED_LINE long} line with more tokens than this is shown plain (its grammar state still
+     * carries on). Tokens bound the colour runs, and RichTextFX lays out one node per run. Prose and long strings
+     * have few tokens and keep their colours; minified code and long data arrays (a token every few
+     * characters) do not. VS Code also gives up colouring a long line, at its 20,000-character cap.
+     */
+    static final int MAX_LONG_LINE_TOKENS = 400;
+
     private static final Logger LOG = Logger.getLogger(TextMateHighlighter.class.getName());
     private static final Set<String> REPORTED_FAILURES = ConcurrentHashMap.newKeySet();
 
@@ -265,7 +273,9 @@ public final class TextMateHighlighter {
             int lineLength = lineEnd - pos;
             boolean longLine = lineLength >= BUDGETED_LINE;
             if (lineLength > MAX_TOKENIZED_LINE || (longLine && longLineNanos > longLineBudgetNanos)) {
-                spans.add(null, lineLength); // too long (or over budget): plain text, state carried across it
+                // Too long (or over budget): plain text, state carried across it. Its brackets are not counted
+                // either: bracket colours on such a line would make the many-span paragraph this avoids.
+                spans.addNotBrackets(null, lineLength);
             } else {
                 long started = longLine ? System.nanoTime() : 0;
                 // One copy per line, terminator included when the text has one: the newline is what makes
@@ -294,7 +304,15 @@ public final class TextMateHighlighter {
                     } else {
                         state = result.getRuleStack();
                     }
-                    addLineSpans(spans, lineLength, tokens, count);
+                    if (longLine && (result.isStoppedEarly() || count > MAX_LONG_LINE_TOKENS)) {
+                        // A long line in many colours is what makes RichTextFX slow: one Text node per run,
+                        // laid out again on every keystroke in it (a 7,000-character array of numbers cost
+                        // ~180 ms a key, a bundle of 8,000-character lines ~850 ms). Plain, it is one node.
+                        // A line cut short by the budget goes plain too, rather than coloured half-way.
+                        spans.addNotBrackets(null, lineLength);
+                    } else {
+                        addLineSpans(spans, lineLength, tokens, count);
+                    }
                     collectSymbol(symbols, lineIndex, line, lineLength, tokens, count);
                 } catch (Exception | LinkageError e) {
                     spans.add(null, lineLength - spans.lineProgress());
@@ -719,6 +737,9 @@ public final class TextMateHighlighter {
     /** {@link #classify}'s answer for "this scope decides the token, and the token is unstyled". */
     private static final String PLAIN = "";
 
+    /** The class of JSX text ({@code <p>this</p>}): prose to spell check, not brackets to colour. */
+    public static final String JSX_TEXT = "jsx-text";
+
     /**
      * The style for a {@code storage.*} scope. Nearly every grammar reserves {@code storage} for declaration
      * keywords and modifiers ({@code class}, {@code const}, {@code static}, {@code fn}, primitive type words),
@@ -759,6 +780,14 @@ public final class TextMateHighlighter {
         }
         if (scope.startsWith("punctuation.definition.template-expression")) {
             return "keyword";
+        }
+        // JSX: the text between tags is page text, which spell check reads as it reads a string (JS/TS review
+        // A112); the code in a {…} there is code again. No theme colours the class: it looks as before.
+        if (scope.startsWith("meta.embedded.expression.tsx")) {
+            return PLAIN;
+        }
+        if (scope.startsWith("meta.jsx.children")) {
+            return JSX_TEXT;
         }
         if (scope.startsWith("constant.numeric")) {
             return "number";
