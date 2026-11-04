@@ -55,8 +55,10 @@ public final class IndentWindow {
             @Nullable Boolean insertSpaces,
             @Nullable Integer indentSize,
             @Nullable String language) {
-        String head = insertSpaces != null ? "" : doc.text(0, Math.min(doc.length(), HEAD_CHARS));
-        return Indenter.unitFor(head, tabSize, insertSpaces, indentSize, language);
+        if (insertSpaces == null) { // nothing set: what the document shows, else the language's default (A109)
+            return Indenter.unitOrLanguageDefault(doc.text(0, Math.min(doc.length(), HEAD_CHARS)), tabSize, language);
+        }
+        return Indenter.unitFor("", tabSize, insertSpaces, indentSize, language);
     }
 
     /** How far below the caret's line Enter looks in a brace language (see {@link CommentContinuation}). */

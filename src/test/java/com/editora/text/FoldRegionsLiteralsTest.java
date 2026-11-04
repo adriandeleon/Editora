@@ -43,7 +43,8 @@ class FoldRegionsLiteralsTest {
     void anUnpairedQuoteOnlyCostsItsOwnLine() {
         String tsx =
                 "function A() {\n  return (\n    <p>Don't have an account?</p>\n  );\n}\nfunction B() {\n  b();\n}\n";
-        assertEquals(List.of(new Region(0, 4), new Region(5, 7)), sorted(tsx, "typescriptreact"));
+        // (1, 3) is the `return ( … )` itself, which folds since JS/TS review A107.
+        assertEquals(List.of(new Region(0, 4), new Region(1, 3), new Region(5, 7)), sorted(tsx, "typescriptreact"));
         String js = "function a() {\n  return s.replace(/'/g, x);\n}\nfunction b() {\n  c();\n}\n";
         assertEquals(List.of(new Region(0, 2), new Region(3, 5)), sorted(js, "javascript"));
         String c = "#error don't build this\nint main() {\n    return 0;\n}\n";

@@ -911,8 +911,7 @@ public final class Indenter {
      */
     public static String detectUnit(String text, int tabSize, @Nullable String language) {
         if (!"python".equals(language)) {
-            String found = detectedUnit(text, tabSize);
-            return found != null ? found : " ".repeat(defaultIndentSize(language, tabSize));
+            return detectUnit(text, tabSize);
         }
         // Python: only lines that start a statement vote. A PEP 8 hanging indent (`def f(` / 8 spaces of
         // arguments) or a docstring's text is not a block step, and enough of them made a 4-space file 8.
@@ -933,6 +932,19 @@ public final class Indenter {
      */
     private static final java.util.Set<String> TWO_SPACE_LANGUAGES =
             java.util.Set.of("javascript", "javascriptreact", "typescript", "typescriptreact", "json", "yaml");
+
+    /**
+     * A buffer's indent unit: what its text shows ({@link #detectUnit(String, int, String)}), or — when nothing is
+     * indented yet — {@code language}'s own default ({@link #defaultIndentSize}) rather than the tab size. Only
+     * the editor's own detection asks this; the pure callers that pass a tab size keep it.
+     */
+    public static String unitOrLanguageDefault(String text, int tabSize, @Nullable String language) {
+        if ("python".equals(language)) {
+            return detectUnit(text, tabSize, language);
+        }
+        String found = detectedUnit(text, tabSize);
+        return found != null ? found : " ".repeat(defaultIndentSize(language, tabSize));
+    }
 
     /** The indent size for {@code language} when its text shows none: two for {@link #TWO_SPACE_LANGUAGES}. */
     public static int defaultIndentSize(@Nullable String language, int tabSize) {
