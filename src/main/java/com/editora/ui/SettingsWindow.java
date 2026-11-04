@@ -7182,14 +7182,10 @@ public class SettingsWindow {
                         () -> config.getSettings().getJsDebugPath(),
                         cb -> {
                             if (dapManager != null) {
-                                // installed, whether or not switched on (review D13): its path and the Node.js
-                                dapManager.detectJsInstalled((server, node) -> cb.accept(
-                                        server != null && node != null,
-                                        server == null
-                                                ? ""
-                                                : node == null
-                                                        ? tr("settings.debug.jsNoNode")
-                                                        : tr("settings.debug.jsFound", node, server)));
+                                // installed, whether or not switched on (review D13): its version and the Node.js
+                                dapManager.detectJsInstalled(js -> cb.accept(
+                                        js.server() != null && js.nodeVersion() != null,
+                                        ToolStatusRow.jsDebugDetail(js)));
                             } else {
                                 cb.accept(false, "");
                             }

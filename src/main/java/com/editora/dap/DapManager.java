@@ -546,17 +546,28 @@ public final class DapManager {
     }
 
     /**
-     * Whether js-debug is installed and a Node.js runs, whatever the enable flags say — what the Settings card shows
-     * (review D13). Delivers the server path (null when not found) and the Node.js version (null when none runs)
-     * on the FX thread.
+     * What the Settings card shows about js-debug, whatever the enable flags say (review D13, D108): the server
+     * (null when not found), its version (null when its bundle does not say), and the version of the Node.js that
+     * runs it (null when none runs).
      */
-    public void detectJsInstalled(java.util.function.BiConsumer<Path, String> onResult) {
+    public record JsDebugInstall(
+            @Nullable Path server,
+            @Nullable String serverVersion,
+            @Nullable String nodeVersion) {}
+
+    /** Finds {@link JsDebugInstall} off the FX thread and delivers it on the FX thread. */
+    public void detectJsInstalled(Consumer<JsDebugInstall> onResult) {
         String configured = jsPath;
         io.submit(() -> {
             Path server =
                     DebugAdapterLocator.locateJsDebugServer(configured, home()).orElse(null);
-            String version = nodeVersion(adapterNode());
-            Platform.runLater(() -> onResult.accept(server, version));
+            String serverVersion =
+                    server == null ? null : com.editora.install.PinnedVersions.jsDebugServerVersion(server);
+            String node = adapterNode();
+            String nodeVersion = nodeVersion(node);
+            String runner = adapterNodeFor(node, nodeVersion);
+            String runnerVersion = runner == null || runner.equals(node) ? nodeVersion : nodeVersion(runner);
+            Platform.runLater(() -> onResult.accept(new JsDebugInstall(server, serverVersion, runnerVersion)));
         });
     }
 
@@ -2482,14 +2493,18 @@ public final class DapManager {
 
     /**
      * The Node.js that runs js-debug for a program on {@code programNode} ({@code version}): that one when it is
-     * new enough, else the Debugging setting's / PATH's, else null. The program still runs on its own Node.
+     * new enough, else the Node.js setting's when that is, else the newest nvm one or {@code node} on PATH — found
+     * without the setting, so an old Node.js chosen in Settings does not stop debugging (review D101); null when
+     * none is new enough. The program still runs on its own Node.
      */
     private @Nullable String adapterNodeFor(String programNode, @Nullable String version) {
         if (JsLaunch.runsAdapter(version)) {
             return programNode;
         }
-        String fallback = adapterNode();
-        return !fallback.equals(programNode) && JsLaunch.runsAdapter(nodeVersion(fallback)) ? fallback : null;
+        List<String> fallbacks = new ArrayList<>();
+        fallbacks.add(adapterNode());
+        fallbacks.addAll(JsAdapterNode.localFallbacks());
+        return JsAdapterNode.choose(programNode, version, fallbacks, DapManager::nodeVersion);
     }
 
     /** A started js-debug server: its process, the port it announced on this machine, and its stderr. */
@@ -2574,7 +2589,19 @@ public final class DapManager {
                     fail(epoch, tr("debug.error.jsNotFound"));
                     return;
                 }
-                JsAdapter adapter = startJsAdapter(server, adapterNode(), epoch);
+                String attachNode = adapterNode();
+                String runner = adapterNodeFor(attachNode, nodeVersion(attachNode));
+                if (runner == null) {
+                    fail(
+                            epoch,
+                            tr(
+                                    "debug.error.jsNodeTooOld",
+                                    String.valueOf(nodeVersion(attachNode)),
+                                    attachNode,
+                                    JsLaunch.MIN_ADAPTER_NODE_MAJOR));
+                    return;
+                }
+                JsAdapter adapter = startJsAdapter(server, runner, epoch);
                 if (adapter == null) {
                     return; // reported
                 }
