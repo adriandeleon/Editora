@@ -315,7 +315,12 @@ class LspServerRegistryTest {
         assertTrue(LspServerRegistry.lspAllowedForSize("python", true, 12_000));
         assertFalse(LspServerRegistry.lspAllowedForSize("python", true, 50_000));
         assertTrue(LspServerRegistry.lspAllowedForSize("java", true, 12_000), "Java keeps jdtls to 50,000 lines (C16)");
-        assertFalse(LspServerRegistry.lspAllowedForSize("typescript", true, 12_000));
+        assertTrue(
+                LspServerRegistry.lspAllowedForSize("typescript", true, 20_000),
+                "tsserver keeps a 20k-line file (E103)");
+        assertTrue(LspServerRegistry.lspAllowedForSize("javascriptreact", true, 45_125), "lib.dom.d.ts-sized");
+        assertFalse(LspServerRegistry.lspAllowedForSize("typescript", true, 50_000));
+        assertFalse(LspServerRegistry.lspAllowedForSize("go", true, 12_000), "others keep the tier's default");
         assertTrue(LspServerRegistry.lspAllowedForSize("java", false, 12_000), "below the tier: always");
     }
 
