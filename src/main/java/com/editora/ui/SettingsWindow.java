@@ -7966,7 +7966,10 @@ public class SettingsWindow {
             return;
         }
         TypeScriptSdkStatus.refresh(
-                typeScriptSdkStatus, lspArgv(com.editora.lsp.TypeScriptServer.SERVER_ID), lspCheck.isSelected());
+                typeScriptSdkStatus,
+                lspArgv(com.editora.lsp.TypeScriptServer.SERVER_ID),
+                config.getConfigDir(),
+                lspCheck.isSelected());
         // Probe the commands this page shows, without configuring the manager. This window must not
         // (re)configure it: doing so with the global commands replaced a trusted project's override and
         // shut its running server down every time Settings was merely opened.

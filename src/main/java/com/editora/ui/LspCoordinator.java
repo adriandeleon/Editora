@@ -519,6 +519,7 @@ final class LspCoordinator {
                 root.getFileName() == null ? root : root.getFileName())));
         lspManager.setOnStartFailed(this::onStartFailed);
         lspManager.setOnStartRefused(this::onStartRefused);
+        lspManager.setOnFolderTypeScriptIgnored(nodeTypes::folderTypeScriptIgnored); // said at ready (JS review B109)
         lspManager.setOnRequestError(this::onRequestError);
         pomCompletionNotice = new PomServerSupport(
                 host::setStatus,
@@ -1044,11 +1045,12 @@ final class LspCoordinator {
         ops.setLspLoading(false);
         // the server's own name ("jdtls needs Java 25"), not the language's ("Java needs Java 25"); said again on the
         // next pulse too, as the file's own "Opened …" status landed over it (seventh review DR3)
-        String said = startRefusedMessage(
+        String said = LspStartMessages.refused(
                 refusal.kind() == com.editora.lsp.StartRefusal.Kind.NO_JAVA_FOR_SERVER
                         ? serverProgram(serverId)
                         : serverLabel(serverId),
-                refusal);
+                refusal,
+                ops.lspProjectRoot() != null);
         if (refusal.kind() == com.editora.lsp.StartRefusal.Kind.XML_LOADS_MAVEN) {
             refusedServers.put(serverId, said); // Doctor and Settings say so too, not "found" and "OK" (review 4, A32)
         }
@@ -1059,20 +1061,6 @@ final class LspCoordinator {
 
     /** Servers Editora would not start with their command (the lemminx-maven guard), by id → what the status said. */
     private final Map<String, String> refusedServers = new java.util.HashMap<>();
-
-    /** The status-line words for a {@link com.editora.lsp.StartRefusal}. */
-    static String startRefusedMessage(String server, com.editora.lsp.StartRefusal refusal) {
-        return switch (refusal.kind()) {
-            case SERVER_REFUSED -> tr("status.lsp.startRefused", server, refusal.detail());
-            case NO_TYPESCRIPT ->
-                refusal.detail().isBlank()
-                        ? tr("status.lsp.tsNoSdk")
-                        : tr("status.lsp.tsSdkWithoutTsserver", refusal.detail());
-            case UNTRUSTED_TYPESCRIPT -> tr("status.lsp.tsSdkUntrusted", tr("command.lsp.trustProjectSettings"));
-            case NO_JAVA_FOR_SERVER -> tr("status.lsp.javaTooOld", server, refusal.detail());
-            case XML_LOADS_MAVEN -> tr("status.lsp.xmlLoadsMaven", server);
-        };
-    }
 
     /**
      * A server's start failed: its command could not be run, or a remote host's connection broke while it
@@ -1690,10 +1678,14 @@ final class LspCoordinator {
      * init and on every settings apply.
      */
     void applySupport() {
-        startBlocked.clear(); // a settings change (an install, a trust decision) may be what the server lacked
-        failingServers.clear();
-        crashedServers.clear();
-        refusedServers.clear();
+        String trouble = troubleSignature();
+        if (!trouble.equals(appliedTrouble)) { // an install, a trust decision, a command: not a theme (JS B112)
+            appliedTrouble = trouble;
+            startBlocked.clear(); // a settings change (an install, a trust decision) may be what the server lacked
+            failingServers.clear();
+            crashedServers.clear();
+            refusedServers.clear();
+        }
         boolean on = ops.lspFeatureEnabled(); // effective: off in Simple UI mode
         // Give jdtls a per-project Eclipse workspace under the config dir (it otherwise shares one default
         // workspace and deadlocks on its .lock — the server then never finishes initialize / completion).
@@ -2011,6 +2003,9 @@ final class LspCoordinator {
             String own = com.editora.install.MavenServerInstall.effectiveCommand(raw, configDir);
             return own.isBlank() ? raw : com.editora.lsp.JvmServerCommand.withJdk(own, jdk);
         }
+        if (com.editora.install.TypeScriptServerInstall.SERVER_ID.equals(serverId)) {
+            return com.editora.install.TypeScriptServerInstall.effectiveCommand(raw, configDir); // JS review B104
+        }
         return "xml".equals(serverId)
                 ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir, jdk)
                 : com.editora.install.WebServerInstall.effectiveCommand(serverId, raw, configDir); // HTML A2
@@ -2174,6 +2169,7 @@ final class LspCoordinator {
         lspManager.setTypeScriptSettings(s.isInlayHints(), s.isCodeLens());
         com.editora.config.ConfigManager config = ops.config();
         lspManager.setLooseRoot(config == null ? null : config.getConfigDir().resolve(LOOSE_ROOT));
+        lspManager.setOwnTypeScriptConfigDir(config == null ? null : config.getConfigDir()); // JS review B101
     }
 
     /** The shared root of loose JavaScript/TypeScript (and XML) files, under the config folder. */
@@ -2203,13 +2199,13 @@ final class LspCoordinator {
                 tr("dialog.lsp.trust.accept"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
         javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
                 javafx.scene.control.Alert.AlertType.WARNING,
-                tr("dialog.lsp.trust.body", root.toString(), String.join("\n", requests)),
+                TrustPromptText.body(root, requests), // a folder's own TypeScript said as such (JS review B110)
                 javafx.scene.control.ButtonType.CANCEL,
                 trust);
         confirm.initOwner(host.window());
         confirm.setTitle(tr("dialog.trust.title"));
         Path name = root.getFileName();
-        confirm.setHeaderText(tr("dialog.lsp.trust.header", name == null ? root.toString() : name.toString()));
+        confirm.setHeaderText(TrustPromptText.header(name == null ? root.toString() : name.toString(), requests));
         confirm.getDialogPane().setMinWidth(520);
         return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == trust;
     }
@@ -2275,7 +2271,9 @@ final class LspCoordinator {
                 }
             }
         };
-        look.accept(top);
+        if (com.editora.lsp.RootResolver.hasAstroConfig(top)) {
+            look.accept(top); // not in a folder without Astro: the prompt listed it there (JS review B110)
+        }
         host.forEachBuffer(b -> {
             if (lspPath(b) != null && ASTRO_SERVER_ID.equals(serverIdForBuffer(b))) {
                 look.accept(lspRootFor(b, ASTRO_SERVER_ID));
@@ -2362,6 +2360,18 @@ final class LspCoordinator {
     }
 
     /** Everything a re-configure depends on: the project's effective commands and enables, as one string. */
+    /** What a crashed, refused or blocked server may have lacked; only its change retries them ({@link #applySupport}). */
+    private String troubleSignature() {
+        com.editora.config.ConfigManager config = ops.config();
+        return ops.lspFeatureEnabled() + "|" + new java.util.TreeMap<>(effectiveCommands()) + "|"
+                + host.settings().isTypescriptTypeAcquisition() + "|"
+                + host.settings().getNodePath() + "|"
+                + lspManager.detectionGeneration() + "|" + projectOverrideSignature() + "|"
+                + (config == null ? "" : config.getTrustStore().trustedRoots());
+    }
+
+    private @Nullable String appliedTrouble;
+
     private String projectOverrideSignature() {
         StringBuilder signature = new StringBuilder();
         for (String serverId : LspServerCommands.SERVER_IDS) {
@@ -2865,7 +2875,14 @@ final class LspCoordinator {
             requestInlayHints(buffer); // gated internally on the setting + capability (#681)
             requestFoldingRanges(buffer); // #738 — a no-op until the server reports ready, then refreshed
             if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId) && !remote) {
-                noticeMissingNodeTypes(buffer, path);
+                nodeTypes.opened(
+                        buffer.getLanguage(),
+                        buffer.text(),
+                        path,
+                        lspRootFor(buffer, serverId),
+                        host.settings().isTypescriptTypeAcquisition(),
+                        lspManager.isReady(path),
+                        host::setStatus);
             }
         } else {
             buffer.setLspActive(false);
@@ -2898,27 +2915,8 @@ final class LspCoordinator {
         }
     }
 
-    /** The folders the "Node.js APIs have no types" hint was shown for (once each per window). */
-    private final java.util.Set<Path> nodeTypesHinted = new java.util.HashSet<>();
-
-    /**
-     * Says once per folder that Node.js APIs have no types for this JavaScript file, and how to add them: without
-     * {@code @types/node} (and with type acquisition off) hover says {@code any} and {@code fs.} completes only
-     * words from the file (Node review B9). TypeScript files get the compiler's own error for this instead.
-     */
-    private void noticeMissingNodeTypes(EditorBuffer buffer, Path path) {
-        String lang = buffer.getLanguage();
-        if (host.settings().isTypescriptTypeAcquisition()
-                || !("javascript".equals(lang) || "javascriptreact".equals(lang))
-                || path.getParent() == null
-                || nodeTypesHinted.contains(path.getParent())
-                || !com.editora.lsp.NodeTypesHint.usesNodeApis(buffer.text())
-                || com.editora.lsp.NodeTypesHint.hasNodeTypes(path)) {
-            return;
-        }
-        nodeTypesHinted.add(path.getParent());
-        host.setStatus(tr("status.lsp.nodeTypesHint"));
-    }
+    /** The "Node.js APIs have no types" hint, said once per folder where it can be read (B9, JS review B108). */
+    private final NodeTypesNotice nodeTypes = new NodeTypesNotice();
 
     /** Workspace root for a buffer under {@code serverId}: active project (if Projects on), else nearest build
      *  file (that server's markers), else the file's dir. */
@@ -2956,6 +2954,9 @@ final class LspCoordinator {
                 ops.lspProjectRoot(), file, com.editora.lsp.LspServerRegistry.rootMarkerTiersForServer(serverId));
         if (resolved != null && "html".equals(serverId)) {
             return com.editora.lsp.RootResolver.siteRoot(resolved, file, ops.lspProjectRoot()); // `/` links (A6)
+        }
+        if (resolved != null && com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)) {
+            return com.editora.lsp.RootResolver.typeScriptWorkspaceRoot(resolved, ops.lspProjectRoot()); // JS B106
         }
         if (resolved != null && com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
             // A module pom's root is its reactor's: one lemminx-maven JVM per reactor, not per module (C11).
@@ -3343,7 +3344,11 @@ final class LspCoordinator {
         // The actually-managing server (so a pom.xml on lemminx-maven reads "maven-pom", not the language's "xml").
         Path path = b == null ? null : lspPath(b);
         String serverId = path == null ? null : lspManager.managedServerId(path);
-        ops.setStatusBarLsp(serverId != null ? serverProgram(serverId) : null);
+        ops.setStatusBarLsp(
+                serverId != null
+                        ? com.editora.lsp.TypeScriptServer.segmentName(
+                                serverProgram(serverId), lspManager.typeScriptVersion(path))
+                        : null);
         updateProblemsAvailability(); // the Problems window tracks the same active-file LSP-managed condition
     }
 
@@ -3382,12 +3387,10 @@ final class LspCoordinator {
         if (named != null) {
             return named;
         }
-        String exe = toks.isEmpty() ? serverId : toks.get(0);
-        try {
-            return Path.of(exe).getFileName().toString();
-        } catch (RuntimeException e) {
-            return exe;
-        }
+        List<String> def = com.editora.run.ProgramArgs.commandLine(
+                com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId)); // past env/npx wrappers (JS B114)
+        return com.editora.lsp.ServerProgramName.of(
+                toks.isEmpty() ? List.of(serverId) : toks, def.isEmpty() ? "" : def.get(0));
     }
 
     /**
@@ -3787,7 +3790,12 @@ final class LspCoordinator {
                 host.setStatus(tr("status.lsp.readyWithProblems", server));
             } else {
                 host.setStatus(
-                        line.ready() ? tr("status.lsp.ready", server) : tr("status.lsp.server", server, line.text()));
+                        line.ready()
+                                ? nodeTypes.atReady(root, tr("status.lsp.ready", server))
+                                : tr("status.lsp.server", server, line.text()));
+                if (line.ready()) {
+                    updateStatusBar(); // the segment names the TypeScript the server said it runs (JS review B109)
+                }
             }
         }
     }
@@ -6975,10 +6983,7 @@ final class LspCoordinator {
     private static com.editora.editor.lsp.CodeAction codeActionRow(LspManager.CodeActionItem item) {
         String label = item.kind().isBlank()
                 ? ""
-                : tr("lsp.codeAction.group."
-                        + com.editora.lsp.CodeActionKinds.group(item.kind())
-                                .name()
-                                .toLowerCase(java.util.Locale.ROOT));
+                : tr("lsp.codeAction.group." + com.editora.lsp.CodeActionKinds.labelKey(item.kind()));
         return new com.editora.editor.lsp.CodeAction(item.title(), label, item.preferred(), item.raw());
     }
 
@@ -9500,6 +9505,8 @@ final class LspCoordinator {
                 .addAll(
                         getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
                         getClass().getResource("/com/editora/styles/syntax.css").toExternalForm());
+        com.editora.editor.PopupSheets.followOwnerTheme(
+                box, area.getScene() == null ? null : area.getScene().getWindow());
 
         Popup popup = new Popup();
         popup.setAutoHide(true); // click outside / focus loss dismisses it
@@ -9910,6 +9917,8 @@ final class LspCoordinator {
                 .addAll(
                         getClass().getResource("/com/editora/styles/app.css").toExternalForm(),
                         getClass().getResource("/com/editora/styles/syntax.css").toExternalForm());
+        com.editora.editor.PopupSheets.followOwnerTheme(
+                box, area.getScene() == null ? null : area.getScene().getWindow());
 
         if (signaturePopup != null) {
             signaturePopup.getContent().setAll(box);

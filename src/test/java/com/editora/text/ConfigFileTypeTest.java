@@ -254,4 +254,11 @@ class ConfigFileTypeTest {
         assertEquals("clojure", LanguageRegistry.forFileName("/home/u/app/deps.edn"));
         assertNull(ConfigFileType.resolve("core.clj"));
     }
+
+    /** VS Code workspace files and Bun's text lockfile are JSON (with comments), not plain text (JS review A102). */
+    @org.junit.jupiter.api.Test
+    void workspaceFilesAndBunLockAreJson() {
+        org.junit.jupiter.api.Assertions.assertEquals("json", LanguageRegistry.forFileName("app.code-workspace"));
+        org.junit.jupiter.api.Assertions.assertEquals("json", LanguageRegistry.forFileName("bun.lock"));
+    }
 }

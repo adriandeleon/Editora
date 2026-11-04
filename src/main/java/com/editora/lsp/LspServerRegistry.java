@@ -348,6 +348,9 @@ public final class LspServerRegistry {
     public static String protocolLanguageId(String routeLanguageId, @Nullable Path file) {
         String id = protocolLanguageId(routeLanguageId);
         Path name = file == null ? null : file.getFileName();
+        if ("json".equals(routeLanguageId) && file != null) {
+            return JsonServer.languageId(file); // comments and trailing commas allowed where they are (JS review A102)
+        }
         return "xml".equals(routeLanguageId) && name != null ? XmlServer.languageId(name.toString()) : id;
     }
 
@@ -459,13 +462,19 @@ public final class LspServerRegistry {
      * navigation, so Java keeps it to 50,000 lines too (Java review C16). lemminx validates and outlines a
      * 60,000-line document in under a second, so XML keeps it to {@link XmlServer#HEAVY_FILE_LINE_LIMIT} (XML review
      * A10). vscode-html-language-server answers a 48,000-line page in under 0.3 s (symbols, folding, formatting), so
-     * HTML keeps it to 50,000 lines (HTML review A14). 0 = the tier's default (no server).
+     * HTML keeps it to 50,000 lines (HTML review A14). tsserver reports a 20,000-line TypeScript file's diagnostics
+     * 1.6 s after it opens and completes in 8–16 ms, while generated API clients, big reducers and {@code
+     * lib.dom.d.ts} (45,000 lines, reached by Go to Definition) had no server at all, so JavaScript and TypeScript
+     * keep it to 50,000 lines too (JS review E103). 0 = the tier's default (no server).
      */
     public static int heavyFileLspLineLimit(String languageId) {
         if ("xml".equals(languageId)) {
             return XmlServer.HEAVY_FILE_LINE_LIMIT;
         }
-        return "python".equals(languageId) || "java".equals(languageId) || "html".equals(languageId) ? 50_000 : 0;
+        return switch (languageId) {
+            case "python", "java", "html", "javascript", "javascriptreact", "typescript", "typescriptreact" -> 50_000;
+            default -> 0;
+        };
     }
 
     /** Pure: whether a file of {@code lines} lines in {@code languageId} gets its language server. */

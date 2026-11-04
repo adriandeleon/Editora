@@ -86,6 +86,9 @@ final class LspServerSettings {
             settings.put("java", javaSettings(javaOnTypeFormatting));
             return settings;
         }
+        if (JsonServer.SERVER_ID.equals(serverId)) {
+            return JsonServer.settings(); // bundled package.json/tsconfig schemas, validation kept on (JS review A102)
+        }
         return null;
     }
 

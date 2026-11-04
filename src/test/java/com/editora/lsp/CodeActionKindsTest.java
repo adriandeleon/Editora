@@ -2,6 +2,7 @@ package com.editora.lsp;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -55,5 +56,31 @@ class CodeActionKindsTest {
         assertTrue(CodeActionKinds.inQuickFixList(false, fix, true));
         assertFalse(CodeActionKinds.inQuickFixList(true, minify, false), "jdtls's source actions: Generate only");
         assertTrue(CodeActionKinds.inQuickFixList(true, fix, true));
+    }
+
+    /**
+     * TypeScript's "Fix all", "Add all missing imports" and "Remove unused" are fixes: hidden on a line with a
+     * problem since the Minify XML rule, exactly where they are wanted (JS review B103). Minify XML stays out.
+     */
+    @Test
+    void fixingSourceActionsStayOnALineWithAProblem() {
+        for (String kind : java.util.List.of(
+                "source.fixAll.ts",
+                "source.addMissingImports.ts",
+                "source.removeUnused.ts",
+                "source.removeUnusedImports.ts",
+                "source.organizeImports.ts",
+                "source.sortImports.ts")) {
+            var item = new LspManager.CodeActionItem(kind, kind, false, "k");
+            assertTrue(CodeActionKinds.inQuickFixList(false, item, true), kind);
+            assertTrue(CodeActionKinds.inQuickFixList(false, item, false), kind);
+        }
+        var minify = new LspManager.CodeActionItem("Minify XML", "source.minify", false, "m");
+        assertFalse(CodeActionKinds.inQuickFixList(false, minify, true), "Minify XML is still no fix");
+        assertEquals("fix", CodeActionKinds.labelKey("source.fixAll.ts"), "a fix reads Fix, not Generate");
+        assertEquals("source", CodeActionKinds.labelKey("source.minify"));
+        assertEquals("refactor", CodeActionKinds.labelKey("refactor.move.newFile"));
+        var fixAllJava = new LspManager.CodeActionItem("Fix all", "source.fixAll", false, "j");
+        assertFalse(CodeActionKinds.inQuickFixList(true, fixAllJava, true), "jdtls's source actions: Generate only");
     }
 }

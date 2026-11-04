@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * How the code-action list is arranged and narrowed, by the actions' LSP kinds. Pure.
  *
@@ -127,7 +129,32 @@ public final class CodeActionKinds {
         if (java) {
             return !source && !isJavaGeneratorAssist(item);
         }
-        return !source || !onProblem;
+        return !source || !onProblem || fixesProblems(item.kind());
+    }
+
+    /**
+     * Source actions that are fixes, which a line with a problem keeps: TypeScript's "Fix all", "Add all missing
+     * imports" and "Remove unused" (and the imports clean-ups) answer exactly the problem at the caret, unlike a
+     * whole-file rewrite such as lemminx's Minify XML (JS review B103, XML review B14).
+     */
+    private static final List<String> FIXING_SOURCE_KINDS = List.of(
+            "source.fixAll",
+            "source.addMissingImports",
+            "source.removeUnused",
+            "source.removeUnusedImports",
+            "source.organizeImports",
+            "source.sortImports");
+
+    /**
+     * The word a row's group is shown with ({@code lsp.codeAction.group.<key>}): its group, except that the source
+     * actions that are fixes read "Fix", not "Generate" (TypeScript's "Fix all fixable JS/TS issues", JS review B103).
+     */
+    public static String labelKey(String kind) {
+        return fixesProblems(kind) ? "fix" : group(kind).name().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static boolean fixesProblems(@Nullable String kind) {
+        return kind != null && FIXING_SOURCE_KINDS.stream().anyMatch(k -> matches(kind, k));
     }
 
     /** {@code items} that {@code keep} accepts, grouped and de-duplicated as the class comment says. */

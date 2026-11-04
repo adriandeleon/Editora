@@ -167,6 +167,17 @@ class LspManagerTest {
         assertNull(LspManager.initOptionsFor("astro", List.of()), "no SDK, no options: the server is not started");
     }
 
+    /** Editora's own TypeScript (never a global one npm -g replaced) serves astro-ls in an untrusted folder (B104). */
+    @Test
+    void editorasOwnTypescriptSdkServesAstroWhereTheFolderIsNotTrusted() throws Exception {
+        java.nio.file.Path folder = java.nio.file.Files.createDirectories(tempDir.resolve("site"));
+        java.nio.file.Path own = java.nio.file.Files.createDirectories(tempDir.resolve("own/lib"));
+        assertEquals(own, LspManager.astroTypeScriptSdk(folder, null, List.of(), own));
+        // a trusted folder's own SDK still comes first
+        java.nio.file.Path project = typeScriptSdkIn(folder, "typescript.js");
+        assertEquals(project, LspManager.astroTypeScriptSdk(folder, folder, List.of(), own));
+    }
+
     /** astro-ls runs the JavaScript in the SDK directory, so an untrusted folder must not supply it. */
     @Test
     void anUntrustedFolderDoesNotSupplyTheAstroTypeScriptSdk() throws Exception {
@@ -989,5 +1000,26 @@ class LspManagerTest {
         } finally {
             System.setProperty("user.home", saved);
         }
+    }
+
+    /** The resolved signature leads the completion doc pane when it says more than the row's detail (JS B107). */
+    @Test
+    void theResolvedSignatureLeadsTheCompletionDocumentation() {
+        assertEquals(
+                "```typescript\n(method) Array<number>.at(index: number): number | undefined\n```\n\nReturns the item.",
+                LspManager.withResolvedDetail(
+                        null,
+                        "(method) Array<number>.at(index: number): number | undefined",
+                        "Returns the item.",
+                        "typescript"));
+        assertEquals(
+                "```typescript\nAuto import from './math.js'\nfunction multiply(a: number, b: number): number\n```",
+                LspManager.withResolvedDetail(
+                        "./math.js",
+                        "Auto import from './math.js'\nfunction multiply(a: number, b: number): number",
+                        null,
+                        "typescript"));
+        assertEquals("docs", LspManager.withResolvedDetail("String", "String", "docs", ""), "nothing new: as before");
+        assertNull(LspManager.withResolvedDetail(null, " ", null, ""));
     }
 }

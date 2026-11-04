@@ -678,7 +678,9 @@ class LspCoordinatorHooksFxTest {
         assertTrue(trusted);
         Asked asked = first.get(30, TimeUnit.SECONDS);
         assertEquals(tr("dialog.lsp.trust.header", "site"), asked.header());
-        assertEquals(tr("dialog.lsp.trust.body", project.toString(), String.join("\n", requests)), asked.content());
+        assertEquals(TrustPromptText.body(project, requests), asked.content());
+        assertTrue(asked.content().contains("rust: ./tools/ra --stdio"), asked.content());
+        assertTrue(asked.content().contains("loaded by the Astro server"), asked.content());
 
         answerNextDialog(ButtonBar.ButtonData.CANCEL_CLOSE);
         assertFalse(FxTestSupport.callOnFx(() -> fx.coordinator.trustConfirmer.test(project, requests)));

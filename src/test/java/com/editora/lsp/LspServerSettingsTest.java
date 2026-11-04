@@ -23,8 +23,7 @@ class LspServerSettingsTest {
      */
     @Test
     void onlyTheServersWithSettingsOfTheirOwnArePushedAnything() {
-        for (String id :
-                List.of("json", "css", "yaml", "typescript", "astro", "go", "xml")) { // html: its session pushes
+        for (String id : List.of("css", "yaml", "typescript", "astro", "go", "xml")) { // html: its session pushes
             assertNull(LspServerSettings.push(id, true), id + " must not be pushed another server's settings");
         }
         assertNull(LspServerSettings.push(null, false));
@@ -33,6 +32,52 @@ class LspServerSettingsTest {
                 LspServerSettings.push("python", false).keySet());
         assertEquals(
                 java.util.Set.of("java"), LspServerSettings.push("java", false).keySet());
+    }
+
+    /**
+     * The JSON server is pushed its schemas, and always {@code json.validate.enable}: without it the push would
+     * switch validation off (JS review A102).
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void theJsonServerGetsTheBundledSchemasWithValidationOn() {
+        Map<String, Object> json =
+                (Map<String, Object>) LspServerSettings.push("json", false).get("json");
+        assertEquals(Map.of("enable", true), json.get("validate"));
+        List<Map<String, Object>> schemas = (List<Map<String, Object>>) json.get("schemas");
+        assertEquals(2, schemas.size(), "package.json and tsconfig/jsconfig, both bundled");
+        assertEquals(List.of("package.json"), schemas.get(0).get("fileMatch"));
+        assertTrue(((List<String>) schemas.get(1).get("fileMatch")).contains("jsconfig.json"));
+        var tsconfig = (com.google.gson.JsonObject) schemas.get(1).get("schema");
+        var options = tsconfig.getAsJsonObject("properties").getAsJsonObject("compilerOptions");
+        assertEquals(false, options.get("additionalProperties").getAsBoolean(), "a typo like strictt is flagged");
+        assertTrue(options.getAsJsonObject("properties").has("strict"));
+        var pkg = (com.google.gson.JsonObject) schemas.get(0).get("schema");
+        assertTrue(pkg.getAsJsonObject("properties").has("workspaces"));
+    }
+
+    /** JSON with comments opens as jsonc, where the server allows comments and trailing commas (JS review A102). */
+    @Test
+    void commentedConfigFilesOpenAsJsonc() {
+        for (String f : List.of(
+                "tsconfig.json",
+                "tsconfig.base.json",
+                "jsconfig.json",
+                ".eslintrc",
+                ".eslintrc.json",
+                ".babelrc",
+                ".swcrc",
+                "x.jsonc",
+                "deno.json",
+                "biome.jsonc",
+                "app.code-workspace",
+                ".vscode/settings.json",
+                "bun.lock")) {
+            assertEquals("jsonc", LspServerRegistry.protocolLanguageId("json", java.nio.file.Path.of("/p/" + f)), f);
+        }
+        for (String f : List.of("package.json", "data.json", "composer.json")) {
+            assertEquals("json", LspServerRegistry.protocolLanguageId("json", java.nio.file.Path.of("/p/" + f)), f);
+        }
     }
 
     /** Pyright reads {@code autoSearchPaths = !!analysis.autoSearchPaths} once an analysis object exists. */

@@ -563,11 +563,31 @@ final class InstallCoordinator {
                         || com.editora.dap.DebugAdapterLocator.locateDebugpy(
                                         "", Path.of(System.getProperty("user.home", "")))
                                 .isPresent();
-            case "typescript-language-server" -> ops.lspAvailable("typescript");
+            // Editora's own copy, or a server whose TypeScript is one it may stay on: a global server beside
+            // TypeScript 6 or 7 still wants Editora's TypeScript 5.9 (JS review B101)
+            case "typescript-language-server" ->
+                com.editora.install.TypeScriptServerInstall.ownLauncher(ops.configDir()) != null
+                        || ops.lspAvailable("typescript") && typeScriptSuitable();
             case "js-debug" -> ops.dapAvailable("javascript") && !editoraCopyOutdated(step.id());
             case "mmdc" -> ops.mmdcAvailable();
             default -> false;
         };
+    }
+
+    /** Whether the TypeScript the configured server would run is suitable ({@link com.editora.lsp.TypeScriptServer.Sdk#suitable}). */
+    private boolean typeScriptSuitable() {
+        Path config = ops.configDir();
+        String command = host.settings() == null ? "" : host.settings().getTypescriptLspCommand();
+        List<String> argv = com.editora.lsp.LspServerRegistry.tokenize(
+                com.editora.install.TypeScriptServerInstall.effectiveCommand(command, config));
+        if (argv.isEmpty()) {
+            argv = com.editora.lsp.LspServerRegistry.tokenize(
+                    com.editora.lsp.LspServerRegistry.DEFAULT_TYPESCRIPT_COMMAND);
+        }
+        return com.editora.lsp.TypeScriptServer.sdk(
+                        com.editora.lsp.LspManager.typeScriptServerExecutable(argv),
+                        com.editora.install.TypeScriptServerInstall.ownTsserver(config))
+                .suitable();
     }
 
     /**

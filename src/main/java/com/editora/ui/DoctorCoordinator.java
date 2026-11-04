@@ -1015,20 +1015,36 @@ final class DoctorCoordinator {
     /**
      * The TypeScript / JavaScript server's row once its command is found: OK with the TypeScript it runs, or a
      * warning when there is no TypeScript with a tsserver beside it (TypeScript 7 has none), in which case the
-     * server does not start outside a trusted folder that has its own (Node review B1, E4).
+     * server does not start outside a trusted folder that has its own (Node review B1, E4); or when that TypeScript
+     * is 6 or newer, which leaves out an installed {@code @types/node} (JS review B101). Update installs Editora's own
+     * TypeScript 5.9, which the server then prefers; a row that offers no Update ({@code ownCommand}) says to use
+     * Install on the Settings card instead (B113).
      */
-    private static DoctorCheck typeScriptServerRow(DoctorCheck base, List<String> argv, String path) {
+    static DoctorCheck typeScriptServerRow(
+            DoctorCheck base, List<String> argv, String path, @Nullable Path config, boolean ownCommand) {
         Path exe = com.editora.lsp.LspManager.typeScriptServerExecutable(argv);
-        Path tsserver = com.editora.lsp.TypeScriptServer.installedTsserver(exe);
+        com.editora.lsp.TypeScriptServer.Sdk sdk = com.editora.lsp.TypeScriptServer.sdk(
+                exe, com.editora.install.TypeScriptServerInstall.ownTsserver(config));
+        Path tsserver = sdk.tsserver();
+        String suffix = ownCommand ? "Own" : "";
         if (tsserver == null) {
-            String version = com.editora.lsp.TypeScriptServer.installedPackageVersion(exe);
-            // Update reinstalls typescript-language-server with the TypeScript 6 it needs (updateStepFor).
+            String version = sdk.besideVersion();
             return version.isEmpty()
-                    ? base.outdated(path, "doctor.tip.typescriptSdkMissing")
-                    : base.outdated(path, "doctor.tip.typescriptSdkWithoutTsserver", version);
+                    ? typeScriptTrouble(base, ownCommand, path, "doctor.tip.typescriptSdkMissing" + suffix)
+                    : typeScriptTrouble(
+                            base, ownCommand, path, "doctor.tip.typescriptSdkWithoutTsserver" + suffix, version);
         }
-        String version = com.editora.lsp.TypeScriptServer.sdkVersion(tsserver);
-        return base.ok(version.isEmpty() ? path : tr("doctor.detail.typescriptSdk", version, path));
+        String detail = sdk.version().isEmpty() ? path : tr("doctor.detail.typescriptSdk", sdk.version(), tsserver);
+        if (!sdk.suitable()) {
+            return typeScriptTrouble(
+                    base, ownCommand, detail, "doctor.tip.typescriptSdkTooNew" + suffix, sdk.version());
+        }
+        return base.ok(detail);
+    }
+
+    private static DoctorCheck typeScriptTrouble(
+            DoctorCheck base, boolean ownCommand, String detail, String tip, String... args) {
+        return ownCommand ? base.warn(detail, tip, args) : base.outdated(detail, tip, args);
     }
 
     /**
@@ -1149,7 +1165,8 @@ final class DoctorCoordinator {
             }
             if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)) {
                 // found is not enough: it needs a tsserver (E4)
-                return withNewer(typeScriptServerRow(base, argv, path), serverId, argv, path, latest);
+                return withNewer(
+                        typeScriptServerRow(base, argv, path, config, ownCommand), serverId, argv, path, latest);
             }
             if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
                 // `java` found is not enough either: the command loads a folder of jars, and an emptied folder or

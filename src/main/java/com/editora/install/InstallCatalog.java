@@ -132,12 +132,19 @@ public final class InstallCatalog {
     public static final String JDTLS_VERSION = "1.63.0";
 
     /**
-     * The TypeScript the language servers that need its {@code tsserver} are installed with. TypeScript 7 is
-     * the native (Go) compiler and ships no {@code lib/tsserver.js}, so typescript-language-server (and astro-ls)
-     * cannot start on it; since TS 7 became npm's {@code latest}, an unpinned {@code typescript} gave a server
-     * that crashed on every file. Pinned to the last major with a tsserver.
+     * The TypeScript the language servers that need its {@code tsserver} are installed with, into Editora's own
+     * folder ({@link TypeScriptServerInstall}). TypeScript 7 is the native (Go) compiler and ships no {@code
+     * lib/tsserver.js}, so typescript-language-server (and astro-ls) cannot start on it (Node review B1); TypeScript 6
+     * no longer includes an installed {@code @types/node} unless a tsconfig lists it, so Node.js code showed false
+     * errors and plain JavaScript had no Node.js types (JS review B101). Pinned to an exact 5.9 release.
      */
-    public static final String TYPESCRIPT_PACKAGE = "typescript@6";
+    public static final String TYPESCRIPT_VERSION = "5.9.3";
+
+    /** {@link #TYPESCRIPT_VERSION} as an npm package spec. */
+    public static final String TYPESCRIPT_PACKAGE = "typescript@" + TYPESCRIPT_VERSION;
+
+    /** The typescript-language-server installed beside it: pinned, checked with TypeScript 5.9 (needs Node.js 20). */
+    public static final String TYPESCRIPT_LS_VERSION = "5.3.0";
 
     /**
      * The bash-language-server Editora installs: pinned, not npm's {@code latest} (Bash review A6/D4). Editora's shell
@@ -602,7 +609,8 @@ public final class InstallCatalog {
             case "yaml" -> java.util.Optional.of(List.of(npmStep("yaml-language-server")));
             case "dockerfile" -> java.util.Optional.of(List.of(npmStep("dockerfile-language-server-nodejs")));
             case "toml" -> java.util.Optional.of(List.of(npmStep("@taplo/cli")));
-            case "astro" -> java.util.Optional.of(List.of(npmStep("@astrojs/language-server", TYPESCRIPT_PACKAGE)));
+            // astro-ls itself from npm; the TypeScript it loads is Editora's own, never a global one (JS review B104)
+            case "astro" -> java.util.Optional.of(List.of(npmStep("@astrojs/language-server"), typescriptLs()));
             // --- language toolchains (install only if the toolchain is already on PATH) ---
             case "go" ->
                 java.util.Optional.of(List.of(
@@ -1506,18 +1514,22 @@ public final class InstallCatalog {
                 null);
     }
 
+    /**
+     * typescript-language-server and its TypeScript, pinned, into Editora's own prefix ({@link
+     * TypeScriptServerInstall#DEST}): not {@code npm -g}, which replaced the user's global {@code tsc} (JS review B104).
+     */
     private static Step typescriptLs() {
         return new Step(
-                "typescript-language-server",
-                Kind.NPM_GLOBAL,
+                TypeScriptServerInstall.PROGRAM,
+                Kind.NPM_PREFIX,
                 Set.of(Prereq.NPM),
-                List.of("typescript-language-server", TYPESCRIPT_PACKAGE),
+                TypeScriptServerInstall.packages(),
                 null,
                 null,
                 null,
                 null,
                 false,
-                "",
+                TypeScriptServerInstall.DEST,
                 null);
     }
 

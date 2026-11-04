@@ -274,6 +274,14 @@ public final class LspManager {
     public @Nullable Path looseRoot() {
         return looseRoot;
     }
+
+    /** The config dir whose own TypeScript (TypeScriptServerInstall) the TypeScript and Astro servers prefer. */
+    private volatile @Nullable Path ownTypeScriptConfigDir;
+
+    /** Sets the config dir Editora's own TypeScript is installed under (JS review B101); null: none. */
+    public void setOwnTypeScriptConfigDir(@Nullable Path configDir) {
+        ownTypeScriptConfigDir = configDir;
+    }
     /** jdtls {@code initializationOptions.bundles} — the java-debug plugin jar(s) that enable debugging.
      *  Applied only to the java server, at {@code initialize}; empty = no debug bundle. */
     private volatile List<String> debugBundles = List.of();
@@ -963,6 +971,16 @@ public final class LspManager {
      *  in-app install drops a server onto PATH / into the config dir without changing its command. */
     public void invalidateDetection() {
         availableCache.clear();
+        detectionGeneration.incrementAndGet();
+    }
+
+    /** Counts {@link #invalidateDetection} calls (an install ends with one): a server may now be fixed (B112). */
+    private final java.util.concurrent.atomic.AtomicLong detectionGeneration =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    /** See {@link #detectionGeneration}. */
+    public long detectionGeneration() {
+        return detectionGeneration.get();
     }
 
     /**
@@ -1862,6 +1880,18 @@ public final class LspManager {
         return file != null && servable(file) && sessionByDocUri.containsKey(uri(file));
     }
 
+    /** The TypeScript {@code file}'s server said it runs ({@code $/typescriptVersion}), or "" (B109). */
+    public String typeScriptVersion(@Nullable Path file) {
+        LanguageServerSession s = file == null || !isManaged(file) ? null : sessionFor(file);
+        return s == null ? "" : s.typeScriptVersion();
+    }
+
+    /** Whether {@code file}'s server has answered {@code initialize} (its "ready" status line has been said). */
+    public boolean isReady(@Nullable Path file) {
+        LanguageServerSession s = file == null || !isManaged(file) ? null : sessionFor(file);
+        return s != null && s.isInitialized();
+    }
+
     /** Current protocol version for an open document, or null when it is not managed. */
     public @Nullable Integer documentVersion(Path file) {
         if (file == null) {
@@ -2437,8 +2467,10 @@ public final class LspManager {
                 Platform.runLater(() -> onStartWithheld.accept(serverId, root));
                 return;
             }
+            Path ownTs = ownTypeScriptConfigDir;
             Path astroTsdk = ASTRO_SERVER_ID.equals(serverId) && !remote
-                    ? astroTypeScriptSdk(root, sdkCeiling, startCommand)
+                    ? astroTypeScriptSdk(
+                            root, sdkCeiling, startCommand, com.editora.install.TypeScriptServerInstall.ownSdk(ownTs))
                     : null;
             if (ASTRO_SERVER_ID.equals(serverId) && astroTsdk == null) {
                 // astro-ls cannot initialize without a TypeScript SDK, and the only one on offer belongs
@@ -2451,7 +2483,12 @@ public final class LspManager {
             }
             Path tsserver = null;
             if (TypeScriptServer.SERVER_ID.equals(serverId) && !remote) {
-                TypeScriptServer.Choice choice = typeScriptChoice(root, sdkCeiling, startCommand, loose);
+                TypeScriptServer.Choice choice = typeScriptChoice(
+                        root,
+                        sdkCeiling,
+                        startCommand,
+                        loose,
+                        com.editora.install.TypeScriptServerInstall.ownTsserver(ownTs));
                 if (!choice.starts()) {
                     // Not a crash and not worth retrying: the same start would only fail (or run a folder's code).
                     endHere(session);
@@ -2467,6 +2504,12 @@ public final class LspManager {
                     return;
                 }
                 tsserver = choice.tsserver();
+                String ignored = TypeScriptServer.ignoredFolderVersion(choice, root, loose);
+                Path runningTs = choice.tsserver();
+                if (!ignored.isEmpty() && runningTs != null) {
+                    String running = TypeScriptServer.sdkVersion(runningTs);
+                    Platform.runLater(() -> onFolderTypeScriptIgnored.folderTypeScriptIgnored(root, ignored, running));
+                }
             }
             if (!remote && (TypeScriptServer.SERVER_ID.equals(serverId) || nodeScriptServer(serverId))) {
                 // the Node.js chosen in Settings runs every npm server's "#!/usr/bin/env node", not only tsserver (A8);
@@ -3150,10 +3193,30 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(existing));
             return;
         }
+        String before = item.getDetail();
+        String fence = TypeScriptServer.SERVER_ID.equals(s.serverId()) ? "typescript" : "";
         s.resolveCompletion(item).whenComplete((resolved, error) -> {
-            String doc = (error == null && resolved != null) ? documentationOf(resolved) : null;
+            String doc = (error == null && resolved != null)
+                    ? withResolvedDetail(before, resolved.getDetail(), documentationOf(resolved), fence)
+                    : null;
             Platform.runLater(() -> cb.accept(doc));
         });
+    }
+
+    /**
+     * {@code doc} led by the signature {@code completionItem/resolve} brought, as a fenced code block, when it says
+     * more than the item's own detail ({@code before}): typescript-language-server puts a member's signature, and an
+     * auto-import's "Auto import from './math.js'", only in the resolved {@code detail}, which the doc pane never
+     * showed (JS review B107). Null when there is neither. Pure.
+     */
+    static @Nullable String withResolvedDetail(
+            @Nullable String before, @Nullable String resolved, @Nullable String doc, String fence) {
+        String detail = resolved == null ? "" : resolved.strip();
+        if (detail.isEmpty() || detail.equals(before == null ? "" : before.strip())) {
+            return doc;
+        }
+        String block = "```" + fence + "\n" + detail + "\n```";
+        return doc == null || doc.isBlank() ? block : block + "\n\n" + doc;
     }
 
     /**
@@ -6231,6 +6294,18 @@ public final class LspManager {
     /** Told (on the FX thread) that a server was <b>not started</b> because it would need untrusted code. */
     private volatile BiConsumer<String, Path> onStartWithheld = (id, root) -> {};
 
+    /** Notified (FX thread) with the root, the folder's own TypeScript version and the running one (JS review B109). */
+    public interface TypeScriptVersionListener {
+        void folderTypeScriptIgnored(Path root, String folderVersion, String runningVersion);
+    }
+
+    private volatile TypeScriptVersionListener onFolderTypeScriptIgnored = (r, f, v) -> {};
+
+    /** See {@link TypeScriptVersionListener}: an untrusted folder's own TypeScript of another major is not run. */
+    public void setOnFolderTypeScriptIgnored(TypeScriptVersionListener callback) {
+        this.onFolderTypeScriptIgnored = callback == null ? (r, f, v) -> {} : callback;
+    }
+
     public void setOnStartWithheld(BiConsumer<String, Path> callback) {
         this.onStartWithheld = callback == null ? (id, root) -> {} : callback;
     }
@@ -6263,13 +6338,23 @@ public final class LspManager {
      */
     static TypeScriptServer.Choice typeScriptChoice(
             Path root, @Nullable Path trustedCeiling, List<String> command, boolean loose) {
+        return typeScriptChoice(root, trustedCeiling, command, loose, null);
+    }
+
+    /**
+     * {@link #typeScriptChoice(Path, Path, List, boolean)} where Editora's own TypeScript ({@code ownTsserver}, null:
+     * not installed) comes before the one beside the server: that one is often a TypeScript 6 or 7 a user installed
+     * globally, where Node.js types go missing or there is no tsserver at all (JS review B101).
+     */
+    static TypeScriptServer.Choice typeScriptChoice(
+            Path root, @Nullable Path trustedCeiling, List<String> command, boolean loose, @Nullable Path ownTsserver) {
         Path trusted = trustedCeiling == null || loose ? null : TypeScriptServer.findTsserver(root, trustedCeiling);
         Path any = loose ? null : TypeScriptServer.findTsserver(root, null);
         Path executable = typeScriptServerExecutable(command);
         return TypeScriptServer.choose(
                 trusted,
                 any,
-                TypeScriptServer.installedTsserver(executable),
+                ownTsserver != null ? ownTsserver : TypeScriptServer.installedTsserver(executable),
                 TypeScriptServer.installedPackageVersion(executable),
                 loose);
     }
@@ -6351,11 +6436,20 @@ public final class LspManager {
      * "can't find TypeScript" error; an untrusted one gets {@code null} — the server is not started.
      */
     static @Nullable Path astroTypeScriptSdk(Path root, @Nullable Path trustedCeiling, List<String> command) {
+        return astroTypeScriptSdk(root, trustedCeiling, command, null);
+    }
+
+    /** As above, with Editora's own TypeScript SDK ({@code ownSdk}, null: none) before the one beside astro-ls (B104). */
+    static @Nullable Path astroTypeScriptSdk(
+            Path root, @Nullable Path trustedCeiling, List<String> command, @Nullable Path ownSdk) {
         if (trustedCeiling != null) {
             Path projectSdk = findTypeScriptSdk(root, trustedCeiling);
             if (projectSdk != null) {
                 return projectSdk;
             }
+        }
+        if (ownSdk != null) {
+            return ownSdk;
         }
         if (command != null && !command.isEmpty()) {
             List<String> resolved = ProcessRunner.resolveExecutable(command);
@@ -7233,15 +7327,20 @@ public final class LspManager {
      * review C2). Null when no jdtls serves the file's folder.
      */
     private @Nullable LanguageServerSession javaSessionFor(@Nullable Path file) {
+        return serverSessionFor(LspServerRegistry.JAVA_SERVER_ID, file);
+    }
+
+    /** {@code serverId}'s session serving {@code file}: its own, else the live one whose root holds it most closely. */
+    private @Nullable LanguageServerSession serverSessionFor(String serverId, @Nullable Path file) {
         LanguageServerSession own = sessionFor(file);
-        if (own != null && LspServerRegistry.JAVA_SERVER_ID.equals(own.serverId())) {
+        if (own != null && serverId.equals(own.serverId())) {
             return own;
         }
         if (file == null) {
             return null;
         }
         Path at = file.toAbsolutePath().normalize();
-        String prefix = sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID);
+        String prefix = sessionKeyPrefix(serverId);
         LanguageServerSession best = null;
         for (var entry : sessionsByRoot.entrySet()) {
             LanguageServerSession s = entry.getValue();
@@ -7375,6 +7474,24 @@ public final class LspManager {
 
     /** As {@link #willRenameFile(Path, Path, Consumer)}, asking {@code fallback} when jdtls has no edit for it. */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
+        // a folder a Java server serves stays jdtls's: its package lines and imports are what a move breaks
+        LanguageServerSession ts =
+                TypeScriptServer.renamesImports(from) && (!Files.isDirectory(from) || javaSessionFor(from) == null)
+                        ? serverSessionFor(TypeScriptServer.SERVER_ID, from)
+                        : null;
+        if (ts != null && ts.isInitialized() && ts.capabilities() != null && willRenameAdvertised(ts)) {
+            // the imports of a moved or renamed .ts/.js file (or folder) follow it (JS review B105)
+            EditBasis expected = editBasis(ts);
+            ts.willRenameFiles(ts.uris().toWire(uri(from)), ts.uris().toWire(uri(to)))
+                    .whenComplete((edit, e) -> Platform.runLater(() -> {
+                        if (e != null || edit == null || !changesText(edit)) {
+                            proceed.accept(true); // nothing to update: the file is moved as it is
+                        } else {
+                            applyWorkspaceEdit(edit, expected, proceed);
+                        }
+                    }));
+            return;
+        }
         LanguageServerSession s = javaSessionFor(from);
         // No Java server for the folder: nothing to ask, and no folder walked (fifth review BV5)
         if (s == null || (!from.toString().endsWith(".java") && !Files.isDirectory(from))) {
@@ -7394,6 +7511,14 @@ public final class LspManager {
             return;
         }
         askWillRename(s, from, to, proceed, fallback);
+    }
+
+    /** Whether {@code s} said it wants {@code workspace/willRenameFiles}. */
+    private static boolean willRenameAdvertised(LanguageServerSession s) {
+        var caps = s.capabilities();
+        var ws = caps == null ? null : caps.getWorkspace();
+        var ops = ws == null ? null : ws.getFileOperations();
+        return ops != null && ops.getWillRename() != null;
     }
 
     private void askWillRename(
