@@ -515,6 +515,7 @@ final class LspCoordinator {
                 root.getFileName() == null ? root : root.getFileName())));
         lspManager.setOnStartFailed(this::onStartFailed);
         lspManager.setOnStartRefused(this::onStartRefused);
+        lspManager.setOnFolderTypeScriptIgnored(nodeTypes::folderTypeScriptIgnored); // said at ready (JS review B109)
         lspManager.setOnRequestError(this::onRequestError);
         pomCompletionNotice = new PomServerSupport(
                 host::setStatus,
@@ -3316,7 +3317,11 @@ final class LspCoordinator {
         // The actually-managing server (so a pom.xml on lemminx-maven reads "maven-pom", not the language's "xml").
         Path path = b == null ? null : lspPath(b);
         String serverId = path == null ? null : lspManager.managedServerId(path);
-        ops.setStatusBarLsp(serverId != null ? serverProgram(serverId) : null);
+        ops.setStatusBarLsp(
+                serverId != null
+                        ? com.editora.lsp.TypeScriptServer.segmentName(
+                                serverProgram(serverId), lspManager.typeScriptVersion(path))
+                        : null);
         updateProblemsAvailability(); // the Problems window tracks the same active-file LSP-managed condition
     }
 
@@ -3355,12 +3360,10 @@ final class LspCoordinator {
         if (named != null) {
             return named;
         }
-        String exe = toks.isEmpty() ? serverId : toks.get(0);
-        try {
-            return Path.of(exe).getFileName().toString();
-        } catch (RuntimeException e) {
-            return exe;
-        }
+        List<String> def = com.editora.run.ProgramArgs.commandLine(
+                com.editora.lsp.LspServerRegistry.defaultCommandFor(serverId)); // past env/npx wrappers (JS B114)
+        return com.editora.lsp.ServerProgramName.of(
+                toks.isEmpty() ? List.of(serverId) : toks, def.isEmpty() ? "" : def.get(0));
     }
 
     /**
@@ -3763,6 +3766,9 @@ final class LspCoordinator {
                         line.ready()
                                 ? nodeTypes.atReady(root, tr("status.lsp.ready", server))
                                 : tr("status.lsp.server", server, line.text()));
+                if (line.ready()) {
+                    updateStatusBar(); // the segment names the TypeScript the server said it runs (JS review B109)
+                }
             }
         }
     }
@@ -6947,10 +6953,7 @@ final class LspCoordinator {
     private static com.editora.editor.lsp.CodeAction codeActionRow(LspManager.CodeActionItem item) {
         String label = item.kind().isBlank()
                 ? ""
-                : tr("lsp.codeAction.group."
-                        + com.editora.lsp.CodeActionKinds.group(item.kind())
-                                .name()
-                                .toLowerCase(java.util.Locale.ROOT));
+                : tr("lsp.codeAction.group." + com.editora.lsp.CodeActionKinds.labelKey(item.kind()));
         return new com.editora.editor.lsp.CodeAction(item.title(), label, item.preferred(), item.raw());
     }
 

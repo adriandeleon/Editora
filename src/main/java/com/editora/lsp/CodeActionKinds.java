@@ -145,6 +145,14 @@ public final class CodeActionKinds {
             "source.organizeImports",
             "source.sortImports");
 
+    /**
+     * The word a row's group is shown with ({@code lsp.codeAction.group.<key>}): its group, except that the source
+     * actions that are fixes read "Fix", not "Generate" (TypeScript's "Fix all fixable JS/TS issues", JS review B103).
+     */
+    public static String labelKey(String kind) {
+        return fixesProblems(kind) ? "fix" : group(kind).name().toLowerCase(java.util.Locale.ROOT);
+    }
+
     private static boolean fixesProblems(@Nullable String kind) {
         return kind != null && FIXING_SOURCE_KINDS.stream().anyMatch(k -> matches(kind, k));
     }

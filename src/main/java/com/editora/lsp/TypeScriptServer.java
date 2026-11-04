@@ -279,6 +279,39 @@ public final class TypeScriptServer {
         return !"null".equals(signal) || !"0".equals(code);
     }
 
+    /**
+     * The version of a folder's own TypeScript the server does not run because the folder is not trusted, when it is
+     * of another major than the one it runs (a project pinned to TypeScript 5.4 checked by 5.9 can disagree with its
+     * own {@code tsc}, JS review B109); "" otherwise. Reads the folder's package.json.
+     */
+    static String ignoredFolderVersion(Choice choice, Path root, boolean loose) {
+        Path running = choice.tsserver();
+        if (loose || choice.outcome() != Outcome.INSTALLED || running == null) {
+            return "";
+        }
+        Path folders = findTsserver(root, null);
+        if (folders == null || folders.equals(running)) {
+            return "";
+        }
+        return differentMajor(sdkVersion(folders), sdkVersion(running));
+    }
+
+    /** {@code folder} when its major differs from {@code running}'s, else "". Pure. */
+    static String differentMajor(String folder, String running) {
+        int f = com.editora.install.TypeScriptServerInstall.major(folder);
+        int r = com.editora.install.TypeScriptServerInstall.major(running);
+        return f > 0 && r > 0 && f != r ? folder : "";
+    }
+
+    /**
+     * The status bar's LSP segment for a file on this server: the TypeScript it runs ("TypeScript 5.9.3") once the
+     * server said so — which TypeScript a file ran on was nowhere to be seen (JS review B109) — else {@code program}.
+     * Pure.
+     */
+    public static String segmentName(String program, @Nullable String typeScriptVersion) {
+        return typeScriptVersion == null || typeScriptVersion.isBlank() ? program : "TypeScript " + typeScriptVersion;
+    }
+
     /** The code-action kinds asked for explicitly: the server returns its source actions only when asked. */
     public static final List<String> CODE_ACTION_KINDS = List.of("quickfix", "refactor", "source");
 }

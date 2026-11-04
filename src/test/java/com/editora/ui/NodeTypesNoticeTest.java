@@ -49,4 +49,14 @@ class NodeTypesNoticeTest {
         Files.writeString(dir.resolve("node_modules/@types/node/package.json"), "{}");
         assertFalse(NodeTypesNotice.wanted("javascript", Files.readString(a), a, false), "types installed");
     }
+
+    @Test
+    void anIgnoredFolderTypescriptIsSaidOnceAtReady(@TempDir Path dir) {
+        NodeTypesNotice notice = new NodeTypesNotice();
+        notice.folderTypeScriptIgnored(dir, "4.9.5", "5.9.3");
+        notice.folderTypeScriptIgnored(dir, "4.9.5", "5.9.3");
+        String said = notice.atReady(dir, "ready");
+        assertTrue(said.contains("4.9.5") && said.contains("5.9.3") && said.contains("Trust"), said);
+        assertEquals("ready", notice.atReady(dir, "ready"));
+    }
 }

@@ -89,6 +89,33 @@ class TypeScriptServerTest {
         assertEquals("7.0.2", TypeScriptServer.sdkVersion(pkg.resolve("tsserver.js")));
     }
 
+    /** The LSP segment names the TypeScript a file runs on once the server says it (JS review B109). */
+    @Test
+    void theSegmentNamesTheRunningTypescriptAndAnIgnoredFolderVersionIsSeen() {
+        assertEquals("TypeScript 5.9.3", TypeScriptServer.segmentName("typescript-language-server", "5.9.3"));
+        assertEquals("typescript-language-server", TypeScriptServer.segmentName("typescript-language-server", ""));
+        assertEquals("5.4.5", TypeScriptServer.differentMajor("5.4.5", "6.0.3"));
+        assertEquals("", TypeScriptServer.differentMajor("5.4.5", "5.9.3"), "same major: nothing to say");
+        assertEquals("", TypeScriptServer.differentMajor("", "5.9.3"));
+    }
+
+    @Test
+    void anUntrustedFoldersOwnTypescriptOfAnotherMajorIsReported(@TempDir Path dir) throws Exception {
+        Path folderLib = Files.createDirectories(dir.resolve("app/node_modules/typescript/lib"));
+        Files.writeString(folderLib.getParent().resolve("package.json"), "{ \"version\": \"4.9.5\" }");
+        Files.writeString(folderLib.resolve("tsserver.js"), "");
+        Path ownLib = Files.createDirectories(dir.resolve("cfg/node_modules/typescript/lib"));
+        Files.writeString(ownLib.getParent().resolve("package.json"), "{ \"version\": \"5.9.3\" }");
+        Files.writeString(ownLib.resolve("tsserver.js"), "");
+        var installed = TypeScriptServer.choose(
+                null, folderLib.resolve("tsserver.js"), ownLib.resolve("tsserver.js"), "", false);
+        assertEquals("4.9.5", TypeScriptServer.ignoredFolderVersion(installed, dir.resolve("app"), false));
+        assertEquals("", TypeScriptServer.ignoredFolderVersion(installed, dir.resolve("app"), true), "loose files");
+        var workspace = TypeScriptServer.choose(folderLib.resolve("tsserver.js"), null, null, "", false);
+        assertEquals(
+                "", TypeScriptServer.ignoredFolderVersion(workspace, dir.resolve("app"), false), "trusted: runs it");
+    }
+
     /** typescript-language-server outlives a killed tsserver; its log line is how Editora knows (JS review B102). */
     @Test
     void aKilledOrFailedTsserverIsSeenInTheServersLog() {

@@ -3380,6 +3380,24 @@ final class LanguageServerSession implements LanguageClient {
      * {@code metals/status}: Metals' status-bar text. A spinning item (an import, a compile) is progress — the
      * loading bar runs until Metals hides it; any other text is a status message.
      */
+    /**
+     * {@code $/typescriptVersion}: the TypeScript typescript-language-server runs ({@code {"version":"5.9.3",
+     * "source":"user-setting"}}). It was dropped as an unsupported notification, so nothing showed which TypeScript a
+     * file ran on (JS review B109); the status bar's LSP segment now names it.
+     */
+    @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("$/typescriptVersion")
+    public void typescriptVersion(com.google.gson.JsonObject params) {
+        var version = params == null ? null : params.get("version");
+        typeScriptVersion = version == null || !version.isJsonPrimitive() ? "" : version.getAsString();
+    }
+
+    private volatile String typeScriptVersion = "";
+
+    /** The TypeScript the server said it runs ({@code $/typescriptVersion}), or "" before it has. */
+    String typeScriptVersion() {
+        return typeScriptVersion;
+    }
+
     @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("metals/status")
     public void metalsStatus(MetalsStatus status) {
         MetalsStatusView view = MetalsStatusView.of(status);

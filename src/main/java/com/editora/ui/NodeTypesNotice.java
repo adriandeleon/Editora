@@ -23,8 +23,11 @@ final class NodeTypesNotice {
     /** Folders the hint was said (or is waiting to be said) for: once each per window. */
     private final Set<Path> hinted = new HashSet<>();
 
-    /** Server roots whose ready line says the hint instead. */
-    private final Set<Path> pending = new HashSet<>();
+    /** Server roots whose ready line says something else instead: the hint, or the TypeScript note (B109). */
+    private final java.util.Map<Path, String> pending = new java.util.HashMap<>();
+
+    /** Server roots the TypeScript-version note was given for (once each per window). */
+    private final Set<Path> versionTold = new HashSet<>();
 
     /**
      * Whether a JavaScript file deserves the hint: it uses Node.js built-ins, no {@code @types/node} is installed
@@ -58,14 +61,32 @@ final class NodeTypesNotice {
         if (ready || root == null) {
             Platform.runLater(() -> say.accept(tr("status.lsp.nodeTypesHint"))); // after this open's "Opened …"
         } else {
-            pending.add(root.toAbsolutePath().normalize());
+            pending.putIfAbsent(root.toAbsolutePath().normalize(), tr("status.lsp.nodeTypesHint"));
         }
     }
 
-    /** The status line for {@code root}'s server becoming ready: the waiting hint, else {@code readyLine}. */
+    /**
+     * Says, in place of {@code root}'s ready line, that the folder's own TypeScript {@code folderVersion} is not the
+     * one running ({@code runningVersion}) because the folder is not trusted: results may differ from the
+     * project's own {@code tsc} (JS review B109). Once per root and window.
+     */
+    void folderTypeScriptIgnored(Path root, String folderVersion, String runningVersion) {
+        Path r = root.toAbsolutePath().normalize();
+        if (versionTold.add(r)) {
+            pending.put(
+                    r,
+                    tr(
+                            "status.lsp.tsFolderVersionIgnored",
+                            folderVersion,
+                            runningVersion,
+                            tr("command.lsp.trustProjectSettings")));
+        }
+    }
+
+    /** The status line for {@code root}'s server becoming ready: what waits for it, else {@code readyLine}. */
     String atReady(@Nullable Path root, String readyLine) {
-        return root != null && pending.remove(root.toAbsolutePath().normalize())
-                ? tr("status.lsp.nodeTypesHint")
-                : readyLine;
+        String waiting =
+                root == null ? null : pending.remove(root.toAbsolutePath().normalize());
+        return waiting != null ? waiting : readyLine;
     }
 }

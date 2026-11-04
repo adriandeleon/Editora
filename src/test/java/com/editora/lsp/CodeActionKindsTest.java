@@ -2,6 +2,7 @@ package com.editora.lsp;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -76,6 +77,9 @@ class CodeActionKindsTest {
         }
         var minify = new LspManager.CodeActionItem("Minify XML", "source.minify", false, "m");
         assertFalse(CodeActionKinds.inQuickFixList(false, minify, true), "Minify XML is still no fix");
+        assertEquals("fix", CodeActionKinds.labelKey("source.fixAll.ts"), "a fix reads Fix, not Generate");
+        assertEquals("source", CodeActionKinds.labelKey("source.minify"));
+        assertEquals("refactor", CodeActionKinds.labelKey("refactor.move.newFile"));
         var fixAllJava = new LspManager.CodeActionItem("Fix all", "source.fixAll", false, "j");
         assertFalse(CodeActionKinds.inQuickFixList(true, fixAllJava, true), "jdtls's source actions: Generate only");
     }

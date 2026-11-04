@@ -1870,6 +1870,12 @@ public final class LspManager {
         return file != null && servable(file) && sessionByDocUri.containsKey(uri(file));
     }
 
+    /** The TypeScript {@code file}'s server said it runs ({@code $/typescriptVersion}), or "" (B109). */
+    public String typeScriptVersion(@Nullable Path file) {
+        LanguageServerSession s = file == null || !isManaged(file) ? null : sessionFor(file);
+        return s == null ? "" : s.typeScriptVersion();
+    }
+
     /** Whether {@code file}'s server has answered {@code initialize} (its "ready" status line has been said). */
     public boolean isReady(@Nullable Path file) {
         LanguageServerSession s = file == null || !isManaged(file) ? null : sessionFor(file);
@@ -2488,6 +2494,12 @@ public final class LspManager {
                     return;
                 }
                 tsserver = choice.tsserver();
+                String ignored = TypeScriptServer.ignoredFolderVersion(choice, root, loose);
+                Path runningTs = choice.tsserver();
+                if (!ignored.isEmpty() && runningTs != null) {
+                    String running = TypeScriptServer.sdkVersion(runningTs);
+                    Platform.runLater(() -> onFolderTypeScriptIgnored.folderTypeScriptIgnored(root, ignored, running));
+                }
             }
             if (!remote && (TypeScriptServer.SERVER_ID.equals(serverId) || nodeScriptServer(serverId))) {
                 // the Node.js chosen in Settings runs every npm server's "#!/usr/bin/env node", not only tsserver (A8);
@@ -6271,6 +6283,18 @@ public final class LspManager {
 
     /** Told (on the FX thread) that a server was <b>not started</b> because it would need untrusted code. */
     private volatile BiConsumer<String, Path> onStartWithheld = (id, root) -> {};
+
+    /** Notified (FX thread) with the root, the folder's own TypeScript version and the running one (JS review B109). */
+    public interface TypeScriptVersionListener {
+        void folderTypeScriptIgnored(Path root, String folderVersion, String runningVersion);
+    }
+
+    private volatile TypeScriptVersionListener onFolderTypeScriptIgnored = (r, f, v) -> {};
+
+    /** See {@link TypeScriptVersionListener}: an untrusted folder's own TypeScript of another major is not run. */
+    public void setOnFolderTypeScriptIgnored(TypeScriptVersionListener callback) {
+        this.onFolderTypeScriptIgnored = callback == null ? (r, f, v) -> {} : callback;
+    }
 
     public void setOnStartWithheld(BiConsumer<String, Path> callback) {
         this.onStartWithheld = callback == null ? (id, root) -> {} : callback;
