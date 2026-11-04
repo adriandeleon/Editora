@@ -19,7 +19,7 @@ class TypeScriptStartMessagesTest {
 
     @Test
     void aRefusalShowsTheServersOwnWords() {
-        String m = LspCoordinator.startRefusedMessage(
+        String m = LspStartMessages.refused(
                 "typescript-language-server",
                 new StartRefusal(StartRefusal.Kind.SERVER_REFUSED, "Could not find a valid TypeScript installation."),
                 true);
@@ -29,16 +29,16 @@ class TypeScriptStartMessagesTest {
 
     @Test
     void typescriptSevenIsNamedAndTheFixIsInstallNeverNpmGlobal() {
-        String m = LspCoordinator.startRefusedMessage(
+        String m = LspStartMessages.refused(
                 "typescript-language-server", new StartRefusal(StartRefusal.Kind.NO_TYPESCRIPT, "7.0.2"), true);
         assertTrue(m.contains("7.0.2"), m);
         assertTrue(m.contains("Install…"), m);
         assertFalse(m.contains("npm install -g"), m);
         assertTrue(m.startsWith("JavaScript and TypeScript features are off"), m);
-        String none = LspCoordinator.startRefusedMessage(
+        String none = LspStartMessages.refused(
                 "typescript-language-server", new StartRefusal(StartRefusal.Kind.NO_TYPESCRIPT, ""), true);
         assertFalse(none.contains("npm install -g"), none);
-        String untrusted = LspCoordinator.startRefusedMessage(
+        String untrusted = LspStartMessages.refused(
                 "typescript-language-server", new StartRefusal(StartRefusal.Kind.UNTRUSTED_TYPESCRIPT, "/w"), true);
         assertFalse(untrusted.contains("{0}"), untrusted);
         assertFalse(untrusted.contains("''"), untrusted);
@@ -48,7 +48,7 @@ class TypeScriptStartMessagesTest {
     /** With No Project there is nothing to trust: the message says what does work (JS review B111). */
     @Test
     void withNoProjectTheUntrustedMessageDoesNotPointAtTrust() {
-        String m = LspCoordinator.startRefusedMessage(
+        String m = LspStartMessages.refused(
                 "typescript-language-server", new StartRefusal(StartRefusal.Kind.UNTRUSTED_TYPESCRIPT, "/w"), false);
         assertFalse(m.contains("Trust This Project"), m);
         assertTrue(m.contains("only a project can be trusted"), m);

@@ -1040,7 +1040,7 @@ final class LspCoordinator {
         ops.setLspLoading(false);
         // the server's own name ("jdtls needs Java 25"), not the language's ("Java needs Java 25"); said again on the
         // next pulse too, as the file's own "Opened …" status landed over it (seventh review DR3)
-        String said = startRefusedMessage(
+        String said = LspStartMessages.refused(
                 refusal.kind() == com.editora.lsp.StartRefusal.Kind.NO_JAVA_FOR_SERVER
                         ? serverProgram(serverId)
                         : serverLabel(serverId),
@@ -1056,23 +1056,6 @@ final class LspCoordinator {
 
     /** Servers Editora would not start with their command (the lemminx-maven guard), by id → what the status said. */
     private final Map<String, String> refusedServers = new java.util.HashMap<>();
-
-    /** The status-line words for a {@link com.editora.lsp.StartRefusal}; only a project can be trusted (B111). */
-    static String startRefusedMessage(String server, com.editora.lsp.StartRefusal refusal, boolean project) {
-        return switch (refusal.kind()) {
-            case SERVER_REFUSED -> tr("status.lsp.startRefused", server, refusal.detail());
-            case NO_TYPESCRIPT ->
-                refusal.detail().isBlank()
-                        ? tr("status.lsp.tsNoSdk")
-                        : tr("status.lsp.tsSdkWithoutTsserver", refusal.detail());
-            case UNTRUSTED_TYPESCRIPT ->
-                project
-                        ? tr("status.lsp.tsSdkUntrusted", tr("command.lsp.trustProjectSettings"))
-                        : tr("status.lsp.tsSdkUntrustedNoProject");
-            case NO_JAVA_FOR_SERVER -> tr("status.lsp.javaTooOld", server, refusal.detail());
-            case XML_LOADS_MAVEN -> tr("status.lsp.xmlLoadsMaven", server);
-        };
-    }
 
     /**
      * A server's start failed: its command could not be run, or a remote host's connection broke while it
@@ -2867,7 +2850,14 @@ final class LspCoordinator {
             requestInlayHints(buffer); // gated internally on the setting + capability (#681)
             requestFoldingRanges(buffer); // #738 — a no-op until the server reports ready, then refreshed
             if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId) && !remote) {
-                noticeMissingNodeTypes(buffer, path);
+                nodeTypes.opened(
+                        buffer.getLanguage(),
+                        buffer.text(),
+                        path,
+                        lspRootFor(buffer, serverId),
+                        host.settings().isTypescriptTypeAcquisition(),
+                        lspManager.isReady(path),
+                        host::setStatus);
             }
         } else {
             buffer.setLspActive(false);
@@ -2900,27 +2890,8 @@ final class LspCoordinator {
         }
     }
 
-    /** The folders the "Node.js APIs have no types" hint was shown for (once each per window). */
-    private final java.util.Set<Path> nodeTypesHinted = new java.util.HashSet<>();
-
-    /**
-     * Says once per folder that Node.js APIs have no types for this JavaScript file, and how to add them: without
-     * {@code @types/node} (and with type acquisition off) hover says {@code any} and {@code fs.} completes only
-     * words from the file (Node review B9). TypeScript files get the compiler's own error for this instead.
-     */
-    private void noticeMissingNodeTypes(EditorBuffer buffer, Path path) {
-        String lang = buffer.getLanguage();
-        if (host.settings().isTypescriptTypeAcquisition()
-                || !("javascript".equals(lang) || "javascriptreact".equals(lang))
-                || path.getParent() == null
-                || nodeTypesHinted.contains(path.getParent())
-                || !com.editora.lsp.NodeTypesHint.usesNodeApis(buffer.text())
-                || com.editora.lsp.NodeTypesHint.hasNodeTypes(path)) {
-            return;
-        }
-        nodeTypesHinted.add(path.getParent());
-        host.setStatus(tr("status.lsp.nodeTypesHint"));
-    }
+    /** The "Node.js APIs have no types" hint, said once per folder where it can be read (B9, JS review B108). */
+    private final NodeTypesNotice nodeTypes = new NodeTypesNotice();
 
     /** Workspace root for a buffer under {@code serverId}: active project (if Projects on), else nearest build
      *  file (that server's markers), else the file's dir. */
@@ -3789,7 +3760,9 @@ final class LspCoordinator {
                 host.setStatus(tr("status.lsp.readyWithProblems", server));
             } else {
                 host.setStatus(
-                        line.ready() ? tr("status.lsp.ready", server) : tr("status.lsp.server", server, line.text()));
+                        line.ready()
+                                ? nodeTypes.atReady(root, tr("status.lsp.ready", server))
+                                : tr("status.lsp.server", server, line.text()));
             }
         }
     }

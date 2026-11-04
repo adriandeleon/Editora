@@ -1870,6 +1870,12 @@ public final class LspManager {
         return file != null && servable(file) && sessionByDocUri.containsKey(uri(file));
     }
 
+    /** Whether {@code file}'s server has answered {@code initialize} (its "ready" status line has been said). */
+    public boolean isReady(@Nullable Path file) {
+        LanguageServerSession s = file == null || !isManaged(file) ? null : sessionFor(file);
+        return s != null && s.isInitialized();
+    }
+
     /** Current protocol version for an open document, or null when it is not managed. */
     public @Nullable Integer documentVersion(Path file) {
         if (file == null) {
