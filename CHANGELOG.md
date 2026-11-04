@@ -156,10 +156,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Project Map: cards open the way the map flows.** A new preview or declaration card opens past its row's column
   the way the map flows — right of it left to right, left of it right to left, below it top to bottom, above it bottom
-  to top — and the map pans back just enough when there is no room there, as it does for a new column. A declaration
-  card opened from a file card's Structure column opens past that column, away from the card and level with its row,
-  so its connector line runs straight to it; it used to open in a far corner of the map, with its line hidden under the
-  other cards.
+  to top. With no room there it opens beside the column, level with its row; the map never pans for it. A file card's
+  Structure column always stands on the card's right, and a declaration card opened from it opens right of the file
+  card, past the column and level with its row, so its connector line runs straight to it; the file card steps left
+  when there is no room. It used to open in a far corner of the map, with its line hidden under the other cards.
 - **Project Map: the explore round's features (Map review 4).**
   - Print or PDF with a long folder open no longer freezes Editora (27 s and 1,613 pages for a 50,000-file folder;
     now 10 pages in under half a second). Paint with 50,000-file folders open stays at a few milliseconds.

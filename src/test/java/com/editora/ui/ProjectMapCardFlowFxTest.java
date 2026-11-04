@@ -19,15 +19,16 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Map card flow: a new card opens past its row's column the way the map flows — right of it, left of it, below or above
- * — as the row's next column would, and the map pans back to make room there; a declaration card opened from a file
- * card's Structure column opens past that column, away from the card, level with its row.
+ * — as the row's next column would; with no room there it takes the side of the column, and the map never pans; a
+ * declaration card opened from a file
+ * card's Structure column opens right of the file card, past the column, level with its row.
  */
 @Tag("fx")
 class ProjectMapCardFlowFxTest {
@@ -93,6 +94,25 @@ class ProjectMapCardFlowFxTest {
             FxTestSupport.runOnFx(() -> FxTestSupport.call(
                     map.view(), "toggleStructure", new Class<?>[] {ProjectMapModel.Entry.class}, entry(map, app)));
             Path add = symbolRow(map, "add");
+            // The map never pans for a card: the declaration's column near the panel's back edge, room past it.
+            FxTestSupport.runOnFx(() -> {
+                MapCards.Site site =
+                        (MapCards.Site) FxTestSupport.call(map.surface(), "cardSite", new Class<?>[] {Path.class}, add);
+                double[] column = site.column();
+                double width = map.surface().getWidth();
+                double height = map.surface().getHeight();
+                double dx = switch (flow) {
+                    case LEFT_TO_RIGHT -> 40 - column[0];
+                    case RIGHT_TO_LEFT -> width - 40 - column[0] - column[2];
+                    default -> 0;
+                };
+                double dy = switch (flow) {
+                    case TOP_TO_BOTTOM -> 40 - column[1];
+                    case BOTTOM_TO_TOP -> height - 40 - column[1] - column[3];
+                    default -> 0;
+                };
+                FxTestSupport.call(map.surface(), "panBy", new Class<?>[] {double.class, double.class}, dx, dy);
+            });
             FxTestSupport.runOnFx(() -> FxTestSupport.call(
                     map.view(), "togglePreview", new Class<?>[] {ProjectMapModel.Entry.class}, entry(map, add)));
             ProjectMapPreview card = waitForCard(map, add);
@@ -108,10 +128,8 @@ class ProjectMapCardFlowFxTest {
     }
 
     @ParameterizedTest
-    @EnumSource(
-            value = ProjectMapView.FlowDirection.class,
-            names = {"LEFT_TO_RIGHT", "TOP_TO_BOTTOM"})
-    void withNoRoomPastTheColumnTheMapPansBackForTheCard(ProjectMapView.FlowDirection flow) throws Exception {
+    @EnumSource(ProjectMapView.FlowDirection.class)
+    void withNoRoomPastTheColumnTheCardTakesItsSideAndTheMapStays(ProjectMapView.FlowDirection flow) throws Exception {
         Path root = Files.createDirectories(temp.resolve("project"));
         Path app = Files.writeString(root.resolve("App.java"), APP);
         Fixture map = openMap(root, flow);
@@ -120,44 +138,62 @@ class ProjectMapCardFlowFxTest {
             FxTestSupport.runOnFx(() -> FxTestSupport.call(
                     map.view(), "toggleStructure", new Class<?>[] {ProjectMapModel.Entry.class}, entry(map, app)));
             Path add = symbolRow(map, "add");
-            // The declaration's column against the panel's far edge: no room past it for a card.
+            // The declaration's column against the panel's far edge the way the map flows: no room past it for a card.
             double[] before = FxTestSupport.callOnFx(() -> {
                 MapCards.Site site =
                         (MapCards.Site) FxTestSupport.call(map.surface(), "cardSite", new Class<?>[] {Path.class}, add);
                 double[] column = site.column();
-                boolean across = flow == ProjectMapView.FlowDirection.LEFT_TO_RIGHT;
-                double edge = across ? map.surface().getWidth() : map.surface().getHeight();
-                double end = across ? column[0] + column[2] : column[1] + column[3];
-                double shift = edge - 20 - end;
-                FxTestSupport.call(
-                        map.surface(),
-                        "panBy",
-                        new Class<?>[] {double.class, double.class},
-                        across ? shift : 0,
-                        across ? 0 : shift);
+                double width = map.surface().getWidth();
+                double height = map.surface().getHeight();
+                double dx = switch (flow) {
+                    case LEFT_TO_RIGHT -> width - 20 - column[0] - column[2];
+                    case RIGHT_TO_LEFT -> 20 - column[0];
+                    default -> 0;
+                };
+                double dy = switch (flow) {
+                    case TOP_TO_BOTTOM -> height - 20 - column[1] - column[3];
+                    case BOTTOM_TO_TOP -> 20 - column[1];
+                    default -> 0;
+                };
+                FxTestSupport.call(map.surface(), "panBy", new Class<?>[] {double.class, double.class}, dx, dy);
                 return offset(map);
             });
             FxTestSupport.runOnFx(() -> FxTestSupport.call(
                     map.view(), "togglePreview", new Class<?>[] {ProjectMapModel.Entry.class}, entry(map, add)));
             ProjectMapPreview card = waitForCard(map, add);
             FxTestSupport.runOnFx(() -> {
-                assertNotEquals(before[0] + before[1], offset(map)[0] + offset(map)[1], "the map panned back");
+                assertArrayEquals(before, offset(map), "the map did not pan");
                 MapCards.Site site =
                         (MapCards.Site) FxTestSupport.call(map.surface(), "cardSite", new Class<?>[] {Path.class}, add);
                 double[] column = site.column();
-                assertTrue(column[0] >= 0 && column[1] >= 0, "the row's column stays on the panel");
-                assertPast(flow, MapCards.drawnBounds(card), column, site.row());
+                double[] drawn = MapCards.drawnBounds(card);
+                String where = "card " + List.of(drawn[0], drawn[1], drawn[2], drawn[3]) + " column "
+                        + List.of(column[0], column[1], column[2], column[3]) + " in " + flow;
+                double[] row = site.row();
+                boolean across = flow == ProjectMapView.FlowDirection.LEFT_TO_RIGHT
+                        || flow == ProjectMapView.FlowDirection.RIGHT_TO_LEFT;
+                int a = across ? 0 : 1;
+                // Beside the column across the flow, level with the row along it: not behind the column.
+                assertTrue(
+                        drawn[a] <= row[a] + row[a + 2] && drawn[a] + drawn[a + 2] >= row[a],
+                        "level with the row: " + where);
+                assertTrue(
+                        drawn[1 - a] + drawn[3 - a] <= column[1 - a] + 1
+                                || drawn[1 - a] >= column[1 - a] + column[3 - a] - 1,
+                        "beside the column: " + where);
             });
         } finally {
             FxTestSupport.runOnFx(map.view()::dispose);
         }
     }
 
-    @Test
-    void aDeclarationCardFromAFileCardsStructureColumnOpensPastTheColumnLevelWithItsRow() throws Exception {
+    @ParameterizedTest
+    @EnumSource(ProjectMapView.FlowDirection.class)
+    void aDeclarationCardFromAFileCardsStructureColumnOpensRightOfTheFileCard(ProjectMapView.FlowDirection flow)
+            throws Exception {
         Path root = Files.createDirectories(temp.resolve("project"));
         Path app = Files.writeString(root.resolve("App.java"), APP);
-        Fixture map = openMap(root, ProjectMapView.FlowDirection.LEFT_TO_RIGHT);
+        Fixture map = openMap(root, flow);
         try {
             waitFor(() -> nodeBox(map, app) != null, "App.java's row");
             FxTestSupport.runOnFx(() -> {
@@ -190,21 +226,39 @@ class ProjectMapCardFlowFxTest {
                     .orElseThrow()
                     .path());
             ProjectMapPreview declaration = waitForCard(map, sub);
+            // The column's cells are laid out on a pulse: the row is drawn once one has run.
+            waitFor(
+                    () -> {
+                        try {
+                            return FxTestSupport.callOnFx(() -> column.rowBounds(sub)) != null;
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                    },
+                    "the row drawn");
             FxTestSupport.runOnFx(() -> {
                 double[] drawn = column.bounds();
                 double[] row = column.rowBounds(sub);
                 assertNotNull(drawn);
                 assertNotNull(row);
                 double[] card = MapCards.drawnBounds(declaration);
-                boolean right = column.side() == CardAttachment.Side.RIGHT;
-                assertTrue(
-                        right ? card[0] >= drawn[0] + drawn[2] - 1 : card[0] + card[2] <= drawn[0] + 1,
-                        "past the column, away from its card: card " + List.of(card[0], card[2]) + " column "
-                                + List.of(drawn[0], drawn[2]) + " on the " + column.side());
-                assertTrue(
-                        card[1] <= row[1] + row[3] && card[1] + card[3] >= row[1],
-                        "level with its row: card " + List.of(card[1], card[3]) + " row " + List.of(row[1], row[3]));
                 double[] owner = MapCards.drawnBounds(file);
+                assertEquals(CardAttachment.Side.RIGHT, column.side(), "the column is on the file card's right");
+                assertTrue(
+                        card[0] >= owner[0] + owner[2] - 1,
+                        "right of the file card: card " + List.of(card[0], card[2]) + " file card "
+                                + List.of(owner[0], owner[2]) + " in " + flow);
+                double panel = map.surface().getWidth() - ProjectMapPreview.EDGE_MARGIN;
+                if (drawn[0] + drawn[2] + 18 + ProjectMapPreview.MIN_WIDTH <= panel) { // room past the column
+                    assertTrue(
+                            card[0] >= drawn[0] + drawn[2] - 1,
+                            "past the column: card " + List.of(card[0], card[2]) + " column "
+                                    + List.of(drawn[0], drawn[2]) + " in " + flow);
+                    assertTrue(
+                            card[1] <= row[1] + row[3] && card[1] + card[3] >= row[1],
+                            "level with its row: card " + List.of(card[1], card[3]) + " row "
+                                    + List.of(row[1], row[3]));
+                }
                 assertTrue(owner[0] >= 0, "the file card stays on the panel");
             });
         } finally {

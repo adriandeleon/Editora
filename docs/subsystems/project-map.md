@@ -172,15 +172,19 @@ its lines weighs more than shorter). Each spot is also tried cut short of the zo
 card's minimum, so a new card does not open with its last lines under them. Each spot also weighs where it stands
 against the way the map flows (`MapCards.cardFlowCost`, Map card flow): nothing past the row's column the way the map
 flows (right of it left to right, left of it right to left, below it top to bottom, above it bottom to top), a
-quarter of the card's area beside it, half behind it, over the columns that lead to the row; and spots level with the
+quarter of the card's area beside it, half behind it, over the columns that lead to the row — and as much for any
+spot that covers the row's column or those columns, so the flow never buys covering the path to the row; and spots
+level with the
 row are tried past whatever stands on the flow side (the band the row's next column would open in, a column already
-open there). A declaration card opened from a file card's Structure column flows away from the card: past the column,
-on the side the column stands, level with its row. Linked result cards go around the card they were found from and
-weigh no flow. **A new card may pan the map** (`MapCards.cardFlowPan`): with no room for it past its row's column
-the way the map flows (past the next column's band), the map — and the cards on it — pans back just enough for the
-card, or for its minimum, as revealing a column does, but never so far that the row's column (and, beside a card's
-Structure column, that card) leaves the panel. A card brought back by a restart or a working set, the Overview card,
-**Move to Free Space** and a card moved for its Structure column never pan. A card is never smaller
+open there). A declaration card opened from a file card's Structure column opens right of the file card (Map
+Structure right): past the column, which always stands on the card's right, level with its row; with no room there the
+file card, with its column, first steps left until the card's minimum fits (`MapCards.cardStructureRoom`), as far as
+the panel's left edge allows, and of the spots left the best one right of the file card wins over any other. Linked result cards go around the card they were found from and
+weigh no flow. **Placement never pans the map**: with no room past the row's column the way the map flows, the
+card takes the side of the column — beside it across the flow (above or below it left to right or right to left, left
+or right of it down or up the panel), cut to the room there down to its minimum, and slid along the row as far as it
+stays level with it to clear the zoom bar, the overview and other cards. A card left of its column widens leftwards
+when its text arrives, in every flow, rather than back over the column. A card is never smaller
 than its minimum (340 × 220 for code, 300 × 180 for notes) unless the panel itself is. Text that arrives
 after a card was placed only widens it where it stands, by at most 120 columns and never past the panel
 (a card already partly out of view is never narrowed);
@@ -489,13 +493,13 @@ card colours its declaration line (`StructurePanel.labelRuns` over the card's ow
 card's text or colours change), and the column is as wide as its longest row needs, between 240 and 560 px
 (`ProjectMapCardStructure.fit`, measured in the rows' font). It works wherever the file's row
 is — filtered, scrolled off or in a closed column — because it belongs to the card: it moves, resizes, zooms,
-hides, rises and closes with it, and does not count against the open-card limit. It goes on the side of the card
-that covers least (`MapCards.chooseColumnSide`) — the map's columns (its row's own and those leading to it
-heaviest), the zoom bar and the overview, other cards and their attachments, the part outside the map area
-(unseen), over the card's right edge last; between sides that cover alike, the one away from the card's row, so the
-connector's side is left clear — and the card's sticky notes stand past it (`ProjectMapStickyNotes.setReserved`).
-It moves when its card is dragged or the map panned and the other side covers clearly less; opened on a card with no free side, the card
-moves where card and column together cover less, if there is such a spot. A click or Enter on a declaration
+hides, rises and closes with it, and does not count against the open-card limit. It always goes on the card's
+right (Map Structure right), so the declarations read on from the card, and the card's sticky notes stand past it
+(`ProjectMapStickyNotes.setReserved`). It stays there when its card is dragged or the map panned, even when that
+takes it past the map area's edge. Opened on a card near the right edge, the card first steps left until the column
+fits inside the map area; when the column would still cover much — the map's columns (its row's own and those
+leading to it heaviest), the zoom bar and the overview, other cards and their attachments — the card moves where card
+and column together cover less, if there is such a spot (`MapCards.nudgeForColumn`). A click or Enter on a declaration
 scrolls the card to it and marks its lines (`ProjectMapPreview.revealRange`), as an outline beside a code view moves
 the view; Shift+click or Shift+Enter opens the declaration's own card, as a Map row's card; the right-click /
 Menu-key menu is the row's (Preview, Open at Declaration, Open Narrowed); the Structure window's Emacs moves
