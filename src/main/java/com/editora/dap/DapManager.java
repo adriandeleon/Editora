@@ -2878,6 +2878,14 @@ public final class DapManager {
         if (!isCurrent(epoch)) {
             return;
         }
+        // The package root as the working folder and workspace, as on this machine (review D110): a compiled
+        // project's source maps map, and process.cwd() is what a local Debug gets. Looked up on the host's files.
+        Path projectRoot = jsProjectRoot;
+        Path root = projectRoot != null && projectRoot.getFileSystem() == file.getFileSystem() ? projectRoot : null;
+        Path remoteCwd = com.editora.run.NodeRuntimes.packageRoot(file, root, null, Files::isRegularFile)
+                .orElse(dir);
+        Path remoteWorkspace =
+                root != null && file.toAbsolutePath().startsWith(root.toAbsolutePath()) ? root : remoteCwd;
         // Port 0: the host picks a free one and the server prints it; 127.0.0.1, so the tunnel's end is known.
         Process proc = target.start(com.editora.process.ExecSpec.of(
                         List.of(node, server, "0", "127.0.0.1"),
@@ -2913,8 +2921,8 @@ public final class DapManager {
                 JsLaunch.request(
                         spec.launchType(),
                         target.toTargetPath(file),
-                        target.toTargetPath(dir),
-                        target.toTargetPath(dir),
+                        target.toTargetPath(remoteCwd),
+                        target.toTargetPath(remoteWorkspace),
                         List.of(node),
                         programArgs,
                         false),
