@@ -348,6 +348,9 @@ public final class LspServerRegistry {
     public static String protocolLanguageId(String routeLanguageId, @Nullable Path file) {
         String id = protocolLanguageId(routeLanguageId);
         Path name = file == null ? null : file.getFileName();
+        if ("json".equals(routeLanguageId) && file != null) {
+            return JsonServer.languageId(file); // comments and trailing commas allowed where they are (JS review A102)
+        }
         return "xml".equals(routeLanguageId) && name != null ? XmlServer.languageId(name.toString()) : id;
     }
 

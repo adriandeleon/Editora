@@ -111,6 +111,7 @@ public final class LanguageRegistry {
             Map.entry("json", "json"),
             Map.entry("ipynb", "json"), // Jupyter notebooks: JSON until there is a notebook view
             Map.entry("jsonc", "json"),
+            Map.entry("code-workspace", "json"), // VS Code workspace files: JSONC (JS review A102)
             Map.entry("json5", "json"),
             Map.entry("c", "c"),
             Map.entry("h", "c"),
