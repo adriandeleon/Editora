@@ -7327,15 +7327,20 @@ public final class LspManager {
      * review C2). Null when no jdtls serves the file's folder.
      */
     private @Nullable LanguageServerSession javaSessionFor(@Nullable Path file) {
+        return serverSessionFor(LspServerRegistry.JAVA_SERVER_ID, file);
+    }
+
+    /** {@code serverId}'s session serving {@code file}: its own, else the live one whose root holds it most closely. */
+    private @Nullable LanguageServerSession serverSessionFor(String serverId, @Nullable Path file) {
         LanguageServerSession own = sessionFor(file);
-        if (own != null && LspServerRegistry.JAVA_SERVER_ID.equals(own.serverId())) {
+        if (own != null && serverId.equals(own.serverId())) {
             return own;
         }
         if (file == null) {
             return null;
         }
         Path at = file.toAbsolutePath().normalize();
-        String prefix = sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID);
+        String prefix = sessionKeyPrefix(serverId);
         LanguageServerSession best = null;
         for (var entry : sessionsByRoot.entrySet()) {
             LanguageServerSession s = entry.getValue();
@@ -7469,6 +7474,24 @@ public final class LspManager {
 
     /** As {@link #willRenameFile(Path, Path, Consumer)}, asking {@code fallback} when jdtls has no edit for it. */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
+        // a folder a Java server serves stays jdtls's: its package lines and imports are what a move breaks
+        LanguageServerSession ts =
+                TypeScriptServer.renamesImports(from) && (!Files.isDirectory(from) || javaSessionFor(from) == null)
+                        ? serverSessionFor(TypeScriptServer.SERVER_ID, from)
+                        : null;
+        if (ts != null && ts.isInitialized() && ts.capabilities() != null && willRenameAdvertised(ts)) {
+            // the imports of a moved or renamed .ts/.js file (or folder) follow it (JS review B105)
+            EditBasis expected = editBasis(ts);
+            ts.willRenameFiles(ts.uris().toWire(uri(from)), ts.uris().toWire(uri(to)))
+                    .whenComplete((edit, e) -> Platform.runLater(() -> {
+                        if (e != null || edit == null || !changesText(edit)) {
+                            proceed.accept(true); // nothing to update: the file is moved as it is
+                        } else {
+                            applyWorkspaceEdit(edit, expected, proceed);
+                        }
+                    }));
+            return;
+        }
         LanguageServerSession s = javaSessionFor(from);
         // No Java server for the folder: nothing to ask, and no folder walked (fifth review BV5)
         if (s == null || (!from.toString().endsWith(".java") && !Files.isDirectory(from))) {
@@ -7488,6 +7511,14 @@ public final class LspManager {
             return;
         }
         askWillRename(s, from, to, proceed, fallback);
+    }
+
+    /** Whether {@code s} said it wants {@code workspace/willRenameFiles}. */
+    private static boolean willRenameAdvertised(LanguageServerSession s) {
+        var caps = s.capabilities();
+        var ws = caps == null ? null : caps.getWorkspace();
+        var ops = ws == null ? null : ws.getFileOperations();
+        return ops != null && ops.getWillRename() != null;
     }
 
     private void askWillRename(

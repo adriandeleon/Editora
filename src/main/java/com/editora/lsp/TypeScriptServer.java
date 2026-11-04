@@ -312,6 +312,30 @@ public final class TypeScriptServer {
         return typeScriptVersion == null || typeScriptVersion.isBlank() ? program : "TypeScript " + typeScriptVersion;
     }
 
+    private static final java.util.Set<String> SOURCE_EXTENSIONS =
+            java.util.Set.of(".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs");
+
+    /**
+     * Whether renaming or moving {@code path} in the Project tree may need imports updated by this server: a JS/TS
+     * source file, or a folder (which may hold some), outside {@code node_modules}. File test only.
+     */
+    public static boolean renamesImports(@Nullable Path path) {
+        if (path == null || path.getFileName() == null) {
+            return false;
+        }
+        for (Path part : path) {
+            if ("node_modules".equals(part.toString())) {
+                return false;
+            }
+        }
+        String name = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        if (name.endsWith(".d.ts")) {
+            return true;
+        }
+        int dot = name.lastIndexOf('.');
+        return dot >= 0 && SOURCE_EXTENSIONS.contains(name.substring(dot)) || Files.isDirectory(path);
+    }
+
     /** The code-action kinds asked for explicitly: the server returns its source actions only when asked. */
     public static final List<String> CODE_ACTION_KINDS = List.of("quickfix", "refactor", "source");
 }

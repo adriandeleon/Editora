@@ -116,6 +116,18 @@ class TypeScriptServerTest {
                 "", TypeScriptServer.ignoredFolderVersion(workspace, dir.resolve("app"), false), "trusted: runs it");
     }
 
+    /** A moved .ts/.js file or folder asks the server for import updates; node_modules and others do not (B105). */
+    @Test
+    void sourceFilesAndFoldersOutsideNodeModulesRenameImports(@TempDir Path dir) throws Exception {
+        for (String name : List.of("a.ts", "b.tsx", "c.mts", "d.js", "e.jsx", "f.mjs", "g.cjs", "h.d.ts")) {
+            assertTrue(TypeScriptServer.renamesImports(dir.resolve(name)), name);
+        }
+        assertTrue(TypeScriptServer.renamesImports(Files.createDirectories(dir.resolve("src/lib"))));
+        assertFalse(TypeScriptServer.renamesImports(dir.resolve("README.md")));
+        assertFalse(TypeScriptServer.renamesImports(dir.resolve("node_modules/x/index.js")));
+        assertFalse(TypeScriptServer.renamesImports(null));
+    }
+
     /** typescript-language-server outlives a killed tsserver; its log line is how Editora knows (JS review B102). */
     @Test
     void aKilledOrFailedTsserverIsSeenInTheServersLog() {
