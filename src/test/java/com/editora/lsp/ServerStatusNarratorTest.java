@@ -182,4 +182,78 @@ class ServerStatusNarratorTest {
         status("ProjectStatus", "WARNING");
         assertEquals(List.of("Classpath is incomplete", "WARNING"), shown);
     }
+
+    /** Ticks as the coordinator's settle timer does — every {@link #QUIET} while a line could still be due. */
+    private void waitFor(long millis) {
+        long until = now + millis;
+        while (now < until && narrator.pending()) {
+            quiet();
+        }
+    }
+
+    /** A Begin whose End never came held the ready line back for good: the user never heard the server was done. */
+    @Test
+    void workThatNeverEndsIsTakenAsOverOnceTheServerFallsSilent() {
+        status("ServiceReady", null);
+        status("Progress", "Indexing");
+        waitFor(ServerStatusNarrator.STALL_MILLIS - 2 * QUIET);
+        assertEquals(List.of("Indexing"), shown, "still within the stall time: no ready line yet");
+
+        waitFor(4 * QUIET);
+        assertEquals(List.of("Indexing", "READY"), shown);
+        assertFalse(narrator.pending());
+
+        // the count starts again from nothing: later work is shown and concluded as usual
+        status("Progress", "Building workspace");
+        quiet();
+        status("ProgressEnd", null);
+        assertEquals(List.of("Indexing", "READY", "Building workspace", "READY"), shown);
+    }
+
+    @Test
+    void reportsKeepLongWorkFromBeingTakenAsStalled() {
+        status("ServiceReady", null);
+        status("Progress", "Indexing");
+        for (int i = 0; i < 3; i++) {
+            waitFor(ServerStatusNarrator.STALL_MILLIS / 2);
+            status("ProgressReport", null);
+        }
+        assertEquals(List.of("Indexing"), shown);
+        status("ProgressEnd", null);
+        quiet();
+        assertEquals(List.of("Indexing", "READY"), shown);
+    }
+
+    @Test
+    void shownBackgroundWorkThatNeverEndsStillEndsWithAReadyLine() {
+        status("ServiceReady", null);
+        quiet();
+        status("Progress", "Compiling");
+        quiet();
+        waitFor(ServerStatusNarrator.STALL_MILLIS + 2 * QUIET);
+        assertEquals(List.of("READY", "Compiling", "READY"), shown);
+        assertFalse(narrator.pending());
+    }
+
+    @Test
+    void aStepsTextIsShownBeforeReadyAndReplacesHeldWorkAfter() {
+        status("Progress", "Importing build");
+        status("ProgressReport", "Compiling root");
+        status("ServiceReady", null);
+        status("ProgressEnd", null);
+        quiet();
+        status("Progress", "Compiling");
+        status("ProgressReport", "Compiling tests");
+        quiet();
+        status("ProgressEnd", null);
+        assertEquals(List.of("Importing build", "Compiling root", "READY", "Compiling tests", "READY"), shown);
+    }
+
+    @Test
+    void aServerThatNeverSaidReadyIsNotCalledReadyByTheStall() {
+        status("Starting", "Importing");
+        status("Progress", "Indexing");
+        waitFor(2 * ServerStatusNarrator.STALL_MILLIS);
+        assertEquals(List.of("Importing", "Indexing"), shown);
+    }
 }

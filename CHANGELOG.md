@@ -232,6 +232,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   greyed while paused, Run ▸ Debugger no longer lists "Debug: Continue", and with the program console off the state
   reads "Program ended, output still arriving" while the last output comes in.
 
+- **Every language server says when it is done.** "‹server›: Loaded and ready" sometimes never came. Metals counted
+  each new spinning status as new work and ended only one of them. A server that sent the same progress Begin twice,
+  or an End for work it never began, threw off the count of open work. Each piece of work now counts once, and work
+  a ready server began but never ended is taken as over after 30 seconds of silence, so the ready line (and the end of
+  the loading bar) always comes.
 - **Go: Beginning/End of Defun describe what they do in Python.** The palette description said "top-level
   definition" in every language; in Python the commands take the innermost def or class, decorators included.
 - **Node.js on a remote host, in WSL or in a container honours the project's `.nvmrc`.** Run, a test file's ▶ and

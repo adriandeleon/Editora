@@ -421,7 +421,7 @@ final class LanguageServerSession implements LanguageClient {
      * jdtls's progress report) it began and has not ended — gopls loading, rust-analyzer indexing, Metals importing.
      */
     boolean busy() {
-        return stillImporting() || !openProgress.isEmpty() || !jdtProgressIds.isEmpty();
+        return stillImporting() || !openProgress.isEmpty() || !jdtProgressIds.isEmpty() || metalsSpinning;
     }
 
     /** The {@code $/progress} tokens begun and not yet ended. */
@@ -721,6 +721,9 @@ final class LanguageServerSession implements LanguageClient {
             this.launcher = launcher;
             server = launcher.getRemoteProxy();
             listening = launcher.startListening();
+            openProgress.clear(); // the last process's work ended with it
+            jdtProgressIds.clear();
+            metalsSpinning = false;
             onStatus.accept("Launching", null); // a new process: the UI forgets what the last one said
             sendInitialize();
             return true;
@@ -2237,7 +2240,9 @@ final class LanguageServerSession implements LanguageClient {
      * {@code $/progress} (#683): a server's long-running work — jdtls project import/indexing, gopls
      * loading, rust-analyzer's initial check. Begin starts the status-bar loading bar (with the title in
      * the echo area); End stops it. Per-step Report notifications are deliberately NOT echoed — jdtls
-     * emits hundreds and the echo area is one line — the bar alone signals "still working".
+     * emits hundreds and the echo area is one line — the bar alone signals "still working"; they only tell the
+     * UI the work is alive ({@link #reportActivity}). Each token is said begun once and ended once: a repeated
+     * Begin, or an End of work never begun, made the UI's count of open work wrong, and it never said "ready".
      */
     @Override
     public void notifyProgress(org.eclipse.lsp4j.ProgressParams params) {
@@ -2248,15 +2253,33 @@ final class LanguageServerSession implements LanguageClient {
         String token = params.getToken() == null
                 ? ""
                 : String.valueOf(params.getToken().get());
-        if (n instanceof org.eclipse.lsp4j.WorkDoneProgressBegin) {
-            openProgress.add(token);
-        } else if (n instanceof org.eclipse.lsp4j.WorkDoneProgressEnd) {
-            openProgress.remove(token);
-        }
         if (n instanceof org.eclipse.lsp4j.WorkDoneProgressBegin begin) {
-            onStatus.accept("Progress", progressText(begin.getTitle(), begin.getMessage(), begin.getPercentage()));
+            if (openProgress.add(token)) {
+                onStatus.accept("Progress", progressText(begin.getTitle(), begin.getMessage(), begin.getPercentage()));
+            }
         } else if (n instanceof org.eclipse.lsp4j.WorkDoneProgressEnd end) {
-            onStatus.accept("ProgressEnd", endText(end.getMessage())); // null message ⇒ just stop the bar
+            if (openProgress.remove(token)) {
+                onStatus.accept("ProgressEnd", endText(end.getMessage())); // null message ⇒ just stop the bar
+            }
+        } else if (n instanceof org.eclipse.lsp4j.WorkDoneProgressReport && openProgress.contains(token)) {
+            reportActivity();
+        }
+    }
+
+    /** At most one {@code ProgressReport} status in this long: the UI only needs to know the work is alive. */
+    private static final long REPORT_EVERY_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(1);
+
+    private volatile long lastReportNanos = System.nanoTime() - REPORT_EVERY_NANOS;
+
+    /**
+     * Tells the UI that work begun earlier is still going, so a long job that only reports steps is not taken for
+     * one whose End was lost ({@link ServerStatusNarrator#STALL_MILLIS}). Throttled: jdtls reports hundreds.
+     */
+    private void reportActivity() {
+        long now = System.nanoTime();
+        if (now - lastReportNanos >= REPORT_EVERY_NANOS) {
+            lastReportNanos = now;
+            onStatus.accept("ProgressReport", null);
         }
     }
 
@@ -3433,15 +3456,43 @@ final class LanguageServerSession implements LanguageClient {
 
     /**
      * {@code metals/status}: Metals' status-bar text. A spinning item (an import, a compile) is progress — the
-     * loading bar runs until Metals hides it; any other text is a status message.
+     * loading bar runs until Metals hides it or replaces it with text that does not spin; any other text is a
+     * status message. Metals updates one item, so its work is one progress however often the spinning text
+     * changes: each change was a new Begin, ended by one hide, and the ready line never came.
      */
     @org.eclipse.lsp4j.jsonrpc.services.JsonNotification("metals/status")
     public void metalsStatus(MetalsStatus status) {
         MetalsStatusView view = MetalsStatusView.of(status);
-        if (view != null) {
-            onStatus.accept(view.type(), view.text());
+        if (view == null) {
+            return;
+        }
+        switch (view.type()) {
+            case "Progress" -> {
+                if (metalsSpinning) {
+                    onStatus.accept("ProgressReport", view.text()); // the same work, a new step
+                } else {
+                    metalsSpinning = true;
+                    onStatus.accept("Progress", view.text());
+                }
+            }
+            case "ProgressEnd" -> {
+                if (metalsSpinning) {
+                    metalsSpinning = false;
+                    onStatus.accept("ProgressEnd", null);
+                }
+            }
+            default -> {
+                onStatus.accept(view.type(), view.text()); // "Build imported": said, then the work it ends is over
+                if (metalsSpinning) {
+                    metalsSpinning = false;
+                    onStatus.accept("ProgressEnd", null);
+                }
+            }
         }
     }
+
+    /** Whether Metals' status item is spinning: its work began and has not ended. */
+    private volatile boolean metalsSpinning;
 
     /**
      * {@code metals/executeClientCommand}: an action Metals asks the editor for. Opening a location is carried
@@ -3811,6 +3862,7 @@ final class LanguageServerSession implements LanguageClient {
             return;
         }
         if (!jdtProgressIds.add(id)) {
+            reportActivity(); // a step of work already begun
             return;
         }
         Integer percentage = report.totalWork > 0
