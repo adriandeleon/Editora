@@ -67,6 +67,8 @@ public final class Commenter {
             case "lua" -> new CommentStyle("--", "--[[", "]]");
             case "terraform" -> new CommentStyle("#", "/*", "*/");
             case "python",
+                    "cython",
+                    "starlark",
                     "shell",
                     "yaml",
                     "ruby",

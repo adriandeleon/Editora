@@ -67,9 +67,51 @@ public final class PythonIndent {
         boolean atEnd =
                 text.substring(caret, lineEnd < 0 ? text.length() : lineEnd).isBlank();
         if (atEnd && BLOCK_ENDERS.contains(PythonScan.firstWord(head, start))) {
-            return Indenter.removeOneIndent(base, dedentWidth(unit, tabSize));
+            return Indenter.removeOneIndent(base, Indenter.dedentWidth(unit, tabSize));
         }
         return base;
+    }
+
+    /**
+     * The indent smart Tab gives the line starting at {@code lineStart}: the indent Enter would have opened it
+     * with at the end of the nearest non-blank line above (so a wrapped call's continuation column, a PEP 8
+     * wrapped {@code if} and a {@code return} are read as Enter reads them), or, for a clause line
+     * ({@code else:}, {@code except …:}), the indent of the statement it continues.
+     */
+    static String tabIndent(String text, int lineStart, String unit, int tabSize) {
+        int pos = lineStart;
+        int prevEnd = -1;
+        for (int scanned = 0; pos > 0 && scanned < Indenter.MAX_SCAN; ) {
+            int prevStart = lineStartOf(text, pos - 1);
+            scanned += pos - prevStart;
+            if (!text.substring(prevStart, pos - 1).isBlank()) {
+                prevEnd = pos - 1;
+                break;
+            }
+            pos = prevStart;
+        }
+        if (prevEnd < 0) {
+            return "";
+        }
+        String body = afterEnter(text, prevEnd, unit, tabSize);
+        String clause = clauseIndent(text, lineStart, tabSize, body);
+        return clause != null ? clause : body;
+    }
+
+    /**
+     * Whether Enter between {@code before} and {@code after} splits a just-opened triple-quoted string from its
+     * closing quotes ({@code """|"""}), which then go on a line of their own (review 2 A110).
+     */
+    static boolean splitsTripleQuote(String before, String after) {
+        String b = before.stripTrailing();
+        String a = after.stripLeading();
+        for (String q : List.of("\"\"\"", "'''")) {
+            if (b.endsWith(q) && a.startsWith(q)) {
+                List<PythonScan.Line> lines = PythonScan.scan(b);
+                return lines.get(lines.size() - 1).stringAtEnd();
+            }
+        }
+        return false;
     }
 
     /** Inside an open bracket: hang one unit in when the bracket ends its line, else line up after it. */
@@ -97,51 +139,8 @@ public final class PythonIndent {
 
     /** Offset of the innermost bracket still open at the end of {@code head}, or -1. */
     private static int innermostOpenBracket(String head, List<PythonScan.Line> lines) {
-        int index = lines.size() - 1;
-        int first = PythonScan.statementStart(lines, index);
-        int from = lines.get(first).start();
-        // Re-read the statement keeping a stack of open bracket offsets (strings and comments skipped).
-        java.util.ArrayDeque<Integer> stack = new java.util.ArrayDeque<>();
-        char triple = 0;
-        for (int i = from; i < head.length(); i++) {
-            char c = head.charAt(i);
-            if (triple != 0) {
-                if (c == '\\') {
-                    i++;
-                } else if (c == triple && head.startsWith(String.valueOf(c).repeat(3), i)) {
-                    triple = 0;
-                    i += 2;
-                }
-                continue;
-            }
-            if (c == '#') {
-                int nl = head.indexOf('\n', i);
-                if (nl < 0) {
-                    break;
-                }
-                i = nl;
-                continue;
-            }
-            if (c == '"' || c == '\'') {
-                if (head.startsWith(String.valueOf(c).repeat(3), i)) {
-                    triple = c;
-                    i += 2;
-                    continue;
-                }
-                int j = i + 1;
-                while (j < head.length() && head.charAt(j) != c && head.charAt(j) != '\n') {
-                    j += head.charAt(j) == '\\' ? 2 : 1;
-                }
-                i = Math.min(j, head.length());
-                continue;
-            }
-            if (c == '(' || c == '[' || c == '{') {
-                stack.push(i);
-            } else if ((c == ')' || c == ']' || c == '}') && !stack.isEmpty()) {
-                stack.pop();
-            }
-        }
-        return stack.isEmpty() ? -1 : stack.peek();
+        int first = PythonScan.statementStart(lines, lines.size() - 1);
+        return PythonScan.innermostOpenBracket(head, lines.get(first).start());
     }
 
     /**
@@ -223,12 +222,45 @@ public final class PythonIndent {
             if (w >= limit) {
                 continue;
             }
-            if (openers.contains(PythonScan.keyword(above, l))) {
+            String word = PythonScan.keyword(above, l);
+            // `finally` continues an `else` only when that `else` belongs to a `try` (`try` … `except` … `else`),
+            // not the `else` of an `if` inside the `try` body (review 2 D106).
+            if (openers.contains(word)
+                    && !("finally".equals(keyword)
+                            && word.equals("else")
+                            && !chainHead(above, lines, i, tabSize).equals("try"))) {
                 return l.indent(above);
             }
             limit = w; // an enclosing statement of another kind: only shallower lines can still match
         }
         return null;
+    }
+
+    /**
+     * The keyword of the statement that heads the clause chain line {@code index} belongs to: back over the
+     * same-indent {@code elif}/{@code else}/{@code except}/{@code finally}/{@code case} lines to the {@code if},
+     * {@code try}, {@code for} … they continue ({@code ""} when the chain has no head in {@code lines}).
+     */
+    private static String chainHead(String text, List<PythonScan.Line> lines, int index, int tabSize) {
+        int w = Indenter.width(lines.get(index).indent(text), tabSize);
+        for (int i = index - 1; i >= 0; i--) {
+            PythonScan.Line l = lines.get(i);
+            if (!l.statement()) {
+                continue;
+            }
+            int lw = Indenter.width(l.indent(text), tabSize);
+            if (lw > w) {
+                continue;
+            }
+            if (lw < w) {
+                return "";
+            }
+            String word = PythonScan.keyword(text, l);
+            if (!CLAUSE_OPENERS.containsKey(word)) {
+                return word;
+            }
+        }
+        return "";
     }
 
     /**
@@ -251,10 +283,6 @@ public final class PythonIndent {
         int w = Indenter.width(before, tabSize);
         int remove = w % step == 0 ? step : w % step;
         return Math.min(remove, spaces);
-    }
-
-    private static int dedentWidth(String unit, int tabSize) {
-        return unit.startsWith(" ") ? unit.length() : tabSize;
     }
 
     /**

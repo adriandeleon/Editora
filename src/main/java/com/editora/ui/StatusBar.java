@@ -943,10 +943,33 @@ public final class StatusBar extends HBox {
                         EditorBuffer b = activeBuffer.get();
                         if (b != null) {
                             refreshSize(b);
+                            refreshIndent(b);
                         }
                     });
         }
         refresh();
+    }
+
+    /**
+     * The tab-size segment, which in a Python file also warns of tabs and spaces mixed the way Python rejects
+     * ({@code TabError}): the file runs nowhere and, drawn at this tab width, may not even look wrong (review 2
+     * A108). Called on attach/refresh and once per typing burst; a file without a tab costs one scan for one.
+     */
+    private void refreshIndent(EditorBuffer buffer) {
+        int bad = buffer.isPython()
+                ? com.editora.editops.PythonScan.inconsistentTabLine(
+                        buffer.getArea().getText())
+                : -1;
+        indent.setText(tr(bad < 0 ? "statusbar.tabSizeShort" : "statusbar.tabSizeMixed", buffer.getTabSize()));
+        indent.getTooltip()
+                .setText(bad < 0 ? tr("statusbar.tip.setTabSize") : tr("statusbar.tip.indentMixed", bad + 1));
+        if ((bad >= 0) != indent.getStyleClass().contains("status-encoding-assumed")) {
+            if (bad >= 0) {
+                indent.getStyleClass().add("status-encoding-assumed"); // the format group's warning colour
+            } else {
+                indent.getStyleClass().remove("status-encoding-assumed");
+            }
+        }
     }
 
     /** Recomputes every segment from the active buffer's current state. */
@@ -1012,9 +1035,11 @@ public final class StatusBar extends HBox {
 
         // Indent + encoding reflect the active buffer's effective values (an .editorconfig can override
         // the global tab size / charset per file), else the global default.
-        indent.setText(tr(
-                "statusbar.tabSizeShort",
-                hasBuffer ? buffer.getTabSize() : settings.get().getTabSize()));
+        if (hasBuffer) {
+            refreshIndent(buffer);
+        } else {
+            indent.setText(tr("statusbar.tabSizeShort", settings.get().getTabSize()));
+        }
         boolean assumed = hasBuffer && buffer.isCharsetAssumed();
         encoding.setText(
                 hasBuffer

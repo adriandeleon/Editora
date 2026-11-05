@@ -137,4 +137,36 @@ class PythonGrammarTest {
         }
         assertHas(t.get(6), "SENTINEL|null", "1|number");
     }
+
+    @Test
+    void aRegexNamedGroupIsNotADeclaration() {
+        // Review 2 A104: `(?P<year>…)` came out as a top-level Structure row "?P<year>".
+        assertEquals(
+                List.of(new TextMateHighlighter.Symbol(1, "f", "function")),
+                TextMateHighlighter.analyze("PAT = re.compile(r\"(?P<year>\\d{4})-(?P=year)\")\ndef f(): ...\n", PYTHON)
+                        .symbols());
+    }
+
+    @Test
+    void aSubscriptInADecoratorIsNotAnError() {
+        // Review 2 A106: PEP 614 (Python 3.9) allows any expression after `@`; `[0].clicked.connect` was invalid.
+        var t = tokens("@buttons[0].clicked.connect\ndef on_click(): ...");
+        for (String token : t.get(0)) {
+            assertTrue(!token.endsWith("|invalid"), "no invalid token in " + t.get(0));
+        }
+        assertHas(t.get(0), "buttons|annotation", "0|number", "connect|annotation");
+        assertHas(t.get(1), "on_click|function");
+    }
+
+    @Test
+    void thePatchedGrammarSaysWhereItCameFromAndWhatChanged() throws Exception {
+        // Review 2 D111: a refresh of the bundled grammars must not silently drop the local patch.
+        try (var in = GrammarRegistry.class.getResourceAsStream("/com/editora/grammars/python.tmLanguage.json")) {
+            String json = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(json.contains("\"information_for_contributors\""), "a provenance header");
+            for (String change : List.of("PEP 695", "PEP 750", "strftime", "match/case", "PEP 614")) {
+                assertTrue(json.contains(change), "the header lists " + change);
+            }
+        }
+    }
 }

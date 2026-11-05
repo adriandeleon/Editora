@@ -70,6 +70,9 @@ public final class TabExpansion {
         if (ident == caret || ident == token) {
             return null;
         }
+        if (before.charAt(ident - 1) == '.') {
+            return null; // a member name (`os.s`, `self.property`, `re.match`), not a trigger (review 2 E104)
+        }
         Snippet s = lookup.apply(before.substring(ident, caret));
         return s == null ? null : new Match(ident, s);
     }

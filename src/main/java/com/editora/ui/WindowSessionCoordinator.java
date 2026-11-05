@@ -1119,7 +1119,7 @@ final class WindowSessionCoordinator {
      * later layout pass</b> — stack-traced to {@code Parent.layout → VirtualFlow.layoutChildren →
      * Navigator.fillViewportFrom → CellListManager.cropTo}, with no app code involved — which showed as a
      * file restored deep in the document flashing to line 1 and back. (A second, distinct collapse from the
-     * one inside {@code setStyleSpans} that {@code EditorBuffer.setStyleSpansPreservingScroll} handles.) So
+     * one inside {@code setStyleSpans} that {@code ScrollAnchor.setStyleSpans} handles.) So
      * once the target offset is known, a listener defends it for the settle window: a drop to the top while
      * we wanted a non-zero offset is put back <em>in the same pulse</em>, before that frame renders.
      * Correcting it a pulse later instead — the obvious poll — only turns the jump into a bounce.

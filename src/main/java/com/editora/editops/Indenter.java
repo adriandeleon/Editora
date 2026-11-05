@@ -185,6 +185,9 @@ public final class Indenter {
                 return opener;
             }
         }
+        if ("python".equals(language)) {
+            return PythonIndent.tabIndent(text, lineStart, unit, tabSize); // what Enter would give (review 2 D103)
+        }
         int pos = lineStart;
         int scanned = 0;
         while (pos > 0 && scanned < MAX_SCAN) {
@@ -240,7 +243,7 @@ public final class Indenter {
      * How many spaces one Shift-Tab removes: the indent unit's own width when it is spaces (EditorConfig's
      * {@code indent_size} can differ from {@code tab_width}), else the tab width.
      */
-    private static int dedentWidth(String unit, int tabSize) {
+    static int dedentWidth(String unit, int tabSize) {
         return unit.startsWith(" ") ? unit.length() : tabSize;
     }
 
@@ -286,7 +289,7 @@ public final class Indenter {
                     "javascriptreact",
                     "typescriptreact" -> Style.BRACES;
             case "xml", "html", "astro", "html-template", "handlebars" -> Style.XML;
-            case "python", "yaml" -> Style.PY;
+            case "python", "cython", "starlark", "yaml" -> Style.PY;
             case "shell" -> Style.SHELL;
             case "ruby" -> Style.RUBY;
             case "lua" -> Style.LUA;
@@ -334,6 +337,10 @@ public final class Indenter {
         EnterEdit comment = style == Style.BRACES ? CommentContinuation.enter(text, caret, before, after) : null;
         if (comment != null) {
             return comment; // ` * ` inside a /** … */ comment
+        }
+        if ("python".equals(language) && PythonIndent.splitsTripleQuote(before, after)) {
+            // `"""|"""` (a docstring just opened): the text line, then the closing quotes, at the quotes' indent
+            return new EnterEdit("\n" + indent + "\n" + indent, 1 + indent.length());
         }
         if (isPairSplit(style, before, after)) {
             String body = indent + unit;
@@ -464,10 +471,11 @@ public final class Indenter {
             return clause != null ? clause : currentIndent;
         }
         if (style == Style.PY && (typed == ':' || typed == '\n')) {
+            // Python's `else:` / `except:` … lines up with its `if` / `try`. A clause with nothing above it to
+            // continue — the first `case` under its `match`, a `try` scrolled out of reach — stays where it is:
+            // the brace languages' "one level out" below would move `case` out to the `match` (review 2 A101).
             String clause = PythonIndent.clauseIndent(text, caret, tabSize, currentIndent);
-            if (clause != null) {
-                return clause; // Python's `else:` / `except:` … lines up with its `if` / `try`
-            }
+            return clause != null ? clause : currentIndent;
         }
         if (isBracketCloser(typed) && text.substring(ls, caret).isBlank()) {
             String opener = openerLineIndent(style, text, ls, typed);

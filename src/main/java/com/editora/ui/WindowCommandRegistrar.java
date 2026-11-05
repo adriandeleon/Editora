@@ -3372,12 +3372,10 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("nav.recentLocations", host.navigation()::showRecentLocations));
         host.registry().register(Command.of("nav.relatedFile", host.navigation()::gotoRelatedFile));
         host.registry()
-                .register(Command.of(
-                        "nav.beginningOfDefun",
-                        () -> host.editing().sexpMove(com.editora.editops.SexpNav::beginningOfDefun)));
+                .register(
+                        Command.of("nav.beginningOfDefun", () -> host.editing().defunMove(false)));
         host.registry()
-                .register(Command.of(
-                        "nav.endOfDefun", () -> host.editing().sexpMove(com.editora.editops.SexpNav::endOfDefun)));
+                .register(Command.of("nav.endOfDefun", () -> host.editing().defunMove(true)));
         host.registry().register(Command.of("nav.moveToWindowLine", host.editing()::moveToWindowLine));
     }
 

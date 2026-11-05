@@ -686,4 +686,67 @@ class HighlightPassTest {
             pool.shutdownNow();
         }
     }
+
+    @Test
+    void aLongFilesFirstPassShowsItsFirstLinesBeforeTokenizingTheRest() {
+        // Review 2 E105: a 50,000-line file sat uncoloured until its last line was tokenized.
+        IGrammar python = GrammarRegistry.shared().forLanguageName("python");
+        StringBuilder sb = new StringBuilder("\"\"\"Doc.\"\"\"\n");
+        for (int i = 0; i < 2_000; i++) {
+            sb.append("def f")
+                    .append(i)
+                    .append("(x):\n    return x + ")
+                    .append(i)
+                    .append("  # n\n");
+        }
+        String text = sb.toString();
+        List<org.fxmisc.richtext.model.StyleSpans<Collection<String>>> previews = new ArrayList<>();
+        HighlightPass.Request request = new HighlightPass.Request(text, python, null, List.of(), -1, 0, false, null)
+                .withPreview(100, previews::add);
+        HighlightPass.Result full = HighlightPass.run(request, () -> false);
+        assertNotNull(full);
+        assertEquals(1, previews.size(), "one early hand-off");
+        var early = previews.get(0);
+        int end = 0;
+        for (int i = 0; i < 100; i++) {
+            end = text.indexOf('\n', end) + 1;
+        }
+        assertEquals(end, early.length(), "the first 100 lines");
+        assertEquals(perChar(full.spans().subView(0, end)), perChar(early), "the same styles the full pass gives");
+
+        // A resumed pass (an edit) and a short document have nothing to show early.
+        previews.clear();
+        HighlightPass.run(
+                new HighlightPass.Request("x = 1\n", python, null, List.of(), -1, 0, false, null)
+                        .withPreview(100, previews::add),
+                () -> false);
+        assertTrue(previews.isEmpty());
+        HighlightPass.run(
+                new HighlightPass.Request(text, python, full.lines(), full.symbols(), 10, 12, false, null)
+                        .withPreview(100, previews::add),
+                () -> false);
+        assertTrue(previews.isEmpty(), "an edit's pass resumes: no preview");
+
+        // A file opens into an empty buffer: its first pass resumes from the empty text's one-line table.
+        HighlightPass.Result empty = HighlightPass.run(
+                new HighlightPass.Request("", python, null, List.of(), -1, 0, false, null), () -> false);
+        HighlightPass.Lines emptyLines = empty == null
+                ? new HighlightPass.Lines(new org.eclipse.tm4e.core.grammar.IStateStack[1], null)
+                : empty.lines();
+        HighlightPass.run(
+                new HighlightPass.Request(text, python, emptyLines, List.of(), 0, text.length(), false, null)
+                        .withPreview(100, previews::add),
+                () -> false);
+        assertEquals(1, previews.size(), "the loaded text's first pass shows the screen early too");
+    }
+
+    private static List<Collection<String>> perChar(org.fxmisc.richtext.model.StyleSpans<Collection<String>> spans) {
+        List<Collection<String>> out = new ArrayList<>();
+        for (StyleSpan<Collection<String>> span : spans) {
+            for (int i = 0; i < span.getLength(); i++) {
+                out.add(span.getStyle());
+            }
+        }
+        return out;
+    }
 }

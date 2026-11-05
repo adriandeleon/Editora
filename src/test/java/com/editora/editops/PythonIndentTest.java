@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Python's Enter / clause / Backspace indentation (review findings A1, A2, A4). */
+/** Python's Enter / Tab / clause / Backspace indentation (review findings A1, A2, A4; review 2 A101, A110, D103, D106, D109). */
 class PythonIndentTest {
 
     /** The indent Enter gives at the end of {@code text} (a Python buffer, four-space unit). */
@@ -160,5 +160,103 @@ class PythonIndentTest {
         assertEquals(
                 "\n    ",
                 Indenter.enterEdit(text, text.length(), "python", 4, null, null).insert());
+    }
+
+    /** The indent smart Tab gives the line at the end of {@code text} (caret at its start, four-space unit). */
+    private static String tab(String text) {
+        int ls = text.lastIndexOf('\n') + 1;
+        Indenter.TabEdit e = Indenter.smartTab(text, ls, ls, "python", 4, false, true, 4);
+        String after = text.substring(0, e.from()) + e.replacement() + text.substring(e.to());
+        return after.substring(ls, e.selStart());
+    }
+
+    @Test
+    void theFirstCaseUnderAMatchStaysInsideIt() {
+        // Review 2 A101: the `:` of the first `case` (nothing above it to continue) moved it out to the `match`.
+        String typed = "def run(cmd):\n    match cmd:\n        case 1";
+        assertEquals(
+                "        ", Indenter.closerAlignIndent(Indenter.Style.PY, typed, typed.length(), 4, "        ", ':'));
+        // Enter at the end of an existing, correct `case` line left it at the `match`'s column too.
+        String existing = "def run(cmd):\n    match cmd:\n        case 1:";
+        assertEquals(
+                "        ",
+                Indenter.closerAlignIndent(Indenter.Style.PY, existing, existing.length(), 4, "        ", '\n'));
+        // A later `case` still lines up with the one before it.
+        String second = "match cmd:\n    case 1:\n        pass\n        case 2";
+        assertEquals(
+                "    ", Indenter.closerAlignIndent(Indenter.Style.PY, second, second.length(), 4, "        ", ':'));
+        // An `except` whose `try` is out of the scan's reach is left where it was typed, not sent to column 0.
+        String longTry = "def f():\n    try:\n" + "        x = 1\n".repeat(900) + "        except ValueError";
+        assertEquals(
+                "        ",
+                Indenter.closerAlignIndent(Indenter.Style.PY, longTry, longTry.length(), 4, "        ", ':'));
+    }
+
+    @Test
+    void finallyGoesToTheTryNotToTheElseOfAnIfInItsBody() {
+        // Review 2 D106.
+        String inner = "try:\n    if a:\n        x()\n    else:\n        y()\n        finally:";
+        assertEquals("", PythonIndent.clauseIndent(inner, inner.length(), 4, "        "));
+        String level = "try:\n    if a:\n        x()\n    else:\n        y()\n    finally:";
+        assertEquals("", PythonIndent.clauseIndent(level, level.length(), 4, "    "));
+        String tryElse = "try:\n    a()\nexcept E:\n    b()\nelse:\n    c()\n    finally:";
+        assertEquals("", PythonIndent.clauseIndent(tryElse, tryElse.length(), 4, "    "));
+        String nested =
+                "def f():\n    try:\n        a()\n    except E:\n        b()\n    else:\n        c()\n        finally:";
+        assertEquals("    ", PythonIndent.clauseIndent(nested, nested.length(), 4, "        "));
+    }
+
+    @Test
+    void sameQuoteNestingInAnFStringIsCode() {
+        // Review 2 D109: `f"{d["k("]}"` — the `"` inside the field used to end the string, leaving `(` open.
+        assertEquals("", enter("s = f\"{d[\"k(\"]}\""));
+        assertEquals(
+                0, PythonScan.scan("s = f'{x:{w}}' + t\"{a[\"(\"]}\"").get(0).depthAtEnd());
+        assertEquals(0, PythonScan.scan("s = f\"{{(}}\"").get(0).depthAtEnd(), "doubled braces are text");
+        assertEquals(1, PythonScan.scan("s = f\"{x}\" + g(").get(0).depthAtEnd());
+        assertEquals(0, PythonScan.scan("elif\"(\"").get(0).depthAtEnd(), "not an f prefix: an ordinary string");
+        // The Enter after a call with an f-string argument that nests the same quote.
+        assertEquals("        ", enter("x = foo(f\"{d[\"k\"]}\","));
+    }
+
+    @Test
+    void tabGivesWhatEnterWouldGive() {
+        // Review 2 D103: Tab used the generic rule and read a continuation line as the block's indent.
+        assertEquals("", tab("result = foo(a,\n             b)\n"));
+        assertEquals("    ", tab("if (a and\n        b):\n"));
+        assertEquals("    ", tab("def f():\n    if x:\n        return 1\n\n"));
+        assertEquals("    ", tab("class A:\n"));
+        assertEquals("    ", tab("x = foo(\n"));
+        // A clause line goes to the statement it continues.
+        assertEquals("", tab("if a:\n    x = 1\nelse:"));
+        assertEquals("    ", tab("def f():\n    try:\n        g()\nexcept E:"));
+    }
+
+    @Test
+    void enterBetweenTripleQuotesPutsTheClosingQuotesOnTheirOwnLine() {
+        // Review 2 A110.
+        String text = "def f():\n    \"\"\"\"\"\"";
+        int caret = text.length() - 3;
+        Indenter.EnterEdit e = Indenter.enterEdit(text, caret, "python", 4);
+        assertEquals("\n    \n    ", e.insert());
+        assertEquals(5, e.caretOffset());
+        String single = "s = '''''';";
+        assertEquals("\n\n", Indenter.enterEdit(single, 7, "python", 4).insert());
+        // A closing triple quote followed by another string is not a split.
+        assertFalse(PythonIndent.splitsTripleQuote("x = \"\"\"a\"\"\"", "\"\"\"b\"\"\""));
+    }
+
+    @Test
+    void tabsAndSpacesMixedTheWayPythonRejectsAreFound() {
+        // Review 2 A108: Python's own TabError rule (tab = 8 columns and tab = 1 column must agree).
+        assertEquals(2, PythonScan.inconsistentTabLine("def f():\n    if x:\n\treturn 1\n    return 2\n"));
+        assertEquals(-1, PythonScan.inconsistentTabLine("def f():\n\tif x:\n\t\treturn 1\n\treturn 2\n"));
+        assertEquals(-1, PythonScan.inconsistentTabLine("def f():\n    x = 1\n"), "no tab: nothing to check");
+        // Consistent either way: a tab then four spaces is deeper than a tab under both widths.
+        assertEquals(-1, PythonScan.inconsistentTabLine("if a:\n\tif b:\n\t    c()\n"));
+        // Eight spaces then a tab-indented line at the same depth: 8 == 8 but 8 != 1.
+        assertEquals(2, PythonScan.inconsistentTabLine("if a:\n        b()\n\tc()\n"));
+        // A tab inside a string or a continuation line is not indentation.
+        assertEquals(-1, PythonScan.inconsistentTabLine("x = foo(\n\t1,\n    2)\ns = '\t'\n"));
     }
 }

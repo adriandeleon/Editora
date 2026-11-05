@@ -1,6 +1,9 @@
 package com.editora.editor.markdown;
 
+import java.util.Collection;
+
 import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.StyleSpans;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -57,5 +60,28 @@ public final class ScrollAnchor {
                 area.requestFollowCaret();
             }
         });
+    }
+
+    /**
+     * Applies style spans without letting the viewport jump.
+     *
+     * <p>{@code setStyleSpans} re-runs the document update and can drop the virtual flow's scroll to the top:
+     * measured as {@code estimatedScrollY} going 184 → 0 on the first highlight pass after a session restore,
+     * a couple of pulses after the file had already painted at its saved caret. That is what showed as a
+     * restored file jumping to line 1 on open. Restoring the scroll only when it actually collapsed to the
+     * top keeps this inert for every normal re-highlight (typing, scrolling), where the flow doesn't reset.
+     *
+     * <p>What is put back is the first visible <em>line</em>, not the pixel offset: right after a whole-document
+     * replace (a reload from disk) the offset is an estimate over unmeasured cells, and re-applying it once the
+     * heights are known landed a hundred lines away from where the view had been.
+     */
+    public static void setStyleSpans(CodeArea area, int from, StyleSpans<Collection<String>> spans) {
+        Double before = area.estimatedScrollYProperty().getValue();
+        int top = before != null && before > 1 ? firstVisibleLine(area) : -1;
+        area.setStyleSpans(from, spans);
+        Double after = area.estimatedScrollYProperty().getValue();
+        if (before != null && before > 1 && (after == null || after <= 1)) {
+            restore(area, top, before);
+        }
     }
 }

@@ -138,7 +138,11 @@ public final class GrammarRegistry {
             com.editora.text.HtmlElements.TEMPLATE_LANGUAGE,
             "text.html.basic",
             com.editora.text.HtmlElements.HANDLEBARS_LANGUAGE,
-            "text.html.basic");
+            "text.html.basic",
+            "cython",
+            "source.python",
+            "starlark",
+            "source.python");
 
     /** Language names that have a bundled grammar file (the grammar's resource name), sorted alphabetically. */
     public Set<String> availableLanguageNames() {
@@ -188,7 +192,7 @@ public final class GrammarRegistry {
         // Name/location-determined config files (Dockerfile, dotenv, ssh/git config, hosts, ...).
         String special = ConfigFileType.resolve(fileName);
         if (special != null) {
-            return languageNameToScope.get(special);
+            return languageNameToScope.getOrDefault(special, LANGUAGE_ALIASES.get(special)); // BUILD.bazel: Starlark
         }
         int dot = base.lastIndexOf('.');
         if (dot < 0 || dot == base.length() - 1) {
@@ -321,7 +325,7 @@ public final class GrammarRegistry {
         mapExtensions("source.shell", ShellFiles.EXTENSIONS.toArray(String[]::new)); // the table LanguageRegistry reads
         mapExtensions("source.powershell", "ps1", "psm1", "psd1");
         mapExtensions("source.batchfile", "bat", "cmd");
-        mapExtensions("source.python", "py", "pyw", "pyi");
+        mapExtensions("source.python", "py", "pyw", "pyi", "pyx", "pxd", "pxi", "bzl", "star");
         mapExtensions("source.groovy", "groovy", "gvy", "gradle");
         mapExtensions("source.kotlin", "kt", "kts");
         // Scala sources, Scala CLI / Ammonite scripts (.sc), sbt build files and Mill builds.

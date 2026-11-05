@@ -115,4 +115,33 @@ class PythonTypingFxTest {
         // Backticks are not Python: no pair.
         assertEquals("# `x", type("", "# `x"));
     }
+
+    @Test
+    void aMatchTypedLineByLineKeepsItsCasesInside() throws Exception {
+        // Review 2 A101: the `:` of the first `case` moved it out to the `match` (an IndentationError).
+        assertEquals(
+                "def run(cmd):\n    match cmd:\n        case 1:\n            pass\n        case _:\n            pass\n        ",
+                type("def run(cmd):\n    match cmd:", "\ncase 1:\npass\ncase _:\npass\n"));
+    }
+
+    @Test
+    void enterAtTheEndOfAnExistingCaseLineLeavesItAlone() throws Exception {
+        String text = "def run(cmd):\n    match cmd:\n        case 1:\n            pass";
+        String out = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride("python");
+            b.setContent(text);
+            b.getNode();
+            b.getArea().moveTo(text.indexOf("case 1:") + "case 1:".length());
+            b.typeChar('\n');
+            return b.getArea().getText();
+        });
+        assertEquals("def run(cmd):\n    match cmd:\n        case 1:\n            \n            pass", out);
+    }
+
+    @Test
+    void enterInAJustOpenedDocstringOpensALineBetweenTheQuotes() throws Exception {
+        // Review 2 A110: the closing quotes stayed on the caret's line.
+        assertEquals("def f():\n    \"\"\"\n    Doc.\n    \"\"\"", type("def f():\n    ", "\"\"\"\nDoc."));
+    }
 }
