@@ -592,7 +592,16 @@ final class DoctorCoordinator {
         if (s.isMermaidSupport()) {
             specs.add(versionedTool(mmdc, mmdcCmd, "mmdc", "--version", latestFor(mmdc.id())));
             // The linter is optional: without it diagrams still render, only live linting is off.
+            com.editora.mermaid.MermaidService mermaidService = ops.mermaidService();
             specs.add(probe(maid, base -> {
+                if (com.editora.mermaid.MaidLocator.isDefault(maidCmd)) {
+                    // Never run the default `npx -y @probelabs/maid` to ask: npx would look it up on the npm
+                    // registry, and download it when it is missing, on every Doctor refresh. Its files decide.
+                    return mermaidService
+                            .locateDefaultMaid()
+                            .map(found -> base.ok(found.detail()))
+                            .orElseGet(() -> base.optional("doctor.tip.maidInstall"));
+                }
                 DoctorProbes.Presence p = DoctorProbes.version(maidCmd);
                 return p.present()
                         ? base.ok(p.version().isBlank() ? DoctorProbes.resolvedPath(maidCmd) : p.version())

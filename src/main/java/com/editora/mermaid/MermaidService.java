@@ -2,9 +2,11 @@ package com.editora.mermaid;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import javafx.application.Platform;
 
@@ -20,8 +22,17 @@ import org.jspecify.annotations.Nullable;
  */
 public final class MermaidService {
 
-    /** Which CLIs are present (resolved from the configured paths or PATH). */
-    public record Availability(boolean mmdc, boolean maid) {}
+    /**
+     * Which CLIs are present (resolved from the configured paths or PATH).
+     *
+     * @param maidInstall where the default {@code npx -y @probelabs/maid} found maid installed (null when it did
+     *     not, or when the maid command is the user's own and was probed by running it)
+     */
+    public record Availability(boolean mmdc, boolean maid, MaidLocator.@Nullable Found maidInstall) {
+        public Availability(boolean mmdc, boolean maid) {
+            this(mmdc, maid, null);
+        }
+    }
 
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "mermaid-service");
@@ -41,7 +52,10 @@ public final class MermaidService {
 
     private volatile String mmdcPath = "";
     private volatile String maidPath = "";
+    private volatile String nodePath = "";
     private volatile @Nullable Availability cached;
+    /** Finds an installed maid for the default npx command by its files (the Settings Node.js in, files only). */
+    private volatile Function<String, Optional<MaidLocator.Found>> maidLocator = MaidLocator::locateLocal;
 
     /** Forgets the cached availability, so the next {@link #detect} probes again (Settings' Re-check). */
     public void invalidate() {
@@ -53,9 +67,10 @@ public final class MermaidService {
      * actually change</b>, so the next detect re-probes.
      *
      * <p>Clearing unconditionally meant every settings apply re-probed — and Settings is live-apply, so that
-     * is once per control you touch, plus every theme apply. The default maid command is
-     * {@code npx -y @probelabs/maid}, whose probe costs ~6.5 s, on the same single thread that serves live
-     * {@code .mmd} linting and exports: toggling a checkbox parked a multi-second job in front of them.
+     * is once per control you touch, plus every theme apply. A probe runs mmdc (and a maid command of the user's
+     * own) for seconds, on the same single thread that serves live {@code .mmd} linting and exports: toggling a
+     * checkbox parked a multi-second job in front of them. (The default {@code npx -y @probelabs/maid} is found
+     * by its files instead — see {@link MaidLocator}.)
      */
     public void setPaths(String mmdcPath, String maidPath) {
         String mmdc = mmdcPath == null ? "" : mmdcPath;
@@ -65,6 +80,51 @@ public final class MermaidService {
         }
         this.mmdcPath = mmdc;
         this.maidPath = maid;
+    }
+
+    /**
+     * The Settings Node.js, whose global {@code node_modules} is one place the default maid is looked for. A
+     * change clears the cached availability, as a path change does.
+     */
+    public void setNodePath(String nodePath) {
+        String node = nodePath == null ? "" : nodePath.strip();
+        if (!node.equals(this.nodePath)) {
+            this.cached = null;
+        }
+        this.nodePath = node;
+    }
+
+    /** Replaces how an installed maid is found for the default command — a test's seam (no real home or PATH). */
+    public void setMaidLocator(Function<String, Optional<MaidLocator.Found>> locator) {
+        this.maidLocator = locator;
+        this.cached = null;
+    }
+
+    /** Whether the maid command is the default {@code npx -y @probelabs/maid} (see {@link MaidLocator}). */
+    public boolean maidIsDefault() {
+        return MaidLocator.isDefault(maidCommand());
+    }
+
+    /**
+     * Where an installed maid is for the default command, found by its files — never by running npx, which
+     * would fetch the package from the npm registry to answer. Empty for a user's own command (run that to
+     * learn), or when none is installed. Blocking file reads; call off the FX thread.
+     */
+    public Optional<MaidLocator.Found> locateDefaultMaid() {
+        return maidIsDefault() ? maidLocator.apply(nodePath) : Optional.empty();
+    }
+
+    /**
+     * Whether maid is there: the default npx command by {@link #locateDefaultMaid() its files}, a user's own
+     * command by running it ({@link Mermaid#detect}). Blocking; call off the FX thread.
+     */
+    Availability probe() {
+        boolean mmdc = Mermaid.detect(mmdcCommand());
+        if (maidIsDefault()) {
+            MaidLocator.Found found = locateDefaultMaid().orElse(null);
+            return new Availability(mmdc, found != null, found);
+        }
+        return new Availability(mmdc, Mermaid.detect(maidCommand()));
     }
 
     /** The mmdc command (configured value or {@link #DEFAULT_MMDC}), tokenized. */
@@ -85,7 +145,7 @@ public final class MermaidService {
             return;
         }
         exec.submit(() -> {
-            Availability a = new Availability(Mermaid.detect(mmdcCommand()), Mermaid.detect(maidCommand()));
+            Availability a = probe();
             cached = a;
             Platform.runLater(() -> onResult.accept(a));
         });

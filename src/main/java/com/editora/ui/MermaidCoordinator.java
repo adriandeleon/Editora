@@ -57,6 +57,7 @@ final class MermaidCoordinator {
         Settings s = host.settings();
         boolean on = s.isMermaidSupport();
         service.setPaths(s.getMmdcPath(), s.getMaidPath());
+        service.setNodePath(s.getNodePath()); // its global node_modules is where an installed default maid may be
         MermaidImages.configure(on, service.mmdcCommand(), service.maidCommand(), host.appThemeDark());
         host.forEachBuffer(b -> {
             host.ensurePreviewControls(b);

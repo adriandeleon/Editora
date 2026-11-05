@@ -213,6 +213,45 @@ class DoctorCoordinatorFxTest {
     }
 
     @Test
+    void theDefaultMermaidLinterIsFoundByItsFilesNotByRunningNpx() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMermaidSupport(true);
+        FakeOps ops = new FakeOps();
+        ops.mermaid.setPaths("/nonexistent/editora-doctor-test/mmdc", ""); // blank maid: npx -y @probelabs/maid
+        java.nio.file.Path pkg = java.nio.file.Path.of("/g/lib/node_modules/@probelabs/maid");
+        ops.mermaid.setMaidLocator(
+                node -> java.util.Optional.of(new com.editora.mermaid.MaidLocator.Found(pkg, "0.0.29")));
+        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, ops));
+
+        List<DoctorService.CheckSpec> specs = FxTestSupport.callOnFx(doctor::buildSpecs);
+        assertEquals("npx -y @probelabs/maid", placeholder(specs, "maid").command());
+        DoctorCheck maid = spec(specs, "maid").probe().get();
+        assertEquals(DoctorStatus.OK, maid.status());
+        assertEquals("0.0.29 · " + pkg, maid.detail());
+    }
+
+    @Test
+    void anUninstalledDefaultMermaidLinterSaysHowToInstallIt() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMermaidSupport(true);
+        FakeOps ops = new FakeOps();
+        ops.mermaid.setPaths("/nonexistent/editora-doctor-test/mmdc", "");
+        ops.mermaid.setMaidLocator(node -> java.util.Optional.empty());
+        DoctorCoordinator doctor = FxTestSupport.callOnFx(() -> new DoctorCoordinator(host, ops));
+
+        List<DoctorService.CheckSpec> specs = FxTestSupport.callOnFx(doctor::buildSpecs);
+        long start = System.nanoTime();
+        DoctorCheck maid = spec(specs, "maid").probe().get();
+        long ms = (System.nanoTime() - start) / 1_000_000;
+        // Optional, as before, but its tip names the install: npx is never run to fetch it just to look.
+        assertEquals(DoctorStatus.OPTIONAL, maid.status());
+        assertEquals("doctor.tip.maidInstall", maid.tipKey());
+        assertTrue(maid.tipArgs().isEmpty(), "no arguments: the tip is shown as written, apostrophes and all");
+        assertTrue(tr("doctor.tip.maidInstall").contains("npm i -g @probelabs/maid"));
+        assertTrue(ms < 3_000, "the maid row took " + ms + " ms");
+    }
+
+    @Test
     void debugpyIsMissingWhenItsInterpreterWontRunEvenIfABundleIsFound() throws Exception {
         FakeHost host = new FakeHost();
         host.settings.setPythonDebugEnabled(true);
