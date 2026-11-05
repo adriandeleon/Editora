@@ -2565,8 +2565,9 @@ final class DebugCoordinator {
                     } else if (!hasStep) {
                         buildToolThenLaunch(
                                 buildRoot, routing, shortName(cfg.mainClass()), plan.jdkEnvironment(), launch);
-                    } else {
-                        launch.run();
+                    } else { // the user's step built it; a Gradle launch still runs jdtls's bin/main (A202)
+                        afterToolBuild(buildRoot == null ? null : BuildBeforeLaunch.toolAt(buildRoot), routing, launch)
+                                .run();
                     }
                 });
     }
@@ -2602,8 +2603,13 @@ final class DebugCoordinator {
                 buildRoot,
                 env,
                 beforeLaunchConsole(),
-                launch);
+                afterToolBuild(tool, source, launch));
         updateDebugAvailability();
+    }
+
+    /** {@code launch}, after jdtls's build too when the launch runs jdtls's output, not the tool's (Gradle, A202). */
+    private Runnable afterToolBuild(com.editora.build.@Nullable BuildTool tool, Path source, Runnable launch) {
+        return BuildBeforeLaunch.jdtlsBuildsAfter(tool) ? () -> buildThenLaunch(source, launch) : launch;
     }
 
     /**

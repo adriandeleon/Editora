@@ -58,9 +58,34 @@ public final class BuildBeforeLaunch {
         };
     }
 
-    /** The quiet compile command: {@code executable} (the tasks tree's argv prefix) + {@code -q} + {@link #compileGoals}. */
+    /**
+     * The quiet compile command: {@code executable} (the tasks tree's argv prefix) + {@code -q} + {@link #compileGoals};
+     * for Gradle also {@link #GRADLE_DAEMON_IDLE}.
+     */
     public static List<String> compileArgv(BuildTool tool, List<String> executable, boolean testScope) {
-        return withGoals(executable, compileGoals(tool, testScope));
+        List<String> argv = new ArrayList<>(withGoals(executable, compileGoals(tool, testScope)));
+        if (tool == BuildTool.GRADLE) {
+            argv.add(GRADLE_DAEMON_IDLE);
+        }
+        return List.copyOf(argv);
+    }
+
+    /**
+     * A Gradle daemon Editora's own compile starts stops after ten idle minutes, as jdtls's import daemons do, not
+     * after Gradle's three hours: each Debug Main Class in a Gradle project left a second daemon behind for hours
+     * (Java debug review 3, A's note). Gradle reuses a daemon whatever its idle timeout.
+     */
+    public static final String GRADLE_DAEMON_IDLE = "-Dorg.gradle.daemon.idletimeout=600000";
+
+    /**
+     * Whether jdtls must build too after the build tool compiled a launch of {@code tool}'s project. A Gradle launch
+     * runs on the class path jdtls resolves — Buildship's {@code bin/main}, which only jdtls writes — while
+     * {@code gradle compileJava} writes {@code build/classes}: after an edit, Debug Main Class and Debug of a
+     * configuration ran the old code under breakpoints on the new lines (review 3, A202). Maven's {@code compile}
+     * writes {@code target/classes}, the class path itself.
+     */
+    public static boolean jdtlsBuildsAfter(@Nullable BuildTool tool) {
+        return tool == BuildTool.GRADLE;
     }
 
     /**
