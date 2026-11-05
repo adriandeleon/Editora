@@ -237,6 +237,16 @@ final class DebugPanelText {
     }
 
     /** One line of a failed watch's message: a long, wrapped error drew over the rows below it (review C17). */
+    /** What a Variables row adds after a value it could not show in full (review 3, B201/B202). */
+    static String valueNote(com.editora.dap.DapModels.ValueNote note) {
+        return switch (note) {
+            case NOT_LOADED -> tr("debugpanel.note.notLoaded");
+            case NO_TO_STRING_AFTER_PAUSE -> tr("debugpanel.note.afterPause");
+            case TO_STRING_FAILED -> tr("debugpanel.note.toStringFailed");
+            case LOADING -> tr("debugpanel.note.loading");
+        };
+    }
+
     static String oneLine(String text, int max) {
         String flat =
                 text == null ? "" : text.replace("\r", "").replace('\n', ' ').strip();

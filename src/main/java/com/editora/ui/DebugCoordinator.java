@@ -618,7 +618,8 @@ final class DebugCoordinator {
         dapManager.setJavaDebugSettings(new com.editora.dap.JavaDebugSettings(
                 s.isDebugStepFilters(),
                 s.isDebugShowStatics(),
-                com.editora.dap.JavaDebugSettings.parseExceptionTypes(s.getDebugExceptionTypes())));
+                com.editora.dap.JavaDebugSettings.parseExceptionTypes(s.getDebugExceptionTypes()),
+                s.isDebugShowToString()));
         List<String> bundles = on ? dapManager.bundlePaths() : List.of();
         boolean changed = !bundles.equals(appliedDebugBundles);
         lspManager.setDebugBundles(bundles); // set before sessions start — jdtls always gets the bundle
@@ -1548,6 +1549,31 @@ final class DebugCoordinator {
             @Override
             public void setVariable(int parentRef, String name, String value, Consumer<String> cb) {
                 dapManager.setVariable(parentRef, name, value, cb);
+            }
+
+            @Override
+            public void setVariable(
+                    int parentRef, String name, String value, String assignTo, int frameId, Consumer<String> cb) {
+                dapManager.setVariable(parentRef, name, value, assignTo, frameId, cb);
+            }
+
+            @Override
+            public void loadValue(DapModels.VariableInfo row, Consumer<DapModels.VariableInfo> cb) {
+                dapManager.loadValue(row, cb);
+            }
+
+            @Override
+            public boolean refreshValues() {
+                DapModels.StackFrameInfo frame = shownFrame;
+                if (frame == null || dapManager.state() != DapManager.State.SUSPENDED) {
+                    return false;
+                }
+                dapManager.forgetValues(); // B205: what the program now says, not this stop's first answers
+                dapManager.scopes(frame.id(), scopes -> {
+                    panel().setScopes(scopes);
+                    applyInlineValues(frame, scopes);
+                });
+                return true;
             }
         };
     }

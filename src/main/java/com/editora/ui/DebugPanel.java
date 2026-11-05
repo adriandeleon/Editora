@@ -154,6 +154,28 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** Set a variable's value (DAP setVariable on its container reference); delivers the new value. */
         void setVariable(int parentRef, String name, String value, Consumer<String> cb);
 
+        /**
+         * {@link #setVariable(int, String, String, Consumer)}, assigning {@code assignTo = value} in frame {@code
+         * frameId} when the adapter cannot set a variable of that type (review 3, B208).
+         */
+        default void setVariable(
+                int parentRef, String name, String value, String assignTo, int frameId, Consumer<String> cb) {
+            setVariable(parentRef, name, value, cb);
+        }
+
+        /** Load a row the stop's time budget left unloaded (a click on it); delivers the loaded row (B201). */
+        default void loadValue(DapModels.VariableInfo row, Consumer<DapModels.VariableInfo> cb) {
+            cb.accept(row);
+        }
+
+        /**
+         * Fetch the selected frame's variables, watches and inline values again: a console evaluation or Set Value
+         * may have changed them (B205). False when there is nothing to refresh them from.
+         */
+        default boolean refreshValues() {
+            return false;
+        }
+
         /** Send a line typed in the console to the running program's standard input. */
         default void sendInput(String line) {}
 
@@ -304,13 +326,32 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             Kind kind,
             int named,
             int indexed,
-            boolean failed) {
+            boolean failed,
+            DapModels.@Nullable ValueNote note) {
         VarRow(String name, String value, String type, int ref, int parentRef, Kind kind) {
             this(name, value, type, ref, parentRef, kind, 0, 0, false);
         }
 
         VarRow(String name, String value, String type, int ref, int parentRef, Kind kind, int named, int indexed) {
             this(name, value, type, ref, parentRef, kind, named, indexed, false);
+        }
+
+        VarRow(
+                String name,
+                String value,
+                String type,
+                int ref,
+                int parentRef,
+                Kind kind,
+                int named,
+                int indexed,
+                boolean failed) {
+            this(name, value, type, ref, parentRef, kind, named, indexed, failed, null);
+        }
+
+        /** Not loaded within the stop's budget: a click (or expanding it) loads it (B201). */
+        boolean notLoaded() {
+            return note == DapModels.ValueNote.NOT_LOADED;
         }
     }
 
@@ -484,6 +525,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         // Watches interactions: double-click "+ Add watch…" adds, double-click a watch edits; the
         // context menu mirrors them (rebuilt per show for the selected row's kind).
         variables.setOnMouseClicked(e -> {
+            TreeItem<VarRow> clicked = variables.getSelectionModel().getSelectedItem();
+            if (e.getClickCount() == 1
+                    && clicked != null
+                    && clicked.getValue() != null
+                    && clicked.getValue().notLoaded()) {
+                loadRow(clicked, false); // "click to load" (B201)
+                return;
+            }
             if (e.getClickCount() != 2) {
                 return;
             }
@@ -505,6 +554,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             if (e.getCode() == javafx.scene.input.KeyCode.ENTER
                     && variables.getSelectionModel().getSelectedItem() instanceof MoreItem more) {
                 showMore(more);
+                e.consume();
+            } else if (e.getCode() == javafx.scene.input.KeyCode.ENTER
+                    && selectedRow() != null
+                    && selectedRow().notLoaded()) {
+                loadRow(variables.getSelectionModel().getSelectedItem(), false);
                 e.consume();
             } else if (e.getCode() == javafx.scene.input.KeyCode.F2) {
                 VarRow row = selectedRow();
@@ -727,6 +781,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                         }
                         flow.getChildren().add(value);
                     }
+                }
+                if (row.note() != null) {
+                    // Why the row shows only Type@id: not loaded yet (a click loads it), or no toString() (B201/B202).
+                    Text note = new Text("  " + DebugPanelText.valueNote(row.note()));
+                    note.getStyleClass().add("debug-val-note");
+                    flow.getChildren().add(note);
                 }
                 if (row.type() != null && !row.type().isBlank()) {
                     Text type = new Text("  " + row.type());
@@ -1498,7 +1558,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             if (value == null) {
                 return;
             }
-            actions.setVariable(row.parentRef(), row.name(), value, newValue -> {
+            actions.setVariable(row.parentRef(), row.name(), value, pathExpression(item), selectedFrameId, newValue -> {
                 item.setValue(new VarRow(
                         row.name(),
                         newValue,
@@ -1508,7 +1568,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                         Kind.VARIABLE,
                         row.named(),
                         row.indexed()));
-                refreshWatchesNode();
+                if (!actions.refreshValues()) { // the inline values and other rows may show it too (B205)
+                    refreshWatchesNode();
+                }
             });
         });
     }
@@ -1681,7 +1743,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         evalInput.clear();
         actions.evaluate(expr, selectedFrameId, result -> {
             String text = result == null ? "" : result.text();
-            appendOutput(text + "\n", result != null && result.failed() ? "stderr" : "console");
+            boolean failed = result != null && result.failed();
+            appendOutput(text + "\n", failed ? "stderr" : "console");
+            if (!failed && lastState == DapManager.State.SUSPENDED) {
+                actions.refreshValues(); // `cnt.inc()` changed what Variables, watches and inline values show (B205)
+            }
         });
     }
 
@@ -1693,7 +1759,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 return row.ref() <= 0;
             }
         };
-        if (row.ref() > 0) {
+        if (row.ref() > 0 && row.notLoaded()) {
+            // Its one child is the value: expanding it loads the row in place, then shows its fields (B201).
+            item.expandedProperty().addListener((o, was, now) -> {
+                if (now && lastState == DapManager.State.SUSPENDED) {
+                    loadRow(item, true);
+                }
+            });
+        } else if (row.ref() > 0) {
             boolean[] loaded = {false};
             item.expandedProperty().addListener((o, was, now) -> {
                 // Only while suspended: a row left over from the previous stop names a reference the adapter
@@ -1769,17 +1842,69 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private List<TreeItem<VarRow>> rows(VarRow parent, List<DapModels.VariableInfo> vars) {
         List<TreeItem<VarRow>> out = new java.util.ArrayList<>(vars.size());
         for (DapModels.VariableInfo v : vars) {
-            out.add(lazyItem(new VarRow(
-                    v.name(),
-                    v.value(),
-                    v.type() == null ? "" : v.type(),
-                    v.variablesReference(),
-                    parent.ref(),
-                    Kind.VARIABLE,
-                    v.namedVariables(),
-                    v.indexedVariables())));
+            out.add(lazyItem(variableRow(v, parent.ref())));
         }
         return out;
+    }
+
+    /** Pure: the tree row of variable {@code v} in container {@code parentRef}. */
+    static VarRow variableRow(DapModels.VariableInfo v, int parentRef) {
+        // A lazy row still lazy here was not resolved (the budget ran out, or the adapter did not answer): it loads
+        // on a click like one the budget left (B201).
+        DapModels.ValueNote note = v.note() != null
+                ? v.note()
+                : v.lazy() && v.variablesReference() > 0 ? DapModels.ValueNote.NOT_LOADED : null;
+        return new VarRow(
+                v.name(),
+                v.value(),
+                v.type() == null ? "" : v.type(),
+                v.variablesReference(),
+                parentRef,
+                Kind.VARIABLE,
+                v.namedVariables(),
+                v.indexedVariables(),
+                false,
+                note);
+    }
+
+    /**
+     * Loads a row the stop's budget left unloaded and puts the loaded row in its place (B201); {@code expand}: then
+     * shows its fields. While it loads, the row says so; a tree rebuilt meanwhile is left alone.
+     */
+    private void loadRow(TreeItem<VarRow> item, boolean expand) {
+        VarRow row = item == null ? null : item.getValue();
+        if (row == null || !row.notLoaded() || lastState != DapManager.State.SUSPENDED) {
+            return;
+        }
+        item.setValue(new VarRow(
+                row.name(),
+                row.value(),
+                row.type(),
+                row.ref(),
+                row.parentRef(),
+                row.kind(),
+                row.named(),
+                row.indexed(),
+                false,
+                DapModels.ValueNote.LOADING));
+        DapModels.VariableInfo asked = new DapModels.VariableInfo(
+                row.name(), row.value(), row.type(), row.ref(), row.named(), row.indexed(), true);
+        actions.loadValue(asked, v -> {
+            TreeItem<VarRow> parent = item.getParent();
+            int idx = parent == null ? -1 : parent.getChildren().indexOf(item);
+            if (idx < 0) {
+                return;
+            }
+            boolean selected = variables.getSelectionModel().getSelectedItem() == item;
+            TreeItem<VarRow> loaded = lazyItem(variableRow(v, row.parentRef()));
+            parent.getChildren().set(idx, loaded);
+            if (selected) {
+                variables.getSelectionModel().select(loaded);
+            }
+            if (expand && !loaded.isLeaf() && !loaded.getValue().notLoaded()) {
+                loaded.setExpanded(true);
+            }
+        });
     }
 
     private static MoreItem moreRow(int next, int remaining, Runnable load) {
