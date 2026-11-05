@@ -199,6 +199,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adds Editora's own TypeScript 5.9.3 and typescript-language-server 5.3.0 to its own folder (never `npm install -g`).
   "Not now" and the install-prompts setting hold for it as for a missing server. The status line says the action
   first ("Install TypeScript 5.9 (Settings → LSP) …") and is no longer cut off before it in a 1300 px window.
+- **JavaScript and TypeScript: a long word no longer slows colouring.** A long run of letters and digits with no
+  spaces (a token, a hash or base64 in a string, a template, a regex or code) took time that grew with the square of
+  its length to colour: 0.2–0.5 s for 2,000 letters and 7–8 s for 10,000, while that tab and every other JavaScript
+  or TypeScript tab waited for colours. It now takes a few milliseconds, and every colour is the same as before.
 
 - **Java debugging (second debugging review, 38 findings).** A loose `.java` file or a plain-folder project is built
   before every Debug and stops on compile errors: edits always run, where the code as first built used to run, and
