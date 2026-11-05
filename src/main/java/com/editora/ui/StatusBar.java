@@ -897,10 +897,14 @@ public final class StatusBar extends HBox {
         }
     }
 
+    /** Refreshes the segments when the attached buffer's editability changes (View mode on or off). */
+    private final javafx.beans.value.ChangeListener<Boolean> editableListener = (obs, was, now) -> refresh();
+
     /** Re-binds live listeners to {@code buffer} (or none) and refreshes the segments. */
     public void attach(@Nullable EditorBuffer buffer) {
         if (attached != null) {
             attached.focusedAreaProperty().removeListener(viewListener);
+            attached.getArea().editableProperty().removeListener(editableListener);
             trackCaret(attached.getFocusedArea(), false);
         }
         if (sizeSub != null) {
@@ -913,6 +917,9 @@ public final class StatusBar extends HBox {
             // Ln/Col + the CSV field track the caret cheaply (no full-document scan).
             trackCaret(buffer.getFocusedArea(), true);
             buffer.focusedAreaProperty().addListener(viewListener);
+            // View mode set after the tab was shown (a library file Go to Definition opened) must not leave
+            // "Editable" in the status bar (Python review 2 E107).
+            buffer.getArea().editableProperty().addListener(editableListener);
             // The file size only changes on an EDIT — and computing it materializes the whole document (an
             // O(n) String + byte[]), so it must not run per keystroke. It was previously bound to textProperty
             // (which itself re-materializes the whole document per keystroke) AND recomputed on every caret
