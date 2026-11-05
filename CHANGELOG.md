@@ -209,6 +209,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Node.js on a remote host, in WSL or in a container honours the project's `.nvmrc`.** Run, a test file's ▶ and
+  Debug now read a `.nvmrc` or `.node-version` on the host (from the file's folder up to the project, or the package
+  root) and run the Node.js of that version from the host's nvm (`$NVM_DIR`, then `~/.nvm`), as a local run does. A
+  version the host's nvm does not have, or an alias such as `lts/*`, falls back to the host's Node.js setting or its
+  `node`, and the console says so. The runtime chip says why that Node.js was chosen on a host too.
+- **Doctor and Settings no longer run npx to look for the Mermaid linter.** With the default maid command
+  (`npx -y @probelabs/maid`), Doctor, the Settings → Mermaid status and every start-up with Mermaid on ran npx just
+  to ask whether maid was there: seconds each time, and npx looked the package up on the npm registry and
+  downloaded it when it was missing. An installed maid is now found by its files — a global install
+  (`npm i -g @probelabs/maid`, beside the Settings Node.js, node on PATH or the npm prefix), a `maid` on PATH that
+  is that package, or npx's own cache — and shown with its version and folder; without one the row is optional and
+  says how to install it. A maid command of your own is still run to check it, as before.
+- **JavaScript and TypeScript with no TypeScript that can run.** When the only TypeScript beside the TypeScript server
+  is a TypeScript 7 (which has no tsserver), or there is none, the file's install banner now offers Install, which
+  adds Editora's own TypeScript 5.9.3 and typescript-language-server 5.3.0 to its own folder (never `npm install -g`).
+  "Not now" and the install-prompts setting hold for it as for a missing server. The status line says the action
+  first ("Install TypeScript 5.9 (Settings → LSP) …") and is no longer cut off before it in a 1300 px window.
+- **JavaScript and TypeScript: a long word no longer slows colouring.** A long run of letters and digits with no
+  spaces (a token, a hash or base64 in a string, a template, a regex or code) took time that grew with the square of
+  its length to colour: 0.2–0.5 s for 2,000 letters and 7–8 s for 10,000, while that tab and every other JavaScript
+  or TypeScript tab waited for colours. It now takes a few milliseconds, and every colour is the same as before.
 - **Python editing:** the first `case` of a `match` stays inside it (one Enter on a correct `case` line used to move
   it out), `finally` lines up with its `try`, Tab indents the way Enter does, Enter between `"""` and `"""` opens a
   line, f-strings with nested quotes no longer confuse the indenter, and the status bar warns when tabs and spaces

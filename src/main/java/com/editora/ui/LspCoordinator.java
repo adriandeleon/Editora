@@ -1036,6 +1036,9 @@ final class LspCoordinator {
             return;
         }
         startBlocked.add(crashKey(serverId, root));
+        noTypeScript.put(
+                crashKey(serverId, root),
+                refusal.kind() == com.editora.lsp.StartRefusal.Kind.NO_TYPESCRIPT ? refusal : null);
         host.forEachBuffer(b -> {
             Path p = lspPath(b);
             if (p != null
@@ -1061,6 +1064,18 @@ final class LspCoordinator {
         host.setError(said);
         Platform.runLater(() -> host.setError(said));
         updateStatusBar();
+        ops.onDetectionSettled(); // NO_TYPESCRIPT: the install banner offers Editora's own TypeScript (JS review B113)
+    }
+
+    /** By {@link #crashKey}: the TypeScript server's NO_TYPESCRIPT refusal, valid while its key is start-blocked. */
+    private final Map<String, com.editora.lsp.@Nullable StartRefusal> noTypeScript = new java.util.HashMap<>();
+
+    /** The NO_TYPESCRIPT refusal holding back {@code b}'s TypeScript server, or null (JS review B113). */
+    com.editora.lsp.@Nullable StartRefusal noTypeScriptFor(EditorBuffer b) {
+        String id = com.editora.lsp.TypeScriptServer.SERVER_ID, key = crashKey(id, lspRootFor(b, id));
+        return lspPath(b) != null && id.equals(serverIdForBuffer(b)) && startBlocked.contains(key)
+                ? noTypeScript.get(key)
+                : null;
     }
 
     /** Servers Editora would not start with their command (the lemminx-maven guard), by id → what the status said. */
@@ -1694,6 +1709,7 @@ final class LspCoordinator {
         if (!trouble.equals(appliedTrouble)) { // an install, a trust decision, a command: not a theme (JS B112)
             appliedTrouble = trouble;
             startBlocked.clear(); // a settings change (an install, a trust decision) may be what the server lacked
+            noTypeScript.clear();
             failingServers.clear();
             crashedServers.clear();
             refusedServers.clear();
@@ -1997,35 +2013,10 @@ final class LspCoordinator {
                 .commandFor(serverId, LspServerCommands.serverCommand(host.settings(), serverId), projectTrusted());
     }
 
-    /** How a server is started: {@link #serverCommand(String)}, a blank one filled in ({@link #withOwnCopy}). */
+    /** How a server is started: {@link #serverCommand(String)}, a blank one filled in ({@link LspServerCommands#withOwnCopy}). */
     private String launchCommand(String serverId) {
-        return withOwnCopy(
+        return LspServerCommands.withOwnCopy(
                 serverId, serverCommand(serverId), configDir(), host.settings().getMavenJdkHome());
-    }
-
-    /** {@code command} for {@code serverId}: Editora's own copy, kept outside PATH, for a blank XML, pom, HTML, CSS or
-     *  JSON command (review A9, review 2 A3, HTML A2), on the Maven JDK ({@code jdkHome}). Pure but for file lookups. */
-    static String withOwnCopy(
-            String serverId, @Nullable String command, @Nullable Path configDir, @Nullable String jdkHome) {
-        String raw = command == null ? "" : command;
-        String jdk = jdkHome == null ? "" : jdkHome;
-        if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId) && raw.isBlank()) {
-            String own = com.editora.install.MavenServerInstall.effectiveCommand(raw, configDir);
-            return own.isBlank() ? raw : com.editora.lsp.JvmServerCommand.withJdk(own, jdk);
-        }
-        if (com.editora.install.TypeScriptServerInstall.SERVER_ID.equals(serverId)) {
-            return com.editora.install.TypeScriptServerInstall.effectiveCommand(raw, configDir); // JS review B104
-        }
-        return "xml".equals(serverId)
-                ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir, jdk)
-                : com.editora.install.WebServerInstall.effectiveCommand(serverId, raw, configDir); // HTML A2
-    }
-
-    /** {@link LspServerCommands#commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
-    static Map<String, String> launchCommandsForAllServers(com.editora.config.Settings s, @Nullable Path configDir) {
-        Map<String, String> commands = LspServerCommands.commandsForAllServers(s);
-        commands.replaceAll((id, command) -> withOwnCopy(id, command, configDir, s.getMavenJdkHome()));
-        return commands;
     }
 
     private @Nullable Path configDir() {
@@ -3846,6 +3837,7 @@ final class LspCoordinator {
     /** Restarts every running server, clears diagnostics, then re-gates each buffer ({@code lsp.restartServers}). */
     void restartServers() {
         startBlocked.clear();
+        noTypeScript.clear();
         failingServers.clear();
         crashedServers.clear();
         refusedServers.clear();

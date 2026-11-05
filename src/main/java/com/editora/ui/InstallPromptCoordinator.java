@@ -114,6 +114,11 @@ final class InstallPromptCoordinator {
         if (offerOwnWebCopy(buffer)) {
             return;
         }
+        // The TypeScript server is there but was not started: no TypeScript it may run (only a TypeScript 7, which has
+        // no tsserver, or none beside it). Install brings Editora's own (JS review B113).
+        if (offerOwnTypeScript(buffer)) {
+            return;
+        }
         // A live LSP session already serving this file ⇒ its server is present; never nag.
         if (host.lspCoordinator().isManaged(buffer.getPath())) {
             buffer.showInstallBar(false);
@@ -331,6 +336,42 @@ final class InstallPromptCoordinator {
                     buffer.showInstallBar(false);
                 });
         buffer.showInstallBar(true);
+    }
+
+    /**
+     * The banner of a JavaScript or TypeScript file whose server Editora did not start because there is no TypeScript
+     * it may run ({@link com.editora.lsp.StartRefusal.Kind#NO_TYPESCRIPT}): only a TypeScript 7, which has no
+     * tsserver, or none at all beside the server. Install puts Editora's own typescript-language-server and
+     * TypeScript into its own folder (never {@code npm install -g}); that TypeScript is then preferred whatever the
+     * server's command, so a command of the user's own is left as it is. Before, only a status line said so, cut off
+     * before its action (JS review B113). True when this decided the banner.
+     */
+    private boolean offerOwnTypeScript(EditorBuffer buffer) {
+        if (!host.lspEnabled()) {
+            return false;
+        }
+        com.editora.lsp.StartRefusal refused = host.lspCoordinator().noTypeScriptFor(buffer);
+        if (refused == null) {
+            return false;
+        }
+        String step = com.editora.install.TypeScriptServerInstall.PROGRAM;
+        offerInstall(
+                buffer,
+                "typescript-sdk",
+                refused.detail().isBlank()
+                        ? tr(
+                                "install.banner.typeScriptNone",
+                                com.editora.install.InstallCatalog.TYPESCRIPT_VERSION,
+                                com.editora.install.InstallCatalog.TYPESCRIPT_LS_VERSION)
+                        : tr(
+                                "install.banner.typeScriptNoTsserver",
+                                refused.detail(),
+                                com.editora.install.InstallCatalog.TYPESCRIPT_VERSION,
+                                com.editora.install.InstallCatalog.TYPESCRIPT_LS_VERSION),
+                // the server step alone, not the debugger of the JavaScript bundle; again even if a copy is there
+                cb -> host.installCoordinator()
+                        .installSupport(com.editora.install.InstallCatalog.Lang.JAVASCRIPT, step, step, cb));
+        return true;
     }
 
     /** {@link com.editora.install.WebServerInstall#foreignCopyWithoutLibs}; a test resolves the command itself. */

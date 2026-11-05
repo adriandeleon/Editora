@@ -314,4 +314,64 @@ class NodeRuntimesTest {
                 List.of(want.toString()),
                 NodeRuntimes.resolve(in(script, repo, "", "", home, null)).command());
     }
+
+    @Test
+    void aHostsNvmNodeIsPickedFromItsListing() {
+        List<String> listed = List.of(
+                "/opt/nvm/versions/node/v18.20.4/bin/node",
+                "/opt/nvm/versions/node/v20.9.0/bin/node",
+                "not a node path",
+                "/home/me/.nvm/versions/node/v20.11.1/bin/node",
+                "/home/me/.nvm/versions/node/v22.3.0/bin/node");
+        assertEquals(
+                Optional.of("/opt/nvm/versions/node/v20.9.0/bin/node"),
+                NodeRuntimes.pickHostNvmNode("20", listed),
+                "the first nvm folder with a match wins, as here");
+        assertEquals(
+                Optional.of("/home/me/.nvm/versions/node/v20.11.1/bin/node"),
+                NodeRuntimes.pickHostNvmNode("v20.11", listed));
+        assertEquals(
+                Optional.of("/home/me/.nvm/versions/node/v22.3.0/bin/node"),
+                NodeRuntimes.pickHostNvmNode("22.3.0", listed));
+        assertEquals(Optional.empty(), NodeRuntimes.pickHostNvmNode("16", listed));
+        assertEquals(Optional.empty(), NodeRuntimes.pickHostNvmNode("lts/*", listed));
+        assertEquals(Optional.empty(), NodeRuntimes.pickHostNvmNode("2", listed), "20 is not 2");
+    }
+
+    /** The listing script itself, run by this machine's /bin/sh against a scratch home. */
+    @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(org.junit.jupiter.api.condition.OS.WINDOWS)
+    void theHostListingScriptFindsNvmNodes() throws Exception {
+        Path home = Files.createDirectories(tmp.resolve("home"));
+        Path other = Files.createDirectories(tmp.resolve("other-nvm"));
+        Path inHome = fakeNode(home.resolve(".nvm"), "v20.11.1");
+        Path inOther = fakeNode(other, "v22.3.0");
+        Files.createDirectories(home.resolve(".nvm/versions/node/v19.0.0/bin")); // no node in it
+
+        assertEquals(List.of(inHome.toString()), listing(home, null));
+        assertEquals(List.of(inOther.toString(), inHome.toString()), listing(home, other), "$NVM_DIR first");
+        assertEquals(Optional.of(inOther.toString()), NodeRuntimes.pickHostNvmNode("22", listing(home, other)));
+    }
+
+    private static Path fakeNode(Path nvm, String version) throws Exception {
+        Path node = nvm.resolve("versions/node").resolve(version).resolve("bin/node");
+        Files.createDirectories(node.getParent());
+        Files.writeString(node, "#!/bin/sh\n");
+        node.toFile().setExecutable(true);
+        return node;
+    }
+
+    private static List<String> listing(Path home, Path nvmDir) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder("/bin/sh", "-c", NodeRuntimes.HOST_NVM_NODES_SCRIPT);
+        pb.environment().clear();
+        pb.environment().put("HOME", home.toString());
+        pb.environment().put("PATH", "/usr/bin:/bin");
+        if (nvmDir != null) {
+            pb.environment().put("NVM_DIR", nvmDir.toString());
+        }
+        Process p = pb.redirectErrorStream(true).start();
+        String out = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(0, p.waitFor(), out);
+        return out.lines().toList();
+    }
 }

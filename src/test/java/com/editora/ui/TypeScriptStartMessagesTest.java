@@ -32,12 +32,15 @@ class TypeScriptStartMessagesTest {
         String m = LspStartMessages.refused(
                 "typescript-language-server", new StartRefusal(StartRefusal.Kind.NO_TYPESCRIPT, "7.0.2"), true);
         assertTrue(m.contains("7.0.2"), m);
-        assertTrue(m.contains("Install…"), m);
         assertFalse(m.contains("npm install -g"), m);
-        assertTrue(m.startsWith("JavaScript and TypeScript features are off"), m);
+        // the action first, short enough for the status line at 1300 px (JS review B113)
+        assertTrue(m.startsWith("Install TypeScript 5.9 (Settings → LSP)"), m);
+        assertTrue(m.length() <= 90, m.length() + ": " + m);
         String none = LspStartMessages.refused(
                 "typescript-language-server", new StartRefusal(StartRefusal.Kind.NO_TYPESCRIPT, ""), true);
         assertFalse(none.contains("npm install -g"), none);
+        assertTrue(none.startsWith("Install TypeScript 5.9"), none);
+        assertTrue(none.length() <= 90, none.length() + ": " + none);
         String untrusted = LspStartMessages.refused(
                 "typescript-language-server", new StartRefusal(StartRefusal.Kind.UNTRUSTED_TYPESCRIPT, "/w"), true);
         assertFalse(untrusted.contains("{0}"), untrusted);

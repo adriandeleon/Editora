@@ -138,6 +138,12 @@ information_for_contributors header or Git history has the detail):
     markdown: the {,3} quantifier written {0,3}; front matter as one begin/end
         rule with a begin/while body; fences for Kotlin, TOML, Mermaid and
         console/shell-session, and VS Code's `shellscript` fence id
+    typescript, typescriptreact: a word-start guard, (?<![_$[:alnum:]]),
+        before the identifier that starts about thirty regexes, so a long
+        run of letters colours in linear time instead of quadratic; it never
+        changes a token. Re-apply after vendoring a new copy with
+        `java scripts/GuardTsGrammars.java` (BundledGrammarsLongWordTest
+        fails without it)
     python: extended for newer Python (PEP 695 type parameters on def/class
         and the `type` alias statement, PEP 750 t-string prefixes, an
         strftime-style f-string format spec, match/case as keywords only on a

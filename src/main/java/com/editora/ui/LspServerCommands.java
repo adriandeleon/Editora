@@ -1,6 +1,9 @@
 package com.editora.ui;
 
+import java.nio.file.Path;
 import java.util.Map;
+
+import org.jspecify.annotations.Nullable;
 
 /** The language server ids Editora knows and each one's configured command from {@link com.editora.config.Settings}. Pure. */
 final class LspServerCommands {
@@ -134,5 +137,30 @@ final class LspServerCommands {
     /** Known server ids in Settings-page order (read by the Doctor screen's check catalog). */
     static java.util.List<String> serverIds() {
         return java.util.List.of(SERVER_IDS);
+    }
+
+    /** {@code command} for {@code serverId}: Editora's own copy, kept outside PATH, for a blank XML, pom, HTML, CSS or
+     *  JSON command (review A9, review 2 A3, HTML A2), on the Maven JDK ({@code jdkHome}). Pure but for file lookups. */
+    static String withOwnCopy(
+            String serverId, @Nullable String command, @Nullable Path configDir, @Nullable String jdkHome) {
+        String raw = command == null ? "" : command;
+        String jdk = jdkHome == null ? "" : jdkHome;
+        if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId) && raw.isBlank()) {
+            String own = com.editora.install.MavenServerInstall.effectiveCommand(raw, configDir);
+            return own.isBlank() ? raw : com.editora.lsp.JvmServerCommand.withJdk(own, jdk);
+        }
+        if (com.editora.install.TypeScriptServerInstall.SERVER_ID.equals(serverId)) {
+            return com.editora.install.TypeScriptServerInstall.effectiveCommand(raw, configDir); // JS review B104
+        }
+        return "xml".equals(serverId)
+                ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir, jdk)
+                : com.editora.install.WebServerInstall.effectiveCommand(serverId, raw, configDir); // HTML A2
+    }
+
+    /** {@link #commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
+    static Map<String, String> launchCommandsForAllServers(com.editora.config.Settings s, @Nullable Path configDir) {
+        Map<String, String> commands = commandsForAllServers(s);
+        commands.replaceAll((id, command) -> withOwnCopy(id, command, configDir, s.getMavenJdkHome()));
+        return commands;
     }
 }

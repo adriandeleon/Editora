@@ -24,7 +24,7 @@ class LspCoordinatorPomOwnCopyTest {
 
     @Test
     void aBlankPomCommandLaunchesTheOwnBundleOnTheMavenJdk() throws IOException {
-        assertEquals("", LspCoordinator.withOwnCopy("maven-pom", "", config, "/jdk"), "nothing installed");
+        assertEquals("", LspServerCommands.withOwnCopy("maven-pom", "", config, "/jdk"), "nothing installed");
         Path dir = Files.createDirectories(MavenServerInstall.folder(config));
         for (String jar : List.of(
                 "org.eclipse.lemminx-1.jar",
@@ -35,18 +35,19 @@ class LspCoordinatorPomOwnCopyTest {
             Files.createFile(dir.resolve(jar));
         }
         String own = InstallCatalog.jvmClasspathCommand(dir, InstallCatalog.LEMMINX_MAIN_CLASS);
-        assertEquals(own, LspCoordinator.withOwnCopy("maven-pom", "", config, ""), "no Maven JDK: java on PATH");
-        String onJdk = LspCoordinator.withOwnCopy("maven-pom", " ", config, "/jdk");
+        assertEquals(own, LspServerCommands.withOwnCopy("maven-pom", "", config, ""), "no Maven JDK: java on PATH");
+        String onJdk = LspServerCommands.withOwnCopy("maven-pom", " ", config, "/jdk");
         assertEquals(
                 com.editora.lsp.JvmServerCommand.withJdk(own, "/jdk"),
                 onJdk,
                 "the Maven JDK, as a stored command gets");
         assertEquals(
-                "my-server", LspCoordinator.withOwnCopy("maven-pom", "my-server", config, "/jdk"), "the user's own");
+                "my-server", LspServerCommands.withOwnCopy("maven-pom", "my-server", config, "/jdk"), "the user's own");
 
         Settings s = new Settings();
         s.setMavenPomLspCommand("");
         s.setMavenJdkHome("");
-        assertEquals(own, LspCoordinator.launchCommandsForAllServers(s, config).get("maven-pom"));
+        assertEquals(
+                own, LspServerCommands.launchCommandsForAllServers(s, config).get("maven-pom"));
     }
 }

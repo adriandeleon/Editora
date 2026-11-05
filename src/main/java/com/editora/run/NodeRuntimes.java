@@ -32,6 +32,9 @@ import org.jspecify.annotations.Nullable;
  * <p>A version file that names a version nvm does not have (or an alias such as {@code lts/*}) is skipped, and
  * the result says so ({@link NodeRuntime#unmetVersion}) so the caller can tell the user.
  *
+ * <p>On a remote host, in WSL or in a container, {@link #resolveOnHost} keeps the same order with the host's
+ * answers: its file system for the version file, its nvm for the version, its Node.js setting and PATH after.
+ *
  * <p>Pure apart from the {@link Inputs#isFile}, {@link Inputs#readFile}, {@link Inputs#listDir} and
  * {@link Inputs#onPath} lookups the caller supplies, so a test (or a remote host) decides what exists. A command
  * may carry arguments ({@code node --no-warnings}); {@link NodeRuntime#command()} keeps them as separate tokens.
@@ -226,7 +229,7 @@ public final class NodeRuntimes {
         String unmet = null;
         String unmetFile = null;
         if (file != null && home != null) {
-            Optional<Path> versionFile = versionFile(in, file, home);
+            Optional<Path> versionFile = versionFile(in.isFile(), in.projectRoot(), file, home);
             if (versionFile.isPresent()) {
                 String wanted = firstLine(in.readFile().apply(versionFile.get()).orElse(""));
                 Optional<Path> node = nvmNode(in, wanted);
@@ -248,6 +251,124 @@ public final class NodeRuntimes {
         }
         String node = in.onPath().apply("node").orElse("node");
         return new NodeRuntime(List.of(node), Source.PATH, unmetFile, unmet);
+    }
+
+    /**
+     * A shell script (no input of the user's in it) that prints, one per line, every nvm-installed {@code node} on
+     * a host: under nvm's folder there ({@code $NVM_DIR}, else {@code $XDG_CONFIG_HOME/nvm} when that exists),
+     * then under {@code $HOME/.nvm} — the order {@link Inputs#nvmRoots} keeps here. Run in the host's login
+     * environment, which carries the {@code NVM_DIR} its profile exports.
+     */
+    public static final String HOST_NVM_NODES_SCRIPT = "r=\"${NVM_DIR:-}\"; "
+            + "if [ -z \"$r\" ] && [ -n \"${XDG_CONFIG_HOME:-}\" ] && [ -d \"$XDG_CONFIG_HOME/nvm\" ]; then"
+            + " r=\"$XDG_CONFIG_HOME/nvm\"; fi; "
+            + "for d in \"$r\" \"${HOME:-}/.nvm\"; do [ -n \"$d\" ] || continue; "
+            + "for n in \"$d\"/versions/node/v*/bin/node; do [ -x \"$n\" ] && printf '%s\\n' \"$n\"; done; done; "
+            + "exit 0";
+
+    /** An nvm-installed {@code node} as a host names it: {@code <nvm>/versions/node/v<x.y.z>/bin/node}. */
+    private static final Pattern HOST_NVM_NODE =
+            Pattern.compile("(/.*)/versions/node/(v\\d{1,9}\\.\\d{1,9}\\.\\d{1,9})/bin/node");
+
+    /**
+     * Which Node.js runs {@code file} on a remote host, in WSL or in a container — the local order (class
+     * comment), each step asked of the host: a run configuration's Interpreter; then the version a {@code .nvmrc}
+     * or {@code .node-version} names, read through {@code file}'s own file system up to {@code projectRoot} (with
+     * none, the package root), when the host's nvm has it ({@code nvmNodes}, the lines {@link
+     * #HOST_NVM_NODES_SCRIPT} printed there, asked only when a version file names a version); then the host's own
+     * Node.js setting ({@code hostTool}); then {@code node} on the host's PATH. A version that is not a number
+     * ({@code lts/*}) or that the host's nvm lacks is skipped and reported ({@link NodeRuntime#unmetVersion}), as
+     * here. The version file's text never reaches a shell: it is matched against what the host listed.
+     */
+    public static NodeRuntime resolveOnHost(
+            Path file,
+            @Nullable Path projectRoot,
+            String configured,
+            @Nullable String hostTool,
+            java.util.function.Supplier<List<String>> nvmNodes) {
+        if (configured != null && !configured.isBlank()) {
+            List<String> cmd = ProgramArgs.tokenize(configured.strip());
+            if (!cmd.isEmpty()) {
+                return new NodeRuntime(cmd, Source.CONFIGURATION, null);
+            }
+        }
+        String unmet = null;
+        String unmetFile = null;
+        Optional<Path> versionFile = versionFile(NodeRuntimes::isHostFile, projectRoot, file, null);
+        if (versionFile.isPresent()) {
+            String wanted = firstLine(readSmall(versionFile.get()).orElse(""));
+            String name = String.valueOf(versionFile.get().getFileName());
+            Optional<String> node = validVersion(wanted) ? pickHostNvmNode(wanted, nvmNodes.get()) : Optional.empty();
+            if (node.isPresent()) {
+                return new NodeRuntime(List.of(node.get()), Source.VERSION_FILE, name);
+            }
+            if (!wanted.isEmpty()) {
+                unmet = wanted;
+                unmetFile = name;
+            }
+        }
+        List<String> tool = hostTool == null || hostTool.isBlank() ? List.of() : ProgramArgs.tokenize(hostTool.strip());
+        if (!tool.isEmpty()) {
+            return new NodeRuntime(tool, Source.SETTING, unmetFile, unmet);
+        }
+        return new NodeRuntime(List.of("node"), Source.PATH, unmetFile, unmet);
+    }
+
+    /**
+     * The {@code node} among a host's nvm-installed ones ({@code nodePaths}, as {@link #HOST_NVM_NODES_SCRIPT}
+     * lists them) that {@code wanted} picks: the newest whose version starts with it ({@code 20} → the newest
+     * 20.x), from the first nvm folder that has one. Lines that are not an nvm node path are ignored. Pure.
+     */
+    public static Optional<String> pickHostNvmNode(String wanted, List<String> nodePaths) {
+        if (!validVersion(wanted)) {
+            return Optional.empty();
+        }
+        int[] want = parseVersion(wanted).orElseThrow();
+        int parts = wanted.strip().replaceFirst("^v", "").split("\\.").length;
+        java.util.Map<String, List<String>> byRoot = new java.util.LinkedHashMap<>();
+        for (String line : nodePaths) {
+            Matcher m = HOST_NVM_NODE.matcher(line.strip());
+            if (m.matches()) {
+                byRoot.computeIfAbsent(m.group(1), k -> new ArrayList<>()).add(line.strip());
+            }
+        }
+        for (List<String> nodes : byRoot.values()) {
+            Optional<String> best = nodes.stream()
+                    .filter(n -> matches(versionOf(n), want, parts))
+                    .max(Comparator.comparing(NodeRuntimes::versionOf, NodeRuntimes::compareVersions));
+            if (best.isPresent()) {
+                return best;
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Whether a version file's {@code wanted} is a plain version ({@code 20}, {@code 20.11}, {@code v20.11.1}). */
+    static boolean validVersion(String wanted) {
+        return wanted != null && wanted.strip().matches("v?\\d{1,9}(\\.\\d{1,9}){0,2}");
+    }
+
+    private static int[] versionOf(String hostNvmNode) {
+        Matcher m = HOST_NVM_NODE.matcher(hostNvmNode);
+        return m.matches() ? parseVersion(m.group(2)).orElse(new int[3]) : new int[3];
+    }
+
+    private static boolean matches(int[] have, int[] want, int parts) {
+        for (int i = 0; i < parts; i++) {
+            if (have[i] != want[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** {@link Files#isRegularFile} that a host's file system failing (a dropped connection) answers no to. */
+    private static boolean isHostFile(Path p) {
+        try {
+            return Files.isRegularFile(p);
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     /**
@@ -409,18 +530,19 @@ public final class NodeRuntimes {
 
     // ------------------------------------------------------------------------------------------------- internals
 
-    private static Optional<Path> versionFile(Inputs in, Path file, Path home) {
+    private static Optional<Path> versionFile(
+            Predicate<Path> isFile, @Nullable Path projectRoot, Path file, @Nullable Path home) {
         // Up to the project root (a monorepo keeps its .nvmrc at the top, above each member's package.json);
         // with no project, up to the package root.
-        Path stop = in.projectRoot() != null
-                ? in.projectRoot().toAbsolutePath().normalize()
-                : packageRoot(file, null, home, in.isFile()).orElse(null);
+        Path stop = projectRoot != null
+                ? projectRoot.toAbsolutePath().normalize()
+                : packageRoot(file, null, home, isFile).orElse(null);
         Path dir = file.toAbsolutePath().normalize().getParent();
         int levels = 0;
         while (dir != null && levels++ < 32) {
             for (String name : VERSION_FILES) {
                 Path candidate = dir.resolve(name);
-                if (in.isFile().test(candidate)) {
+                if (isFile.test(candidate)) {
                     return Optional.of(candidate);
                 }
             }

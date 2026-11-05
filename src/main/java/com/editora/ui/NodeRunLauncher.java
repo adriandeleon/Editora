@@ -13,7 +13,6 @@ import com.editora.process.ExecTargets;
 import com.editora.process.ProcessRunner;
 import com.editora.run.NodeRunPlan;
 import com.editora.run.NodeRuntimes;
-import com.editora.run.ProgramArgs;
 import com.editora.run.TsRunRoute;
 import org.jspecify.annotations.Nullable;
 
@@ -62,7 +61,7 @@ final class NodeRunLauncher {
      *     {@code .ts}): where the program starts in {@code plan.argv()}
      * @param notice a line for the console before the program's output (which file runs, a stale build), or null
      * @param route how a TypeScript file runs ({@link TsRunRoute.Kind#PLAIN} for everything else)
-     * @param source why this Node.js was chosen ({@code .nvmrc, via nvm}), for the runtime chip; null on a host
+     * @param source why this Node.js was chosen ({@code .nvmrc, via nvm}), for the runtime chip
      */
     record Ready(
             NodeRunPlan plan,
@@ -116,14 +115,19 @@ final class NodeRunLauncher {
     static Ready planNow(Spec spec) {
         Path file = spec.file();
         boolean here = ExecTargets.runsHere(file);
-        NodeRuntimes.NodeRuntime runtime = here
-                ? NodeRuntimes.resolveLocal(file, spec.projectRoot(), spec.configured(), spec.setting())
-                : remoteRuntime(file, spec.configured());
         Path dir = spec.workingDir() != null
                 ? spec.workingDir()
                 : here
                         ? NodeRuntimes.workingDirectory(file, spec.projectRoot())
                         : hostPackageRoot(file, spec.projectRoot());
+        NodeRuntimes.NodeRuntime runtime = here
+                ? NodeRuntimes.resolveLocal(file, spec.projectRoot(), spec.configured(), spec.setting())
+                : hostRuntime(
+                        file,
+                        spec.projectRoot(),
+                        spec.configured(),
+                        ExecTargets.remoteTool(file, "node"),
+                        () -> hostNvmNodes(dir != null ? dir : file.getParent()));
         String name = file.getFileName() == null ? "" : file.getFileName().toString();
         String firstLine = RunCoordinator.firstLine(file);
         String version = null;
@@ -171,11 +175,11 @@ final class NodeRunLauncher {
                 spec.userEnv(),
                 here ? p -> Files.isExecutable(Path.of(p)) : null,
                 loaderFlags));
-        String pin = here ? pinNotice(runtime) : null;
+        String pin = pinNotice(runtime);
         if (pin != null) {
             notice = notice == null ? pin : pin + "\n" + notice;
         }
-        return new Ready(plan, dir, target, notice, route, here ? source(runtime) : null);
+        return new Ready(plan, dir, target, notice, route, source(runtime));
     }
 
     /**
@@ -219,17 +223,50 @@ final class NodeRunLauncher {
         }
     }
 
-    /** A host's Node: the configuration's Interpreter, else the host's {@code node} tool, else its own node. */
-    private static NodeRuntimes.NodeRuntime remoteRuntime(@Nullable Path file, String configured) {
-        String command =
-                configured != null && !configured.isBlank() ? configured : ExecTargets.remoteTool(file, "node");
-        List<String> tokens = command == null || command.isBlank() ? List.of() : ProgramArgs.tokenize(command.strip());
-        return new NodeRuntimes.NodeRuntime(
-                tokens.isEmpty() ? List.of("node") : tokens,
-                configured != null && !configured.isBlank()
-                        ? NodeRuntimes.Source.CONFIGURATION
-                        : NodeRuntimes.Source.SETTING,
-                null);
+    private static final Duration NVM_LIST_TIMEOUT = Duration.ofSeconds(10);
+
+    /**
+     * A host's Node, chosen as here ({@link NodeRuntimes#resolveOnHost}): the configuration's Interpreter, else
+     * the version a {@code .nvmrc}/{@code .node-version} on the host names when the host's nvm has it (review
+     * C109), else the host's {@code node} tool ({@code hostTool}), else {@code node} on its PATH. A host that
+     * cannot be asked counts as having no nvm.
+     */
+    static NodeRuntimes.NodeRuntime hostRuntime(
+            Path file,
+            @Nullable Path projectRoot,
+            String configured,
+            @Nullable String hostTool,
+            java.util.function.Supplier<List<String>> nvmNodes) {
+        Path root = projectRoot != null && projectRoot.getFileSystem() == file.getFileSystem() ? projectRoot : null;
+        try {
+            return NodeRuntimes.resolveOnHost(file, root, configured, hostTool, nvmNodes);
+        } catch (RuntimeException e) {
+            // The host's file system failed mid-walk: its own Node, as before version files counted there.
+            String command = configured != null && !configured.isBlank() ? configured : hostTool;
+            List<String> argv = command == null || command.isBlank()
+                    ? List.of()
+                    : com.editora.run.ProgramArgs.tokenize(command.strip());
+            return new NodeRuntimes.NodeRuntime(
+                    argv.isEmpty() ? List.of("node") : argv,
+                    configured != null && !configured.isBlank()
+                            ? NodeRuntimes.Source.CONFIGURATION
+                            : argv.isEmpty() ? NodeRuntimes.Source.PATH : NodeRuntimes.Source.SETTING,
+                    null);
+        }
+    }
+
+    /**
+     * The nvm-installed {@code node}s on the host that holds {@code dir} ({@link NodeRuntimes#HOST_NVM_NODES_SCRIPT}
+     * run there, one round trip); empty when the host cannot say.
+     */
+    private static List<String> hostNvmNodes(@Nullable Path dir) {
+        try {
+            ProcessRunner.Result r = ProcessRunner.run(
+                    dir, NVM_LIST_TIMEOUT, List.of("/bin/sh", "-c", NodeRuntimes.HOST_NVM_NODES_SCRIPT));
+            return r == null || !r.ok() ? List.of() : r.out().lines().toList();
+        } catch (RuntimeException e) {
+            return List.of();
+        }
     }
 
     /** What {@code runtime --version} prints, or null when it cannot say. */
