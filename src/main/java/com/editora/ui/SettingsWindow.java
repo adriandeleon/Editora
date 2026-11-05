@@ -7068,6 +7068,7 @@ public class SettingsWindow {
                 javaDebugLspNote = note("");
                 javaDebugLspNote.setWrapText(true);
                 javaDebugLspNote.setMaxWidth(440);
+                javaDebugLspNote.getStyleClass().add("settings-row"); // own row: a wrapper left a gap (C209)
                 cardRow(c, Category.DEBUG, javaDebugLspNote, "debug java lsp language server jdtls off");
                 controlRow(
                         c,
@@ -7977,10 +7978,9 @@ public class SettingsWindow {
             }
         }
         if (javaDebugLspNote != null) {
-            var st = config.getSettings();
-            String why = !st.isLspSupport()
+            String why = !config.getSettings().isLspSupport()
                     ? tr("status.debug.javaNeedsLsp")
-                    : !st.isJavaLspEnabled() ? tr("status.debug.javaServerOff") : "";
+                    : !config.getSettings().isJavaLspEnabled() ? tr("status.debug.javaServerOff") : "";
             javaDebugLspNote.setText(why);
             javaDebugLspNote.setVisible(!why.isEmpty());
             javaDebugLspNote.setManaged(!why.isEmpty());

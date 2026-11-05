@@ -4230,8 +4230,7 @@ final class DebugCoordinator {
         }
         // Bare titles, as every other row of this menu ("Debug: Edit Breakpoint…" beside "Remove Breakpoint",
         // review 2 C110).
-        javafx.scene.control.MenuItem edit = menuItem("debug.editBreakpoint", Icons.edit(), () -> {});
-        edit.setOnAction(ev -> {
+        javafx.scene.control.MenuItem edit = menuItem("debug.editBreakpoint", Icons.edit(), () -> {
             b.getFocusedArea().moveTo(line, 0);
             editBreakpointAtCaret();
         });

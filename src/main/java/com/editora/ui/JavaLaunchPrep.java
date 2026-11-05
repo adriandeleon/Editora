@@ -57,42 +57,6 @@ final class JavaLaunchPrep {
         return inside(path, scope);
     }
 
-    /**
-     * A build's compile errors in {@code project} as Debug console lines, {@code path:line: error: message} —
-     * javac's form, which the console turns into links — sorted by file, at most {@code limit} of them
-     * ({@link #errorCount} says how many there are). Errors outside the project are not this launch's.
-     */
-    static List<String> errorLines(Map<Path, List<LspDiagnostic>> errors, @Nullable Path project, int limit) {
-        List<String> out = new ArrayList<>();
-        for (Map.Entry<Path, List<LspDiagnostic>> e : new java.util.TreeMap<>(errors).entrySet()) {
-            if (project != null && !inside(e.getKey(), project)) {
-                continue;
-            }
-            for (LspDiagnostic d : e.getValue()) {
-                if (d.severity() != LspDiagnostic.Severity.ERROR) {
-                    continue;
-                }
-                if (out.size() < limit) {
-                    out.add(e.getKey() + ":" + (d.startLine() + 1) + ": error: " + d.message());
-                }
-            }
-        }
-        return out;
-    }
-
-    /** How many error diagnostics of {@code errors} are in {@code project}. */
-    static int errorCount(Map<Path, List<LspDiagnostic>> errors, @Nullable Path project) {
-        int n = 0;
-        for (Map.Entry<Path, List<LspDiagnostic>> e : errors.entrySet()) {
-            if (project == null || inside(e.getKey(), project)) {
-                n += (int) e.getValue().stream()
-                        .filter(d -> d.severity() == LspDiagnostic.Severity.ERROR)
-                        .count();
-            }
-        }
-        return n;
-    }
-
     // --- review 2, A103/A104: the build errors a launch shows -------------------------------------------------
 
     /** Whether {@code file} is a Java source file: what a compile error of a Java build is reported against. */

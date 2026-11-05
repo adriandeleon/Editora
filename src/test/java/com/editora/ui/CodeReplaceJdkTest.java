@@ -38,6 +38,8 @@ class CodeReplaceJdkTest {
     void theProgramsJavaIsReadFromTheRuntimeChip() {
         assertEquals(25, CodeReplaceJdk.programMajor("Java 25.0.1 (Corretto)"));
         assertEquals(27, CodeReplaceJdk.programMajor("Java 27 (Corretto)"));
+        assertEquals(8, CodeReplaceJdk.programMajor("Java 1.8.0_402 (Temurin)"), "Java 8's 1.x form (review 3, C209)");
+        assertEquals(11, CodeReplaceJdk.programMajor("Java 11.0.2"));
         assertNull(CodeReplaceJdk.programMajor("Python 3.13.1"));
         assertNull(CodeReplaceJdk.programMajor(""));
     }

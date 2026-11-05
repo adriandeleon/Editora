@@ -32,14 +32,18 @@ final class CodeReplaceJdk {
         return tr("debug.hcr.jdkMismatch", programMajor, builtMajor);
     }
 
-    /** The major version of a runtime chip's label ({@code Java 25.0.1 (Corretto)} → 25), or null. */
+    /**
+     * The major version of a runtime chip's label ({@code Java 25.0.1 (Corretto)} → 25), or null. A Java 8 chip reads
+     * {@code Java 1.8.0_402}: its major is the 8, not the 1 (review 3, C209).
+     */
     static @Nullable Integer programMajor(@Nullable String chip) {
         if (chip == null) {
             return null;
         }
         java.util.regex.Matcher m = CHIP.matcher(chip);
-        return m.find() ? Integer.valueOf(m.group(1)) : null;
+        return m.find() ? Integer.valueOf(m.group(1) != null ? m.group(1) : m.group(2)) : null;
     }
 
-    private static final java.util.regex.Pattern CHIP = java.util.regex.Pattern.compile("^Java (\\d{1,3})(?![\\d])");
+    private static final java.util.regex.Pattern CHIP =
+            java.util.regex.Pattern.compile("^Java (?:1\\.(\\d{1,2})(?![\\d])|(\\d{1,3})(?![\\d]))");
 }

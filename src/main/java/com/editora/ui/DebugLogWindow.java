@@ -25,7 +25,7 @@ import static com.editora.i18n.Messages.tr;
 /**
  * A simple modeless window that displays {@link DebugLog}'s captured log (java.util.logging output +
  * uncaught exceptions) in a read-only monospace area, with Refresh / Copy / Clear / Export / Report a
- * Problem. Opened by the {@code view.debugLog} command and the Settings → Advanced "Show Debug Log" button — the
+ * Problem. Opened by View: Application Log ({@code view.debugLog}) and Settings → Advanced "Show Application Log" — the
  * way to see logs in a packaged build where stderr isn't visible.
  */
 public final class DebugLogWindow {
