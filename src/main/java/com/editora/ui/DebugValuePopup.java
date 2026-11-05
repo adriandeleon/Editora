@@ -230,7 +230,8 @@ final class DebugValuePopup implements DebugValuePresenter {
         expression = expr;
         if (isText(r)) {
             String value = DebugPanelText.copyValue(r.result());
-            textHeader.setText(tr("debugpanel.stringChars", expr, value.length()));
+            // Characters as the user counts them: an emoji is one, not two UTF-16 units (review 3, B note).
+            textHeader.setText(tr("debugpanel.stringChars", expr, value.codePointCount(0, value.length())));
             text.setText(value);
             text.setPrefHeight(textHeight(value));
             text.setPrefWidth(MAX_WIDTH - 16);

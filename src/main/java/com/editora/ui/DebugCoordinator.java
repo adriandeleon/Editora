@@ -1312,6 +1312,7 @@ final class DebugCoordinator {
             @Override
             public void onStopped(int threadId, String reason, List<DapModels.StackFrameInfo> stopFrames) {
                 List<DapModels.StackFrameInfo> frames = currentLines(stopFrames);
+                oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
                 panel().setStopReason(reason);
                 // The frame that threw: its line is drawn red while it is the one shown (review C13).
                 exceptionFrameId = "exception".equals(reason) && !frames.isEmpty()
@@ -3689,7 +3690,11 @@ final class DebugCoordinator {
                     .findFirst()
                     .orElse(f));
         }
-        return tr("status.debug.exceptionFilters", debugAdapterLabel(language), String.join(", ", labels));
+        // While muted, the choice is kept but stops nothing: it must not read as active (review 3, note on Mute).
+        return tr(
+                breakpointsMuted ? "status.debug.exceptionFiltersMuted" : "status.debug.exceptionFilters",
+                debugAdapterLabel(language),
+                String.join(", ", labels));
     }
 
     // --- adapter pickers ---------------------------------------------------------------------------
@@ -3896,7 +3901,7 @@ final class DebugCoordinator {
                 } else {
                     // Methods that were running keep their old code (java-debug's "obsolete methods"): say how to
                     // run one again with the new code (review 2, B103).
-                    panel().appendNotice(tr("debug.hcr.restartFrameHint"));
+                    explainOldCode();
                     host.setStatus(tr("debug.hcr.appliedOldStatus", names));
                 }
                 savedSinceReplace.removeAll(covered);
@@ -3927,6 +3932,48 @@ final class DebugCoordinator {
                 host.setStatus(tr("debug.hcr.buildFailed"));
             }
             case NO_SESSION -> host.setStatus(tr("debug.hcr.noSession"));
+        }
+    }
+
+    /**
+     * Says how to run a method left on its old code again — Restart Frame, or, when the only such method is the
+     * thread's first one ({@code main}), restarting the program (review 3, B209). java-debug names an old-code frame
+     * {@code Obsolete method()} only in the stack it stops on after the replace, so the hint waits for that stack (a
+     * second at most; then it reads the stack shown).
+     */
+    private void explainOldCode() {
+        // While java-debug replaces, the program reads as running: the stack it stops on again names the frames.
+        List<String> shown =
+                panel().callStack().stream().map(DapModels.StackFrameInfo::name).toList();
+        if (shown.stream().anyMatch(DebugPanelText::isObsoleteFrame)) {
+            panel().appendNotice(CodeReplaceText.oldCodeHint(shown)); // that stack came before the answer
+            return;
+        }
+        long asked = ++oldCodeHintAsked;
+        oldCodeHintPending = asked;
+        javafx.animation.PauseTransition wait = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(1));
+        wait.setOnFinished(e -> {
+            if (oldCodeHintPending == asked) {
+                oldCodeHintPending = 0;
+                panel().appendNotice(CodeReplaceText.oldCodeHint(panel().callStack().stream()
+                        .map(DapModels.StackFrameInfo::name)
+                        .toList()));
+            }
+        });
+        wait.play();
+    }
+
+    /** The replace whose old-code hint waits for the next stack ({@link #explainOldCode}); 0 when none. */
+    private long oldCodeHintPending;
+
+    private long oldCodeHintAsked;
+
+    /** A stack arrived: say the waiting old-code hint from it (B209). */
+    private void oldCodeHintFrom(List<DapModels.StackFrameInfo> frames) {
+        if (oldCodeHintPending != 0) {
+            oldCodeHintPending = 0;
+            panel().appendNotice(CodeReplaceText.oldCodeHint(
+                    frames.stream().map(DapModels.StackFrameInfo::name).toList()));
         }
     }
 
@@ -3969,6 +4016,12 @@ final class DebugCoordinator {
         }
         if (!dapManager.supportsRestartFrame()) {
             host.setStatus(tr("debug.restartFrame.unsupported"));
+            return;
+        }
+        List<DapModels.StackFrameInfo> frames = panel().callStack();
+        if (frames.contains(frame) && !canRestartFrame(true, true, frame, frames)) {
+            // The thread's first method: nothing called it, so nothing can call it again (review 3, B209).
+            host.setStatus(tr("debug.restartFrame.bottom"));
             return;
         }
         dapManager.restartFrame(frame.id());

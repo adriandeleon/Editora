@@ -1204,6 +1204,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Every frame of the stack shown, folded rows included in {@link StackFolding} form or not. */
     private List<DapModels.StackFrameInfo> allFrames = List.of();
 
+    /** The call stack shown, top first (every frame, folded or not). */
+    List<DapModels.StackFrameInfo> callStack() {
+        return allFrames;
+    }
+
     /** Whether the user unfolded this stack's runtime frames (until the next stop). */
     private boolean framesExpanded;
 

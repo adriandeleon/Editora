@@ -132,6 +132,11 @@ final class DebugPanelText {
      * a method hot code replace left on its old code as {@code Main — old code (Restart Frame runs it again)}
      * (review 2, B103) rather than java-debug's {@code Main.Obsolete method()[native method]}.
      */
+    /** Whether java-debug names this frame as running a method hot code replace has since replaced. */
+    static boolean isObsoleteFrame(String name) {
+        return name != null && OBSOLETE_FRAME.matcher(name).matches();
+    }
+
     static String frameName(String name) {
         if (name == null) {
             return "";
