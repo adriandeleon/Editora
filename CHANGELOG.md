@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Java debugging: Show toString() values.** Settings → Debugging → Java has a switch (on by default) for the
+  `toString()` text after each object in Variables, watches, inline values and hover. Values load within a 1.5 s
+  budget per stop; past it a row reads "(toString() not loaded yet: click to load)" and loads on a click, Enter or
+  expanding it.
+
 - **Python: quick fixes and format on save.** Code Actions and the lightbulb on a Python error offer Import X
   (from Pyright, else the standard-library module a common name comes from), Remove unused import and Ignore on this
   line (`# pyright: ignore[rule]`); Pyright itself gives none. Ruff or Black can format a Python file after an
@@ -208,6 +213,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
 
 ### Fixed
+
+- **Java debugging (third debugging review, 25 findings).** A plain-folder project with more than one package can
+  be debugged again: when the Java language server cannot build a file without Maven or Gradle, Editora compiles it
+  with javac from its source root, and only errors in code the program uses stop the launch (a broken unrelated file
+  or a JUnit test without JUnit no longer does); "Unresolved compilation problem" code never runs. Gradle Debug Main
+  Class and Debug of a run configuration run the edited code, and Editora's own Gradle daemons stop after 10 idle
+  minutes. The language server builds for the JDK the program runs on even when that JDK is outside the usual
+  folders; on macOS the `/usr/bin/java` stub no longer hides `JAVA_HOME`; a removed Default JDK is reported and the
+  `java` on PATH is used. A slow or stuck `toString()` no longer holds up a stop or wedges the session; after Pause,
+  objects read `Type@id` with a note instead of "null"; each `toString()` runs once per stop. Set Value works on
+  Integer, record and enum variables; values refresh after a console evaluation; boxed numbers read `42`
+  everywhere; a 1 MB String no longer hides the rows below it; wrapping or re-indenting a line keeps its breakpoint.
+  F5, Debug ▶, Debug File in the editor menu and Debug Test share one check: a session that is paused, running or
+  still being built is replaced only after asking. A loose launch shows "Building…" with Stop from the moment you
+  press F5, F5 on a test's annotations debugs that test, and files changed outside Editora just before F5 are built.
+  The Debug console wraps, and the Debug and Run consoles stay readable with mixed light and dark themes. Pause is
+  greyed while paused, Run ▸ Debugger no longer lists "Debug: Continue", and with the program console off the state
+  reads "Program ended, output still arriving" while the last output comes in.
 
 - **Go: Beginning/End of Defun describe what they do in Python.** The palette description said "top-level
   definition" in every language; in Python the commands take the innermost def or class, decorators included.
