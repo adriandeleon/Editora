@@ -21,6 +21,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.lsp.FakeLanguageServer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
+import com.editora.run.BuildBeforeLaunch;
 import com.editora.run.StackTraceLinks;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterEach;
@@ -132,7 +133,16 @@ class DebugCoordinatorCommandsFxTest {
         }
     }
 
+    /** The build tool command the Ops hands out (null: the tool's own name). */
+    private volatile List<String> buildCommand;
+
     private final class Ops implements DebugCoordinator.Ops {
+        @Override
+        public List<String> buildExecutable(com.editora.build.BuildTool tool, Path root) {
+            List<String> given = buildCommand;
+            return given != null ? given : List.of(tool.commandExample());
+        }
+
         @Override
         public void openToolWindow() {}
 
@@ -716,6 +726,53 @@ class DebugCoordinatorCommandsFxTest {
         javafx.scene.control.Label header = FxTestSupport.field(debug.panel(), "status");
         assertEquals(tr("debugpanel.state.buildFailed"), FxTestSupport.callOnFx(header::getText));
         assertEquals(1, adapter.sessionCount(), "nothing was launched the second time");
+    }
+
+    /**
+     * Review 3, A202: a Gradle launch runs on jdtls's class path (Buildship's bin/main), which only jdtls writes, while
+     * {@code gradle compileJava} writes build/classes. Debug Main Class now runs jdtls's build after Gradle's compile.
+     */
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // the stand-in Gradle is a /bin/sh command
+    void aGradleMainClassIsBuiltByJdtlsAfterGradlesCompile() throws Exception {
+        Path gp = Files.createDirectories(loose.resolve("gp"));
+        Files.writeString(gp.resolve("build.gradle"), "plugins { id 'application' }\n");
+        Path app = gp.resolve("src/main/java/demo/App.java");
+        String source = "package demo;\npublic class App {\n    public static void main(String[] a) {}\n}\n";
+        buffer(app, source);
+        lspManager.openDocument(app, gp, "java", source);
+        Path ran = loose.resolve("gradle-ran.txt");
+        buildCommand = List.of("/bin/sh", "-c", "printf '%s' \"$*\" > '" + ran + "'", "gradle");
+        FxTestSupport.runOnFx(() -> host.settings.setBuildBeforeRun(true));
+        List<Boolean> gradleFirst = new java.util.concurrent.CopyOnWriteArrayList<>();
+        for (FakeLanguageServer fake : fakes) {
+            fake.executeCommandHandler = params -> {
+                commands.add(params.getCommand());
+                return replies.get(params.getCommand());
+            };
+            fake.rawHandler = raw -> {
+                if ("java/buildWorkspace".equals(raw.method())) {
+                    gradleFirst.add(Files.exists(ran));
+                    return 1;
+                }
+                return null;
+            };
+        }
+        Path bin = Files.createDirectories(gp.resolve("bin/main"));
+        replies.put(
+                "vscode.java.resolveMainClass",
+                List.of(Map.of("mainClass", "demo.App", "projectName", "gp", "filePath", app.toString())));
+        replies.put("vscode.java.resolveClasspath", List.of(List.of(), List.of(bin.toString())));
+        replies.put("vscode.java.resolveJavaExecutable", javaExecutable());
+
+        FxTestSupport.runOnFx(() -> debug.debugMainClass());
+
+        FakeDebugAdapter.Session session = session("launch");
+        assertEquals("demo.App", session.launchArgs.get("mainClass"));
+        assertEquals(List.of(true), gradleFirst, "jdtls built once, after Gradle's compile");
+        assertTrue(
+                Files.readString(ran).contains("compileJava " + BuildBeforeLaunch.GRADLE_DAEMON_IDLE),
+                "the 10-minute daemon");
     }
 
     /**
