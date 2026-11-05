@@ -1284,6 +1284,18 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
+    /** Whether this Python session checks its whole project, not only the open files (review 2, B105). */
+    private volatile boolean pythonWorkspaceDiagnostics;
+
+    /** Sets {@link #pythonWorkspaceDiagnostics}; a running Python server is pushed the change. */
+    void setPythonWorkspaceDiagnostics(boolean workspace) {
+        boolean changed = pythonWorkspaceDiagnostics != workspace;
+        pythonWorkspaceDiagnostics = workspace;
+        if (changed && "python".equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
     /** The interpreter last given to this session (null = none). */
     @Nullable
     String pythonPath() {
@@ -1376,7 +1388,8 @@ final class LanguageServerSession implements LanguageClient {
     private void pushConfiguration() {
         java.util.Map<String, Object> settings = TypeScriptServer.SERVER_ID.equals(serverId)
                 ? typeScriptSettings
-                : LspServerSettings.push(serverId, javaOnTypeFormatting, effectiveBashIde(), pythonPath);
+                : LspServerSettings.push(
+                        serverId, javaOnTypeFormatting, effectiveBashIde(), pythonPath, pythonWorkspaceDiagnostics);
         java.util.Map<String, Object> xml = xmlSettings;
         if (xml != null && XmlServerSettings.isLemminx(serverId)) {
             settings = Map.of(XmlServerSettings.SECTION, xml); // lemminx's own; for a pom, with lemminx-maven's
@@ -3348,7 +3361,8 @@ final class LanguageServerSession implements LanguageClient {
         if (HtmlServerSettings.SERVER_ID.equals(serverId)) { // per document: its wrap column and final newline
             return htmlSettings.answer(item.getSection(), indentForUri(item.getScopeUri()));
         }
-        Object answer = LspServerSettings.answer(serverId, item.getSection(), effectiveBashIde(), pythonPath);
+        Object answer = LspServerSettings.answer(
+                serverId, item.getSection(), effectiveBashIde(), pythonPath, pythonWorkspaceDiagnostics);
         if (answer == null && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && item.getScopeUri() != null) {
             answer = LspServerSettings.javaFormatAnswer(item.getSection(), indentForUri(item.getScopeUri()));
         }

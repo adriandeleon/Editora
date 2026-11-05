@@ -386,6 +386,7 @@ public final class LspManager {
             ProcessRunner.warmAugmentedPathAsync(); // before the first session start reads it on FX
         } else {
             closeRootWatchers(); // no server to tell: a folder watcher left running held an inotify instance
+            pythonLibraries.closeAll();
             shutdownAll();
             com.editora.perf.AfterFirstPaint.run(ProcessRunner::warmAugmentedPathAsync);
         }
@@ -823,9 +824,54 @@ public final class LspManager {
         }
     }
 
+    /** The library folders of each local Python session's environment, watched for installs (review 2, B102). */
+    private final PythonLibraryWatchers pythonLibraries = new PythonLibraryWatchers();
+
+    /** How many library folders are watched for {@code session} (tests). */
+    int pythonLibraryWatchesForTest(LanguageServerSession session) {
+        return pythonLibraries.watchedFor(session);
+    }
+
+    /** Runs on the FX thread when an environment was created or deleted under a server's root (review 2, B103). */
+    private volatile Runnable onPythonEnvironmentChanged = () -> {};
+
     /**
-     * Re-resolves every running Python session's interpreter (the project's pick changed, a venv was
-     * created) off the FX thread; a session whose answer changed is pushed the new {@code python.pythonPath}.
+     * Installs what runs (FX thread) when a watched change creates or removes a Python environment: the window
+     * re-resolves its interpreter, re-tells its servers ({@link #refreshPythonInterpreters}) and its status item.
+     */
+    public void setOnPythonEnvironmentChanged(Runnable handler) {
+        onPythonEnvironmentChanged = handler == null ? () -> {} : handler;
+    }
+
+    /**
+     * An environment folder appeared or went: told now and twice more, since {@code python -m venv} writes the
+     * folder first and its {@code pyvenv.cfg} and interpreter a moment later, inside a folder no watcher reports.
+     */
+    private void pythonEnvironmentChanged() {
+        Platform.runLater(() -> onPythonEnvironmentChanged.run());
+        Thread.ofVirtual().name("lsp-python-environment").start(() -> {
+            for (long wait : new long[] {2_000, 4_000}) {
+                try {
+                    Thread.sleep(wait);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                if (closed) {
+                    return;
+                }
+                Platform.runLater(() -> {
+                    if (!closed) {
+                        onPythonEnvironmentChanged.run();
+                    }
+                });
+            }
+        });
+    }
+
+    /**
+     * Re-resolves every running Python session's interpreter off the FX thread — the project's pick changed, or an
+     * environment was created or deleted ({@link #setOnPythonEnvironmentChanged}); a session whose answer changed is
+     * pushed the new {@code python.pythonPath} and has its library folders watched again.
      */
     public void refreshPythonInterpreters() {
         List<LanguageServerSession> python = new ArrayList<>();
@@ -841,6 +887,7 @@ public final class LspManager {
             for (LanguageServerSession s : python) {
                 if (!s.isDisposed()) {
                     s.setPythonPath(resolvePythonPath(s.root()));
+                    pythonLibraries.update(s);
                 }
             }
         });
@@ -935,7 +982,46 @@ public final class LspManager {
         synchronized (rootWatchers) {
             rootWatchers.values().forEach(RootWatcher::close);
             rootWatchers.clear();
+            remoteScanners.values().forEach(RemoteRootScanner::close);
+            remoteScanners.clear();
         }
+    }
+
+    /** Remote root → its scanner ({@link RemoteRootScanner}); at most {@link #MAX_ROOT_WATCHERS}. */
+    private final Map<Path, RemoteRootScanner> remoteScanners = new ConcurrentHashMap<>();
+
+    /**
+     * Starts listing a server's folder on another machine — an SSH host, WSL, a container — when the window comes
+     * to the front, so a file {@code git pull} created there reaches the server (Python review 2, B108). Any thread.
+     */
+    private void ensureRemoteScanner(Path root) {
+        if (closed || root == null) {
+            return;
+        }
+        synchronized (rootWatchers) {
+            if (remoteScanners.containsKey(root)
+                    || remoteScanners.size() >= MAX_ROOT_WATCHERS
+                    || remoteScanners.keySet().stream().anyMatch(root::startsWith)) {
+                return;
+            }
+            remoteScanners.put(
+                    root,
+                    new RemoteRootScanner(
+                                    root,
+                                    batch -> Platform.runLater(() -> {
+                                        if (!closed) {
+                                            notifyWatchedFiles(batch);
+                                            onWatchedFiles.accept(batch);
+                                        }
+                                    }),
+                                    () -> windowFocused.getAsBoolean())
+                            .start());
+        }
+    }
+
+    /** The remote roots being listed (tests). */
+    java.util.Set<Path> scannedRemoteRoots() {
+        return java.util.Set.copyOf(remoteScanners.keySet());
     }
 
     /**
@@ -2367,6 +2453,8 @@ public final class LspManager {
             }
             if (PYTHON_SERVER_ID.equals(serverId)) {
                 session.setPythonPath(resolvePythonPath(root)); // as the production start does, before initialize
+                pythonLibraries.update(session);
+                session.setPythonWorkspaceDiagnostics(pythonWholeProject);
             }
             ensureRootWatcher(root, serverId);
             sessionStarterForTest.accept(session); // TEST SEAM (see the field): attach a fake, never fork
@@ -2576,9 +2664,13 @@ public final class LspManager {
             if (PYTHON_SERVER_ID.equals(serverId)) {
                 // Before initialize: the first answer counts. A remote server is told the path as its host names it.
                 session.setPythonPath(resolvePythonPath(root));
+                pythonLibraries.update(session);
+                session.setPythonWorkspaceDiagnostics(pythonWholeProject);
             }
             if (!remote) {
                 ensureRootWatcher(root, serverId); // file changes nobody else reports reach this server (B7)
+            } else {
+                ensureRemoteScanner(root); // no watcher here can follow it: listed when the window returns (2, B108)
             }
             session.configureStart(
                     startCommand,
@@ -3500,6 +3592,9 @@ public final class LspManager {
             }
         }
         changes.stream().map(WatchedFile::file).filter(f -> f != null).forEach(this::projectStyleChanged);
+        if (PythonLibraryWatchers.touchesEnvironment(changes)) {
+            pythonEnvironmentChanged(); // python -m venv .venv after the server started (review 2, B103)
+        }
     }
 
     /**
@@ -6309,6 +6404,10 @@ public final class LspManager {
             // gvy reads a flat map of its VS Code settings. CodeNarc's style rules flag nearly every line of
             // ordinary Groovy at Information level; compiler errors are what an editor needs by default.
             case "groovy" -> Map.of("groovy.codenarc.enabled", false);
+            // Pyright publishes its diagnostics: pulled ones it computes only for the open files unless the client
+            // keeps a workspace/diagnostic request waiting, so Problems → Whole project listed nothing more
+            // (Python review 2, B105). Publishing is how it reports a whole project.
+            case "python" -> Map.of("disablePullDiagnostics", true);
             case "scala" -> metalsInitOptions();
             case ASTRO_SERVER_ID ->
                 astroTsdk == null ? null : Map.of("typescript", Map.of("tsdk", astroTsdk.toString()));
@@ -6646,6 +6745,7 @@ public final class LspManager {
         closed = true;
         enabled = false;
         closeRootWatchers();
+        pythonLibraries.close();
         shutdownAll();
         pendingEvictions.values().forEach(timer -> timer.cancel(false));
         pendingEvictions.clear();
@@ -6772,12 +6872,21 @@ public final class LspManager {
     /** Whether diagnostics published for a file that is not open on the publishing server are dropped. */
     private volatile boolean openDocumentDiagnosticsOnly;
 
+    /** Whether Problems shows the whole project, which Pyright then checks file by file (review 2, B105). */
+    private volatile boolean pythonWholeProject;
+
     /**
      * Says whether the consumer only shows diagnostics for open documents (the Problems window's default
      * scope). It then never sees a publish for any other file. Off by default: everything is delivered.
      */
     public void setOpenDocumentDiagnosticsOnly(boolean openDocumentsOnly) {
         openDocumentDiagnosticsOnly = openDocumentsOnly;
+        pythonWholeProject = !openDocumentsOnly;
+        for (LanguageServerSession s : sessionsByRoot.values()) {
+            if (PYTHON_SERVER_ID.equals(s.serverId())) {
+                s.setPythonWorkspaceDiagnostics(!openDocumentsOnly); // Pyright checks the closed files too (B105)
+            }
+        }
     }
 
     /**
@@ -7928,10 +8037,15 @@ public final class LspManager {
         });
     }
 
-    /** Pyright's organize-imports command, under basedpyright's name when that is the server. Pure. */
+    /**
+     * Pyright's organize-imports command, under basedpyright's name when that is the server — whichever word of the
+     * command names it: {@code npx basedpyright-langserver --stdio} ran basedpyright under Pyright's name, which it
+     * does not answer (Python review 2, D110). Pure.
+     */
     static String pyrightOrganizeCommand(List<String> serverCommand) {
-        String exe = serverCommand == null || serverCommand.isEmpty() ? "" : serverCommand.get(0);
-        return exe.contains("basedpyright") ? "basedpyright.organizeimports" : "pyright.organizeimports";
+        boolean based = serverCommand != null
+                && serverCommand.stream().anyMatch(word -> word != null && word.contains("basedpyright"));
+        return based ? "basedpyright.organizeimports" : "pyright.organizeimports";
     }
 
     /** Whether {@code edit} carries any text change (Pyright answers an already-sorted file with none). */

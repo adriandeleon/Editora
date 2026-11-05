@@ -511,6 +511,8 @@ final class LspCoordinator {
             }
         });
         lspManager.setPythonInterpreterResolver(pythonInterpreters::pythonPathForServerRoot); // review B1
+        lspManager.setOnPythonEnvironmentChanged(pythonInterpreters::environmentChanged); // review 2, B103
+        pythonInterpreters.setServerRoots(b -> lspRootFor(b, "python")); // the item shows what Pyright is told
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
         lspManager.setOnSecondServer((serverId, root) -> host.setStatus(tr(
@@ -1583,6 +1585,11 @@ final class LspCoordinator {
     void buildWorkspace() {
         EditorBuffer b = host.activeBuffer();
         Path path = b == null ? null : lspPath(b);
+        if (path != null && "python".equals(lspManager.managedServerId(path))) {
+            setProjectWideProblems(true); // Pyright then checks every file (Python review 2, E101)
+            host.setStatus(tr("status.lsp.pythonWholeProject"));
+            return;
+        }
         if (path == null || !lspManager.hasJavaSession(path)) {
             host.setStatus(tr("status.lsp.unavailable"));
             return;
@@ -2953,6 +2960,9 @@ final class LspCoordinator {
         if (resolved != null && "html".equals(serverId)) {
             return com.editora.lsp.RootResolver.siteRoot(resolved, file, ops.lspProjectRoot()); // `/` links (A6)
         }
+        if (resolved != null && "python".equals(serverId)) { // a sub-project's own Pyright (Python review 2, B101)
+            return com.editora.lsp.RootResolver.pythonProjectRoot(resolved, file, ops.lspProjectRoot());
+        }
         if (resolved != null && com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)) {
             return com.editora.lsp.RootResolver.typeScriptWorkspaceRoot(resolved, ops.lspProjectRoot()); // JS B106
         }
@@ -3026,13 +3036,9 @@ final class LspCoordinator {
         }
     }
 
-    /** Whether {@code target} lies outside the server root and the project. Pure. */
+    /** {@link com.editora.lsp.RootResolver#isLibraryTarget}. Pure. */
     static boolean isLibraryTarget(Path target, Path serverRoot, @Nullable Path projectRoot) {
-        Path t = target.toAbsolutePath().normalize();
-        if (serverRoot != null && t.startsWith(serverRoot.toAbsolutePath().normalize())) {
-            return false;
-        }
-        return projectRoot == null || !t.startsWith(projectRoot.toAbsolutePath().normalize());
+        return com.editora.lsp.RootResolver.isLibraryTarget(target, serverRoot, projectRoot);
     }
 
     /** The origin recorded for {@code file} when the buffer is about to be served by {@code serverId}. */

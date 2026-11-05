@@ -71,6 +71,20 @@ final class LspServerSettings {
             boolean javaOnTypeFormatting,
             @Nullable BashIdeConfig bashIde,
             @Nullable String pythonPath) {
+        return push(serverId, javaOnTypeFormatting, bashIde, pythonPath, false);
+    }
+
+    /**
+     * As {@link #push(String, boolean, BashIdeConfig, String)}, with whether the Python server checks every file of
+     * its project ({@code python.analysis.diagnosticMode = "workspace"}) rather than the open ones: Problems →
+     * Whole project (Python review 2, B105). It is a client setting; a {@code pyrightconfig.json} cannot set it.
+     */
+    static @Nullable Map<String, Object> push(
+            String serverId,
+            boolean javaOnTypeFormatting,
+            @Nullable BashIdeConfig bashIde,
+            @Nullable String pythonPath,
+            boolean pythonWorkspace) {
         if (BASH_SERVER_ID.equals(serverId)) {
             Map<String, Object> settings = new HashMap<>();
             settings.put(BashIdeConfig.SECTION, bashSection(bashIde));
@@ -78,7 +92,7 @@ final class LspServerSettings {
         }
         if (PYTHON_SERVER_ID.equals(serverId)) {
             Map<String, Object> settings = new HashMap<>();
-            settings.put("python", pythonSection(pythonPath));
+            settings.put("python", pythonSection(pythonPath, pythonWorkspace));
             return settings;
         }
         if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
@@ -112,6 +126,19 @@ final class LspServerSettings {
     /** As {@link #answer(String, String, BashIdeConfig)}, with the Python server's interpreter (may be null). */
     static @Nullable Object answer(
             String serverId, String section, @Nullable BashIdeConfig bashIde, @Nullable String pythonPath) {
+        return answer(serverId, section, bashIde, pythonPath, false);
+    }
+
+    /**
+     * As above, with the Python server's diagnostic scope (see {@link #push(String, boolean, BashIdeConfig, String,
+     * boolean)}).
+     */
+    static @Nullable Object answer(
+            String serverId,
+            String section,
+            @Nullable BashIdeConfig bashIde,
+            @Nullable String pythonPath,
+            boolean pythonWorkspace) {
         String s = section == null ? "" : section;
         if (BASH_SERVER_ID.equals(serverId)) {
             return s.equals(BashIdeConfig.SECTION) ? bashSection(bashIde) : null;
@@ -125,11 +152,14 @@ final class LspServerSettings {
             if (s.endsWith(".pythonPath")) {
                 return blank(pythonPath) ? null : pythonPath;
             }
+            if (s.endsWith(".diagnosticMode")) {
+                return diagnosticMode(pythonWorkspace);
+            }
             if (s.endsWith(".analysis")) {
-                return pythonAnalysis();
+                return pythonAnalysis(pythonWorkspace);
             }
             if (s.equals("python")) {
-                return pythonSection(pythonPath);
+                return pythonSection(pythonPath, pythonWorkspace);
             }
             return null;
         }
@@ -149,9 +179,9 @@ final class LspServerSettings {
     }
 
     /** The whole {@code python} object: the analysis settings, and the interpreter when one was resolved. */
-    private static Map<String, Object> pythonSection(@Nullable String pythonPath) {
+    private static Map<String, Object> pythonSection(@Nullable String pythonPath, boolean workspace) {
         Map<String, Object> python = new HashMap<>();
-        python.put("analysis", pythonAnalysis());
+        python.put("analysis", pythonAnalysis(workspace));
         if (!blank(pythonPath)) {
             python.put("pythonPath", pythonPath);
         }
@@ -159,11 +189,16 @@ final class LspServerSettings {
     }
 
     /** The one {@code python.analysis} object, so the push and both answer shapes cannot drift apart. */
-    private static Map<String, Object> pythonAnalysis() {
+    private static Map<String, Object> pythonAnalysis(boolean workspace) {
         Map<String, Object> analysis = new HashMap<>();
         analysis.put("autoImportCompletions", true);
         analysis.put("autoSearchPaths", true); // Pyright's own default, lost once this object exists
+        analysis.put("diagnosticMode", diagnosticMode(workspace));
         return analysis;
+    }
+
+    private static String diagnosticMode(boolean workspace) {
+        return workspace ? "workspace" : "openFilesOnly";
     }
 
     /** The {@code java} object pushed to jdtls; {@code LspManager} sends the same keys at {@code initialize}. */

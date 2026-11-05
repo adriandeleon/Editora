@@ -49,6 +49,8 @@ final class RootWatcher implements AutoCloseable {
     private final Consumer<List<LspManager.WatchedFile>> sink;
     private final java.util.function.Predicate<Path> reported;
     private final boolean skipOutputs;
+    /** Only the root folder itself is watched, not the folders in it: a library folder (Python review 2, B102). */
+    private boolean shallow;
     /** The root's {@code .gitignore} rules: a folder they leave out is not watched. */
     private final com.editora.search.GitignoreFilter ignore;
 
@@ -102,6 +104,32 @@ final class RootWatcher implements AutoCloseable {
             return w;
         } catch (IOException | RuntimeException e) {
             LOG.log(java.util.logging.Level.FINE, "cannot watch " + root, e);
+            return null;
+        }
+    }
+
+    /**
+     * Watches {@code dir} alone — what is created in it or removed from it, not what changes inside its folders: a
+     * virtual environment's {@code site-packages}, where {@code pip install} adds a package folder (Python review 2,
+     * B102). Null on failure.
+     */
+    static @Nullable RootWatcher startShallow(Path dir, Consumer<List<LspManager.WatchedFile>> sink) {
+        try {
+            if (!Files.isDirectory(dir) || dir.getFileSystem() != FileSystems.getDefault()) {
+                return null;
+            }
+            RootWatcher w = new RootWatcher(dir, com.editora.io.WatchServices.open(), sink, path -> true, false);
+            w.shallow = true;
+            try {
+                w.registerTree(dir);
+            } catch (RuntimeException e) {
+                w.ws.close();
+                throw e;
+            }
+            Thread.ofVirtual().name("lsp-library-watcher").start(w::loop);
+            return w;
+        } catch (IOException | RuntimeException e) {
+            LOG.log(java.util.logging.Level.FINE, "cannot watch " + dir, e);
             return null;
         }
     }
@@ -198,6 +226,9 @@ final class RootWatcher implements AutoCloseable {
                     continue;
                 }
             }
+            if (shallow) {
+                return;
+            }
             try (var children = Files.list(dir)) {
                 children.filter(c -> Files.isDirectory(c, java.nio.file.LinkOption.NOFOLLOW_LINKS))
                         .sorted()
@@ -258,6 +289,7 @@ final class RootWatcher implements AutoCloseable {
                             ? LspManager.WatchedKind.DELETED
                             : LspManager.WatchedKind.CHANGED;
             if (kind == LspManager.WatchedKind.CREATED
+                    && !shallow
                     && Files.isDirectory(path)
                     && !skipped(path)
                     && !(skipOutputs && buildOutput(path))) {
