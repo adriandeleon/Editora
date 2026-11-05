@@ -593,4 +593,53 @@ class JavaRuntimesTest {
                 "java { toolchain { languageVersion = JavaLanguageVersion.of(jdk) } }\n");
         assertEquals(0, JavaRuntimes.statedRelease(props), "a name no property has");
     }
+
+    // --- Java debug review 2, B102: one JDK for the program and jdtls's build -------------------------------
+
+    @Test
+    void theSettingsJdkThenPathsJavaThenJavaHomeIsTheDefault() {
+        assertEquals("/chosen", JavaRuntimes.preferredHome("/chosen", "/path-jdk", "/env"));
+        assertEquals("/path-jdk", JavaRuntimes.preferredHome("", "/path-jdk", "/env"), "what Run starts a file with");
+        assertEquals("/env", JavaRuntimes.preferredHome("", null, "/env"));
+        assertNull(JavaRuntimes.preferredHome(null, " ", ""));
+    }
+
+    @Test
+    void aLaunchersHomeIsTheFolderAboveItsBin() {
+        assertEquals(
+                java.nio.file.Path.of("/opt/jdk-25").toString(),
+                JavaRuntimes.homeOfPath(java.nio.file.Path.of("/opt/jdk-25/bin/java")));
+        assertNull(JavaRuntimes.homeOfPath(java.nio.file.Path.of("/usr/local/java")));
+        assertNull(JavaRuntimes.homeOfPath(java.nio.file.Path.of("/opt/jdk/bin/javac")));
+        assertNull(JavaRuntimes.homeOf("java"), "a bare name is not a JDK");
+    }
+
+    @Test
+    void theDefaultRuntimesMajorIsReadFromItsName() {
+        assertEquals(
+                25,
+                JavaRuntimes.defaultMajor(List.of(
+                        Map.of("name", "JavaSE-27", "path", "/j27"),
+                        Map.of("name", "JavaSE-25", "path", "/j25", "default", true))));
+        assertEquals(
+                8, JavaRuntimes.defaultMajor(List.of(Map.of("name", "JavaSE-1.8", "path", "/j8", "default", true))));
+        assertNull(JavaRuntimes.defaultMajor(List.of(Map.of("name", "JavaSE-25", "path", "/j25"))));
+    }
+
+    @Test
+    void theRuntimesSettingsCarryTheGradleJdkAndAShortDaemonIdleTime() {
+        List<Map<String, Object>> runtimes = List.of(Map.of("name", "JavaSE-25", "path", "/j25", "default", true));
+        Map<String, Object> java = LspManager.withRuntimes(
+                Map.of("configuration", Map.of("updateBuildConfiguration", "automatic")), runtimes);
+        assertEquals(
+                Map.of("updateBuildConfiguration", "automatic", "runtimes", runtimes),
+                java.get("configuration"),
+                "a push keeps the other configuration keys");
+        assertEquals(
+                Map.of(
+                        "gradle",
+                        Map.of("java", Map.of("home", "/j25"), "arguments", LspManager.GRADLE_DAEMON_ARGUMENTS)),
+                java.get("import"));
+        assertEquals(Map.of("a", 1), LspManager.withRuntimes(Map.of("a", 1), List.of()), "no JDKs known: unchanged");
+    }
 }
