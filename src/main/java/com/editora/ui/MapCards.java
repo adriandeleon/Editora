@@ -72,6 +72,14 @@ final class MapCards {
         /** Every column on screen as {@code {x, y, w, h, 1}}: what a card's Structure column weighs its side by. */
         List<double[]> columns();
 
+        /**
+         * The project's own column, the map's first, as drawn {@code {x, y, w, h}} (on screen or not), or null: the
+         * Overview card opens before it.
+         */
+        default double @Nullable [] rootColumn() {
+            return null;
+        }
+
         /** The map's zoom the cards are drawn at. */
         double zoom();
 
@@ -227,6 +235,8 @@ final class MapCards {
     private ProjectPanel.@Nullable MarkerActions notePreviewActions;
     /** The text zoom of the card last zoomed with −/+: new cards open at it. */
     private double cardTextZoom = 1.0;
+    /** The Overview card's last −/+ text zoom: the next Overview opens at it, as code cards do theirs. */
+    private double overviewTextZoom = 1.0;
     /** The editor window whose editor font the cards use (see {@link ProjectMapPreview#EDITOR_FONT_KEY}). */
     private java.util.function.Supplier<javafx.stage.@Nullable Window> cardFontSource = () -> null;
 
@@ -518,22 +528,139 @@ final class MapCards {
         });
         created.setOnReveal(reveal);
         created.setOnOpen(open);
+        created.setTextZoom(overviewTextZoom);
+        created.setOnTextZoomed(zoom -> overviewTextZoom = zoom);
         created.setMapScale(host.zoom());
         installPreviewListeners(created);
         overviewCard = created;
         cardTouches.put(created, ++cardTouchSequence);
         canvasHost.getChildren().add(created);
         created.show(root, facts);
-        created.place(previewPlacement(
-                created,
-                root,
-                ProjectMapOverviewCard.DEFAULT_WIDTH,
-                ProjectMapOverviewCard.DEFAULT_HEIGHT,
-                ProjectMapOverviewCard.MIN_WIDTH,
-                ProjectMapOverviewCard.MIN_HEIGHT,
-                canvasHost.getWidth(),
-                canvasHost.getHeight()));
+        created.place(overviewPlacement(created, root));
         return created;
+    }
+
+    /**
+     * Where the Overview card opens: first on the map, before the project's own column the way the map flows — left
+     * of it left to right, right of it right to left, above it top to bottom, below it bottom to top — level with its
+     * start, shorter rather than out of line. The map pans along the flow just enough for the card to fit there, never so far that the column leaves
+     * the view; with still too little room the card narrows, down to its minimum. With no root column on the map, the
+     * one placement path of the other cards ({@link #previewPlacement}).
+     */
+    private ProjectMapPreview.Placement overviewPlacement(ProjectMapOverviewCard card, Path root) {
+        double width = canvasHost.getWidth();
+        double height = canvasHost.getHeight();
+        double[] column = host.rootColumn();
+        if (column == null || width <= 0 || height <= 0) {
+            return previewPlacement(
+                    card,
+                    root,
+                    ProjectMapOverviewCard.DEFAULT_WIDTH,
+                    ProjectMapOverviewCard.DEFAULT_HEIGHT,
+                    ProjectMapOverviewCard.MIN_WIDTH,
+                    ProjectMapOverviewCard.MIN_HEIGHT,
+                    width,
+                    height);
+        }
+        double scale = cardScale(card);
+        double[] spot = overviewSpot(
+                column,
+                ProjectMapOverviewCard.DEFAULT_WIDTH * scale,
+                ProjectMapOverviewCard.DEFAULT_HEIGHT * scale,
+                ProjectMapOverviewCard.MIN_WIDTH * scale,
+                ProjectMapOverviewCard.MIN_HEIGHT * scale,
+                width,
+                height,
+                host.horizontalFlow(),
+                host.reverseFlow(),
+                host.chrome());
+        if (Math.abs(spot[0]) > 0.5 || Math.abs(spot[1]) > 0.5) {
+            host.panBy(spot[0], spot[1]); // the cards already open move with the map
+        }
+        return new ProjectMapPreview.Placement(spot[2], spot[3], spot[4] / scale, spot[5] / scale);
+    }
+
+    /**
+     * The Overview card's spot before the root column {@code {x, y, w, h}} in a panel {@code parentWidth ×
+     * parentHeight}, every size as drawn: {@code {dx, dy, x, y, w, h}}, where {@code dx, dy} is the pan the map needs
+     * first and {@code x, y} is the card's corner after it. Worked out as if the map flowed left to right — the flow
+     * along x, the card left of the column — and turned back to the real flow at the end. The zoom bar and the
+     * overview ({@code chrome}) are cleared across the flow when they are in the way.
+     */
+    static double[] overviewSpot(
+            double[] column,
+            double width,
+            double height,
+            double minimumWidth,
+            double minimumHeight,
+            double parentWidth,
+            double parentHeight,
+            boolean horizontal,
+            boolean reverse,
+            List<double[]> chrome) {
+        double margin = ProjectMapPreview.EDGE_MARGIN;
+        // Along the flow (a) and across it (c): the column's start and size, the card's sizes, the panel's.
+        double along = horizontal ? parentWidth : parentHeight;
+        double across = horizontal ? parentHeight : parentWidth;
+        double size = horizontal ? column[2] : column[3];
+        double start = horizontal ? column[0] : column[1];
+        if (reverse) {
+            start = along - start - size; // mirrored: the flow runs forwards
+        }
+        double crossStart = horizontal ? column[1] : column[0];
+        double cardAlong =
+                cardBounded(horizontal ? width : height, horizontal ? minimumWidth : minimumHeight, along - margin * 2);
+        double minimumAlong = Math.min(horizontal ? minimumWidth : minimumHeight, cardAlong);
+        double cardAcross = cardBounded(
+                horizontal ? height : width, horizontal ? minimumHeight : minimumWidth, across - margin * 2);
+        double pan = 0;
+        double behind = start - COLUMN_GAP - margin; // the room before the column
+        double missing = cardAlong - behind;
+        if (missing > 0) { // the map moves ahead, as far as the column stays in view
+            double ahead = Math.max(0, along - margin - (start + size));
+            pan = Math.min(missing, ahead);
+            start += pan;
+            behind += pan;
+        }
+        if (behind < cardAlong) {
+            cardAlong = Math.max(minimumAlong, behind);
+        }
+        double cardStart = Math.max(margin, start - COLUMN_GAP - cardAlong);
+        if (cardStart + cardAlong > along - margin) { // the column is past the far edge: the map comes back
+            double back = along - margin - (cardStart + cardAlong);
+            pan += back;
+            cardStart += back;
+        }
+        // Level with the column's start, the card shorter rather than higher; it moves only for its minimum.
+        double minimumAcross = Math.min(horizontal ? minimumHeight : minimumWidth, cardAcross);
+        double cardCross = Math.max(margin, Math.min(crossStart, across - margin - minimumAcross));
+        cardAcross = Math.min(cardAcross, across - margin - cardCross);
+        if (reverse) {
+            cardStart = along - cardStart - cardAlong;
+            pan = -pan;
+        }
+        double x = horizontal ? cardStart : cardCross;
+        double y = horizontal ? cardCross : cardStart;
+        double w = horizontal ? cardAlong : cardAcross;
+        double h = horizontal ? cardAcross : cardAlong;
+        for (double[] c : chrome) {
+            if (cardOverlapCost(x, y, w, h, List.of(c)) <= 0) {
+                continue;
+            }
+            double gap = COLUMN_GAP / 2;
+            if (horizontal) { // across is up and down: end above it, or stand above it
+                if (c[1] - gap - y >= Math.min(minimumHeight, h)) {
+                    h = Math.min(h, c[1] - gap - y);
+                } else if (c[1] - gap - h >= margin) {
+                    y = c[1] - gap - h;
+                }
+            } else if (c[0] + c[2] + gap + w <= parentWidth - margin) { // across is sideways: step past it
+                x = c[0] + c[2] + gap;
+            } else if (c[0] - gap - w >= margin) {
+                x = c[0] - gap - w;
+            }
+        }
+        return new double[] {horizontal ? pan : 0, horizontal ? 0 : pan, x, y, w, h};
     }
 
     /** The open Overview card, or null. */

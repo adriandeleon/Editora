@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The pure parts of the Project Map's structure columns: which files, which lines, which paths. */
@@ -122,6 +123,29 @@ class ProjectMapStructureTest {
         assertFalse(row.isFile());
         assertFalse(row.directory());
         assertFalse(ProjectMapModel.matchesType(row, ProjectMapModel.TypeFilter.SOURCE));
+    }
+
+    @Test
+    void theLoneClassBesideAPackageEntryIsTheOneThatOpens() {
+        Path file = Path.of("/p/App.java").toAbsolutePath();
+        ProjectMapStructure.Node pkg = node(file, "com.acme", "package", List.of());
+        ProjectMapStructure.Node field = node(file, "count", "field", List.of());
+        ProjectMapStructure.Node app = node(file, "App", "class", List.of(field));
+        ProjectMapStructure.Node other = node(file, "Other", "class", List.of(field));
+        assertEquals(app, ProjectMapStructure.loneBranch(List.of(pkg, app)), "jdtls lists the package as a root");
+        assertEquals(app, ProjectMapStructure.loneBranch(List.of(app)));
+        assertNull(ProjectMapStructure.loneBranch(List.of(pkg, app, other)), "two classes: neither opens");
+        assertNull(ProjectMapStructure.loneBranch(List.of(pkg)), "nothing with members");
+        ProjectMapStructure.Node heading = node(file, "Intro", "heading", List.of());
+        assertNull(ProjectMapStructure.loneBranch(List.of(heading, app)), "any other root still counts");
+    }
+
+    private static ProjectMapStructure.Node node(
+            Path file, String name, String kind, List<ProjectMapStructure.Node> children) {
+        ProjectMapModel.Symbol symbol =
+                new ProjectMapModel.Symbol(file, name, kind, 0, 0, 0, null, !children.isEmpty());
+        return new ProjectMapStructure.Node(
+                file.resolve(ProjectMapStructure.SEGMENT_PREFIX + name + "~0"), symbol, children);
     }
 
     private static ProjectMapModel.Entry symbol(Path file, String name, int depth, int line) {

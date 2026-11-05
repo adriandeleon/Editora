@@ -3454,6 +3454,11 @@ final class ProjectMapView extends VBox {
             }
 
             @Override
+            public double @Nullable [] rootColumn() {
+                return surface.cardRootColumn();
+            }
+
+            @Override
             public double zoom() {
                 return surface.cardZoom();
             }

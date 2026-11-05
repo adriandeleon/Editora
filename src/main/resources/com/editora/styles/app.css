@@ -1870,16 +1870,20 @@
     -fx-font-size: 12px;
     -fx-text-fill: -color-fg-default;
 }
-.project-map-overview-card .label.project-map-overview-heading {
-    -fx-font-size: 11px;
+/* The sections' sizes are in em of the size the card's −/+ set on them (ProjectMapOverviewCard.setTextZoom). */
+.project-map-overview-card .project-map-overview-sections .label {
+    -fx-font-size: 1em;
+}
+.project-map-overview-card .project-map-overview-sections .label.project-map-overview-heading {
+    -fx-font-size: 0.917em;
     -fx-font-weight: bold;
     -fx-text-fill: -color-fg-muted;
     -fx-padding: 4 0 0 0;
 }
-.project-map-overview-card .label.project-map-overview-hint,
-.project-map-overview-card .label.project-map-overview-muted,
-.project-map-overview-card .label.project-map-overview-footer {
-    -fx-font-size: 11px;
+.project-map-overview-card .project-map-overview-sections .label.project-map-overview-hint,
+.project-map-overview-card .project-map-overview-sections .label.project-map-overview-muted,
+.project-map-overview-card .project-map-overview-sections .label.project-map-overview-footer {
+    -fx-font-size: 0.917em;
     -fx-text-fill: -color-fg-muted;
 }
 .project-map-overview-card .label.project-map-overview-readme {
@@ -1890,7 +1894,7 @@
 .project-map-overview-link,
 .project-map-overview-open {
     -fx-padding: 1 5 1 5;
-    -fx-font-size: 12px;
+    -fx-font-size: 1em;
     -fx-text-fill: -color-accent-fg;
     -fx-background-color: transparent;
     -fx-background-radius: 4;

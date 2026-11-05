@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Starlark, Cython and SCons files open with Python highlighting** (BUILD.bazel, `.bzl`, `.star`, Tiltfile,
   `.pyx`/`.pxd`/`.pxi`, SConstruct/SConscript, `.pythonrc`), and ipython, graalpy, micropython and pythonw shebangs
   are recognised.
+- **The Map's Project overview card has −/+ and opens first.** Like a file's preview card, its title bar has −/+
+  to make its text smaller or larger; the next overview opens at the same size. It now opens before the project's
+  own column, the way the map flows — left of it left to right, right of it right to left, above it top to bottom,
+  below it bottom to top — and the map moves aside just enough to make room, instead of the card covering the
+  panel's far side.
 - **Find File opens a folder as a project.** In the Find File popup (C-x C-f in Emacs), C-d opens the highlighted
   folder as a project instead of descending into it. With the field ending in a separator and the highlight not
   moved, it opens the folder being listed; on a file, the folder the file is in. The legend shows the key when
@@ -223,6 +228,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fraction of a second, regex group names no longer appear in Structure, and `def f` is no longer shown as
   `f() : de`. Status-bar items are keyboard buttons, and completion rows have spoken names. VS Code keymap:
   Shift+Alt+O organizes imports, Ctrl+Shift+Space shows parameter hints; CUA: Ctrl+Space completes.
+- **Map: a Java file's Structure column opens its class again.** With the Java language server running, the Map's
+  Structure column (and a file card's) stopped at the package and the class, because the server lists the package as
+  a top-level entry of its own. A lone package, namespace or module line no longer counts, so the class's members are
+  listed straight away as before.
 - **Java debugging (second debugging review, 38 findings).** A loose `.java` file or a plain-folder project is built
   before every Debug and stops on compile errors: edits always run, where the code as first built used to run, and
   code that does not compile no longer runs. Hot code replace works in those folders (it failed with "…: null" when
