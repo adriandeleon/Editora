@@ -5620,6 +5620,11 @@ public final class LspManager {
                 }
                 items.sort((a, b) -> Boolean.compare(b.preferred(), a.preferred())); // preferred first (stable)
             }
+            if (PythonCodeActions.SERVER_ID.equals(s.serverId())) { // Pyright gives no quick fixes (Python 2 E102)
+                PythonCodeActions.withQuickFixes(s, uri(file), items, context, only, expected, sentAt)
+                        .whenComplete((all, failed) -> Platform.runLater(() -> cb.accept(all != null ? all : items)));
+                return;
+            }
             List<CodeActionItem> shown = BashCompletions.SERVER_ID.equals(s.serverId()) // titles, suppressions (C10)
                     ? BashCodeActions.shape(items, context, uri(file), s.documentSnapshot(uri(file)), expected, sentAt)
                     : items;
