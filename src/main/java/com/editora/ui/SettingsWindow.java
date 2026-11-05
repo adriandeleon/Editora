@@ -5280,8 +5280,8 @@ public class SettingsWindow {
                 "mermaid diagram enable mmdc render mmd");
         installButtons.put(
                 "mermaid", mmdcStatus.install(() -> installSupport("mermaid")).installButton());
-        // Mermaid's detection is kept until a path changes (probing the default maid through npx takes
-        // seconds on the thread that lints .mmd files), so a tool installed meanwhile is found on request.
+        // Mermaid's detection is kept until a path changes (probing mmdc, or a maid command of the user's own,
+        // takes seconds on the thread that lints .mmd files), so a tool installed meanwhile is found on request.
         mmdcStatus.link(tr("settings.mermaid.recheck"), () -> {
             if (mermaidService != null) {
                 mermaidService.invalidate();
@@ -7771,11 +7771,12 @@ public class SettingsWindow {
         mermaidService.detect(a -> {
             boolean on = mermaidCheck.isSelected();
             mmdcStatus.show(a.mmdc(), a.mmdc() ? ToolStatusRow.pathOf(mermaidService.mmdcCommand()) : "", on);
-            // The default maid is run through npx, which fetches it on first use: npx is what was found.
-            boolean viaNpx = config.getSettings().getMaidPath().isBlank();
+            // The default `npx -y @probelabs/maid` is found by its files, never by running npx (which would
+            // fetch it from the npm registry): show where the installed package is.
+            com.editora.mermaid.MaidLocator.Found install = a.maidInstall();
             maidStatus.show(
                     a.maid(),
-                    viaNpx ? tr("settings.mermaid.viaNpx") : ToolStatusRow.pathOf(mermaidService.maidCommand()),
+                    install != null ? install.detail() : ToolStatusRow.pathOf(mermaidService.maidCommand()),
                     on);
         });
     }

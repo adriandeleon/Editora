@@ -182,6 +182,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Doctor and Settings no longer run npx to look for the Mermaid linter.** With the default maid command
+  (`npx -y @probelabs/maid`), Doctor, the Settings → Mermaid status and every start-up with Mermaid on ran npx just
+  to ask whether maid was there: seconds each time, and npx looked the package up on the npm registry and
+  downloaded it when it was missing. An installed maid is now found by its files — a global install
+  (`npm i -g @probelabs/maid`, beside the Settings Node.js, node on PATH or the npm prefix), a `maid` on PATH that
+  is that package, or npx's own cache — and shown with its version and folder; without one the row is optional and
+  says how to install it. A maid command of your own is still run to check it, as before.
 - **Java debugging (second debugging review, 38 findings).** A loose `.java` file or a plain-folder project is built
   before every Debug and stops on compile errors: edits always run, where the code as first built used to run, and
   code that does not compile no longer runs. Hot code replace works in those folders (it failed with "…: null" when
