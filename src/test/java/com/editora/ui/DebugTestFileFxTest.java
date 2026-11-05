@@ -1,8 +1,5 @@
 package com.editora.ui;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -17,6 +14,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Review A102: Debug ▶ (debug.start) in a JUnit test file debugs the test at the caret, or the whole class. */
 @Tag("fx")
@@ -54,7 +54,9 @@ class DebugTestFileFxTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        fx = FxWindowFixture.create(Files.createDirectories(dir.resolve("config")), shared -> {});
+        fx = FxWindowFixture.create(
+                Files.createDirectories(dir.resolve("config")),
+                shared -> shared.getSettings().setDebugSupport(true)); // Debug ▶ runs only with debugging on
     }
 
     @AfterEach
@@ -69,7 +71,10 @@ class DebugTestFileFxTest {
         FxTestSupport.runOnFx(() -> c.openAndNavigate(file, 1));
         EditorBuffer b = FxTestSupport.callOnFx(c::activeBuffer);
         DebugCoordinator debug = FxTestSupport.field(c, "debugCoordinator");
-        FxTestSupport.runOnFx(() -> debug.setTestDebugger(debugged::add));
+        FxTestSupport.runOnFx(() -> {
+            debug.setTestDebugger(debugged::add);
+            b.setTestGutterEnabled(true); // what a detected Maven/Gradle build turns on (applyTestGutter)
+        });
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
         while (FxTestSupport.callOnFx(() -> b.testClassTarget() == null)) {
             assertTrue(System.nanoTime() < deadline, "the load's test scan never landed");
@@ -103,8 +108,7 @@ class DebugTestFileFxTest {
     @Test
     void aTestFileWithItsOwnMainIsStillLaunched() throws Exception {
         String withMain = TEST.replace(
-                "class CalculatorTest {\n",
-                "class CalculatorTest {\n    public static void main(String[] args) {}\n");
+                "class CalculatorTest {\n", "class CalculatorTest {\n    public static void main(String[] args) {}\n");
         EditorBuffer b = open("CalculatorTest.java", withMain);
         debugAt(b, 14);
         assertEquals(List.of(), debugged);
