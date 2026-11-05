@@ -214,6 +214,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or an End for work it never began, threw off the count of open work. Each piece of work now counts once, and work
   a ready server began but never ended is taken as over after 30 seconds of silence, so the ready line (and the end of
   the loading bar) always comes.
+- **Go: Beginning/End of Defun describe what they do in Python.** The palette description said "top-level
+  definition" in every language; in Python the commands take the innermost def or class, decorators included.
 - **Node.js on a remote host, in WSL or in a container honours the project's `.nvmrc`.** Run, a test file's ▶ and
   Debug now read a `.nvmrc` or `.node-version` on the host (from the file's folder up to the project, or the package
   root) and run the Node.js of that version from the host's nvm (`$NVM_DIR`, then `~/.nvm`), as a local run does. A
