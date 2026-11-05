@@ -39,7 +39,7 @@ It ships **twenty-three** general-purpose servers (plus the Maven-aware `pom.xml
 | --- | --- | --- |
 | `java` | `jdtls` | `pom.xml`, `build.gradle`, …, `.git` |
 | `typescript` | `typescript-language-server --stdio` | `tsconfig.json`, `jsconfig.json`, `package.json`, `.git` |
-| `python` | `pyright-langserver --stdio` | `pyproject.toml`, `setup.py`, …, `.git` |
+| `python` | `pyright-langserver --stdio` | `pyproject.toml`, `setup.py`, `setup.cfg`, `pyrightconfig.json`, then `.git`, then `requirements.txt`/`Pipfile` |
 | `go` | `gopls` | `go.mod`, `go.work`, `.git` |
 | `rust` | `rust-analyzer` | `Cargo.toml`, `.git` |
 | `clangd` | `clangd` | `compile_commands.json`, `CMakeLists.txt`, …, `.git` |
@@ -619,6 +619,22 @@ files leave out (nested ones too). A watcher registers at most 2,000 folders (30
 first, and it reports a file only when its own folder is registered (`RootWatcher.watches`), not anything under its root; the panel's own event for a
 file that a watcher reports is not sent again (`LspManager.reportsChangesTo`). A build file saved here that no watcher
 covers (an SSH project, or one past the folder cap) is sent as a watched-file change on save.
+
+A server that runs elsewhere (SSH, WSL, a container) has no watcher here: `RemoteRootScanner` lists its root again
+(at most 300 folders, 5,000 files, the same folders skipped) when the window comes back to the front and every minute
+while it stays there, and reports the difference as watched-file events.
+
+**Python specifics** (Python review 2). In a project window a Python file's server is rooted at the nearest folder
+below the project root holding `pyproject.toml`, `setup.py`, `setup.cfg` or `pyrightconfig.json`
+(`RootResolver.pythonProjectRoot`; a uv workspace member stays with its workspace), so a `backend/` is analysed with
+its own `.venv`, `src/` and `[tool.pyright]`. The interpreter a session is told (`python.pythonPath`) is resolved
+from its root; the status-bar item resolves the same way (`PythonInterpreterCoordinator.setServerRoots`), so it shows
+what Pyright was told. A watched event that creates or removes an environment folder or a `pyvenv.cfg` re-resolves
+it (`LspManager.setOnPythonEnvironmentChanged`, now and twice more within six seconds). Pyright watches nothing itself
+when the client does not register its watchers, so `PythonLibraryWatchers` watches the top of each local session's
+`site-packages` and tells that session when a package folder appears or goes. Pyright is started with
+`disablePullDiagnostics` and publishes; Problems → Whole project sends `python.analysis.diagnosticMode =
+"workspace"` (pulled diagnostics would cover the open files only), Open files sends `openFilesOnly`.
 
 bash-language-server has no `didChangeWatchedFiles` handler. For a Bash session, a shell script (by extension or name,
 or `.inc`) created or changed under its root and open in no window is opened and closed again with its text from disk

@@ -215,6 +215,10 @@ class PythonLspFxTest {
                 "basedpyright.organizeimports",
                 LspManager.pyrightOrganizeCommand(List.of("basedpyright-langserver", "--stdio")));
         assertEquals("pyright.organizeimports", LspManager.pyrightOrganizeCommand(List.of("pyright-langserver")));
+        // whichever word names it (Python review 2, D110)
+        assertEquals(
+                "basedpyright.organizeimports",
+                LspManager.pyrightOrganizeCommand(List.of("npx", "basedpyright-langserver", "--stdio")));
     }
 
     /** Any other server: its {@code source.organizeImports} code action, when it offers one. */
@@ -307,5 +311,83 @@ class PythonLspFxTest {
         assertTrue(RootWatcher.skipped(root.resolve("node_modules")));
         assertTrue(RootWatcher.skipped(root.resolve("__pycache__")));
         assertFalse(RootWatcher.skipped(Files.createDirectories(root.resolve("pkg"))));
+    }
+
+    /** Waits for a configuration push after the first {@code before}; returns its {@code python} object. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> nextPush(FakeLanguageServer fake, int before) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        while (fake.configurations.size() <= before && System.nanoTime() < deadline) {
+            Thread.sleep(20);
+        }
+        assertTrue(fake.configurations.size() > before, "nothing was pushed");
+        var settings = (Map<String, Object>) fake.configurations.getLast().getSettings();
+        return (Map<String, Object>) settings.get("python");
+    }
+
+    /**
+     * {@code python -m venv .venv} after the server started: the environment folder's event makes the window
+     * resolve the interpreter again, and the server is told the new one (Python review 2, B103).
+     */
+    @Test
+    void anEnvironmentCreatedAfterStartIsToldToTheServer() throws Exception {
+        interpreter = "/usr/bin/python3";
+        manager.setOnPythonEnvironmentChanged(manager::refreshPythonInterpreters);
+        FakeLanguageServer fake = open();
+        int before = fake.configurations.size();
+        interpreter = root.resolve(".venv/bin/python").toString(); // what the resolver finds once it exists
+        Files.createDirectories(root.resolve(".venv/bin"));
+        Map<String, Object> python = nextPush(fake, before);
+        assertEquals(interpreter, python.get("pythonPath"));
+        assertEquals(interpreter, manager.pythonPathFor(file));
+    }
+
+    /**
+     * {@code pip install} into the server's environment: the new package folder in {@code site-packages} is
+     * reported to the server, which watches nothing itself (Python review 2, B102).
+     */
+    @Test
+    void aPackageInstalledIntoTheEnvironmentReachesTheServer() throws Exception {
+        Path venv = Files.createDirectories(root.resolve("env-outside-root/.venv"));
+        Files.createDirectories(venv.resolve("bin"));
+        Files.writeString(venv.resolve("pyvenv.cfg"), "home = /usr/bin\n");
+        Files.writeString(venv.resolve("bin/python"), "");
+        Path sitePackages = Files.createDirectories(venv.resolve("lib/python3.13/site-packages"));
+        interpreter = venv.resolve("bin/python").toString();
+        FakeLanguageServer fake = open();
+        assertEquals(1, manager.pythonLibraryWatchesForTest(sessions.get(0)));
+        Path pkg = Files.createDirectories(sitePackages.resolve("requests"));
+        String uri = pkg.toUri().toString().replaceAll("/$", "");
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        boolean seen = false;
+        while (!seen && System.nanoTime() < deadline) {
+            Thread.sleep(50);
+            seen = onFx(() -> List.copyOf(fake.watchedFiles)).stream()
+                    .flatMap(p -> p.getChanges().stream())
+                    .anyMatch(e -> e.getUri().replaceAll("/$", "").equals(uri)
+                            && e.getType() == org.eclipse.lsp4j.FileChangeType.Created);
+        }
+        assertTrue(seen, "a Created event for the installed package: " + fake.fileEvents());
+        manager.close();
+        assertEquals(0, manager.pythonLibraryWatchesForTest(sessions.get(0)), "closed with the window");
+    }
+
+    /**
+     * Problems → Whole project: Pyright is told to check every file, and the open ones again when it is turned
+     * off; it publishes (pulled diagnostics covered the open files only) (Python review 2, B105).
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void wholeProjectProblemsSwitchPyrightToWorkspaceMode() throws Exception {
+        FakeLanguageServer fake = open();
+        int before = fake.configurations.size();
+        manager.setOpenDocumentDiagnosticsOnly(false);
+        var analysis = (Map<String, Object>) nextPush(fake, before).get("analysis");
+        assertEquals("workspace", analysis.get("diagnosticMode"));
+        before = fake.configurations.size();
+        manager.setOpenDocumentDiagnosticsOnly(true);
+        analysis = (Map<String, Object>) nextPush(fake, before).get("analysis");
+        assertEquals("openFilesOnly", analysis.get("diagnosticMode"));
+        assertEquals(Map.of("disablePullDiagnostics", true), LspManager.initOptionsFor("python", List.of()));
     }
 }

@@ -249,4 +249,32 @@ class PythonInterpreterViewTest {
         assertTrue(PythonInterpreterView.isAbsolute("\\\\server\\share\\python.exe"));
         org.junit.jupiter.api.Assertions.assertFalse(PythonInterpreterView.isAbsolute("python3"));
     }
+
+    /**
+     * A bare name or a command with arguments is told to Pyright as PATH finds it: Run used {@code python3.12}
+     * while Pyright analysed with another Python (Python review 2, D104).
+     */
+    @Test
+    void aBareInterpreterNameIsToldAsPathFindsIt() {
+        java.util.function.Function<String, Optional<String>> onPath =
+                name -> name.equals("python3.12") || name.equals("python3")
+                        ? Optional.of("/usr/bin/" + name)
+                        : Optional.empty();
+        assertEquals(
+                "/usr/bin/python3.12",
+                PythonInterpreterView.pythonPathForServer(
+                        new PythonInterpreter(List.of("python3.12"), Source.SETTING, null), onPath));
+        assertEquals(
+                "/usr/bin/python3",
+                PythonInterpreterView.pythonPathForServer(
+                        new PythonInterpreter(List.of("python3", "-X", "dev"), Source.SETTING, null), onPath));
+        assertEquals(
+                "/opt/py/bin/python",
+                PythonInterpreterView.pythonPathForServer(
+                        new PythonInterpreter(List.of("/opt/py/bin/python"), Source.SETTING, null), onPath));
+        assertNull(PythonInterpreterView.pythonPathForServer(
+                new PythonInterpreter(List.of("pypy3"), Source.SETTING, null), onPath));
+        assertNull(PythonInterpreterView.pythonPathForServer(
+                new PythonInterpreter(List.of("tools/python"), Source.SETTING, null), onPath));
+    }
 }

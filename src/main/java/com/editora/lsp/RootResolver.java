@@ -171,6 +171,98 @@ public final class RootResolver {
         return widened;
     }
 
+    /**
+     * The Python server's root for {@code file} in a project window, whose markers chose {@code resolved} (the
+     * project root): the nearest folder between the file and the project root holding a strong Python marker
+     * ({@link LspServerRegistry#PYTHON_PROJECT_MARKERS}), so a {@code backend/} with its own {@code pyproject.toml}
+     * and {@code .venv} is a Pyright of its own — its venv, its {@code src/} and its {@code [tool.pyright]} — as
+     * it already was without a project (Python review 2, B101). A member of a uv workspace stays with the
+     * workspace's root, whose one {@code .venv} it shares. Anything else keeps {@code resolved}. File reads, cached
+     * like {@link #typeScriptWorkspaceRoot(Path, Path)}.
+     */
+    public static Path pythonProjectRoot(Path resolved, Path file, @Nullable Path projectRoot) {
+        if (projectRoot == null || com.editora.vfs.Vfs.isRemote(file)) {
+            return resolved;
+        }
+        String key = "py\u0000" + file.getParent() + "\u0000" + resolved + "\u0000" + projectRoot;
+        long now = System.nanoTime();
+        Widened known = WIDENED.get(key);
+        if (known != null && now - known.at() < WIDEN_TTL_NANOS) {
+            return known.root();
+        }
+        Path root = pythonProjectRootUncached(resolved, file, projectRoot);
+        if (WIDENED.size() > 512) {
+            WIDENED.clear();
+        }
+        WIDENED.put(key, new Widened(root, now));
+        return root;
+    }
+
+    static Path pythonProjectRootUncached(Path resolved, Path file, Path projectRoot) {
+        Path top = projectRoot.toAbsolutePath().normalize();
+        Path abs = file.toAbsolutePath().normalize();
+        if (!resolved.toAbsolutePath().normalize().equals(top) || !abs.startsWith(top)) {
+            return resolved;
+        }
+        Path nearest = null;
+        for (Path dir = abs.getParent();
+                dir != null && dir.startsWith(top) && !dir.equals(top);
+                dir = dir.getParent()) {
+            if (nearest == null && hasAny(dir, LspServerRegistry.PYTHON_PROJECT_MARKERS)) {
+                nearest = dir;
+            } else if (nearest != null && fileMentions(dir.resolve("pyproject.toml"), "[tool.uv.workspace]")) {
+                nearest = dir; // a workspace member shares its workspace's server
+            }
+        }
+        if (nearest != null && fileMentions(top.resolve("pyproject.toml"), "[tool.uv.workspace]")) {
+            return resolved; // the project itself is the workspace
+        }
+        return nearest == null ? resolved : nearest;
+    }
+
+    /**
+     * Whether {@code target}, reached by a definition jump, is a library file: outside the server root and the
+     * project (the stdlib, a server's bundled stubs), or in installed packages wherever they are — a project's own
+     * {@code .venv} too, which opened as an editable project file (Python review 2, B106). Pure.
+     */
+    public static boolean isLibraryTarget(Path target, @Nullable Path serverRoot, @Nullable Path projectRoot) {
+        Path t = target.toAbsolutePath().normalize();
+        if (inInstalledPackages(t)) {
+            return true;
+        }
+        if (serverRoot != null && t.startsWith(serverRoot.toAbsolutePath().normalize())) {
+            return false;
+        }
+        return projectRoot == null || !t.startsWith(projectRoot.toAbsolutePath().normalize());
+    }
+
+    /**
+     * Whether {@code path} lies in a Python environment's installed packages ({@code site-packages}, Debian's
+     * {@code dist-packages}): a library file even inside the project's own {@code .venv} (Python review 2, B106).
+     * Pure.
+     */
+    public static boolean inInstalledPackages(@Nullable Path path) {
+        if (path == null) {
+            return false;
+        }
+        for (Path part : path) {
+            String n = part.toString();
+            if (n.equals("site-packages") || n.equals("dist-packages")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasAny(Path dir, List<String> files) {
+        for (String f : files) {
+            if (Files.isRegularFile(dir.resolve(f))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private record Widened(Path root, long at) {}
 
     private static final java.util.concurrent.ConcurrentHashMap<String, Widened> WIDENED =

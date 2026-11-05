@@ -68,6 +68,27 @@ final class PythonInterpreterCoordinator {
         this.host = host;
     }
 
+    /**
+     * A Python buffer → the root of the language server that serves (or will serve) it; asked only while language
+     * servers and the Python one are on. Its interpreter is what the status item shows: the item said {@code (.venv)}
+     * while Pyright, resolved from another folder, analysed with {@code /usr/bin/python3} (Python review 2, B101).
+     */
+    private java.util.function.Function<EditorBuffer, @Nullable Path> serverRoots = b -> null;
+
+    /** Installs how a buffer's server root is found (FX thread). */
+    void setServerRoots(java.util.function.Function<EditorBuffer, @Nullable Path> roots) {
+        serverRoots = roots;
+    }
+
+    /**
+     * An environment was created or deleted under a server's root (Python review 2, B103): versions are probed
+     * again, and the servers and the item follow the new answer (FX thread).
+     */
+    void environmentChanged() {
+        versions.clear();
+        host.interpreterChanged();
+    }
+
     /** Re-reads the project root, the pick and the setting (FX thread). */
     void captureSnapshot() {
         com.editora.config.ConfigManager config = host.config();
@@ -114,7 +135,19 @@ final class PythonInterpreterCoordinator {
             return null;
         }
         // A file directly in the root: the venv search starts at the root itself and walks up to the project.
-        return PythonInterpreterView.pythonPathForServer(resolve(root.resolve("__editora__.py")));
+        // A bare name (a setting of `python3.12`) is told as this machine's PATH finds it (review 2, D104). On
+        // another host it is left to the server there: asking that host's PATH is a round trip per start and
+        // refresh, which a dropped connection held up until the server's start timed out.
+        return PythonInterpreterView.pythonPathForServer(
+                resolve(serverFile(root)),
+                elsewhere(root)
+                        ? name -> java.util.Optional.empty()
+                        : com.editora.run.PythonInterpreters::onAugmentedPath);
+    }
+
+    /** The made-up file a server root's interpreter is resolved for: one directly in the root. */
+    private static Path serverFile(Path root) {
+        return root.resolve("__editora__.py");
     }
 
     /** Updates the status-bar item for the active buffer: shown on Python files, local or remote (FX thread). */
@@ -125,10 +158,16 @@ final class PythonInterpreterCoordinator {
             return;
         }
         Path path = buffer.getPath();
+        com.editora.config.ConfigManager config = host.config();
+        boolean served = config != null
+                && config.getSettings().isLspSupport()
+                && config.getSettings().isPythonLspEnabled();
+        Path serverRoot = served ? serverRoots.apply(buffer) : null;
         captureSnapshot();
         boolean remote = elsewhere(path);
         Thread.ofVirtual().name("python-interpreter-status").start(() -> {
-            PythonInterpreter interp = resolve(path);
+            // What the buffer's server was told when one serves it, else what Run would use for the file.
+            PythonInterpreter interp = resolve(serverRoot != null ? serverFile(serverRoot) : path);
             // A remote interpreter is not run here for its version: the item names it and says why.
             String version = remote ? "" : versionOf(interp.executablePath());
             Platform.runLater(() -> {
