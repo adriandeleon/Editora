@@ -48,6 +48,8 @@
   "Cmd-.": "lsp.codeActions",
   "f2": "lsp.rename",
   "M-S-f": "lsp.formatDocument",
+  "M-S-o": "lsp.organizeImports",
+  "Cmd-S-space": "lsp.signatureHelp",
   "f5": "debug.start",
   "S-f5": "debug.stop",
   "Cmd-S-f5": "debug.restart",
