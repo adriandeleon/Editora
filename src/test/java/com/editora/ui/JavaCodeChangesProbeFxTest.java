@@ -66,6 +66,9 @@ class JavaCodeChangesProbeFxTest {
 
     private static final int ADD_FIRST_LINE = 18;
 
+    /** greet's {@code return "hello-v1 " + i;}. */
+    private static final int GREET_LINE = 10;
+
     @BeforeAll
     static void boot() throws Exception {
         FxTestSupport.bootToolkit();
@@ -191,6 +194,47 @@ class JavaCodeChangesProbeFxTest {
             // The redefined class can print before the adapter's reply to the redefinition is handled.
             await(w, "the change to be reported", 300, () -> console(w).contains(tr("debug.hcr.applied", "Main")));
             assertEquals(DapManager.State.RUNNING, FxTestSupport.callOnFx(w.dap()::state), "no restart");
+        } finally {
+            stop(w, dir);
+        }
+    }
+
+    /**
+     * Review 2, B103 + B104: main is running when its own code changes, so java-debug answers "JVM contains obsolete
+     * methods" — the replace still worked and says so; and the breakpoint on the line edited in place still stops.
+     */
+    @Test
+    void aReplaceWithMainRunningIsAppliedAndAnEditedLinesBreakpointStillStops(@TempDir Path dir) throws Exception {
+        Window w = start(dir, false);
+        try {
+            FxTestSupport.runOnFx(() -> {
+                EditorBuffer b = w.fx().controller.activeBuffer();
+                b.toggleBreakpoint(GREET_LINE);
+                w.debug().onBreakpointsChanged(b);
+            });
+            await(w, "a stop in greet", 300, () -> topFrame(w).line() == GREET_LINE);
+            FxTestSupport.runOnFx(() -> {
+                EditorBuffer b = w.fx().controller.activeBuffer();
+                String text = b.getArea().getText();
+                int at = text.indexOf("hello-v1");
+                b.getArea().replaceText(at, at + "hello-v1".length(), "hello-v2"); // the breakpoint's own line
+                int sleep = b.getArea().getText().indexOf("Thread.sleep(100)");
+                b.getArea().replaceText(sleep, sleep + "Thread.sleep(100)".length(), "Thread.sleep(101)"); // main
+                w.registry().run("file.save");
+            });
+            await(w, "the change to be reported", 300, () -> console(w).contains(tr("debug.hcr.applied", "Main")));
+            assertTrue(console(w).contains(tr("debug.hcr.restartFrameHint")), console(w));
+            assertTrue(!console(w).contains(tr("debug.hcr.restartNeeded")), "not reported as failed");
+            int before = console(w).length();
+            FxTestSupport.runOnFx(() -> w.registry().run("debug.continue"));
+            // The paused greet finishes on its old code (it prints); the next call runs the new code and stops.
+            await(
+                    w,
+                    "the edited line's breakpoint to stop again",
+                    300,
+                    () -> console(w).length() > before && topFrame(w).line() == GREET_LINE);
+            FxTestSupport.runOnFx(() -> w.registry().run("debug.continue"));
+            await(w, "the new code to run", 300, () -> console(w).contains("hello-v2"));
         } finally {
             stop(w, dir);
         }

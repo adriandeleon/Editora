@@ -189,7 +189,8 @@ class JavaDebugRealAdapterProbeFxTest {
                 public class ProbeApp {
                     public static void main(String[] args) {
                         System.out.println("cp=" + System.getProperty("java.class.path"));
-                        int answer = 41;
+                        Integer boxed = 41;
+                        int answer = boxed;
                         answer++;
                         System.out.println("answer=" + answer);
                     }
@@ -208,7 +209,7 @@ class JavaDebugRealAdapterProbeFxTest {
                 .inheritIO()
                 .start();
         assertEquals(0, javac.waitFor());
-        int breakpointLine = 6; // answer++;
+        int breakpointLine = 7; // answer++;
         try (Harness h = new Harness(dir)) {
             h.open(
                     dir,
@@ -237,6 +238,18 @@ class JavaDebugRealAdapterProbeFxTest {
             assertNotNull(frames, "the breakpoint was not hit; errors=" + h.errors + " output=" + h.output);
             assertEquals(breakpointLine, frames.getFirst().line());
             assertEquals(file.toRealPath(), frames.getFirst().file().toRealPath());
+            // Review 2, B101: java-debug sends an Integer as a lazy Integer@id row; it shows its value.
+            CompletableFuture<List<DapModels.ScopeInfo>> scopes = new CompletableFuture<>();
+            int frameId = frames.getFirst().id();
+            FxTestSupport.runOnFx(() -> h.dap.scopes(frameId, scopes::complete));
+            int locals = scopes.get(LONG, TimeUnit.SECONDS).getFirst().variablesReference();
+            CompletableFuture<List<DapModels.VariableInfo>> vars = new CompletableFuture<>();
+            FxTestSupport.runOnFx(() -> h.dap.variables(locals, vars::complete));
+            DapModels.VariableInfo boxed = vars.get(LONG, TimeUnit.SECONDS).stream()
+                    .filter(v -> v.name().equals("boxed"))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals("41", boxed.value(), "a boxed Integer shows its value: " + boxed);
             await("the program's first line never reached the console", 30, () -> h.output.indexOf("cp=") >= 0);
             assertTrue(
                     h.output.toString().contains(classes.toRealPath().toString())
