@@ -74,7 +74,6 @@ public final class LatestVersions {
         return Optional.ofNullable(
                 switch (serverId) {
                     case "python" -> new Source(Registry.NPM, "pyright");
-                    case "typescript" -> new Source(Registry.NPM, "typescript-language-server");
                     case "yaml" -> new Source(Registry.NPM, "yaml-language-server");
                     case "dockerfile" -> new Source(Registry.NPM, "dockerfile-language-server-nodejs");
                     case "toml" -> new Source(Registry.NPM, "@taplo/cli");

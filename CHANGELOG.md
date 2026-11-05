@@ -168,6 +168,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Doctor no longer offers a newer typescript-language-server than Editora installs.** Check for Newer Versions
+  looked it up on npm although Editora pins 5.3.0, whose next release needs Node.js 22.22.2. It is now pinned like the
+  HTML, CSS and JSON servers: not looked up, and Install… replaces an own copy older than the pin.
+- **The trust dialogs point at Settings → Advanced.** The build, HTTP and folder trust messages said Trusted Folders
+  was under Workspace, in every language.
 - **A terminal no longer ties up a shared background thread while it is open.** Each open terminal, and each
   program run on an SSH host, kept one of the JVM's shared background threads waiting for its end; the pool has one
   thread fewer than the machine has cores. With a program that never ended they could all be taken, and then
