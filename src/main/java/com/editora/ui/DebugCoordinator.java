@@ -222,6 +222,12 @@ final class DebugCoordinator {
      */
     private volatile List<DapModels.FileBreakpoints> closedBreakpoints = List.of();
 
+    /**
+     * The session start waiting for {@link #withClosedBreakpoints}'s file reads, else null (FX thread). Stop and a
+     * newer start clear or replace it, and the start it stands for is then not made (review D104).
+     */
+    private @Nullable Object closedBreakpointsRead;
+
     // Coalesce the per-edit (line-shift) breakpoint persist off the FX hot path — see schedulePersistBreakpoints.
     // Only the synchronous breakpoints.json write is debounced; the adapter update stays immediate. (#551)
     private final javafx.animation.PauseTransition persistDebounce =
@@ -385,15 +391,13 @@ final class DebugCoordinator {
 
     /** Debug ▸ Stop: a before-launch build still running is what gets stopped; else the session. */
     void stop() {
+        closedBreakpointsRead = null; // a start still reading closed files' breakpoints is not made (review D104)
         if (beforeLaunch.isActive()) {
             beforeLaunch.stop();
         } else if (pendingBuild != null) {
             // The jdtls build before a launch: it finishes on its own, but nothing is launched after it.
-            pendingBuild = null;
-            panel().setPreparing(false);
-            ops.setStatusDebugLoading(false);
+            dropPendingBuild();
             host.setStatus(tr("status.debug.launchCancelled"));
-            updateDebugAvailability();
         } else if (pendingAttachStop != null && !dapManager.isActive()) {
             // Debug Test waiting for its suspended JVM: there is no session yet, so Stop ends the build that
             // would fork it (review D1) — as it ends the run of an attached session below.
@@ -1147,6 +1151,8 @@ final class DebugCoordinator {
      * snapshotted on the FX thread; the file reads happen on a daemon thread.
      */
     private void withClosedBreakpoints(Runnable then) {
+        Object token = new Object();
+        closedBreakpointsRead = token; // a newer start, or Stop, drops this one
         Set<String> openPaths = new HashSet<>();
         host.forEachBuffer(b -> {
             if (b.getPath() != null) {
@@ -1159,6 +1165,10 @@ final class DebugCoordinator {
                     List<DapModels.FileBreakpoints> computed = closedFileBreakpoints(
                             map, openPaths, RemoteExec::runsFor, ClosedFileBreakpoints::readLinesOrNull);
                     Platform.runLater(() -> {
+                        if (closedBreakpointsRead != token) {
+                            return; // stopped, or replaced by another start, while the files were read
+                        }
+                        closedBreakpointsRead = null;
                         closedBreakpoints = computed;
                         then.run();
                     });
@@ -1216,7 +1226,11 @@ final class DebugCoordinator {
                     }
                 }
                 updateDebugStatus(state);
+                forgetCodeReplace(state);
                 primeCodeReplace(state);
+                if (state == DapManager.State.STARTING || state == DapManager.State.INACTIVE) {
+                    closeMainClassPicker(); // it chose for a launch that has been replaced or has ended (A106)
+                }
                 if (state == DapManager.State.INACTIVE || state == DapManager.State.STARTING) {
                     if (state == DapManager.State.STARTING) {
                         snapshotLaunchedLines(); // B1: what the program is built from (the files were saved)
@@ -1454,7 +1468,7 @@ final class DebugCoordinator {
             }
 
             @Override
-            public void evaluate(String expr, int frameId, Consumer<String> cb) {
+            public void evaluate(String expr, int frameId, Consumer<com.editora.dap.ConsoleEvaluation> cb) {
                 dapManager.evaluate(expr, frameId, "repl", cb);
             }
 
@@ -1680,25 +1694,41 @@ final class DebugCoordinator {
      */
     void debugStart() {
         EditorBuffer b = host.activeBuffer();
-        if (dapManager.isActive()) {
-            // A session is live. While SUSPENDED (or mid-step) the green button keeps its Continue semantics:
-            // never yank a paused session. While it runs, the same file is already being debugged (said so),
-            // and another debuggable file replaces it — after asking, since that ends the running program.
-            Path path = b == null ? null : b.getPath();
-            boolean differentFile = path != null && !samePath(path, dapManager.debugFile());
-            boolean paused = dapManager.state() == DapManager.State.SUSPENDED || dapManager.isStepping();
-            if (paused) {
+        // A session is live — or still getting ready (a build before it, a compile, the main-class picker). While
+        // SUSPENDED (or mid-step) the green button keeps its Continue semantics: never yank a paused session.
+        // Otherwise the same file is already being debugged (said so), and another debuggable file replaces it —
+        // after asking, since that ends the running program (review A106: a starting launch was replaced unasked).
+        Path path = b == null ? null : b.getPath();
+        boolean preparing = pendingBuild != null && !dapManager.isActive();
+        Path sessionFile = preparing ? pendingBuildFile : dapManager.debugFile();
+        boolean differentFile = path != null && !samePath(path, sessionFile);
+        boolean debuggable = b != null && path != null && debugEffectiveFor(b.getLanguage(), path);
+        switch (DebugStartChoice.of(
+                dapManager.isActive(),
+                dapManager.state(),
+                dapManager.isStepping(),
+                preparing,
+                differentFile,
+                debuggable)) {
+            case CONTINUE -> {
                 dapManager.resume(); // F5-style continue
                 return;
             }
-            if (!differentFile || b == null || path == null || !debugEffectiveFor(b.getLanguage(), path)) {
+            case ALREADY_RUNNING -> {
                 host.setStatus(tr("status.debug.alreadyRunning", sessionLabel));
                 return;
             }
-            if (!confirmRetarget(tr("dialog.debug.retargetContent", sessionLabel, path.getFileName()))) {
-                return;
+            case ASK_RETARGET -> {
+                if (path == null
+                        || !confirmRetarget(tr("dialog.debug.retargetContent", sessionLabel, path.getFileName()))) {
+                    return;
+                }
+                dropPendingBuild();
+                dapManager.stop(); // retarget to the newly active file below
             }
-            dapManager.stop(); // retarget to the newly active file below
+            case LAUNCH -> {
+                // nothing to end first
+            }
         }
         launchBuffer(b);
     }
@@ -1892,6 +1922,21 @@ final class DebugCoordinator {
     /** The build before a project launch in flight; replaced or cleared to drop its result (Stop). */
     private @Nullable Object pendingBuild;
 
+    /** The file {@link #pendingBuild}'s launch is for. */
+    private @Nullable Path pendingBuildFile;
+
+    /** Drops the build before a launch, if one is running: it finishes on its own, but nothing is launched. */
+    private void dropPendingBuild() {
+        if (pendingBuild == null) {
+            return;
+        }
+        pendingBuild = null;
+        pendingBuildFile = null;
+        panel().setPreparing(false);
+        ops.setStatusDebugLoading(false);
+        updateDebugAvailability();
+    }
+
     /** The fully-qualified name of the first {@code main} in {@code source}, or null. */
     private static @Nullable String ownMainClass(String source) {
         List<com.editora.run.MainMethodScanner.MainMethod> mains =
@@ -1932,6 +1977,7 @@ final class DebugCoordinator {
     private void buildThenLaunch(Path routing, Runnable launch) {
         Object token = new Object();
         pendingBuild = token;
+        pendingBuildFile = routing;
         lsp.ensureManaged(routing);
         ops.openToolWindow();
         panel().setPreparing(true);
@@ -1942,6 +1988,7 @@ final class DebugCoordinator {
                 return; // stopped, or replaced by another launch
             }
             pendingBuild = null;
+            pendingBuildFile = null;
             panel().setPreparing(false);
             ops.setStatusDebugLoading(false);
             if (result.outcome() == LspManager.BuildOutcome.WITH_ERRORS) {
@@ -2622,7 +2669,7 @@ final class DebugCoordinator {
                 host.setStatus(tr("status.debug.noMainClass"));
                 return;
             }
-            Consumer<DapManager.MainClassOption> launch = opt -> {
+            Consumer<DapManager.@Nullable MainClassOption> launch = opt -> {
                 if (opt == null) {
                     return;
                 }
@@ -3118,16 +3165,40 @@ final class DebugCoordinator {
     }
 
     /** Main-class chooser (QuickOpen) when jdtls finds several. */
-    private void pickMainClass(List<DapManager.MainClassOption> options, Consumer<DapManager.MainClassOption> chosen) {
+    private void pickMainClass(
+            List<DapManager.MainClassOption> options, Consumer<DapManager.@Nullable MainClassOption> chosen) {
+        closeMainClassPicker();
         QuickOpen<DapManager.MainClassOption> picker = new QuickOpen<>(
                 tr("debug.pickMainTitle"),
                 tr("debug.pickMainPrompt"),
                 () -> options,
                 o -> o.mainClass() == null ? "" : o.mainClass(),
                 o -> o.projectName() == null ? "" : o.projectName(),
-                chosen);
+                o -> chosen.accept(o));
+        // Esc ends the launch it was asked for: it used to sit in "Starting…" with nothing left to start.
+        picker.setOnCancelled(() -> chosen.accept(null));
         picker.setOverlayHost(host.overlayHost());
+        mainClassPicker = picker;
         picker.show(host.window());
+    }
+
+    /** The main-class picker last shown, while it may still be open. */
+    private @Nullable QuickOpen<DapManager.MainClassOption> mainClassPicker;
+
+    /** Closes the main-class picker if it is still open; its answer goes to a launch that no longer waits. */
+    private void closeMainClassPicker() {
+        QuickOpen<DapManager.MainClassOption> picker = mainClassPicker;
+        mainClassPicker = null;
+        if (picker != null && picker.isShown()) {
+            picker.hide();
+        }
+    }
+
+    /** The main-class picker, while it is open (tests). */
+    @Nullable
+    QuickOpen<DapManager.MainClassOption> openMainClassPicker() {
+        QuickOpen<DapManager.MainClassOption> picker = mainClassPicker;
+        return picker != null && picker.isShown() ? picker : null;
     }
 
     /** Toggles a breakpoint on the active buffer's caret line. */
@@ -3492,6 +3563,8 @@ final class DebugCoordinator {
 
     /** An Apply Code Changes is building or replacing; a save meanwhile is folded into one more round. */
     private boolean codeReplaceRunning;
+    /** Bumped when a session starts or ends: the answer of a replace begun before is not this session's. */
+    private long codeReplaceSession;
     /** Another save arrived during {@link #codeReplaceRunning}: apply once more when it ends. */
     private @Nullable Path codeReplaceAgain;
     /** Java files saved since the running code last matched them (re-baselined by a successful replace). */
@@ -3532,6 +3605,22 @@ final class DebugCoordinator {
         }
     }
 
+    /**
+     * A session started or ended: a replace still running belongs to the one before, and so do the saves it has
+     * not applied. Left set, the running flag held every later save and Apply Code Changes of the window, which
+     * then did nothing at all (review D101).
+     */
+    private void forgetCodeReplace(DapManager.State state) {
+        if (state != DapManager.State.STARTING && state != DapManager.State.INACTIVE) {
+            return;
+        }
+        codeReplaceSession++;
+        codeReplaceRunning = false;
+        codeReplaceAgain = null;
+        savedSinceReplace.clear();
+        lastCodeReplaceError = "";
+    }
+
     /** A Java session started running: let jdtls build what it will compare saved changes with. */
     private void primeCodeReplace(DapManager.State state) {
         if (state == DapManager.State.RUNNING && codeReplaceMode() != DapManager.CodeReplaceMode.OFF) {
@@ -3566,8 +3655,12 @@ final class DebugCoordinator {
         codeReplaceRunning = true;
         lastCodeReplaceError = "";
         Set<Path> covered = new LinkedHashSet<>(savedSinceReplace);
+        long session = codeReplaceSession;
         host.setStatus(tr("debug.hcr.applying"));
         dapManager.applyCodeChanges(file, outcome -> {
+            if (session != codeReplaceSession) {
+                return; // its session ended meanwhile, which reset all of this (review D101)
+            }
             codeReplaceRunning = false;
             reportCodeReplace(outcome, covered, asked);
             Path again = codeReplaceAgain;

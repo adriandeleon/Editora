@@ -326,7 +326,7 @@ class JavaDebugEngineFxTest {
         CompletableFuture<org.eclipse.lsp4j.debug.EvaluateResponse> slow = new CompletableFuture<>();
         adapter.evaluateGate = slow;
         List<String> results = new CopyOnWriteArrayList<>();
-        onFx(() -> dap.evaluate("slow()", 1, "repl", results::add));
+        onFx(() -> dap.evaluate("slow()", 1, "repl", r -> results.add(r.text())));
         session.awaitRequest("evaluate");
 
         onFx(() -> {
@@ -424,7 +424,7 @@ class JavaDebugEngineFxTest {
         List<String> console = new CopyOnWriteArrayList<>();
         List<String> hover = new CopyOnWriteArrayList<>();
         onFx(() -> {
-            dap.evaluate("e", 1, "repl", console::add);
+            dap.evaluate("e", 1, "repl", r -> console.add(r.text()));
             dap.evaluateHover("e", 1, hover::add);
         });
         await("both answered", () -> console.size() == 1 && hover.size() == 1);

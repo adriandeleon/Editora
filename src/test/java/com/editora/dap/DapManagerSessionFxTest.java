@@ -952,7 +952,7 @@ class DapManagerSessionFxTest {
 
         onFx(() -> {
             dap.evaluate("badExpr", 1, "repl", r -> {
-                text.add(r);
+                text.add((r.failed() ? "failed:" : "") + r.text());
                 event("evaluated");
             });
             dap.evaluateFull("badWatch", 1, "watch", r -> {
@@ -962,7 +962,7 @@ class DapManagerSessionFxTest {
         });
         awaitEvents("evaluated", 2);
 
-        assertEquals(List.of("error: Cannot evaluate: badExpr"), text);
+        assertEquals(List.of("failed:error: Cannot evaluate: badExpr"), text);
         assertTrue(full.get(0).failed());
         assertEquals("Cannot evaluate: badWatch", full.get(0).result());
         assertEquals(0, full.get(0).variablesReference());
@@ -976,7 +976,7 @@ class DapManagerSessionFxTest {
             dap.stackTrace(7, answers::add);
             dap.scopes(1, answers::add);
             dap.variables(1000, answers::add);
-            dap.evaluate("x", 1, "repl", answers::add);
+            dap.evaluate("x", 1, "repl", r -> answers.add(r.text()));
             dap.evaluateFull("x", 1, "watch", r -> answers.add(r.result() + "/" + r.failed()));
             dap.evaluateHover("x", 1, answers::add);
             dap.setVariable(1000, "x", "2", answers::add); // nothing was set: no answer at all

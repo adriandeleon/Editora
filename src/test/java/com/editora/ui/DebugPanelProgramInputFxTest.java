@@ -71,9 +71,9 @@ class DebugPanelProgramInputFxTest {
             public void loadChildren(int variablesReference, Consumer<List<DapModels.VariableInfo>> cb) {}
 
             @Override
-            public void evaluate(String expression, int frameId, Consumer<String> cb) {
+            public void evaluate(String expression, int frameId, Consumer<com.editora.dap.ConsoleEvaluation> cb) {
                 calls.add("eval:" + expression);
-                cb.accept("42");
+                cb.accept(com.editora.dap.ConsoleEvaluation.value("42"));
             }
 
             @Override

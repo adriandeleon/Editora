@@ -130,12 +130,14 @@ class DebugPanelWatchesFxTest {
         }
 
         @Override
-        public void evaluate(String expression, int frameId, Consumer<String> cb) {
+        public void evaluate(String expression, int frameId, Consumer<com.editora.dap.ConsoleEvaluation> cb) {
             calls.add("evaluate " + expression + " @" + frameId);
             cb.accept(
                     expression.startsWith("null")
                             ? null
-                            : expression.startsWith("boom") ? "error: " + expression : "val(" + expression + ")");
+                            : expression.startsWith("boom")
+                                    ? com.editora.dap.ConsoleEvaluation.failure(expression)
+                                    : com.editora.dap.ConsoleEvaluation.value("val(" + expression + ")"));
         }
 
         @Override

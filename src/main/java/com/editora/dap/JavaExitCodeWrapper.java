@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -64,10 +65,7 @@ final class JavaExitCodeWrapper {
             Path script = bin.resolve("java");
             Files.writeString(script, script(realJava, exit), StandardCharsets.UTF_8);
             Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rwx------"));
-            // Should Editora quit before the session ends: deleted in the reverse order of registration.
-            for (Path p : java.util.List.of(dir, bin, script, exit.resolveSibling("exit-code.tmp"), exit)) {
-                p.toFile().deleteOnExit();
-            }
+            Leftovers.add(dir); // should Editora quit before the session ends
             return new JavaExitCodeWrapper(dir, script, exit);
         } catch (IOException | RuntimeException e) {
             deleteTree(dir);
@@ -142,6 +140,36 @@ final class JavaExitCodeWrapper {
     /** Removes the wrapper's folder (best effort). */
     void delete() {
         deleteTree(directory);
+        Leftovers.remove(directory);
+    }
+
+    /** Wrapper folders not deleted yet (test read). */
+    static int pendingCount() {
+        return Leftovers.LIVE.size();
+    }
+
+    /**
+     * The wrapper folders still on disk, removed by one shutdown hook should Editora quit first. Each folder used
+     * to register five {@code deleteOnExit} paths, which the JVM keeps until it exits: the list grew with every
+     * debug session of a long-running Editora (review D105). A folder leaves this set when it is deleted.
+     */
+    private static final class Leftovers {
+        static final java.util.Set<Path> LIVE = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+        static {
+            Runtime.getRuntime()
+                    .addShutdownHook(Thread.ofPlatform()
+                            .name("editora-jexit-cleanup")
+                            .unstarted(() -> List.copyOf(LIVE).forEach(JavaExitCodeWrapper::deleteTree)));
+        }
+
+        static void add(Path dir) {
+            LIVE.add(dir);
+        }
+
+        static void remove(Path dir) {
+            LIVE.remove(dir);
+        }
     }
 
     private static void deleteTree(Path dir) {

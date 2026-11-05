@@ -87,7 +87,8 @@ public final class DapManager {
 
     /** Lets the controller present a chooser when several main classes are found (QuickOpen). */
     public interface MainClassPicker {
-        void pick(List<MainClassOption> options, Consumer<MainClassOption> chosen);
+        /** {@code chosen} gets null when the user dismissed the chooser. */
+        void pick(List<MainClassOption> options, Consumer<@Nullable MainClassOption> chosen);
     }
 
     /** UI sink (implemented by the controller / Debug panel); all calls arrive on the FX thread. */
@@ -3418,10 +3419,10 @@ public final class DapManager {
         return javaDebugSession() ? JdwpStringRepair.repair(c, result) : CompletableFuture.completedFuture(result);
     }
 
-    public void evaluate(String expression, int frameId, String context, Consumer<String> cb) {
+    public void evaluate(String expression, int frameId, String context, Consumer<ConsoleEvaluation> cb) {
         DapClient c = client;
         if (c == null) {
-            cb.accept("");
+            cb.accept(ConsoleEvaluation.value(""));
             return;
         }
         boolean console = "repl".equals(context);
@@ -3438,8 +3439,8 @@ public final class DapManager {
                         String r = full == null ? null : full.result();
                         cb.accept(
                                 e != null
-                                        ? "error: " + (isTimeout(e) ? stillEvaluating() : msg(e))
-                                        : (r == null ? "" : r));
+                                        ? ConsoleEvaluation.failure(isTimeout(e) ? stillEvaluating() : msg(e))
+                                        : ConsoleEvaluation.value(r == null ? "" : r));
                     }
                 }));
     }
@@ -3974,6 +3975,12 @@ public final class DapManager {
         listener.onState(s);
     }
 
+    /**
+     * Starts a new session: ends whatever the previous one still holds — its connection, the program it
+     * launched, its compiled classes, its exit-code wrapper — and returns the new session's epoch. Every start
+     * path goes through here, so none can leave the session before it running (review D102: an attach of
+     * Editora's JVM adapter used to replace a live Java session's connection without ending it).
+     */
     private long beginSession() {
         jsNoise = new JsLaunch.InspectorNoise();
         Future<?> startup = startupTask;
@@ -3981,14 +3988,27 @@ public final class DapManager {
         if (startup != null) {
             startup.cancel(true);
         }
+        long epoch;
+        DapClient previous;
+        synchronized (sessionLock) {
+            // The epoch moves first: a compile of the old session that finishes now no longer keeps its folder.
+            epoch = ++sessionEpoch;
+            previous = client;
+            client = null;
+        }
+        tempBreakpointFile = null;
         killDebuggee();
+        if (previous != null) {
+            previous.disposeInBackground();
+        }
+        killAdapterProgram();
+        lspLease.run(); // the old session's jdtls pin; a Java session takes its own once it has an adapter
+        lspLease = () -> {};
         // A launch still waiting for its adapter has no client for ready() to stop, but it may already hold
         // its compiled classes: the next launch would overwrite the only reference to them (review D6).
         releaseCompilationDirectory();
         releaseExitWrapper();
-        synchronized (sessionLock) {
-            return ++sessionEpoch;
-        }
+        return epoch;
     }
 
     private boolean isCurrent(long epoch) {
@@ -4260,7 +4280,7 @@ public final class DapManager {
      * Apply Code Changes: has jdtls build {@code file}'s workspace (incrementally — Editora runs it without
      * autobuild, so nothing else compiles a saved file), then asks java-debug to load the rebuilt classes into
      * the running program. A build with compile errors replaces nothing. {@code cb} runs on the FX thread,
-     * and not at all when the session ended meanwhile.
+     * exactly once — with {@link CodeReplaceResult#NO_SESSION} when the session ended meanwhile.
      */
     public void applyCodeChanges(@Nullable Path file, Consumer<CodeReplaceOutcome> cb) {
         DapClient c = client;
@@ -4271,6 +4291,7 @@ public final class DapManager {
         long epoch = sessionEpoch;
         lsp.buildJavaWorkspace(file, false, built -> {
             if (!isCurrent(epoch, c)) {
+                cb.accept(ended()); // the caller waits for an answer (review D101)
                 return;
             }
             switch (built) {
@@ -4278,13 +4299,19 @@ public final class DapManager {
                 case SUCCEEDED ->
                     c.redefineClasses()
                             .whenComplete((r, e) -> Platform.runLater(() -> {
-                                if (isCurrent(epoch, c)) {
-                                    cb.accept(codeReplaceOutcome(r, e == null ? null : msg(e)));
-                                }
+                                cb.accept(
+                                        isCurrent(epoch, c)
+                                                ? codeReplaceOutcome(r, e == null ? null : msg(e))
+                                                : ended());
                             }));
                 default -> cb.accept(new CodeReplaceOutcome(CodeReplaceResult.BUILD_FAILED, List.of(), ""));
             }
         });
+    }
+
+    /** The outcome of a replace whose session ended before it finished. */
+    private static CodeReplaceOutcome ended() {
+        return new CodeReplaceOutcome(CodeReplaceResult.NO_SESSION, List.of(), "");
     }
 
     /** Pure: the outcome of a {@code redefineClasses} answer, or of the request failing with {@code error}. */

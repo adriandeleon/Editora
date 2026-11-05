@@ -68,8 +68,8 @@ class DebugReviewFollowupFxTest {
                 cb.accept(List.of());
             }
 
-            public void evaluate(String expression, int frameId, Consumer<String> cb) {
-                cb.accept("val");
+            public void evaluate(String expression, int frameId, Consumer<com.editora.dap.ConsoleEvaluation> cb) {
+                cb.accept(com.editora.dap.ConsoleEvaluation.value("val"));
             }
 
             public void evaluateWatch(String expression, int frameId, Consumer<DapModels.EvalResult> cb) {
