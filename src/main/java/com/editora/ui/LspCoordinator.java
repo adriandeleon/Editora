@@ -442,7 +442,7 @@ final class LspCoordinator {
                 host.setError(message);
             }
         };
-        this.pythonFormat = new PythonFormatCoordinator(formatHost);
+        this.pythonFormat = new PythonFormatCoordinator(formatHost, host::settings, ops::saveBuffer);
         this.xmlFormat = new XmlFormatCoordinator(formatHost); // XML without a formatting server (C8)
         this.workspaceFiles = java.util.Objects.requireNonNull(workspaceFiles, "workspaceFiles");
         this.workspaceExecutor = java.util.Objects.requireNonNull(workspaceExecutor, "workspaceExecutor");
@@ -3285,9 +3285,8 @@ final class LspCoordinator {
     private final XmlFormatCoordinator xmlFormat;
 
     /**
-     * {@code lsp.formatDocument} for a Python file: Ruff or Black when no running server formats it; for an XML
-     * file, the built-in {@link XmlFormatCoordinator}. True when this took the command — then it works with the
-     * language server off too.
+     * {@code lsp.formatDocument} without a formatting server: Ruff/Black (Python), the built-in XML formatter, or
+     * Prettier/Biome (JS/TS). True when this took the command — then it works with the language server off too.
      */
     boolean formatPythonExternally() {
         pythonInterpreters.captureSnapshot();
@@ -3912,6 +3911,7 @@ final class LspCoordinator {
      */
     void afterUserSave(EditorBuffer buffer) {
         jsFormat.afterUserSave(buffer); // JS/TS: organize imports, ESLint's fixes, format (JS review F)
+        pythonFormat.afterUserSave(buffer); // Python: Ruff/Black when Settings ask (Python review 2, A111)
         boolean cleanup = host.settings().isJavaCleanupOnSave();
         boolean organize = host.settings().isJavaOrganizeImportsOnSave();
         boolean format = host.settings().isJavaFormatOnSave();

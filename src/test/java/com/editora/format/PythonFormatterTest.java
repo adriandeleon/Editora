@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,6 +24,11 @@ class PythonFormatterTest {
 
     @TempDir
     Path dir;
+
+    @BeforeAll
+    static void english() {
+        com.editora.i18n.Messages.init("en");
+    }
 
     private static Optional<String> none(String name) {
         return Optional.empty();
@@ -64,10 +70,52 @@ class PythonFormatterTest {
     @Test
     void aFailureIsReportedWithTheFormattersOwnWords() {
         var ruff = new PythonFormatter.Found("ruff", "/bin/ruff", false);
-        var bad = PythonFormatter.outcome(ruff, 2, "", "\nerror: Failed to parse app.py:3:5: Expected an expression\n");
+        var bad = PythonFormatter.outcome(
+                ruff, 2, "", "\nerror: Failed to parse app.py:3:5: Expected an expression\n", "x = (\n", false);
         assertFalse(bad.ok());
         assertEquals("ruff: error: Failed to parse app.py:3:5: Expected an expression", bad.error());
-        assertEquals("x = 1\n", PythonFormatter.outcome(ruff, 0, "x = 1\n", "").text());
+        assertEquals(
+                "x = 1\n",
+                PythonFormatter.outcome(ruff, 0, "x = 1\n", "", "x=1\n", false).text());
+    }
+
+    /**
+     * Python review 2, D102: exit 0 is not enough. Black prints nothing for a file its force-exclude skips, and a
+     * result past the 10 MB capture limit is cut short; either used to replace the buffer (with nothing, or with
+     * its head). An empty file formatted to nothing is still fine.
+     */
+    @Test
+    void anEmptyOrTruncatedResultNeverReplacesTheText() {
+        var black = new PythonFormatter.Found("black", "/bin/black", false);
+        var skipped = PythonFormatter.outcome(black, 0, "", "", "x = 1\nprint(x)\n", false);
+        assertFalse(skipped.ok());
+        assertNull(skipped.text());
+        assertTrue(skipped.error().startsWith("black printed nothing"), skipped.error());
+        var cut = PythonFormatter.outcome(black, 0, "x = 1\n", "", "x=1\n", true);
+        assertFalse(cut.ok());
+        assertTrue(cut.error().contains("10 MB"), cut.error());
+        assertEquals(
+                "", PythonFormatter.outcome(black, 0, "", "", "\n\n", false).text());
+    }
+
+    /**
+     * Python review 2, A103: a Ruff set to {@code line-ending = "cr-lf"} prints CRLF. The buffer holds LF text, so the
+     * result is read as LF; diffed as it came, a lone {@code \r} became an extra blank line on every run.
+     */
+    @Test
+    void aCrlfResultIsReadAsLfSoTheSpanStaysTight() {
+        var ruff = new PythonFormatter.Found("ruff", "/bin/ruff", false);
+        String text = PythonFormatter.outcome(ruff, 0, "import os\r\nx = 1\r\n", "", "import os\nx=1\n", false)
+                .text();
+        assertEquals("import os\nx = 1\n", text);
+        assertArrayEquals(new int[] {11, 12, 14}, PythonFormatter.changedSpan("import os\nx=1\n", text));
+        assertNull(
+                PythonFormatter.changedSpan(
+                        "x = 1\n",
+                        PythonFormatter.outcome(ruff, 0, "x = 1\r\n", "", "x = 1\n", false)
+                                .text()),
+                "already formatted: no edit, so Format Document says so");
+        assertEquals("a\nb\nc", FormatterOutput.lf("a\r\nb\rc"));
     }
 
     @Test
@@ -90,5 +138,19 @@ class PythonFormatterTest {
         var outcome = PythonFormatter.run(found, dir.resolve("app.py"), "x=1\nprint(x)\n");
         assertTrue(outcome.ok(), outcome.error());
         assertEquals("x = 1\nprint(x)\n", outcome.text());
+    }
+
+    /** A real run of a stand-in Black that skips the file (force-exclude): nothing printed, exit 0, no result. */
+    @Test
+    void aRealRunThatPrintsNothingIsNotASuccess() throws Exception {
+        assumeTrue(!com.editora.run.PythonInterpreters.isWindows(), "POSIX stand-in formatter");
+        Path black = dir.resolve(".venv/bin/black");
+        Files.createDirectories(black.getParent());
+        Files.writeString(black, "#!/bin/sh\ncat >/dev/null\nexit 0\n");
+        Files.setPosixFilePermissions(black, PosixFilePermissions.fromString("rwxr-xr-x"));
+        var found = PythonFormatter.findLocal(dir.resolve(".venv")).orElseThrow();
+        var outcome = PythonFormatter.run(found, dir.resolve("migrations_0001.py"), "x = 1\n");
+        assertFalse(outcome.ok());
+        assertNull(outcome.text());
     }
 }
