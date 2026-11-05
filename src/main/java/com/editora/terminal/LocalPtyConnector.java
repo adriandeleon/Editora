@@ -2,6 +2,7 @@ package com.editora.terminal;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import com.editora.process.ProcessRegistry;
 import com.jediterm.core.util.TermSize;
@@ -59,12 +60,32 @@ public final class LocalPtyConnector extends ProcessTtyConnector implements Term
         return process.isAlive();
     }
 
+    /**
+     * How long a stopped program has to be gone, counted from Stop, before its terminal is closed under it: the
+     * force kill's grace period and then some.
+     *
+     * <p>On macOS a process cannot finish exiting while its terminal holds output that has not been read. The last
+     * close of the terminal's slave side waits for that output to drain ({@code ttywai}), with no time limit, and
+     * SIGKILL does not end the wait: the process is killed, but never reaped. A program's shell prints a line when
+     * the force kill ends the job it waited for, and when nothing reads the terminal any more, as when its tab has
+     * gone, the program stayed for good. Closing the terminal ends the wait, so it ends the program.
+     */
+    static final long UNREAD_OUTPUT_EXIT_MILLIS = ProcessRegistry.GRACE_MS + 2_000;
+
     @Override
     public void close() {
         ProcessRegistry.killTree(trackable);
         if (program) {
-            // Its streams stay open until it has gone, so what it prints on its way out is still shown.
-            process.onExit().thenRun(this::closeStreams);
+            // Its streams stay open until it has gone, so what it prints on its way out is still shown, but not
+            // past the bound. A thread of its own, not a CompletableFuture timeout: those run on the common pool.
+            Thread.ofVirtual().name("pty-program-close").start(() -> {
+                try {
+                    trackable.waitFor(UNREAD_OUTPUT_EXIT_MILLIS, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                closeStreams();
+            });
         }
     }
 

@@ -9,6 +9,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.LongConsumer;
 
+import com.editora.process.ExitWatch;
 import com.editora.process.LauncherProcess;
 import com.editora.process.ProcessRegistry;
 import com.editora.process.RemoteProcess;
@@ -33,6 +34,10 @@ import org.jspecify.annotations.Nullable;
 public final class PtyChannel implements TerminalChannel {
 
     private final PtyProcess process;
+    /** The launcher's exit, for {@link Shell#onExit}: not pty4j's {@code onExit()}, which holds a common-pool
+     *  worker until the launcher ends ({@link ExitWatch}). */
+    private final ExitWatch exit;
+
     private final InputStream output;
     private final LongConsumer hangUp;
     private final Shell shell;
@@ -46,6 +51,7 @@ public final class PtyChannel implements TerminalChannel {
             @Nullable String targetId,
             LauncherProcess.@Nullable Recorder recorder) {
         this.process = process;
+        this.exit = new ExitWatch("pty-channel-exit", process::waitFor);
         this.hangUp = hangUp;
         this.shell = new Shell(targetId == null ? "local" : targetId, recorder);
         this.output = new PidMarkStream(process.getInputStream(), found -> {
@@ -281,7 +287,7 @@ public final class PtyChannel implements TerminalChannel {
 
         @Override
         public CompletableFuture<Process> onExit() {
-            return process.onExit().thenApply(p -> this);
+            return exit.onExit(this);
         }
     }
 }

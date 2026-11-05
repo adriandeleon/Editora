@@ -163,6 +163,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A terminal no longer ties up a shared background thread while it is open.** Each open terminal, and each
+  program run on an SSH host, kept one of the JVM's shared background threads waiting for its end; the pool has one
+  thread fewer than the machine has cores. With a program that never ended they could all be taken, and then
+  completion, link checks, debugger timers and other background work stopped until restart. A program that ignores
+  Stop and whose terminal nobody reads any more is now also ended on macOS: its terminal is closed after the grace
+  period, since macOS does not let a process finish exiting while its output is unread.
+
 - **JavaScript, TypeScript, Node.js and npm (JS/TS review).**
   - **Which TypeScript runs.** Install now puts typescript-language-server 5.3.0 and TypeScript 5.9.3 in Editora's
     own folder instead of `npm install -g`, so it no longer replaces your own `tsc`. TypeScript 6, which the last

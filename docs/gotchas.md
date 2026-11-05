@@ -407,3 +407,26 @@ The polling fallback tells a file renamed over another apart by its file key (th
 delete-then-rename gets the old one back (NTFS tunnelling), so that case, with the same size and modified
 time, still goes unseen. Don't assume tunnelling applies to every replace; it was measured on `windows-latest`
 in #1276.
+
+## A custom `Process` must override `onExit()`
+
+**Symptom:** on a three-core macOS runner every DapClient test after `LocalPtyConnectorPtyTest` failed with
+"the adapter never received 1 x 'configurationDone'", along with `HiddenTabTimerTest` and process tests. The
+thread dump showed both `ForkJoinPool.commonPool` workers in `UnixPtyProcess.waitFor`, so the fake adapter's
+`runAsync(initialized)` never ran.
+
+**Why/fix:** the JDK's default `Process.onExit()` is `supplyAsync(this::waitFor)` on the common pool: one pool
+worker waits until the process ends. pty4j's processes, and any `Process` subclass of our own, inherit it, and
+`ProcessRegistry.track` asks every tracked process for its exit. The common pool has one worker fewer than the
+machine has cores, and how far it adds spare workers for blocked ones depends on timing and the JDK update: on
+the runner it added none. Give a `Process` subclass its own `onExit()`: from a completion callback when it has one
+(`SshExecProcess`), otherwise through `ExitWatch`
+([`ExitWatch.java`](../src/main/java/com/editora/process/ExitWatch.java)), which waits on a thread of its own.
+
+The program that never ended was a second trap. On macOS a process cannot finish exiting while its pseudo-terminal
+holds output nobody has read: the last close of the terminal waits for it to drain, with no time limit, and SIGKILL
+does not end that wait. Measured on macos-15 in #1425: a pty program SIGKILLed with unread output was still there 3 s
+later, in `ps` state `E` (exiting); closing the terminal ended it within 3 s. The test stopped reading after "ready", and its shell printed a line when the force kill
+ended its `sleep`. `LocalPtyConnector.close()` therefore closes a stopped program's terminal once the grace period
+has passed (`UNREAD_OUTPUT_EXIT_MILLIS`), which ends the wait.
+

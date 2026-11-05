@@ -7,6 +7,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.EnumSet;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -33,13 +34,21 @@ final class SshExecProcess extends RemoteProcess {
     private final long pid;
     /** Released by the channel's own close notification, so a waiter never polls or misses it. */
     private final CountDownLatch exited = new CountDownLatch(1);
+    /** The same close as a future, for {@link #onExit}: the JDK's default would hold a common-pool worker in
+     *  {@link #waitFor} until the command ended ({@link com.editora.process.ExitWatch}). */
+    private final CompletableFuture<Void> closed = new CompletableFuture<>();
 
     private SshExecProcess(ClientSession session, ChannelExec channel, String targetId, long pid) {
         this.session = session;
         this.channel = channel;
         this.targetId = targetId;
         this.pid = pid;
-        channel.addCloseFutureListener(closed -> exited.countDown());
+        channel.addCloseFutureListener(done -> {
+            exited.countDown();
+            // What waits on onExit() (the registry's ledger write, a session's end) runs on the completing
+            // thread, which must not be the connection's I/O thread.
+            Thread.ofVirtual().name("ssh-exec-exit").start(() -> closed.complete(null));
+        });
     }
 
     /** Runs {@code action} once the channel has closed, at once if it already has. */
@@ -199,6 +208,11 @@ final class SshExecProcess extends RemoteProcess {
     @Override
     public InputStream getErrorStream() {
         return channel.getInvertedErr();
+    }
+
+    @Override
+    public CompletableFuture<Process> onExit() {
+        return closed.thenApply(ignored -> this);
     }
 
     @Override
