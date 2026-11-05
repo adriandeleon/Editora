@@ -231,12 +231,12 @@ final class InstallPromptCoordinator {
 
     /**
      * Which language's first file asks to turn language servers on: {@code python}, or {@code xml}, {@code bash} (a
-     * shell script, Bash review C8), {@code html} or {@code css} (HTML review C15) unless that server is switched off;
-     * else null.
+     * shell script, Bash review C8), {@code html} or {@code css} (HTML review C15) unless that server is switched off
+     * (Python's too: "Turn on" started nothing for a switched-off Pyright, Python review 2 C108); else null.
      */
     private @Nullable String turnOnKind(EditorBuffer buffer) {
         if (buffer.isPython()) {
-            return "python";
+            return host.lspCoordinator().serverEnabled("python") ? "python" : null;
         }
         String server = com.editora.lsp.LspServerRegistry.serverIdFor(buffer.getLanguage());
         if (server == null || !TURN_ON_SERVERS.contains(server)) {
