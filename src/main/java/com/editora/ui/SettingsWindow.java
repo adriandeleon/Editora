@@ -8016,7 +8016,7 @@ public class SettingsWindow {
         // (re)configure it: doing so with the global commands replaced a trusted project's override and
         // shut its running server down every time Settings was merely opened.
         java.util.Map<String, String> shown =
-                LspCoordinator.launchCommandsForAllServers(config.getSettings(), config.getConfigDir());
+                LspServerCommands.launchCommandsForAllServers(config.getSettings(), config.getConfigDir());
         for (LspServerUi srv : lspServerUis()) {
             ToolStatusRow status = lspStatusLabels.get(srv.id());
             if (status == null) {
@@ -8140,7 +8140,7 @@ public class SettingsWindow {
     /** The argv the LSP page shows for {@code serverId}: its global command, blank ⇒ the default. */
     private List<String> lspArgv(String serverId) {
         return com.editora.lsp.LspServerRegistry.commandFor(
-                serverId, LspCoordinator.launchCommandsForAllServers(config.getSettings(), config.getConfigDir()));
+                serverId, LspServerCommands.launchCommandsForAllServers(config.getSettings(), config.getConfigDir()));
     }
 
     /** The program a server runs, as its pill names it: the display-name table first (the pom.xml server runs

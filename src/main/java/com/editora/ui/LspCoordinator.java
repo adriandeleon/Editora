@@ -2013,35 +2013,10 @@ final class LspCoordinator {
                 .commandFor(serverId, LspServerCommands.serverCommand(host.settings(), serverId), projectTrusted());
     }
 
-    /** How a server is started: {@link #serverCommand(String)}, a blank one filled in ({@link #withOwnCopy}). */
+    /** How a server is started: {@link #serverCommand(String)}, a blank one filled in ({@link LspServerCommands#withOwnCopy}). */
     private String launchCommand(String serverId) {
-        return withOwnCopy(
+        return LspServerCommands.withOwnCopy(
                 serverId, serverCommand(serverId), configDir(), host.settings().getMavenJdkHome());
-    }
-
-    /** {@code command} for {@code serverId}: Editora's own copy, kept outside PATH, for a blank XML, pom, HTML, CSS or
-     *  JSON command (review A9, review 2 A3, HTML A2), on the Maven JDK ({@code jdkHome}). Pure but for file lookups. */
-    static String withOwnCopy(
-            String serverId, @Nullable String command, @Nullable Path configDir, @Nullable String jdkHome) {
-        String raw = command == null ? "" : command;
-        String jdk = jdkHome == null ? "" : jdkHome;
-        if (com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId) && raw.isBlank()) {
-            String own = com.editora.install.MavenServerInstall.effectiveCommand(raw, configDir);
-            return own.isBlank() ? raw : com.editora.lsp.JvmServerCommand.withJdk(own, jdk);
-        }
-        if (com.editora.install.TypeScriptServerInstall.SERVER_ID.equals(serverId)) {
-            return com.editora.install.TypeScriptServerInstall.effectiveCommand(raw, configDir); // JS review B104
-        }
-        return "xml".equals(serverId)
-                ? com.editora.install.XmlServerInstall.effectiveCommand(raw, configDir, jdk)
-                : com.editora.install.WebServerInstall.effectiveCommand(serverId, raw, configDir); // HTML A2
-    }
-
-    /** {@link LspServerCommands#commandsForAllServers} as they are launched: {@link #withOwnCopy} applied to each. */
-    static Map<String, String> launchCommandsForAllServers(com.editora.config.Settings s, @Nullable Path configDir) {
-        Map<String, String> commands = LspServerCommands.commandsForAllServers(s);
-        commands.replaceAll((id, command) -> withOwnCopy(id, command, configDir, s.getMavenJdkHome()));
-        return commands;
     }
 
     private @Nullable Path configDir() {
