@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-11-05
+
 ### Added
 
 - **Java debugging: Show toString() values.** Settings → Debugging → Java has a switch (on by default) for the
@@ -203,7 +205,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status is not re-applied, a hidden Map does not redraw, icons and column controls are built ahead of a big search,
   and card connectors are drawn once per frame. On an SSH project a folder's listing is reused for 30 s.
 - **Project tree and Map: folders of hash-named files sort in plain order** (`07c96f…` before `7c781c…`).
-
 - **The macOS DMGs are signed and notarized.** Editora for macOS (Apple silicon and Intel) is now signed
   with a Developer ID certificate and notarized by Apple, so it opens on first launch with no Gatekeeper
   warning and no trip to System Settings → Privacy & Security. The Windows MSI is still unsigned.
@@ -211,9 +212,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   statement for each installer, archive and jar, naming the repository, commit and tag that built it.
   Check a download with
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
+- Updated commonmark-java to 0.31.0, Apache MINA SSHD to 2.20.1, Gson to 2.15.0 and joni to 2.2.8.
 
 ### Fixed
 
+- **Sticky-scroll headers keep their height** while the top line is partly scrolled off; they used to shrink to a
+  few pixels and draw over each other.
 - **Java debugging (third debugging review, 25 findings).** A plain-folder project with more than one package can
   be debugged again: when the Java language server cannot build a file without Maven or Gradle, Editora compiles it
   with javac from its source root, and only errors in code the program uses stop the launch (a broken unrelated file

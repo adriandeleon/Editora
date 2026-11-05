@@ -109,7 +109,7 @@ release as `editora-signing-key.asc`:
 
 ```bash
 gpg --import editora-signing-key.asc
-gpg --verify Editora-0.26.1-linux-x64.deb.asc Editora-0.26.1-linux-x64.deb
+gpg --verify Editora-0.27.0-linux-x64.deb.asc Editora-0.27.0-linux-x64.deb
 ```
 
 The `.rpm` is signed inside too, for `rpm -K` and dnf. The Windows installer is still **unsigned**,
@@ -120,7 +120,7 @@ Every release file has a signed build provenance attestation, so you can check t
 by this repository's release workflow from the tagged commit:
 
 ```bash
-gh attestation verify Editora-0.26.1-linux-x64.deb --repo adriandeleon/Editora --source-ref refs/tags/v0.26.1
+gh attestation verify Editora-0.27.0-linux-x64.deb --repo adriandeleon/Editora --source-ref refs/tags/v0.27.0
 ```
 
 On startup Editora checks GitHub at most once a day for a newer release and shows an "Update: X.Y.Z"
