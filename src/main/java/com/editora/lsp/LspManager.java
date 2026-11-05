@@ -7947,11 +7947,20 @@ public final class LspManager {
             List<WatchedFile> fresh = FreshJavaSources.since(
                     root, System.currentTimeMillis() - FreshJavaSources.WINDOW_MS, FreshJavaSources.MAX_VISITED);
             Platform.runLater(() -> {
-                List<org.eclipse.lsp4j.FileEvent> events = eventsUnderRoot(fresh, root, s.uris());
-                if (!events.isEmpty()) {
-                    s.didChangeWatchedFiles(events);
+                // an open file's edits reach jdtls as its document's; only files changed outside Editora count
+                List<org.eclipse.lsp4j.FileEvent> events = eventsUnderRoot(fresh, root, s.uris()).stream()
+                        .filter(e -> !s.isOpen(e.getUri()))
+                        .toList();
+                if (events.isEmpty()) {
+                    launchBuild.run();
+                    return;
                 }
-                launchBuild.run();
+                s.didChangeWatchedFiles(events);
+                // jdtls takes watched-file events in on a thread of its own: give it a moment before the build
+                javafx.animation.PauseTransition settle =
+                        new javafx.animation.PauseTransition(javafx.util.Duration.millis(FreshJavaSources.SETTLE_MS));
+                settle.setOnFinished(e -> launchBuild.run());
+                settle.play();
             });
         });
     }

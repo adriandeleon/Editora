@@ -22,7 +22,13 @@ final class FreshJavaSources {
     private FreshJavaSources() {}
 
     /** How far back a file's modification counts as possibly not yet seen by jdtls. */
-    static final long WINDOW_MS = 10_000;
+    static final long WINDOW_MS = 3_000;
+
+    /**
+     * How long the launch build waits after telling jdtls about such files: jdtls refreshes them on a thread of its
+     * own, not before the next request, and a build that started first compiled the old text.
+     */
+    static final long SETTLE_MS = 400;
 
     /** The most folder entries one scan visits: a huge folder costs a bounded walk. */
     static final int MAX_VISITED = 20_000;
