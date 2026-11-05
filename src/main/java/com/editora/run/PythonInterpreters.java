@@ -394,7 +394,7 @@ public final class PythonInterpreters {
     }
 
     /** Drops the Microsoft Store App Execution Alias ({@code …\WindowsApps\python.exe}). */
-    static Optional<String> real(Optional<String> found) {
+    public static Optional<String> real(@Nullable Optional<String> found) {
         if (found == null || found.isEmpty()) {
             return Optional.empty();
         }
