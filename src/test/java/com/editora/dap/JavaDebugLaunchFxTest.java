@@ -232,9 +232,12 @@ class JavaDebugLaunchFxTest {
         assertEquals(loose.toString(), launch.get("cwd"));
     }
 
-    /** A loose file whose class jdtls <em>does</em> have (an Eclipse project it built) launches as resolved. */
+    /**
+     * A loose file whose class jdtls has just built for this launch launches as resolved; one it built at some
+     * earlier time is compiled instead (review 2, A101 — JavaLooseLaunchFxTest).
+     */
     @Test
-    void aLooseFileWithACompiledClassLaunchesOnTheResolvedClassPath() throws Exception {
+    void aLooseFileJdtlsHasJustBuiltLaunchesOnTheResolvedClassPath() throws Exception {
         Path loose = Files.createDirectories(dir.resolve("eclipse"));
         Path file = loose.resolve("Second.java");
         open(file, loose, "public class Second {\n    public static void main(String[] args) {}\n}\n");
@@ -243,7 +246,10 @@ class JavaDebugLaunchFxTest {
         replies.put("vscode.java.resolveMainClass", p -> List.of(mainClass("Second", "eclipse", file)));
         replies.put("vscode.java.resolveClasspath", p -> List.of(List.of(), List.of(bin.toString())));
 
-        onFx(() -> dap.startLaunch(file, "java", noPicker, "", null));
+        onFx(() -> {
+            dap.setLooseClassesBuilt(true); // what the Debug command says after jdtls's build succeeded
+            dap.startLaunch(file, "java", noPicker, "", null);
+        });
 
         assertEquals(List.of(bin.toString()), request("launch").get("classPaths"));
     }
