@@ -179,6 +179,7 @@ class DebugReviewFollowupFxTest {
                         case "names" -> new DapModels.EvalResult("ArrayList@10 size=3", 5, "ArrayList", 0, 3, false);
                         case "big" -> new DapModels.EvalResult("int[250]@4", 9, "int[]", 0, 250, false);
                         case "total" -> new DapModels.EvalResult("14", 0, "int");
+                        case "msg" -> new DapModels.EvalResult("\"line one\nline \\\"two\\\"\"", 12, "String");
                         default -> DapModels.EvalResult.failure("cannot");
                     });
         }
@@ -214,7 +215,7 @@ class DebugReviewFollowupFxTest {
         Object[] made = FxTestSupport.callOnFx(() -> {
             EditorBuffer b = new EditorBuffer();
             b.setLanguageOverride("java");
-            b.getArea().replaceText("names.size();\nint total = big.length;\n");
+            b.getArea().replaceText("names.size();\nint total = big.length;\nlog(msg);\n");
             Stage stage = new Stage();
             stage.setScene(new Scene(new javafx.scene.layout.VBox(b.getNode()), 800, 400));
             stage.show();
@@ -274,6 +275,15 @@ class DebugReviewFollowupFxTest {
                 assertTrue(popup.isShowing());
                 assertEquals("total = 14", popup.line().getText());
                 assertFalse(popup.tree().getParent() != null, "no tree for a plain value");
+
+                // A String shows its whole text, not the String class's fields (review 2, C105).
+                area.moveTo(area.getText().indexOf("log(msg)") + "log(m".length());
+                assertTrue(b.showDebugValueAtCaret(), "Show Value finds msg");
+                assertTrue(popup.isShowing(), "the popup shows the text");
+                assertEquals("line one\nline \"two\"", popup.text().getText());
+                assertTrue(popup.text().isWrapText(), "wrapped");
+                assertFalse(popup.text().isEditable());
+                assertTrue(values.requests.stream().noneMatch(r -> r.startsWith("12:")), "no field tree fetched");
 
                 // Resuming closes it.
                 b.setDebugHoverActive(false);

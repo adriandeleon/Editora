@@ -4768,6 +4768,11 @@
     -fx-text-fill: -color-fg-default;
 }
 .debug-value-popup .debug-vars { -fx-background-color: transparent; }
+/* A String's whole text in the value popup (review 2, C105): read-only, wrapped, scrolls. */
+.debug-value-popup .debug-value-text {
+    -fx-font-size: 12px;
+    -fx-font-family: "JetBrains Mono", monospace;
+}
 /* "Experimental" notice at the top of the LSP / Debugging settings pages — amber to stand out. */
 /* A beta page says so with the one pill beside its title (and in the sidebar); its own "experimental"
    line is plain page text, not a second, louder badge. */

@@ -21,10 +21,21 @@ public final class DapErrors {
     private static final Pattern CLASS_PREFIX =
             Pattern.compile("^\\s*(?:[a-zA-Z_$][\\w$]*\\.)+[A-Z][\\w$]*(?:Exception|Error|Throwable)\\s*:\\s*");
 
+    /** java-debug's failed evaluation: {@code Cannot evaluate because of <what>}. */
+    private static final String CANNOT_EVALUATE = "Cannot evaluate because of ";
+
+    /** What an evaluation threw, after the class names: {@code java.lang.NullPointerException at length().} */
+    private static final Pattern THREW =
+            Pattern.compile("^(?:[a-zA-Z_$][\\w$]*\\.)*([A-Z][\\w$]*(?:Exception|Error|Throwable))(?: at (.+?))?\\.?$");
+
     /** {@code text} without the Java exception class names it starts with; {@code text} itself when it is only that. */
     public static String userText(@Nullable String text) {
         if (text == null) {
             return "";
+        }
+        String evaluation = evaluationText(text.strip());
+        if (evaluation != null) {
+            return evaluation;
         }
         String out = text;
         for (int i = 0; i < 8; i++) { // nested causes repeat the prefix; a few is all any adapter sends
@@ -38,6 +49,31 @@ public final class DapErrors {
             out = next;
         }
         return out;
+    }
+
+    /**
+     * java-debug's failed evaluation said plainly (review 2, B106): {@code Cannot evaluate because of
+     * org.eclipse.debug.core.DebugException: java.lang.NullPointerException at length().} becomes "The expression
+     * threw NullPointerException in length()"; other Eclipse wrappers lose their class names ("Cannot evaluate:
+     * …"). A compile error ("Cannot evaluate because of compilation error(s): …") reads well and is kept. Null
+     * when {@code text} is not such a message.
+     */
+    static @Nullable String evaluationText(String text) {
+        if (!text.startsWith(CANNOT_EVALUATE)) {
+            return null;
+        }
+        String reason = text.substring(CANNOT_EVALUATE.length());
+        if (!CLASS_PREFIX.matcher(reason).lookingAt()) {
+            return null; // "compilation error(s): x cannot be resolved" — already plain
+        }
+        String inner = userText(reason);
+        java.util.regex.Matcher threw = THREW.matcher(inner.strip());
+        if (threw.matches()) {
+            return threw.group(2) == null
+                    ? com.editora.i18n.Messages.tr("debug.eval.threw", threw.group(1))
+                    : com.editora.i18n.Messages.tr("debug.eval.threwIn", threw.group(1), threw.group(2));
+        }
+        return com.editora.i18n.Messages.tr("debug.eval.cannot", inner.strip());
     }
 
     /** What lsp4j puts in a refused request's message when the adapter's answer has none. */

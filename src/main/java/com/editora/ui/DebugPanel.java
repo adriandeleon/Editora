@@ -1048,8 +1048,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         framesExpanded = false;
         showFrames(index);
         java.nio.file.Path at = frames.isEmpty() ? null : frames.get(index).file();
-        String in =
-                at == null || at.getFileName() == null ? "" : at.getFileName().toString();
+        // DebugValues.sourceName: a jdt:// frame's last segment is a piece of its query (review 2, B107).
+        String in = at == null ? "" : DebugValues.sourceName(at);
         if (!in.equals(stoppedIn)) {
             stoppedIn = in;
             refreshStatus();

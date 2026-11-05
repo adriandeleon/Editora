@@ -251,7 +251,7 @@ public final class DapManager {
         } else {
             exceptionChoices.put(language, List.copyOf(filters));
         }
-        if (client != null && language.equals(sessionLanguage)) {
+        if (client != null && language.equals(sessionLanguage) && !exceptionsMuted) {
             client.setExceptionFilters(filters == null ? null : List.copyOf(filters));
         }
     }
@@ -262,12 +262,30 @@ public final class DapManager {
         setExceptionFilters(sessionLanguage, filters);
     }
 
-    /** The filters chosen for {@code language}, or null when the adapter's defaults apply. */
+    /** The filters chosen for {@code language}, or null when the adapter's defaults apply; none while muted. */
     private @Nullable List<String> filtersFor(String language) {
         sessionLanguage = language;
         jsSession = "javascript".equals(language);
         reportedConditionErrors.clear();
-        return exceptionChoices.get(language);
+        return exceptionsMuted ? List.of() : exceptionChoices.get(language);
+    }
+
+    /** Mute Breakpoints also mutes the exception stops (review 2, B109), as IntelliJ's Mute does. */
+    private boolean exceptionsMuted;
+
+    /**
+     * Mutes or restores the exception stops: a live session is told at once (no filters while muted, the chosen
+     * ones — or the adapter's defaults — after); the next session starts that way. The choices themselves stay.
+     */
+    public void setExceptionsMuted(boolean muted) {
+        if (exceptionsMuted == muted) {
+            return;
+        }
+        exceptionsMuted = muted;
+        if (client != null) {
+            List<String> chosen = exceptionChoices.get(sessionLanguage);
+            client.setExceptionFilters(muted ? List.of() : chosen);
+        }
     }
 
     /** The language of the live (or last) session. */
@@ -3395,6 +3413,7 @@ public final class DapManager {
             return;
         }
         c.variables(ref, filter, start, count)
+                .thenCompose(vars -> lazyValues.resolveAll(vars, child -> c.variables(child, null, 0, 0)))
                 .thenCompose(vars -> repairStrings(c, vars))
                 .whenComplete((vars, e) -> Platform.runLater(() -> {
                     if (client == c) {
@@ -3402,6 +3421,9 @@ public final class DapManager {
                     }
                 }));
     }
+
+    /** Lazy rows resolved during the current stop (B101); forgotten whenever the program runs. */
+    private final LazyValues lazyValues = new LazyValues();
 
     // --- strings java-debug garbles (follow-up 4: emoji arrive as two wrong characters) -------------------
 
@@ -3412,11 +3434,15 @@ public final class DapManager {
 
     private CompletableFuture<List<DapModels.VariableInfo>> repairStrings(
             DapClient c, List<DapModels.VariableInfo> vars) {
-        return javaDebugSession() ? JdwpStringRepair.repairAll(c, vars) : CompletableFuture.completedFuture(vars);
+        return javaDebugSession()
+                ? JdwpStringRepair.repairAll(c, vars).thenApply(JavaValueText::tidyAll) // B108: lambdas
+                : CompletableFuture.completedFuture(vars);
     }
 
     private CompletableFuture<DapModels.EvalResult> repairString(DapClient c, DapModels.EvalResult result) {
-        return javaDebugSession() ? JdwpStringRepair.repair(c, result) : CompletableFuture.completedFuture(result);
+        return javaDebugSession()
+                ? JdwpStringRepair.repair(c, result).thenApply(JavaValueText::tidy) // B108: lambdas
+                : CompletableFuture.completedFuture(result);
     }
 
     public void evaluate(String expression, int frameId, String context, Consumer<ConsoleEvaluation> cb) {
@@ -3967,6 +3993,9 @@ public final class DapManager {
         if (s != State.RUNNING) {
             stepInFlight = false;
         }
+        if (s != State.SUSPENDED) {
+            lazyValues.clear(); // the program ran (or ended): references and values are stale
+        }
         if (s == State.INACTIVE || s == State.STARTING) {
             consoleEvaluations = 0; // an answer that never comes cannot hold the next session's controls
             stoppedThreads.clear();
@@ -4322,9 +4351,13 @@ public final class DapManager {
         if (reply == null || (!reply.failed() && reply.changedClasses().isEmpty())) {
             return new CodeReplaceOutcome(CodeReplaceResult.NOTHING_CHANGED, List.of(), "");
         }
-        return reply.failed()
-                ? new CodeReplaceOutcome(CodeReplaceResult.FAILED, reply.changedClasses(), reply.error())
-                : new CodeReplaceOutcome(CodeReplaceResult.APPLIED, reply.changedClasses(), "");
+        // java-debug words "JVM contains obsolete methods" as an error although the classes were replaced: a method
+        // that was running when the code changed (main's loop, typically) goes on with its old code. That is a
+        // replace that worked, with a note (review 2, B103) — it used to read "not applied, restart".
+        if (!reply.failed() || !reply.changedClasses().isEmpty() || reply.obsoleteMethods()) {
+            return new CodeReplaceOutcome(CodeReplaceResult.APPLIED, reply.changedClasses(), reply.error());
+        }
+        return new CodeReplaceOutcome(CodeReplaceResult.FAILED, reply.changedClasses(), reply.error());
     }
 
     /** Whether the session's adapter can restart a frame ({@code restartFrame}). */

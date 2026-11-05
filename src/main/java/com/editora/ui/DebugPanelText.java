@@ -92,10 +92,25 @@ final class DebugPanelText {
     /** A frame of a JVM hidden class (a lambda's proxy): {@code 0x000000003f040c00.accept(Object)}. */
     private static final Pattern HIDDEN_FRAME = Pattern.compile("^0x[0-9a-fA-F]+\\.(.*)$");
 
-    /** How a frame is named in the call stack: a hidden lambda class shows as {@code <lambda>.accept(Object)}. */
+    /**
+     * java-debug's name for a frame running a method that hot code replace has since replaced:
+     * {@code Main.Obsolete method()[native method]}.
+     */
+    private static final Pattern OBSOLETE_FRAME =
+            Pattern.compile("^(.*?)\\.?Obsolete method\\(\\)(?:\\[native method])?$");
+
+    /**
+     * How a frame is named in the call stack: a hidden lambda class shows as {@code <lambda>.accept(Object)}, and
+     * a method hot code replace left on its old code as {@code Main — old code (Restart Frame runs it again)}
+     * (review 2, B103) rather than java-debug's {@code Main.Obsolete method()[native method]}.
+     */
     static String frameName(String name) {
         if (name == null) {
             return "";
+        }
+        var obsolete = OBSOLETE_FRAME.matcher(name);
+        if (obsolete.matches()) {
+            return com.editora.i18n.Messages.tr("debugpanel.obsoleteFrame", obsolete.group(1));
         }
         var m = HIDDEN_FRAME.matcher(name);
         return m.matches() ? "<lambda>." + m.group(1) : name;

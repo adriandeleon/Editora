@@ -1278,8 +1278,12 @@ final class DebugCoordinator {
                 int shown = frameToShow(reason, frames, DebugCoordinator.this::hasSource);
                 panel().setCallStack(frames, shown);
                 if (shown > 0) {
+                    // A JDK or library frame jdtls can show is "library code", not "no source" (review 2, B107).
                     host.setStatus(tr(
-                            "status.debug.stoppedWithoutSource", frames.get(0).name()));
+                            frames.get(0).sourceUri() != null
+                                    ? "status.debug.stoppedInLibrary"
+                                    : "status.debug.stoppedWithoutSource",
+                            DebugPanelText.frameName(frames.get(0).name())));
                 }
                 dapManager.threads(list -> panel().setThreads(list, dapManager.currentThreadId()));
             }
@@ -3418,6 +3422,7 @@ final class DebugCoordinator {
         });
         if (ops.debugBreakpointsMuted() && !breakpointsMuted) {
             breakpointsMuted = true; // Mute Breakpoints is kept per project, like the exception choices
+            dapManager.setExceptionsMuted(true);
             showBreakpointsMuted();
         }
     }
@@ -3675,9 +3680,16 @@ final class DebugCoordinator {
     private void reportCodeReplace(DapManager.CodeReplaceOutcome outcome, Set<Path> covered, boolean asked) {
         switch (outcome.result()) {
             case APPLIED -> {
-                String names = CodeReplaceText.classList(outcome.classes());
+                String names = CodeReplaceText.appliedNames(outcome.classes(), covered);
                 panel().appendNotice(tr("debug.hcr.applied", names));
-                host.setStatus(tr("debug.hcr.appliedStatus", names));
+                if (outcome.message() == null || outcome.message().isEmpty()) {
+                    host.setStatus(tr("debug.hcr.appliedStatus", names));
+                } else {
+                    // Methods that were running keep their old code (java-debug's "obsolete methods"): say how to
+                    // run one again with the new code (review 2, B103).
+                    panel().appendNotice(tr("debug.hcr.restartFrameHint"));
+                    host.setStatus(tr("debug.hcr.appliedOldStatus", names));
+                }
                 savedSinceReplace.removeAll(covered);
                 codeReplaced(covered);
             }
@@ -3833,6 +3845,7 @@ final class DebugCoordinator {
      */
     void toggleMuteBreakpoints() {
         breakpointsMuted = !breakpointsMuted;
+        dapManager.setExceptionsMuted(breakpointsMuted); // exception stops too (review 2, B109)
         if (dapManager.isActive()) {
             Set<String> open = new HashSet<>();
             host.forEachBuffer(b -> {

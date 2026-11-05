@@ -421,7 +421,8 @@ class DebugUiFlowFxTest {
                     () -> stack().getSelectionModel().getSelectedIndex() == 1);
             await("no execution line", () -> !execLines(b).isEmpty());
             assertEquals(List.of(2), execLines(b));
-            assertEquals(tr("status.debug.stoppedWithoutSource", "Thread.sleep"), status());
+            // A jdt:// frame is library code jdtls can show, not "no source" (review 2, B107).
+            assertEquals(tr("status.debug.stoppedInLibrary", "Thread.sleep"), status());
 
             // The frame itself stays selectable: its variables load, nothing is opened, nothing fails.
             int scopes = java.util.Collections.frequency(session.requests, "scopes");
