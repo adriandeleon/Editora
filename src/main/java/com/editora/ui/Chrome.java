@@ -307,7 +307,50 @@ final class Chrome {
             boolean printableTab,
             boolean selection,
             boolean projectMap,
-            boolean terminalOpen) {
+            boolean terminalOpen,
+            boolean debugRunning) {
+
+        /**
+         * A context whose program runs whenever its session is live and not paused — the neutral value for callers
+         * that are not asking about Pause (it is greyed while the program is paused, building or ending: review 3,
+         * C206).
+         */
+        PaletteContext(
+                boolean hasBuffer,
+                boolean inRepo,
+                boolean markdownLike,
+                boolean csvFile,
+                boolean httpFile,
+                boolean typstFile,
+                boolean hasPreview,
+                boolean debugActive,
+                boolean debugSuspended,
+                boolean debugRestartable,
+                boolean gitOperation,
+                boolean exportablePreview,
+                boolean printableTab,
+                boolean selection,
+                boolean projectMap,
+                boolean terminalOpen) {
+            this(
+                    hasBuffer,
+                    inRepo,
+                    markdownLike,
+                    csvFile,
+                    httpFile,
+                    typstFile,
+                    hasPreview,
+                    debugActive,
+                    debugSuspended,
+                    debugRestartable,
+                    gitOperation,
+                    exportablePreview,
+                    printableTab,
+                    selection,
+                    projectMap,
+                    terminalOpen,
+                    debugActive && !debugSuspended);
+        }
 
         /** A context with a terminal open: the neutral value for callers that are not asking about the terminal. */
         PaletteContext(
@@ -587,6 +630,11 @@ final class Chrome {
         if (DEBUG_NEEDS_SESSION.contains(id)) {
             if (!c.debugActive()) {
                 return new DisabledReason("palette.disabled.needsDebugSession", null);
+            }
+            // Pause does nothing unless the program runs: lit while it was paused, it disagreed with the Debug
+            // window's own Pause (review 3, C206).
+            if (id.equals("debug.pause") && !c.debugRunning()) {
+                return new DisabledReason("palette.disabled.needsRunning", null);
             }
             // A session attached to a build or test run cannot be restarted from here; the same sentence the
             // command itself reports when it is reached by its key chord.

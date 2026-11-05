@@ -540,6 +540,11 @@ final class DebugCoordinator {
         beforeLaunchService.shutdown();
     }
 
+    /** The session's program is running (not paused, starting or being built for): what Pause acts on (C206). */
+    boolean programRunning() {
+        return dapManager.isActive() && dapManager.state() == DapManager.State.RUNNING;
+    }
+
     /** A session is starting, running, paused or being built for — the states Stop / Restart act on. */
     boolean sessionLive() {
         return dapManager.state() != DapManager.State.INACTIVE
