@@ -205,7 +205,61 @@ class LanguageServerSessionClientTest {
         assertNull(s.createProgress(new org.eclipse.lsp4j.WorkDoneProgressCreateParams())
                 .join());
 
-        assertEquals(List.of("Progress:Indexing — demo (40%)", "ProgressEnd:done"), statuses);
+        assertEquals(List.of("Progress:Indexing — demo (40%)", "ProgressReport:null", "ProgressEnd:done"), statuses);
+    }
+
+    /** A repeated Begin, or an End of work never begun, left the UI's count of open work wrong: no ready line. */
+    @Test
+    void eachProgressTokenIsBegunAndEndedOnce() {
+        LanguageServerSession s = unattached("rust");
+        var begin = new WorkDoneProgressBegin();
+        begin.setTitle("Indexing");
+
+        s.notifyProgress(new ProgressParams(Either.forLeft("t"), Either.forLeft(begin)));
+        s.notifyProgress(new ProgressParams(Either.forLeft("t"), Either.forLeft(begin)));
+        s.notifyProgress(new ProgressParams(Either.forLeft("other"), Either.forLeft(new WorkDoneProgressEnd())));
+        s.notifyProgress(new ProgressParams(Either.forLeft("other"), Either.forLeft(new WorkDoneProgressReport())));
+        s.notifyProgress(new ProgressParams(Either.forLeft("t"), Either.forLeft(new WorkDoneProgressReport())));
+        s.notifyProgress(new ProgressParams(Either.forLeft("t"), Either.forLeft(new WorkDoneProgressReport())));
+        s.notifyProgress(new ProgressParams(Either.forLeft("t"), Either.forLeft(new WorkDoneProgressEnd())));
+        s.notifyProgress(new ProgressParams(Either.forLeft("t"), Either.forLeft(new WorkDoneProgressEnd())));
+
+        // the second report within a second is not passed on: it says nothing the first did not
+        assertEquals(List.of("Progress:Indexing", "ProgressReport:null", "ProgressEnd:null"), statuses);
+        assertFalse(s.busy());
+    }
+
+    /** Each new spinning text of Metals' one status item was a Begin, and one hide ended only one of them. */
+    @Test
+    void metalsSpinningStatusIsOneWorkHoweverOftenItsTextChanges() {
+        LanguageServerSession s = unattached("scala");
+        s.metalsStatus(metals("$(sync~spin) Importing build", null));
+        s.metalsStatus(metals("$(sync~spin) Compiling root", null));
+        assertTrue(s.busy());
+        s.metalsStatus(metals(null, true));
+        s.metalsStatus(metals(null, true)); // nothing open: nothing to end
+        s.metalsStatus(metals("$(sync~spin) Compiling tests", null));
+        s.metalsStatus(metals("$(check) Build imported", null)); // text that does not spin ends the work too
+        s.metalsStatus(metals("Metals", null));
+
+        assertEquals(
+                List.of(
+                        "Progress:Importing build",
+                        "ProgressReport:Compiling root",
+                        "ProgressEnd:null",
+                        "Progress:Compiling tests",
+                        "Message:Build imported",
+                        "ProgressEnd:null",
+                        "Message:Metals"),
+                statuses);
+        assertFalse(s.busy());
+    }
+
+    private static LanguageServerSession.MetalsStatus metals(String text, Boolean hide) {
+        var status = new LanguageServerSession.MetalsStatus();
+        status.text = text;
+        status.hide = hide;
+        return status;
     }
 
     @Test
@@ -226,7 +280,7 @@ class LanguageServerSessionClientTest {
         report.task = "Importing";
         report.status = " 25% ";
         s.languageProgressReport(report);
-        s.languageProgressReport(report); // the same task again: already announced
+        s.languageProgressReport(report); // the same task again: already announced, only alive
         s.languageProgressReport(null);
 
         var stray = new LanguageServerSession.LanguageProgressReport();
@@ -239,7 +293,7 @@ class LanguageServerSessionClientTest {
         s.languageProgressReport(report);
 
         assertEquals(
-                List.of("Progress:Importing", "ProgressEnd:Imported"),
+                List.of("Progress:Importing", "ProgressReport:null", "ProgressEnd:Imported"),
                 statuses,
                 "no total: no percentage; a status that is only a percentage is not repeated as detail");
     }

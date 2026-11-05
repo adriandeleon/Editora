@@ -25,12 +25,21 @@ import org.jspecify.annotations.Nullable;
  *   <li>After that, background work (diagnostics, searches — every edit starts some) is shown only when it is
  *       still running after {@link #QUIET_MILLIS}, and work that was shown ends with another ready line, so the
  *       log never stops on a job that looks unfinished.
+ *   <li>Work a server began and never ended — an End it did not send, or lost — would hold the ready line back for
+ *       good. Once a ready server has said nothing at all for {@link #STALL_MILLIS} with work still open, that work
+ *       is taken as over and the ready line is said; per-step reports ("ProgressReport") count as something said.
  * </ul>
  */
 public final class ServerStatusNarrator {
 
     /** How long the server must have been quiet before it is called ready, or work must run before it shows. */
     public static final long QUIET_MILLIS = 800;
+
+    /**
+     * How long a ready server with work open must have said nothing — no Begin, End or report — before that work
+     * is taken as over: an End the server never sent kept the ready line from ever being said.
+     */
+    public static final long STALL_MILLIS = 30_000;
 
     /**
      * A line to show: either the server's own {@code text}, or the narrator's "ready" line ({@code text} null).
@@ -69,8 +78,8 @@ public final class ServerStatusNarrator {
 
     /**
      * Takes one status from {@code serverId} at {@code now}: {@code type} is what {@code LanguageServerSession}
-     * reports (a JDT LS {@code language/status} type, "Progress"/"ProgressEnd", "Message", "Error",
-     * "Launching"). Returns the line to show now, or null for none.
+     * reports (a JDT LS {@code language/status} type, "Progress"/"ProgressEnd", "ProgressReport" (a step of work
+     * already begun: it counts as activity, and a text replaces the work's), "Message", "Error", "Launching"). Returns the line to show now, or null for none.
      */
     public @Nullable Line onStatus(@Nullable String serverId, String type, @Nullable String message, long now) {
         String key = serverId == null ? "" : serverId;
@@ -93,6 +102,17 @@ public final class ServerStatusNarrator {
                     return null;
                 }
                 return show(serverId, s, msg);
+            }
+            case "progressreport" -> {
+                if (!s.announced) {
+                    return show(serverId, s, msg);
+                }
+                if (msg != null && s.held != null) {
+                    s.held = msg; // not shown yet: when it is, it says where the work is now
+                } else if (msg != null && s.busyShown && s.outstanding > 0) {
+                    return show(serverId, s, msg);
+                }
+                return null;
             }
             case "progressend" -> {
                 s.outstanding = Math.max(0, s.outstanding - 1);
@@ -168,6 +188,17 @@ public final class ServerStatusNarrator {
                 s.announced = true;
                 s.lastShown = null;
                 out.add(new Line(serverId, null));
+            } else if (s.ready && !s.failed && s.outstanding > 0 && now - s.lastActivity >= STALL_MILLIS) {
+                // work begun and never ended: the server is not going to say so (Metals, a lost End)
+                s.outstanding = 0;
+                s.held = null;
+                boolean owed = !s.announced || s.busyShown;
+                s.announced = true;
+                s.busyShown = false;
+                if (owed) {
+                    s.lastShown = null;
+                    out.add(new Line(serverId, null));
+                }
             } else if (s.announced && s.held != null && s.outstanding > 0 && now - s.heldSince >= QUIET_MILLIS) {
                 s.busyShown = true;
                 s.lastShown = s.held;
@@ -181,7 +212,7 @@ public final class ServerStatusNarrator {
     /** Whether a later {@link #tick} could still produce a line. */
     public boolean pending() {
         for (State s : states.values()) {
-            if ((!s.announced && s.ready && !s.failed) || (s.announced && s.held != null)) {
+            if ((!s.announced && s.ready && !s.failed) || (s.announced && (s.held != null || s.outstanding > 0))) {
                 return true;
             }
         }
