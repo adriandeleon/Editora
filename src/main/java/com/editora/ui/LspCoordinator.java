@@ -2790,9 +2790,7 @@ final class LspCoordinator {
                 // The intermediate large-source tier skips LSP (keeps highlighting) — up to a per-language limit:
                 // Python keeps Pyright to 50,000 lines (review B10).
                 && com.editora.lsp.LspServerRegistry.lspAllowedForSize(
-                        buffer.getLanguage(),
-                        buffer.isHeavyFile(),
-                        buffer.getArea().getParagraphs().size())
+                        buffer.getLanguage(), buffer.isHeavyFile(), LspDocumentFacts.lines(buffer))
                 // While narrowed the area holds only the region, so every position the server sends or
                 // receives is offset — a formatting edit or code action would land in the wrong place and
                 // corrupt the file. Suspend the document until the buffer is widened again.
