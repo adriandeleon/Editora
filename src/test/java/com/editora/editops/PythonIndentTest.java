@@ -245,4 +245,18 @@ class PythonIndentTest {
         // A closing triple quote followed by another string is not a split.
         assertFalse(PythonIndent.splitsTripleQuote("x = \"\"\"a\"\"\"", "\"\"\"b\"\"\""));
     }
+
+    @Test
+    void tabsAndSpacesMixedTheWayPythonRejectsAreFound() {
+        // Review 2 A108: Python's own TabError rule (tab = 8 columns and tab = 1 column must agree).
+        assertEquals(2, PythonScan.inconsistentTabLine("def f():\n    if x:\n\treturn 1\n    return 2\n"));
+        assertEquals(-1, PythonScan.inconsistentTabLine("def f():\n\tif x:\n\t\treturn 1\n\treturn 2\n"));
+        assertEquals(-1, PythonScan.inconsistentTabLine("def f():\n    x = 1\n"), "no tab: nothing to check");
+        // Consistent either way: a tab then four spaces is deeper than a tab under both widths.
+        assertEquals(-1, PythonScan.inconsistentTabLine("if a:\n\tif b:\n\t    c()\n"));
+        // Eight spaces then a tab-indented line at the same depth: 8 == 8 but 8 != 1.
+        assertEquals(2, PythonScan.inconsistentTabLine("if a:\n        b()\n\tc()\n"));
+        // A tab inside a string or a continuation line is not indentation.
+        assertEquals(-1, PythonScan.inconsistentTabLine("x = foo(\n\t1,\n    2)\ns = '\t'\n"));
+    }
 }

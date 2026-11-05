@@ -266,6 +266,57 @@ public final class PythonScan {
         return format && (k == floor || !(Character.isLetterOrDigit(text.charAt(k - 1)) || text.charAt(k - 1) == '_'));
     }
 
+    /**
+     * The first line (0-based) whose indentation Python rejects with a {@code TabError} — tabs and spaces mixed so
+     * that the line's depth depends on the tab width — or -1. Python's own rule: every statement's indent is
+     * measured twice, with tabs to the next multiple of 8 and with a tab as one column, and the two measures
+     * must agree on deeper / same / shallower against the enclosing block (review 2 A108). Free for a file
+     * without a tab.
+     */
+    public static int inconsistentTabLine(CharSequence text) {
+        if (text.toString().indexOf('\t') < 0) {
+            return -1;
+        }
+        List<Line> lines = scan(text);
+        java.util.ArrayDeque<int[]> stack = new java.util.ArrayDeque<>();
+        stack.push(new int[] {0, 0});
+        for (int i = 0; i < lines.size(); i++) {
+            Line l = lines.get(i);
+            if (!l.statement()) {
+                continue;
+            }
+            int col = 0;
+            int alt = 0;
+            for (int k = l.start(); k < l.indentEnd(); k++) {
+                if (text.charAt(k) == '\t') {
+                    col = (col / 8 + 1) * 8;
+                } else {
+                    col++;
+                }
+                alt++;
+            }
+            int[] top = stack.getFirst();
+            if (col == top[0]) {
+                if (alt != top[1]) {
+                    return i;
+                }
+            } else if (col > top[0]) {
+                if (alt <= top[1]) {
+                    return i;
+                }
+                stack.push(new int[] {col, alt});
+            } else {
+                while (stack.size() > 1 && col < stack.getFirst()[0]) {
+                    stack.pop();
+                }
+                if (col == stack.getFirst()[0] && alt != stack.getFirst()[1]) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
     /** The first word of the code at {@code line}'s indent ({@code ""} when it does not start with a letter). */
     public static String firstWord(CharSequence text, Line line) {
         int i = line.indentEnd();
