@@ -1196,6 +1196,7 @@ final class DebugCoordinator {
         return new DapManager.Listener() {
             @Override
             public void onState(DapManager.State state) {
+                closeSmartStepPicker(state); // review E108
                 // INACTIVE with no panel built is what startup (configure, stop) reports: a panel built later
                 // starts in that state by itself, so there is nothing to show and no reason to build it now.
                 boolean show = debugPanel != null || state != DapManager.State.INACTIVE;
@@ -1734,7 +1735,37 @@ final class DebugCoordinator {
                 // nothing to end first
             }
         }
+        if (debugsTest(b)) {
+            return;
+        }
         launchBuffer(b);
+    }
+
+    /** Debugs a JUnit test at the caret ({@code true}: the whole class), as the gutter's Debug Test; set by the
+     *  window. Null: Debug ▶ launches a test file like any other. */
+    private @Nullable Consumer<Boolean> testDebugger;
+
+    void setTestDebugger(Consumer<Boolean> testDebugger) {
+        this.testDebugger = testDebugger;
+    }
+
+    /** Debug ▶ in a JUnit test file debugs the test at the caret, or its class (review A102); true when it did. */
+    private boolean debugsTest(@Nullable EditorBuffer b) {
+        if (b == null || testDebugger == null || !"java".equals(b.getLanguage())) {
+            return false;
+        }
+        b.settleRunScan(); // the test lines come from the load's off-FX scan
+        DebugTestRoute.Route route = DebugTestRoute.route(
+                true,
+                b.isCompactSource(),
+                b.testClassTarget() != null,
+                ownMainClass(b.getContent()) != null,
+                b.testTargetAtCaret(false) != null);
+        if (route == DebugTestRoute.Route.LAUNCH) {
+            return false;
+        }
+        testDebugger.accept(route == DebugTestRoute.Route.TEST_CLASS);
+        return true;
     }
 
     /**
@@ -3803,7 +3834,9 @@ final class DebugCoordinator {
             host.setStatus(tr("debug.smartStep.unsupported"));
             return;
         }
-        dapManager.stepInTargets(targets -> {
+        String lineText = shownLineText();
+        dapManager.stepInTargets(found -> {
+            List<DapModels.StepTarget> targets = com.editora.editor.debug.StepTargetOrder.sort(found, lineText);
             if (targets.isEmpty()) {
                 host.setStatus(tr("debug.smartStep.none"));
             } else if (targets.size() == 1) {
@@ -3820,6 +3853,28 @@ final class DebugCoordinator {
                 picker.show(host.window());
             }
         });
+    }
+
+    /** The text of the stopped line Smart Step Into lists the calls of ("" when its file is not open). */
+    private String shownLineText() {
+        DapModels.StackFrameInfo frame = shownFrame;
+        if (frame == null || frame.file() == null) {
+            return "";
+        }
+        EditorBuffer b = ops.bufferForPath(frame.file());
+        int line = frame.line();
+        return b == null || line < 0 || line >= b.getArea().getParagraphs().size()
+                ? ""
+                : b.getArea().getParagraph(line).getText();
+    }
+
+    /** A Smart Step Into list belongs to one stop: it closes once the program runs on or the session ends. */
+    private void closeSmartStepPicker(DapManager.State state) {
+        QuickOpen<DapModels.StepTarget> picker = smartStepPicker;
+        if (picker != null && state != DapManager.State.SUSPENDED) {
+            smartStepPicker = null;
+            picker.hide();
+        }
     }
 
     // --- review C: breakpoints list, mute, gutter and editor menus, Show Value -----------------------------

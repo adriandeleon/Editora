@@ -3692,7 +3692,49 @@ public final class DapManager {
             LOG.fine(() -> "java-debug: " + original.strip());
         }
         if (!shown.isEmpty()) {
+            lastOutput = new OutputStamp(epoch, System.nanoTime());
             outputPump.offer(epoch, shown, category);
+        }
+    }
+
+    /** When the adapter last sent program output, and for which session (see {@link OutputTail}). */
+    private record OutputStamp(long epoch, long nanos) {}
+
+    private volatile OutputStamp lastOutput = new OutputStamp(-1, 0);
+
+    /** A program java-debug started itself (the program console off): its output trails its exit (E104). */
+    private boolean outputTrails(long epoch) {
+        return javaAdapterEpoch == epoch && programStartedEpoch != epoch;
+    }
+
+    /**
+     * Runs {@code then} on the FX thread once the session's output has gone quiet ({@link OutputTail}), so the
+     * program's last lines are shown before the session ends; dropped if the session ends meanwhile (Stop).
+     */
+    private void whenOutputQuiet(long epoch, long doneNanos, Runnable then) {
+        OutputStamp last = lastOutput;
+        long wait = OutputTail.waitMillis(System.nanoTime(), last.epoch() == epoch ? last.nanos() : 0, doneNanos);
+        if (wait <= 0) {
+            then.run();
+            return;
+        }
+        CompletableFuture.delayedExecutor(wait, TimeUnit.MILLISECONDS)
+                .execute(() -> Platform.runLater(() -> {
+                    if (isCurrent(epoch)) {
+                        whenOutputQuiet(epoch, doneNanos, then);
+                    }
+                }));
+    }
+
+    /** The session whose exit report waits for its trailing output; -1 for none. */
+    private long exitAwaitingOutput = -1;
+
+    /** Reports the exit of {@code epoch} if it is still waiting for the output before it (FX thread). */
+    private void reportAwaitedExit(long epoch) {
+        if (exitAwaitingOutput == epoch) {
+            exitAwaitingOutput = -1;
+            outputPump.flush();
+            reportJavaExit(epoch);
         }
     }
 
@@ -3732,6 +3774,13 @@ public final class DapManager {
                                 program.terminate();
                             }
                         }));
+                return;
+            }
+            if (isCurrent(epoch) && outputTrails(epoch)) {
+                whenOutputQuiet(epoch, System.nanoTime(), () -> {
+                    reportAwaitedExit(epoch);
+                    endSession(epoch);
+                });
                 return;
             }
             endSession(epoch);
@@ -3831,6 +3880,9 @@ public final class DapManager {
             started.complete(pid);
             if (!program.inTerminal()) {
                 listener.onProgramInput(true); // in a terminal, the terminal takes the input
+            } else {
+                // The Debug console stays empty: say where the program's output and input are (review E106).
+                onOutput(epoch, tr("debug.console.inTerminal", programTitle()) + "\n", COMMAND_CATEGORY);
             }
         } catch (java.io.IOException | RuntimeException e) {
             program.kill();
@@ -3875,8 +3927,10 @@ public final class DapManager {
             if (javaAdapterEpoch == epoch) {
                 // java-debug reports 0 whatever the program exited with (System.exit(3) included, seen live).
                 // The wrapper the program was started through recorded its real code; without one the console
-                // says only that the program ended, not a code that is not its own (review A10).
-                reportJavaExit(epoch);
+                // says only that the program ended, not a code that is not its own (review A10). It waits for
+                // the output still on its way, which would otherwise come after it (E104).
+                exitAwaitingOutput = epoch;
+                whenOutputQuiet(epoch, System.nanoTime(), () -> reportAwaitedExit(epoch));
                 return;
             }
             listener.onProgramExit(exitCode);

@@ -372,4 +372,37 @@ class DebugCodeChangesFxTest {
         session.awaitRequests("stepIn", 2);
         assertEquals(101, session.stepIns.get(1).getTargetId());
     }
+
+    @Test
+    void smartStepIntoListsTheCallsInTheOrderTheyRunAndClosesOnceTheProgramRunsOn() throws Exception {
+        String call = "System.out.println(\"v1\");";
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = buffer.getArea();
+            int at = area.getText().indexOf(call);
+            area.replaceText(at, at + call.length(), "int r = add(twice(1), twice(2));");
+        });
+        FakeDebugAdapter.Session session = connect();
+        session.framePath = file.toString();
+        session.stepTargetLabels = List.of("add(twice(1),twice(2))", "twice(2)", "twice(1)");
+        session.stop(7, "breakpoint");
+        await("the stop", () -> FxTestSupport.callOnFx(dap::state) == DapManager.State.SUSPENDED);
+        await("the frame to show", () -> FxTestSupport.field(debug, "shownFrame") != null);
+        FxTestSupport.runOnFx(() -> registry.run("debug.smartStepInto"));
+        QuickOpen<DapModels.StepTarget>[] picker = new QuickOpen[1];
+        await(
+                "the picker",
+                () -> (picker[0] = FxTestSupport.field(debug, "smartStepPicker")) != null
+                        && FxTestSupport.callOnFx(picker[0]::isShown));
+        java.util.function.Supplier<List<DapModels.StepTarget>> items = FxTestSupport.field(picker[0], "itemsSupplier");
+        assertEquals(
+                List.of("twice(1)", "twice(2)", "add(twice(1),twice(2))"),
+                FxTestSupport.callOnFx(items::get).stream()
+                        .map(DapModels.StepTarget::label)
+                        .toList(),
+                "the order the calls run in, whatever order the adapter sent (review E108)");
+
+        FxTestSupport.runOnFx(() -> registry.run("debug.continue"));
+        await("the program runs on", () -> FxTestSupport.callOnFx(dap::state) == DapManager.State.RUNNING);
+        await("the stale list closes", () -> !FxTestSupport.callOnFx(picker[0]::isShown));
+    }
 }

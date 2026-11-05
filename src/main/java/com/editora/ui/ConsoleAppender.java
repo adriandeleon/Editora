@@ -70,7 +70,11 @@ final class ConsoleAppender {
         discard(); // first: a failing edit must not leave its text to be applied again
         int start = console.getLength();
         if (start + appended.length() > maxChars) {
+            boolean first = !trimmed;
             trimmed = true; // the oldest output is about to be cut: the console's owner says so
+            if (first && onTrimmed != null) {
+                onTrimmed.run();
+            }
         }
         int caretBefore = console.getCaretPosition();
         boolean follow = caretBefore >= start; // scrolled back? stay put
@@ -95,6 +99,13 @@ final class ConsoleAppender {
     }
 
     private boolean trimmed;
+
+    /** Told the first time the console cuts its oldest output (since {@link #resetTrimmed()}); may be null. */
+    private @Nullable Runnable onTrimmed;
+
+    void onTrimmed(@Nullable Runnable onTrimmed) {
+        this.onTrimmed = onTrimmed;
+    }
 
     /** Whether output was dropped from the top to stay under the cap since {@link #resetTrimmed()}. */
     boolean trimmed() {
