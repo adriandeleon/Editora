@@ -114,15 +114,18 @@ class TypeScriptInstallBannerFxTest {
 
     /** The status echo's text and the text it draws at {@code width} px, which ends in "…" when it is cut off. */
     private static String[] echoAt(MainController c, double width) throws Exception {
-        FxTestSupport.runOnFx(() -> c.stage.setWidth(width));
-        FxTestSupport.drainFx(); // the scene takes the stage's width on the next pulse
-        FxTestSupport.drainFx();
+        FxTestSupport.drainFx(); // the new text is applied
         return FxTestSupport.callOnFx(() -> {
-            c.stage.getScene().getRoot().applyCss();
-            c.stage.getScene().getRoot().layout();
-            Label echo = (Label) c.stage.getScene().getRoot().lookup(".status-message");
+            // Lay the window's content out at exactly {@code width} within this one call rather than sizing the
+            // stage: in a full test run the stage kept 1000 px, so the check depended on the run, not the text.
+            javafx.scene.layout.Region root =
+                    (javafx.scene.layout.Region) c.stage.getScene().getRoot();
+            root.applyCss();
+            root.resize(width, root.getHeight());
+            root.layout();
+            Label echo = (Label) root.lookup(".status-message");
             Text drawn = (Text) echo.lookup(".text");
-            assertEquals(width, c.stage.getScene().getWidth(), 0.5);
+            assertEquals(width, root.getWidth(), 0.5);
             return new String[] {echo.getText(), drawn == null ? echo.getText() : drawn.getText()};
         });
     }
