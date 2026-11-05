@@ -37,6 +37,9 @@ import org.jspecify.annotations.Nullable;
 public final class CompletionPopup {
 
     private static final int VISIBLE_ROWS = 9;
+    /** Rows {@link #contentWidth} measures (E106: server lists are no longer capped at 50). */
+    static final int MEASURED_ROWS = 200;
+
     private static final double ROW_HEIGHT = 24;
     private static final double MIN_WIDTH = 360;
     // A jdtls method row carries its whole parameter list in the label (CompletionMapper appends
@@ -54,6 +57,9 @@ public final class CompletionPopup {
 
     private final Popup popup = new Popup();
     private final ListView<Completion> list = new ListView<>();
+    /** "Waiting for Pyright…" under the rows while a slow server's answer is pending (Python review 2 E103). */
+    private final Label waiting = new Label();
+
     private Consumer<Completion> onAccept = c -> {};
     private Consumer<Completion> onSelect = c -> {};
     private String query = "";
@@ -77,7 +83,9 @@ public final class CompletionPopup {
             }
         });
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> onSelect.accept(now));
-        VBox box = new VBox(list);
+        waiting.getStyleClass().add("completion-waiting");
+        setWaitingText(null);
+        VBox box = new VBox(list, waiting);
         box.getStyleClass().add("completion-popup");
         // A Popup has its own scene that does NOT inherit the editor scene's stylesheets, so without this
         // app.css (and its `.completion-*` rules + AtlantaFX `-color-*` vars) never apply and the list
@@ -184,6 +192,9 @@ public final class CompletionPopup {
             hide();
             return;
         }
+        setWaitingText(null);
+        list.setVisible(true);
+        list.setManaged(true);
         Completion previous = isShowing() && userSelected ? selected() : null;
         int preserved = previous == null ? -1 : items.indexOf(previous);
         int sel = preserved >= 0 ? preserved : Math.max(0, Math.min(selectIndex, items.size() - 1));
@@ -218,6 +229,53 @@ public final class CompletionPopup {
         }
     }
 
+    /**
+     * Shows {@code items} (the buffer's words and snippets, possibly none) with {@code waitingText} under them, while
+     * the server's own list is on its way: a 20,000-line Python file kept Pyright busy for seconds and the popup
+     * showed nothing at all (Python review 2 E103). The server's answer replaces it through {@link #show}.
+     */
+    public void showWaiting(Window owner, Bounds caretScreen, List<Completion> items, String waitingText) {
+        if (owner == null || caretScreen == null) {
+            hide();
+            return;
+        }
+        if (!items.isEmpty()) {
+            show(owner, caretScreen, items, 0);
+        } else {
+            userSelected = false;
+            list.getItems().clear();
+            list.setVisible(false);
+            list.setManaged(false);
+        }
+        setWaitingText(waitingText);
+        double y =
+                CaretPopupPlacement.top(caretScreen, ((VBox) popup.getContent().get(0)).prefHeight(-1));
+        if (popup.isShowing()) {
+            popup.setAnchorX(caretScreen.getMinX());
+            popup.setAnchorY(y);
+        } else {
+            popup.show(owner, caretScreen.getMinX(), y);
+        }
+    }
+
+    /** Whether the popup has rows to pick from (false while it only says it is waiting). */
+    public boolean hasRows() {
+        return !list.getItems().isEmpty();
+    }
+
+    /** The waiting line, or null while none shows. */
+    @Nullable
+    String waitingText() {
+        return waiting.isVisible() ? waiting.getText() : null;
+    }
+
+    private void setWaitingText(@Nullable String text) {
+        boolean on = text != null && !text.isEmpty();
+        waiting.setText(on ? text : "");
+        waiting.setVisible(on);
+        waiting.setManaged(on);
+    }
+
     /** The popup's on-screen bounds (for positioning the doc popup beside it), or null when hidden. */
     public @Nullable Bounds screenBounds() {
         if (!popup.isShowing()) {
@@ -233,6 +291,7 @@ public final class CompletionPopup {
         }
         userSelected = false;
         list.getItems().clear();
+        setWaitingText(null);
     }
 
     /**
@@ -260,7 +319,9 @@ public final class CompletionPopup {
         Text measure = new Text();
         double widest = 0;
         boolean overflow = items.size() > VISIBLE_ROWS;
-        for (Completion c : items) {
+        // The first rows are enough to size the popup; measuring all of a 5,000-row server list on the FX thread
+        // is not (the list itself is virtual). Longer labels further down ellipsize.
+        for (Completion c : items.subList(0, Math.min(items.size(), MEASURED_ROWS))) {
             measure.setFont(labelFont);
             measure.setText(c.label() == null ? "" : c.label());
             double labelW = measure.getLayoutBounds().getWidth();

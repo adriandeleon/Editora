@@ -477,9 +477,21 @@ public final class LspServerRegistry {
         };
     }
 
-    /** Pure: whether a file of {@code lines} lines in {@code languageId} gets its language server. */
+    /**
+     * Pure: whether a file of {@code lines} lines in {@code languageId} gets its language server. The limit is
+     * inclusive: "up to 50,000 lines" keeps a file of exactly 50,000 (Python review 2 E109).
+     */
     public static boolean lspAllowedForSize(String languageId, boolean heavyFile, int lines) {
-        return !heavyFile || lines < heavyFileLspLineLimit(languageId);
+        return !heavyFile || lines <= heavyFileLspLineLimit(languageId);
+    }
+
+    /**
+     * Pure: the line count a reader means, from the editor's paragraph count. A file that ends with a line break
+     * has an empty last paragraph, which is not a line: a 49,999-line file with a final newline is 50,000
+     * paragraphs, and counting those lost Pyright below the documented limit (Python review 2 E109).
+     */
+    public static int lineCount(int paragraphs, boolean lastParagraphEmpty) {
+        return paragraphs > 1 && lastParagraphEmpty ? paragraphs - 1 : paragraphs;
     }
 
     /** Whether any registered server serves {@code languageId}. */

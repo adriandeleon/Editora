@@ -51,7 +51,7 @@ class XmlServerTest {
     void xmlKeepsItsServerInTheLargeSourceTierUpToAHundredThousandLines() {
         assertEquals(100_000, LspServerRegistry.heavyFileLspLineLimit("xml"));
         assertTrue(LspServerRegistry.lspAllowedForSize("xml", true, 60_004)); // big.xml from the review
-        assertFalse(LspServerRegistry.lspAllowedForSize("xml", true, 100_000));
+        assertFalse(LspServerRegistry.lspAllowedForSize("xml", true, 100_001));
         assertFalse(LspServerRegistry.lspAllowedForSize("json", true, 12_000)); // others keep the tier's default
     }
 

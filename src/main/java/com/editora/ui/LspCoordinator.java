@@ -2622,6 +2622,13 @@ final class LspCoordinator {
         }
     }
 
+    /** {@code b}'s managing server as {@link LspFeatureNotice} names it ("Pyright"), or null (C107, E103). */
+    LspFeatureNotice.@Nullable Server serverOf(@Nullable EditorBuffer b) {
+        Path path = b == null ? null : lspPath(b);
+        String id = path == null ? null : lspManager.managedServerId(path);
+        return path == null || id == null ? null : new LspFeatureNotice.Server(lspManager, path, serverProgram(id));
+    }
+
     /** Re-applies the inlay-hints gate to every open buffer (the palette/Settings toggle's apply). */
     void applyInlayHints() {
         lspManager.setTypeScriptSettings(
@@ -2790,9 +2797,7 @@ final class LspCoordinator {
                 // The intermediate large-source tier skips LSP (keeps highlighting) — up to a per-language limit:
                 // Python keeps Pyright to 50,000 lines (review B10).
                 && com.editora.lsp.LspServerRegistry.lspAllowedForSize(
-                        buffer.getLanguage(),
-                        buffer.isHeavyFile(),
-                        buffer.getArea().getParagraphs().size())
+                        buffer.getLanguage(), buffer.isHeavyFile(), LspDocumentFacts.lines(buffer))
                 // While narrowed the area holds only the region, so every position the server sends or
                 // receives is offset — a formatting edit or code action would land in the wrong place and
                 // corrupt the file. Suspend the document until the buffer is widened again.
@@ -4096,21 +4101,22 @@ final class LspCoordinator {
                 inlayScrollSettle.playFromStart();
             }
         });
-        buffer.setLspCompletionSource((line, column, kind, trigger, cb) -> {
-            Path path = lspPath(buffer);
-            if (path != null && lspManager.isManaged(path)) {
-                return lspManager.completion(
-                        path,
-                        line,
-                        column,
-                        kind,
-                        trigger,
-                        item -> autoImportAccept(buffer, item),
-                        pomCompletionFilter(buffer, line, column, kind, trigger, cb));
-            }
-            cb.accept(com.editora.completion.CompletionResult.EMPTY);
-            return () -> {};
-        });
+        buffer.setLspCompletionSource(com.editora.completion.CompletionSource.named(
+                () -> LspFeatureNotice.nameOf(serverOf(buffer)), (line, column, kind, trigger, cb) -> {
+                    Path path = lspPath(buffer);
+                    if (path != null && lspManager.isManaged(path)) {
+                        return lspManager.completion(
+                                path,
+                                line,
+                                column,
+                                kind,
+                                trigger,
+                                item -> autoImportAccept(buffer, item),
+                                pomCompletionFilter(buffer, line, column, kind, trigger, cb));
+                    }
+                    cb.accept(com.editora.completion.CompletionResult.EMPTY);
+                    return () -> {};
+                }));
         // Lazy documentation for the completion doc side-popup: resolve the item's docs on demand.
         buffer.setCompletionDocResolver((token, cb) -> {
             Path path = lspPath(buffer);
