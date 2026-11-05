@@ -314,6 +314,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     public DebugPanel(Actions actions) {
         this.actions = actions;
+        appender.onTrimmed(this::refreshStatus);
         getStyleClass().add("debug-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
@@ -911,7 +912,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (breakpointsMuted) {
             state = state + " · " + tr("debugpanel.muted");
         }
-        status.setText(sessionFile.isEmpty() ? state : state + " — " + sessionFile);
+        // The console keeps only its last characters; say so, as the Run console does (review E107).
+        String trimNote = appender.trimmed() ? " " + tr("run.outputTrimmed", MAX_CONSOLE_CHARS) : "";
+        status.setText((sessionFile.isEmpty() ? state : state + " — " + sessionFile) + trimNote);
         RunPanel.showSpinner(
                 busy, preparing || lastState == DapManager.State.STARTING || lastState == DapManager.State.RUNNING);
     }
@@ -1755,6 +1758,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     public void clearConsole() {
         appender.discard();
         console.clear();
+        if (appender.trimmed()) {
+            appender.resetTrimmed();
+            refreshStatus();
+        }
     }
 
     @Override
