@@ -186,11 +186,11 @@ public class SettingsWindow {
     private final Consumer<Boolean> onToggleExpert;
     private final Consumer<Path> onOpenFile;
     private final Runnable onExportConfig;
-    /** Import Configuration… (the {@code config.import} command); null until wired. */
-    private @Nullable Runnable onImportConfig;
+    /** Runs a command by id (Import Configuration…, Python: Select Interpreter); null until wired. */
+    private @Nullable Consumer<String> runCommand;
 
-    void setImportConfig(Runnable importConfig) {
-        this.onImportConfig = importConfig;
+    void setRunCommand(Consumer<String> runCommand) {
+        this.runCommand = runCommand;
     }
 
     private final Runnable onShowDebugLog;
@@ -7039,6 +7039,11 @@ public class SettingsWindow {
                 debugCheck,
                 tr("settings.debug.note"),
                 "debug dap breakpoint step variables enable install plugin vscode mason jdtls debugpy js-debug");
+        // The Python interpreter is on the LSP page, editable with debugging off (Python review 2, C101).
+        Hyperlink pythonLink = new Hyperlink(tr("settings.debug.pythonInterpreterLink"));
+        pythonLink.setWrapText(true);
+        pythonLink.setOnAction(e -> sidebar.getSelectionModel().select(Category.LSP));
+        row(p, Category.DEBUG, null, pythonLink, "debug python interpreter venv path lsp language servers");
         // One card per adapter, titled with the language (Java has no per-adapter enable — it rides
         // the Java LSP server; see DebugCoordinator.debugEffectiveFor).
         dependsOn(p, debugCheck);
@@ -7104,6 +7109,10 @@ public class SettingsWindow {
                     .install(() -> installSupport("javascript".equals(dbg.id()) ? "js-debug" : dbg.id())); // D111
             debugStatusLabels.put(dbg.id(), status);
             installButtons.put("debug:" + dbg.id(), status.installButton());
+            if ("python".equals(dbg.id())) { // its field is on the LSP page's Python card
+                controlRow(c, Category.DEBUG, tr("settings.git.detected"), null, status.node(), dbg.keywords());
+                continue;
+            }
             String title = tr(dbg.commandLabelKey());
             toolRows(c, Category.DEBUG, title, null, debugCommandFields.get(dbg.id()), null, status, dbg.keywords());
         }
@@ -7223,6 +7232,7 @@ public class SettingsWindow {
         features.setWrapText(true);
         features.setOnAction(e -> sidebar.getSelectionModel().select(Category.COMPLETION));
         row(p, Category.LSP, null, features, "lsp inlay hints code lens semantic highlighting format on type imports");
+        pythonCard(p); // before dependsOn: editable with language servers off, as Run and Debug use it too
         dependsOn(p, lspCheck);
         for (LspServerUi srv : lspServerUis()) {
             Card c = card(p, null);
@@ -7287,6 +7297,41 @@ public class SettingsWindow {
             }
         }
         return p;
+    }
+
+    /**
+     * The Python card (Python review 2, C101): the fallback interpreter, a way to the project's own pick and format on
+     * save. It sat on the Debugging page's Python card, greyed out while debugging was off — the default — though Run
+     * and Pyright use it too.
+     */
+    private void pythonCard(VBox p) {
+        String words = "python interpreter venv virtual environment pyright run debug tests ";
+        Card c = card(p, tr("settings.lsp.python.title"));
+        TextField field = debugCommandFields.get("python");
+        if (field != null) { // build() makes one per adapter
+            String title = tr("settings.debug.pythonCommand");
+            field.setPrefWidth(PATH_FIELD_WIDTH);
+            fullValueTip(field, title);
+            HBox path = new HBox(6, field, browseButton(title, field));
+            controlRow(c, Category.LSP, title, tr("settings.lsp.pythonInterpreter.desc"), path, words + "path python3");
+        }
+        Button pick = new Button(tr("settings.lsp.pythonPick"));
+        pick.setOnAction(e -> {
+            if (runCommand != null) {
+                stage.hide(); // the picker opens in the editor window, behind this one
+                runCommand.accept("python.selectInterpreter");
+            }
+        });
+        String pickTitle = tr("command.python.selectInterpreter");
+        controlRow(c, Category.LSP, pickTitle, tr("settings.lsp.pythonPick.desc"), pick, words + "select pick project");
+        switchRow(
+                c,
+                Category.LSP,
+                "lsp.pythonFormatOnSave",
+                true,
+                Settings::isPythonFormatOnSave,
+                Settings::setPythonFormatOnSave,
+                words + "format formatter ruff black on save actions");
     }
 
     /** The TypeScript card's "TypeScript" line (the SDK its server runs). */
@@ -8311,8 +8356,8 @@ public class SettingsWindow {
         cardRow(ioSection, Category.ADVANCED, exportBox, "export backup settings config zip archive");
         Button importConfig = new Button(tr("settings.importConfig"));
         importConfig.setOnAction(e -> {
-            if (onImportConfig != null) {
-                onImportConfig.run();
+            if (runCommand != null) {
+                runCommand.accept("config.import");
             }
         });
         Label importHint = note(tr("settings.importConfig.hint"));

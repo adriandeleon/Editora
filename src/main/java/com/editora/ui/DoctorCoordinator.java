@@ -1543,7 +1543,7 @@ final class DoctorCoordinator {
         var resolver = ops.pythonInterpreter();
         boolean elsewhere = resolver != null && ops.pythonInterpreterElsewhere();
         DoctorCheck row = DoctorCheck.checking("run.python", "run", tr("doctor.label.pythonInterpreter"), "python")
-                .withSettings("debug");
+                .withSettings("lsp"); // the LSP page's Python card, editable with debugging off (Python 2, C101)
         return probe(row, base -> {
             com.editora.run.PythonInterpreters.PythonInterpreter py = resolver != null
                     ? resolver.get()
