@@ -3561,7 +3561,12 @@ final class LspCoordinator {
             if (!ops.lspFeatureEnabled()) {
                 return;
             }
-            statusNarrator.tick(System.currentTimeMillis()).forEach(this::showStatusLine);
+            for (var line : statusNarrator.tick(System.currentTimeMillis())) {
+                if (line.ready()) {
+                    ops.setLspLoading(false); // work that never ended (a lost End) spun the bar on
+                }
+                showStatusLine(line);
+            }
             if (statusNarrator.pending()) {
                 settle.playFromStart();
             }

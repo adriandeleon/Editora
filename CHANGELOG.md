@@ -209,6 +209,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Every language server says when it is done.** "‹server›: Loaded and ready" sometimes never came. Metals counted
+  each new spinning status as new work and ended only one of them. A server that sent the same progress Begin twice,
+  or an End for work it never began, threw off the count of open work. Each piece of work now counts once, and work
+  a ready server began but never ended is taken as over after 30 seconds of silence, so the ready line (and the end of
+  the loading bar) always comes.
 - **Node.js on a remote host, in WSL or in a container honours the project's `.nvmrc`.** Run, a test file's ▶ and
   Debug now read a `.nvmrc` or `.node-version` on the host (from the file's folder up to the project, or the package
   root) and run the Node.js of that version from the host's nvm (`$NVM_DIR`, then `~/.nvm`), as a local run does. A
