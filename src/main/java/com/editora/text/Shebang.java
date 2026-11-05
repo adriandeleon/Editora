@@ -143,8 +143,8 @@ public final class Shebang {
     }
 
     /** A CPython or PyPy executable name, any version and build suffix ({@code python3.14t}, {@code pypy3}). */
-    private static final java.util.regex.Pattern PYTHON_NAME =
-            java.util.regex.Pattern.compile("(?:python|pypy)(?:\\d+(?:\\.\\d+)*)?(?:t|d|-dbg)?(?:\\.exe)?");
+    private static final java.util.regex.Pattern PYTHON_NAME = java.util.regex.Pattern.compile(
+            "(?:python|pypy|ipython|graalpy|micropython)(?:\\d+(?:\\.\\d+)*)?(?:t|d|w|-dbg)?(?:\\.exe)?");
 
     private static boolean isPython(String name) {
         return PYTHON_NAME.matcher(name).matches();

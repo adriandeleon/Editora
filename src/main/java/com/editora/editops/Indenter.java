@@ -289,7 +289,7 @@ public final class Indenter {
                     "javascriptreact",
                     "typescriptreact" -> Style.BRACES;
             case "xml", "html", "astro", "html-template", "handlebars" -> Style.XML;
-            case "python", "yaml" -> Style.PY;
+            case "python", "cython", "starlark", "yaml" -> Style.PY;
             case "shell" -> Style.SHELL;
             case "ruby" -> Style.RUBY;
             case "lua" -> Style.LUA;

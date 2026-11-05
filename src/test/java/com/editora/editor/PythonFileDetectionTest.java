@@ -118,4 +118,34 @@ class PythonFileDetectionTest {
         }
         return out;
     }
+
+    @Test
+    void pythonDialectsAndPythonByOtherNames() {
+        // Review 2 A113: these opened as plain text, and .pythonrc as INI.
+        for (String line : List.of(
+                "#!/usr/bin/env ipython",
+                "#!/usr/bin/env graalpy",
+                "#!/usr/bin/env micropython",
+                "#!/usr/bin/pythonw")) {
+            assertEquals("py", Shebang.extension(line), line);
+        }
+        assertEquals("python", LanguageRegistry.forFileName(".pythonrc"));
+        assertEquals("python", LanguageRegistry.forFileName("SConstruct"));
+        assertEquals("python", LanguageRegistry.forFileName("src/SConscript"));
+        for (String name :
+                List.of("BUILD", "BUILD.bazel", "WORKSPACE", "MODULE.bazel", "defs.bzl", "x.star", "Tiltfile")) {
+            assertEquals("starlark", LanguageRegistry.forFileName(name), name);
+            assertTrue(GrammarRegistry.shared().hasGrammarFor(name), name);
+        }
+        assertEquals("plaintext", LanguageRegistry.forFileName("build"), "a lower-case build is usually a script");
+        for (String name : List.of("fast.pyx", "fast.pxd", "fast.pxi")) {
+            assertEquals("cython", LanguageRegistry.forFileName(name), name);
+            assertTrue(GrammarRegistry.shared().hasGrammarFor(name), name);
+        }
+        assertNotNull(GrammarRegistry.shared().forLanguageName("starlark"));
+        assertTrue(GrammarRegistry.shared().pickableLanguageNames().contains("cython"));
+        assertEquals("#", Commenter.styleFor("starlark").line());
+        assertEquals("#", Commenter.styleFor("cython").line());
+        assertEquals(com.editora.editops.Indenter.Style.PY, com.editora.editops.Indenter.styleFor("starlark"));
+    }
 }

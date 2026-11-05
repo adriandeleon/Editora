@@ -234,6 +234,21 @@ public final class ConfigFileType {
         if (lower.equals(".classpath") || lower.equals(".project")) {
             return "xml";
         }
+        // Python by another name: a PYTHONSTARTUP file and SCons build scripts are Python; Bazel and Tilt build
+        // files are Starlark, a Python dialect (review 2 A113). Before the generic rc rule, which read
+        // .pythonrc as INI.
+        switch (lower) {
+            case ".pythonrc", "pythonrc", ".pythonstartup", "sconstruct", "sconscript" -> {
+                return "python";
+            }
+            case "build.bazel", "workspace.bazel", "module.bazel", "tiltfile" -> {
+                return "starlark";
+            }
+            default -> {}
+        }
+        if (base.equals("BUILD") || base.equals("WORKSPACE")) {
+            return "starlark"; // Bazel's spelling: a lower-case `build` is far more often a shell script
+        }
         // Generic "rc" config files not caught by a more specific rule above (e.g. .vimrc, .inputrc,
         // .screenrc, .nanorc, .curlrc, .wgetrc, .netrc, .mailrc, /etc/inputrc): most "rc" runtime-config
         // files are INI-style key/value, so default them to INI. Restricted to an extension-less name
