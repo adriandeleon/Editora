@@ -56,6 +56,17 @@ final class BashShims {
         return SERVER_ID.equals(serverId);
     }
 
+    /**
+     * Whether {@code serverId}'s server reads {@code includeDeclaration: false} as "without the occurrence at the
+     * request position", so Find References is asked with the declaration and leaves it out itself: bash-language-
+     * server (C4) and Pyright, whose list from a call lacked that call and, for a function called once, held only its
+     * definition — which was then "jumped to" (Python review 2, C102). typescript-language-server keeps the occurrence
+     * (it adds the declaration instead) and is asked as before.
+     */
+    static boolean dropsRequestedOccurrence(@Nullable String serverId) {
+        return isBash(serverId) || "python".equals(serverId);
+    }
+
     // --- References (C4, B9) ---------------------------------------------------------------------------------
 
     /** The plain locations of a definition answer: a {@link LocationLink} by its target. */

@@ -174,12 +174,34 @@ class BashSessionShimsTest {
         assertEquals(List.of(call), refs);
     }
 
+    /**
+     * Pyright drops the occurrence at the request position too: from {@code helper(1)} the list lacked that call, and a
+     * function called once "jumped" to its definition (Python review 2, C102). It gets the same shim.
+     */
     @Test
-    void otherServersAreAskedForUsagesOnly() throws Exception {
+    void pyrightReferencesIncludeTheCallUnderTheCaretAndNotTheDefinition() throws Exception {
         LanguageServerSession session = session("python");
         FakeLanguageServer fake = new FakeLanguageServer();
         session.attachForTest(fake, new ServerCapabilities());
-        session.references("file:///srv/proj/a.py", new Position(0, 0)).get(5, TimeUnit.SECONDS);
+        String app = "file:///srv/proj/app.py";
+        Location imported = new Location(app, range(0, 21, 0, 27));
+        Location call = new Location(app, range(4, 10, 4, 16));
+        Location definition = new Location("file:///srv/proj/pkg/util.py", range(0, 4, 0, 10));
+        fake.referenceResponse = List.of(imported, call, definition);
+        fake.definitionResponse = List.of(definition);
+
+        var refs = session.references(app, new Position(4, 12)).get(5, TimeUnit.SECONDS);
+
+        assertTrue(FakeLanguageServer.last(fake.references).getContext().isIncludeDeclaration());
+        assertEquals(List.of(imported, call), refs);
+    }
+
+    @Test
+    void otherServersAreAskedForUsagesOnly() throws Exception {
+        LanguageServerSession session = session("typescript");
+        FakeLanguageServer fake = new FakeLanguageServer();
+        session.attachForTest(fake, new ServerCapabilities());
+        session.references("file:///srv/proj/a.ts", new Position(0, 0)).get(5, TimeUnit.SECONDS);
         assertFalse(FakeLanguageServer.last(fake.references).getContext().isIncludeDeclaration());
         assertTrue(fake.definitions.isEmpty());
     }

@@ -343,6 +343,12 @@ public final class CompletionPopup {
         return Math.max(MIN_WIDTH, Math.min(widest, MAX_WIDTH));
     }
 
+    /** Pure: what a screen reader says for a row — its label, then its detail's first line (a type, a module). */
+    static String accessibleText(Completion item) {
+        String detail = firstLine(item.detail());
+        return detail.isBlank() ? item.label() : item.label() + ", " + detail;
+    }
+
     private final class CompletionCell extends ListCell<Completion> {
         private final TextFlow label = new TextFlow();
         private final Label detail = new Label();
@@ -365,8 +371,10 @@ public final class CompletionPopup {
             super.updateItem(item, empty);
             if (empty || item == null) {
                 setGraphic(null);
+                setAccessibleText(null);
                 return;
             }
+            setAccessibleText(accessibleText(item)); // the row is a graphic: say its words (Python review 2, C112)
             // Icon (rebuilt per item — a JavaFX node can only have one parent / the cell is recycled).
             Node icon = CompletionIcons.forKind(item.iconKind());
             if (iconHolder == null) {

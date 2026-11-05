@@ -393,13 +393,33 @@ public final class StatusBar extends HBox {
         return b;
     }
 
-    /** Builds a clickable segment label that dispatches {@code commandId} when clicked. */
+    /** Builds a clickable segment label that dispatches {@code commandId} when clicked, or from the keyboard. */
     private Label segment(String commandId, String hint) {
         Label label = new Label();
         label.getStyleClass().addAll("status-segment", "status-segment-clickable");
         label.setTooltip(new Tooltip(hint));
-        label.setOnMouseClicked(e -> registry.run(commandId));
+        asButton(label, commandId, hint);
         return label;
+    }
+
+    /**
+     * Makes {@code seg} a keyboard-reachable button (Tab, then Enter or Space) a screen reader announces with
+     * {@code hint}, besides a mouse click. The built-in segments (the Python interpreter, the language server) were
+     * mouse-only, unlike a plugin's (Python review 2, C112).
+     */
+    private void asButton(Label seg, String commandId, @Nullable String hint) {
+        seg.setOnMouseClicked(e -> registry.run(commandId));
+        seg.setFocusTraversable(true);
+        seg.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON);
+        if (hint != null && !hint.isBlank()) {
+            seg.setAccessibleHelp(hint);
+        }
+        seg.setOnKeyPressed(e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.ENTER || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
+                e.consume();
+                registry.run(commandId);
+            }
+        });
     }
 
     /**
@@ -418,16 +438,7 @@ public final class StatusBar extends HBox {
         }
         if (commandId != null && !commandId.isBlank()) {
             seg.getStyleClass().add("status-segment-clickable");
-            seg.setOnMouseClicked(e -> registry.run(commandId));
-            seg.setFocusTraversable(true);
-            seg.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON);
-            seg.setOnKeyPressed(e -> {
-                if (e.getCode() == javafx.scene.input.KeyCode.ENTER
-                        || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
-                    e.consume();
-                    registry.run(commandId);
-                }
-            });
+            asButton(seg, commandId, hint);
         }
         getChildren().add(seg);
         return seg;
@@ -810,6 +821,7 @@ public final class StatusBar extends HBox {
         boolean show = text != null && !text.isBlank() && !simpleMode;
         pythonInterpreter.setText(show ? text : "");
         pythonInterpreter.setTooltip(show && tooltip != null ? new Tooltip(tooltip) : null);
+        pythonInterpreter.setAccessibleHelp(show ? tooltip : null); // what a screen reader says it does (C112)
         pythonInterpreter.setVisible(show);
         pythonInterpreter.setManaged(show);
     }

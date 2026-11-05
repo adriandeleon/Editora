@@ -14,6 +14,7 @@
   "Cmd-/": "edit.toggleComment",
   "Cmd-S-7": "edit.toggleComment",
   "Cmd-divide": "edit.toggleComment",
+  "C-space": "edit.completion",
   "Cmd-f": "find.show",
   "Cmd-g": "find.show",
   "Cmd-S-g": "find.showBackward",

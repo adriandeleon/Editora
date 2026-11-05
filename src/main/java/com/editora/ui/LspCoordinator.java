@@ -314,6 +314,8 @@ final class LspCoordinator {
 
     /** Diagnostics by file, <b>scoped to open files only</b> (a server publishes project-wide). */
     private final Map<Path, List<LspDiagnostic>> problems = new LinkedHashMap<>();
+    /** What each buffer last drew: its faded tags too, which {@link #problems} leaves out (Python 2, C105). */
+    private final Map<EditorBuffer, List<LspDiagnostic>> drawn = new java.util.WeakHashMap<>();
 
     /** The Problems / References / Hierarchy panels, each built on its first use (see the accessors). */
     private @Nullable ProblemsPanel problemsPanel;
@@ -559,7 +561,7 @@ final class LspCoordinator {
      */
     private void diagnosticsUnchanged(@Nullable Path file) {
         EditorBuffer buffer = bufferForLspPath(file);
-        List<LspDiagnostic> last = problems.get(ops.canonicalize(file));
+        List<LspDiagnostic> last = buffer == null ? null : drawn.get(buffer);
         if (buffer != null && last != null && !last.isEmpty()) {
             buffer.setLspDiagnostics(last);
         }
@@ -1466,6 +1468,7 @@ final class LspCoordinator {
         diagnostics = eslint.joined(buffer, diagnostics); // a JS/TS file's ESLint problems join the server's
         if (buffer != null) {
             buffer.setLspDiagnostics(diagnostics);
+            drawn.put(buffer, diagnostics);
             noteNonProjectFile(file, diagnostics);
             xmlTrust.onDiagnostics(buffer, diagnostics); // a schema not downloaded: Trust Folder on the file (C6)
             String blocked = xmlNotices.onDiagnostics(diagnostics, () -> xmlTrust.downloadsOffStatus(buffer)); // C25
@@ -1609,12 +1612,14 @@ final class LspCoordinator {
     /** Drops {@code file}'s diagnostics (a tab closed / its LSP session ended) + refreshes the panel. */
     void clearDiagnostics(@Nullable Path file) {
         problems.remove(ops.canonicalize(file));
+        drawn.remove(bufferForLspPath(file));
         refreshProblems();
     }
 
     /** Clears every file's diagnostics (LSP disabled / servers restarted) + refreshes the panel. */
     void clearAllDiagnostics() {
         problems.clear();
+        drawn.clear();
         refreshProblems();
     }
 

@@ -171,13 +171,24 @@ final class PythonInterpreterCoordinator {
             // a version.
             List<PythonInterpreterView.Choice> choices = PythonInterpreterView.choices(
                     current,
+                    root,
                     found,
                     windows,
                     machine.toTarget(),
                     machine.onPath(),
-                    machine.local() ? this::versionOf : exe -> "");
+                    machine.local() ? this::versionOf : exe -> "",
+                    machine.local() ? PythonInterpreterCoordinator::realPath : exe -> exe);
             Platform.runLater(() -> showPicker(choices, root));
         });
+    }
+
+    /** The file {@code executable} resolves to (symlinks followed), or itself. Blocking: off the FX thread. */
+    private static String realPath(String executable) {
+        try {
+            return Path.of(executable).toRealPath().toString();
+        } catch (java.io.IOException | RuntimeException e) {
+            return executable;
+        }
     }
 
     private void showPicker(List<PythonInterpreterView.Choice> choices, @Nullable Path root) {
@@ -187,6 +198,7 @@ final class PythonInterpreterCoordinator {
                 () -> choices,
                 PythonInterpreterView.Choice::label,
                 PythonInterpreterView.Choice::detail,
+                PythonInterpreterView::searchKey, // "venv" or a path finds its row (Python review 2, C103)
                 c -> {
                     if (c != null) {
                         choose(c, root);
@@ -216,18 +228,32 @@ final class PythonInterpreterCoordinator {
             chooser.setInitialDirectory(from.toFile());
         }
         java.io.File picked = chooser.showOpenDialog(host.window());
-        if (picked != null) {
-            store(picked.getAbsolutePath());
+        if (picked == null) {
+            return;
         }
+        // Any file could be picked, and Pyright would then be told to analyse with it: only a Python is stored
+        // (Python review 2, C103). Running it for its version blocks, so off the FX thread.
+        String path = picked.getAbsolutePath();
+        Thread.ofVirtual().name("python-interpreter-check").start(() -> {
+            boolean python =
+                    !PythonInterpreterView.parseVersion(versionOf(path)).isEmpty();
+            Platform.runLater(() -> {
+                if (python) {
+                    store(PythonInterpreterView.commandText(List.of(path)));
+                } else {
+                    host.setStatus(tr("python.interpreter.pick.notPython", picked.getName()));
+                }
+            });
+        });
     }
 
-    /** Stores {@code executable} as the project's pick ("" = detect automatically) and tells everyone. */
-    void store(String executable) {
+    /** Stores {@code command} (one line, as a picker row has it) as the project's pick ("" = detect automatically). */
+    void store(String command) {
         com.editora.config.ConfigManager config = host.config();
         if (config == null) {
             return;
         }
-        String stored = executable.isEmpty() ? "" : PythonInterpreterView.storedChoice(host.projectRoot(), executable);
+        String stored = command.isEmpty() ? "" : PythonInterpreterView.storedChoice(host.projectRoot(), command);
         config.getWorkspaceState().setPythonInterpreter(stored);
         config.saveAsync();
         captureSnapshot();

@@ -2749,7 +2749,7 @@ final class LanguageServerSession implements LanguageClient {
         }
         // Usages only: with the declaration included, Find References on an unused symbol answered with the
         // declaration alone, and the lone result was "jumped to" — the caret stayed put (Java review B5).
-        if (BashShims.isBash(serverId)) {
+        if (BashShims.dropsRequestedOccurrence(serverId)) {
             return bashReferences(uri, pos);
         }
         ReferenceParams params = new ReferenceParams(doc(uri), pos, new ReferenceContext(false));
@@ -2757,8 +2757,8 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /**
-     * bash-language-server reads {@code includeDeclaration: false} as "without the occurrence at the request
-     * position": from a call the list held the definition and not the call (Bash review C4, B9). It is asked with
+     * bash-language-server and Pyright read {@code includeDeclaration: false} as "without the occurrence at the request
+     * position": from a call the list held the definition and not the call (Bash review C4, B9; Python 2 C102). Asked with
      * the declaration included, and the declaration — where {@code textDocument/definition} says it is — is left
      * out here. Should the definition request fail, the whole list is shown.
      */
