@@ -182,6 +182,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JavaScript and TypeScript: a long word no longer slows colouring.** A long run of letters and digits with no
+  spaces (a token, a hash or base64 in a string, a template, a regex or code) took time that grew with the square of
+  its length to colour: 0.2–0.5 s for 2,000 letters and 7–8 s for 10,000, while that tab and every other JavaScript
+  or TypeScript tab waited for colours. It now takes a few milliseconds, and every colour is the same as before.
+
 - **Java debugging (second debugging review, 38 findings).** A loose `.java` file or a plain-folder project is built
   before every Debug and stops on compile errors: edits always run, where the code as first built used to run, and
   code that does not compile no longer runs. Hot code replace works in those folders (it failed with "…: null" when

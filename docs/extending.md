@@ -152,6 +152,8 @@ list.
    version, any local change, and the "Languages bundled" list. tm4e reads `applyEndPatternLast` as true
    only when it is the boolean `true` (`"1"` is false), and the Joni backend rejects variable-length
    look-behinds; `BundledGrammarsTokenizeTest` compiles every regex and fails on either.
+   A grammar with local patches lists them in `NOTICE`; re-apply them when vendoring a new copy (the
+   TypeScript and TypeScriptReact guards are `java scripts/GuardTsGrammars.java`).
 2. **`GrammarRegistry`** — a `scopeToResource` entry (scope → resource base name) and a
    `mapExtensions(...)` entry (extension → scope). Name-only files (`Dockerfile`, `project.clj`) go in
    `ConfigFileType`, which both registries read.

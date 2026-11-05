@@ -124,6 +124,11 @@ style-only change that still ended a succession — skips the draw and the snaps
   (`TextMateHighlighter.MAX_TOKENIZED_LINE` / `LINE_TIMEOUT`). Passes are queued per grammar
   (`HighlightPass.submit`) so a waiting pass holds no pool thread, and `GrammarRegistry` lookups are
   lock-free; only loads are serialized.
+- A grammar regex that starts with an identifier and a lookahead is tried from every position of a long
+  word, each try running to the word's end: quadratic in the word's length. The TypeScript and
+  TypeScriptReact grammars carry a word-start guard on those regexes (`scripts/GuardTsGrammars.java`;
+  `BundledGrammarsLongWordTest` times 10,000-letter words). Measure a new grammar the same way before
+  bundling it.
 - A buffer with no grammar is not restyled at a typing pause; styles are cleared once, on the transition
   from "styled" to "no grammar".
 - A semantic-tokens response is a style-only update: identical tokens restyle nothing, and a different
