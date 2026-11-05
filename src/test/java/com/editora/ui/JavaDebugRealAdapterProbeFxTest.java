@@ -369,12 +369,12 @@ class JavaDebugRealAdapterProbeFxTest {
         assumeRealAdapter();
         Path project = Files.createDirectory(dir.resolve("loose"));
         Path file = project.resolve("LingerProbe.java");
+        // A compact source file: the one kind of loose file still compiled by javac into a folder of its own
+        // (a class with a main runs jdtls's build output since Java debug review 2, A101).
         Files.writeString(file, """
-                public class LingerProbe {
-                    public static void main(String[] args) throws Exception {
-                        while (true) {
-                            Thread.sleep(200);
-                        }
+                void main() throws Exception {
+                    while (true) {
+                        Thread.sleep(200);
                     }
                 }
                 """);
