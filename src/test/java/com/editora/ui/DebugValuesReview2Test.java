@@ -75,6 +75,10 @@ class DebugValuesReview2Test {
 
     @Test
     void aLibraryFrameIsNamedByItsFileNotByAPieceOfItsJdtQuery() {
+        // Windows cannot hold a jdt: URI in a Path, so there a library frame carries no file at all.
+        org.junit.jupiter.api.Assumptions.assumeFalse(System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("win"));
         Path jdt = Path.of("jdt:/contents/java.base/java.lang/String.java?=project_1/%5C/jdk%5C/lib%5C/jrt-fs.jar"
                 + "%60java.base=/%3Cjava.lang%28String.class");
         assertEquals("String.java", DebugValues.sourceName(jdt));

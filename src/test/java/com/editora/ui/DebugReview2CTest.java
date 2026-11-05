@@ -71,8 +71,10 @@ class DebugReview2CTest {
         assertEquals("", BreakpointsPicker.folder(root, root, home), "at the project root: no folder at all");
         assertEquals("src/demo", BreakpointsPicker.folder(root.resolve("src/demo"), root, home));
         assertEquals("~/notes", BreakpointsPicker.folder(home.resolve("notes"), root, home));
-        assertEquals("/opt/lib", BreakpointsPicker.folder(Path.of("/opt/lib"), root, home));
-        assertEquals("/opt/lib", BreakpointsPicker.folder(Path.of("/opt/lib"), null, null));
+        // Elsewhere: the folder as the platform writes it (a backslash path on Windows).
+        String opt = Path.of("/opt/lib").toString();
+        assertEquals(opt, BreakpointsPicker.folder(Path.of("/opt/lib"), root, home));
+        assertEquals(opt, BreakpointsPicker.folder(Path.of("/opt/lib"), null, null));
 
         BreakpointsPicker.Entry e =
                 new BreakpointsPicker.Entry(root.resolve("src/demo/Main.java"), "k", 2, bp("x > 1", "", true), null);
