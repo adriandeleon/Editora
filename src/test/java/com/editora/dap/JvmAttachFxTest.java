@@ -183,6 +183,60 @@ class JvmAttachFxTest {
         assertTrue(errors.isEmpty(), errors.toString());
     }
 
+    /**
+     * Review D102: an attach started while a session was live replaced that session's connection without ending
+     * it — its adapter stayed connected and its program kept running, with nothing in the window to stop it.
+     */
+    @Test
+    void anAttachEndsTheSessionBeforeIt() throws Exception {
+        Path project = Files.createDirectories(dir.resolve("app"));
+        Files.writeString(project.resolve("pom.xml"), "<project/>\n");
+        Path source =
+                Files.createDirectories(project.resolve("src/main/java/p")).resolve("Hello.java");
+        Files.writeString(source, """
+                package p;
+                public class Hello {
+                    public static void main(String[] args) throws Exception {
+                        Thread.sleep(60_000);
+                    }
+                }
+                """);
+        int port = startSuspended(source);
+        onFx(() -> dap.startJvmAttach(source, "kotlin", "localhost", port));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
+        while (!states.contains(DapManager.State.RUNNING)) {
+            assertTrue(System.nanoTime() < deadline, "the first attach never ran; states " + states + ", " + errors);
+            Thread.sleep(20);
+        }
+        Object first = client();
+        assertNotNull(first, "the first session is connected");
+
+        int closed;
+        try (ServerSocket probe = new ServerSocket(0)) {
+            closed = probe.getLocalPort();
+        }
+        onFx(() -> dap.startJvmAttach(source, "kotlin", "localhost", closed));
+
+        assertTrue((Boolean) field(first, "disposed"), "the session before the new attach was ended");
+        assertTrue(client() != first, "the new attach has a session of its own");
+    }
+
+    private Object client() throws Exception {
+        Object[] c = new Object[1];
+        onFx(() -> c[0] = field(dap, "client"));
+        return c[0];
+    }
+
+    private static Object field(Object target, String name) {
+        try {
+            var f = target.getClass().getDeclaredField(name);
+            f.setAccessible(true);
+            return f.get(target);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
     @Test
     void aLanguageWithoutTheJvmAdapterIsReported() throws Exception {
         onFx(() -> dap.startJvmAttach(dir.resolve("main.py"), "python", "localhost", 5005));
