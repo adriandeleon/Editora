@@ -10,7 +10,7 @@
         "description": "Ignore specific line diagnostic in pyright (ignore all is unsafe)"
     },
     "Multiline string": {
-        "prefix": "#",
+        "prefix": "doc",
         "body": ["\"\"\"$0", "\"\"\""],
         "description": "Snippet to avoid autopair plugin annoyances when typing multiple \""
     },
@@ -20,12 +20,12 @@
         "description": "Snippet to avoid autopair plugin annoyances when typing multiple \""
     },
     "self": {
-        "prefix": "s",
+        "prefix": "self",
         "body": "self.$0",
         "description": "Snippet to reference the self property in an object"
     },
     "__magic__": {
-        "prefix": "__",
+        "prefix": "dunder",
         "body": "__${1:init}__$0",
         "description": "Create magic method"
     },
