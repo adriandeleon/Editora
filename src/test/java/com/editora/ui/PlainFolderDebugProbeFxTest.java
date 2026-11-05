@@ -147,10 +147,22 @@ class PlainFolderDebugProbeFxTest {
         }
     }
 
-    /** Opens {@code file}, replaces {@code from} with {@code to} in the editor, and saves it. */
+    /** Opens {@code file}, replaces {@code from} with {@code to} in the editor once it is loaded, and saves it. */
     private static void edit(MainController c, CommandRegistry registry, Path file, String from, String to)
             throws Exception {
         FxTestSupport.runOnFx(() -> c.openAndNavigate(file, 1));
+        for (int i = 0; i < 100; i++) { // the tab's text is read off the FX thread
+            boolean loaded = FxTestSupport.callOnFx(() -> {
+                EditorBuffer b = c.activeBuffer();
+                return b != null
+                        && file.equals(b.getPath())
+                        && b.getArea().getText().contains(from);
+            });
+            if (loaded) {
+                break;
+            }
+            Thread.sleep(100);
+        }
         FxTestSupport.runOnFx(() -> {
             EditorBuffer b = c.activeBuffer();
             int at = b.getArea().getText().indexOf(from);
