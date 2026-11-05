@@ -139,4 +139,19 @@ class NodeModulesPruningTest {
                         .contains("!node_modules/"),
                 "an include glob naming node_modules looks inside it");
     }
+
+    @Test
+    void aPathInsideADependencyFolderAtAnyDepth() {
+        assertTrue(DependencyDirs.inDependencyDir("node_modules/react/index.js"));
+        assertTrue(DependencyDirs.inDependencyDir("packages/web/node_modules/x/y.js"));
+        assertFalse(DependencyDirs.inDependencyDir("src/node_modules.js"));
+        assertFalse(DependencyDirs.inDependencyDir("node_modules"), "the folder itself is not inside it");
+        assertFalse(DependencyDirs.inDependencyDir("src/app.js"));
+    }
+
+    @Test
+    void eachSkipListTakesItsDependencyFoldersFromOnePlace() {
+        assertEquals(List.of("node_modules", "target", ".git"), List.copyOf(DependencyDirs.with("target", ".git")));
+        assertTrue(DependencyDirs.with().containsAll(DependencyDirs.NAMES));
+    }
 }

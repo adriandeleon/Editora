@@ -36,7 +36,9 @@ import org.jspecify.annotations.Nullable;
 public final class NodeSpecParser implements TestResultParser {
 
     private static final Pattern RESULT =
-            Pattern.compile("^( *)([✔✖﹣▶])\\s+(.+?)(?:\\s+\\((\\d+(?:\\.\\d+)?)ms\\))?(\\s+#\\s*(SKIP|TODO)\\b.*)?$");
+            // node prints "# SKIP"/"# TODO", or the reason instead ("﹣ later (0.4ms) # not now", "✔ x (1ms) # why"):
+            // after the duration, any "# …" is a skip or todo directive (review C107).
+            Pattern.compile("^( *)([✔✖﹣▶])\\s+(.+?)(?:\\s+\\((\\d+(?:\\.\\d+)?)ms\\)(\\s+#\\s*(.*))?)?$");
     private static final Pattern TEST_AT = Pattern.compile("^test at (.+?):(\\d+)(?::\\d+)?$");
     private static final String FAILING = "✖ failing tests:";
 
@@ -117,7 +119,7 @@ public final class NodeSpecParser implements TestResultParser {
         if (seen > 1) {
             name = name + " (" + seen + ")";
         }
-        TestStatus status = m.group(6) != null || mark == '﹣'
+        TestStatus status = m.group(5) != null || mark == '﹣'
                 ? TestStatus.SKIPPED
                 : mark == '✔' ? TestStatus.PASSED : TestStatus.FAILED;
         long ms = m.group(4) == null ? 0 : Math.round(Double.parseDouble(m.group(4)));

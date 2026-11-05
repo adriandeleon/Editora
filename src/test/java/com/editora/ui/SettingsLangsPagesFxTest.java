@@ -104,7 +104,8 @@ class SettingsLangsPagesFxTest {
             Map<String, javafx.scene.control.Button> installs = rig.control("installButtons");
             installs.get("debug:python").fire();
             installs.get("debug:javascript").fire();
-            org.junit.jupiter.api.Assertions.assertEquals(java.util.List.of("python", "javascript"), asked);
+            // The JavaScript card installs vscode-js-debug alone, not the TypeScript server too (JS/TS review D111).
+            org.junit.jupiter.api.Assertions.assertEquals(java.util.List.of("python", "js-debug"), asked);
             assertFalse(tr("settings.debug.note").contains("scripts/"), "no repository folder in the hint");
         });
     }

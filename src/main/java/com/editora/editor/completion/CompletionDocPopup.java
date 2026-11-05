@@ -79,6 +79,7 @@ final class CompletionDocPopup {
             hide();
             return;
         }
+        com.editora.editor.PopupSheets.followOwnerTheme(card, owner); // dark code in a dark theme (B107)
         VBox content = new VBox(6);
         content.getStyleClass().add("completion-doc-content");
         if (hasSig) {

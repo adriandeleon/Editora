@@ -144,7 +144,7 @@ final class BracketColors {
         void run(@Nullable String style, int length) {
 
             int end = Math.min(text.length(), pos + length);
-            if (!"string".equals(style) && !"comment".equals(style)) {
+            if (!"string".equals(style) && !"comment".equals(style) && !TextMateHighlighter.JSX_TEXT.equals(style)) {
                 for (int i = pos; i < end; i++) {
                     char c = text.charAt(i);
                     if (isOpen(c)) {

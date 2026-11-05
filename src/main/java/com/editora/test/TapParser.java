@@ -23,6 +23,10 @@ import org.jspecify.annotations.Nullable;
  * nested under it is that suite, not a test, and gets no row ("3 of 5 failed" for two failures in four tests).
  * A failure's YAML is read by {@link NodeTestFailure}: its {@code error} is the message, {@code stack} and
  * {@code location} the frames — not the {@code duration_ms}/{@code type} lines it used to show.
+ *
+ * <p>A file that fails before any test runs (a missing module, a syntax error) is one result named after the
+ * file's whole path, whose YAML only says {@code test failed}; the real error came just before it as {@code #}
+ * diagnostic lines. That row is named after the file alone and carries those lines as its message and stack.
  */
 public final class TapParser implements TestResultParser {
 
@@ -47,6 +51,15 @@ public final class TapParser implements TestResultParser {
     private boolean inYaml;
     private final java.util.List<String> yaml = new java.util.ArrayList<>();
     private boolean sawSubtests;
+    /** {@code #} diagnostic lines since the last result (a file's load error), oldest first, capped. */
+    private final java.util.List<String> diagnostics = new java.util.ArrayList<>();
+    /** The diagnostics that came before the last result, kept for its YAML block. */
+    private java.util.List<String> lastDiagnostics = java.util.List.of();
+
+    private static final int MAX_DIAGNOSTICS = 60;
+    private static final Pattern SUMMARY =
+            Pattern.compile("^#\\s*(tests|suites|pass|fail|cancelled|skipped|todo|duration_ms)\\s+[\\d.]+\\s*$");
+    private static final Pattern FILE_RESULT = Pattern.compile("^(?:[A-Za-z]:)?[\\\\/].*\\.[cm]?[jt]sx?$");
 
     public TapParser() {
         this(SUITE);
@@ -90,6 +103,10 @@ public final class TapParser implements TestResultParser {
                 if (lastName == null || lastStatus != TestStatus.FAILED || failure.suite()) {
                     return List.of();
                 }
+                if (!lastDiagnostics.isEmpty()
+                        && (failure.message() == null || "test failed".equals(failure.message()))) {
+                    failure = NodeTestFailure.fromDiagnostics(lastDiagnostics, failure);
+                }
                 return List.of(new ParsedSuite(suite, List.of(failure.toParsedTest(suite, lastName, lastStatus))));
             }
             yaml.add(line);
@@ -97,6 +114,13 @@ public final class TapParser implements TestResultParser {
         }
 
         int level = nestingLevel(line);
+        if (trimmed.startsWith("#") && !SUBTEST.matcher(trimmed).matches()) {
+            if (!SUMMARY.matcher(trimmed).matches() && diagnostics.size() < MAX_DIAGNOSTICS) {
+                // node escapes '#' inside a diagnostic ("at \\#cachedDefaultResolve")
+                diagnostics.add(trimmed.substring(1).replaceFirst("^ ", "").replace("\\#", "#"));
+            }
+            return List.of();
+        }
         Matcher subtest = SUBTEST.matcher(trimmed);
         if (subtest.matches()) {
             sawSubtests = true;
@@ -113,6 +137,11 @@ public final class TapParser implements TestResultParser {
             String name = DIRECTIVE.matcher(rest).replaceAll("").strip();
             if (name.isEmpty()) {
                 name = "test " + (number != null ? number : Integer.toString(++unnamed));
+            }
+            lastDiagnostics = List.copyOf(diagnostics);
+            diagnostics.clear();
+            if (level == 0 && isFileResult(name)) {
+                name = fileName(name); // node:test's result for a whole file is named after its path
             }
             // A result whose subtest had results of its own is a suite (node:test's describe): no row.
             boolean isSuite = count(level) > 0;
@@ -145,6 +174,16 @@ public final class TapParser implements TestResultParser {
             yaml.clear();
         }
         return List.of();
+    }
+
+    /** Whether a result's name is a test file's path — node:test's one result for a whole file. */
+    public static boolean isFileResult(String name) {
+        return name != null && FILE_RESULT.matcher(name.strip()).matches();
+    }
+
+    private static String fileName(String path) {
+        String p = path.strip().replace('\\', '/');
+        return p.substring(p.lastIndexOf('/') + 1);
     }
 
     private int count(int level) {

@@ -158,12 +158,12 @@ class InstallServiceTarTest {
                 "{\"assets\":[{\"browser_download_url\":"
                         + "\"https://github.com/microsoft/vscode-js-debug/releases/download/v1.105.0/ms-vscode.js-debug.vsix\"},"
                         + "{\"browser_download_url\":\"" + asset + "\"}]}");
-        web.serve(
-                asset,
-                TestArchives.tar()
-                        .file("js-debug/package.json", "{}")
-                        .file("js-debug/src/dapDebugServer.js", "server")
-                        .gz());
+        byte[] tgz = TestArchives.tar()
+                .file("js-debug/package.json", "{}")
+                .file("js-debug/src/dapDebugServer.js", "server")
+                .gz();
+        web.serve(asset, tgz);
+        service.setJsDebugSha256ForTest(InstallCatalog.sha256Hex(tgz));
 
         InstallService.Result result = install(jsDebug());
 
@@ -178,12 +178,32 @@ class InstallServiceTarTest {
         String asset =
                 "https://github.com/microsoft/vscode-js-debug/releases/download/v1.105.0/js-debug-dap-v1.105.0.tar.gz";
         web.serve(jsDebug().apiUrl(), "{\"browser_download_url\":\"" + asset + "\"}");
-        web.serve(asset, TestArchives.tar().file("js-debug/package.json", "{}").gz());
+        byte[] tgz = TestArchives.tar().file("js-debug/package.json", "{}").gz();
+        web.serve(asset, tgz);
+        service.setJsDebugSha256ForTest(InstallCatalog.sha256Hex(tgz));
 
         InstallService.Result result = install(jsDebug());
 
         assertFalse(result.ok());
         assertEquals("js-debug: expected files not found after extraction", result.message());
+    }
+
+    @Test
+    void aJavaScriptDebugAdapterTarballWithAnotherChecksumIsRefused() {
+        String asset =
+                "https://github.com/microsoft/vscode-js-debug/releases/download/v1.105.0/js-debug-dap-v1.105.0.tar.gz";
+        web.serve(jsDebug().apiUrl(), "{\"browser_download_url\":\"" + asset + "\"}");
+        web.serve(
+                asset,
+                TestArchives.tar()
+                        .file("js-debug/src/dapDebugServer.js", "server")
+                        .gz());
+
+        InstallService.Result result = install(jsDebug());
+
+        assertFalse(result.ok());
+        assertTrue(result.message().contains("does not match its pinned checksum"), result.message());
+        assertFalse(Files.exists(config.resolve("plugins/dap/javascript/js-debug/src/dapDebugServer.js")));
     }
 
     @Test

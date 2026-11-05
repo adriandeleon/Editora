@@ -17,7 +17,7 @@ import com.editora.text.LanguageRegistry;
  *   <li>{@link #HTML} and {@link #TYPST}: the document's text content — what is left once tags, attributes,
  *       strings, math and code are taken out — plus comments. They used to be treated as code, so the prose
  *       of a web page or a Typst paper was never checked at all.
- *   <li>{@link #CODE}: comments and strings only.
+ *   <li>{@link #CODE}: comments and strings only, and the text of JSX markup.
  * </ul>
  */
 public enum SpellMode {
@@ -69,7 +69,10 @@ public enum SpellMode {
                 return true;
             }
             default -> {
-                return style.contains("comment") || style.contains("string"); // code: only comments/strings
+                // Code: only comments, strings and JSX text (`<p>Welcome back</p>` is what the page says).
+                return style.contains("comment")
+                        || style.contains("string")
+                        || style.contains(com.editora.editor.highlight.TextMateHighlighter.JSX_TEXT);
             }
         }
     }

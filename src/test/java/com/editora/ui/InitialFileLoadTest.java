@@ -16,13 +16,11 @@ class InitialFileLoadTest {
     }
 
     @Test
-    void manyLongLinesMakeAFileLongLinedThoughNoLineReachesTheSingleLineLimit() {
-        String wrapped = ("x".repeat(19_000) + "\n").repeat(40); // a minified bundle wrapped at 19,000 characters
-        FileWorkflowCoordinator.TextStats stats = FileWorkflowCoordinator.textStats(wrapped);
-        assertTrue(stats.maxLineLength() < FileWorkflowCoordinator.LONG_LINE_FILE_CHARS);
-        assertTrue(stats.longLined(), "760,000 characters in long lines");
-        String few = ("x".repeat(12_000) + "\n").repeat(5) + "code();\n".repeat(1_000);
-        assertFalse(FileWorkflowCoordinator.textStats(few).longLined(), "a few long lines are not enough");
+    void onlyALineTooWideToLayOutMakesAFileLongLined() {
+        // A bundle wrapped at 19,000 characters keeps undo now: its long lines are shown plain by the highlighter
+        // and it opens in View mode (LongLineFiles), so long-line mode is left to the 64K paragraph.
+        String wrapped = ("x".repeat(19_000) + "\n").repeat(40);
+        assertFalse(FileWorkflowCoordinator.textStats(wrapped).longLined(), "760,000 characters in 19K lines");
         assertTrue(FileWorkflowCoordinator.textStats("y".repeat(FileWorkflowCoordinator.LONG_LINE_FILE_CHARS))
                 .longLined());
     }

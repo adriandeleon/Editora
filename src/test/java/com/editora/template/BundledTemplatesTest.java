@@ -102,14 +102,28 @@ class BundledTemplatesTest {
     }
 
     /**
-     * The Node TypeScript project pins a TypeScript that ships {@code tsserver}: TypeScript 7 has none, so the
-     * project's own language server could not start (Node review A9/B1).
+     * The Node TypeScript project pins a TypeScript that ships {@code tsserver} and keeps TypeScript 5's handling of
+     * {@code @types}: TypeScript 7 has no tsserver (Node review A9/B1), and the language server runs TypeScript 5.9
+     * (JS review B101).
      */
     @Test
     void theNodeTypescriptProjectPinsATypescriptWithATsserver(@TempDir Path tmp) throws Exception {
         var pkg = new ObjectMapper()
                 .readTree(rendered(tmp, bundled(tmp, "node-typescript-project")).get("package.json"));
-        assertEquals("^6.0.0", pkg.path("devDependencies").path("typescript").asText());
+        assertEquals("^5.9.0", pkg.path("devDependencies").path("typescript").asText());
+    }
+
+    /**
+     * Its sources import {@code ./greet.js} (NodeNext), which plain Node cannot map to {@code greet.ts}: start and
+     * test go through tsx, which Run also uses when the project has it (JS review C102).
+     */
+    @Test
+    void theNodeTypescriptProjectRunsItsSourcesThroughTsx(@TempDir Path tmp) throws Exception {
+        var pkg = new ObjectMapper()
+                .readTree(rendered(tmp, bundled(tmp, "node-typescript-project")).get("package.json"));
+        assertTrue(pkg.path("devDependencies").has("tsx"));
+        assertEquals("tsx src/index.ts", pkg.path("scripts").path("start").asText());
+        assertTrue(pkg.path("scripts").path("test").asText().startsWith("node --import tsx --test "));
     }
 
     @Test

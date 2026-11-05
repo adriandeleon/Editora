@@ -73,4 +73,12 @@ class NpmProjectTest {
                 IllegalArgumentException.class, () -> NpmProject.parse("{\n  \"scripts\": { \"x\": "));
         assertTrue(e.getMessage().startsWith("line 2, column"), e.getMessage());
     }
+
+    @Test
+    void aParseErrorSaysWhereWithoutJacksonsCharacterCode() {
+        IllegalArgumentException e = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class, () -> NpmProject.parse("{\"name\":\"bad\",\"scripts\":{\"a\":\"x\",}"));
+        org.junit.jupiter.api.Assertions.assertTrue(e.getMessage().startsWith("line 1, column "), e.getMessage());
+        org.junit.jupiter.api.Assertions.assertFalse(e.getMessage().contains("(code "), e.getMessage());
+    }
 }

@@ -65,8 +65,8 @@ final class ProjectMapSearch {
             "spec");
 
     /** Path segments that hold somebody else's code, vendored or installed. */
-    private static final Set<String> VENDOR_SEGMENTS =
-            Set.of("vendor", "third_party", "third-party", "thirdparty", "node_modules", "bower_components");
+    private static final Set<String> VENDOR_SEGMENTS = com.editora.search.DependencyDirs.with(
+            "vendor", "third_party", "third-party", "thirdparty", "bower_components");
 
     private ProjectMapSearch() {}
 

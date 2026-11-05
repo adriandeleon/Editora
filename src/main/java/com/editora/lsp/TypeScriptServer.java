@@ -121,6 +121,37 @@ public final class TypeScriptServer {
         return executable == null || executable.getParent() == null ? null : findTsserver(executable.getParent(), null);
     }
 
+    /**
+     * The TypeScript the server runs outside a trusted folder of its own, as Settings and Doctor show it:
+     * {@code tsserver} (null: none it can run), its {@code version}, whether it is Editora's own copy ({@code own}),
+     * and the version of the {@code typescript} package beside the server ({@code besideVersion}, "" when none),
+     * which may have no tsserver (TypeScript 7).
+     */
+    public record Sdk(@Nullable Path tsserver, String version, boolean own, String besideVersion) {
+        /** Whether the server can start on it. */
+        public boolean found() {
+            return tsserver != null;
+        }
+
+        /** Whether it is one that leaves the server as it should be: a tsserver and TypeScript 5's types (B101). */
+        public boolean suitable() {
+            return com.editora.install.TypeScriptServerInstall.suitable(version, tsserver != null);
+        }
+    }
+
+    /**
+     * {@link Sdk} for the server whose executable (links followed) is {@code executable}, with Editora's own
+     * TypeScript ({@code ownTsserver}, null: not installed) first, as {@link LspManager} chooses it. File reads.
+     */
+    public static Sdk sdk(@Nullable Path executable, @Nullable Path ownTsserver) {
+        String beside = installedPackageVersion(executable);
+        if (ownTsserver != null) {
+            return new Sdk(ownTsserver, sdkVersion(ownTsserver), true, beside);
+        }
+        Path tsserver = installedTsserver(executable);
+        return new Sdk(tsserver, tsserver == null ? "" : sdkVersion(tsserver), false, beside);
+    }
+
     /** The version of the {@code typescript} package beside the server (any version, tsserver or not), or "". */
     public static String installedPackageVersion(@Nullable Path executable) {
         if (executable == null || executable.getParent() == null) {
@@ -226,6 +257,83 @@ public final class TypeScriptServer {
             return options;
         }
         return null;
+    }
+
+    private static final Pattern TSSERVER_EXITED =
+            Pattern.compile("\\[tsserver\\] Exited\\. Code: (\\S+?)\\.? Signal: (\\S+)");
+
+    /**
+     * Whether {@code logMessage} is typescript-language-server saying its tsserver died — {@code [tsserver] Exited.
+     * Code: null. Signal: SIGKILL}, or a non-zero code (out of memory) — rather than ended normally. Pure.
+     */
+    public static boolean tsserverDied(@Nullable String logMessage) {
+        if (logMessage == null) {
+            return false;
+        }
+        Matcher m = TSSERVER_EXITED.matcher(logMessage);
+        if (!m.find()) {
+            return false;
+        }
+        String code = m.group(1);
+        String signal = m.group(2).replaceAll("[.,;]+$", "");
+        return !"null".equals(signal) || !"0".equals(code);
+    }
+
+    /**
+     * The version of a folder's own TypeScript the server does not run because the folder is not trusted, when it is
+     * of another major than the one it runs (a project pinned to TypeScript 5.4 checked by 5.9 can disagree with its
+     * own {@code tsc}, JS review B109); "" otherwise. Reads the folder's package.json.
+     */
+    static String ignoredFolderVersion(Choice choice, Path root, boolean loose) {
+        Path running = choice.tsserver();
+        if (loose || choice.outcome() != Outcome.INSTALLED || running == null) {
+            return "";
+        }
+        Path folders = findTsserver(root, null);
+        if (folders == null || folders.equals(running)) {
+            return "";
+        }
+        return differentMajor(sdkVersion(folders), sdkVersion(running));
+    }
+
+    /** {@code folder} when its major differs from {@code running}'s, else "". Pure. */
+    static String differentMajor(String folder, String running) {
+        int f = com.editora.install.TypeScriptServerInstall.major(folder);
+        int r = com.editora.install.TypeScriptServerInstall.major(running);
+        return f > 0 && r > 0 && f != r ? folder : "";
+    }
+
+    /**
+     * The status bar's LSP segment for a file on this server: the TypeScript it runs ("TypeScript 5.9.3") once the
+     * server said so — which TypeScript a file ran on was nowhere to be seen (JS review B109) — else {@code program}.
+     * Pure.
+     */
+    public static String segmentName(String program, @Nullable String typeScriptVersion) {
+        return typeScriptVersion == null || typeScriptVersion.isBlank() ? program : "TypeScript " + typeScriptVersion;
+    }
+
+    private static final java.util.Set<String> SOURCE_EXTENSIONS =
+            java.util.Set.of(".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs");
+
+    /**
+     * Whether renaming or moving {@code path} in the Project tree may need imports updated by this server: a JS/TS
+     * source file, or a folder (which may hold some), outside {@code node_modules}. File test only.
+     */
+    public static boolean renamesImports(@Nullable Path path) {
+        if (path == null || path.getFileName() == null) {
+            return false;
+        }
+        for (Path part : path) {
+            if ("node_modules".equals(part.toString())) {
+                return false;
+            }
+        }
+        String name = path.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        if (name.endsWith(".d.ts")) {
+            return true;
+        }
+        int dot = name.lastIndexOf('.');
+        return dot >= 0 && SOURCE_EXTENSIONS.contains(name.substring(dot)) || Files.isDirectory(path);
     }
 
     /** The code-action kinds asked for explicitly: the server returns its source actions only when asked. */

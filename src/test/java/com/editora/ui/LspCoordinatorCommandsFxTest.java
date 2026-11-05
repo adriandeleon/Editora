@@ -1083,7 +1083,14 @@ class LspCoordinatorCommandsFxTest {
             fx.coordinator.syncBuffer(background);
             fx.host.active = b;
         });
+        fx.settle();
         assertTrue(fx.manager.isManaged(other));
+        // The settings as applied before anything crashes: the baseline the "unrelated apply" check below compares
+        // against (JS review B112). An apply re-probes the servers, and a CI runner has no jdtls, so the probe is
+        // answered for the fixture's fake Java server first.
+        LspTestHooks.cacheAvailability(fx.manager, "java", true);
+        fx.run(() -> fx.coordinator.applySupport());
+        fx.settle();
 
         int sessions = fx.fakes.size();
         FxTestSupport.runOnFx(() -> LspTestHooks.simulateServerDeath(fx.manager, b.getPath()));
@@ -1124,6 +1131,12 @@ class LspCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> fx.coordinator.syncBuffer(b));
         fx.settle();
         assertEquals(afterLoop, fx.fakes.size(), "a crash-looped server is not restarted by a tab");
+        // …nor by a settings apply that changes nothing it could have lacked: a theme, a font (JS review B112)…
+        FxTestSupport.runOnFx(() -> fx.coordinator.applySupport());
+        fx.settle();
+        FxTestSupport.runOnFx(() -> fx.coordinator.syncBuffer(b));
+        fx.settle();
+        assertEquals(afterLoop, fx.fakes.size(), "an unrelated settings apply does not restart a crash loop");
         // …until the user asks for it.
         fx.run(() -> fx.coordinator.restartServers());
         assertTrue(fx.manager.isManaged(b.getPath()), "Restart Language Servers starts it again");

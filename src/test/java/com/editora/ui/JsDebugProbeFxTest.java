@@ -117,7 +117,9 @@ class JsDebugProbeFxTest {
 
             FxTestSupport.runOnFx(manager::resume);
             assertTrue(ended.await(60, TimeUnit.SECONDS), "the session must end when the program does: " + states);
-            assertTrue(output.toString().contains("answer 42"), "program output: " + output);
+            // Debug runs with FORCE_COLOR=1 as Run does (JS review D104), so console.log colours the number.
+            String plain = output.toString().replaceAll("\u001B\\[[0-9;]*m", "");
+            assertTrue(plain.contains("answer 42"), "program output: " + output);
         } finally {
             FxTestSupport.runOnFx(manager::shutdown);
         }

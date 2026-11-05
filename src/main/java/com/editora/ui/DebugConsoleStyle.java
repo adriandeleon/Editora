@@ -51,4 +51,46 @@ final class DebugConsoleStyle {
         }
         return anyLink || baseStyle != null ? b.create() : null;
     }
+
+    /**
+     * The spans of {@link #spans(String, String)} with the program's own colours from {@code ansi} laid over them
+     * (review D104): each run's {@code ansi-*} classes join the line's category and link classes. Null when the
+     * chunk has neither.
+     */
+    static @Nullable StyleSpans<Collection<String>> spans(
+            String text, @Nullable String baseStyle, List<com.editora.run.AnsiText.Run> ansi) {
+        StyleSpans<Collection<String>> base = spans(text, baseStyle);
+        boolean coloured = false;
+        for (com.editora.run.AnsiText.Run r : ansi) {
+            coloured |= !r.classes().isEmpty();
+        }
+        if (!coloured || text == null || text.isEmpty()) {
+            return base;
+        }
+        StyleSpansBuilder<Collection<String>> runs = new StyleSpansBuilder<>();
+        int covered = 0;
+        for (com.editora.run.AnsiText.Run r : ansi) {
+            int length = Math.min(r.length(), text.length() - covered);
+            if (length <= 0) {
+                break;
+            }
+            runs.add(List.copyOf(r.classes()), length);
+            covered += length;
+        }
+        if (covered < text.length()) {
+            runs.add(List.of(), text.length() - covered);
+        }
+        StyleSpans<Collection<String>> colours = runs.create();
+        if (base == null) {
+            return colours;
+        }
+        return base.overlay(colours, (line, colour) -> {
+            if (colour.isEmpty()) {
+                return line;
+            }
+            List<String> both = new ArrayList<>(line);
+            both.addAll(colour);
+            return both;
+        });
+    }
 }

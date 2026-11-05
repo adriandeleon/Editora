@@ -318,7 +318,8 @@ jobs:
   # The Node.js tool chain Editora drives but never ships: typescript-language-server with TypeScript, and
   # vscode-js-debug. Both are user-installed, so the default lanes skip their probes — and a TypeScript release
   # without tsserver.js (TypeScript 7) broke every JavaScript file with nothing in CI to notice (review E12).
-  # Pinned to what Editora's installer pins: typescript@6 and js-debug v1.117.0. The runner's own Node.js runs them.
+  # Pinned to what Editora's installer pins: typescript@5.9.3, typescript-language-server@5.3.0 and js-debug
+  # v1.117.0. The runner's own Node.js runs them.
   node-probes:
     name: Node.js integration (TypeScript server, js-debug)
     if: ${{ github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'full-ci') && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')) }}
@@ -341,12 +342,12 @@ jobs:
             **/pom.xml
             .mvn/maven.config
 
-      - name: Install typescript-language-server, TypeScript 6 and vscode-js-debug
+      - name: Install typescript-language-server, TypeScript 5.9 and vscode-js-debug
         env:
           JS_DEBUG_VERSION: v1.117.0
         run: |
           node --version
-          npm install -g --no-fund --no-audit typescript@6 typescript-language-server
+          npm install -g --no-fund --no-audit typescript@5.9.3 typescript-language-server@5.3.0
           typescript-language-server --version
           test -f "$(npm root -g)/typescript/lib/tsserver.js"
           dest="$HOME/.editora/plugins/dap/javascript"

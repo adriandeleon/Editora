@@ -44,8 +44,17 @@ final class Debuggee {
 
     /** A program that runs in a Terminal tab titled {@code title} when {@code terminal} is given. */
     Debuggee(@Nullable ProgramTerminal terminal, String title) {
+        this(terminal, title, false);
+    }
+
+    /**
+     * As above; {@code ordered}: its stderr shares stdout's pipe, so the Debug console shows its lines in the order
+     * they were written (review D102), all as standard output.
+     */
+    Debuggee(@Nullable ProgramTerminal terminal, String title, boolean ordered) {
         this.terminal = terminal;
         this.title = title == null ? "" : title;
+        service.setMergeErrorStream(ordered);
     }
 
     /** Whether the program runs in a Terminal tab, which then owns its input and output. */

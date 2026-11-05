@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -182,7 +183,7 @@ class JsDebugStartFxTest {
     }
 
     @Test
-    void launchingAFileSendsItsProgramFolderAndNodeAndShowsTheCommandFirst() throws Exception {
+    void launchingAFileSendsItsProgramFolderNodeAndRunsColours() throws Exception {
         Path node = node("echo \"Debug server listening at 127.0.0.1:" + adapter.port() + "\"\nexec sleep 300");
         enableJs(node);
         Path project = Files.createDirectories(dir.resolve("app"));
@@ -201,9 +202,9 @@ class JsDebugStartFxTest {
         assertEquals(file.toString(), session.launchArgs.get("program"), session.launchArgs.toString());
         assertEquals(project.toString(), session.launchArgs.get("cwd"), session.launchArgs.toString());
         assertEquals(node.toString(), session.launchArgs.get("runtimeExecutable"), session.launchArgs.toString());
-        assertTrue(
-                output.stream().anyMatch(line -> line.contains(node.toString()) && line.contains("main.js")),
-                "the console opens with what runs: " + output);
+        // The program prints the colours it prints under Run (review D104); the command line is printed when js-debug
+        // asks Editora to start it (runInTerminal), which this stand-in never does (review D106).
+        assertEquals(Map.of("FORCE_COLOR", "1"), session.launchArgs.get("env"), session.launchArgs.toString());
         onFx(dap::stop);
         assertTrue(session.disconnected.await(WAIT, TimeUnit.SECONDS));
     }
@@ -214,11 +215,35 @@ class JsDebugStartFxTest {
         Files.writeString(node, "#!/bin/sh\ncase \"$1\" in --version) echo v16.20.2; exit 0;; esac\nexit 1\n");
         Files.setPosixFilePermissions(node, PosixFilePermissions.fromString("rwxr-xr-x"));
         enableJs(node);
+        dap.setAdapterNodeFallbacksForTest(List::of); // no newer Node.js on this machine
         Path file = Files.writeString(dir.resolve("main.js"), "console.log('hi');\n");
         onFx(() -> dap.startLaunch(file, "javascript", (options, chosen) -> {}));
         awaitError();
         assertEquals(
                 List.of(tr("debug.error.jsNodeTooOld", "v16.20.2", node.toString(), JsLaunch.MIN_ADAPTER_NODE_MAJOR)),
                 errors);
+    }
+
+    /** Review D101: an old Node.js chosen in Settings runs the program; js-debug itself runs on a newer one. */
+    @Test
+    void anOldChosenNodeRunsTheProgramWhileJsDebugRunsOnANewerOne() throws Exception {
+        Path old = dir.resolve("node16");
+        Files.writeString(old, "#!/bin/sh\ncase \"$1\" in --version) echo v16.20.2; exit 0;; esac\nexit 1\n");
+        Files.setPosixFilePermissions(old, PosixFilePermissions.fromString("rwxr-xr-x"));
+        enableJs(old);
+        Path newer = node("echo \"Debug server listening at 127.0.0.1:" + adapter.port() + "\"\nexec sleep 300");
+        dap.setAdapterNodeFallbacksForTest(() -> List.of(newer.toString()));
+        Path file = Files.writeString(dir.resolve("main.js"), "console.log('hi');\n");
+        onFx(() -> dap.startLaunch(file, "javascript", (options, chosen) -> {}));
+        FakeDebugAdapter.Session session = adapter.awaitSession();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT);
+        while (!session.requests.contains("launch")) {
+            assertTrue(System.nanoTime() < deadline, "no launch; requests " + session.requests + ", errors " + errors);
+            Thread.sleep(20);
+        }
+        assertEquals(old.toString(), session.launchArgs.get("runtimeExecutable"), session.launchArgs.toString());
+        assertTrue(errors.isEmpty(), errors.toString());
+        onFx(dap::stop);
+        assertTrue(session.disconnected.await(WAIT, TimeUnit.SECONDS));
     }
 }

@@ -49,6 +49,10 @@ public final class ConfigFileType {
         if (lower.equals("makefile") || lower.equals("gnumakefile") || lower.startsWith("makefile.")) {
             return "makefile";
         }
+        // Bun's text lockfile is JSON with trailing commas (JSONC), read by the JSON server as such (JS review A102).
+        if (lower.equals("bun.lock")) {
+            return "json";
+        }
         // just command-runner file — "justfile"/".justfile" (case-insensitive by convention).
         if (lower.equals("justfile") || lower.equals(".justfile")) {
             return "just";

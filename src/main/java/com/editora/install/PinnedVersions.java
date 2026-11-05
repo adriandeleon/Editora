@@ -314,6 +314,18 @@ public final class PinnedVersions {
         }
     }
 
+    /**
+     * The version of the vscode-js-debug server at {@code dapDebugServerJs} (its bundle's own constant), or null —
+     * what Settings and Doctor show beside it.
+     */
+    public static @Nullable String jsDebugServerVersion(Path dapDebugServerJs) {
+        try {
+            return jsDebugVersion(dapDebugServerJs);
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
     private static @Nullable String jsDebugVersion(Path bundle) throws IOException {
         if (!Files.isRegularFile(bundle) || Files.size(bundle) > 64L * 1024 * 1024) {
             return null;

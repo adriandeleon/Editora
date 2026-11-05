@@ -219,12 +219,14 @@ final class BuildCoordinator {
         // root is real), so the tree must say the build file is broken rather than "no build tool detected".
         tree.setProvider(
                 provider,
-                markerRoot != null && provider == null ? tr("status.build.malformed", tool.displayName()) : null);
+                markerRoot != null && provider == null
+                        ? tr("status.build.malformed", tool.markers().get(0))
+                        : null);
         // The reason, with a way to the file — it used to appear only in the status bar after Show Actions.
         if (markerRoot != null && parseError != null && !parseError.isBlank()) {
             Path file = markerRoot.resolve(tool.markers().get(0));
             tree.setNotice(
-                    tr("status.build.malformedAt", tool.displayName(), parseError),
+                    tr("status.build.malformedAt", tool.markers().get(0), parseError),
                     tr("buildtree.openBuildFile", tool.markers().get(0)),
                     () -> ops.openFile(file));
         } else {
@@ -542,8 +544,8 @@ final class BuildCoordinator {
         if (provider == null || isMalformed()) {
             host.setStatus(
                     parseError == null || parseError.isBlank()
-                            ? tr("status.build.malformed", tool.displayName())
-                            : tr("status.build.malformedAt", tool.displayName(), parseError));
+                            ? tr("status.build.malformed", tool.markers().get(0))
+                            : tr("status.build.malformedAt", tool.markers().get(0), parseError));
             if (provider == null) {
                 return;
             }
@@ -595,8 +597,13 @@ final class BuildCoordinator {
                 if (finalParsed == null) {
                     host.setStatus(
                             finalError == null || finalError.isBlank()
-                                    ? tr("status.build.malformed", tool.displayName())
-                                    : tr("status.build.malformedAt", tool.displayName(), finalError));
+                                    ? tr(
+                                            "status.build.malformed",
+                                            tool.markers().get(0))
+                                    : tr(
+                                            "status.build.malformedAt",
+                                            tool.markers().get(0),
+                                            finalError));
                     return;
                 }
                 popupRoot = root;
@@ -803,6 +810,25 @@ final class BuildCoordinator {
         if (!allowRun(root)) {
             return;
         }
+        if (tool == BuildTool.NPM) {
+            // npm runs on the Node.js Run File would pick here (.nvmrc, the setting, PATH): its folder goes first
+            // on PATH, and the npm beside it runs (review C101). Which Node is a disk question: planned off FX.
+            NpmRunSupport.prepare(root, ops.projectRoot(), host.settings().getNodePath(), argv, npm -> {
+                if (!isRunning()) {
+                    launchNow(root, npm.argv(), taskArgs, toggleArgs, npm);
+                }
+            });
+            return;
+        }
+        launchNow(root, argv, taskArgs, toggleArgs, null);
+    }
+
+    private void launchNow(
+            Path root,
+            List<String> argv,
+            List<String> taskArgs,
+            List<String> toggleArgs,
+            com.editora.run.@Nullable NpmLaunch npm) {
         lastRoot = root;
         lastTaskArgs = taskArgs;
         lastToggleArgs = toggleArgs;
@@ -827,9 +853,8 @@ final class BuildCoordinator {
             ops.openConsole();
         }
         String label = String.join(" ", taskArgs);
-        // npm's tab is named after the manager that runs (pnpm, yarn, bun), not always "npm".
-        String tabName =
-                tool == BuildTool.NPM ? com.editora.run.MissingProgram.baseName(runArgv.get(0)) : tool.displayName();
+        // npm's tab is the Package Scripts window's: the header line names the manager that runs (JS review E108).
+        String tabName = tool == BuildTool.NPM ? tr("toolwindow.npm") : tool.displayName();
         panel.started(this, tabName, label, tool.outputStyle(), this::stop);
         if (tree != null) {
             tree.setRunning(true);
@@ -837,7 +862,9 @@ final class BuildCoordinator {
         // Always names the folder: Rerun Last runs where the last build did, which may be a root whose tool
         // windows are no longer shown (review B21).
         Path rootName = root.toAbsolutePath().normalize().getFileName();
-        host.setStatus(tr("status.build.startedIn", tool.displayName(), label, String.valueOf(rootName)));
+        // npm's messages name the manager that runs ("pnpm finished successfully"), as its tab does.
+        String runName = tool == BuildTool.NPM ? tabName : tool.displayName();
+        host.setStatus(tr("status.build.startedIn", runName, label, String.valueOf(rootName)));
         // Maven and the Scala tools (sbt, Mill, Scala CLI) run on the JDK chosen in Settings, as Run does; Gradle
         // picks its own through its toolchains.
         boolean onSettingsJdk = tool == BuildTool.MAVEN
@@ -853,12 +880,15 @@ final class BuildCoordinator {
                                 com.editora.process.ExecTargets.remoteTool(root, "jdk.home"))
                         : com.editora.run.JdkToolchain.environment(
                                 host.settings().getMavenJdkHome(), com.editora.process.ProcessRunner.augmentedPath());
-        if (tool == BuildTool.NPM) {
-            environment = NpmRunSupport.environment(System.getenv("NO_COLOR"));
+        if (npm != null) {
+            environment = npm.env();
             long generation = ++runtimeGeneration;
-            com.editora.run.RuntimeProbe.probe(runArgv, root, environment, version -> {
+            com.editora.run.RuntimeProbe.probe(npm.probe(), root, environment, version -> {
                 if (generation == runtimeGeneration) {
-                    panel.setRuntime(BuildCoordinator.this, version); // the Node (or Bun) the script runs under
+                    // the Node (or Bun) the script runs under, and on hover why that Node.js
+                    panel.setRuntime(
+                            BuildCoordinator.this,
+                            NodeRunLauncher.withSource(version, NodeRunLauncher.source(npm.node())));
                 }
             });
         }
@@ -867,6 +897,14 @@ final class BuildCoordinator {
             public void onStart(String commandLine) {
                 panel.started(
                         BuildCoordinator.this, tabName, commandLine, tool.outputStyle(), BuildCoordinator.this::stop);
+                if (npm != null) {
+                    // Which manager and which npm ran: the header's command line is gone once the run ends.
+                    panel.appendOutput(BuildCoordinator.this, "$ " + commandLine, false);
+                    String pin = NodeRunLauncher.pinNotice(npm.node());
+                    if (pin != null) {
+                        panel.appendOutput(BuildCoordinator.this, pin, false);
+                    }
+                }
             }
 
             @Override
@@ -910,10 +948,8 @@ final class BuildCoordinator {
                 }
                 host.setStatus(
                         stopped
-                                ? tr("status.build.stopped", tool.displayName())
-                                : code == 0
-                                        ? tr("status.build.ok", tool.displayName())
-                                        : tr("status.build.exit", tool.displayName(), code));
+                                ? tr("status.build.stopped", runName)
+                                : code == 0 ? tr("status.build.ok", runName) : tr("status.build.exit", runName, code));
                 runAfterStop();
                 if (!stopped && code > 0 && tool == BuildTool.NPM) {
                     // A script that failed because nothing is installed yet (a fresh clone, a new template):
@@ -931,7 +967,11 @@ final class BuildCoordinator {
                 outputWatcher = null;
                 stopRequested = false;
                 afterStop = null; // nothing ran, so nothing was stopped: a queued run would start from a failure
-                panel.failed(BuildCoordinator.this, message);
+                // "pnpm was not found. This project uses pnpm (package.json)…" in the header too, not the JDK's
+                // "Cannot run program …: error: 2" above the friendly line (review C104).
+                String friendly = NpmRunSupport.missingMessage(
+                        runArgv.get(0), message, detectedManager == null ? "" : detectedManager.reason());
+                panel.failed(BuildCoordinator.this, friendly != null ? friendly : message);
                 if (tree != null) {
                     tree.setRunning(false);
                 }
@@ -940,13 +980,11 @@ final class BuildCoordinator {
                 }
                 runtimeGeneration++; // nothing ran: drop the runtime chip and any late probe answer
                 panel.setRuntime(BuildCoordinator.this, null);
-                String friendly = NpmRunSupport.missingMessage(
-                        runArgv.get(0), message, detectedManager == null ? "" : detectedManager.reason());
                 if (friendly != null) {
                     panel.appendOutput(BuildCoordinator.this, friendly, true);
                     host.setStatus(friendly);
                 } else {
-                    host.setStatus(tr("status.build.failed", tool.displayName(), message));
+                    host.setStatus(tr("status.build.failed", runName, message));
                 }
             }
         });

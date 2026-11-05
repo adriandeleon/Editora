@@ -119,12 +119,39 @@ final class InstallCoordinator {
      * ends up with the pinned or the latest version.
      */
     void installSupport(Lang lang, @Nullable String updateStep, java.util.function.Consumer<Boolean> onResult) {
+        installSupport(lang, updateStep, null, onResult);
+    }
+
+    /**
+     * A Settings "Install…" button: {@code typst} (the typst CLI), a language ({@code python}, {@code javascript},
+     * {@code mermaid}, else Java), or {@code js-debug} — the Debugging card's JavaScript row, which installs the
+     * debugger alone, not the TypeScript language server with it (review D111).
+     */
+    void installSettingsKey(String key) {
+        switch (key) {
+            case "typst" -> installTypstCli(); // the typst CLI (renderer), not an LSP server
+            case "js-debug" -> installSupport(Lang.JAVASCRIPT, null, "js-debug", ok -> {});
+            case "python" -> installSupport(Lang.PYTHON);
+            case "javascript" -> installSupport(Lang.JAVASCRIPT);
+            case "mermaid" -> installSupport(Lang.MERMAID);
+            default -> installSupport(Lang.JAVA);
+        }
+    }
+
+    /** As above; {@code onlyStep}, when given, is the one step of the language to install. */
+    void installSupport(
+            Lang lang,
+            @Nullable String updateStep,
+            @Nullable String onlyStep,
+            java.util.function.Consumer<Boolean> onResult) {
         if (installing.contains(lang)) {
             host.setStatus(tr("status.install.inProgress"));
             onResult.accept(false);
             return;
         }
-        List<Step> all = InstallCatalog.steps(lang);
+        List<Step> all = InstallCatalog.steps(lang).stream()
+                .filter(s -> onlyStep == null || s.id().equals(onlyStep))
+                .toList();
         List<Step> missing = all.stream()
                 .filter(s -> !stepInstalled(s) || s.id().equals(updateStep))
                 .toList();
@@ -536,11 +563,31 @@ final class InstallCoordinator {
                         || com.editora.dap.DebugAdapterLocator.locateDebugpy(
                                         "", Path.of(System.getProperty("user.home", "")))
                                 .isPresent();
-            case "typescript-language-server" -> ops.lspAvailable("typescript");
+            // Editora's own copy, or a server whose TypeScript is one it may stay on: a global server beside
+            // TypeScript 6 or 7 still wants Editora's TypeScript 5.9 (JS review B101)
+            case "typescript-language-server" ->
+                com.editora.install.TypeScriptServerInstall.ownLauncher(ops.configDir()) != null
+                        || ops.lspAvailable("typescript") && typeScriptSuitable();
             case "js-debug" -> ops.dapAvailable("javascript") && !editoraCopyOutdated(step.id());
             case "mmdc" -> ops.mmdcAvailable();
             default -> false;
         };
+    }
+
+    /** Whether the TypeScript the configured server would run is suitable ({@link com.editora.lsp.TypeScriptServer.Sdk#suitable}). */
+    private boolean typeScriptSuitable() {
+        Path config = ops.configDir();
+        String command = host.settings() == null ? "" : host.settings().getTypescriptLspCommand();
+        List<String> argv = com.editora.lsp.LspServerRegistry.tokenize(
+                com.editora.install.TypeScriptServerInstall.effectiveCommand(command, config));
+        if (argv.isEmpty()) {
+            argv = com.editora.lsp.LspServerRegistry.tokenize(
+                    com.editora.lsp.LspServerRegistry.DEFAULT_TYPESCRIPT_COMMAND);
+        }
+        return com.editora.lsp.TypeScriptServer.sdk(
+                        com.editora.lsp.LspManager.typeScriptServerExecutable(argv),
+                        com.editora.install.TypeScriptServerInstall.ownTsserver(config))
+                .suitable();
     }
 
     /**

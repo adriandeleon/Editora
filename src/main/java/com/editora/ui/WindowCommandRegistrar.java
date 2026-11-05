@@ -2425,6 +2425,8 @@ final class WindowCommandRegistrar {
                 host.ifLsp(host.lspCoordinator()::formatDocument);
             }
         }));
+        // ESLint's automatic fixes for a JS/TS file: not behind ifLsp, the project's ESLint needs no server (JS F)
+        host.registry().register(Command.of("eslint.fixAll", host.lspCoordinator().eslint::fixAllActive));
         // In a .http file the code actions are the {{variable}} fixes ("Use environment dev"), which need no server.
         host.registry().register(Command.of("lsp.codeActions", () -> {
             EditorBuffer active = host.activeBuffer();

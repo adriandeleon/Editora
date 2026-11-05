@@ -789,20 +789,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 pluginCoordinator::disableFromSettings);
         this.settingsWindow.setDictionaryActions(
                 this::openTechnicalDictionary, this::openPersonalDictionary); // Spell Check file links
-        this.settingsWindow.setInstallActions(
-                key -> { // Settings LSP/Mermaid/Typst "Install…" buttons
-                    if ("typst".equals(key)) { // the typst CLI (renderer), not an LSP server
-                        installCoordinator.installTypstCli();
-                        return;
-                    }
-                    com.editora.install.InstallCatalog.Lang lang = switch (key) {
-                        case "python" -> com.editora.install.InstallCatalog.Lang.PYTHON;
-                        case "javascript" -> com.editora.install.InstallCatalog.Lang.JAVASCRIPT;
-                        case "mermaid" -> com.editora.install.InstallCatalog.Lang.MERMAID;
-                        default -> com.editora.install.InstallCatalog.Lang.JAVA;
-                    };
-                    installCoordinator.installSupport(lang);
-                });
+        this.settingsWindow.setInstallActions(installCoordinator::installSettingsKey); // Settings "Install…" buttons
         this.settingsWindow.setInstallServerActions(installCoordinator::installServer); // per-LSP-server Install
         this.settingsWindow.setOpenUrl(this::openExternalUrl); // Diagrams' "How to install" docs link
         this.settingsWindow.setInstallToolActions(

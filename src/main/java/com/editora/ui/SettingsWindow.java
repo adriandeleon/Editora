@@ -5429,6 +5429,20 @@ public class SettingsWindow {
                 tr("settings.buildBeforeRun.hint"),
                 "java build before run debug compile maven gradle launch main class stale");
         for (BuildTool bt : BuildTool.enabled()) {
+            if (bt == BuildTool.NPM) {
+                // One Node.js for Run, npm scripts, Debug, the language servers and HTTP scripts (review E102):
+                // beside npm, never greyed out by another feature's switch.
+                Card nodeCard = card(p, "Node.js");
+                nodePathField.setPrefWidth(PATH_FIELD_WIDTH);
+                String node = tr("settings.debug.nodePath");
+                controlRow(
+                        nodeCard,
+                        Category.BUILD_TOOLS,
+                        node,
+                        tr("settings.debug.nodePath.hint"),
+                        new HBox(6, nodePathField, browseButton(node, nodePathField)),
+                        "node nodejs node.js runtime nvm nvmrc version run debug npm typescript executable path");
+            }
             Card c = card(p, bt.displayName());
             String kw = bt.id() + " build tool project detected enable command override toolbar";
             CheckBox enable = buildToolChecks.get(bt);
@@ -7078,16 +7092,11 @@ public class SettingsWindow {
                         "debug java exception breakpoint class type filter caught uncaught");
             }
             if ("javascript".equals(dbg.id())) {
-                // E6: one Node.js for everything Node in Editora, here beside the debugger that needs it.
-                nodePathField.setPrefWidth(PATH_FIELD_WIDTH);
-                String node = tr("settings.debug.nodePath");
-                controlRow(
-                        c,
-                        Category.DEBUG,
-                        node,
-                        tr("settings.debug.nodePath.hint"),
-                        new HBox(6, nodePathField, browseButton(node, nodePathField)),
-                        "node nodejs node.js runtime nvm nvmrc version run debug npm typescript executable path");
+                // The one Node.js setting lives on Build Tools, editable with debugging off (review E102).
+                Hyperlink nodeLink = new Hyperlink(tr("settings.debug.nodePathLink"));
+                nodeLink.setWrapText(true);
+                nodeLink.setOnAction(e -> sidebar.getSelectionModel().select(Category.BUILD_TOOLS));
+                cardRow(c, Category.DEBUG, nodeLink, "node nodejs node.js runtime path debug build tools");
             }
             // Install fetches what this language's support lacks — the adapter included — keyed on the adapter.
             ToolStatusRow status = new ToolStatusRow(
@@ -7096,7 +7105,7 @@ public class SettingsWindow {
                                 case "python" -> "debugpy";
                                 default -> "js-debug";
                             })
-                    .install(() -> installSupport(dbg.id()));
+                    .install(() -> installSupport("javascript".equals(dbg.id()) ? "js-debug" : dbg.id())); // D111
             debugStatusLabels.put(dbg.id(), status);
             installButtons.put("debug:" + dbg.id(), status.installButton());
             String title = tr(dbg.commandLabelKey());
@@ -7182,14 +7191,10 @@ public class SettingsWindow {
                         () -> config.getSettings().getJsDebugPath(),
                         cb -> {
                             if (dapManager != null) {
-                                // installed, whether or not switched on (review D13): its path and the Node.js
-                                dapManager.detectJsInstalled((server, node) -> cb.accept(
-                                        server != null && node != null,
-                                        server == null
-                                                ? ""
-                                                : node == null
-                                                        ? tr("settings.debug.jsNoNode")
-                                                        : tr("settings.debug.jsFound", node, server)));
+                                // installed, whether or not switched on (review D13): its version and the Node.js
+                                dapManager.detectJsInstalled(js -> cb.accept(
+                                        js.server() != null && js.nodeVersion() != null,
+                                        ToolStatusRow.jsDebugDetail(js)));
                             } else {
                                 cb.accept(false, "");
                             }
@@ -7310,6 +7315,7 @@ public class SettingsWindow {
                 Settings::isTypescriptTypeAcquisition,
                 Settings::setTypescriptTypeAcquisition,
                 words + "types npm automatic type acquisition download @types");
+        SettingsJsToolRows.add(this, c); // ESLint, Prettier/Biome and the actions on save (JS review F)
     }
 
     /** The ShellCheck / shfmt status lines on the Bash card, by tool id. */
@@ -7960,7 +7966,10 @@ public class SettingsWindow {
             return;
         }
         TypeScriptSdkStatus.refresh(
-                typeScriptSdkStatus, lspArgv(com.editora.lsp.TypeScriptServer.SERVER_ID), lspCheck.isSelected());
+                typeScriptSdkStatus,
+                lspArgv(com.editora.lsp.TypeScriptServer.SERVER_ID),
+                config.getConfigDir(),
+                lspCheck.isSelected());
         // Probe the commands this page shows, without configuring the manager. This window must not
         // (re)configure it: doing so with the global commands replaced a trusted project's override and
         // shut its running server down every time Settings was merely opened.

@@ -100,4 +100,24 @@ class NodeSpecParserTest {
         assertEquals("AssertionError: 1 == 2", fails.failureMessage());
         assertTrue(fails.stackTrace().contains("/p/x.test.js:3:9"));
     }
+
+    /** JS review C107: node prints a skip's or todo's reason in place of the word SKIP/TODO. */
+    @Test
+    void aSkipOrTodoWithAReasonKeepsItsNameAndIsNotAPass() {
+        TestNode root = parse(
+                "\uFE63 skipped (0.400352ms) # not now",
+                "\uFE63 plain skip (0.061475ms) # SKIP",
+                "\u2714 todo one (0.053597ms) # TODO",
+                "\u2714 todo why (0.046548ms) # later",
+                "\u2714 passes (0.1ms)",
+                "\u2139 tests 5");
+        TestNode suite = root.childById(TapParser.SUITE);
+        List<String> names =
+                suite.children().stream().map(TestNode::displayName).toList();
+        assertEquals(List.of("skipped", "plain skip", "todo one", "todo why", "passes"), names);
+        for (int i = 0; i < 4; i++) {
+            assertEquals(TestStatus.SKIPPED, suite.children().get(i).status(), names.get(i));
+        }
+        assertEquals(TestStatus.PASSED, suite.children().get(4).status());
+    }
 }

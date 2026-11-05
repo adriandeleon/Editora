@@ -56,6 +56,30 @@ public final class RunConfigPrompts {
         return "settings.runConfig.workingDirPrompt";
     }
 
+    /** The Before launch prompt key: a Node or npm configuration's example is an npm build, not Maven's. */
+    public static String beforeLaunch(String type) {
+        return ScriptRunCommand.NODE.equals(type) || ScriptRunCommand.NPM.equals(type)
+                ? "settings.runConfig.beforeLaunchPromptNode"
+                : "settings.runConfig.beforeLaunchPrompt";
+    }
+
+    /**
+     * The row labels a type names in its own words — a Node.js configuration's Interpreter is its "Node.js", its
+     * options "Node.js options", its target a "Script" — as {@code [target, interpreter, options]} keys.
+     */
+    public static java.util.List<String> labels(String type) {
+        if (ScriptRunCommand.NODE.equals(type)) {
+            return java.util.List.of(
+                    "settings.runConfig.targetScript",
+                    "settings.runConfig.interpreterNode",
+                    "settings.runConfig.interpreterOptionsNode");
+        }
+        return java.util.List.of(
+                ScriptRunCommand.NPM.equals(type) ? "settings.runConfig.targetScript" : "settings.runConfig.target",
+                "settings.runConfig.interpreter",
+                "settings.runConfig.interpreterOptions");
+    }
+
     /** Whether the target row's Browse… button applies: a script file to pick, or an npm script to choose. */
     public static boolean browses(String type) {
         return RunConfigFields.usesScriptFile(type) || ScriptRunCommand.NPM.equals(type);

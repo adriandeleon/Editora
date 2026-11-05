@@ -223,6 +223,7 @@ class LspProjectOverridesFxTest {
     void theTrustPromptListsTheFoldersOwnTypeScriptSdkForAstro() throws Exception {
         Path sdk = Files.createDirectories(project.resolve("node_modules/typescript/lib"));
         Files.createFile(sdk.resolve("typescript.js"));
+        Files.writeString(project.resolve("astro.config.mjs"), "export default {};\n");
         applySupport();
         List<List<String>> asked = new ArrayList<>();
 
@@ -236,6 +237,25 @@ class LspProjectOverridesFxTest {
 
         assertEquals(List.of(List.of("astro: " + sdk.toAbsolutePath().normalize())), asked);
         assertTrue(config.getTrustStore().isTrusted(project));
+    }
+
+    /** A folder without Astro is not asked about Astro: the prompt listed its TypeScript for it (JS review B110). */
+    @Test
+    void aFolderWithoutAstroIsNotAskedAboutAstro() throws Exception {
+        Path sdk = Files.createDirectories(project.resolve("node_modules/typescript/lib"));
+        Files.createFile(sdk.resolve("typescript.js"));
+        applySupport();
+        List<List<String>> asked = new ArrayList<>();
+
+        FxTestSupport.runOnFx(() -> {
+            coordinator.trustConfirmer = (folder, requests) -> {
+                asked.add(requests);
+                return true;
+            };
+            coordinator.trustProjectSettings();
+        });
+
+        assertTrue(asked.stream().flatMap(List::stream).noneMatch(r -> r.startsWith("astro: ")), asked.toString());
     }
 
     /** An edit to the file takes effect on the running configuration, not only on the labels. */

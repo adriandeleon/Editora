@@ -21,11 +21,16 @@ import org.jspecify.annotations.Nullable;
  * <p>Order, first match wins:
  * <ol>
  *   <li>the run configuration's Interpreter field;</li>
- *   <li>the user's setting (Settings → Debugging → Node.js);</li>
- *   <li>the version a {@code .nvmrc} or {@code .node-version} names, from the file's folder up to the package
- *       root, when nvm has that version installed ({@code ~/.nvm/versions/node/v<version>/bin/node});</li>
+ *   <li>the version a {@code .nvmrc} or {@code .node-version} names, from the file's folder up to the project
+ *       root (with no project, the package root), when nvm has that version installed ({@code $NVM_DIR/versions/node/v<version>/bin/node}, nvm's
+ *       folder being {@code $NVM_DIR}, else {@code $XDG_CONFIG_HOME/nvm} when that exists, else {@code ~/.nvm})
+ *       — a project's own pin beats the global setting;</li>
+ *   <li>the user's setting (Settings → Build Tools → Node.js);</li>
  *   <li>{@code node} on Editora's augmented PATH (the login shell's PATH, so nvm/fnm/volta defaults count).</li>
  * </ol>
+ *
+ * <p>A version file that names a version nvm does not have (or an alias such as {@code lts/*}) is skipped, and
+ * the result says so ({@link NodeRuntime#unmetVersion}) so the caller can tell the user.
  *
  * <p>Pure apart from the {@link Inputs#isFile}, {@link Inputs#readFile}, {@link Inputs#listDir} and
  * {@link Inputs#onPath} lookups the caller supplies, so a test (or a remote host) decides what exists. A command
@@ -49,14 +54,29 @@ public final class NodeRuntimes {
         PATH
     }
 
-    /** A resolved Node.js: {@code command} is the argv prefix (the executable, then any arguments given to it). */
+    /**
+     * A resolved Node.js.
+     *
+     * @param command the argv prefix (the executable, then any arguments given to it)
+     * @param source why it was chosen
+     * @param versionFile the version file's name ({@code .nvmrc}) when {@link Source#VERSION_FILE} chose it, or the
+     *     file that named an {@link #unmetVersion}
+     * @param unmetVersion what a version file asked for when nvm does not have it (so another Node runs), else null
+     */
     public record NodeRuntime(
-            List<String> command, Source source, @Nullable String versionFile) {
+            List<String> command,
+            Source source,
+            @Nullable String versionFile,
+            @Nullable String unmetVersion) {
         public NodeRuntime {
             command = List.copyOf(command);
             if (command.isEmpty()) {
                 throw new IllegalArgumentException("empty node command");
             }
+        }
+
+        public NodeRuntime(List<String> command, Source source, @Nullable String versionFile) {
+            this(command, source, versionFile, null);
         }
 
         public String executable() {
@@ -98,6 +118,7 @@ public final class NodeRuntimes {
      * @param readFile a small file's text, or empty when unreadable
      * @param listDir a folder's entries, or an empty list
      * @param onPath the absolute path of a bare command name found on PATH, if any
+     * @param nvmDir nvm's own folder ({@code $NVM_DIR}), or null for {@code <home>/.nvm}
      */
     public record Inputs(
             @Nullable Path file,
@@ -108,10 +129,41 @@ public final class NodeRuntimes {
             Predicate<Path> isFile,
             Function<Path, Optional<String>> readFile,
             Function<Path, List<Path>> listDir,
-            Function<String, Optional<String>> onPath) {
+            Function<String, Optional<String>> onPath,
+            @Nullable Path nvmDir) {
         public Inputs {
             configured = configured == null ? "" : configured.strip();
             setting = setting == null ? "" : setting.strip();
+        }
+
+        /** Without an {@code $NVM_DIR}: nvm lives in {@code <home>/.nvm}. */
+        public Inputs(
+                @Nullable Path file,
+                @Nullable Path projectRoot,
+                String configured,
+                String setting,
+                @Nullable Path home,
+                Predicate<Path> isFile,
+                Function<Path, Optional<String>> readFile,
+                Function<Path, List<Path>> listDir,
+                Function<String, Optional<String>> onPath) {
+            this(file, projectRoot, configured, setting, home, isFile, readFile, listDir, onPath, null);
+        }
+
+        /**
+         * The folders holding nvm's {@code versions/node}, the one {@code $NVM_DIR} names first, then {@code
+         * <home>/.nvm}: a machine whose {@code $NVM_DIR} points elsewhere (a CI image, a system-wide nvm) can still
+         * have versions in the home folder.
+         */
+        List<Path> nvmRoots() {
+            List<Path> roots = new ArrayList<>(2);
+            if (nvmDir != null) {
+                roots.add(nvmDir);
+            }
+            if (home != null && !home.resolve(".nvm").equals(nvmDir)) {
+                roots.add(home.resolve(".nvm"));
+            }
+            return roots;
         }
 
         /** Local inputs: the real file system, the user's home and Editora's augmented PATH. */
@@ -126,8 +178,32 @@ public final class NodeRuntimes {
                     Files::isRegularFile,
                     NodeRuntimes::readSmall,
                     NodeRuntimes::list,
-                    PythonInterpreters::onAugmentedPath);
+                    PythonInterpreters::onAugmentedPath,
+                    NodeRuntimes.nvmDir(
+                            System.getenv("NVM_DIR"), System.getenv("XDG_CONFIG_HOME"), Files::isDirectory));
         }
+    }
+
+    /**
+     * nvm's folder from the environment: {@code $NVM_DIR} when set, else {@code $XDG_CONFIG_HOME/nvm} when that
+     * folder exists (nvm's installer uses it when {@code XDG_CONFIG_HOME} is set), else null ({@code ~/.nvm}).
+     */
+    public static @Nullable Path nvmDir(
+            @Nullable String nvmDirVar, @Nullable String xdgConfigHome, Predicate<Path> isDirectory) {
+        try {
+            if (nvmDirVar != null && !nvmDirVar.isBlank()) {
+                return Path.of(nvmDirVar.strip());
+            }
+            if (xdgConfigHome != null && !xdgConfigHome.isBlank()) {
+                Path xdg = Path.of(xdgConfigHome.strip()).resolve("nvm");
+                if (isDirectory.test(xdg)) {
+                    return xdg;
+                }
+            }
+        } catch (java.nio.file.InvalidPathException e) {
+            return null;
+        }
+        return null;
     }
 
     /** Resolves for a local file with the real file system and augmented PATH. Off the FX thread. */
@@ -144,32 +220,76 @@ public final class NodeRuntimes {
                 return new NodeRuntime(cmd, Source.CONFIGURATION, null);
             }
         }
-        if (!in.setting().isEmpty()) {
-            List<String> cmd = tokens(in.setting());
-            if (!cmd.isEmpty()) {
-                return new NodeRuntime(cmd, Source.SETTING, null);
-            }
-        }
+        // A project's own pin beats the global setting (a run configuration's Interpreter beats both).
         Path file = in.file();
         Path home = in.home();
+        String unmet = null;
+        String unmetFile = null;
         if (file != null && home != null) {
             Optional<Path> versionFile = versionFile(in, file, home);
             if (versionFile.isPresent()) {
-                String wanted = in.readFile()
-                        .apply(versionFile.get())
-                        .map(String::strip)
-                        .orElse("");
-                Optional<Path> node = nvmNode(in, home, wanted);
+                String wanted = firstLine(in.readFile().apply(versionFile.get()).orElse(""));
+                Optional<Path> node = nvmNode(in, wanted);
+                String name = String.valueOf(versionFile.get().getFileName());
                 if (node.isPresent()) {
-                    return new NodeRuntime(
-                            List.of(node.get().toString()),
-                            Source.VERSION_FILE,
-                            versionFile.get().getFileName().toString());
+                    return new NodeRuntime(List.of(node.get().toString()), Source.VERSION_FILE, name);
+                }
+                if (!wanted.isEmpty()) {
+                    unmet = wanted;
+                    unmetFile = name;
                 }
             }
         }
+        if (!in.setting().isEmpty()) {
+            List<String> cmd = tokens(in.setting());
+            if (!cmd.isEmpty()) {
+                return new NodeRuntime(cmd, Source.SETTING, unmetFile, unmet);
+            }
+        }
         String node = in.onPath().apply("node").orElse("node");
-        return new NodeRuntime(List.of(node), Source.PATH, null);
+        return new NodeRuntime(List.of(node), Source.PATH, unmetFile, unmet);
+    }
+
+    /**
+     * A Node.js for one of Editora's own tools (the JavaScript debug adapter) that must not depend on what a user
+     * picked for their programs: the newest nvm-installed Node of at least {@code minMajor}, else {@code node} on
+     * PATH. Neither the setting nor a project's version file is consulted.
+     */
+    public static NodeRuntime resolveForTool(Inputs in, int minMajor) {
+        for (Path nvm : in.nvmRoots()) {
+            Optional<Path> newest = in.listDir().apply(nvm.resolve("versions").resolve("node")).stream()
+                    .filter(d -> parseVersion(String.valueOf(d.getFileName()))
+                            .map(v -> v[0] >= minMajor)
+                            .orElse(false))
+                    .sorted(Comparator.comparing(
+                                    (Path d) -> parseVersion(String.valueOf(d.getFileName()))
+                                            .orElseThrow(),
+                                    NodeRuntimes::compareVersions)
+                            .reversed())
+                    .map(d -> d.resolve("bin").resolve("node"))
+                    .filter(in.isFile())
+                    .findFirst();
+            if (newest.isPresent()) {
+                return new NodeRuntime(List.of(newest.get().toString()), Source.PATH, null);
+            }
+        }
+        return new NodeRuntime(List.of(in.onPath().apply("node").orElse("node")), Source.PATH, null);
+    }
+
+    /** {@link #resolveForTool(Inputs, int)} on this machine. Off the FX thread. */
+    public static NodeRuntime resolveForTool(int minMajor) {
+        return resolveForTool(Inputs.local(null, null, "", ""), minMajor);
+    }
+
+    /** A version file's first non-blank, non-comment line, stripped ("" when none). */
+    static String firstLine(String text) {
+        for (String line : text.split("\\R")) {
+            String l = line.strip();
+            if (!l.isEmpty() && !l.startsWith("#")) {
+                return l;
+            }
+        }
+        return "";
     }
 
     /**
@@ -290,11 +410,11 @@ public final class NodeRuntimes {
     // ------------------------------------------------------------------------------------------------- internals
 
     private static Optional<Path> versionFile(Inputs in, Path file, Path home) {
-        Path stop = packageRoot(file, in.projectRoot(), home, in.isFile())
-                .orElse(
-                        in.projectRoot() == null
-                                ? null
-                                : in.projectRoot().toAbsolutePath().normalize());
+        // Up to the project root (a monorepo keeps its .nvmrc at the top, above each member's package.json);
+        // with no project, up to the package root.
+        Path stop = in.projectRoot() != null
+                ? in.projectRoot().toAbsolutePath().normalize()
+                : packageRoot(file, null, home, in.isFile()).orElse(null);
         Path dir = file.toAbsolutePath().normalize().getParent();
         int levels = 0;
         while (dir != null && levels++ < 32) {
@@ -316,13 +436,22 @@ public final class NodeRuntimes {
      * The newest nvm-installed {@code node} matching {@code wanted} — {@code 20}, {@code 20.11}, {@code v20.11.1};
      * aliases such as {@code lts/*} or {@code node} are not resolved here (empty).
      */
-    static Optional<Path> nvmNode(Inputs in, Path home, String wanted) {
+    static Optional<Path> nvmNode(Inputs in, String wanted) {
         Optional<int[]> want = parseVersion(wanted);
         if (want.isEmpty() || !wanted.strip().matches("v?\\d+(\\.\\d+){0,2}")) {
             return Optional.empty();
         }
         int parts = wanted.strip().replaceFirst("^v", "").split("\\.").length;
-        Path versions = home.resolve(".nvm").resolve("versions").resolve("node");
+        for (Path nvm : in.nvmRoots()) {
+            Optional<Path> found = nvmNodeIn(in, nvm.resolve("versions").resolve("node"), want.get(), parts);
+            if (found.isPresent()) {
+                return found;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<Path> nvmNodeIn(Inputs in, Path versions, int[] want, int parts) {
         return in.listDir().apply(versions).stream()
                 .filter(d -> {
                     Optional<int[]> have = parseVersion(d.getFileName().toString());
@@ -330,7 +459,7 @@ public final class NodeRuntimes {
                         return false;
                     }
                     for (int i = 0; i < parts; i++) {
-                        if (have.get()[i] != want.get()[i]) {
+                        if (have.get()[i] != want[i]) {
                             return false;
                         }
                     }

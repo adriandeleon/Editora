@@ -27,10 +27,11 @@ final class NodeDebugConfigs {
      */
     static DapManager.@Nullable JsProgram fromRunPlan(
             List<String> argv, String target, Map<String, String> env, @Nullable Path dir) {
-        int at = argv == null || target == null ? -1 : argv.indexOf(target);
+        int at = argv == null || target == null ? -1 : programIndex(argv, target);
         if (at < 1 || dir == null) {
             return null;
         }
+        target = argv.get(at);
         return new DapManager.JsProgram(
                 argv.subList(0, at), target, argv.subList(at + 1, argv.size()), dir, env == null ? Map.of() : env);
     }
@@ -45,5 +46,55 @@ final class NodeDebugConfigs {
             return null;
         }
         return new DapManager.JsProgram(argv, "", List.of(), dir, new LinkedHashMap<>(npmEnv));
+    }
+
+    /**
+     * Where the program is in a planned {@code argv}: {@code target} itself, else — a TypeScript source Run runs as
+     * its compiled file — the first later word naming a script with the same name and a JavaScript or TypeScript
+     * extension ({@code src/main.ts} → {@code dist/main.js}); -1 when neither is there.
+     */
+    static int programIndex(List<String> argv, String target) {
+        int at = argv.indexOf(target);
+        if (at >= 1) {
+            return at;
+        }
+        String stem = stem(target);
+        for (int i = 1; i < argv.size(); i++) {
+            String word = argv.get(i);
+            if (!word.startsWith("-")
+                    && SCRIPT.matcher(word).matches()
+                    && stem(word).equals(stem)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static final java.util.regex.Pattern SCRIPT =
+            java.util.regex.Pattern.compile(".*\\.(?:[cm]?[jt]s|[jt]sx)$", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    private static String stem(String path) {
+        String name = path.replace('\\', '/');
+        name = name.substring(name.lastIndexOf('/') + 1);
+        int dot = name.indexOf('.');
+        return dot < 0 ? name : name.substring(0, dot);
+    }
+
+    /**
+     * Whether js-debug can launch {@code runtime}: Node.js itself, or a Node-based runner it reaches through
+     * {@code NODE_OPTIONS} (tsx, ts-node). Deno and Bun are not Node.js.
+     */
+    static boolean debuggableRuntime(List<String> runtime) {
+        if (runtime == null || runtime.isEmpty()) {
+            return false;
+        }
+        String exe = runtime.get(0);
+        if (com.editora.run.NodeRunPlan.isNodeName(exe)) {
+            return true;
+        }
+        String name = exe.replace('\\', '/');
+        name = name.substring(name.lastIndexOf('/') + 1).toLowerCase(java.util.Locale.ROOT);
+        name = name.replaceFirst("\\.(cmd|exe|ps1)$", "");
+        return name.equals("tsx") || name.equals("ts-node") || name.equals("ts-node-esm");
     }
 }

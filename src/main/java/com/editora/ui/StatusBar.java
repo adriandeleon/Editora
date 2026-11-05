@@ -972,7 +972,11 @@ public final class StatusBar extends HBox {
         readOnly.setManaged(readOnlyShown);
         if (hasBuffer) {
             boolean ro = !buffer.isEditable();
-            readOnly.setText(ro ? tr("statusbar.readOnly") : tr("statusbar.editable"));
+            // A large or long-lined file edits without undo; the status line said so once, this says it while
+            // it is true (JS/TS review A108).
+            boolean noUndo = !ro && buffer.isLargeFile();
+            readOnly.setText(
+                    tr(ro ? "statusbar.readOnly" : noUndo ? "statusbar.editableNoUndo" : "statusbar.editable"));
             if (ro) {
                 if (!readOnly.getStyleClass().contains("active")) {
                     readOnly.getStyleClass().add("active");
@@ -980,7 +984,11 @@ public final class StatusBar extends HBox {
             } else {
                 readOnly.getStyleClass().remove("active");
             }
-            readOnly.getTooltip().setText(ro ? tr("statusbar.tip.readOnly") : tr("statusbar.tip.editable"));
+            readOnly.getTooltip()
+                    .setText(tr(
+                            ro
+                                    ? "statusbar.tip.readOnly"
+                                    : noUndo ? "statusbar.tip.editableNoUndo" : "statusbar.tip.editable"));
         }
 
         // Indent + encoding reflect the active buffer's effective values (an .editorconfig can override

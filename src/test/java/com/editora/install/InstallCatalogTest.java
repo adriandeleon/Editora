@@ -72,18 +72,25 @@ class InstallCatalogTest {
     }
 
     /**
-     * TypeScript 7 ships no {@code tsserver}, so an unpinned {@code typescript} gave a language server that could
-     * not start (Node review B1). Both servers that run a tsserver install the pinned major.
+     * TypeScript 7 ships no {@code tsserver} (Node review B1) and TypeScript 6 leaves out an installed {@code
+     * @types/node} (JS review B101): the server and its TypeScript are pinned to exact releases and go into Editora's
+     * own folder, never {@code npm -g}, which replaced the user's global {@code tsc} (B104). Astro's TypeScript is
+     * that one too.
      */
     @Test
-    void typescriptServersInstallTheTsserverMajor() {
-        assertEquals("typescript@6", InstallCatalog.TYPESCRIPT_PACKAGE);
-        assertEquals(
-                List.of("typescript-language-server", "typescript@6"),
-                InstallCatalog.steps(Lang.JAVASCRIPT).get(0).npmPackages());
-        assertEquals(
-                List.of("@astrojs/language-server", "typescript@6"),
-                InstallCatalog.serverInstall("astro").orElseThrow().get(0).npmPackages());
+    void typescriptServersInstallTheirPinnedTypescriptIntoEditorasFolder() {
+        assertEquals("typescript@5.9.3", InstallCatalog.TYPESCRIPT_PACKAGE);
+        Step ts = InstallCatalog.steps(Lang.JAVASCRIPT).get(0);
+        assertEquals(Kind.NPM_PREFIX, ts.kind());
+        assertEquals("plugins/lsp/typescript", ts.destSubpath());
+        assertEquals(List.of("typescript-language-server@5.3.0", "typescript@5.9.3"), ts.npmPackages());
+        List<Step> astro = InstallCatalog.serverInstall("astro").orElseThrow();
+        assertEquals(List.of("@astrojs/language-server"), astro.get(0).npmPackages());
+        assertEquals(ts, astro.get(1));
+        for (Step s : List.of(ts, astro.get(1))) {
+            assertTrue(s.npmPackages().stream().noneMatch(p -> p.equals("typescript") || p.equals("typescript@6")));
+        }
+        assertEquals("typescript-language-server", InstallCatalog.npmPackage("typescript"));
     }
 
     @Test
@@ -184,7 +191,7 @@ class InstallCatalogTest {
         assertEquals(
                 List.of("typescript-language-server", "js-debug"),
                 steps.stream().map(Step::id).toList());
-        assertEquals(Kind.NPM_GLOBAL, steps.get(0).kind());
+        assertEquals(Kind.NPM_PREFIX, steps.get(0).kind()); // into Editora's own folder, not npm -g (JS review B104)
         Step jsDebug = steps.get(1);
         assertEquals(Kind.TARBALL, jsDebug.kind());
         assertEquals(InstallCatalog.JS_DEBUG_RELEASES_API, jsDebug.apiUrl());
@@ -360,7 +367,7 @@ class InstallCatalogTest {
         assertTrue(InstallCatalog.serverInstall("typescript").isEmpty());
         assertTrue(InstallCatalog.serverInstall(null).isEmpty());
         assertEquals(
-                List.of("@astrojs/language-server", "typescript@6"),
+                List.of("@astrojs/language-server"),
                 InstallCatalog.serverInstall("astro").orElseThrow().get(0).npmPackages());
     }
 
@@ -723,5 +730,16 @@ class InstallCatalogTest {
         assertEquals("@scope/name", InstallCatalog.packageName("@scope/name@1.2.3"));
         assertEquals("@scope/name", InstallCatalog.packageName("@scope/name"));
         assertEquals("typescript", InstallCatalog.packageName("typescript@6"));
+    }
+
+    @Test
+    void aJsDebugDownloadIsRefusedUnlessItsChecksumIsThePinnedOne() {
+        byte[] data = "tarball".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String good = InstallCatalog.sha256Hex(data);
+        org.junit.jupiter.api.Assertions.assertNull(InstallCatalog.checksumProblem("js-debug", data, good));
+        org.junit.jupiter.api.Assertions.assertNull(InstallCatalog.checksumProblem("js-debug", data, null));
+        org.junit.jupiter.api.Assertions.assertNull(InstallCatalog.checksumProblem("other", data, "00"));
+        String bad = InstallCatalog.checksumProblem("js-debug", data, "00");
+        org.junit.jupiter.api.Assertions.assertTrue(bad != null && bad.contains(good), String.valueOf(bad));
     }
 }

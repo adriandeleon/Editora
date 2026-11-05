@@ -40,4 +40,14 @@ class MissingProgramTest {
                 MissingProgram.forProgram("bun", "bun.lock").key());
         assertNull(MissingProgram.forProgram("java", ""));
     }
+
+    @Test
+    void aConfigurationsInterpreterPathThatIsNotThereIsNamed() {
+        java.util.function.Predicate<String> none = p -> false;
+        assertEquals("/no/such/node", MissingProgram.missingInterpreter("/no/such/node --no-warnings", none));
+        assertEquals("C:\\node\\node.exe", MissingProgram.missingInterpreter("C:\\node\\node.exe", none));
+        assertNull(MissingProgram.missingInterpreter("node", none), "a bare name is looked up at launch");
+        assertNull(MissingProgram.missingInterpreter("", none));
+        assertNull(MissingProgram.missingInterpreter("/usr/bin/node", p -> true));
+    }
 }

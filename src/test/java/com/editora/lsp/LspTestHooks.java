@@ -100,6 +100,14 @@ public final class LspTestHooks {
         manager.sessionForTest(file).languageEventNotification(event);
     }
 
+    /**
+     * {@code serverId} counts as installed for every later detection, as a probe would say on a machine that has it:
+     * a test's real settings apply then re-detects its fake server as available, whatever the machine has.
+     */
+    public static void cacheAvailability(LspManager manager, String serverId, boolean available) {
+        manager.cacheAvailabilityForTest(serverId, available);
+    }
+
     /** Plays the server serving {@code file} dying on its own — a crash, not a shutdown the editor asked for. */
     public static void simulateServerDeath(LspManager manager, java.nio.file.Path file) {
         manager.sessionForTest(file).simulateServerDeathForTest();

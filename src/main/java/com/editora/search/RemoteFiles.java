@@ -111,7 +111,7 @@ public final class RemoteFiles {
         List<String> argv = new ArrayList<>(List.of("find", ".", "-type", "d", "!", "-name", ".", "("));
         argv.addAll(List.of("-name", ".*"));
         if (respectGitignore) {
-            argv.addAll(List.of("-o", "-name", "node_modules"));
+            DependencyDirs.NAMES.forEach(n -> argv.addAll(List.of("-o", "-name", n)));
         }
         argv.addAll(List.of(")", "-prune", "-o", "-type", "f", "-print"));
         int ceiling = findCeiling(max);

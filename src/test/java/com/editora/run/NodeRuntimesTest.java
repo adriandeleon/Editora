@@ -177,4 +177,141 @@ class NodeRuntimesTest {
         assertFalse(NodeRuntimes.atLeast("v16.20.2", 18, 0));
         assertNull(NodeRuntimes.parseVersion("x").orElse(null));
     }
+
+    @Test
+    void aProjectsVersionFileBeatsTheSetting() throws Exception {
+        Path home = tmp.resolve("home");
+        Path want = nvmVersion(home, "v20.11.1");
+        Path proj = tmp.resolve("proj");
+        file(proj.resolve("package.json"));
+        Files.writeString(proj.resolve(".nvmrc"), "# pinned\nv20\n");
+        Path script = file(proj.resolve("app.js"));
+        NodeRuntime r = NodeRuntimes.resolve(in(script, null, "", "/opt/node24/bin/node", home, "/usr/bin/node"));
+        assertEquals(List.of(want.toString()), r.command());
+        assertEquals(Source.VERSION_FILE, r.source());
+        // the run configuration's own Interpreter still beats the pin
+        assertEquals(
+                Source.CONFIGURATION,
+                NodeRuntimes.resolve(in(script, null, "node", "", home, null)).source());
+    }
+
+    @Test
+    void anUninstalledPinIsReportedAndTheSettingRuns() throws Exception {
+        Path home = tmp.resolve("home");
+        nvmVersion(home, "v24.18.1");
+        Path proj = tmp.resolve("proj");
+        file(proj.resolve("package.json"));
+        Files.writeString(proj.resolve(".nvmrc"), "18\n");
+        Path script = file(proj.resolve("app.js"));
+        NodeRuntime viaSetting =
+                NodeRuntimes.resolve(in(script, null, "", "/opt/node24/bin/node", home, "/usr/bin/node"));
+        assertEquals(Source.SETTING, viaSetting.source());
+        assertEquals("18", viaSetting.unmetVersion());
+        assertEquals(".nvmrc", viaSetting.versionFile());
+        NodeRuntime viaPath = NodeRuntimes.resolve(in(script, null, "", "", home, "/usr/bin/node"));
+        assertEquals(Source.PATH, viaPath.source());
+        assertEquals("18", viaPath.unmetVersion());
+        assertNull(NodeRuntimes.resolve(in(tmp.resolve("x.js"), null, "", "", home, null))
+                .unmetVersion());
+    }
+
+    @Test
+    void nvmDirComesFromTheEnvironment() throws Exception {
+        Path nvm = tmp.resolve("custom-nvm");
+        Path bin = nvm.resolve("versions/node/v20.1.0/bin");
+        Files.createDirectories(bin);
+        Files.writeString(bin.resolve("node"), "");
+        Path proj = tmp.resolve("proj");
+        Files.createDirectories(proj);
+        Files.writeString(proj.resolve(".node-version"), "20");
+        Path script = file(proj.resolve("app.js"));
+        Inputs base = in(script, proj, "", "", tmp.resolve("home"), null);
+        Inputs withNvm = new Inputs(
+                base.file(),
+                base.projectRoot(),
+                "",
+                "",
+                base.home(),
+                base.isFile(),
+                base.readFile(),
+                base.listDir(),
+                base.onPath(),
+                nvm);
+        assertEquals(
+                List.of(bin.resolve("node").toString()),
+                NodeRuntimes.resolve(withNvm).command());
+        assertEquals(Source.PATH, NodeRuntimes.resolve(base).source(), "~/.nvm has no such version");
+
+        assertEquals(Path.of("/x/nvm"), NodeRuntimes.nvmDir("/x/nvm", "/cfg", p -> true));
+        assertEquals(Path.of("/cfg/nvm"), NodeRuntimes.nvmDir(null, "/cfg", p -> true));
+        assertNull(NodeRuntimes.nvmDir(null, "/cfg", p -> false));
+        assertNull(NodeRuntimes.nvmDir("", "", p -> true));
+    }
+
+    @Test
+    void aVersionMissingFromNvmDirIsStillFoundInTheHomeFoldersNvm() throws Exception {
+        // A CI image sets $NVM_DIR to its own nvm; a version installed under ~/.nvm still counts.
+        Path home = tmp.resolve("home");
+        Path bin = home.resolve(".nvm/versions/node/v12.22.12/bin");
+        Files.createDirectories(bin);
+        Files.writeString(bin.resolve("node"), "");
+        Files.createDirectories(tmp.resolve("system-nvm/versions/node/v24.0.0/bin"));
+        Path proj = tmp.resolve("legacy");
+        Files.createDirectories(proj);
+        Files.writeString(proj.resolve(".nvmrc"), "12\n");
+        Path script = file(proj.resolve("app.js"));
+        Inputs base = in(script, proj, "", "", home, null);
+        Inputs withNvm = new Inputs(
+                base.file(),
+                base.projectRoot(),
+                "",
+                "",
+                home,
+                base.isFile(),
+                base.readFile(),
+                base.listDir(),
+                base.onPath(),
+                tmp.resolve("system-nvm"));
+        assertEquals(
+                List.of(bin.resolve("node").toString()),
+                NodeRuntimes.resolve(withNvm).command());
+        assertEquals(Source.VERSION_FILE, NodeRuntimes.resolve(withNvm).source());
+    }
+
+    @Test
+    void aToolsNodeIgnoresTheSettingAndThePin() throws Exception {
+        Path home = tmp.resolve("home");
+        nvmVersion(home, "v16.20.0");
+        Path newest = nvmVersion(home, "v22.3.0");
+        nvmVersion(home, "v20.11.1");
+        Inputs i = in(null, null, "", "/opt/old/node", home, "/usr/bin/node");
+        assertEquals(
+                List.of(newest.toString()), NodeRuntimes.resolveForTool(i, 18).command());
+        assertEquals(
+                List.of("/usr/bin/node"), NodeRuntimes.resolveForTool(i, 23).command(), "none new enough");
+        assertEquals(
+                List.of("node"),
+                NodeRuntimes.resolveForTool(in(null, null, "", "", null, null), 18)
+                        .command());
+    }
+
+    @Test
+    void theVersionFilesFirstRealLineCounts() {
+        assertEquals("20", NodeRuntimes.firstLine("\n# comment\n  20  \nlts/*\n"));
+        assertEquals("", NodeRuntimes.firstLine("\n\n"));
+    }
+
+    @Test
+    void aMonoreposPinAboveTheMembersPackageJsonCounts() throws Exception {
+        Path home = tmp.resolve("home");
+        Path want = nvmVersion(home, "v20.11.1");
+        Path repo = tmp.resolve("repo");
+        file(repo.resolve("package.json"));
+        Files.writeString(repo.resolve(".nvmrc"), "20");
+        file(repo.resolve("packages/a/package.json"));
+        Path script = file(repo.resolve("packages/a/src/x.js"));
+        assertEquals(
+                List.of(want.toString()),
+                NodeRuntimes.resolve(in(script, repo, "", "", home, null)).command());
+    }
 }

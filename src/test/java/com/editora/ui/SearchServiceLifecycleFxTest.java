@@ -158,8 +158,12 @@ class SearchServiceLifecycleFxTest {
         }
     }
 
+    /**
+     * A file over 2 MB is skipped, as ripgrep's {@code --max-filesize} skips it, without marking the result cut:
+     * a built bundle made every walker search in a JavaScript project end "(truncated)" (JS review E106).
+     */
     @Test
-    void skippedOversizeFileIsReportedAsIncomplete(@TempDir Path dir) throws Exception {
+    void skippedOversizeFileLeavesTheResultComplete(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("large.txt"), "x".repeat(2 * 1024 * 1024 + 1));
         SearchService service = new SearchService();
         service.setBackend(false, List.of(), false);
@@ -171,7 +175,8 @@ class SearchServiceLifecycleFxTest {
                 delivered.countDown();
             });
             assertTrue(delivered.await(10, TimeUnit.SECONDS));
-            assertTrue(outcome.get().truncated());
+            assertFalse(outcome.get().truncated(), "nothing was cut: the large file is skipped");
+            assertEquals(0, outcome.get().totalMatches(), "the large file is not read");
         } finally {
             service.shutdown();
         }

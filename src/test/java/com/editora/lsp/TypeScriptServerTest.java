@@ -89,6 +89,85 @@ class TypeScriptServerTest {
         assertEquals("7.0.2", TypeScriptServer.sdkVersion(pkg.resolve("tsserver.js")));
     }
 
+    /** The LSP segment names the TypeScript a file runs on once the server says it (JS review B109). */
+    @Test
+    void theSegmentNamesTheRunningTypescriptAndAnIgnoredFolderVersionIsSeen() {
+        assertEquals("TypeScript 5.9.3", TypeScriptServer.segmentName("typescript-language-server", "5.9.3"));
+        assertEquals("typescript-language-server", TypeScriptServer.segmentName("typescript-language-server", ""));
+        assertEquals("5.4.5", TypeScriptServer.differentMajor("5.4.5", "6.0.3"));
+        assertEquals("", TypeScriptServer.differentMajor("5.4.5", "5.9.3"), "same major: nothing to say");
+        assertEquals("", TypeScriptServer.differentMajor("", "5.9.3"));
+    }
+
+    @Test
+    void anUntrustedFoldersOwnTypescriptOfAnotherMajorIsReported(@TempDir Path dir) throws Exception {
+        Path folderLib = Files.createDirectories(dir.resolve("app/node_modules/typescript/lib"));
+        Files.writeString(folderLib.getParent().resolve("package.json"), "{ \"version\": \"4.9.5\" }");
+        Files.writeString(folderLib.resolve("tsserver.js"), "");
+        Path ownLib = Files.createDirectories(dir.resolve("cfg/node_modules/typescript/lib"));
+        Files.writeString(ownLib.getParent().resolve("package.json"), "{ \"version\": \"5.9.3\" }");
+        Files.writeString(ownLib.resolve("tsserver.js"), "");
+        var installed = TypeScriptServer.choose(
+                null, folderLib.resolve("tsserver.js"), ownLib.resolve("tsserver.js"), "", false);
+        assertEquals("4.9.5", TypeScriptServer.ignoredFolderVersion(installed, dir.resolve("app"), false));
+        assertEquals("", TypeScriptServer.ignoredFolderVersion(installed, dir.resolve("app"), true), "loose files");
+        var workspace = TypeScriptServer.choose(folderLib.resolve("tsserver.js"), null, null, "", false);
+        assertEquals(
+                "", TypeScriptServer.ignoredFolderVersion(workspace, dir.resolve("app"), false), "trusted: runs it");
+    }
+
+    /** A moved .ts/.js file or folder asks the server for import updates; node_modules and others do not (B105). */
+    @Test
+    void sourceFilesAndFoldersOutsideNodeModulesRenameImports(@TempDir Path dir) throws Exception {
+        for (String name : List.of("a.ts", "b.tsx", "c.mts", "d.js", "e.jsx", "f.mjs", "g.cjs", "h.d.ts")) {
+            assertTrue(TypeScriptServer.renamesImports(dir.resolve(name)), name);
+        }
+        assertTrue(TypeScriptServer.renamesImports(Files.createDirectories(dir.resolve("src/lib"))));
+        assertFalse(TypeScriptServer.renamesImports(dir.resolve("README.md")));
+        assertFalse(TypeScriptServer.renamesImports(dir.resolve("node_modules/x/index.js")));
+        assertFalse(TypeScriptServer.renamesImports(null));
+    }
+
+    /** typescript-language-server outlives a killed tsserver; its log line is how Editora knows (JS review B102). */
+    @Test
+    void aKilledOrFailedTsserverIsSeenInTheServersLog() {
+        assertTrue(
+                TypeScriptServer.tsserverDied("[lspserver] [tsclient] [tsserver] Exited. Code: null. Signal: SIGKILL"));
+        assertTrue(TypeScriptServer.tsserverDied("[tsserver] Exited. Code: 134. Signal: null"));
+        assertFalse(TypeScriptServer.tsserverDied("[tsserver] Exited. Code: 0. Signal: null"));
+        assertFalse(TypeScriptServer.tsserverDied("Using Typescript version (user-setting) 5.9.3"));
+        assertFalse(TypeScriptServer.tsserverDied(null));
+    }
+
+    @Test
+    void editorasOwnTypescriptComesBeforeTheOneBesideTheServer(@TempDir Path dir) throws Exception {
+        Path global = dir.resolve("lib/node_modules");
+        Path cli = global.resolve("typescript-language-server/lib/cli.mjs");
+        Files.createDirectories(cli.getParent());
+        Files.writeString(cli, "");
+        Path beside = Files.createDirectories(global.resolve("typescript/lib"));
+        Files.writeString(beside.getParent().resolve("package.json"), "{ \"version\": \"6.0.3\" }");
+        Files.writeString(beside.resolve("tsserver.js"), "");
+        var onBeside = TypeScriptServer.sdk(cli, null);
+        assertEquals(beside.resolve("tsserver.js"), onBeside.tsserver());
+        assertFalse(onBeside.own());
+        assertFalse(onBeside.suitable(), "TypeScript 6 leaves @types/node out (JS review B101)");
+        Path own = Files.createDirectories(dir.resolve("cfg/plugins/lsp/typescript/node_modules/typescript/lib"));
+        Files.writeString(own.getParent().resolve("package.json"), "{ \"version\": \"5.9.3\" }");
+        Files.writeString(own.resolve("tsserver.js"), "");
+        var onOwn = TypeScriptServer.sdk(cli, own.resolve("tsserver.js"));
+        assertEquals(own.resolve("tsserver.js"), onOwn.tsserver());
+        assertTrue(onOwn.own());
+        assertTrue(onOwn.suitable());
+        assertEquals("6.0.3", onOwn.besideVersion());
+        // a TypeScript 7 beside the server and no own copy: nothing to run
+        Files.delete(beside.resolve("tsserver.js"));
+        assertFalse(TypeScriptServer.sdk(cli, null).found());
+        // the start choice takes the own one even then (LspManager.typeScriptChoice passes it as the installed one)
+        var choice = TypeScriptServer.choose(null, null, own.resolve("tsserver.js"), "7.0.2", false);
+        assertEquals(TypeScriptServer.Outcome.INSTALLED, choice.outcome());
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void initializationOptionsNameTheTsserverAndTurnTypeAcquisitionOffByDefault() {

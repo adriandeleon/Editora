@@ -66,8 +66,8 @@ public enum GitPathScope {
     /** How deep below the root a repository is looked for, and what is not looked in. */
     static final int SCAN_DEPTH = 8;
 
-    static final java.util.List<String> SCAN_SKIPS =
-            java.util.List.of("node_modules", ".venv", "venv", "__pycache__", ".cache", ".gradle");
+    static final java.util.List<String> SCAN_SKIPS = java.util.List.copyOf(
+            com.editora.search.DependencyDirs.with(".venv", "venv", "__pycache__", ".cache", ".gradle"));
 
     /**
      * The command that lists a remote root's {@code .git} entries, run in the root: {@code ./a/b/.git} for a

@@ -144,4 +144,25 @@ class RunServiceGuardsFxTest {
         assertEquals(-1, RunService.javaMajorOf("command not found: java"));
         assertEquals(-1, RunService.javaMajorOf(null));
     }
+
+    /**
+     * With stderr merged into stdout (a debugged Node.js program, review D102), lines written to the two streams
+     * arrive in the order they were written; two pipes read by two threads reordered them most runs.
+     */
+    @Test
+    @DisabledOnOs(OS.WINDOWS)
+    void mergedStreamsKeepTheOrderTheProgramWrote(@TempDir Path dir) throws Exception {
+        for (int run = 0; run < 5; run++) {
+            RunService service = new RunService();
+            service.setMergeErrorStream(true);
+            Recorder listener = new Recorder();
+            FxTestSupport.runOnFx(() -> service.runInDir(
+                    dir, List.of("sh", "-c", "echo 1; echo 2 >&2; echo 3; echo 4 >&2; echo 5; echo 6 >&2"), listener));
+            assertTrue(listener.ended.await(30, TimeUnit.SECONDS), "the program ends");
+            FxTestSupport.drainFx();
+            assertEquals(
+                    List.of("start", "out:1", "out:2", "out:3", "out:4", "out:5", "out:6", "exit:0"),
+                    listener.events());
+        }
+    }
 }

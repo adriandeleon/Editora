@@ -147,7 +147,7 @@ final class RootWatcher implements AutoCloseable {
         Path name = dir.getFileName();
         String n = name == null ? "" : name.toString();
         return (n.startsWith(".") && !n.equals(".settings"))
-                || n.equals("node_modules")
+                || com.editora.search.DependencyDirs.NAMES.contains(n)
                 || n.equals("__pycache__")
                 || Files.isRegularFile(dir.resolve("pyvenv.cfg"));
     }

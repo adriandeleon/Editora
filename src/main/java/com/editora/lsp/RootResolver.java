@@ -20,6 +20,19 @@ public final class RootResolver {
 
     private RootResolver() {}
 
+    /** Whether {@code dir} holds an Astro project's config ({@code astro.config.mjs}/{@code .ts}/{@code .js}/…). */
+    public static boolean hasAstroConfig(@Nullable Path dir) {
+        if (dir == null) {
+            return false;
+        }
+        for (String ext : List.of("mjs", "ts", "js", "mts", "cjs")) {
+            if (java.nio.file.Files.isRegularFile(dir.resolve("astro.config." + ext))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * The workspace root for {@code filePath}. Uses {@code projectRoot} when non-null; else the nearest
      * marker-bearing ancestor; else the file's parent directory (or the file itself if it has no parent).
@@ -132,6 +145,68 @@ public final class RootResolver {
         Path h = home.toAbsolutePath().normalize();
         Path m = markerRoot.toAbsolutePath().normalize();
         return !h.startsWith(m) && !com.editora.config.PathKeys.canonical(h).startsWith(m);
+    }
+
+    /**
+     * The TypeScript server's root for a file whose markers chose {@code root}: widened to the outermost folder
+     * above it that is a JS monorepo's root — a {@code package.json} with {@code "workspaces"}, a {@code
+     * pnpm-workspace.yaml}, or a {@code tsconfig.json} with {@code "references"} — never to the home folder or above,
+     * nor outside {@code projectRoot}. Each package with its own tsconfig was a server of its own, about 500 MB each,
+     * every one loading its neighbours again (JS review B106). File reads (a few small files per folder).
+     */
+    public static Path typeScriptWorkspaceRoot(Path root, @Nullable Path projectRoot) {
+        String home = System.getProperty("user.home");
+        String key = root + "\u0000" + projectRoot;
+        long now = System.nanoTime();
+        Widened known = WIDENED.get(key);
+        if (known != null && now - known.at() < WIDEN_TTL_NANOS) {
+            return known.root(); // asked on the FX thread for every sync of every tab: the reads are not repeated
+        }
+        Path widened =
+                typeScriptWorkspaceRoot(root, projectRoot, home == null || home.isBlank() ? null : Path.of(home));
+        if (WIDENED.size() > 512) {
+            WIDENED.clear();
+        }
+        WIDENED.put(key, new Widened(widened, now));
+        return widened;
+    }
+
+    private record Widened(Path root, long at) {}
+
+    private static final java.util.concurrent.ConcurrentHashMap<String, Widened> WIDENED =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final long WIDEN_TTL_NANOS = 10_000_000_000L;
+
+    static Path typeScriptWorkspaceRoot(Path root, @Nullable Path projectRoot, @Nullable Path home) {
+        Path start = root.toAbsolutePath().normalize();
+        Path top = projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
+        Path best = start;
+        for (Path dir = start.getParent(); dir != null; dir = dir.getParent()) {
+            if (tooBroad(dir, home) || (top != null && !dir.startsWith(top))) {
+                break;
+            }
+            if (workspaceRoot(dir)) {
+                best = dir;
+            }
+        }
+        return best;
+    }
+
+    private static boolean workspaceRoot(Path dir) {
+        return Files.isRegularFile(dir.resolve("pnpm-workspace.yaml"))
+                || fileMentions(dir.resolve("package.json"), "\"workspaces\"")
+                || fileMentions(dir.resolve("tsconfig.json"), "\"references\"");
+    }
+
+    private static boolean fileMentions(Path file, String word) {
+        try {
+            return Files.isRegularFile(file)
+                    && Files.size(file) < 512 * 1024
+                    && Files.readString(file).contains(word);
+        } catch (java.io.IOException | RuntimeException e) {
+            return false;
+        }
     }
 
     /**
@@ -349,8 +424,8 @@ public final class RootResolver {
     }
 
     /** Folders whose name says they hold no build of the user's: dependencies, build output, VCS metadata. */
-    private static final java.util.Set<String> SKIPPED_FOLDERS = java.util.Set.of(
-            "node_modules", "target", "build", "out", "dist", ".git", ".idea", ".editora", ".gradle", ".mvn");
+    private static final java.util.Set<String> SKIPPED_FOLDERS = com.editora.search.DependencyDirs.with(
+            "target", "build", "out", "dist", ".git", ".idea", ".editora", ".gradle", ".mvn");
 
     /**
      * The directories at most {@code depth} levels below {@code root} (the root itself included) that hold
