@@ -182,6 +182,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Map: a Java file's Structure column opens its class again.** With the Java language server running, the Map's
+  Structure column (and a file card's) stopped at the package and the class, because the server lists the package as
+  a top-level entry of its own. A lone package, namespace or module line no longer counts, so the class's members are
+  listed straight away as before.
 - **Java debugging (second debugging review, 38 findings).** A loose `.java` file or a plain-folder project is built
   before every Debug and stops on compile errors: edits always run, where the code as first built used to run, and
   code that does not compile no longer runs. Hot code replace works in those folders (it failed with "…: null" when

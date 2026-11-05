@@ -25,6 +25,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 
+import com.editora.lsp.SymbolNode;
 import com.editora.text.FoldRegions;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.BeforeAll;
@@ -97,6 +98,40 @@ class ProjectMapStructureFxTest {
                         .map(ProjectMapModel.Entry::name)
                         .toList();
                 assertEquals(List.of("count", "add(int, int)", "reset()"), members); // its field too (review 3, C6)
+            });
+        } finally {
+            map.close();
+        }
+    }
+
+    @Test
+    void aServerOutlinesPackageEntryDoesNotKeepTheLoneClassClosed() throws Exception {
+        root = projectRoot();
+        Path app = Files.writeString(root.resolve("App.java"), APP);
+        // An open buffer outlined by jdtls: the package is a root of its own beside the class.
+        Fixture map = openMap(path -> path.equals(app) ? new ProjectMapPreview.Content(APP, false) : null);
+        FxTestSupport.runOnFx(() -> map.view()
+                .setServerSymbols(path -> path.equals(app)
+                        ? List.of(
+                                new SymbolNode("demo", "", "package", 0, 0, List.of()),
+                                new SymbolNode(
+                                        "App",
+                                        "",
+                                        "class",
+                                        2,
+                                        15,
+                                        List.of(
+                                                new SymbolNode("count", "", "field", 3, 3, List.of()),
+                                                new SymbolNode("reset()", "", "method", 12, 14, List.of()))))
+                        : null));
+        try {
+            waitForRow(map, app);
+            FxTestSupport.runOnFx(() -> clickStructureIcon(map.surface(), app));
+            Path type = waitForSymbol(map, "App");
+            Path reset = waitForSymbol(map, "reset()");
+            FxTestSupport.runOnFx(() -> {
+                assertEquals(type, entry(map.surface(), reset).parent(), "the class's members are listed");
+                assertTrue(columnTitles(map.surface()).contains("App"), "the class's column opened by itself");
             });
         } finally {
             map.close();

@@ -812,10 +812,9 @@ final class ProjectMapStructure {
             }
         }
         outlines.put(file, outline);
-        if (autoExpand.remove(file)
-                && outline.roots().size() == 1
-                && outline.roots().getFirst().symbol().branches()) {
-            open.add(outline.roots().getFirst().path()); // most Java files: one class, its members are the point
+        Node lone = autoExpand.remove(file) ? loneBranch(outline.roots()) : null;
+        if (lone != null) {
+            open.add(lone.path()); // most Java files: one class, its members are the point
         }
         open.removeIf(path -> path.startsWith(file)
                 && !path.equals(file)
@@ -824,6 +823,22 @@ final class ProjectMapStructure {
         onChanged.run();
         onFileChanged.accept(file);
     }
+
+    /**
+     * The file's lone top-level declaration with members (the class of a Java file), or null. A leaf {@code package}
+     * line beside it does not count: jdtls lists the package as a root of its own, which kept the class closed.
+     * Any other second root does (two Markdown headings, two classes): then neither opens by itself.
+     */
+    static @Nullable Node loneBranch(List<Node> roots) {
+        List<Node> counted = roots.stream()
+                .filter(root -> root.symbol().branches()
+                        || !PACKAGE_KINDS.contains(root.symbol().kind()))
+                .toList();
+        return counted.size() == 1 && counted.getFirst().symbol().branches() ? counted.getFirst() : null;
+    }
+
+    /** Server symbol kinds that only name where a file's declarations live (see {@link #loneBranch}). */
+    private static final Set<String> PACKAGE_KINDS = Set.of("package", "namespace", "module");
 
     /**
      * Where the declaration at {@code path} went in the last outline of its file when its path changed: the
