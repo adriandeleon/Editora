@@ -1273,7 +1273,10 @@ public final class DapClient implements IDebugProtocolClient {
                             v.getType(),
                             v.getVariablesReference(),
                             count(v.getNamedVariables()),
-                            count(v.getIndexedVariables())));
+                            count(v.getIndexedVariables()),
+                            v.getPresentationHint() != null
+                                    && Boolean.TRUE.equals(
+                                            v.getPresentationHint().getLazy())));
                 }
             }
             return out;

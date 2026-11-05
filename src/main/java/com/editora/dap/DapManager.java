@@ -3394,6 +3394,7 @@ public final class DapManager {
             return;
         }
         c.variables(ref, filter, start, count)
+                .thenCompose(vars -> lazyValues.resolveAll(vars, child -> c.variables(child, null, 0, 0)))
                 .thenCompose(vars -> repairStrings(c, vars))
                 .whenComplete((vars, e) -> Platform.runLater(() -> {
                     if (client == c) {
@@ -3401,6 +3402,9 @@ public final class DapManager {
                     }
                 }));
     }
+
+    /** Lazy rows resolved during the current stop (B101); forgotten whenever the program runs. */
+    private final LazyValues lazyValues = new LazyValues();
 
     // --- strings java-debug garbles (follow-up 4: emoji arrive as two wrong characters) -------------------
 
@@ -3411,11 +3415,15 @@ public final class DapManager {
 
     private CompletableFuture<List<DapModels.VariableInfo>> repairStrings(
             DapClient c, List<DapModels.VariableInfo> vars) {
-        return javaDebugSession() ? JdwpStringRepair.repairAll(c, vars) : CompletableFuture.completedFuture(vars);
+        return javaDebugSession()
+                ? JdwpStringRepair.repairAll(c, vars).thenApply(JavaValueText::tidyAll) // B108: lambdas
+                : CompletableFuture.completedFuture(vars);
     }
 
     private CompletableFuture<DapModels.EvalResult> repairString(DapClient c, DapModels.EvalResult result) {
-        return javaDebugSession() ? JdwpStringRepair.repair(c, result) : CompletableFuture.completedFuture(result);
+        return javaDebugSession()
+                ? JdwpStringRepair.repair(c, result).thenApply(JavaValueText::tidy) // B108: lambdas
+                : CompletableFuture.completedFuture(result);
     }
 
     public void evaluate(String expression, int frameId, String context, Consumer<String> cb) {
@@ -3965,6 +3973,9 @@ public final class DapManager {
         }
         if (s != State.RUNNING) {
             stepInFlight = false;
+        }
+        if (s != State.SUSPENDED) {
+            lazyValues.clear(); // the program ran (or ended): references and values are stale
         }
         if (s == State.INACTIVE || s == State.STARTING) {
             consoleEvaluations = 0; // an answer that never comes cannot hold the next session's controls

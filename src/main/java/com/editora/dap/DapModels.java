@@ -73,9 +73,30 @@ public final class DapModels {
      * {@code namedVariables} / {@code indexedVariables} are the child counts an adapter reports when the client
      * declared {@code supportsVariablePaging} (0 = not reported): a large {@code indexedVariables} is what lets
      * the children be fetched a page at a time instead of all at once.
+     *
+     * <p>{@code lazy} is DAP's {@code presentationHint.lazy}: the value is not computed until asked for, and the
+     * one child of {@code variablesReference} holds it. java-debug 0.53.2 sends every object whose class has its
+     * own {@code toString()} this way ({@code Integer}, enums, records, dates): the row reads {@code Integer@62}
+     * and its value hides one level down. {@link LazyValues} resolves such a row before anyone shows it.
      */
     public record VariableInfo(
-            String name, String value, String type, int variablesReference, int namedVariables, int indexedVariables) {
+            String name,
+            String value,
+            String type,
+            int variablesReference,
+            int namedVariables,
+            int indexedVariables,
+            boolean lazy) {
+
+        public VariableInfo(
+                String name,
+                String value,
+                String type,
+                int variablesReference,
+                int namedVariables,
+                int indexedVariables) {
+            this(name, value, type, variablesReference, namedVariables, indexedVariables, false);
+        }
 
         public VariableInfo(String name, String value, String type, int variablesReference) {
             this(name, value, type, variablesReference, 0, 0);
