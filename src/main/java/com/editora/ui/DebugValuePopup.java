@@ -264,7 +264,18 @@ final class DebugValuePopup implements DebugValuePresenter {
             popup.setAnchorX(x);
             popup.setAnchorY(y);
         } else {
-            popup.show(area, x, y);
+            // Owned by the window, not the editor: a popup owned by a node takes that node as its CSS parent, so the
+            // editor's own rules (`.editor-area .text { -fx-fill: … }`, the editor theme's text colour) reached the
+            // popup's labels and button. A light editor theme in a dark window made the String header and Copy
+            // Value dark on the dark popup (review 2, C105 follow-up). The window's scene root gives the popup the
+            // window theme's colours, as every other popup has.
+            javafx.stage.Window window =
+                    area.getScene() == null ? null : area.getScene().getWindow();
+            if (window != null) {
+                popup.show(window, x, y);
+            } else {
+                popup.show(area, x, y);
+            }
         }
     }
 
