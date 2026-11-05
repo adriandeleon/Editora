@@ -105,6 +105,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Java debugging: Run ▸ Debugger and the Debug window (second debugging review).** The Run menu keeps Start /
+  Continue, Debug Main Class, Attach, Stop, Restart and Toggle Breakpoint; stepping, watches, breakpoint and exception
+  items moved into a **Run ▸ Debugger** submenu (the menu fits a 1080p screen again). Caught and Uncaught exception
+  stops are one ⚠ button. The Breakpoints list shows each kind with its gutter glyph and short folders; Edit Breakpoint
+  names its file and line and shows the line. The IntelliJ keymap opens the Breakpoints list with Ctrl+Shift+F8; CUA
+  and Sublime open the Debug window with Ctrl+Shift+Y and show F11 for Step Into. **Mute Breakpoints also mutes
+  exception stops.** Settings → Debugging has a **Debugged programs** card for the program-console and Terminal-tab
+  switches (they apply to Python and JavaScript too). "Debug Log" is now **Application Log**: it is Editora's own log.
+- **Java files without Maven or Gradle run on the Settings JDK, else the `java` on PATH, and the Java language
+  server builds for that same JDK.** A changed Default JDK reaches a running language server without a restart.
+  Gradle daemons the language server starts stop after 10 idle minutes.
+- **Debug in a JUnit test file debugs the test at the caret** (or the whole class), as Debug Test does, instead of
+  the project's main class.
+
 - **Project Map: pins, linked cards and trails after Map review 4.**
   - A pinned card stays until you close it with its own ×: Collapse All, Close Other Branches, closing its folder,
     Escape on the map, the orphan check and a trail moving on all leave it open.
@@ -167,6 +181,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `gh attestation verify <file> --repo adriandeleon/Editora --source-ref refs/tags/v<version>`.
 
 ### Fixed
+
+- **Java debugging (second debugging review, 38 findings).** A loose `.java` file or a plain-folder project is built
+  before every Debug and stops on compile errors: edits always run, where the code as first built used to run, and
+  code that does not compile no longer runs. Hot code replace works in those folders (it failed with "…: null" when
+  two JDKs disagreed), a replace with running methods is reported as applied (with Restart Frame), a breakpoint on a
+  line edited during the session keeps working, and Stop during a replace no longer switches it off for the window.
+  Records, enums, dates and boxed numbers show their values in Variables, inline values and the value popup
+  (`GREEN`, `Point[x=3, y=4]`, `42` instead of `Main$Color@18`); a String's popup shows its whole text with Copy
+  Value, and lambdas read `lambda@N`. JDK frames show the source of the JDK the program runs on. The Variables
+  right-click menu opens (it never did). An attach ends the session before it; Stop cancels a start that is still
+  being prepared; F5 asks before replacing a launch that is still starting, and Esc on the main-class chooser
+  cancels it. With the program console off, a program's last output and exit line are no longer lost; the console
+  says when the program runs in a Terminal tab and when it dropped old output. A failed Maven/Gradle import is named
+  as one, build errors show project-relative paths for the launched project only, Attach remembers its address and
+  explains a port nothing listens on, and evaluation errors, library stops and Smart Step Into (calls in run order)
+  read plainly. Names stay readable with a dark UI and a light editor theme.
 
 - **Doctor no longer offers a newer typescript-language-server than Editora installs.** Check for Newer Versions
   looked it up on npm although Editora pins 5.3.0, whose next release needs Node.js 22.22.2. It is now pinned like the

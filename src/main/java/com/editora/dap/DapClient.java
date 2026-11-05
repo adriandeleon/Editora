@@ -62,8 +62,9 @@ import org.jspecify.annotations.Nullable;
  * ({@code initialize} → on the {@code initialized} event send {@code setBreakpoints}/{@code setExceptionBreakpoints}
  * → {@code configurationDone}), and exposes the control + inspection requests.
  *
- * <p>Pure of JavaFX: event callbacks fire on the launcher's reader thread, so the {@link Host}
- * implementation ({@link DapManager}) marshals to the FX thread. Requests return raw futures.
+ * <p>Pure of JavaFX: event callbacks fire on the launcher's reader thread, so the {@link Host} — the one
+ * {@link DapManager} makes for each session, bound to its epoch — marshals to the FX thread. Requests return raw
+ * futures.
  *
  * <p><b>Multi-session adapters.</b> vscode-js-debug never debugs the program on the connection that
  * launched it. That first ("root") session only starts the launcher; for every debuggee it then sends the
@@ -85,7 +86,7 @@ public final class DapClient implements IDebugProtocolClient {
         return REQUEST_TIMEOUT.toSeconds();
     }
 
-    /** Event sink (implemented by {@link DapManager}); calls arrive on the launcher's reader thread. */
+    /** Event sink (one per session, made by {@link DapManager}); calls arrive on the launcher's reader thread. */
     public interface Host {
         void onStopped(int threadId, String reason);
 
@@ -1273,7 +1274,10 @@ public final class DapClient implements IDebugProtocolClient {
                             v.getType(),
                             v.getVariablesReference(),
                             count(v.getNamedVariables()),
-                            count(v.getIndexedVariables())));
+                            count(v.getIndexedVariables()),
+                            v.getPresentationHint() != null
+                                    && Boolean.TRUE.equals(
+                                            v.getPresentationHint().getLazy())));
                 }
             }
             return out;

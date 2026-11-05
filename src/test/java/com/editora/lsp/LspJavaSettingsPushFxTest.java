@@ -75,14 +75,23 @@ class LspJavaSettingsPushFxTest {
     }
 
     @Test
-    void aNewDefaultJdkSaysARunningJavaServerKeepsItsOwn() throws Exception {
-        assertFalse(manager.setJavaDefaultJdk("/jdk/21"), "no Java server runs: nothing to restart");
+    void aNewDefaultJdkReachesARunningJavaServer() throws Exception {
+        manager.setJavaDefaultJdk("/jdk/21");
         Path f = root.resolve("A.java");
         Files.writeString(f, "class A {}\n");
         manager.openDocument(f, root, "java", "class A {}\n");
         assertTrue(manager.hasSession("java", root), "started or starting: no second \"Starting…\" (C18)");
-        assertTrue(manager.setJavaDefaultJdk("/jdk/25"), "it keeps /jdk/21 until restarted (re-review CN7)");
-        assertFalse(manager.setJavaDefaultJdk("/jdk/25"), "unchanged");
+        int before = fakes.get(0).configurations.size();
+        // Pushed to the running server at once, not left for a restart (Java debug review 2, B102).
+        String jdk = JavaRuntimes.discover().get(0).path();
+        manager.setJavaDefaultJdk(jdk);
+        long end = System.currentTimeMillis() + 10_000;
+        while (fakes.get(0).configurations.size() == before && System.currentTimeMillis() < end) {
+            Thread.sleep(20);
+        }
+        assertTrue(fakes.get(0).configurations.size() > before, "pushed at once");
+        assertTrue(lastPush().contains("runtimes=") && lastPush().contains("default=true"), lastPush());
+        manager.setJavaDefaultJdk(jdk);
     }
 
     @Test

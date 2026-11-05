@@ -930,6 +930,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
         /** When set, every {@code redefineClasses} is refused with this message. */
         public volatile String redefineFailure;
 
+        /** When set, a {@code redefineClasses} is answered only once this completes (a replace still running). */
+        public volatile CompletableFuture<Void> redefineGate;
+
         /** java-debug's own request: load the classes jdtls rebuilt into the running program. */
         @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("redefineClasses")
         public CompletableFuture<Map<String, Object>> redefineClasses(Object args) {
@@ -937,9 +940,11 @@ public final class FakeDebugAdapter implements AutoCloseable {
                 hotCodeReplace(notice[0], notice[1]); // java-debug reports progress and problems before answering
             }
             record("redefineClasses");
-            return redefineFailure != null
+            CompletableFuture<Map<String, Object>> answer = redefineFailure != null
                     ? refused(redefineFailure)
                     : CompletableFuture.completedFuture(redefineAnswer);
+            CompletableFuture<Void> gate = redefineGate;
+            return gate == null ? answer : gate.thenCompose(v -> answer);
         }
 
         /** java-debug's non-standard {@code hotcodereplace} event. */

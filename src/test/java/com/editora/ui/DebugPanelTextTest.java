@@ -105,4 +105,22 @@ class DebugPanelTextTest {
         org.junit.jupiter.api.Assertions.assertFalse(
                 DebugPanelText.isPackageManagerThread(new com.editora.dap.DapModels.ThreadInfo(2, "npm-check.js [7]")));
     }
+
+    /** Review 2 C104: the one exception button says in its tooltip which exceptions stop the program. */
+    @Test
+    void theExceptionButtonTooltipNamesWhatStops() {
+        String tr = "debugpanel.exceptions.tip";
+        assertEquals(
+                com.editora.i18n.Messages.tr(tr, com.editora.i18n.Messages.tr("debugpanel.exceptions.off")),
+                DebugPanelText.exceptionsTip(false, false));
+        assertEquals(
+                com.editora.i18n.Messages.tr(tr, com.editora.i18n.Messages.tr("debugpanel.exceptions.uncaught")),
+                DebugPanelText.exceptionsTip(false, true));
+        assertEquals(
+                com.editora.i18n.Messages.tr(tr, com.editora.i18n.Messages.tr("debugpanel.exceptions.caught")),
+                DebugPanelText.exceptionsTip(true, false));
+        assertEquals(
+                com.editora.i18n.Messages.tr(tr, com.editora.i18n.Messages.tr("debugpanel.exceptions.both")),
+                DebugPanelText.exceptionsTip(true, true));
+    }
 }

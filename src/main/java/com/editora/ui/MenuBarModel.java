@@ -276,7 +276,9 @@ final class MenuBarModel {
                 new MenuSpec(
                         "menubar.run",
                         // Every debugger action has a place here (review C10): Pause, Restart, Run to Cursor,
-                        // Evaluate and the breakpoint list were reachable only from the palette.
+                        // Evaluate and the breakpoint list were reachable only from the palette. The session-level
+                        // ones stay at the top; stepping, evaluate, watches and breakpoints are in a Debugger
+                        // submenu — flat, the menu was taller than a 1080p screen (review 2 C103).
                         List.of(
                                 "file.run",
                                 "file.runWithArgs",
@@ -290,24 +292,8 @@ final class MenuBarModel {
                                 "debug.attach",
                                 "debug.stop",
                                 "debug.restart",
-                                SEPARATOR,
-                                "debug.continue",
-                                "debug.pause",
-                                "debug.stepOver",
-                                "debug.stepInto",
-                                "debug.smartStepInto",
-                                "debug.stepOut",
-                                "debug.runToCursor",
-                                "debug.restartFrame",
-                                SEPARATOR,
-                                "debug.applyCodeChanges",
-                                "debug.evaluate",
-                                "debug.showValue",
-                                "debug.addWatch",
                                 "debug.toggleBreakpoint",
-                                "debug.exceptions.caught",
-                                "debug.exceptions.uncaught",
-                                submenu("menubar.run.breakpoints"),
+                                submenu("menubar.run.debugger"),
                                 SEPARATOR,
                                 "test.run",
                                 "test.rerunFailed",
@@ -329,13 +315,29 @@ final class MenuBarModel {
                                                 "tool.maven",
                                                 "tool.buildOutput")),
                                 new MenuSpec(
-                                        "menubar.run.breakpoints",
+                                        "menubar.run.debugger",
                                         List.of(
+                                                "debug.continue",
+                                                "debug.pause",
+                                                "debug.stepOver",
+                                                "debug.stepInto",
+                                                "debug.smartStepInto",
+                                                "debug.stepOut",
+                                                "debug.runToCursor",
+                                                "debug.restartFrame",
+                                                SEPARATOR,
+                                                "debug.applyCodeChanges",
+                                                "debug.evaluate",
+                                                "debug.showValue",
+                                                "debug.addWatch",
+                                                SEPARATOR,
                                                 "debug.toggleBreakpointEnabled",
                                                 "debug.editBreakpoint",
                                                 "debug.breakpoints",
                                                 "debug.muteBreakpoints",
                                                 SEPARATOR,
+                                                "debug.exceptions.caught",
+                                                "debug.exceptions.uncaught",
                                                 "debug.toggleExceptionBreakpoints")),
                                 // A local project run on another machine (Run on in a configuration).
                                 new MenuSpec(

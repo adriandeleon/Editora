@@ -130,12 +130,14 @@ class DebugPanelWatchesFxTest {
         }
 
         @Override
-        public void evaluate(String expression, int frameId, Consumer<String> cb) {
+        public void evaluate(String expression, int frameId, Consumer<com.editora.dap.ConsoleEvaluation> cb) {
             calls.add("evaluate " + expression + " @" + frameId);
             cb.accept(
                     expression.startsWith("null")
                             ? null
-                            : expression.startsWith("boom") ? "error: " + expression : "val(" + expression + ")");
+                            : expression.startsWith("boom")
+                                    ? com.editora.dap.ConsoleEvaluation.failure(expression)
+                                    : com.editora.dap.ConsoleEvaluation.value("val(" + expression + ")"));
         }
 
         @Override
@@ -641,6 +643,47 @@ class DebugPanelWatchesFxTest {
         });
     }
 
+    /**
+     * Review 2 C101: a real right-click on a Variables row (the control's own CONTEXT_MENU_REQUESTED path, mouse and
+     * menu key) opens the row menu. It started empty, and ContextMenu.show() returns before ON_SHOWING then, so the
+     * menu never opened — the tests above build it by calling the handler themselves.
+     */
+    @Test
+    void aRealRightClickOnARowOpensItsMenu() throws Exception {
+        javafx.stage.Stage stage = FxTestSupport.callOnFx(() -> {
+            javafx.stage.Stage s = new javafx.stage.Stage();
+            s.setScene(new javafx.scene.Scene(panel, 1100, 360));
+            s.show();
+            stopWithLocals();
+            return s;
+        });
+        try {
+            FxTestSupport.drainFx();
+            for (boolean keyboard : List.of(false, true)) {
+                FxTestSupport.runOnFx(() -> {
+                    tree().getSelectionModel().select(row("Locals", "name"));
+                    var b = tree().localToScreen(tree().getBoundsInLocal());
+                    tree().fireEvent(new javafx.scene.input.ContextMenuEvent(
+                            javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED,
+                            40,
+                            40,
+                            b.getMinX() + 40,
+                            b.getMinY() + 40,
+                            keyboard,
+                            null));
+                    ContextMenu menu = tree().getContextMenu();
+                    assertTrue(menu.isShowing(), "the row menu opens (keyboard=" + keyboard + ")");
+                    List<String> labels = labels(menu.getItems());
+                    assertTrue(labels.contains(tr("debugpanel.copyValue")), labels.toString());
+                    assertTrue(labels.contains(tr("debugpanel.addToWatches", "name")), labels.toString());
+                    menu.hide();
+                });
+            }
+        } finally {
+            FxTestSupport.runOnFx(stage::close);
+        }
+    }
+
     /** Review C13: the exception row stays at the top of Variables when the scopes arrive after it. */
     @Test
     void theExceptionRowLeadsTheTreeUntilTheNextStop() throws Exception {
@@ -736,6 +779,9 @@ class DebugPanelWatchesFxTest {
             panel.setExitCode(1);
             panel.setState(DapManager.State.INACTIVE);
             assertEquals(tr("debugpanel.state.exited", 1), state.getText());
+            ListView<?> stack = FxTestSupport.field(panel, "stack");
+            assertEquals( // review 2 C110: how to go again, not how to set a first breakpoint
+                    tr("debugpanel.endedHint"), ((javafx.scene.control.Label) stack.getPlaceholder()).getText());
             panel.setState(DapManager.State.STARTING);
             assertEquals(tr("debugpanel.state.starting"), state.getText());
         });

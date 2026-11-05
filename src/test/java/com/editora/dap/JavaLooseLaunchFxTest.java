@@ -318,6 +318,52 @@ class JavaLooseLaunchFxTest {
                 "the console says which program runs: " + console);
     }
 
+    // --- review 2, A101: never an old class of jdtls's ---------------------------------------------------
+
+    /** jdtls's output already holds Main.class (jdtls builds it at import), as stale as it may be. */
+    private Path staleBin(Path folder, Path main) throws Exception {
+        Path bin = Files.createDirectories(dir.resolve("ws/old_1/bin"));
+        Files.writeString(bin.resolve("Main.class"), "old bytes, built before the last edit");
+        replies.put("vscode.java.resolveMainClass", p -> List.of(mainClass("Main", "old_1", main)));
+        replies.put("vscode.java.resolveClasspath", p -> List.of(List.of(), List.of(bin.toString())));
+        return bin;
+    }
+
+    /**
+     * A class file in jdtls's output is no reason to launch it: jdtls built that output once, at import, and every
+     * later launch ran the code as it was then (review 2, A101). With no build for this launch, the file is compiled.
+     */
+    @Test
+    void anOldClassInJdtlsOutputIsNeverLaunchedWithoutABuild() throws Exception {
+        Path folder = Files.createDirectories(dir.resolve("old"));
+        Path main = folder.resolve("Main.java");
+        open(main, folder, "public class Main {\n    public static void main(String[] args) {}\n}\n");
+        Path bin = staleBin(folder, main);
+
+        onFx(() -> dap.startLaunch(main, "java", noPicker, javaExec(), null));
+
+        Map<String, Object> launch = launch();
+        List<?> classPaths = (List<?>) launch.get("classPaths");
+        assertFalse(classPaths.contains(bin.toString()), "jdtls's old output is not launched: " + classPaths);
+        assertTrue(holdsClass(launch, "Main"), "the file was compiled for this launch: " + launch);
+    }
+
+    /** Right after jdtls's build for this launch succeeded, its output is current and is what runs. */
+    @Test
+    void jdtlsOutputIsLaunchedRightAfterItsBuild() throws Exception {
+        Path folder = Files.createDirectories(dir.resolve("built"));
+        Path main = folder.resolve("Main.java");
+        open(main, folder, "public class Main {\n    public static void main(String[] args) {}\n}\n");
+        Path bin = staleBin(folder, main);
+
+        onFx(() -> {
+            dap.setLooseClassesBuilt(true);
+            dap.startLaunch(main, "java", noPicker, javaExec(), null);
+        });
+
+        assertEquals(List.of(bin.toString()), launch().get("classPaths"));
+    }
+
     // --- A5: compile errors ---------------------------------------------------------------------------
 
     /** javac's report goes to the Debug console, where its file:line opens the file; the status says where. */

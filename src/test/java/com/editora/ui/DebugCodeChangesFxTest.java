@@ -213,6 +213,30 @@ class DebugCodeChangesFxTest {
                 statuses().toString());
     }
 
+    /**
+     * Review D101: a session that ended while its replace was still running left the replace "running" for good, so
+     * every later save — and Apply Code Changes — in the window did nothing at all.
+     */
+    @Test
+    void aSessionThatEndsDuringAReplaceLeavesTheNextSessionsReplacesWorking() throws Exception {
+        FakeDebugAdapter.Session first = connect();
+        first.redefineGate = new java.util.concurrent.CompletableFuture<>();
+        editAndSave("\"v1\"", "\"v2\"");
+        first.awaitRequest("redefineClasses");
+        FxTestSupport.runOnFx(dap::stop);
+        first.redefineGate.complete(null); // the ended session's answer arrives late, and is not this window's
+        FxTestSupport.drainFx();
+
+        FakeDebugAdapter.Session next = connect();
+        next.redefineAnswer = Map.of("changedClasses", List.of("App"));
+        editAndSave("\"v2\"", "\"v3\"");
+
+        next.awaitRequest("redefineClasses");
+        String applied = tr("debug.hcr.applied", "App");
+        await("the console line", () -> console().contains(applied));
+        assertFalse(statuses().contains(tr("debug.hcr.noSession")), "the late answer said nothing: " + statuses());
+    }
+
     @Test
     void aReplaceJavaDebugRefusesTellsTheUserToRestart() throws Exception {
         FakeDebugAdapter.Session session = connect();
@@ -347,5 +371,38 @@ class DebugCodeChangesFxTest {
 
         session.awaitRequests("stepIn", 2);
         assertEquals(101, session.stepIns.get(1).getTargetId());
+    }
+
+    @Test
+    void smartStepIntoListsTheCallsInTheOrderTheyRunAndClosesOnceTheProgramRunsOn() throws Exception {
+        String call = "System.out.println(\"v1\");";
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = buffer.getArea();
+            int at = area.getText().indexOf(call);
+            area.replaceText(at, at + call.length(), "int r = add(twice(1), twice(2));");
+        });
+        FakeDebugAdapter.Session session = connect();
+        session.framePath = file.toString();
+        session.stepTargetLabels = List.of("add(twice(1),twice(2))", "twice(2)", "twice(1)");
+        session.stop(7, "breakpoint");
+        await("the stop", () -> FxTestSupport.callOnFx(dap::state) == DapManager.State.SUSPENDED);
+        await("the frame to show", () -> FxTestSupport.field(debug, "shownFrame") != null);
+        FxTestSupport.runOnFx(() -> registry.run("debug.smartStepInto"));
+        QuickOpen<DapModels.StepTarget>[] picker = new QuickOpen[1];
+        await(
+                "the picker",
+                () -> (picker[0] = FxTestSupport.field(debug, "smartStepPicker")) != null
+                        && FxTestSupport.callOnFx(picker[0]::isShown));
+        java.util.function.Supplier<List<DapModels.StepTarget>> items = FxTestSupport.field(picker[0], "itemsSupplier");
+        assertEquals(
+                List.of("twice(1)", "twice(2)", "add(twice(1),twice(2))"),
+                FxTestSupport.callOnFx(items::get).stream()
+                        .map(DapModels.StepTarget::label)
+                        .toList(),
+                "the order the calls run in, whatever order the adapter sent (review E108)");
+
+        FxTestSupport.runOnFx(() -> registry.run("debug.continue"));
+        await("the program runs on", () -> FxTestSupport.callOnFx(dap::state) == DapManager.State.RUNNING);
+        await("the stale list closes", () -> !FxTestSupport.callOnFx(picker[0]::isShown));
     }
 }

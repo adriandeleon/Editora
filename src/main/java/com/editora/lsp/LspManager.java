@@ -392,18 +392,51 @@ public final class LspManager {
     }
 
     /**
-     * The JDK the user chose in Settings (Build Tools ▸ Default JDK, "" for none). A Java server started after
-     * this marks it as its default runtime and runs Gradle on it, and runs on it itself when the launcher's own
-     * Java is older than jdtls needs. A running server keeps what it started with; true when one does and the
-     * value changed.
+     * The JDK jdtls makes its default ({@link JavaRuntimes#preferredHome(String, String, String)}): {@code setting}
+     * (the Default JDK), else PATH's java, else {@code JAVA_HOME}; null for {@code setting} null (a remote or
+     * non-Java server). Scans PATH: off the FX thread.
      */
-    public boolean setJavaDefaultJdk(@Nullable String home) {
+    static @Nullable String javaPreferredHome(@Nullable String setting) {
+        return setting == null
+                ? null
+                : JavaRuntimes.preferredHome(setting, JavaRuntimes.pathJavaHome(), System.getenv("JAVA_HOME"));
+    }
+
+    /**
+     * The Java version jdtls builds {@code file}'s folder for when it has no build file: its default runtime's
+     * ({@code JavaSE-25} → 25); null when no local Java server serves it or none is known.
+     */
+    public @Nullable Integer javaDefaultMajor(Path file) {
+        LanguageServerSession s = file == null ? null : javaSessionFor(file);
+        return s == null ? null : JavaRuntimes.defaultMajor(s.javaRuntimes());
+    }
+
+    /**
+     * The JDK the user chose in Settings (Build Tools ▸ Default JDK, "" for none). A Java server marks it as its
+     * default runtime (else PATH's java, {@link #javaPreferredHome}) and runs Gradle on it; one started after this
+     * also runs on it itself when the launcher's own Java is older than jdtls needs. A running local server is
+     * sent the new default at once (Java debug review 2, B102), so what it builds and the JDK sources it shows
+     * follow the program's JDK; only the JDK it runs on itself waits for a restart.
+     */
+    public void setJavaDefaultJdk(@Nullable String home) {
         String next = home == null ? "" : home;
         boolean changed = !next.equals(javaDefaultJdk);
         javaDefaultJdk = next;
-        String prefix = sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID);
-        // true: a running Java server keeps the old one until it restarts (re-review CN7)
-        return changed && sessionsByRoot.keySet().stream().anyMatch(k -> k.startsWith(prefix));
+        if (changed) {
+            String prefix = sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID);
+            List<LanguageServerSession> running = sessionsByRoot.entrySet().stream()
+                    .filter(e -> e.getKey().startsWith(prefix))
+                    .map(Map.Entry::getValue)
+                    .filter(session -> com.editora.process.ExecTargets.runsHere(session.root()))
+                    .toList();
+            if (!running.isEmpty()) {
+                startExec.execute(() -> {
+                    List<Map<String, Object>> runtimes =
+                            JavaRuntimes.runtimes(JavaRuntimes.discover(), javaPreferredHome(next), true);
+                    running.forEach(session -> session.setJavaRuntimes(runtimes));
+                });
+            }
+        }
     }
 
     /** The clean-ups jdtls's {@code java/cleanup} runs ({@code java.cleanup.actions}); every Java session gets them. */
@@ -2354,9 +2387,9 @@ public final class LspManager {
         String workspaceBaseName = needsJdtlsWorkspace && !remote ? LspServerRegistry.workspaceDirName(root) : null;
         List<String> bundles = List.copyOf(debugBundles);
         boolean onTypeFormatting = javaOnTypeFormatting;
-        String javaPreferredHome = remote || !LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
-                ? null // a remote host's JDKs are its own; the setting names this machine's
-                : JavaRuntimes.preferredHome(javaDefaultJdk, System.getenv("JAVA_HOME"));
+        // a remote host's JDKs are its own; the setting names this machine's. PATH's java is found on the start
+        // thread below (a PATH scan stays off the FX thread).
+        String javaJdkSetting = remote || !LspServerRegistry.JAVA_SERVER_ID.equals(serverId) ? null : javaDefaultJdk;
         boolean centralIndex = mavenCentralIndex;
         boolean downloadSources = javaDownloadSources;
         // Trust is read here, on the caller's thread, where the trust list is also edited.
@@ -2371,6 +2404,7 @@ public final class LspManager {
         boolean loose = root.toAbsolutePath().normalize().equals(looseRoot);
         startExec.execute(() -> {
             awaitPriorExit(key); // a restart: let the server being replaced release what it holds
+            String javaPreferredHome = javaPreferredHome(javaJdkSetting);
             if (closed || session.isDisposed()) {
                 dropSession(key, session);
                 return;
@@ -2530,6 +2564,11 @@ public final class LspManager {
             }
             Path tsserverPath = tsserver;
             List<JavaRuntimes.Jdk> jdks = hostJdks;
+            if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
+                // what the start's settings carry (javaSettings), kept for every later push of them
+                session.setJavaRuntimes(JavaRuntimes.runtimes(
+                        jdks == null ? JavaRuntimes.discover() : jdks, javaPreferredHome, jdks == null));
+            }
             // A remote jdtls is told about the host's JDKs, and gets the debug bundles as files on the host.
             List<String> startBundles = remote && LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
                     ? remoteDebugBundles(root, bundles)
@@ -6057,20 +6096,44 @@ public final class LspManager {
         List<Map<String, Object>> runtimes =
                 // jdks given: a remote host's, whose sources are not on this machine's disk to look for
                 JavaRuntimes.runtimes(jdks == null ? JavaRuntimes.discover() : jdks, preferredHome, jdks == null);
-        if (!runtimes.isEmpty()) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> configuration =
-                    new java.util.HashMap<>((Map<String, Object>) java.getOrDefault("configuration", Map.of()));
-            configuration.put("runtimes", runtimes);
-            java.put("configuration", Map.copyOf(configuration));
-            String gradleJdk = JavaRuntimes.defaultPath(runtimes);
-            if (gradleJdk != null) {
-                // Gradle runs on the same JDK as the projects' default, not whatever jdtls itself runs on.
-                java.put("import", Map.of("gradle", Map.of("java", Map.of("home", gradleJdk))));
-            }
-        }
-        return Map.copyOf(java);
+        return Map.copyOf(withRuntimes(java, runtimes));
     }
+
+    /**
+     * {@code java} (jdtls's {@code settings.java}) with {@code runtimes} as {@code configuration.runtimes}, Gradle
+     * run on their default, and the Gradle daemons jdtls starts told to stop when idle ({@link
+     * #GRADLE_DAEMON_ARGUMENTS}). Sent at start and in every later settings push, so a changed Default JDK reaches
+     * a running jdtls (Java debug review 2, B102). Pure.
+     */
+    static Map<String, Object> withRuntimes(Map<String, Object> java, List<Map<String, Object>> runtimes) {
+        Map<String, Object> out = new java.util.HashMap<>(java);
+        if (runtimes.isEmpty()) {
+            return out;
+        }
+        Map<String, Object> configuration = new java.util.HashMap<>();
+        if (out.get("configuration") instanceof Map<?, ?> existing) {
+            existing.forEach((k, v) -> configuration.put(String.valueOf(k), v));
+        }
+        configuration.put("runtimes", runtimes);
+        out.put("configuration", Map.copyOf(configuration));
+        Map<String, Object> gradle = new java.util.HashMap<>();
+        gradle.put("arguments", GRADLE_DAEMON_ARGUMENTS);
+        String gradleJdk = JavaRuntimes.defaultPath(runtimes);
+        if (gradleJdk != null) {
+            // Gradle runs on the same JDK as the projects' default, not whatever jdtls itself runs on.
+            gradle.put("java", Map.of("home", gradleJdk));
+        }
+        out.put("import", Map.of("gradle", Map.copyOf(gradle)));
+        return out;
+    }
+
+    /**
+     * The Gradle arguments of jdtls's imports: a daemon it starts stops after ten idle minutes, not Gradle's three
+     * hours. jdtls leaves its daemons running when it exits, so each Gradle project opened left a JVM behind long
+     * after Editora closed (Java debug review 2, lead note). Only the daemons these imports start are affected:
+     * Gradle reuses a daemon only when its settings match.
+     */
+    static final String GRADLE_DAEMON_ARGUMENTS = "-Dorg.gradle.daemon.idletimeout=600000";
 
     private static Map<String, Object> finishJavaInitOptions(Map<String, Object> options, List<String> debugBundles) {
         options.put("extendedClientCapabilities", javaExtendedClientCapabilities());

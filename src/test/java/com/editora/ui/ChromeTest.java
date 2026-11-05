@@ -647,6 +647,12 @@ class ChromeTest {
         assertEquals(
                 "palette.disabled.needsDebugSession",
                 Chrome.disabledReason("debug.stop", allOn(), noSession).messageKey());
+        // Review 2 C109: Apply Code Changes needs a session; Add Watch works without one, as the Debug window does.
+        assertEquals(
+                "palette.disabled.needsDebugSession",
+                Chrome.disabledReason("debug.applyCodeChanges", allOn(), noSession)
+                        .messageKey());
+        assertEquals(null, Chrome.disabledReason("debug.addWatch", allOn(), noSession));
     }
 
     /**

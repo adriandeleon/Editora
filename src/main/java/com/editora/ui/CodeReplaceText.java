@@ -15,6 +15,25 @@ final class CodeReplaceText {
     private CodeReplaceText() {}
 
     /**
+     * What a replace that worked names: its classes, or — java-debug sends none with its "obsolete methods" warning
+     * (review 2, B103) — the saved files, so the message never reads "Code changes applied: ".
+     */
+    static String appliedNames(List<String> classes, java.util.Collection<java.nio.file.Path> files) {
+        String names = classList(classes);
+        if (!names.isEmpty() || files == null || files.isEmpty()) {
+            return names;
+        }
+        List<String> fileNames = new java.util.ArrayList<>();
+        for (java.nio.file.Path f : files) {
+            if (f != null && f.getFileName() != null) {
+                String name = f.getFileName().toString();
+                fileNames.add(name.endsWith(".java") ? name.substring(0, name.length() - 5) : name);
+            }
+        }
+        return classList(fileNames);
+    }
+
+    /**
      * The replaced classes by simple name ({@code com.acme.Main$Inner} → {@code Main$Inner}), in their order,
      * the first {@link #MAX_NAMED} named and the rest counted.
      */

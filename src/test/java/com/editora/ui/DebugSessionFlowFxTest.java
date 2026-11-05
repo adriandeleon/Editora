@@ -194,7 +194,7 @@ class DebugSessionFlowFxTest {
             public void loadChildren(int ref, Consumer<List<DapModels.VariableInfo>> cb) {}
 
             @Override
-            public void evaluate(String expr, int frameId, Consumer<String> cb) {
+            public void evaluate(String expr, int frameId, Consumer<com.editora.dap.ConsoleEvaluation> cb) {
                 evaluated.add(expr);
             }
 

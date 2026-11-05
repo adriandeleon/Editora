@@ -143,6 +143,14 @@ public class QuickOpen<T> {
         this.itemIcon = itemIcon;
     }
 
+    /** What the list says while it has no rows at all (the breakpoints list with no breakpoints, review 2 C107). */
+    public void setPlaceholder(String text) {
+        Label empty = new Label(text);
+        empty.getStyleClass().add("palette-hint");
+        empty.setWrapText(true);
+        list.setPlaceholder(empty);
+    }
+
     /** The title over the list: one picker serves two commands (Insert Snippet, Surround With — ET2). */
     public void setTitle(String title) {
         header.setText(title);

@@ -750,6 +750,24 @@ public final class JavaRuntimes {
         }
     }
 
+    /** The major version of {@code runtimes}' default entry ({@code JavaSE-25} → 25, {@code JavaSE-1.8} → 8), or null. Pure. */
+    public static @Nullable Integer defaultMajor(List<Map<String, Object>> runtimes) {
+        for (Map<String, Object> entry : runtimes) {
+            if (Boolean.TRUE.equals(entry.get("default")) && entry.get("name") instanceof String name) {
+                String v = name.startsWith("JavaSE-") ? name.substring("JavaSE-".length()) : name;
+                if (v.startsWith("1.")) {
+                    v = v.substring(2);
+                }
+                try {
+                    return Integer.valueOf(v);
+                } catch (NumberFormatException e) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
     /** The path of the runtime {@link #runtimes} marked default, or null when there is none. */
     public static @Nullable String defaultPath(List<Map<String, Object>> runtimes) {
         for (Map<String, Object> entry : runtimes) {
@@ -765,10 +783,71 @@ public final class JavaRuntimes {
      * {@code javaHome} (the {@code JAVA_HOME} variable), else null.
      */
     public static @Nullable String preferredHome(@Nullable String settingHome, @Nullable String javaHome) {
+        return preferredHome(settingHome, null, javaHome);
+    }
+
+    /**
+     * The JDK a Java file runs on, which jdtls is made to build for and show sources of (Java debug review 2,
+     * B102/B105): Settings' Default JDK ({@code settingHome}) when set, else the JDK of the {@code java} on PATH
+     * ({@code pathJavaHome}, {@link #pathJavaHome()}) — what Run and Debug start a file without a build tool
+     * with — else {@code JAVA_HOME}, else null. Pure.
+     *
+     * <p>{@code JAVA_HOME} used to come before PATH. jdtls then built a loose file for one JDK (or the newest,
+     * with neither set) while the program ran on PATH's: hot code replace failed ("Failed to redefine classes:
+     * null"), and a JDK frame was shown in another JDK's source.
+     */
+    public static @Nullable String preferredHome(
+            @Nullable String settingHome, @Nullable String pathJavaHome, @Nullable String javaHome) {
         if (settingHome != null && !settingHome.isBlank()) {
             return settingHome.strip();
         }
+        if (pathJavaHome != null && !pathJavaHome.isBlank()) {
+            return pathJavaHome.strip();
+        }
         return javaHome == null || javaHome.isBlank() ? null : javaHome.strip();
+    }
+
+    /** The home of the JDK whose {@code java} is first on the (augmented) PATH, links followed; null when none. */
+    public static @Nullable String pathJavaHome() {
+        List<String> resolved = com.editora.process.ProcessRunner.resolveExecutable(List.of("java"));
+        return resolved.isEmpty() ? null : homeOf(resolved.get(0));
+    }
+
+    /**
+     * The JDK home of a {@code java} launcher ({@code <home>/bin/java}), links followed — sdkman's {@code current}
+     * and a distribution's {@code /usr/bin/java} alternatives are links — or null when it is not a JDK's (a bare
+     * {@code java} that was not found on PATH, say).
+     */
+    public static @Nullable String homeOf(@Nullable String javaExecutable) {
+        if (javaExecutable == null || javaExecutable.isBlank()) {
+            return null;
+        }
+        try {
+            java.nio.file.Path launcher = java.nio.file.Path.of(javaExecutable.strip());
+            if (!launcher.isAbsolute()) {
+                return null;
+            }
+            java.nio.file.Path real = java.nio.file.Files.exists(launcher) ? launcher.toRealPath() : launcher;
+            return homeOfPath(real);
+        } catch (java.io.IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** Pure: {@code <home>} of {@code <home>/bin/java[.exe]}, or null for any other path. */
+    static @Nullable String homeOfPath(java.nio.file.Path launcher) {
+        java.nio.file.Path bin = launcher.getParent();
+        java.nio.file.Path home = bin == null ? null : bin.getParent();
+        java.nio.file.Path name = launcher.getFileName();
+        java.nio.file.Path binName = bin == null ? null : bin.getFileName();
+        if (home == null
+                || name == null
+                || binName == null
+                || !"bin".equals(binName.toString())
+                || !("java".equals(name.toString()) || "java.exe".equals(name.toString()))) {
+            return null;
+        }
+        return home.toString();
     }
 
     private static @Nullable String realPath(@Nullable String home) {

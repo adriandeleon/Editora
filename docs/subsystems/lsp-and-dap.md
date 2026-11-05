@@ -1023,7 +1023,11 @@ and dispatches `startLaunch(file, language, picker)`. Adapter `output` events re
 [`dap/DapOutputPump`](../../src/main/java/com/editora/dap/DapOutputPump.java), which mirrors the Run
 console's pump: a bounded queue, one scheduled drain at a time, a bounded slice per drain with neighbouring
 events joined into one append, and a "truncated" notice when the debuggee outruns the UI; the queue is
-flushed before a session ends so its last lines are not lost. Step Over/Into/Out put the state back to
+flushed before a session ends so its last lines are not lost. A program java-debug launched itself (the
+program console off) has output that trails its `exited`/`terminated` events by seconds when it prints fast,
+so the end of such a session and its exit line wait until the output has been quiet for 300 ms, at most 30 s
+([`dap/OutputTail`](../../src/main/java/com/editora/dap/OutputTail.java), review E104). The Debug console
+keeps its last 200,000 characters and its state line says when older output was dropped (E107). Step Over/Into/Out put the state back to
 RUNNING until the next stop, exactly like Resume — but only once the adapter *acknowledges* the step: a
 refused step (java-debug: "the thread is not suspended") leaves the session SUSPENDED and reports the
 adapter's message. `isStepping()` is true from the request to the next stop; `debug.start` treats that as
@@ -1032,7 +1036,10 @@ threads are stopped (`stopped.allThreadsStopped`, `continue`'s `allThreadsContin
 events): java-debug suspends and resumes per thread, so after Continue on one of several stopped threads
 the next still-stopped thread is brought forward instead of reporting a running session. Restart goes
 through `DebugCoordinator.restart()`, which repeats the coordinator-level start (save, before-launch
-build, closed-file breakpoints) rather than only the adapter launch. A session `attachToPort` opened on a
+build, closed-file breakpoints) rather than only the adapter launch. `debug.start` in a JUnit test file that
+has no `main` of its own debugs the test at the caret, or the class when the caret is outside a test, through
+the gutter's Debug Test path ([`ui/DebugTestRoute`](../../src/main/java/com/editora/ui/DebugTestRoute.java),
+review A102). A session `attachToPort` opened on a
 JVM that a test or build run started is the exception: that JVM stops listening once resumed, so Restart
 leaves the session alone and reports that the run has to be started again. Launch paths:
 
@@ -1102,7 +1109,7 @@ exposed to the UI are in [`dap/DapModels`](../../src/main/java/com/editora/dap/D
 
 java-debug's `internalConsole` starts the program inside jdtls with no standard input: anything reading
 `System.in` waits forever. With the `debugProgramConsole` setting on (the default; palette
-`debug.toggleProgramConsole`, Settings ▸ Debugging ▸ Java) a Java **launch** instead says
+`debug.toggleProgramConsole`, Settings ▸ Debugging ▸ Debugged programs) a Java **launch** instead says
 `console: integratedTerminal` (`LaunchConfig.inClientConsole`) on a `DapClient` that offered
 `supportsRunInTerminalRequest` (`setRunsDebuggee`). The adapter then sends the `runInTerminal` reverse
 request — an argv array (the `java` executable, `-agentlib:jdwp=…server=n…address=localhost:<port>`, class
@@ -1112,7 +1119,8 @@ exactly that through [`dap/Debuggee`](../../src/main/java/com/editora/dap/Debugg
 gives a program; not jdtls's environment), tracked by `ProcessRegistry`, stdout/stderr through the Run
 console's bounded pump into `Listener.onOutput` as `stdout`/`stderr`. With `debugProgramInTerminal` on,
 `DapManager` holds a `ProgramTerminal` and `Debuggee` starts the same command in a Terminal tab instead: a real
-terminal, whose tab owns the output and input (no Debug-console input then), while its exit and Stop behave as
+terminal, whose tab owns the output and input (no Debug-console input then; the console's first line names
+the tab, review E106), while its exit and Stop behave as
 below ([terminal.md](terminal.md#ide-features)). What follows from owning the process (all measured against
 java-debug 0.53.2):
 

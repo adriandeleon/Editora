@@ -7042,6 +7042,14 @@ public class SettingsWindow {
         // One card per adapter, titled with the language (Java has no per-adapter enable — it rides
         // the Java LSP server; see DebugCoordinator.debugEffectiveFor).
         dependsOn(p, debugCheck);
+        // Where the debugged program runs: Java, Python and JavaScript alike, so not on the Java card (E108).
+        Card programs = card(p, tr("settings.debug.programs"));
+        SettingsDependents.bind(debugCheck.selectedProperty(), programs.box());
+        for (CheckBox check : List.of(debugProgramConsoleCheck, debugProgramInTerminalCheck)) {
+            String key = check == debugProgramConsoleCheck ? "programConsole" : "programInTerminal";
+            String words = "debug python javascript program console input stdin terminal tab tty screen keys";
+            checkRow(programs, Category.DEBUG, check, tr("settings.debug." + key + ".hint"), words);
+        }
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             Card c = card(p, tr(dbg.sectionKey()));
             SettingsDependents.bind(debugCheck.selectedProperty(), c.box());
@@ -7056,18 +7064,6 @@ public class SettingsWindow {
                 javaDebugLspNote.setWrapText(true);
                 javaDebugLspNote.setMaxWidth(440);
                 cardRow(c, Category.DEBUG, javaDebugLspNote, "debug java lsp language server jdtls off");
-                checkRow(
-                        c,
-                        Category.DEBUG,
-                        debugProgramConsoleCheck,
-                        tr("settings.debug.programConsole.hint"),
-                        "debug java console input stdin standard input program terminal type");
-                checkRow(
-                        c,
-                        Category.DEBUG,
-                        debugProgramInTerminalCheck,
-                        tr("settings.debug.programInTerminal.hint"),
-                        "debug program terminal tab tty curses screen keys run in terminal integrated");
                 controlRow(
                         c,
                         Category.DEBUG,
@@ -8341,7 +8337,7 @@ public class SettingsWindow {
                 debugSection,
                 Category.ADVANCED,
                 debugBox,
-                "debug log logs errors warnings exceptions diagnostics bug report console");
+                "application log debug log logs errors warnings exceptions diagnostics bug report console");
         updatesAndTrustCards(p); // moved from Workspace (B20)
         return p;
     }

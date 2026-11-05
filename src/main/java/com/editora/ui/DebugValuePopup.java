@@ -11,6 +11,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.PopupControl;
 import javafx.scene.control.Skin;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
@@ -18,6 +19,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.util.Duration;
 
 import com.editora.dap.DapModels;
@@ -62,6 +64,12 @@ final class DebugValuePopup implements DebugValuePresenter {
     private final TreeView<DebugPanel.VarRow> tree = new TreeView<>();
     private final PauseTransition closing = new PauseTransition(Duration.millis(350));
     private final ContextMenu menu = new ContextMenu();
+    /** A String's whole text (review 2, C105): its header line, the text itself, and Copy. */
+    private final Label textHeader = new Label();
+
+    private final TextArea text = new TextArea();
+    private final javafx.scene.control.Button copyText = new javafx.scene.control.Button();
+    private final VBox textBox = new VBox(4, textHeader, text, copyText);
 
     /** The editor the popup was opened for, and the key filter it carries while the popup is keyboard-driven. */
     private @Nullable CodeArea owner;
@@ -106,6 +114,14 @@ final class DebugValuePopup implements DebugValuePresenter {
             watch.setDisable(expr.isEmpty());
         });
         tree.setContextMenu(menu);
+        textHeader.getStyleClass().add("debug-value-line");
+        text.getStyleClass().add("debug-value-text");
+        text.setEditable(false);
+        text.setWrapText(true);
+        text.setFocusTraversable(false);
+        copyText.setText(tr("debugpanel.copyValue"));
+        copyText.setFocusTraversable(false);
+        copyText.setOnAction(e -> DebugPanel.copyToClipboard(text.getText()));
         // As tall as its rows, up to the bound: a three-element list was a mostly empty box.
         tree.expandedItemCountProperty().addListener((o, was, now) -> fitHeight());
         root.getChildren().add(line);
@@ -189,9 +205,39 @@ final class DebugValuePopup implements DebugValuePresenter {
 
     // --- content -------------------------------------------------------------------------------------
 
+    /**
+     * Pure: whether {@code r} is a Java {@code String}, shown as its whole text rather than a tree of the String
+     * class's internals ({@code CASE_INSENSITIVE_ORDER}, {@code coder}, {@code value = byte[318]}…) — review 2, C105.
+     */
+    static boolean isText(DapModels.@Nullable EvalResult r) {
+        if (r == null || r.failed() || r.result() == null || !r.result().startsWith("\"")) {
+            return false;
+        }
+        String type = r.type() == null ? "" : r.type();
+        return type.equals("String") || type.equals("java.lang.String");
+    }
+
+    /** How tall the text box is for {@code value}: its lines (wrapped ones counted roughly), within the bound. */
+    static double textHeight(String value) {
+        int lines = 0;
+        for (String l : value.split("\\R", -1)) {
+            lines += 1 + l.length() / 70;
+        }
+        return Math.min(MAX_HEIGHT - 70, Math.max(2, lines) * 18 + 14);
+    }
+
     private void present(CodeArea area, String expr, DapModels.EvalResult r, double x, double y, boolean keyboard) {
         expression = expr;
-        if (r.variablesReference() <= 0) {
+        if (isText(r)) {
+            String value = DebugPanelText.copyValue(r.result());
+            textHeader.setText(tr("debugpanel.stringChars", expr, value.length()));
+            text.setText(value);
+            text.setPrefHeight(textHeight(value));
+            text.setPrefWidth(MAX_WIDTH - 16);
+            root.getChildren().setAll(textBox);
+            root.setPrefSize(
+                    javafx.scene.layout.Region.USE_COMPUTED_SIZE, javafx.scene.layout.Region.USE_COMPUTED_SIZE);
+        } else if (r.variablesReference() <= 0) {
             line.setText(expr + " = " + r.result());
             root.getChildren().setAll(line);
             root.setPrefSize(
@@ -218,7 +264,18 @@ final class DebugValuePopup implements DebugValuePresenter {
             popup.setAnchorX(x);
             popup.setAnchorY(y);
         } else {
-            popup.show(area, x, y);
+            // Owned by the window, not the editor: a popup owned by a node takes that node as its CSS parent, so the
+            // editor's own rules (`.editor-area .text { -fx-fill: … }`, the editor theme's text colour) reached the
+            // popup's labels and button. A light editor theme in a dark window made the String header and Copy
+            // Value dark on the dark popup (review 2, C105 follow-up). The window's scene root gives the popup the
+            // window theme's colours, as every other popup has.
+            javafx.stage.Window window =
+                    area.getScene() == null ? null : area.getScene().getWindow();
+            if (window != null) {
+                popup.show(window, x, y);
+            } else {
+                popup.show(area, x, y);
+            }
         }
     }
 
@@ -344,7 +401,9 @@ final class DebugValuePopup implements DebugValuePresenter {
 
     private void copySelected() {
         TreeItem<DebugPanel.VarRow> sel = tree.getSelectionModel().getSelectedItem();
-        if (sel != null && !(sel instanceof More)) {
+        if (root.getChildren().contains(textBox)) {
+            DebugPanel.copyToClipboard(text.getText());
+        } else if (sel != null && !(sel instanceof More)) {
             DebugPanel.copyToClipboard(DebugPanelText.copyValue(sel.getValue().value()));
         } else if (root.getChildren().contains(line)) {
             DebugPanel.copyToClipboard(line.getText());
@@ -464,6 +523,10 @@ final class DebugValuePopup implements DebugValuePresenter {
 
     Label line() {
         return line;
+    }
+
+    TextArea text() {
+        return text;
     }
 
     PopupControl popup() {

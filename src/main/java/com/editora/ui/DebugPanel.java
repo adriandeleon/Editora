@@ -49,40 +49,53 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private static final int MAX_CONSOLE_CHARS = 200_000;
 
-    /** Callbacks into the controller / {@link DapManager}. */
-    // --- Fixer B: the Caught / Uncaught exception-breakpoint toggles (B10) -----------------------------
+    // --- The exception breakpoints (B10): Caught / Uncaught under one compact toolbar button ------------
 
-    private final javafx.scene.control.ToggleButton caughtToggle = new javafx.scene.control.ToggleButton();
+    /**
+     * Break on caught / uncaught exceptions, as checked items of one icon button: two text toggles took twice the
+     * height of the icon buttons, outshone them when on, and read "Cau…" / "Uncau…" at 1000 px (review 2 C104).
+     */
+    private final javafx.scene.control.CheckMenuItem caughtToggle = new javafx.scene.control.CheckMenuItem();
 
-    private final javafx.scene.control.ToggleButton uncaughtToggle = new javafx.scene.control.ToggleButton();
-    /** True while {@link #setExceptionToggles} writes the buttons, so that is not taken for a click. */
-    private boolean settingExceptionToggles;
+    private final javafx.scene.control.CheckMenuItem uncaughtToggle = new javafx.scene.control.CheckMenuItem();
 
-    private javafx.scene.control.ToggleButton exceptionToggle(
-            javafx.scene.control.ToggleButton b, String key, boolean caught) {
-        b.setText(tr(key));
-        b.setTooltip(new javafx.scene.control.Tooltip(tr(key + ".tip")));
-        b.getStyleClass().add("debug-exception-toggle");
-        b.setFocusTraversable(false);
-        b.selectedProperty().addListener((o, was, now) -> {
-            if (!settingExceptionToggles) {
-                actions.toggleExceptions(caught);
-            }
-        });
-        return b;
+    private final javafx.scene.control.MenuButton exceptionsButton = new javafx.scene.control.MenuButton();
+
+    private static final javafx.css.PseudoClass EXCEPTIONS_ON = javafx.css.PseudoClass.getPseudoClass("on");
+
+    private javafx.scene.control.MenuButton exceptionsButton() {
+        caughtToggle.setText(DebugPanelText.bareTitle(tr("command.debug.exceptions.caught")));
+        uncaughtToggle.setText(DebugPanelText.bareTitle(tr("command.debug.exceptions.uncaught")));
+        // The coordinator owns the state and writes it back through setExceptionToggles.
+        caughtToggle.setOnAction(e -> actions.toggleExceptions(true));
+        uncaughtToggle.setOnAction(e -> actions.toggleExceptions(false));
+        exceptionsButton.getItems().setAll(caughtToggle, uncaughtToggle);
+        exceptionsButton.setGraphic(Icons.warning());
+        exceptionsButton.getStyleClass().addAll("flat", "debug-toolbar-button", "debug-exceptions");
+        exceptionsButton.setFocusTraversable(false);
+        exceptionsButton.setAccessibleText(tr("debugpanel.exceptions"));
+        exceptionsButton.setTooltip(new Tooltip());
+        showExceptionState();
+        return exceptionsButton;
     }
 
     /** Shows whether exception breakpoints stop on caught and on uncaught exceptions. */
     public void setExceptionToggles(boolean caught, boolean uncaught) {
-        settingExceptionToggles = true;
-        try {
-            caughtToggle.setSelected(caught);
-            uncaughtToggle.setSelected(uncaught);
-        } finally {
-            settingExceptionToggles = false;
-        }
+        caughtToggle.setSelected(caught);
+        uncaughtToggle.setSelected(uncaught);
+        showExceptionState();
     }
 
+    private void showExceptionState() {
+        boolean caught = caughtToggle.isSelected();
+        boolean uncaught = uncaughtToggle.isSelected();
+        String tip = DebugPanelText.exceptionsTip(caught, uncaught);
+        exceptionsButton.getTooltip().setText(tip);
+        exceptionsButton.setAccessibleHelp(tip);
+        exceptionsButton.pseudoClassStateChanged(EXCEPTIONS_ON, caught || uncaught);
+    }
+
+    /** Callbacks into the controller / {@link DapManager}. */
     public interface Actions {
         /** Start a debug session when idle, or continue when suspended (the green play button). */
         void start();
@@ -133,7 +146,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
 
         /** Evaluate {@code expression} in the selected frame ({@code frameId}) and deliver the result. */
-        void evaluate(String expression, int frameId, Consumer<String> cb);
+        void evaluate(String expression, int frameId, Consumer<com.editora.dap.ConsoleEvaluation> cb);
 
         /** Evaluate a watch expression (context "watch") keeping the expandable reference + type. */
         void evaluateWatch(String expression, int frameId, Consumer<DapModels.EvalResult> cb);
@@ -314,6 +327,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     public DebugPanel(Actions actions) {
         this.actions = actions;
+        appender.onTrimmed(this::refreshStatus);
         getStyleClass().add("debug-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
@@ -336,8 +350,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 btn(stepOut, DebugPanelText.Control.STEP_OUT, actions::stepOut, Icons.debugStepOut()),
                 btn(runToCursor, DebugPanelText.Control.RUN_TO_CURSOR, actions::runToCursor, Icons.debugRunToCursor()),
                 groupSeparator(),
-                exceptionToggle(caughtToggle, "debugpanel.exceptions.caught", true),
-                exceptionToggle(uncaughtToggle, "debugpanel.exceptions.uncaught", false),
+                exceptionsButton(),
                 spacer(),
                 busy,
                 runtime,
@@ -509,7 +522,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 e.consume();
             }
         });
-        javafx.scene.control.ContextMenu varsMenu = new javafx.scene.control.ContextMenu();
+        // Built for the row it opens on. ContextMenu.show() returns before ON_SHOWING when it has no items, so an
+        // empty menu here never opened at all (review C101): a placeholder stands in until the first rebuild.
+        javafx.scene.control.ContextMenu varsMenu =
+                new javafx.scene.control.ContextMenu(new javafx.scene.control.MenuItem());
         varsMenu.setOnShowing(e -> rebuildVarsMenu(varsMenu));
         variables.setContextMenu(varsMenu);
 
@@ -629,6 +645,33 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         actions.selectFrame(frame);
     }
 
+    /**
+     * Marks the runs drawn in the editor theme's token colours. Those colours are made for the editor's background;
+     * on a light UI with a dark editor theme, or the other way round, they can vanish into the panel's own (review
+     * 2 C111), so {@link #setPlainValueColours} draws them in the UI's text colour instead.
+     */
+    static final String TOKEN = "debug-token";
+
+    private static final javafx.css.PseudoClass PLAIN_VALUES = javafx.css.PseudoClass.getPseudoClass("plain-values");
+
+    /** Draws names and values in the UI's text colours instead of the editor theme's (see {@link #TOKEN}). */
+    public void setPlainValueColours(boolean plain) {
+        pseudoClassStateChanged(PLAIN_VALUES, plain);
+    }
+
+    /** Whether {@code node} (the Debug window, or the value popup's root) draws values in plain colours. */
+    static void setPlainValueColours(Node node, boolean plain) {
+        node.pseudoClassStateChanged(PLAIN_VALUES, plain);
+    }
+
+    /**
+     * Pure: whether the editor theme's token colours need the plain fallback — the UI theme and the editor theme
+     * disagree on light vs dark, judged by their backgrounds.
+     */
+    static boolean themesDisagree(javafx.scene.paint.Color uiBackground, javafx.scene.paint.Color editorBackground) {
+        return (uiBackground.getBrightness() < 0.5) != (editorBackground.getBrightness() < 0.5);
+    }
+
     /** Builds the styled TextFlow for one variables-tree row. */
     static TextFlow renderRow(VarRow row) {
         TextFlow flow = new TextFlow();
@@ -652,7 +695,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 // Name, value and type in the editor's syntax token colours (.text.<class> from the active
                 // editor theme), so a value reads like the code it came from.
                 Text name = new Text(row.name());
-                name.getStyleClass().addAll("text", "variable");
+                name.getStyleClass().addAll("text", "variable", TOKEN);
                 if (row.kind() == Kind.VARIABLE
                         && row.value().isEmpty()
                         && row.ref() > 0
@@ -678,7 +721,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                     for (DebugValues.Run run : DebugValues.runs(DebugValues.display(row.value()))) {
                         Text value = new Text(run.text());
                         if (run.token() != null) {
-                            value.getStyleClass().addAll("text", run.token());
+                            value.getStyleClass().addAll("text", run.token(), TOKEN);
                         } else {
                             value.getStyleClass().add("debug-val-plain");
                         }
@@ -687,7 +730,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 }
                 if (row.type() != null && !row.type().isBlank()) {
                     Text type = new Text("  " + row.type());
-                    type.getStyleClass().addAll("text", "type");
+                    type.getStyleClass().addAll("text", "type", TOKEN);
                     flow.getChildren().add(type);
                 }
             }
@@ -727,7 +770,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             String title = DebugPanelText.bareTitle(tr("command." + id));
             b.getTooltip()
                     .setText(DebugPanelText.tooltip(
-                            title, chordFor.apply(c.commandId), c.keyLabel(), tr("debugpanel.inPanel")));
+                            title,
+                            DebugPanelText.chordOf(chordFor::apply, c.commandId),
+                            c.keyLabel(),
+                            tr("debugpanel.inPanel")));
             b.setAccessibleText(title);
         }
         stackHint.setText(lastState == DapManager.State.INACTIVE ? emptyHint() : "");
@@ -736,7 +782,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** What the empty call stack says while there is no session: how to start one (review C22). */
     private String emptyHint() {
         String chord = chordFor.apply("debug.start");
-        return chord == null || chord.isBlank() ? tr("debugpanel.emptyHint") : tr("debugpanel.emptyHintChord", chord);
+        boolean bound = chord != null && !chord.isBlank();
+        if (exitCode != null) {
+            // The program just ended (the state line says how): how to go again, not how to set a breakpoint
+            // beside the ones already set (review 2 C110).
+            return bound ? tr("debugpanel.endedHintChord", chord) : tr("debugpanel.endedHint");
+        }
+        return bound ? tr("debugpanel.emptyHintChord", chord) : tr("debugpanel.emptyHint");
     }
 
     /** The keymap chord of a command id ("" when unbound): the toolbar tooltips name it (review C18). */
@@ -807,6 +859,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         boolean wasRunning = lastState == DapManager.State.RUNNING;
         lastState = state;
         if (state == DapManager.State.STARTING) {
+            refused = null;
             exitCode = null; // a new session: the last one's outcome is no longer what the status says
             ansiParsers.clear(); // and none of its colours is still on
         }
@@ -873,6 +926,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      */
     public void setPreparing(boolean preparing) {
         this.preparing = preparing;
+        if (preparing) {
+            refused = null;
+        }
         boolean active = lastState != DapManager.State.INACTIVE;
         start.setDisable(preparing || !(!active || lastState == DapManager.State.SUSPENDED));
         stop.setDisable(!active && !preparing);
@@ -895,7 +951,27 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         refreshStatus();
     }
 
+    /**
+     * A launch that never started — its build failed — says so in the state line ({@code text}) until the next
+     * launch: the last session's "Exited with code 0" stood beside the build's errors (review 2, A105).
+     */
+    public void setLaunchRefused(@Nullable String text) {
+        refused = text == null || text.isBlank() ? null : text;
+        if (refused != null) {
+            sessionFile = "";
+        }
+        refreshStatus();
+    }
+
+    /** The state line of a launch its build stopped ({@link #setLaunchRefused}); null otherwise. */
+    private @Nullable String refused;
+
     private void refreshStatus() {
+        if (refused != null && lastState == DapManager.State.INACTIVE) {
+            status.setText(refused);
+            RunPanel.showSpinner(busy, preparing);
+            return;
+        }
         String state = stoppedOnException && lastState == DapManager.State.SUSPENDED
                 ? (stoppedException.isEmpty()
                         ? tr("debugpanel.state.exception")
@@ -911,7 +987,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (breakpointsMuted) {
             state = state + " · " + tr("debugpanel.muted");
         }
-        status.setText(sessionFile.isEmpty() ? state : state + " — " + sessionFile);
+        // The console keeps only its last characters; say so, as the Run console does (review E107).
+        String trimNote = appender.trimmed() ? " " + tr("run.outputTrimmed", MAX_CONSOLE_CHARS) : "";
+        status.setText((sessionFile.isEmpty() ? state : state + " — " + sessionFile) + trimNote);
         RunPanel.showSpinner(
                 busy, preparing || lastState == DapManager.State.STARTING || lastState == DapManager.State.RUNNING);
     }
@@ -983,6 +1061,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     public void setExitCode(int code) {
         exitCode = code;
         refreshStatus();
+        refreshTooltips();
     }
 
     /** How long a resumed program runs before the last stop's stack and variables are cleared. */
@@ -1048,8 +1127,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         framesExpanded = false;
         showFrames(index);
         java.nio.file.Path at = frames.isEmpty() ? null : frames.get(index).file();
-        String in =
-                at == null || at.getFileName() == null ? "" : at.getFileName().toString();
+        // DebugValues.sourceName: a jdt:// frame's last segment is a piece of its query (review 2, B107).
+        String in = at == null ? "" : DebugValues.sourceName(at);
         if (!in.equals(stoppedIn)) {
             stoppedIn = in;
             refreshStatus();
@@ -1601,8 +1680,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         appendOutput("> " + expr + "\n", DapManager.COMMAND_CATEGORY);
         evalInput.clear();
         actions.evaluate(expr, selectedFrameId, result -> {
-            String text = result == null ? "" : result;
-            appendOutput(text + "\n", text.startsWith("error: ") ? "stderr" : "console");
+            String text = result == null ? "" : result.text();
+            appendOutput(text + "\n", result != null && result.failed() ? "stderr" : "console");
         });
     }
 
@@ -1755,6 +1834,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     public void clearConsole() {
         appender.discard();
         console.clear();
+        if (appender.trimmed()) {
+            appender.resetTrimmed();
+            refreshStatus();
+        }
     }
 
     @Override

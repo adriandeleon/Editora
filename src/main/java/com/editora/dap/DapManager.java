@@ -87,7 +87,8 @@ public final class DapManager {
 
     /** Lets the controller present a chooser when several main classes are found (QuickOpen). */
     public interface MainClassPicker {
-        void pick(List<MainClassOption> options, Consumer<MainClassOption> chosen);
+        /** {@code chosen} gets null when the user dismissed the chooser. */
+        void pick(List<MainClassOption> options, Consumer<@Nullable MainClassOption> chosen);
     }
 
     /** UI sink (implemented by the controller / Debug panel); all calls arrive on the FX thread. */
@@ -250,7 +251,7 @@ public final class DapManager {
         } else {
             exceptionChoices.put(language, List.copyOf(filters));
         }
-        if (client != null && language.equals(sessionLanguage)) {
+        if (client != null && language.equals(sessionLanguage) && !exceptionsMuted) {
             client.setExceptionFilters(filters == null ? null : List.copyOf(filters));
         }
     }
@@ -261,12 +262,30 @@ public final class DapManager {
         setExceptionFilters(sessionLanguage, filters);
     }
 
-    /** The filters chosen for {@code language}, or null when the adapter's defaults apply. */
+    /** The filters chosen for {@code language}, or null when the adapter's defaults apply; none while muted. */
     private @Nullable List<String> filtersFor(String language) {
         sessionLanguage = language;
         jsSession = "javascript".equals(language);
         reportedConditionErrors.clear();
-        return exceptionChoices.get(language);
+        return exceptionsMuted ? List.of() : exceptionChoices.get(language);
+    }
+
+    /** Mute Breakpoints also mutes the exception stops (review 2, B109), as IntelliJ's Mute does. */
+    private boolean exceptionsMuted;
+
+    /**
+     * Mutes or restores the exception stops: a live session is told at once (no filters while muted, the chosen
+     * ones — or the adapter's defaults — after); the next session starts that way. The choices themselves stay.
+     */
+    public void setExceptionsMuted(boolean muted) {
+        if (exceptionsMuted == muted) {
+            return;
+        }
+        exceptionsMuted = muted;
+        if (client != null) {
+            List<String> chosen = exceptionChoices.get(sessionLanguage);
+            client.setExceptionFilters(muted ? List.of() : chosen);
+        }
     }
 
     /** The language of the live (or last) session. */
@@ -1033,8 +1052,10 @@ public final class DapManager {
     }
 
     /**
-     * Launches {@code opt}. Outside a build project jdtls's "invisible project" never compiles anything into its
-     * output folder (autobuild is off), so a class missing there is compiled here, from its own source file.
+     * Launches {@code opt}. Outside a build project the classes come from jdtls's "invisible project" only when
+     * the build before this launch brought them up to date; otherwise the file is compiled here, from its own
+     * source ({@link LooseJavaLaunch#classesFor}): jdtls builds that output once, at import, and an old class
+     * file there ran old code after every edit (review 2, A101).
      */
     private void launchOption(
             Path file,
@@ -1057,7 +1078,30 @@ public final class DapManager {
                 null,
                 dir,
                 file);
+        boolean built = takeLooseBuild();
+        if (!built) {
+            compile.run(); // no build ran for this launch: whatever jdtls's output holds may be from any earlier one
+            return;
+        }
         resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch, compile);
+    }
+
+    /** Whether jdtls built a file without a build project for the launch now starting; set by the caller. */
+    private volatile boolean looseBuilt;
+
+    /**
+     * Says that jdtls's build of the next launch's file (a loose file or a plain-folder project, which have no
+     * build tool) has just succeeded, so its output may be launched; read once by that launch. Without it the
+     * launch compiles the file itself.
+     */
+    public void setLooseClassesBuilt(boolean built) {
+        this.looseBuilt = built;
+    }
+
+    private boolean takeLooseBuild() {
+        boolean built = looseBuilt;
+        looseBuilt = false;
+        return built;
     }
 
     /** The source file of {@code opt} as Editora reaches it ({@code file} when jdtls named none). */
@@ -1219,8 +1263,11 @@ public final class DapManager {
                 return;
             }
             if (ifNoClassFile != null
-                    && !(JavaLaunchSupport.classFilePresent(r.classPaths(), opt.mainClass())
-                            || JavaLaunchSupport.classFilePresent(r.modulePaths(), opt.mainClass()))) {
+                    && LooseJavaLaunch.classesFor(
+                                    true,
+                                    JavaLaunchSupport.classFilePresent(r.classPaths(), opt.mainClass())
+                                            || JavaLaunchSupport.classFilePresent(r.modulePaths(), opt.mainClass()))
+                            == LooseJavaLaunch.Classes.COMPILE_HERE) {
                 ifNoClassFile.run();
                 return;
             }
@@ -1228,9 +1275,7 @@ public final class DapManager {
                 fail(epoch, r.error());
                 return;
             }
-            if (ifNoClassFile == null) {
-                warnAboutClasses(file, opt, r, epoch);
-            }
+            warnAboutClasses(file, opt, r, epoch); // jdtls's output too: it is warned about, never trusted blindly
             startDebugSessionAndConnect(
                     file,
                     LaunchConfig.launch(
@@ -1721,6 +1766,15 @@ public final class DapManager {
                 }
                 (attach ? c.attach(args) : c.launch(args)).whenComplete((v, le) -> {
                     if (le != null) {
+                        String refused = attach ? DapErrors.refusedAttach(msg(le)) : null;
+                        if (refused != null) {
+                            // Nothing listens there: say so, and how a JVM is made to listen (review 2, A109).
+                            failWithConsole(
+                                    epoch,
+                                    tr("debug.console.attachRefused", refused),
+                                    tr("status.debug.attachRefused", refused));
+                            return;
+                        }
                         fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
                         return;
                     }
@@ -3394,6 +3448,7 @@ public final class DapManager {
             return;
         }
         c.variables(ref, filter, start, count)
+                .thenCompose(vars -> lazyValues.resolveAll(vars, child -> c.variables(child, null, 0, 0)))
                 .thenCompose(vars -> repairStrings(c, vars))
                 .whenComplete((vars, e) -> Platform.runLater(() -> {
                     if (client == c) {
@@ -3401,6 +3456,9 @@ public final class DapManager {
                     }
                 }));
     }
+
+    /** Lazy rows resolved during the current stop (B101); forgotten whenever the program runs. */
+    private final LazyValues lazyValues = new LazyValues();
 
     // --- strings java-debug garbles (follow-up 4: emoji arrive as two wrong characters) -------------------
 
@@ -3411,17 +3469,21 @@ public final class DapManager {
 
     private CompletableFuture<List<DapModels.VariableInfo>> repairStrings(
             DapClient c, List<DapModels.VariableInfo> vars) {
-        return javaDebugSession() ? JdwpStringRepair.repairAll(c, vars) : CompletableFuture.completedFuture(vars);
+        return javaDebugSession()
+                ? JdwpStringRepair.repairAll(c, vars).thenApply(JavaValueText::tidyAll) // B108: lambdas
+                : CompletableFuture.completedFuture(vars);
     }
 
     private CompletableFuture<DapModels.EvalResult> repairString(DapClient c, DapModels.EvalResult result) {
-        return javaDebugSession() ? JdwpStringRepair.repair(c, result) : CompletableFuture.completedFuture(result);
+        return javaDebugSession()
+                ? JdwpStringRepair.repair(c, result).thenApply(JavaValueText::tidy) // B108: lambdas
+                : CompletableFuture.completedFuture(result);
     }
 
-    public void evaluate(String expression, int frameId, String context, Consumer<String> cb) {
+    public void evaluate(String expression, int frameId, String context, Consumer<ConsoleEvaluation> cb) {
         DapClient c = client;
         if (c == null) {
-            cb.accept("");
+            cb.accept(ConsoleEvaluation.value(""));
             return;
         }
         boolean console = "repl".equals(context);
@@ -3438,8 +3500,8 @@ public final class DapManager {
                         String r = full == null ? null : full.result();
                         cb.accept(
                                 e != null
-                                        ? "error: " + (isTimeout(e) ? stillEvaluating() : msg(e))
-                                        : (r == null ? "" : r));
+                                        ? ConsoleEvaluation.failure(isTimeout(e) ? stillEvaluating() : msg(e))
+                                        : ConsoleEvaluation.value(r == null ? "" : r));
                     }
                 }));
     }
@@ -3665,7 +3727,49 @@ public final class DapManager {
             LOG.fine(() -> "java-debug: " + original.strip());
         }
         if (!shown.isEmpty()) {
+            lastOutput = new OutputStamp(epoch, System.nanoTime());
             outputPump.offer(epoch, shown, category);
+        }
+    }
+
+    /** When the adapter last sent program output, and for which session (see {@link OutputTail}). */
+    private record OutputStamp(long epoch, long nanos) {}
+
+    private volatile OutputStamp lastOutput = new OutputStamp(-1, 0);
+
+    /** A program java-debug started itself (the program console off): its output trails its exit (E104). */
+    private boolean outputTrails(long epoch) {
+        return javaAdapterEpoch == epoch && programStartedEpoch != epoch;
+    }
+
+    /**
+     * Runs {@code then} on the FX thread once the session's output has gone quiet ({@link OutputTail}), so the
+     * program's last lines are shown before the session ends; dropped if the session ends meanwhile (Stop).
+     */
+    private void whenOutputQuiet(long epoch, long doneNanos, Runnable then) {
+        OutputStamp last = lastOutput;
+        long wait = OutputTail.waitMillis(System.nanoTime(), last.epoch() == epoch ? last.nanos() : 0, doneNanos);
+        if (wait <= 0) {
+            then.run();
+            return;
+        }
+        CompletableFuture.delayedExecutor(wait, TimeUnit.MILLISECONDS)
+                .execute(() -> Platform.runLater(() -> {
+                    if (isCurrent(epoch)) {
+                        whenOutputQuiet(epoch, doneNanos, then);
+                    }
+                }));
+    }
+
+    /** The session whose exit report waits for its trailing output; -1 for none. */
+    private long exitAwaitingOutput = -1;
+
+    /** Reports the exit of {@code epoch} if it is still waiting for the output before it (FX thread). */
+    private void reportAwaitedExit(long epoch) {
+        if (exitAwaitingOutput == epoch) {
+            exitAwaitingOutput = -1;
+            outputPump.flush();
+            reportJavaExit(epoch);
         }
     }
 
@@ -3705,6 +3809,13 @@ public final class DapManager {
                                 program.terminate();
                             }
                         }));
+                return;
+            }
+            if (isCurrent(epoch) && outputTrails(epoch)) {
+                whenOutputQuiet(epoch, System.nanoTime(), () -> {
+                    reportAwaitedExit(epoch);
+                    endSession(epoch);
+                });
                 return;
             }
             endSession(epoch);
@@ -3804,6 +3915,9 @@ public final class DapManager {
             started.complete(pid);
             if (!program.inTerminal()) {
                 listener.onProgramInput(true); // in a terminal, the terminal takes the input
+            } else {
+                // The Debug console stays empty: say where the program's output and input are (review E106).
+                onOutput(epoch, tr("debug.console.inTerminal", programTitle()) + "\n", COMMAND_CATEGORY);
             }
         } catch (java.io.IOException | RuntimeException e) {
             program.kill();
@@ -3848,8 +3962,10 @@ public final class DapManager {
             if (javaAdapterEpoch == epoch) {
                 // java-debug reports 0 whatever the program exited with (System.exit(3) included, seen live).
                 // The wrapper the program was started through recorded its real code; without one the console
-                // says only that the program ended, not a code that is not its own (review A10).
-                reportJavaExit(epoch);
+                // says only that the program ended, not a code that is not its own (review A10). It waits for
+                // the output still on its way, which would otherwise come after it (E104).
+                exitAwaitingOutput = epoch;
+                whenOutputQuiet(epoch, System.nanoTime(), () -> reportAwaitedExit(epoch));
                 return;
             }
             listener.onProgramExit(exitCode);
@@ -3966,6 +4082,9 @@ public final class DapManager {
         if (s != State.RUNNING) {
             stepInFlight = false;
         }
+        if (s != State.SUSPENDED) {
+            lazyValues.clear(); // the program ran (or ended): references and values are stale
+        }
         if (s == State.INACTIVE || s == State.STARTING) {
             consoleEvaluations = 0; // an answer that never comes cannot hold the next session's controls
             stoppedThreads.clear();
@@ -3974,6 +4093,12 @@ public final class DapManager {
         listener.onState(s);
     }
 
+    /**
+     * Starts a new session: ends whatever the previous one still holds — its connection, the program it
+     * launched, its compiled classes, its exit-code wrapper — and returns the new session's epoch. Every start
+     * path goes through here, so none can leave the session before it running (review D102: an attach of
+     * Editora's JVM adapter used to replace a live Java session's connection without ending it).
+     */
     private long beginSession() {
         jsNoise = new JsLaunch.InspectorNoise();
         Future<?> startup = startupTask;
@@ -3981,14 +4106,27 @@ public final class DapManager {
         if (startup != null) {
             startup.cancel(true);
         }
+        long epoch;
+        DapClient previous;
+        synchronized (sessionLock) {
+            // The epoch moves first: a compile of the old session that finishes now no longer keeps its folder.
+            epoch = ++sessionEpoch;
+            previous = client;
+            client = null;
+        }
+        tempBreakpointFile = null;
         killDebuggee();
+        if (previous != null) {
+            previous.disposeInBackground();
+        }
+        killAdapterProgram();
+        lspLease.run(); // the old session's jdtls pin; a Java session takes its own once it has an adapter
+        lspLease = () -> {};
         // A launch still waiting for its adapter has no client for ready() to stop, but it may already hold
         // its compiled classes: the next launch would overwrite the only reference to them (review D6).
         releaseCompilationDirectory();
         releaseExitWrapper();
-        synchronized (sessionLock) {
-            return ++sessionEpoch;
-        }
+        return epoch;
     }
 
     private boolean isCurrent(long epoch) {
@@ -4260,7 +4398,7 @@ public final class DapManager {
      * Apply Code Changes: has jdtls build {@code file}'s workspace (incrementally — Editora runs it without
      * autobuild, so nothing else compiles a saved file), then asks java-debug to load the rebuilt classes into
      * the running program. A build with compile errors replaces nothing. {@code cb} runs on the FX thread,
-     * and not at all when the session ended meanwhile.
+     * exactly once — with {@link CodeReplaceResult#NO_SESSION} when the session ended meanwhile.
      */
     public void applyCodeChanges(@Nullable Path file, Consumer<CodeReplaceOutcome> cb) {
         DapClient c = client;
@@ -4271,6 +4409,7 @@ public final class DapManager {
         long epoch = sessionEpoch;
         lsp.buildJavaWorkspace(file, false, built -> {
             if (!isCurrent(epoch, c)) {
+                cb.accept(ended()); // the caller waits for an answer (review D101)
                 return;
             }
             switch (built) {
@@ -4278,13 +4417,19 @@ public final class DapManager {
                 case SUCCEEDED ->
                     c.redefineClasses()
                             .whenComplete((r, e) -> Platform.runLater(() -> {
-                                if (isCurrent(epoch, c)) {
-                                    cb.accept(codeReplaceOutcome(r, e == null ? null : msg(e)));
-                                }
+                                cb.accept(
+                                        isCurrent(epoch, c)
+                                                ? codeReplaceOutcome(r, e == null ? null : msg(e))
+                                                : ended());
                             }));
                 default -> cb.accept(new CodeReplaceOutcome(CodeReplaceResult.BUILD_FAILED, List.of(), ""));
             }
         });
+    }
+
+    /** The outcome of a replace whose session ended before it finished. */
+    private static CodeReplaceOutcome ended() {
+        return new CodeReplaceOutcome(CodeReplaceResult.NO_SESSION, List.of(), "");
     }
 
     /** Pure: the outcome of a {@code redefineClasses} answer, or of the request failing with {@code error}. */
@@ -4295,9 +4440,13 @@ public final class DapManager {
         if (reply == null || (!reply.failed() && reply.changedClasses().isEmpty())) {
             return new CodeReplaceOutcome(CodeReplaceResult.NOTHING_CHANGED, List.of(), "");
         }
-        return reply.failed()
-                ? new CodeReplaceOutcome(CodeReplaceResult.FAILED, reply.changedClasses(), reply.error())
-                : new CodeReplaceOutcome(CodeReplaceResult.APPLIED, reply.changedClasses(), "");
+        // java-debug words "JVM contains obsolete methods" as an error although the classes were replaced: a method
+        // that was running when the code changed (main's loop, typically) goes on with its old code. That is a
+        // replace that worked, with a note (review 2, B103) — it used to read "not applied, restart".
+        if (!reply.failed() || !reply.changedClasses().isEmpty() || reply.obsoleteMethods()) {
+            return new CodeReplaceOutcome(CodeReplaceResult.APPLIED, reply.changedClasses(), reply.error());
+        }
+        return new CodeReplaceOutcome(CodeReplaceResult.FAILED, reply.changedClasses(), reply.error());
     }
 
     /** Whether the session's adapter can restart a frame ({@code restartFrame}). */

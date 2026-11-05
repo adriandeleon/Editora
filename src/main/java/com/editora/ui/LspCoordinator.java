@@ -1780,9 +1780,7 @@ final class LspCoordinator {
      *  that server when it changes). */
     void applyOnTypeFormatting() {
         lspManager.setJavaOnTypeFormatting(host.settings().isLspOnTypeFormatting());
-        if (lspManager.setJavaDefaultJdk(host.settings().getMavenJdkHome())) {
-            host.setStatus(tr("status.lsp.javaJdkChanged")); // a running jdtls keeps its JDK (re-review CN7)
-        }
+        lspManager.setJavaDefaultJdk(host.settings().getMavenJdkHome()); // a running jdtls is told at once
         lspManager.setMavenCentralIndex(host.settings().isMavenPomCentralIndex());
         lspManager.setJavaDownloadSources(host.settings().isJavaDownloadSources());
     }

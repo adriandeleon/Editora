@@ -83,7 +83,9 @@ class JavaDebugEngineFxTest {
                 }
 
                 @Override
-                public void onOutput(String text, String category) {}
+                public void onOutput(String text, String category) {
+                    event("out:" + text.strip());
+                }
 
                 @Override
                 public void onError(String message) {
@@ -316,6 +318,36 @@ class JavaDebugEngineFxTest {
         assertFalse(events().contains("adapterLost"), events().toString());
     }
 
+    // --- E104: output that trails the end of a program java-debug launched ---------------------------------
+
+    @Test
+    void outputThatArrivesAfterTheProgramEndedIsStillShownBeforeTheSessionEnds() throws Exception {
+        FakeDebugAdapter.Session session = launch();
+        session.output("first line\n");
+        session.terminate(); // java-debug says the program is done while its output is still on its way
+        session.awaitDelivered();
+        Thread.sleep(100);
+        session.output("last line\n");
+        awaitEvent("INACTIVE");
+        List<String> seen = events();
+        assertTrue(seen.contains("out:last line"), "the program's last line is shown: " + seen);
+        assertTrue(
+                seen.indexOf("out:last line") < seen.lastIndexOf("INACTIVE"),
+                "the session ends after its last output: " + seen);
+    }
+
+    @Test
+    void aSessionWhoseOutputHadStoppedEndsAtOnce() throws Exception {
+        FakeDebugAdapter.Session session = launch();
+        session.output("only line\n");
+        Thread.sleep(OutputTail.QUIET_MILLIS + 200);
+        long t0 = System.nanoTime();
+        session.terminate();
+        awaitEvent("INACTIVE");
+        long ms = (System.nanoTime() - t0) / 1_000_000;
+        assertTrue(ms < OutputTail.QUIET_MILLIS + 2_000, "no wait when the output is done: " + ms + " ms");
+    }
+
     // --- B11: controls wait for a console evaluation -----------------------------------------------------
 
     @Test
@@ -326,7 +358,7 @@ class JavaDebugEngineFxTest {
         CompletableFuture<org.eclipse.lsp4j.debug.EvaluateResponse> slow = new CompletableFuture<>();
         adapter.evaluateGate = slow;
         List<String> results = new CopyOnWriteArrayList<>();
-        onFx(() -> dap.evaluate("slow()", 1, "repl", results::add));
+        onFx(() -> dap.evaluate("slow()", 1, "repl", r -> results.add(r.text())));
         session.awaitRequest("evaluate");
 
         onFx(() -> {
@@ -424,7 +456,7 @@ class JavaDebugEngineFxTest {
         List<String> console = new CopyOnWriteArrayList<>();
         List<String> hover = new CopyOnWriteArrayList<>();
         onFx(() -> {
-            dap.evaluate("e", 1, "repl", console::add);
+            dap.evaluate("e", 1, "repl", r -> console.add(r.text()));
             dap.evaluateHover("e", 1, hover::add);
         });
         await("both answered", () -> console.size() == 1 && hover.size() == 1);

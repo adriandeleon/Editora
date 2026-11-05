@@ -1326,6 +1326,28 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
+    /**
+     * jdtls's {@code java.configuration.runtimes} (with its default JDK), sent in every settings push: a push
+     * without them left the start's, so a changed Default JDK never reached a running jdtls (Java debug review 2,
+     * B102). Empty: none known (not a Java server).
+     */
+    private volatile List<Map<String, Object>> javaRuntimes = List.of();
+
+    /** {@link #javaRuntimes}: the JDKs jdtls was told about, the default one marked. */
+    List<Map<String, Object>> javaRuntimes() {
+        return javaRuntimes;
+    }
+
+    /** Sets {@link #javaRuntimes} and, for a running Java server, pushes them when they changed. */
+    void setJavaRuntimes(List<Map<String, Object>> runtimes) {
+        List<Map<String, Object>> next = runtimes == null ? List.of() : List.copyOf(runtimes);
+        boolean changed = !next.equals(javaRuntimes);
+        javaRuntimes = next;
+        if (changed && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
     /** Whether jdtls downloads every dependency's sources at import (Maven and Gradle). */
     private volatile boolean javaDownloadSources;
 
@@ -1381,6 +1403,7 @@ final class LanguageServerSession implements LanguageClient {
             completion.put("filteredTypes", javaFilteredTypes);
             merged.put("completion", completion);
             JavaLibrarySources.into(merged, javaDownloadSources);
+            merged = LspManager.withRuntimes(merged, javaRuntimes); // the JDKs, and which one is the default
             settings = Map.of("java", merged); // the project's own style, and the chosen clean-ups
         }
         try {
