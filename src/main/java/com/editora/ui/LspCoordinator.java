@@ -2622,6 +2622,13 @@ final class LspCoordinator {
         }
     }
 
+    /** {@code b}'s managing server as {@link LspFeatureNotice} names it ("Pyright"), or null (C107, E103). */
+    LspFeatureNotice.@Nullable Server serverOf(@Nullable EditorBuffer b) {
+        Path path = b == null ? null : lspPath(b);
+        String id = path == null ? null : lspManager.managedServerId(path);
+        return path == null || id == null ? null : new LspFeatureNotice.Server(lspManager, path, serverProgram(id));
+    }
+
     /** Re-applies the inlay-hints gate to every open buffer (the palette/Settings toggle's apply). */
     void applyInlayHints() {
         lspManager.setTypeScriptSettings(
