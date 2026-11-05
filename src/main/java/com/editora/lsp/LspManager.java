@@ -999,9 +999,20 @@ public final class LspManager {
             return;
         }
         synchronized (rootWatchers) {
+            remoteScanners
+                    .entrySet()
+                    .removeIf(
+                            e -> { // a dropped connection's: its tabs moved to the new one
+                                boolean gone = !e.getKey().getFileSystem().isOpen();
+                                if (gone) {
+                                    e.getValue().close();
+                                }
+                                return gone;
+                            });
             if (remoteScanners.containsKey(root)
                     || remoteScanners.size() >= MAX_ROOT_WATCHERS
-                    || remoteScanners.keySet().stream().anyMatch(root::startsWith)) {
+                    || remoteScanners.keySet().stream() // paths of two connections cannot be compared
+                            .anyMatch(k -> k.getFileSystem() == root.getFileSystem() && root.startsWith(k))) {
                 return;
             }
             remoteScanners.put(

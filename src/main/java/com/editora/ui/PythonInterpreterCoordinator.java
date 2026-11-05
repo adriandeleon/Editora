@@ -135,11 +135,14 @@ final class PythonInterpreterCoordinator {
             return null;
         }
         // A file directly in the root: the venv search starts at the root itself and walks up to the project.
-        // A bare name (a setting of `python3.12`) is told as the machine's PATH finds it (review 2, D104).
-        PythonRunPlan.Host machine = PythonRunLauncher.hostFor(root);
+        // A bare name (a setting of `python3.12`) is told as this machine's PATH finds it (review 2, D104). On
+        // another host it is left to the server there: asking that host's PATH is a round trip per start and
+        // refresh, which a dropped connection held up until the server's start timed out.
         return PythonInterpreterView.pythonPathForServer(
                 resolve(serverFile(root)),
-                machine.local() ? com.editora.run.PythonInterpreters::onAugmentedPath : machine.onPath());
+                elsewhere(root)
+                        ? name -> java.util.Optional.empty()
+                        : com.editora.run.PythonInterpreters::onAugmentedPath);
     }
 
     /** The made-up file a server root's interpreter is resolved for: one directly in the root. */

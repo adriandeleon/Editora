@@ -64,7 +64,7 @@ final class RemoteRootScanner implements AutoCloseable {
         boolean wasFocused = true;
         long lastScan = 0;
         try {
-            while (!closed) {
+            while (!closed && root.getFileSystem().isOpen()) {
                 boolean now = focused.getAsBoolean();
                 long at = System.currentTimeMillis();
                 if (last == null || (now && (!wasFocused || at - lastScan >= INTERVAL_MS))) {
