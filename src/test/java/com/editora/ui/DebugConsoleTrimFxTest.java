@@ -1,9 +1,5 @@
 package com.editora.ui;
 
-import static com.editora.i18n.Messages.tr;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 import java.lang.reflect.Proxy;
 
 import javafx.scene.control.Label;
@@ -12,6 +8,10 @@ import com.editora.dap.DapManager;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+
+import static com.editora.i18n.Messages.tr;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Review E107: the Debug console says when it has dropped its oldest output, as the Run console does. */
 @Tag("fx")
