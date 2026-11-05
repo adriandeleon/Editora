@@ -3853,6 +3853,9 @@ public final class DapManager {
             started.complete(pid);
             if (!program.inTerminal()) {
                 listener.onProgramInput(true); // in a terminal, the terminal takes the input
+            } else {
+                // The Debug console stays empty: say where the program's output and input are (review E106).
+                onOutput(epoch, tr("debug.console.inTerminal", programTitle()) + "\n", COMMAND_CATEGORY);
             }
         } catch (java.io.IOException | RuntimeException e) {
             program.kill();
