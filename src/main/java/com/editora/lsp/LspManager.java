@@ -7930,12 +7930,29 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(new BuildResult(BuildOutcome.UNAVAILABLE, Map.of())));
             return;
         }
-        build(s, false, first -> {
+        Runnable launchBuild = () -> build(s, false, first -> {
             if (first.outcome() == BuildOutcome.WITH_ERRORS && first.errors().isEmpty()) {
                 build(s, true, cb);
             } else {
                 cb.accept(first);
             }
+        });
+        Path root = s.root();
+        if (root == null || !com.editora.process.ExecTargets.runsHere(root)) {
+            launchBuild.run();
+            return;
+        }
+        // What was written on disk just now may not have reached jdtls through a watcher yet (review 3, A207).
+        Thread.ofVirtual().name("java-launch-fresh-sources").start(() -> {
+            List<WatchedFile> fresh = FreshJavaSources.since(
+                    root, System.currentTimeMillis() - FreshJavaSources.WINDOW_MS, FreshJavaSources.MAX_VISITED);
+            Platform.runLater(() -> {
+                List<org.eclipse.lsp4j.FileEvent> events = eventsUnderRoot(fresh, root, s.uris());
+                if (!events.isEmpty()) {
+                    s.didChangeWatchedFiles(events);
+                }
+                launchBuild.run();
+            });
         });
     }
 
