@@ -265,6 +265,12 @@ final class StructureOutline {
             symbolByLine.values().removeIf(sym -> "tag".equals(sym.kind()));
             scriptConstants(src.lineAt(), regions, symbolByLine, paras); // `const routes = {` … (A106)
         }
+        if ("python".equals(lang)) {
+            // Module constants and class fields, which the grammar does not name (review 2 C113).
+            for (Symbol v : PythonOutlineSymbols.variables(src.text())) {
+                symbolByLine.putIfAbsent(v.line(), v);
+            }
+        }
         boolean haveSymbols = !symbolByLine.isEmpty();
         boolean brace = isBraceLanguage(src.language());
         if ("css".equals(src.language())) {

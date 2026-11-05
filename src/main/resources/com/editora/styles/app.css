@@ -357,6 +357,13 @@
     -fx-fill: -color-fg-muted;
 }
 
+/* A Python def's kind word (async, property, classmethod …) beside its row: quieter than the signature. */
+.structure-tree .structure-marker {
+    -fx-fill: -color-fg-muted;
+    -fx-font-style: italic;
+    -fx-font-size: 0.85em;
+}
+
 .structure-tree .structure-line-number,
 .bookmarks-tree .bookmark-line-number,
 .notes-tree .note-line-number {

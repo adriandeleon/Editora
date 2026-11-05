@@ -522,7 +522,9 @@ public final class TextMateHighlighter {
 
     /** The definition kind a single scope names, or {@code null} — see {@link #kindForScopes}. */
     private static @Nullable String definitionKind(String scope) {
-        if (!scope.startsWith("entity.name.")) {
+        if (!scope.startsWith("entity.name.") || scope.endsWith(".regexp")) {
+            // A regex's named group (`(?P<year>…)`, `(?<id>…)`) is scoped entity.name.tag…regexp: a name inside a
+            // string literal, not a declaration for the outline (review 2 A104).
             return null;
         }
         if (scope.startsWith("entity.name.function")) {
