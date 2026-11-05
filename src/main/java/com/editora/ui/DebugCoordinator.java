@@ -1957,9 +1957,12 @@ final class DebugCoordinator {
         // A remote file's program runs on its host: none of this machine's JDK setting, PATH or JAVA_HOME.
         // A Groovy script runs on the Settings JDK too (its JAVA_HOME), as Run runs it.
         boolean jvmScript = com.editora.run.JvmScriptRun.supports(language);
-        String jdkHome = !(java || jvmScript) || !com.editora.process.ExecTargets.runsHere(path)
-                ? ""
-                : compactSource || jvmScript ? host.settings().getMavenJdkHome() : configuredJdkHome(projectRoot, null);
+        String jdkHome = presentJdk(
+                !(java || jvmScript) || !com.editora.process.ExecTargets.runsHere(path)
+                        ? ""
+                        : compactSource || jvmScript
+                                ? host.settings().getMavenJdkHome()
+                                : configuredJdkHome(projectRoot, null));
         String selectedJava = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
         // A Java file without a build tool runs on Run's JDK: the Settings JDK, else PATH's java (review 2, B102).
         String javaExec = java && projectRoot == null && com.editora.process.ExecTargets.runsHere(path)
@@ -2007,6 +2010,23 @@ final class DebugCoordinator {
     }
 
     // --- Java launch preparation (review A2, B3, D1) ------------------------------------------------------
+
+    /**
+     * {@code home}, or "" — PATH's java — when it names a JDK that is no longer there: the Debug console and the
+     * status bar say so and where to choose another, where java-debug's raw "Cannot run program" stood beside an
+     * empty console (review 3, A206).
+     */
+    private String presentJdk(String home) {
+        if (!com.editora.run.JdkToolchain.isGone(home)) {
+            return home;
+        }
+        String said = tr("debug.console.defaultJdkMissing", home.strip());
+        panel().clearConsole(); // this launch's console: kept when its session starts
+        panel().appendNotice(said);
+        consoleStarted = true;
+        host.setStatus(said);
+        return "";
+    }
 
     /** The {@code java} a file without a build tool runs on: {@code selected} (the Settings JDK's), else PATH's. */
     private static String looseJava(String selected) {
@@ -2913,15 +2933,17 @@ final class DebugCoordinator {
     }
 
     private String configuredJavaExecutable(@Nullable Path root, @Nullable RunConfiguration cfg) {
-        String selected = com.editora.run.JdkToolchain.javaExecutable(configuredJdkHome(root, cfg));
+        String selected = com.editora.run.JdkToolchain.javaExecutable(presentJdk(configuredJdkHome(root, cfg)));
         // No build tool (a plain folder): the Settings JDK, else PATH's java, as Run (review 2, B102).
         return root == null ? looseJava(selected) : selected;
     }
 
     private java.util.Map<String, String> configuredJdkEnvironment(
             @Nullable Path root, @Nullable RunConfiguration cfg) {
+        String home = configuredJdkHome(root, cfg);
         return com.editora.run.JdkToolchain.environment(
-                configuredJdkHome(root, cfg), com.editora.process.ProcessRunner.augmentedPath());
+                com.editora.run.JdkToolchain.isGone(home) ? "" : home,
+                com.editora.process.ProcessRunner.augmentedPath());
     }
 
     /** The simple class name of a fully-qualified main class (for the session label). */

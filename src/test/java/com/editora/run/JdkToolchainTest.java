@@ -81,4 +81,15 @@ class JdkToolchainTest {
                 .toLowerCase(java.util.Locale.ROOT)
                 .contains("win");
     }
+
+    @Test
+    void aChosenJdkWhoseJavaIsGoneIsGone(@TempDir Path tmp) throws Exception {
+        // review 3, A206: a Default JDK removed since it was chosen
+        assertTrue(JdkToolchain.isGone(tmp.resolve("gone/jdk-25").toString()));
+        Path bin = Files.createDirectories(tmp.resolve("jdk/bin"));
+        Files.writeString(bin.resolve(File.separatorChar == '\\' ? "java.exe" : "java"), "");
+        assertFalse(JdkToolchain.isGone(tmp.resolve("jdk").toString()));
+        assertFalse(JdkToolchain.isGone(""), "none chosen");
+        assertFalse(JdkToolchain.isGone(null));
+    }
 }

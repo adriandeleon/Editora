@@ -1551,6 +1551,7 @@ class DebugCoordinatorCommandsFxTest {
     void aCompactSourceIsCompiledWithTheSelectedJdkAndDebuggedAsTheClassNamedAfterIt() throws Exception {
         Path jdk = loose.resolve("jdk");
         Path javac = Files.createDirectories(jdk.resolve("bin")).resolve("javac");
+        Files.writeString(jdk.resolve("bin").resolve("java"), ""); // a JDK that exists (review 3, A206)
         Files.writeString(javac, "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + loose.resolve("javac-args.txt") + "'\n");
         Files.setPosixFilePermissions(javac, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
         host.settings.setMavenJdkHome(jdk.toString());
