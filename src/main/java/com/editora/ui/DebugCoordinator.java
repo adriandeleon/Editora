@@ -3351,6 +3351,7 @@ final class DebugCoordinator {
         });
         if (ops.debugBreakpointsMuted() && !breakpointsMuted) {
             breakpointsMuted = true; // Mute Breakpoints is kept per project, like the exception choices
+            dapManager.setExceptionsMuted(true);
             showBreakpointsMuted();
         }
     }
@@ -3751,6 +3752,7 @@ final class DebugCoordinator {
      */
     void toggleMuteBreakpoints() {
         breakpointsMuted = !breakpointsMuted;
+        dapManager.setExceptionsMuted(breakpointsMuted); // exception stops too (review 2, B109)
         if (dapManager.isActive()) {
             Set<String> open = new HashSet<>();
             host.forEachBuffer(b -> {

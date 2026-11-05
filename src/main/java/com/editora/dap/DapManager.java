@@ -250,7 +250,7 @@ public final class DapManager {
         } else {
             exceptionChoices.put(language, List.copyOf(filters));
         }
-        if (client != null && language.equals(sessionLanguage)) {
+        if (client != null && language.equals(sessionLanguage) && !exceptionsMuted) {
             client.setExceptionFilters(filters == null ? null : List.copyOf(filters));
         }
     }
@@ -261,12 +261,30 @@ public final class DapManager {
         setExceptionFilters(sessionLanguage, filters);
     }
 
-    /** The filters chosen for {@code language}, or null when the adapter's defaults apply. */
+    /** The filters chosen for {@code language}, or null when the adapter's defaults apply; none while muted. */
     private @Nullable List<String> filtersFor(String language) {
         sessionLanguage = language;
         jsSession = "javascript".equals(language);
         reportedConditionErrors.clear();
-        return exceptionChoices.get(language);
+        return exceptionsMuted ? List.of() : exceptionChoices.get(language);
+    }
+
+    /** Mute Breakpoints also mutes the exception stops (review 2, B109), as IntelliJ's Mute does. */
+    private boolean exceptionsMuted;
+
+    /**
+     * Mutes or restores the exception stops: a live session is told at once (no filters while muted, the chosen
+     * ones — or the adapter's defaults — after); the next session starts that way. The choices themselves stay.
+     */
+    public void setExceptionsMuted(boolean muted) {
+        if (exceptionsMuted == muted) {
+            return;
+        }
+        exceptionsMuted = muted;
+        if (client != null) {
+            List<String> chosen = exceptionChoices.get(sessionLanguage);
+            client.setExceptionFilters(muted ? List.of() : chosen);
+        }
     }
 
     /** The language of the live (or last) session. */
