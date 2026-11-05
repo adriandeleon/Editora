@@ -425,7 +425,8 @@ the runner it added none. Give a `Process` subclass its own `onExit()`: from a c
 
 The program that never ended was a second trap. On macOS a process cannot finish exiting while its pseudo-terminal
 holds output nobody has read: the last close of the terminal waits for it to drain, with no time limit, and SIGKILL
-does not end that wait. The test stopped reading after "ready", and its shell printed a line when the force kill
+does not end that wait. Measured on macos-15 in #1425: a pty program SIGKILLed with unread output was still there 3 s
+later, in `ps` state `E` (exiting); closing the terminal ended it within 3 s. The test stopped reading after "ready", and its shell printed a line when the force kill
 ended its `sleep`. `LocalPtyConnector.close()` therefore closes a stopped program's terminal once the grace period
 has passed (`UNREAD_OUTPUT_EXIT_MILLIS`), which ends the wait.
 
