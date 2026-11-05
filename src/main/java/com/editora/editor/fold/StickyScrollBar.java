@@ -182,6 +182,61 @@ public final class StickyScrollBar {
             box.getChildren().setAll(nodes);
         }
         box.setVisible(!rows.isEmpty());
+        alignToText(area);
+    }
+
+    /**
+     * Starts the pinned rows where the code's text starts, past the line numbers and fold arrows: they started
+     * at the window edge, a gutter's width left of the lines they name (review 2 A109). Measured from a laid-out
+     * line's first character, with the horizontal scroll added back so the rows stay put while it scrolls.
+     */
+    private void alignToText(CodeArea area) {
+        double inset = textStart(area);
+        if (inset < 0) {
+            if (!alignPending) { // the bar was just attached: measure once it is in the scene
+                alignPending = true;
+                javafx.application.Platform.runLater(() -> {
+                    alignPending = false;
+                    double later = textStart(area);
+                    if (later >= 0) {
+                        setInset(later);
+                    }
+                });
+            }
+            return;
+        }
+        setInset(inset);
+    }
+
+    private boolean alignPending;
+
+    private void setInset(double inset) {
+        if (Math.abs(box.getPadding().getLeft() - inset) > 0.5) {
+            box.setPadding(new javafx.geometry.Insets(0, 0, 0, inset));
+        }
+    }
+
+    /** The x, in the bar's own coordinates, where column 0 of the code is drawn; -1 while unknown. */
+    private double textStart(CodeArea area) {
+        try {
+            int first = area.firstVisibleParToAllParIndex();
+            int last = Math.min(area.lastVisibleParToAllParIndex(), first + LINE_HEIGHT_SAMPLES - 1);
+            for (int par = first; par <= last; par++) {
+                if (area.getParagraphLength(par) == 0) {
+                    continue;
+                }
+                int at = area.getAbsolutePosition(par, 0);
+                Bounds ch = area.getCharacterBoundsOnScreen(at, at + 1).orElse(null);
+                if (ch == null) {
+                    continue;
+                }
+                javafx.geometry.Point2D local = box.screenToLocal(ch.getMinX(), ch.getMinY());
+                return local == null ? -1 : Math.max(0, local.getX() + area.getEstimatedScrollX());
+            }
+        } catch (RuntimeException notLaidOut) {
+            // fall through: keep the current inset
+        }
+        return -1;
     }
 
     /** Visible paragraphs {@link #lineHeight} looks at; a scroll step pays for this many bounds lookups. */

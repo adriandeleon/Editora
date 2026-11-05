@@ -146,6 +146,9 @@ public final class NarrowPresentation {
         }
         barLines = lines;
         int last = firstLine + lines;
-        text.setText(tr("editor.narrow.bar", firstLine + 1, last, last + suffixLines));
+        // A region that ends with its newline shows an empty last line: that line is the next one's start, not
+        // part of the region ("lines 17–45" for a definition that ends on 44).
+        boolean emptyTail = lines > 1 && area.getParagraph(lines - 1).length() == 0;
+        text.setText(tr("editor.narrow.bar", firstLine + 1, emptyTail ? last - 1 : last, last + suffixLines));
     }
 }

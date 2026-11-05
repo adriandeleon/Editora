@@ -99,4 +99,16 @@ class TabExpansionTest {
         assertFalse(TabExpansion.wordTrigger("h2"));
         assertFalse(TabExpansion.wordTrigger(""));
     }
+
+    @Test
+    void aMemberNameAfterADotIsNotATrigger() {
+        // Review 2 E104: `self.s` + Tab gave `self.self.`, `re.match` a whole match block.
+        assertNull(found("self.s", "s", "self"));
+        assertNull(found("x = os.environ.s", "s"));
+        assertNull(found("m = re.match", "match"));
+        assertNull(found("v = self.property", "property"));
+        assertEquals("match@0", found("match", "match"), "the trigger on its own still expands");
+        assertEquals("div.@2", found("  div.", "div."), "a trigger that ends in a dot is still whole");
+        assertEquals("console.log@0", found("console.log", "console.log"), "a dotted user trigger, typed whole");
+    }
 }

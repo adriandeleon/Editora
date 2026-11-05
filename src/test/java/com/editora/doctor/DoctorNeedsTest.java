@@ -41,9 +41,9 @@ class DoctorNeedsTest {
 
     @Test
     void pythonProjectsAreRecognised() {
-        assertTrue(DoctorNeeds.pythonProject(List.of("pyproject.toml")));
-        assertTrue(DoctorNeeds.pythonProject(List.of("requirements.txt")));
-        assertFalse(DoctorNeeds.pythonProject(List.of("pom.xml")));
+        assertTrue(DoctorNeeds.serversForRootFiles(List.of("pyproject.toml")).contains("python"));
+        assertTrue(DoctorNeeds.serversForRootFiles(List.of("requirements.txt")).contains("python"));
+        assertFalse(DoctorNeeds.serversForRootFiles(List.of("pom.xml")).contains("python"));
     }
 
     @Test

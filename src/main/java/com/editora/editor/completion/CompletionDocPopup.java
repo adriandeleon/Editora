@@ -27,6 +27,16 @@ import org.jspecify.annotations.Nullable;
 final class CompletionDocPopup {
 
     private static final double WIDTH = 420;
+    /** Widest the panel grows for a long signature: a 66-character Pyright overload line, uncut. */
+    static final double MAX_WIDTH = 680;
+    /** Average advance of the panel's code font, per character, and the code block's padding and scroll bar. */
+    private static final double CODE_CHAR_WIDTH = 9.0;
+
+    private static final double CODE_CHROME = 72;
+
+    /** The panel's width for the item now shown ({@link #widthFor}). */
+    private double width = WIDTH;
+
     static final double MAX_HEIGHT = 320;
     private static final double GAP = 4;
 
@@ -41,8 +51,8 @@ final class CompletionDocPopup {
         scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
         // Size to the content (so short docs get a small popup, not a fixed empty box), capped at a max.
         card.getStyleClass().add("completion-doc-popup");
-        card.setPrefWidth(WIDTH);
-        card.setMaxWidth(WIDTH);
+        card.setPrefWidth(width);
+        card.setMaxWidth(width);
         card.setMaxHeight(MAX_HEIGHT);
         // A Popup has its own scene that doesn't inherit the editor's stylesheets — attach both so the
         // markdown-preview + token rules resolve (the note-tooltip / hover-popup idiom).
@@ -68,18 +78,58 @@ final class CompletionDocPopup {
     }
 
     /**
+     * Pure: the panel's width for documentation {@code markdown} — wide enough for its longest code line, as the hover
+     * card is, between the usual {@link #WIDTH} and {@link #MAX_WIDTH}. Pyright's overload signatures were cut behind a
+     * sideways scroll bar at 420 px (Python review 2, C106).
+     */
+    static double widthFor(@Nullable String markdown) {
+        int longest = com.editora.editor.markdown.CodeFences.longestLine(markdown == null ? "" : markdown);
+        return Math.max(WIDTH, Math.min(MAX_WIDTH, longest * CODE_CHAR_WIDTH + CODE_CHROME));
+    }
+
+    /**
+     * Pure: the width to show a panel that wants {@code wanted}, with {@code right} and {@code left} free beside the
+     * list: as wanted where it fits (right first, as before), else narrower beside the list rather than over it, down
+     * to the usual {@link #WIDTH}; with no room for even that, the usual width, placed as before.
+     */
+    static double fitWidth(double wanted, double right, double left) {
+        if (wanted <= right) {
+            return wanted;
+        }
+        if (right >= WIDTH) {
+            return right;
+        }
+        if (wanted <= left) {
+            return wanted;
+        }
+        return left >= WIDTH ? left : Math.min(wanted, WIDTH);
+    }
+
+    /** As {@link #show(Window, Bounds, String, Node, String)} for documentation with no code block. */
+    void show(Window owner, Bounds listBounds, String signature, @Nullable Node docNode) {
+        show(owner, listBounds, signature, docNode, "");
+    }
+
+    /**
      * Shows the declaration {@code signature} (wrapping monospace header) and optional rendered
      * {@code docNode} beside the completion popup ({@code listBounds} in screen coordinates): to its
      * right, or flipped to its left when it would overflow the screen's visible bounds. Hides when there
-     * is nothing to show.
+     * is nothing to show. {@code markdown} (the documentation's source) sets its width.
      */
-    void show(Window owner, Bounds listBounds, String signature, @Nullable Node docNode) {
+    void show(Window owner, Bounds listBounds, String signature, @Nullable Node docNode, @Nullable String markdown) {
         boolean hasSig = signature != null && !signature.isBlank();
         if (owner == null || listBounds == null || (!hasSig && docNode == null)) {
             hide();
             return;
         }
         com.editora.editor.PopupSheets.followOwnerTheme(card, owner); // dark code in a dark theme (B107)
+        Rectangle2D screen = screenFor(listBounds);
+        width = fitWidth(
+                widthFor(markdown),
+                screen.getMaxX() - listBounds.getMaxX() - GAP,
+                listBounds.getMinX() - GAP - screen.getMinX());
+        card.setPrefWidth(width);
+        card.setMaxWidth(width);
         VBox content = new VBox(6);
         content.getStyleClass().add("completion-doc-content");
         if (hasSig) {
@@ -97,10 +147,10 @@ final class CompletionDocPopup {
         fitHeight(content);
         Rectangle2D vis = screenFor(listBounds);
         double x = listBounds.getMaxX() + GAP;
-        if (x + WIDTH > vis.getMaxX()) {
-            x = listBounds.getMinX() - GAP - WIDTH; // not enough room on the right → flip left
+        if (x + width > vis.getMaxX()) {
+            x = listBounds.getMinX() - GAP - width; // not enough room on the right → flip left
         }
-        x = Math.max(vis.getMinX(), Math.min(x, vis.getMaxX() - WIDTH));
+        x = Math.max(vis.getMinX(), Math.min(x, vis.getMaxX() - width));
         double y = Math.max(vis.getMinY(), Math.min(listBounds.getMinY(), vis.getMaxY() - MAX_HEIGHT));
         if (popup.isShowing()) {
             popup.setAnchorX(x);
@@ -122,10 +172,10 @@ final class CompletionDocPopup {
         content.applyCss();
         Insets cardInsets = card.getInsets();
         Insets scrollInsets = scroll.getInsets();
-        double width =
-                WIDTH - cardInsets.getLeft() - cardInsets.getRight() - scrollInsets.getLeft() - scrollInsets.getRight();
+        double inner =
+                width - cardInsets.getLeft() - cardInsets.getRight() - scrollInsets.getLeft() - scrollInsets.getRight();
         double chrome = cardInsets.getTop() + cardInsets.getBottom() + scrollInsets.getTop() + scrollInsets.getBottom();
-        double wanted = Math.ceil(content.prefHeight(width)); // past the maximum, it scrolls
+        double wanted = Math.ceil(content.prefHeight(inner)); // past the maximum, it scrolls
         scroll.setPrefViewportHeight(Math.max(1, Math.min(wanted, MAX_HEIGHT - chrome)));
     }
 

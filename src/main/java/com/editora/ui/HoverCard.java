@@ -37,21 +37,7 @@ final class HoverCard {
      * line in characters — clamped to {@link #maxWidth}; 0 without a code block.
      */
     static double codeWidth(String markdown) {
-        if (markdown == null) {
-            return 0;
-        }
-        int longest = 0;
-        boolean inFence = false;
-        for (String line : markdown.split("\\R", -1)) {
-            String t = line.strip();
-            if (t.startsWith("```") || t.startsWith("~~~")) {
-                inFence = !inFence;
-                continue;
-            }
-            if (inFence) {
-                longest = Math.max(longest, line.length());
-            }
-        }
+        int longest = com.editora.editor.markdown.CodeFences.longestLine(markdown);
         return longest == 0 ? 0 : Math.min(maxWidth(markdown), longest * CODE_CHAR_WIDTH + CODE_CHROME);
     }
 

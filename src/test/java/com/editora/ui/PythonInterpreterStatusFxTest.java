@@ -93,4 +93,48 @@ class PythonInterpreterStatusFxTest {
                     .isEmpty());
         }
     }
+
+    /**
+     * A project whose Python code and {@code .venv} live in a {@code backend/} folder: the file's server is rooted
+     * at {@code backend/} and told that venv, and the item says what the server was told — it said {@code (.venv)}
+     * while Pyright, rooted at the project, analysed with the PATH's Python (Python review 2, B101).
+     */
+    @Test
+    void aSubProjectsVenvIsWhatItsServerIsToldAndWhatTheItemShows() throws Exception {
+        assumeTrue(!com.editora.run.PythonInterpreters.isWindows(), "POSIX stand-in interpreter");
+        assumeTrue(
+                System.getenv("VIRTUAL_ENV") == null && System.getenv("CONDA_PREFIX") == null,
+                "an activated environment would win, by design");
+        FxTestSupport.bootToolkit();
+        Path repo = Files.createDirectories(work.resolve("repo"));
+        Path backend = Files.createDirectories(repo.resolve("backend"));
+        Files.writeString(backend.resolve("pyproject.toml"), "[project]\nname = \"b\"\n");
+        Files.writeString(Files.createDirectories(backend.resolve(".venv")).resolve("pyvenv.cfg"), "home = /usr\n");
+        Path venvPython = fakePython(backend.resolve(".venv/bin/python"), "3.97.2");
+        Path test = Files.createDirectories(backend.resolve("tests")).resolve("test_x.py");
+        Files.writeString(test, "import os\n");
+
+        try (FxWindowFixture fx = FxWindowFixture.create(Files.createDirectories(work.resolve("cfg")), shared -> {
+            shared.getSettings().setLspSupport(true);
+            shared.getSettings().setLspInstallPrompts(false);
+            shared.getSettings()
+                    .setPythonLspCommand(work.resolve("no-such-server").toString()); // nothing starts
+        })) {
+            MainController c = fx.controller;
+            FxTestSupport.runOnFx(() -> {
+                fx.shared.getSettings().setProjectSupport(true);
+                c.setWindowContext(fx.windowManager, new com.editora.config.Project("repo", "repo", repo.toString()));
+            });
+            FxTestSupport.runOnFx(() -> c.openAndNavigate(test, 1));
+            assertEquals("Python 3.97.2 (.venv)", waitForItem(c, "Python 3.97.2 (.venv)"));
+            Path serverRoot = FxTestSupport.callOnFx(() -> c.lspCoordinator.lspRootFor(c.activeBuffer(), "python"));
+            assertEquals(
+                    backend.toAbsolutePath().normalize(),
+                    serverRoot.toAbsolutePath().normalize());
+            assertEquals(
+                    venvPython.toString(),
+                    c.lspCoordinator.pythonInterpreters.pythonPathForServerRoot(serverRoot),
+                    "the server is told the backend's venv, not PATH's python3");
+        }
+    }
 }

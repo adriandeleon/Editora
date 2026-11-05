@@ -101,7 +101,24 @@ final class PythonInterpreterView {
      * worse).
      */
     static @Nullable String pythonPathForServer(PythonInterpreter interp) {
-        return isAbsolute(interp.executablePath()) ? interp.executablePath() : null;
+        return pythonPathForServer(interp, name -> java.util.Optional.empty());
+    }
+
+    /**
+     * As above, a bare name ({@code python3.12}, or {@code python3 -X dev}'s {@code python3}) looked up with {@code
+     * onPath}: Run used it while Pyright was told nothing and analysed with another Python (review 2, D104). The
+     * arguments are Run's; Pyright is told only the interpreter.
+     */
+    static @Nullable String pythonPathForServer(PythonInterpreter interp, Function<String, Optional<String>> onPath) {
+        String exe = interp.executablePath();
+        if (isAbsolute(exe)) {
+            return exe;
+        }
+        if (exe.isBlank() || exe.contains("/") || exe.contains("\\")) {
+            return null; // a relative path: nothing to look up
+        }
+        Optional<String> found = onPath == null ? null : onPath.apply(exe);
+        return found != null && found.isPresent() && isAbsolute(found.get()) ? found.get() : null;
     }
 
     /**
@@ -123,24 +140,54 @@ final class PythonInterpreterView {
     }
 
     /**
-     * What a pick stores in the project's state: a path inside the project root is kept relative (so the
-     * project folder can move, and a teammate's checkout means the same thing), anything else absolute.
+     * What a pick stores in the project's state: the whole command — an {@code env NAME=value} prefix and arguments
+     * such as {@code -X dev} or {@code py.exe -3} kept (Python review 2, D107) — as one line {@code ProgramArgs.tokenize}
+     * reads back, a token with a space quoted. An executable inside the project root is kept relative (so the project
+     * folder can move, and a teammate's checkout means the same thing), anything else absolute.
      */
-    static String storedChoice(@Nullable Path projectRoot, String executable) {
-        if (projectRoot == null || executable == null) {
-            return executable == null ? "" : executable;
+    static String storedChoice(@Nullable Path projectRoot, String command) {
+        if (command == null || command.isBlank()) {
+            return "";
         }
-        try {
-            Path exe = Path.of(executable);
-            Path root = projectRoot.toAbsolutePath().normalize();
-            if (exe.isAbsolute() && exe.normalize().startsWith(root)) {
-                return root.relativize(exe.normalize()).toString().replace('\\', '/');
+        List<String> tokens = new ArrayList<>(com.editora.run.ProgramArgs.tokenize(command));
+        int exe = PythonInterpreters.executableIndex(tokens);
+        if (projectRoot != null) {
+            try {
+                Path path = Path.of(tokens.get(exe));
+                Path root = projectRoot.toAbsolutePath().normalize();
+                if (path.isAbsolute() && path.normalize().startsWith(root)) {
+                    tokens.set(exe, root.relativize(path.normalize()).toString().replace('\\', '/'));
+                }
+            } catch (RuntimeException e) {
+                // not a path: stored as typed
             }
-        } catch (RuntimeException e) {
-            // not a path: stored as typed
         }
-        return executable;
+        return commandText(tokens);
     }
+
+    /** {@code argv} as one line {@code ProgramArgs.tokenize} splits back into it: a token with a space is quoted. */
+    static String commandText(List<String> argv) {
+        List<String> words = new ArrayList<>();
+        for (String token : argv) {
+            boolean plain = !token.isEmpty()
+                    && token.chars().noneMatch(c -> Character.isWhitespace(c) || c == '"' || c == '\'');
+            words.add(plain ? token : token.indexOf('"') < 0 ? '"' + token + '"' : "'" + token + "'");
+        }
+        return String.join(" ", words);
+    }
+
+    /** {@code text} cut in the middle to {@code max} characters, so a long path keeps its folder name at the end. */
+    static String elideMiddle(String text, int max) {
+        if (text == null || text.length() <= max || max < 5) {
+            return text == null ? "" : text;
+        }
+        int head = (max - 1) / 2;
+        int tail = max - 1 - head;
+        return text.substring(0, head) + "…" + text.substring(text.length() - tail);
+    }
+
+    /** How long a picker row's path may be before it is cut in the middle. */
+    static final int DETAIL_MAX = 60;
 
     /** The names a system Python is found under on PATH, newest first after the plain names. */
     static List<String> pathNames(boolean windows) {
@@ -154,51 +201,65 @@ final class PythonInterpreterView {
 
     /**
      * The picker rows: Detect automatically first, then the current interpreter, the project's environments,
-     * every distinct Python on PATH, and Browse…. Rows with the same executable are shown once.
+     * every distinct Python on PATH, and Browse…. An environment is named by its folder ({@code .venv},
+     * {@code services/api/.venv}) — every venv's executable is just {@code python}, so the rows read alike (Python
+     * review 2, B107) — and a long path is cut in the middle. Rows that run the same interpreter are shown once: an
+     * environment by its executable, a Python on PATH by the file it resolves to ({@code python3} →
+     * {@code python3.13}); a venv's {@code python} links to the system one, yet is a different environment.
      *
      * @param current what resolves now (shown first after Detect automatically)
+     * @param projectRoot the folder environment names are relative to (null: their folder names)
      * @param venvs environment folders found for the project, in Editora's view of the files
      * @param windows whether the machine the interpreter runs on is Windows ({@code Scripts\python.exe})
      * @param toTarget a path in Editora's view → as that machine names it ({@link Path#toString} here; a remote
      *     host or WSL is POSIX, also when Editora runs on Windows)
      * @param onPath name → absolute path of that name on PATH (empty when absent)
+     * @param realPath an executable → the file it resolves to (itself when that cannot be known)
      */
     static List<Choice> choices(
             PythonInterpreter current,
+            @Nullable Path projectRoot,
             List<Path> venvs,
             boolean windows,
             Function<Path, String> toTarget,
             Function<String, Optional<String>> onPath,
-            Function<String, String> versionOf) {
+            Function<String, String> versionOf,
+            Function<String, String> realPath) {
         Map<String, Choice> rows = new LinkedHashMap<>();
         List<Choice> out = new ArrayList<>();
         out.add(new Choice(
                 Kind.AUTO, "", tr("python.interpreter.pick.auto"), tr("python.interpreter.pick.autoDetail")));
         if (current != null) {
             String exe = current.executablePath();
+            String name = current.venv() != null ? envName(projectRoot, current.venv()) : fileName(exe);
+            String detail =
+                    tr("python.interpreter.pick.current", reason(current)) + "  " + elideMiddle(exe, DETAIL_MAX);
             rows.put(
-                    exe,
-                    new Choice(
-                            Kind.CURRENT,
-                            exe,
-                            labelFor(exe, versionOf),
-                            tr("python.interpreter.pick.current", reason(current))));
+                    current.venv() != null ? exe : realPath.apply(exe),
+                    new Choice(Kind.CURRENT, commandText(current.command()), label(name, exe, versionOf), detail));
         }
         for (Path venv : venvs) {
             String exe = toTarget.apply(PythonInterpreters.venvPython(venv, windows));
-            rows.putIfAbsent(exe, new Choice(Kind.VENV, exe, labelFor(exe, versionOf), toTarget.apply(venv)));
+            String detail = elideMiddle(toTarget.apply(venv), DETAIL_MAX);
+            rows.putIfAbsent(
+                    exe,
+                    new Choice(
+                            Kind.VENV,
+                            commandText(List.of(exe)),
+                            label(envName(projectRoot, venv), exe, versionOf),
+                            detail));
         }
         for (String name : pathNames(windows)) {
-            Optional<String> found = onPath.apply(name);
-            if (found != null && found.isPresent() && !rows.containsKey(found.get())) {
+            Optional<String> found = PythonInterpreters.real(onPath.apply(name)); // not the Microsoft Store alias
+            if (found.isPresent()) {
                 String exe = found.get();
-                if (windows
-                        && exe.replace('/', '\\')
-                                .toLowerCase(java.util.Locale.ROOT)
-                                .contains("\\windowsapps\\")) {
-                    continue; // the Microsoft Store alias, not a Python
-                }
-                rows.put(exe, new Choice(Kind.PATH, exe, labelFor(exe, versionOf), exe));
+                rows.putIfAbsent(
+                        realPath.apply(exe),
+                        new Choice(
+                                Kind.PATH,
+                                commandText(List.of(exe)),
+                                label(fileName(exe), exe, versionOf),
+                                elideMiddle(exe, DETAIL_MAX)));
             }
         }
         out.addAll(rows.values());
@@ -207,8 +268,32 @@ final class PythonInterpreterView {
         return List.copyOf(out);
     }
 
-    private static String labelFor(String exe, Function<String, String> versionOf) {
+    /** What the picker's filter matches: the row's words, and its whole command (a path cut in the middle too). */
+    static String searchKey(Choice c) {
+        return c.label() + " " + c.detail() + " " + c.command();
+    }
+
+    /** An environment folder's name: relative to the project root when inside it, else its own name. */
+    static String envName(@Nullable Path projectRoot, Path venv) {
+        try {
+            if (projectRoot != null
+                    && venv.normalize().startsWith(projectRoot.normalize())
+                    && !venv.equals(projectRoot)) {
+                return projectRoot
+                        .normalize()
+                        .relativize(venv.normalize())
+                        .toString()
+                        .replace('\\', '/');
+            }
+        } catch (RuntimeException e) {
+            // another file system's path: its own name below
+        }
+        Path name = venv.getFileName();
+        return name == null ? venv.toString() : name.toString();
+    }
+
+    private static String label(String name, String exe, Function<String, String> versionOf) {
         String v = versionOf == null ? "" : parseVersion(versionOf.apply(exe));
-        return v.isEmpty() ? fileName(exe) : tr("python.interpreter.status", v) + "  —  " + fileName(exe);
+        return v.isEmpty() ? name : tr("python.interpreter.status", v) + "  —  " + name;
     }
 }

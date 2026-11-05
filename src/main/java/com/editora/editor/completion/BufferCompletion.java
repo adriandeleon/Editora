@@ -463,7 +463,7 @@ public final class BufferCompletion {
         if (anchor == null || completionArea == null || completionArea.getScene() == null) {
             return;
         }
-        docPopup().show(completionArea.getScene().getWindow(), anchor, signature, rendered);
+        docPopup().show(completionArea.getScene().getWindow(), anchor, signature, rendered, doc);
     }
 
     /** Opens a link clicked in a completion's documentation: the window's own link opener. */
@@ -781,6 +781,13 @@ public final class BufferCompletion {
                 return;
             }
             if (completionPopup == null || !completionPopup.isShowing()) {
+                return;
+            }
+            if (!completionPopup.hasRows()) { // only "Waiting for Pyright…": keys keep their meaning (E103)
+                switch (e.getCode()) {
+                    case DOWN, UP, PAGE_DOWN, PAGE_UP, ENTER, TAB, LEFT, RIGHT, HOME, END -> hideCompletion();
+                    default -> {}
+                }
                 return;
             }
             // Emacs-style C-n / C-p move the selection too (the area takes just these chords while the popup
@@ -1682,6 +1689,47 @@ public final class BufferCompletion {
                     renderCompletion(a, requested, localItems);
                     if (result.incomplete() && lastRequestVersion != host.docVersion()) updateCompletion(a, false);
                 });
+        waitingTimer.setOnFinished(e -> showWaiting(a, requested, gen, localItems, source.serverName()));
+        waitingTimer.playFromStart();
+    }
+
+    /** How long a server may take before the list says it is waiting for it (Python review 2 E103). */
+    static final javafx.util.Duration WAITING_AFTER = javafx.util.Duration.millis(300);
+
+    private final javafx.animation.PauseTransition waitingTimer = new javafx.animation.PauseTransition(WAITING_AFTER);
+
+    /**
+     * The server has not answered {@code requested} within {@link #WAITING_AFTER}: shows the buffer's own rows with
+     * "Waiting for Pyright…" under them. A 49,000-line Python file kept Pyright busy for 13 s, and the popup showed
+     * nothing at all meanwhile (Python review 2 E103). The answer, when it lands, replaces this list.
+     */
+    private void showWaiting(
+            CodeArea a, CompletionSession requested, long gen, List<Completion> localItems, @Nullable String server) {
+        if (gen != completionGen
+                || session != requested
+                || requested.result() != null
+                || a.getScene() == null
+                || !a.isFocused()
+                || !requested.matches(a.getCaretPosition(), host.docVersion())
+                || codeActionsShowing()) return;
+        Bounds bounds = caretAnchorBounds(a);
+        if (bounds == null) return;
+        completionAnchorStart = a.getCaretPosition() - requested.prefix().length();
+        completionAnchor = bounds;
+        completionArea = a;
+        if (!localItems.isEmpty()) a.getProperties().put(OWNED_CHORDS, LIST_CHORDS);
+        completionPopup().setQuery(requested.prefix());
+        completionPopup()
+                .showWaiting(
+                        a.getScene().getWindow(),
+                        bounds,
+                        localItems,
+                        server == null
+                                ? com.editora.i18n.Messages.tr("completion.waitingServer")
+                                : com.editora.i18n.Messages.tr("completion.waiting", server));
+        localShown = true;
+        localCaret = a.getCaretPosition();
+        localVersion = host.docVersion();
     }
 
     private void renderCompletion(CodeArea a, CompletionSession context, List<Completion> localItems) {
@@ -1838,7 +1886,7 @@ public final class BufferCompletion {
 
     /**
      * Preserves server overloads; removes duplicate local snippets and the server templates a local snippet
-     * shadows, and caps the displayed list.
+     * shadows, and lets buffer words fill the list only up to {@link #MERGED_ROWS}.
      */
     public static java.util.List<Completion> mergeCompletions(
             java.util.List<Completion> lsp, java.util.List<Completion> local) {
@@ -1848,7 +1896,7 @@ public final class BufferCompletion {
         // A local snippet is never dropped for a server word with its trigger's text: its insert IS its trigger, so
         // bash-language-server's `case` keyword and `echo` builtin took Editora's case and echo snippets away, and
         // the server's own `case` snippet went too, as shadowed by the snippet just dropped (Bash review C6). It is
-        // listed right after the server row of the same word, so the cap below never cuts it off a long list.
+        // listed right after the server row of the same word.
         var triggers = new java.util.HashSet<String>();
         var snippetKeys = new java.util.HashSet<String>();
         var snippetsByTrigger = new java.util.LinkedHashMap<String, java.util.List<Completion>>();
@@ -1875,13 +1923,20 @@ public final class BufferCompletion {
             }
         for (var kept : snippetsByTrigger.values())
             for (Completion snippet : kept) if (placed.add(snippet)) out.add(snippet);
-        for (Completion c : local) if (c.kind() != Completion.Kind.SNIPPET && inserts.add(c.insert())) out.add(c);
-        if (out.size() <= 50) return List.copyOf(out);
-        int room = 50 - placed.size(); // the snippets stay; the server's long tail of commands is what goes
-        var capped = new java.util.ArrayList<Completion>(50);
-        for (Completion c : out) if (placed.contains(c) || room-- > 0) capped.add(c);
-        return List.copyOf(capped.subList(0, Math.min(50, capped.size())));
+        // Buffer words only fill the list up to MERGED_ROWS. Every server row stays (up to a safety bound): the
+        // list is virtual, and capping it at 50 left `os.` without path, getcwd or sep (Python review 2 E106).
+        if (out.size() > MAX_SERVER_ROWS)
+            out.subList(MAX_SERVER_ROWS, out.size()).clear();
+        for (Completion c : local)
+            if (c.kind() != Completion.Kind.SNIPPET && out.size() < MERGED_ROWS && inserts.add(c.insert())) out.add(c);
+        return List.copyOf(out);
     }
+
+    /** Rows buffer words may fill a merged list up to; server rows and snippets are never cut to it. */
+    static final int MERGED_ROWS = 50;
+
+    /** Safety bound on server rows: far above any module's members (Pyright's {@code os.} is 419). */
+    static final int MAX_SERVER_ROWS = 5_000;
 
     /** A language server's own snippet item (its {@code kind} is Snippet), as opposed to a local snippet. */
     private static boolean isServerTemplate(Completion c) {

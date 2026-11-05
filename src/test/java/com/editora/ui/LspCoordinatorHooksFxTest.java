@@ -343,6 +343,32 @@ class LspCoordinatorHooksFxTest {
         assertTrue(fx.server().changed.isEmpty(), "an unchanged document is not re-sent");
     }
 
+    /** The marks put back include the faded tags ("os is not accessed"), which the Problems list leaves out:
+     *  restoring the Problems list un-faded every unused import (Python review 2, C105). */
+    @Test
+    void aNetZeroEditPutsBackTheFadedTagsToo() throws Exception {
+        List<List<com.editora.text.LspDiagnostic>> shown = new java.util.concurrent.CopyOnWriteArrayList<>();
+        HookedBuffer buffer = fx.open("B.java", SOURCE, FxTestSupport.callOnFx(() -> new HookedBuffer() {
+            @Override
+            public void setLspDiagnostics(List<com.editora.text.LspDiagnostic> diagnostics) {
+                shown.add(diagnostics);
+                super.setLspDiagnostics(diagnostics);
+            }
+        }));
+        FxTestSupport.runOnFx(() -> fx.coordinator.wireBuffer(buffer));
+        var error = new com.editora.text.LspDiagnostic(
+                1, 9, 1, 11, com.editora.text.LspDiagnostic.Severity.ERROR, "x", null, null);
+        var unused = new com.editora.text.LspDiagnostic(
+                0, 7, 0, 9, com.editora.text.LspDiagnostic.Severity.HINT, "not accessed", null, "Pyright", null, true);
+        FxTestSupport.runOnFx(() -> fx.coordinator.onDiagnostics(buffer.getPath(), List.of(error, unused)));
+        shown.clear();
+
+        fx.run(() -> buffer.change.accept(SOURCE));
+
+        assertFalse(shown.isEmpty(), "the marks were not put back");
+        assertTrue(shown.stream().allMatch(List.of(error, unused)::equals), "what was put back: " + shown);
+    }
+
     @Test
     void theTypingPauseHookRefreshesDiagnosticsOutlineFoldsAndTokens() throws Exception {
         HookedBuffer buffer = wired("A.java");

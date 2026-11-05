@@ -9872,33 +9872,10 @@ public class EditorBuffer implements TabContent {
                 if (gen != highlightGen || version != docVersion || spans.length() != area.getLength()) {
                     return;
                 }
-                setStyleSpansPreservingScroll(0, spans);
+                ScrollAnchor.setStyleSpans(area, 0, spans);
                 scheduleBraceMatch();
             });
         });
-    }
-
-    /**
-     * Applies style spans without letting the viewport jump.
-     *
-     * <p>{@code setStyleSpans} re-runs the document update and can drop the virtual flow's scroll to the top:
-     * measured as {@code estimatedScrollY} going 184 → 0 on the first highlight pass after a session restore,
-     * a couple of pulses after the file had already painted at its saved caret. That is what showed as a
-     * restored file jumping to line 1 on open. Restoring the scroll only when it actually collapsed to the
-     * top keeps this inert for every normal re-highlight (typing, scrolling), where the flow doesn't reset.
-     *
-     * <p>What is put back is the first visible <em>line</em>, not the pixel offset: right after a whole-document
-     * replace (a reload from disk) the offset is an estimate over unmeasured cells, and re-applying it once the
-     * heights are known landed a hundred lines away from where the view had been.
-     */
-    private void setStyleSpansPreservingScroll(int from, StyleSpans<Collection<String>> spans) {
-        Double before = area.estimatedScrollYProperty().getValue();
-        int top = before != null && before > 1 ? ScrollAnchor.firstVisibleLine(area) : -1;
-        area.setStyleSpans(from, spans);
-        Double after = area.estimatedScrollYProperty().getValue();
-        if (before != null && before > 1 && (after == null || after <= 1)) {
-            ScrollAnchor.restore(area, top, before);
-        }
     }
 
     private void applyHighlighting() {
@@ -9944,17 +9921,24 @@ public class EditorBuffer implements TabContent {
         // result is applied only if no newer pass was dispatched and the text is still the snapshot's.
         styled = true;
         java.util.List<SemanticToken> overlay = semanticOverlay();
-        HighlightPass.Request request = new HighlightPass.Request(
-                documentTextSnapshot(),
-                grammar,
-                highlightLines,
-                symbols,
-                highlightDirty.isClean() ? -1 : highlightDirty.start(),
-                highlightDirty.end(),
-                bracketColors,
-                overlay);
         long version = docVersion;
         long gen = ++highlightGen;
+        HighlightPass.Request request = new HighlightPass.Request(
+                        documentTextSnapshot(),
+                        grammar,
+                        highlightLines,
+                        symbols,
+                        highlightDirty.isClean() ? -1 : highlightDirty.start(),
+                        highlightDirty.end(),
+                        bracketColors,
+                        overlay)
+                .withPreview( // a long file's screen is coloured before the rest is tokenized (review 2 E105)
+                        Math.max(ScrollAnchor.firstVisibleLine(area), area.getCurrentParagraph()) + 150,
+                        spans -> Platform.runLater(() -> {
+                            if (gen == highlightGen && version == docVersion) {
+                                ScrollAnchor.setStyleSpans(area, 0, spans);
+                            }
+                        }));
         HighlightPass.submit(HIGHLIGHT_POOL, grammar, () -> {
             HighlightPass.Result r;
             try {
@@ -9976,7 +9960,7 @@ public class EditorBuffer implements TabContent {
                 highlightDirty.applied();
                 highlightLines = r.lines();
                 if (r.spans() != null) {
-                    setStyleSpansPreservingScroll(r.fromOffset(), r.spans());
+                    ScrollAnchor.setStyleSpans(area, r.fromOffset(), r.spans());
                     scheduleBraceMatch(); // re-apply the match highlight the spans just overwrote
                 }
                 if (r.symbolsChanged()) {

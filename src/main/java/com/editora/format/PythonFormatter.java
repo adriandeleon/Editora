@@ -14,6 +14,8 @@ import java.util.function.Predicate;
 import com.editora.process.ProcessRunner;
 import org.jspecify.annotations.Nullable;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * Format Document for Python (adl's decision 4): Pyright has no formatter, so a {@code .py} file is piped through
  * Ruff ({@code ruff format -}) or, failing that, Black ({@code black -q -}) — the two formatters Python
@@ -90,13 +92,11 @@ public final class PythonFormatter {
     /** {@link #find} on this machine: the real file system and Editora's augmented PATH. */
     public static Optional<Found> findLocal(@Nullable Path venv) {
         boolean windows = com.editora.run.PythonInterpreters.isWindows();
-        return find(venv, windows, p -> Files.isRegularFile(p) && Files.isExecutable(p), PythonFormatter::onPath);
-    }
-
-    private static Optional<String> onPath(String name) {
-        List<String> resolved = ProcessRunner.resolveExecutable(List.of(name));
-        String exe = resolved.isEmpty() ? name : resolved.get(0);
-        return exe.equals(name) ? Optional.empty() : Optional.of(exe);
+        return find(
+                venv,
+                windows,
+                p -> Files.isRegularFile(p) && Files.isExecutable(p),
+                com.editora.run.PythonInterpreters::onAugmentedPath);
     }
 
     /** Formats {@code text} (the buffer's, unsaved edits included) as {@code file}. Forks: off the FX thread. */
@@ -108,13 +108,25 @@ public final class PythonFormatter {
                 formatter.argv(file),
                 Map.of("PYTHONIOENCODING", "utf-8"), // Black writes stdout in the locale's encoding otherwise
                 text.getBytes(StandardCharsets.UTF_8));
-        return outcome(formatter, r.exit(), r.out(), r.err());
+        return outcome(formatter, r.exit(), r.out(), r.err(), text, r.outTruncated());
     }
 
-    /** Pure: a formatter's exit, stdout and stderr → the formatted text, or the first useful error line. */
-    static Outcome outcome(Found formatter, int exit, String out, @Nullable String err) {
+    /**
+     * Pure: a formatter's exit, stdout and stderr for {@code input} → the formatted text (with {@code \n} line
+     * breaks, {@link FormatterOutput#lf}), or the first useful error line. Success is not trusted blindly (Python
+     * review 2, D102): Black prints nothing and exits 0 for a file its {@code force-exclude} skips, and output past
+     * the capture limit is cut short — either would have replaced the buffer with nothing, or with its first 10 MB.
+     */
+    static Outcome outcome(
+            Found formatter, int exit, String out, @Nullable String err, String input, boolean truncated) {
         if (exit == 0) {
-            return new Outcome(out, null);
+            if (truncated) {
+                return new Outcome(null, tr("status.python.formatTooLarge", formatter.name()));
+            }
+            if (out.isEmpty() && !input.isBlank()) {
+                return new Outcome(null, tr("status.python.formatNoOutput", formatter.name()));
+            }
+            return new Outcome(FormatterOutput.lf(out), null);
         }
         String line = firstLine(err);
         if (line.isEmpty()) {

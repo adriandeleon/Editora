@@ -246,4 +246,31 @@ class LspServerSettingsTest {
         assertNull(LspServerSettings.answer("python", "python.pythonPath"));
         assertNull(LspServerSettings.answer("bash", "python.pythonPath", null, exe), "only the Python server");
     }
+
+    /**
+     * Problems → Whole project: Pyright is told to check every file ({@code diagnosticMode = "workspace"}), and
+     * the open ones again when it is turned off (Python review 2, B105).
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    void thePythonDiagnosticScopeIsSentInBothChannels() {
+        var open =
+                (Map<String, Object>) ((Map<String, Object>) LspServerSettings.push("python", false, null, null, false)
+                                .get("python"))
+                        .get("analysis");
+        assertEquals("openFilesOnly", open.get("diagnosticMode"));
+        var whole =
+                (Map<String, Object>) ((Map<String, Object>) LspServerSettings.push("python", false, null, null, true)
+                                .get("python"))
+                        .get("analysis");
+        assertEquals("workspace", whole.get("diagnosticMode"));
+        assertEquals(Boolean.TRUE, whole.get("autoSearchPaths"));
+        assertEquals(
+                "workspace",
+                ((Map<String, Object>) LspServerSettings.answer("python", "python.analysis", null, null, true))
+                        .get("diagnosticMode"));
+        assertEquals(
+                "workspace", LspServerSettings.answer("python", "python.analysis.diagnosticMode", null, null, true));
+        assertEquals("openFilesOnly", LspServerSettings.answer("python", "python.analysis.diagnosticMode"));
+    }
 }

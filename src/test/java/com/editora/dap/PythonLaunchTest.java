@@ -98,6 +98,7 @@ class PythonLaunchTest {
 
     @Test
     void aTimeoutSaysWhichInterpreterDidNotRun() {
+        com.editora.i18n.Messages.init("en"); // run alone, the catalog is not loaded yet
         String text = DapManager.launchFailure(
                 new java.util.concurrent.CompletionException(new java.util.concurrent.TimeoutException()),
                 Map.of("python", "/usr/bin/env"));

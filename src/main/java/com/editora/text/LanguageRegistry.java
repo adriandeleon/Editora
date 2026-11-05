@@ -157,6 +157,12 @@ public final class LanguageRegistry {
             Map.entry("py", "python"),
             Map.entry("pyw", "python"),
             Map.entry("pyi", "python"),
+            // Cython and Starlark (Bazel, Buck, Tilt) read as Python: its grammar, comments and indentation.
+            Map.entry("pyx", "cython"),
+            Map.entry("pxd", "cython"),
+            Map.entry("pxi", "cython"),
+            Map.entry("bzl", "starlark"),
+            Map.entry("star", "starlark"),
             Map.entry("rb", "ruby"),
             Map.entry("rake", "ruby"),
             Map.entry("gemspec", "ruby"),

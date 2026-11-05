@@ -990,6 +990,13 @@ final class FileWorkflowCoordinator {
         }
     }
 
+    /** The file's lines as a reader counts them: a final line break does not start another (E109). */
+    private static int textLines(PreparedLoad load) {
+        String content = load.content();
+        return com.editora.lsp.LspServerRegistry.lineCount(
+                load.lines(), content == null || content.isEmpty() || content.endsWith("\n"));
+    }
+
     static TextStats textStats(String text) {
         int lines = 1;
         int lineLength = 0;
@@ -1428,10 +1435,10 @@ final class FileWorkflowCoordinator {
                         com.editora.text.LanguageRegistry.forFileName(
                                 String.valueOf(load.file().getFileName())),
                         true,
-                        load.lines())) {
-            return tr("status.largeFileTierKeepsLsp", load.lines()); // a Python file keeps Pyright (B10)
+                        textLines(load))) {
+            return tr("status.largeFileTierKeepsLsp", textLines(load)); // a Python file keeps Pyright (B10)
         }
-        return load.heavy() ? tr("status.largeFileTier", load.lines()) : "";
+        return load.heavy() ? tr("status.largeFileTier", textLines(load)) : "";
     }
 
     /**

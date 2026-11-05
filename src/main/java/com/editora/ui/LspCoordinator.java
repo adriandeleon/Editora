@@ -314,6 +314,8 @@ final class LspCoordinator {
 
     /** Diagnostics by file, <b>scoped to open files only</b> (a server publishes project-wide). */
     private final Map<Path, List<LspDiagnostic>> problems = new LinkedHashMap<>();
+    /** What each buffer last drew: its faded tags too, which {@link #problems} leaves out (Python 2, C105). */
+    private final Map<EditorBuffer, List<LspDiagnostic>> drawn = new java.util.WeakHashMap<>();
 
     /** The Problems / References / Hierarchy panels, each built on its first use (see the accessors). */
     private @Nullable ProblemsPanel problemsPanel;
@@ -442,7 +444,7 @@ final class LspCoordinator {
                 host.setError(message);
             }
         };
-        this.pythonFormat = new PythonFormatCoordinator(formatHost);
+        this.pythonFormat = new PythonFormatCoordinator(formatHost, host::settings, ops::saveBuffer);
         this.xmlFormat = new XmlFormatCoordinator(formatHost); // XML without a formatting server (C8)
         this.workspaceFiles = java.util.Objects.requireNonNull(workspaceFiles, "workspaceFiles");
         this.workspaceExecutor = java.util.Objects.requireNonNull(workspaceExecutor, "workspaceExecutor");
@@ -511,6 +513,8 @@ final class LspCoordinator {
             }
         });
         lspManager.setPythonInterpreterResolver(pythonInterpreters::pythonPathForServerRoot); // review B1
+        lspManager.setOnPythonEnvironmentChanged(pythonInterpreters::environmentChanged); // review 2, B103
+        pythonInterpreters.setServerRoots(b -> lspRootFor(b, "python")); // the item shows what Pyright is told
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
         lspManager.setOnSecondServer((serverId, root) -> host.setStatus(tr(
@@ -559,7 +563,7 @@ final class LspCoordinator {
      */
     private void diagnosticsUnchanged(@Nullable Path file) {
         EditorBuffer buffer = bufferForLspPath(file);
-        List<LspDiagnostic> last = problems.get(ops.canonicalize(file));
+        List<LspDiagnostic> last = buffer == null ? null : drawn.get(buffer);
         if (buffer != null && last != null && !last.isEmpty()) {
             buffer.setLspDiagnostics(last);
         }
@@ -1466,6 +1470,7 @@ final class LspCoordinator {
         diagnostics = eslint.joined(buffer, diagnostics); // a JS/TS file's ESLint problems join the server's
         if (buffer != null) {
             buffer.setLspDiagnostics(diagnostics);
+            drawn.put(buffer, diagnostics);
             noteNonProjectFile(file, diagnostics);
             xmlTrust.onDiagnostics(buffer, diagnostics); // a schema not downloaded: Trust Folder on the file (C6)
             String blocked = xmlNotices.onDiagnostics(diagnostics, () -> xmlTrust.downloadsOffStatus(buffer)); // C25
@@ -1583,6 +1588,11 @@ final class LspCoordinator {
     void buildWorkspace() {
         EditorBuffer b = host.activeBuffer();
         Path path = b == null ? null : lspPath(b);
+        if (path != null && "python".equals(lspManager.managedServerId(path))) {
+            setProjectWideProblems(true); // Pyright then checks every file (Python review 2, E101)
+            host.setStatus(tr("status.lsp.pythonWholeProject"));
+            return;
+        }
         if (path == null || !lspManager.hasJavaSession(path)) {
             host.setStatus(tr("status.lsp.unavailable"));
             return;
@@ -1609,12 +1619,14 @@ final class LspCoordinator {
     /** Drops {@code file}'s diagnostics (a tab closed / its LSP session ended) + refreshes the panel. */
     void clearDiagnostics(@Nullable Path file) {
         problems.remove(ops.canonicalize(file));
+        drawn.remove(bufferForLspPath(file));
         refreshProblems();
     }
 
     /** Clears every file's diagnostics (LSP disabled / servers restarted) + refreshes the panel. */
     void clearAllDiagnostics() {
         problems.clear();
+        drawn.clear();
         refreshProblems();
     }
 
@@ -2622,6 +2634,13 @@ final class LspCoordinator {
         }
     }
 
+    /** {@code b}'s managing server as {@link LspFeatureNotice} names it ("Pyright"), or null (C107, E103). */
+    LspFeatureNotice.@Nullable Server serverOf(@Nullable EditorBuffer b) {
+        Path path = b == null ? null : lspPath(b);
+        String id = path == null ? null : lspManager.managedServerId(path);
+        return path == null || id == null ? null : new LspFeatureNotice.Server(lspManager, path, serverProgram(id));
+    }
+
     /** Re-applies the inlay-hints gate to every open buffer (the palette/Settings toggle's apply). */
     void applyInlayHints() {
         lspManager.setTypeScriptSettings(
@@ -2790,9 +2809,7 @@ final class LspCoordinator {
                 // The intermediate large-source tier skips LSP (keeps highlighting) — up to a per-language limit:
                 // Python keeps Pyright to 50,000 lines (review B10).
                 && com.editora.lsp.LspServerRegistry.lspAllowedForSize(
-                        buffer.getLanguage(),
-                        buffer.isHeavyFile(),
-                        buffer.getArea().getParagraphs().size())
+                        buffer.getLanguage(), buffer.isHeavyFile(), LspDocumentFacts.lines(buffer))
                 // While narrowed the area holds only the region, so every position the server sends or
                 // receives is offset — a formatting edit or code action would land in the wrong place and
                 // corrupt the file. Suspend the document until the buffer is widened again.
@@ -2953,6 +2970,9 @@ final class LspCoordinator {
         if (resolved != null && "html".equals(serverId)) {
             return com.editora.lsp.RootResolver.siteRoot(resolved, file, ops.lspProjectRoot()); // `/` links (A6)
         }
+        if (resolved != null && "python".equals(serverId)) { // a sub-project's own Pyright (Python review 2, B101)
+            return com.editora.lsp.RootResolver.pythonProjectRoot(resolved, file, ops.lspProjectRoot());
+        }
         if (resolved != null && com.editora.lsp.TypeScriptServer.SERVER_ID.equals(serverId)) {
             return com.editora.lsp.RootResolver.typeScriptWorkspaceRoot(resolved, ops.lspProjectRoot()); // JS B106
         }
@@ -3026,13 +3046,9 @@ final class LspCoordinator {
         }
     }
 
-    /** Whether {@code target} lies outside the server root and the project. Pure. */
+    /** {@link com.editora.lsp.RootResolver#isLibraryTarget}. Pure. */
     static boolean isLibraryTarget(Path target, Path serverRoot, @Nullable Path projectRoot) {
-        Path t = target.toAbsolutePath().normalize();
-        if (serverRoot != null && t.startsWith(serverRoot.toAbsolutePath().normalize())) {
-            return false;
-        }
-        return projectRoot == null || !t.startsWith(projectRoot.toAbsolutePath().normalize());
+        return com.editora.lsp.RootResolver.isLibraryTarget(target, serverRoot, projectRoot);
     }
 
     /** The origin recorded for {@code file} when the buffer is about to be served by {@code serverId}. */
@@ -3285,9 +3301,8 @@ final class LspCoordinator {
     private final XmlFormatCoordinator xmlFormat;
 
     /**
-     * {@code lsp.formatDocument} for a Python file: Ruff or Black when no running server formats it; for an XML
-     * file, the built-in {@link XmlFormatCoordinator}. True when this took the command — then it works with the
-     * language server off too.
+     * {@code lsp.formatDocument} without a formatting server: Ruff/Black (Python), the built-in XML formatter, or
+     * Prettier/Biome (JS/TS). True when this took the command — then it works with the language server off too.
      */
     boolean formatPythonExternally() {
         pythonInterpreters.captureSnapshot();
@@ -3912,6 +3927,7 @@ final class LspCoordinator {
      */
     void afterUserSave(EditorBuffer buffer) {
         jsFormat.afterUserSave(buffer); // JS/TS: organize imports, ESLint's fixes, format (JS review F)
+        pythonFormat.afterUserSave(buffer); // Python: Ruff/Black when Settings ask (Python review 2, A111)
         boolean cleanup = host.settings().isJavaCleanupOnSave();
         boolean organize = host.settings().isJavaOrganizeImportsOnSave();
         boolean format = host.settings().isJavaFormatOnSave();
@@ -4096,21 +4112,22 @@ final class LspCoordinator {
                 inlayScrollSettle.playFromStart();
             }
         });
-        buffer.setLspCompletionSource((line, column, kind, trigger, cb) -> {
-            Path path = lspPath(buffer);
-            if (path != null && lspManager.isManaged(path)) {
-                return lspManager.completion(
-                        path,
-                        line,
-                        column,
-                        kind,
-                        trigger,
-                        item -> autoImportAccept(buffer, item),
-                        pomCompletionFilter(buffer, line, column, kind, trigger, cb));
-            }
-            cb.accept(com.editora.completion.CompletionResult.EMPTY);
-            return () -> {};
-        });
+        buffer.setLspCompletionSource(com.editora.completion.CompletionSource.named(
+                () -> LspFeatureNotice.nameOf(serverOf(buffer)), (line, column, kind, trigger, cb) -> {
+                    Path path = lspPath(buffer);
+                    if (path != null && lspManager.isManaged(path)) {
+                        return lspManager.completion(
+                                path,
+                                line,
+                                column,
+                                kind,
+                                trigger,
+                                item -> autoImportAccept(buffer, item),
+                                pomCompletionFilter(buffer, line, column, kind, trigger, cb));
+                    }
+                    cb.accept(com.editora.completion.CompletionResult.EMPTY);
+                    return () -> {};
+                }));
         // Lazy documentation for the completion doc side-popup: resolve the item's docs on demand.
         buffer.setCompletionDocResolver((token, cb) -> {
             Path path = lspPath(buffer);

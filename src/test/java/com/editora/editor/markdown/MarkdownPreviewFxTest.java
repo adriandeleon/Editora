@@ -444,12 +444,8 @@ class MarkdownPreviewFxTest {
         EditorFx.awaitChange(() -> pane(buffer).contentProperty(), () -> {
             org.fxmisc.richtext.CodeArea area = buffer.getArea();
             // Styles that differ from the ones it has, as the first highlighting pass brings.
-            EditorFx.call(
-                    buffer,
-                    "setStyleSpansPreservingScroll",
-                    new Class<?>[] {int.class, org.fxmisc.richtext.model.StyleSpans.class},
-                    0,
-                    org.fxmisc.richtext.model.StyleSpans.singleton(List.of("text"), area.getLength()));
+            ScrollAnchor.setStyleSpans(
+                    area, 0, org.fxmisc.richtext.model.StyleSpans.singleton(List.of("text"), area.getLength()));
             assertTrue(area.estimatedScrollYProperty().getValue() <= 1, "the window this is about");
             buffer.setMarkdownViewMode(MarkdownViewMode.PREVIEW);
         });

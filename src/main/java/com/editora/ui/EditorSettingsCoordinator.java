@@ -914,8 +914,26 @@ final class EditorSettingsCoordinator {
                 });
     }
 
-    /** Picker for how aggressively inlay parameter-name hints are suppressed (Literals only / All). */
+    /** After a toggle turned a feature on: says so when the active file's server does not give it (C107). */
+    void noteMissingFeature(LspFeatureNotice.Feature feature, boolean on) {
+        String notice =
+                on ? LspFeatureNotice.forServer(host.lspCoordinator().serverOf(host.activeBuffer()), feature) : null;
+        if (notice != null) {
+            host.setStatus(notice);
+        }
+    }
+
+    /**
+     * Picker for how aggressively inlay parameter-name hints are suppressed (Literals only / All). On a file whose
+     * server gives no inlay hints (Pyright) there is nothing to filter: it says so instead (C107).
+     */
     void chooseInlayHintMode() {
+        String notice = LspFeatureNotice.forServer(
+                host.lspCoordinator().serverOf(host.activeBuffer()), LspFeatureNotice.Feature.INLAY_HINT_FILTER);
+        if (notice != null) {
+            host.setStatus(notice);
+            return;
+        }
         chooseSetting(
                 "lsp.setInlayHintMode", () -> List.of("literals", "all"), SettingsWindow::inlayHintModeName, id -> {
                     Settings s = host.config().getSettings();

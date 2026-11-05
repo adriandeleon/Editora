@@ -21,6 +21,7 @@ final class StructureNode {
     private List<SyntaxRun> nameRuns = List.of();
     private List<SyntaxRun> returnRuns = List.of();
     private String doc = ""; // filled by attachDocs() from the buffer text; "" when none
+    private String marker = ""; // a Python def's `async` / `property` / `classmethod` …; "" when none
     private final List<StructureNode> children = new ArrayList<>();
 
     StructureNode(@Nullable Region region, String label, @Nullable String kind, int line) {
@@ -71,6 +72,14 @@ final class StructureNode {
 
     void setReturnRuns(List<SyntaxRun> runs) {
         returnRuns = runs == null ? List.of() : List.copyOf(runs);
+    }
+
+    String marker() {
+        return marker;
+    }
+
+    void setMarker(String marker) {
+        this.marker = marker == null ? "" : marker;
     }
 
     String doc() {

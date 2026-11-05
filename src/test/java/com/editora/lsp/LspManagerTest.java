@@ -143,7 +143,8 @@ class LspManagerTest {
                         "settings",
                         Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", true))))),
                 LspManager.initOptionsFor("maven-pom", List.of()));
-        assertNull(LspManager.initOptionsFor("python", List.of()));
+        // Pyright publishes: pulled diagnostics covered the open files only (Python review 2, B105)
+        assertEquals(Map.of("disablePullDiagnostics", true), LspManager.initOptionsFor("python", List.of()));
         assertNull(LspManager.initOptionsFor("typescript", List.of()));
         assertNull(LspManager.initOptionsFor(null, List.of()));
     }

@@ -102,6 +102,14 @@ class JsToolRunTest {
                         .error());
     }
 
+    /** Prettier with {@code endOfLine: "crlf"}: read as LF, as the buffer holds it (Python review 2, A103). */
+    @Test
+    void aCrlfResultIsReadAsLf() {
+        var crlf = JsToolRun.formatOutcome(
+                JsTools.Kind.PRETTIER, new JsToolRun.Output(0, "x = 1;\r\ny = 2;\r\n", "", false, false), "x=1\ny=2\n");
+        assertEquals("x = 1;\ny = 2;\n", crlf.text());
+    }
+
     @Test
     void eslintExitsOneWithProblemsAndTwoWithAReasonAfterItsOops() {
         var problems = JsToolRun.eslintOutcome(

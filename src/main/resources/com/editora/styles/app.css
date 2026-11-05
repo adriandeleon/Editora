@@ -357,6 +357,13 @@
     -fx-fill: -color-fg-muted;
 }
 
+/* A Python def's kind word (async, property, classmethod …) beside its row: quieter than the signature. */
+.structure-tree .structure-marker {
+    -fx-fill: -color-fg-muted;
+    -fx-font-style: italic;
+    -fx-font-size: 0.85em;
+}
+
 .structure-tree .structure-line-number,
 .bookmarks-tree .bookmark-line-number,
 .notes-tree .note-line-number {
@@ -3941,6 +3948,12 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 11px;
 }
+/* "Waiting for Pyright…" under the rows while a slow server's list is on its way (Python review 2 E103). */
+.completion-waiting {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+    -fx-padding: 4 10 4 10;
+}
 /* Snippet rows get an accent label so they read as "expandable" vs plain words. */
 .completion-kind-snippet .completion-label-text {
     -fx-fill: -color-accent-fg;
@@ -5844,12 +5857,14 @@
     -fx-border-color: transparent transparent -color-border-muted transparent;
     -fx-border-width: 0 0 1 0;
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.18), 6, 0, 0, 2);
-    -fx-padding: 0;
+    /* No -fx-padding: StickyScrollBar sets the left inset to the code's text column, and a stylesheet value
+       would win over it on every CSS pass. */
 }
 /* No vertical padding: StickyScrollBar holds each row to one code line, so the rows cover exactly the lines
    they stand in for. */
+/* No left padding: StickyScrollBar insets the rows to where the code's text starts, past the gutter. */
 .sticky-scroll-row {
-    -fx-padding: 0 6 0 6;
+    -fx-padding: 0 6 0 0;
     -fx-cursor: hand;
 }
 .sticky-scroll-row:hover {

@@ -393,13 +393,33 @@ public final class StatusBar extends HBox {
         return b;
     }
 
-    /** Builds a clickable segment label that dispatches {@code commandId} when clicked. */
+    /** Builds a clickable segment label that dispatches {@code commandId} when clicked, or from the keyboard. */
     private Label segment(String commandId, String hint) {
         Label label = new Label();
         label.getStyleClass().addAll("status-segment", "status-segment-clickable");
         label.setTooltip(new Tooltip(hint));
-        label.setOnMouseClicked(e -> registry.run(commandId));
+        asButton(label, commandId, hint);
         return label;
+    }
+
+    /**
+     * Makes {@code seg} a keyboard-reachable button (Tab, then Enter or Space) a screen reader announces with
+     * {@code hint}, besides a mouse click. The built-in segments (the Python interpreter, the language server) were
+     * mouse-only, unlike a plugin's (Python review 2, C112).
+     */
+    private void asButton(Label seg, String commandId, @Nullable String hint) {
+        seg.setOnMouseClicked(e -> registry.run(commandId));
+        seg.setFocusTraversable(true);
+        seg.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON);
+        if (hint != null && !hint.isBlank()) {
+            seg.setAccessibleHelp(hint);
+        }
+        seg.setOnKeyPressed(e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.ENTER || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
+                e.consume();
+                registry.run(commandId);
+            }
+        });
     }
 
     /**
@@ -418,16 +438,7 @@ public final class StatusBar extends HBox {
         }
         if (commandId != null && !commandId.isBlank()) {
             seg.getStyleClass().add("status-segment-clickable");
-            seg.setOnMouseClicked(e -> registry.run(commandId));
-            seg.setFocusTraversable(true);
-            seg.setAccessibleRole(javafx.scene.AccessibleRole.BUTTON);
-            seg.setOnKeyPressed(e -> {
-                if (e.getCode() == javafx.scene.input.KeyCode.ENTER
-                        || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
-                    e.consume();
-                    registry.run(commandId);
-                }
-            });
+            asButton(seg, commandId, hint);
         }
         getChildren().add(seg);
         return seg;
@@ -810,6 +821,7 @@ public final class StatusBar extends HBox {
         boolean show = text != null && !text.isBlank() && !simpleMode;
         pythonInterpreter.setText(show ? text : "");
         pythonInterpreter.setTooltip(show && tooltip != null ? new Tooltip(tooltip) : null);
+        pythonInterpreter.setAccessibleHelp(show ? tooltip : null); // what a screen reader says it does (C112)
         pythonInterpreter.setVisible(show);
         pythonInterpreter.setManaged(show);
     }
@@ -897,10 +909,14 @@ public final class StatusBar extends HBox {
         }
     }
 
+    /** Refreshes the segments when the attached buffer's editability changes (View mode on or off). */
+    private final javafx.beans.value.ChangeListener<Boolean> editableListener = (obs, was, now) -> refresh();
+
     /** Re-binds live listeners to {@code buffer} (or none) and refreshes the segments. */
     public void attach(@Nullable EditorBuffer buffer) {
         if (attached != null) {
             attached.focusedAreaProperty().removeListener(viewListener);
+            attached.getArea().editableProperty().removeListener(editableListener);
             trackCaret(attached.getFocusedArea(), false);
         }
         if (sizeSub != null) {
@@ -913,6 +929,9 @@ public final class StatusBar extends HBox {
             // Ln/Col + the CSV field track the caret cheaply (no full-document scan).
             trackCaret(buffer.getFocusedArea(), true);
             buffer.focusedAreaProperty().addListener(viewListener);
+            // View mode set after the tab was shown (a library file Go to Definition opened) must not leave
+            // "Editable" in the status bar (Python review 2 E107).
+            buffer.getArea().editableProperty().addListener(editableListener);
             // The file size only changes on an EDIT — and computing it materializes the whole document (an
             // O(n) String + byte[]), so it must not run per keystroke. It was previously bound to textProperty
             // (which itself re-materializes the whole document per keystroke) AND recomputed on every caret
@@ -924,10 +943,33 @@ public final class StatusBar extends HBox {
                         EditorBuffer b = activeBuffer.get();
                         if (b != null) {
                             refreshSize(b);
+                            refreshIndent(b);
                         }
                     });
         }
         refresh();
+    }
+
+    /**
+     * The tab-size segment, which in a Python file also warns of tabs and spaces mixed the way Python rejects
+     * ({@code TabError}): the file runs nowhere and, drawn at this tab width, may not even look wrong (review 2
+     * A108). Called on attach/refresh and once per typing burst; a file without a tab costs one scan for one.
+     */
+    private void refreshIndent(EditorBuffer buffer) {
+        int bad = buffer.isPython()
+                ? com.editora.editops.PythonScan.inconsistentTabLine(
+                        buffer.getArea().getText())
+                : -1;
+        indent.setText(tr(bad < 0 ? "statusbar.tabSizeShort" : "statusbar.tabSizeMixed", buffer.getTabSize()));
+        indent.getTooltip()
+                .setText(bad < 0 ? tr("statusbar.tip.setTabSize") : tr("statusbar.tip.indentMixed", bad + 1));
+        if ((bad >= 0) != indent.getStyleClass().contains("status-encoding-assumed")) {
+            if (bad >= 0) {
+                indent.getStyleClass().add("status-encoding-assumed"); // the format group's warning colour
+            } else {
+                indent.getStyleClass().remove("status-encoding-assumed");
+            }
+        }
     }
 
     /** Recomputes every segment from the active buffer's current state. */
@@ -993,9 +1035,11 @@ public final class StatusBar extends HBox {
 
         // Indent + encoding reflect the active buffer's effective values (an .editorconfig can override
         // the global tab size / charset per file), else the global default.
-        indent.setText(tr(
-                "statusbar.tabSizeShort",
-                hasBuffer ? buffer.getTabSize() : settings.get().getTabSize()));
+        if (hasBuffer) {
+            refreshIndent(buffer);
+        } else {
+            indent.setText(tr("statusbar.tabSizeShort", settings.get().getTabSize()));
+        }
         boolean assumed = hasBuffer && buffer.isCharsetAssumed();
         encoding.setText(
                 hasBuffer

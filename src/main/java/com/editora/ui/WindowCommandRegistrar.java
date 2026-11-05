@@ -2457,15 +2457,18 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of("lsp.typeHierarchy", () -> host.ifLsp(host.lspCoordinator()::typeHierarchy)));
         host.registry().register(Command.of("view.toggleLsp", host::toggleLsp));
-        host.registry()
-                .register(Command.of(
-                        "view.toggleSemanticHighlight",
-                        () -> host.editorSettings()
-                                .toggleSetting(
-                                        "view.toggleSemanticHighlight",
-                                        () -> host.config().getSettings().isSemanticHighlight(),
-                                        host.config().getSettings()::setSemanticHighlight,
-                                        host.lspCoordinator()::applySemanticHighlight)));
+        host.registry().register(Command.of("view.toggleSemanticHighlight", () -> {
+            host.editorSettings()
+                    .toggleSetting(
+                            "view.toggleSemanticHighlight",
+                            () -> host.config().getSettings().isSemanticHighlight(),
+                            host.config().getSettings()::setSemanticHighlight,
+                            host.lspCoordinator()::applySemanticHighlight);
+            host.editorSettings()
+                    .noteMissingFeature(
+                            LspFeatureNotice.Feature.SEMANTIC_TOKENS,
+                            host.config().getSettings().isSemanticHighlight());
+        }));
         host.registry()
                 .register(Command.of(
                         "view.toggleOnTypeFormatting",
@@ -2502,24 +2505,30 @@ final class WindowCommandRegistrar {
                                         () -> host.editorSettings()
                                                 .applyViewSettingsToAllBuffers(
                                                         host.config().getSettings()))));
-        host.registry()
-                .register(Command.of(
-                        "view.toggleInlayHints",
-                        () -> host.editorSettings()
-                                .toggleSetting(
-                                        "view.toggleInlayHints",
-                                        () -> host.config().getSettings().isInlayHints(),
-                                        host.config().getSettings()::setInlayHints,
-                                        host.lspCoordinator()::applyInlayHints)));
-        host.registry()
-                .register(Command.of(
-                        "view.toggleCodeLens",
-                        () -> host.editorSettings()
-                                .toggleSetting(
-                                        "view.toggleCodeLens",
-                                        () -> host.config().getSettings().isCodeLens(),
-                                        host.config().getSettings()::setCodeLens,
-                                        host.lspCoordinator()::applyInlayHints)));
+        host.registry().register(Command.of("view.toggleInlayHints", () -> {
+            host.editorSettings()
+                    .toggleSetting(
+                            "view.toggleInlayHints",
+                            () -> host.config().getSettings().isInlayHints(),
+                            host.config().getSettings()::setInlayHints,
+                            host.lspCoordinator()::applyInlayHints);
+            host.editorSettings()
+                    .noteMissingFeature(
+                            LspFeatureNotice.Feature.INLAY_HINTS,
+                            host.config().getSettings().isInlayHints());
+        }));
+        host.registry().register(Command.of("view.toggleCodeLens", () -> {
+            host.editorSettings()
+                    .toggleSetting(
+                            "view.toggleCodeLens",
+                            () -> host.config().getSettings().isCodeLens(),
+                            host.config().getSettings()::setCodeLens,
+                            host.lspCoordinator()::applyInlayHints);
+            host.editorSettings()
+                    .noteMissingFeature(
+                            LspFeatureNotice.Feature.CODE_LENS,
+                            host.config().getSettings().isCodeLens());
+        }));
         host.registry().register(Command.of("lsp.setInlayHintMode", host.editorSettings()::chooseInlayHintMode));
         host.registry()
                 .register(Command.of(
@@ -3363,12 +3372,10 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("nav.recentLocations", host.navigation()::showRecentLocations));
         host.registry().register(Command.of("nav.relatedFile", host.navigation()::gotoRelatedFile));
         host.registry()
-                .register(Command.of(
-                        "nav.beginningOfDefun",
-                        () -> host.editing().sexpMove(com.editora.editops.SexpNav::beginningOfDefun)));
+                .register(
+                        Command.of("nav.beginningOfDefun", () -> host.editing().defunMove(false)));
         host.registry()
-                .register(Command.of(
-                        "nav.endOfDefun", () -> host.editing().sexpMove(com.editora.editops.SexpNav::endOfDefun)));
+                .register(Command.of("nav.endOfDefun", () -> host.editing().defunMove(true)));
         host.registry().register(Command.of("nav.moveToWindowLine", host.editing()::moveToWindowLine));
     }
 
