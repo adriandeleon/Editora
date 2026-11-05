@@ -5785,6 +5785,15 @@ final class MapSurface extends Region {
         return chrome;
     }
 
+    /**
+     * The project's own column — the first the map shows, listing the root — as drawn, {@code {x, y, w, h}} in panel
+     * pixels, on screen or not; null when there is none. The Overview card opens before it, the way the map flows.
+     */
+    double @Nullable [] cardRootColumn() {
+        ColumnBox root = columnOpenedBy(view.root);
+        return root == null ? null : new double[] {root.x(), root.y(), root.width(), root.height()};
+    }
+
     /** Every column on screen as {@code {x, y, w, h, 1}}, for a card's Structure column choosing its side. */
     List<double[]> cardColumns() {
         List<double[]> columns = new ArrayList<>();

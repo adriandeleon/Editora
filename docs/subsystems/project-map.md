@@ -1018,6 +1018,15 @@ never opens it by itself), which marks it seen and tells `setOnOverviewSeen`; �
 again with the facts worked out afresh. Its first line is the one-time orientation subtitle: what a column is, where
 to search, and that ? lists every key.
 
+It opens first on the map, before the project's own column the way the map flows (`MapCards.overviewPlacement`,
+the pure `overviewSpot`): left of it left to right, right of it right to left, above it top to bottom, below it
+bottom to top, level with the column's start (`MapSurface.cardRootColumn`). Unlike the other cards it may pan the
+map, along the flow and only by the room it is missing, never so far that the root column leaves the view; with
+still too little room it narrows to its minimum, and across the flow it gets shorter rather than out of line, and
+clears the zoom bar. Its title bar has **−/+** like a code card's: they set the sections' font size
+(`setTextZoom`, 0.5–3.0, ×1.1 a press, as `-fx-font-size` on the sections with every size in app.css in `em` of
+it), and the next Overview opens at the last size for the rest of the session (`MapCards.overviewTextZoom`).
+
 ### Activity: recent changes and owners (Map explore positions 3, 4)
 
 `ProjectMapActivity` holds what the Map shows of a project's activity. **Recent changes**: the ⋯ option **Show

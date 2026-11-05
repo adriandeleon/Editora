@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The Map's Project overview card has −/+ and opens first.** Like a file's preview card, its title bar has −/+
+  to make its text smaller or larger; the next overview opens at the same size. It now opens before the project's
+  own column, the way the map flows — left of it left to right, right of it right to left, above it top to bottom,
+  below it bottom to top — and the map moves aside just enough to make room, instead of the card covering the
+  panel's far side.
 - **Find File opens a folder as a project.** In the Find File popup (C-x C-f in Emacs), C-d opens the highlighted
   folder as a project instead of descending into it. With the field ending in a separator and the highlight not
   moved, it opens the folder being listed; on a file, the folder the file is in. The legend shows the key when
