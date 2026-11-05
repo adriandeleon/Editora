@@ -1404,6 +1404,11 @@ final class DebugCoordinator {
             public void onStatus(String message) {
                 host.setStatus(message);
             }
+
+            @Override
+            public void onCompileFailed() { // javac refused it: the header says so, as for a failed build (A201)
+                panel().setLaunchRefused(tr("debugpanel.state.buildFailed"));
+            }
         };
     }
 
@@ -2017,8 +2022,9 @@ final class DebugCoordinator {
      * project (review 2, A101). jdtls built that folder's classes once, at import, and nothing rebuilt them: every
      * later launch ran old code, and a file that did not compile ran as "Unresolved compilation problem". Its
      * source folder is corrected first (a packaged class in a folder jdtls guessed wrong would not build), then
-     * jdtls builds it, compile errors stop the launch, and only a launch whose build succeeded may use jdtls's
-     * output ({@link DapManager#setLooseClassesBuilt}); any other compiles the file itself.
+     * jdtls builds it, and only a launch whose build succeeded may use jdtls's output
+     * ({@link DapManager#setLooseClassesBuilt}); any other compiles the file with javac from its declared source
+     * root, and javac's errors — only those the program reaches — stop it ({@link JavaLaunchPrep#afterBuild}).
      */
     private void looseBuildThenLaunch(Path routing, Runnable launch) {
         lsp.ensureManaged(routing);
@@ -2113,14 +2119,13 @@ final class DebugCoordinator {
             pendingBuildFile = null;
             panel().setPreparing(false);
             ops.setStatusDebugLoading(false);
-            if (result.outcome() == LspManager.BuildOutcome.WITH_ERRORS) {
-                // A loose file in a window without a project: errors outside its own folder do not stop it.
-                Runnable proceed = loose ? launch : null;
-                showBuildErrors(routing, result.errors(), BUILD_ERROR_WAITS, proceed);
+            JavaLaunchPrep.AfterBuild next = JavaLaunchPrep.afterBuild(result.outcome(), loose);
+            if (next == JavaLaunchPrep.AfterBuild.REFUSE) {
+                showBuildErrors(routing, result.errors(), BUILD_ERROR_WAITS);
                 return;
             }
-            if (loose) {
-                dapManager.setLooseClassesBuilt(result.outcome() == LspManager.BuildOutcome.SUCCEEDED);
+            if (loose) { // without jdtls's output, javac compiles it from its declared source root (review 3, A201)
+                dapManager.setLooseClassesBuilt(next == JavaLaunchPrep.AfterBuild.LAUNCH_BUILT);
             }
             launch.run();
         });
@@ -2133,11 +2138,7 @@ final class DebugCoordinator {
      * every Java file of the project was saved first) — and may still be on their way, so with none known yet
      * this looks again a few times before saying only that there are errors.
      */
-    private void showBuildErrors(
-            Path routing,
-            Map<Path, List<com.editora.text.LspDiagnostic>> published,
-            int waits,
-            @Nullable Runnable loose) {
+    private void showBuildErrors(Path routing, Map<Path, List<com.editora.text.LspDiagnostic>> published, int waits) {
         Map<Path, List<com.editora.text.LspDiagnostic>> found = new java.util.TreeMap<>(lsp.problems());
         found.putAll(published);
         // Only this launch's project: the Problems window holds every open file's, of every language (review 2, A104).
@@ -2148,14 +2149,8 @@ final class DebugCoordinator {
         if (errors == 0 && importErrors.isEmpty() && waits > 0) {
             javafx.animation.PauseTransition later =
                     new javafx.animation.PauseTransition(javafx.util.Duration.millis(250));
-            later.setOnFinished(e -> showBuildErrors(routing, published, waits - 1, loose));
+            later.setOnFinished(e -> showBuildErrors(routing, published, waits - 1));
             later.play();
-            return;
-        }
-        if (errors == 0 && importErrors.isEmpty() && loose != null && project == null) {
-            // A loose file whose own folder compiles: the errors are elsewhere in the folder it was opened from.
-            dapManager.setLooseClassesBuilt(true);
-            loose.run();
             return;
         }
         panel().clearConsole();

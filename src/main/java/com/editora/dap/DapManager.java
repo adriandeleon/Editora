@@ -136,6 +136,9 @@ public final class DapManager {
         /** A short message for the status bar about a control that cannot act now (not an error). */
         default void onStatus(String message) {}
 
+        /** The launched file did not compile (javac's report is already in the console): no program was started. */
+        default void onCompileFailed() {}
+
         /**
          * The session launched its program with {@code runtime} — the interpreter or {@code java} argv the
          * adapter starts it with, before the program's own arguments — in {@code where} (its folder, so its
@@ -1529,7 +1532,8 @@ public final class DapManager {
                     failWithConsole(
                             epoch,
                             JavaLaunchSupport.compilerReport(r.out(), r.err(), compileFile, file),
-                            com.editora.i18n.Messages.tr("status.debug.compileFailed", file.getFileName()));
+                            com.editora.i18n.Messages.tr("status.debug.compileFailed", file.getFileName()),
+                            true);
                     return;
                 }
                 synchronized (sessionLock) {
@@ -4233,6 +4237,11 @@ public final class DapManager {
      * the Debug console (as error output, links and all) and {@code status} to the status line.
      */
     private void failWithConsole(long epoch, String console, String status) {
+        failWithConsole(epoch, console, status, false);
+    }
+
+    /** As above; {@code compileFailed}: the launched file did not compile, so nothing was started (review 3, A201). */
+    private void failWithConsole(long epoch, String console, String status, boolean compileFailed) {
         Platform.runLater(() -> {
             if (!isCurrent(epoch)) {
                 return;
@@ -4241,6 +4250,9 @@ public final class DapManager {
                 listener.onOutput(console.endsWith("\n") ? console : console + "\n", "stderr");
             }
             listener.onError(status);
+            if (compileFailed) {
+                listener.onCompileFailed();
+            }
             stop();
         });
     }

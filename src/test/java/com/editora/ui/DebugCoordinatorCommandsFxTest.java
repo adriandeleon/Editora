@@ -641,6 +641,84 @@ class DebugCoordinatorCommandsFxTest {
     }
 
     /**
+     * Review 3, A201 and choice 10: a plain folder whose jdtls build reports errors — jdtls's nested source root
+     * ("The declared package … does not match the expected package") — is compiled by javac from the source root
+     * its package line declares, and runs. A broken file the program does not reach does not stop it; only javac's
+     * own errors do, said as a failed build.
+     */
+    @Test
+    void aPlainFolderJdtlsCannotBuildIsCompiledWithJavacAndOnlyErrorsItReachesStopIt() throws Exception {
+        windowProject = loose;
+        Path util = loose.resolve("src/com/acme/util/Util.java");
+        Files.createDirectories(util.getParent());
+        Files.writeString(
+                util,
+                "package com.acme.util;\npublic class Util {\n    public static int twice(int x) { return 2 * x; }\n}\n");
+        Files.writeString(loose.resolve("src/Unrelated.java"), "class Unrelated { int x = \"not an int\"; }\n");
+        Path main = loose.resolve("src/com/acme/app/Main.java");
+        String source = "package com.acme.app;\nimport com.acme.util.Util;\npublic class Main {\n"
+                + "    public static void main(String[] a) { System.out.println(Util.twice(21)); }\n}\n";
+        buffer(main, source);
+        lspManager.openDocument(main, loose, "java", source);
+        for (FakeLanguageServer fake : fakes) {
+            fake.executeCommandHandler = params -> {
+                commands.add(params.getCommand());
+                return replies.get(params.getCommand());
+            };
+        }
+        replies.put(
+                "vscode.java.resolveMainClass",
+                List.of(Map.of("mainClass", "Main", "projectName", "loose_1", "filePath", main.toString())));
+        replies.put("vscode.java.resolveJavaExecutable", javaExecutable());
+        for (FakeLanguageServer fake : fakes) { // jdtls's build: its nested source root's errors (status 2)
+            fake.rawHandler = raw -> {
+                if (!"java/buildWorkspace".equals(raw.method())) {
+                    return null;
+                }
+                var d = new org.eclipse.lsp4j.Diagnostic(
+                        new org.eclipse.lsp4j.Range(
+                                new org.eclipse.lsp4j.Position(0, 0), new org.eclipse.lsp4j.Position(0, 7)),
+                        "The declared package \"com.acme.util\" does not match the expected package \"\"");
+                d.setSeverity(org.eclipse.lsp4j.DiagnosticSeverity.Error);
+                LspTestHooks.publishDiagnostics(
+                        lspManager,
+                        main,
+                        new org.eclipse.lsp4j.PublishDiagnosticsParams(
+                                util.toUri().toString(), List.of(d)));
+                return 2;
+            };
+        }
+
+        FakeDebugAdapter.Session first = launch();
+
+        assertEquals("com.acme.app.Main", first.launchArgs.get("mainClass"));
+        Path classes = Path.of(String.valueOf(((List<?>) first.launchArgs.get("classPaths")).get(0)));
+        assertTrue(
+                Files.isRegularFile(classes.resolve("com/acme/util/Util.class")), "javac compiled the other package");
+        assertFalse(Files.exists(classes.resolve("Unrelated.class")), "nor what the program does not reach");
+        assertFalse(
+                statuses().contains(tr("status.debug.buildErrors", 1)),
+                statuses().toString());
+
+        // A compile error the program reaches: javac's report, and the launch is refused as a failed build.
+        FxTestSupport.runOnFx(() -> debug.stop());
+        assertTrue(first.disconnected.await(10, TimeUnit.SECONDS));
+        awaitState(null);
+        Files.writeString(
+                util,
+                "package com.acme.util;\npublic class Util {\n    public static int twice(int x) { return \"no\"; }\n}\n");
+        clearLog();
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        awaitStatus(tr("status.debug.error", tr("status.debug.compileFailed", main.getFileName())));
+        FxTestSupport.drainFx();
+        CodeArea console = FxTestSupport.field(debug.panel(), "console");
+        assertTrue(FxTestSupport.callOnFx(console::getText).contains("Util.java:3: error"), "javac's own report");
+        javafx.scene.control.Label header = FxTestSupport.field(debug.panel(), "status");
+        assertEquals(tr("debugpanel.state.buildFailed"), FxTestSupport.callOnFx(header::getText));
+        assertEquals(1, adapter.sessionCount(), "nothing was launched the second time");
+    }
+
+    /**
      * Debug Test / Debug via Build attach to a JVM their run started: Stop used to detach only, and the test or
      * app ran on (review A4). Every JVM of the run is attached in turn — several surefire forks each wait
      * suspended on a port of their own (review D11).
