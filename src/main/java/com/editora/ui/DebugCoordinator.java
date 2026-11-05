@@ -1264,8 +1264,12 @@ final class DebugCoordinator {
                 int shown = frameToShow(reason, frames, DebugCoordinator.this::hasSource);
                 panel().setCallStack(frames, shown);
                 if (shown > 0) {
+                    // A JDK or library frame jdtls can show is "library code", not "no source" (review 2, B107).
                     host.setStatus(tr(
-                            "status.debug.stoppedWithoutSource", frames.get(0).name()));
+                            frames.get(0).sourceUri() != null
+                                    ? "status.debug.stoppedInLibrary"
+                                    : "status.debug.stoppedWithoutSource",
+                            DebugPanelText.frameName(frames.get(0).name())));
                 }
                 dapManager.threads(list -> panel().setThreads(list, dapManager.currentThreadId()));
             }
