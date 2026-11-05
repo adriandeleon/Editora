@@ -88,9 +88,17 @@ public final class LspServerRegistry {
     public static final List<String> TS_ROOT_MARKERS =
             List.of("tsconfig.json", "jsconfig.json", "package.json", ".git");
 
-    /** Markers for a Python project root (pyproject/setup/requirements/Pipfile, else the repo). */
-    public static final List<String> PYTHON_ROOT_MARKERS =
-            List.of("pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile", ".git");
+    /**
+     * Markers for a Python project root: every one {@link #rootMarkerTiersForServer} looks for — the strong ones
+     * ({@link #PYTHON_PROJECT_MARKERS}) first, then the repository ({@code .git}), then a {@code requirements.txt}
+     * or {@code Pipfile}.
+     */
+    public static final List<String> PYTHON_ROOT_MARKERS = List.of(
+            "pyproject.toml", "setup.py", "setup.cfg", "pyrightconfig.json", "requirements.txt", "Pipfile", ".git");
+
+    /** The files that make a folder a Python project of its own (the first tier of {@link #PYTHON_ROOT_MARKERS}). */
+    public static final List<String> PYTHON_PROJECT_MARKERS =
+            List.of("pyproject.toml", "setup.py", "setup.cfg", "pyrightconfig.json");
 
     /** Markers for an XML project root (a build file that often carries the schema, else the repo). */
     public static final List<String> XML_ROOT_MARKERS = List.of("pom.xml", "build.xml", ".git");
@@ -356,7 +364,7 @@ public final class LspServerRegistry {
 
     /**
      * The root markers for a server id in tiers, nearest-first within a tier and tier by tier: Python's own
-     * project files ({@code pyproject.toml}, {@code setup.py}, {@code setup.cfg}) first, then the repository,
+     * project files ({@link #PYTHON_PROJECT_MARKERS}) first, then the repository,
      * and only then a {@code requirements.txt}/{@code Pipfile}. Nearest-of-any let a {@code docs/requirements.txt}
      * (Read the Docs) make {@code docs/} a server root of its own, where the project's package did not resolve
      * (review B9). Kotlin: a Gradle settings file first, so a multi-module build is one root. Every other server:
@@ -369,10 +377,7 @@ public final class LspServerRegistry {
             return List.of(List.of("tsconfig.json", "jsconfig.json"), List.of("package.json"), List.of(".git"));
         }
         if ("python".equals(serverId)) {
-            return List.of(
-                    List.of("pyproject.toml", "setup.py", "setup.cfg"),
-                    List.of(".git"),
-                    List.of("requirements.txt", "Pipfile"));
+            return List.of(PYTHON_PROJECT_MARKERS, List.of(".git"), List.of("requirements.txt", "Pipfile"));
         }
         if ("kotlin".equals(serverId)) {
             // The Kotlin LSP imports the whole Gradle build: a module's build.gradle.kts under a settings file

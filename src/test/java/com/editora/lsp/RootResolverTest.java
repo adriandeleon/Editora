@@ -15,6 +15,57 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RootResolverTest {
 
+    /**
+     * In a project window a Python sub-project with its own {@code pyproject.toml} (or {@code pyrightconfig.json})
+     * gets a server of its own; a file with none keeps the project root (Python review 2, B101).
+     */
+    @Test
+    void aPythonSubProjectIsAServerRootOfItsOwn(@TempDir Path tmp) throws IOException {
+        Path repo =
+                Files.createDirectories(tmp.resolve("repo")).toAbsolutePath().normalize();
+        Path backend = Files.createDirectories(repo.resolve("backend"));
+        Files.writeString(backend.resolve("pyproject.toml"), "[project]\nname = \"b\"\n");
+        Path tools = Files.createDirectories(repo.resolve("tools/checker"));
+        Files.writeString(tools.resolve("pyrightconfig.json"), "{}\n");
+        Files.createDirectories(repo.resolve("scripts"));
+
+        assertEquals(backend, RootResolver.pythonProjectRootUncached(repo, backend.resolve("tests/test_x.py"), repo));
+        assertEquals(tools, RootResolver.pythonProjectRootUncached(repo, tools.resolve("x.py"), repo));
+        assertEquals(repo, RootResolver.pythonProjectRootUncached(repo, repo.resolve("scripts/x.py"), repo));
+        assertEquals(repo, RootResolver.pythonProjectRootUncached(repo, repo.resolve("x.py"), repo));
+        // no project: the markers already chose; a file outside the project keeps what was resolved
+        assertEquals(backend, RootResolver.pythonProjectRoot(backend, backend.resolve("x.py"), null));
+        Path outside = Files.createDirectories(tmp.resolve("outside"));
+        assertEquals(outside, RootResolver.pythonProjectRootUncached(outside, outside.resolve("x.py"), repo));
+    }
+
+    /** A uv workspace's members share its one server and its one {@code .venv}. */
+    @Test
+    void uvWorkspaceMembersStayWithTheirWorkspace(@TempDir Path tmp) throws IOException {
+        Path repo =
+                Files.createDirectories(tmp.resolve("repo")).toAbsolutePath().normalize();
+        Path ws = Files.createDirectories(repo.resolve("py"));
+        Files.writeString(ws.resolve("pyproject.toml"), "[tool.uv.workspace]\nmembers = [\"packages/*\"]\n");
+        Path member = Files.createDirectories(ws.resolve("packages/a"));
+        Files.writeString(member.resolve("pyproject.toml"), "[project]\nname = \"a\"\n");
+
+        assertEquals(ws, RootResolver.pythonProjectRootUncached(repo, member.resolve("src/a/m.py"), repo));
+        // the project itself is the workspace: one server for all of it
+        assertEquals(ws, RootResolver.pythonProjectRootUncached(ws, member.resolve("src/a/m.py"), ws));
+    }
+
+    /** A definition in a project's own {@code .venv} is a library file too (Python review 2, B106). */
+    @Test
+    void installedPackagesAreLibraryFilesEvenInsideTheProject() {
+        Path proj = Path.of("/home/u/proj").toAbsolutePath();
+        Path lib = proj.resolve(".venv/lib/python3.13/site-packages/fakelib/__init__.py");
+        assertTrue(RootResolver.inInstalledPackages(lib));
+        assertTrue(RootResolver.isLibraryTarget(lib, proj, proj));
+        assertTrue(RootResolver.isLibraryTarget(Path.of("/usr/lib/python3/dist-packages/x.py"), proj, null));
+        assertFalse(RootResolver.isLibraryTarget(proj.resolve("pkg/util.py"), proj, proj));
+        assertFalse(RootResolver.inInstalledPackages(proj.resolve("site_packages_notes/x.py")));
+    }
+
     private static final List<String> MARKERS = LspServerRegistry.JAVA_ROOT_MARKERS;
 
     @Test

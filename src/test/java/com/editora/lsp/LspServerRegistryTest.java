@@ -78,6 +78,11 @@ class LspServerRegistryTest {
         assertEquals("python", spec.serverId());
         assertEquals(List.of("pyright-langserver", "--stdio"), spec.command());
         assertTrue(spec.rootMarkers().contains("pyproject.toml"));
+        // a pyrightconfig.json makes a Python project of its own too (Python review 2, B101)
+        assertTrue(spec.rootMarkers().contains("pyrightconfig.json"));
+        assertEquals(
+                LspServerRegistry.PYTHON_PROJECT_MARKERS,
+                LspServerRegistry.rootMarkerTiersForServer("python").get(0));
     }
 
     @Test

@@ -101,7 +101,24 @@ final class PythonInterpreterView {
      * worse).
      */
     static @Nullable String pythonPathForServer(PythonInterpreter interp) {
-        return isAbsolute(interp.executablePath()) ? interp.executablePath() : null;
+        return pythonPathForServer(interp, name -> java.util.Optional.empty());
+    }
+
+    /**
+     * As above, a bare name ({@code python3.12}, or {@code python3 -X dev}'s {@code python3}) looked up with {@code
+     * onPath}: Run used it while Pyright was told nothing and analysed with another Python (review 2, D104). The
+     * arguments are Run's; Pyright is told only the interpreter.
+     */
+    static @Nullable String pythonPathForServer(PythonInterpreter interp, Function<String, Optional<String>> onPath) {
+        String exe = interp.executablePath();
+        if (isAbsolute(exe)) {
+            return exe;
+        }
+        if (exe.isBlank() || exe.contains("/") || exe.contains("\\")) {
+            return null; // a relative path: nothing to look up
+        }
+        Optional<String> found = onPath == null ? null : onPath.apply(exe);
+        return found != null && found.isPresent() && isAbsolute(found.get()) ? found.get() : null;
     }
 
     /**

@@ -31,9 +31,10 @@ import org.jspecify.annotations.Nullable;
  *       {@code WindowsApps}.</li>
  * </ol>
  *
- * <p>Pure apart from the {@link Inputs#isFile} and {@link Inputs#onPath} lookups the caller supplies, so a
- * test (or a remote host) decides what exists. A command may carry arguments ({@code python3 -X dev}) or an
- * {@code env} prefix; {@link PythonInterpreter#command()} keeps them as separate tokens.
+ * <p>Pure apart from the {@link Inputs#isFile} and {@link Inputs#onPath} lookups the caller supplies (and the
+ * home folder from {@code user.home}), so a test (or a remote host) decides what exists. A command may carry
+ * arguments ({@code python3 -X dev}) or an {@code env} prefix; {@link PythonInterpreter#command()} keeps them as
+ * separate tokens.
  */
 public final class PythonInterpreters {
 
@@ -45,9 +46,15 @@ public final class PythonInterpreters {
     /** With no project root, how many folders (the file's own included) are searched for an environment. */
     static final int NO_PROJECT_LEVELS = 4;
 
-    /** Files that mark the top of a Python project when there is no Editora project root to stop at. */
+    /** Files that mark a Python project when there is no Editora project root to stop at. */
     static final List<String> PROJECT_MARKERS =
-            List.of(".git", "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile");
+            List.of("pyproject.toml", "setup.py", "setup.cfg", "pyrightconfig.json", "requirements.txt", "Pipfile");
+
+    /**
+     * With no project root, how many folders above the first {@link #PROJECT_MARKERS project marker} are still
+     * searched: a uv workspace keeps one {@code .venv} at its top for every member package (review 2, B104).
+     */
+    static final int WORKSPACE_LEVELS = 3;
 
     /** Where an interpreter came from — shown beside it so the user knows why it was chosen. */
     public enum Source {
@@ -290,10 +297,11 @@ public final class PythonInterpreters {
 
     /**
      * The nearest project virtual environment for {@code file}: each folder from the file's own up to
-     * {@code projectRoot} (inclusive) is checked for {@link #VENV_DIRS}. With no project root the walk stops
-     * at the first folder holding a {@link #PROJECT_MARKERS project marker}, after
-     * {@link #NO_PROJECT_LEVELS} folders, or below the home folder: an environment in the home folder itself
-     * is never taken for a loose script.
+     * {@code projectRoot} (inclusive) is checked for {@link #VENV_DIRS}. With no project root the walk stops at
+     * a repository's top (a {@code .git}), {@link #WORKSPACE_LEVELS} folders above the first one holding a {@link
+     * #PROJECT_MARKERS project marker} — a uv workspace member's environment is its workspace's, above its own
+     * {@code pyproject.toml} (review 2, B104) — after {@link #NO_PROJECT_LEVELS} folders when there is no marker,
+     * or below the home folder: an environment in the home folder itself is never taken for a loose script.
      */
     public static Optional<Path> findProjectVenv(
             @Nullable Path file, @Nullable Path projectRoot, Predicate<Path> isFile, boolean windows) {
@@ -301,6 +309,7 @@ public final class PythonInterpreters {
         Path stop = projectRoot == null ? null : projectRoot.toAbsolutePath().normalize();
         Path home = projectRoot == null ? userHome() : null;
         int levels = 0;
+        int aboveMarker = -1; // folders searched since the first project marker (-1: none seen yet)
         while (dir != null && levels++ < 64) {
             if (home != null && home.startsWith(dir.toAbsolutePath().normalize())) {
                 break; // a loose script never picks up an environment in (or above) the home folder
@@ -316,10 +325,16 @@ public final class PythonInterpreters {
                 if (here.equals(stop) || !here.startsWith(stop)) {
                     break;
                 }
-            } else if (levels >= NO_PROJECT_LEVELS
-                    || PROJECT_MARKERS.stream()
-                            .anyMatch(m -> isFile.test(here.resolve(m)) || Files.isDirectory(here.resolve(m)))) {
-                break;
+            } else {
+                if (isFile.test(here.resolve(".git").resolve("HEAD")) || isFile.test(here.resolve(".git"))) {
+                    break; // the repository's top (a worktree's .git is a file)
+                }
+                if (aboveMarker < 0 && PROJECT_MARKERS.stream().anyMatch(m -> isFile.test(here.resolve(m)))) {
+                    aboveMarker = 0;
+                }
+                if (aboveMarker >= 0 ? aboveMarker++ >= WORKSPACE_LEVELS : levels >= NO_PROJECT_LEVELS) {
+                    break;
+                }
             }
             dir = dir.getParent();
         }
