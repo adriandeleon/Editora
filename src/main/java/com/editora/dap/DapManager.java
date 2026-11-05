@@ -1033,8 +1033,10 @@ public final class DapManager {
     }
 
     /**
-     * Launches {@code opt}. Outside a build project jdtls's "invisible project" never compiles anything into its
-     * output folder (autobuild is off), so a class missing there is compiled here, from its own source file.
+     * Launches {@code opt}. Outside a build project the classes come from jdtls's "invisible project" only when
+     * the build before this launch brought them up to date; otherwise the file is compiled here, from its own
+     * source ({@link LooseJavaLaunch#classesFor}): jdtls builds that output once, at import, and an old class
+     * file there ran old code after every edit (review 2, A101).
      */
     private void launchOption(
             Path file,
@@ -1057,7 +1059,30 @@ public final class DapManager {
                 null,
                 dir,
                 file);
+        boolean built = takeLooseBuild();
+        if (!built) {
+            compile.run(); // no build ran for this launch: whatever jdtls's output holds may be from any earlier one
+            return;
+        }
         resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch, compile);
+    }
+
+    /** Whether jdtls built a file without a build project for the launch now starting; set by the caller. */
+    private volatile boolean looseBuilt;
+
+    /**
+     * Says that jdtls's build of the next launch's file (a loose file or a plain-folder project, which have no
+     * build tool) has just succeeded, so its output may be launched; read once by that launch. Without it the
+     * launch compiles the file itself.
+     */
+    public void setLooseClassesBuilt(boolean built) {
+        this.looseBuilt = built;
+    }
+
+    private boolean takeLooseBuild() {
+        boolean built = looseBuilt;
+        looseBuilt = false;
+        return built;
     }
 
     /** The source file of {@code opt} as Editora reaches it ({@code file} when jdtls named none). */
@@ -1219,8 +1244,11 @@ public final class DapManager {
                 return;
             }
             if (ifNoClassFile != null
-                    && !(JavaLaunchSupport.classFilePresent(r.classPaths(), opt.mainClass())
-                            || JavaLaunchSupport.classFilePresent(r.modulePaths(), opt.mainClass()))) {
+                    && LooseJavaLaunch.classesFor(
+                                    true,
+                                    JavaLaunchSupport.classFilePresent(r.classPaths(), opt.mainClass())
+                                            || JavaLaunchSupport.classFilePresent(r.modulePaths(), opt.mainClass()))
+                            == LooseJavaLaunch.Classes.COMPILE_HERE) {
                 ifNoClassFile.run();
                 return;
             }
@@ -1228,9 +1256,7 @@ public final class DapManager {
                 fail(epoch, r.error());
                 return;
             }
-            if (ifNoClassFile == null) {
-                warnAboutClasses(file, opt, r, epoch);
-            }
+            warnAboutClasses(file, opt, r, epoch); // jdtls's output too: it is warned about, never trusted blindly
             startDebugSessionAndConnect(
                     file,
                     LaunchConfig.launch(
@@ -1721,6 +1747,15 @@ public final class DapManager {
                 }
                 (attach ? c.attach(args) : c.launch(args)).whenComplete((v, le) -> {
                     if (le != null) {
+                        String refused = attach ? DapErrors.refusedAttach(msg(le)) : null;
+                        if (refused != null) {
+                            // Nothing listens there: say so, and how a JVM is made to listen (review 2, A109).
+                            failWithConsole(
+                                    epoch,
+                                    tr("debug.console.attachRefused", refused),
+                                    tr("status.debug.attachRefused", refused));
+                            return;
+                        }
                         fail(epoch, tr(attach ? "debug.error.attachFailed" : "debug.error.launchFailed", msg(le)));
                         return;
                     }

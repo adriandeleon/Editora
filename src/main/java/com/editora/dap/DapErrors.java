@@ -123,4 +123,21 @@ public final class DapErrors {
         }
         return false;
     }
+
+    /** java-debug's text for an attach nothing answered: {@code Failed to attach to localhost:5005 (attach timeout …}. */
+    private static final Pattern ATTACH_REFUSED = Pattern.compile("Failed to attach to (\\S+?:\\d{1,5})\\b");
+
+    /**
+     * The {@code host:port} of an attach that failed because nothing answered there, read from java-debug's
+     * error text; null for any other error. Its text — "Failed to attach to remote debuggee VM. Reason:
+     * java.io.IOException: Failed to attach to localhost:38147 (attach timeout 30000, handshake timeout 0)" — was
+     * the whole message (Java debug review 2, A109).
+     */
+    public static @Nullable String refusedAttach(@Nullable String text) {
+        if (text == null) {
+            return null;
+        }
+        java.util.regex.Matcher m = ATTACH_REFUSED.matcher(text);
+        return m.find() ? m.group(1) : null;
+    }
 }

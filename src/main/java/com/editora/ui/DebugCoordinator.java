@@ -234,6 +234,15 @@ final class DebugCoordinator {
     /** The session label of the launch in progress, re-applied once the session it replaces has ended. */
     private String sessionLabel = "";
 
+    /** Whether this session's start was said in the status bar (once, at its first RUNNING or SUSPENDED). */
+    private boolean sessionAnnounced = true;
+
+    /**
+     * Whether the next session's start is said in the status bar: one that a before-launch step or a build/test
+     * run started, whose "Running the before-launch step…" / "Attaching the debugger…" would stay there otherwise.
+     */
+    private boolean announceStart;
+
     /** The console already belongs to this launch (its before-launch build wrote to it): do not clear again. */
     private boolean consoleStarted;
 
@@ -514,6 +523,7 @@ final class DebugCoordinator {
 
     /** Streams a before-launch build into the Debug console and keeps Stop usable while it runs. */
     private BeforeLaunchStep.Console beforeLaunchConsole() {
+        announceStart = true; // a step's status would outlive it (review 2, A105)
         return new BeforeLaunchStep.Console() {
             @Override
             public void started(String commandLine) {
@@ -1208,6 +1218,17 @@ final class DebugCoordinator {
                 if (state == DapManager.State.STARTING) {
                     nameSession(sessionLabel); // ending the replaced session cleared it
                     refreshExceptionToggles(); // the session's language decides what Caught / Uncaught mean
+                    sessionAnnounced = !announceStart;
+                    announceStart = false;
+                } else if ((state == DapManager.State.RUNNING || state == DapManager.State.SUSPENDED)
+                        && !sessionAnnounced) {
+                    // Once per session: replaces "Running the before-launch step…" or "Attaching the debugger on
+                    // port …", which stood in the status bar while the program sat paused (review 2, A105).
+                    sessionAnnounced = true;
+                    host.setStatus(
+                            sessionLabel.isEmpty()
+                                    ? tr("status.debug.sessionStarted")
+                                    : tr("status.debug.sessionStartedNamed", sessionLabel));
                 }
                 if (state != DapManager.State.SUSPENDED) {
                     shownFrame = null;
@@ -1847,7 +1868,11 @@ final class DebugCoordinator {
         String jdkHome = !(java || jvmScript) || !com.editora.process.ExecTargets.runsHere(path)
                 ? ""
                 : compactSource || jvmScript ? host.settings().getMavenJdkHome() : configuredJdkHome(projectRoot, null);
-        String javaExec = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
+        String selectedJava = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
+        // A Java file without a build tool runs on Run's JDK: the Settings JDK, else PATH's java (review 2, B102).
+        String javaExec = java && projectRoot == null && com.editora.process.ExecTargets.runsHere(path)
+                ? looseJava(selectedJava)
+                : selectedJava;
         dapManager.setEnv(
                 com.editora.run.JdkToolchain.environment(jdkHome, com.editora.process.ProcessRunner.augmentedPath()));
         Path launched = path;
@@ -1882,12 +1907,47 @@ final class DebugCoordinator {
         });
         if (projectRoot != null && !compactSource) {
             buildThenLaunch(path, start);
+        } else if (java && !compactSource) {
+            looseBuildThenLaunch(path, start); // a loose file or a plain folder is built too (review 2, A101)
         } else {
             start.run();
         }
     }
 
     // --- Java launch preparation (review A2, B3, D1) ------------------------------------------------------
+
+    /** The {@code java} a file without a build tool runs on: {@code selected} (the Settings JDK's), else PATH's. */
+    private static String looseJava(String selected) {
+        if (selected != null && !selected.isBlank()) {
+            return selected;
+        }
+        List<String> onPath = com.editora.process.ProcessRunner.resolveExecutable(List.of("java"));
+        return com.editora.dap.LooseJavaLaunch.launchJava(selected, onPath.isEmpty() ? null : onPath.get(0));
+    }
+
+    /**
+     * {@link #buildThenLaunch} for a Java file with no Maven or Gradle build — a loose file or a plain-folder
+     * project (review 2, A101). jdtls built that folder's classes once, at import, and nothing rebuilt them: every
+     * later launch ran old code, and a file that did not compile ran as "Unresolved compilation problem". Its
+     * source folder is corrected first (a packaged class in a folder jdtls guessed wrong would not build), then
+     * jdtls builds it, compile errors stop the launch, and only a launch whose build succeeded may use jdtls's
+     * output ({@link DapManager#setLooseClassesBuilt}); any other compiles the file itself.
+     */
+    private void looseBuildThenLaunch(Path routing, Runnable launch) {
+        lsp.ensureManaged(routing);
+        Object token = new Object();
+        pendingBuild = token;
+        com.editora.dap.JavaSourceRootFix.correct(
+                lspManager,
+                routing,
+                com.editora.dap.JavaSourceRootFix.declaredPackage(readQuietly(routing)),
+                () -> pendingBuild == token,
+                fixed -> {
+                    if (pendingBuild == token) {
+                        buildThenLaunch(routing, launch, true);
+                    }
+                });
+    }
 
     /** The build before a project launch in flight; replaced or cleared to drop its result (Stop). */
     private @Nullable Object pendingBuild;
@@ -1930,6 +1990,11 @@ final class DebugCoordinator {
      * launches anyway; the launch then checks the class files itself (missing: refused; older: a warning).
      */
     private void buildThenLaunch(Path routing, Runnable launch) {
+        buildThenLaunch(routing, launch, false);
+    }
+
+    /** As above; {@code loose}: a file without a build tool, whose launch is told whether its build succeeded. */
+    private void buildThenLaunch(Path routing, Runnable launch, boolean loose) {
         Object token = new Object();
         pendingBuild = token;
         lsp.ensureManaged(routing);
@@ -1945,8 +2010,13 @@ final class DebugCoordinator {
             panel().setPreparing(false);
             ops.setStatusDebugLoading(false);
             if (result.outcome() == LspManager.BuildOutcome.WITH_ERRORS) {
-                showBuildErrors(result.errors(), BUILD_ERROR_WAITS);
+                // A loose file in a window without a project: errors outside its own folder do not stop it.
+                Runnable proceed = loose ? launch : null;
+                showBuildErrors(routing, result.errors(), BUILD_ERROR_WAITS, proceed);
                 return;
+            }
+            if (loose) {
+                dapManager.setLooseClassesBuilt(result.outcome() == LspManager.BuildOutcome.SUCCEEDED);
             }
             launch.run();
         });
@@ -1959,29 +2029,60 @@ final class DebugCoordinator {
      * every Java file of the project was saved first) — and may still be on their way, so with none known yet
      * this looks again a few times before saying only that there are errors.
      */
-    private void showBuildErrors(Map<Path, List<com.editora.text.LspDiagnostic>> published, int waits) {
+    private void showBuildErrors(
+            Path routing,
+            Map<Path, List<com.editora.text.LspDiagnostic>> published,
+            int waits,
+            @Nullable Runnable loose) {
         Map<Path, List<com.editora.text.LspDiagnostic>> found = new java.util.TreeMap<>(lsp.problems());
         found.putAll(published);
-        int errors = JavaLaunchPrep.errorCount(found, null);
-        if (errors == 0 && waits > 0) {
+        // Only this launch's project: the Problems window holds every open file's, of every language (review 2, A104).
+        Path project = JavaLaunchPrep.projectOf(routing, JavaProjectRoot.find(routing), ops.projectRoot());
+        java.util.function.Predicate<Path> scope = JavaLaunchPrep.errorScope(routing, project);
+        int errors = JavaLaunchPrep.javaErrorCount(found, scope);
+        List<String> importErrors = JavaLaunchPrep.importErrors(found, project);
+        if (errors == 0 && importErrors.isEmpty() && waits > 0) {
             javafx.animation.PauseTransition later =
                     new javafx.animation.PauseTransition(javafx.util.Duration.millis(250));
-            later.setOnFinished(e -> showBuildErrors(published, waits - 1));
+            later.setOnFinished(e -> showBuildErrors(routing, published, waits - 1, loose));
             later.play();
+            return;
+        }
+        if (errors == 0 && importErrors.isEmpty() && loose != null && project == null) {
+            // A loose file whose own folder compiles: the errors are elsewhere in the folder it was opened from.
+            dapManager.setLooseClassesBuilt(true);
+            loose.run();
             return;
         }
         panel().clearConsole();
         consoleStarted = false;
-        List<String> lines = JavaLaunchPrep.errorLines(found, null, MAX_BUILD_ERROR_LINES);
+        List<String> lines = JavaLaunchPrep.javaErrorLines(found, scope, ops.projectRoot(), MAX_BUILD_ERROR_LINES);
         for (String line : lines) {
             panel().appendOutput(line + "\n", "stderr");
         }
         if (errors > lines.size()) {
             panel().appendNotice(tr("debug.console.moreBuildErrors", errors - lines.size()));
         }
-        panel().appendNotice(tr("debug.console.buildFailed"));
-        host.setStatus(errors > 0 ? tr("status.debug.buildErrors", errors) : tr("status.debug.buildErrorsUnlisted"));
+        // A failed Maven/Gradle import is no compile error: it says so, and where its JDK is chosen (review 2, A103).
+        for (String message : importErrors) {
+            panel().appendOutput(message + "\n", "stderr");
+        }
+        boolean importFailed = errors == 0 && !importErrors.isEmpty();
+        panel().appendNotice(tr(importFailed ? "debug.console.importFailed" : "debug.console.buildFailed"));
+        host.setStatus(
+                importFailed
+                        ? tr("status.debug.importFailed")
+                        : errors > 0 ? tr("status.debug.buildErrors", errors) : tr("status.debug.buildErrorsUnlisted"));
+        panel().setLaunchRefused(tr(importFailed ? "debugpanel.state.importFailed" : "debugpanel.state.buildFailed"));
         updateDebugAvailability();
+    }
+
+    private static String readQuietly(Path file) {
+        try {
+            return java.nio.file.Files.size(file) > 2_000_000 ? "" : java.nio.file.Files.readString(file);
+        } catch (java.io.IOException | RuntimeException e) {
+            return "";
+        }
     }
 
     /** How many times a failed build's errors are looked for again before the console says only that there are some. */
@@ -2343,12 +2444,13 @@ final class DebugCoordinator {
                 // On a remote host the plan names the host's configured JDK, as Run uses it (review D9).
                 boolean onHost = !com.editora.process.ExecTargets.runsHere(routing);
                 dapManager.setHostJavaExec(onHost ? plan.javaExecutable() : "");
-                withClosedBreakpoints(() -> dapManager.startLaunchMainClass(
-                        routing, match, plan.cwd(), onHost ? "" : plan.javaExecutable(), plainFolder));
+                String java = onHost ? "" : plainFolder ? looseJava(plan.javaExecutable()) : plan.javaExecutable();
+                withClosedBreakpoints(
+                        () -> dapManager.startLaunchMainClass(routing, match, plan.cwd(), java, plainFolder));
             });
         };
         // A before-launch step builds the project the user's way, in the project root (review A12); without
-        // one, jdtls builds it (review A2). A plain folder has nothing to build: its class is compiled at launch.
+        // one, jdtls builds it (review A2). A plain folder is built by jdtls after any step (review 2, A101).
         boolean hasStep = cfg.beforeLaunch() != null && !cfg.beforeLaunch().isBlank();
         Path toolRoot = buildRoot != null ? buildRoot : root;
         beforeLaunch.run(
@@ -2359,7 +2461,9 @@ final class DebugCoordinator {
                 plan.jdkEnvironment(),
                 beforeLaunchConsole(),
                 () -> {
-                    if (!hasStep && !plainFolder) {
+                    if (plainFolder) {
+                        looseBuildThenLaunch(routing, launch); // after its own step too: jdtls's output (A101)
+                    } else if (!hasStep) {
                         buildToolThenLaunch(
                                 buildRoot, routing, shortName(cfg.mainClass()), plan.jdkEnvironment(), launch);
                     } else {
@@ -2650,7 +2754,7 @@ final class DebugCoordinator {
                 Runnable go = () -> withClosedBreakpoints(
                         () -> dapManager.startLaunchMainClass(routing, opt, root, javaExec, plainFolder));
                 if (plainFolder) {
-                    go.run();
+                    looseBuildThenLaunch(routing, go); // built like a loose file (review 2, A101)
                 } else {
                     Path source =
                             opt.filePath() == null || opt.filePath().isBlank() ? routing : Path.of(opt.filePath());
@@ -2704,7 +2808,9 @@ final class DebugCoordinator {
     }
 
     private String configuredJavaExecutable(@Nullable Path root, @Nullable RunConfiguration cfg) {
-        return com.editora.run.JdkToolchain.javaExecutable(configuredJdkHome(root, cfg));
+        String selected = com.editora.run.JdkToolchain.javaExecutable(configuredJdkHome(root, cfg));
+        // No build tool (a plain folder): the Settings JDK, else PATH's java, as Run (review 2, B102).
+        return root == null ? looseJava(selected) : selected;
     }
 
     private java.util.Map<String, String> configuredJdkEnvironment(
@@ -2800,6 +2906,7 @@ final class DebugCoordinator {
             setPendingAttach(null); // the wait is over: from here Stop goes through the session (ownerStop)
         }
         ownerStop = stopOwner;
+        announceStart = stopOwner != null; // "Attaching the debugger on port …" would outlive it (review 2, A105)
         String jvmLanguage = jvmAdapterLanguage(anchorFile);
         if (jvmLanguage != null) {
             // A Kotlin (or Groovy) program of a build: Editora's JVM adapter, which binds by source name.
@@ -2876,6 +2983,9 @@ final class DebugCoordinator {
         return sameProject != null ? sameProject : anyManaged != null ? anyManaged : anchor;
     }
 
+    /** What Attach offers: the address last attached to from this window, else the JDWP default. */
+    private String lastAttachAddress = "localhost:5005";
+
     void debugAttach() {
         EditorBuffer b = host.activeBuffer();
         if (b != null && "javascript".equals(DapServerRegistry.adapterLanguage(b.getLanguage()))) {
@@ -2896,7 +3006,7 @@ final class DebugCoordinator {
             host.setStatus(unavailableMessage(adapterLanguage, b.getPath()));
             return;
         }
-        host.promptText(tr("dialog.debug.attachTitle"), tr("dialog.debug.attachContent"), "localhost:5005", input -> {
+        host.promptText(tr("dialog.debug.attachTitle"), tr("dialog.debug.attachContent"), lastAttachAddress, input -> {
             String text = input == null ? "" : input.trim();
             String hostName = "localhost";
             String portStr = text;
@@ -2907,6 +3017,7 @@ final class DebugCoordinator {
             }
             try {
                 int port = Integer.parseInt(portStr.trim());
+                lastAttachAddress = text; // offered again next time, in this window (review 2, A109)
                 Path file = b.getPath(); // checked above; a saved buffer keeps a path
                 if (file == null) {
                     return;
@@ -3124,7 +3235,7 @@ final class DebugCoordinator {
                 tr("debug.pickMainPrompt"),
                 () -> options,
                 o -> o.mainClass() == null ? "" : o.mainClass(),
-                o -> o.projectName() == null ? "" : o.projectName(),
+                o -> JavaLaunchPrep.projectLabel(o.projectName()),
                 chosen);
         picker.setOverlayHost(host.overlayHost());
         picker.show(host.window());
@@ -3532,6 +3643,19 @@ final class DebugCoordinator {
         }
     }
 
+    /**
+     * A reasonless refusal said with its likely reason ({@link CodeReplaceJdk}): the program's Java (its runtime
+     * chip) and the one jdtls builds a file without a build tool for; null when that cannot be told.
+     */
+    private @Nullable String explainCodeReplace(@Nullable String message) {
+        Path file = dapManager.sessionFile();
+        if (!CodeReplaceJdk.reasonless(message) || file == null || JavaProjectRoot.find(file) != null) {
+            return null; // a build project is compiled for its own release, not jdtls's default
+        }
+        return CodeReplaceJdk.explain(
+                message, CodeReplaceJdk.programMajor(panel().runtimeText()), lspManager.javaDefaultMajor(file));
+    }
+
     /** A Java session started running: let jdtls build what it will compare saved changes with. */
     private void primeCodeReplace(DapManager.State state) {
         if (state == DapManager.State.RUNNING && codeReplaceMode() != DapManager.CodeReplaceMode.OFF) {
@@ -3598,7 +3722,10 @@ final class DebugCoordinator {
                 host.setStatus(tr("debug.hcr.compileErrors"));
             }
             case FAILED -> {
-                if (CodeReplaceText.saidAlready(outcome.message(), lastCodeReplaceError)) {
+                String explained = explainCodeReplace(outcome.message());
+                if (explained != null && !explained.equals(lastCodeReplaceError)) {
+                    panel().appendNotice(tr("debug.hcr.notice", explained));
+                } else if (explained != null || CodeReplaceText.saidAlready(outcome.message(), lastCodeReplaceError)) {
                     panel().appendNotice(tr("debug.hcr.restartNeeded")); // the adapter's event gave the reason
                 } else {
                     panel().appendNotice(tr("debug.hcr.failed", outcome.message()));
@@ -3625,7 +3752,9 @@ final class DebugCoordinator {
      * java-debug's own hot code replace events. A replace it could not finish leaves the program on the old code
      * somewhere: that is said in the console. Progress events need no words — Editora reports the outcome.
      */
-    private void codeReplaceNotice(String changeType, String message) {
+    private void codeReplaceNotice(String changeType, String rawMessage) {
+        String explained = "ERROR".equals(changeType) ? explainCodeReplace(rawMessage) : null;
+        String message = explained != null ? explained : rawMessage;
         String text = CodeReplaceText.notice(changeType, message);
         if ("ERROR".equals(changeType)) {
             lastCodeReplaceError = message == null ? "" : message.strip();

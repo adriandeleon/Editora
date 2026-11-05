@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DapErrorsTest {
@@ -89,5 +90,15 @@ class DapErrorsTest {
                                         "variables",
                                         java.util.Map.of("path", "a.js")))));
         assertEquals(null, DapErrors.responseText("Unset error message.", null));
+    }
+
+    @Test
+    void anAttachNothingAnsweredNamesTheAddress() {
+        assertEquals(
+                "localhost:38147",
+                DapErrors.refusedAttach("Failed to attach to remote debuggee VM. Reason: java.io.IOException: Failed to"
+                        + " attach to localhost:38147 (attach timeout 30000, handshake timeout 0)"));
+        assertNull(DapErrors.refusedAttach("Failed to attach to remote debuggee VM. Reason: handshake failed"));
+        assertNull(DapErrors.refusedAttach(null));
     }
 }
