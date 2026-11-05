@@ -52,7 +52,7 @@ public final class ProcessRegistry {
     private static final Logger LOG = Logger.getLogger(ProcessRegistry.class.getName());
 
     /** Grace period after SIGTERM before a still-alive tree is force-killed (see {@link #killTree}). */
-    static final long GRACE_MS = 1500;
+    public static final long GRACE_MS = 1500;
 
     /** Live tracked roots (the {@link Process} we started). */
     private static final Set<Process> LIVE = ConcurrentHashMap.newKeySet();

@@ -5,6 +5,7 @@ import java.io.OutputStream;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import com.editora.process.ExitWatch;
 import com.editora.process.ProcessRegistry;
 import com.pty4j.PtyProcess;
 
@@ -19,6 +20,8 @@ import com.pty4j.PtyProcess;
 class PtyHandleProcess extends Process {
 
     private final PtyProcess pty;
+    /** Not pty4j's own {@code onExit()}, which is the JDK's: a common-pool worker held until the end. */
+    private final ExitWatch exit;
 
     /** An interactive shell: ended by hanging up its terminal, so its detached jobs live on. */
     static final class Shell extends PtyHandleProcess implements ProcessRegistry.HangsUp {
@@ -38,6 +41,7 @@ class PtyHandleProcess extends Process {
 
     PtyHandleProcess(PtyProcess pty) {
         this.pty = pty;
+        this.exit = new ExitWatch("pty-exit", pty::waitFor);
     }
 
     @Override
@@ -99,6 +103,6 @@ class PtyHandleProcess extends Process {
 
     @Override
     public CompletableFuture<Process> onExit() {
-        return pty.onExit().thenApply(p -> this);
+        return exit.onExit(this);
     }
 }

@@ -45,10 +45,10 @@ class LocalPtyConnectorPtyTest {
     }
 
     /**
-     * Kills {@code program} and everything it started, by pid, and waits for it to go. Its {@code destroyForcibly}
-     * alone did not end it on a macOS runner when the assertion above had failed: the shell lived on, and the
-     * common-pool threads waiting in its {@code onExit()} starved every DapClient test later in that JVM (seen on
-     * PRs 1321 and 1423).
+     * Kills {@code program} and everything it started, by pid, and waits for it to go. On macOS a SIGKILL could not
+     * end it while its terminal held output nobody read (see {@link LocalPtyConnector#UNREAD_OUTPUT_EXIT_MILLIS});
+     * the common-pool threads then waiting in its {@code onExit()} starved every DapClient test later in that JVM
+     * (PRs 1321, 1423, 1424). Its exit is now waited for on a thread of its own ({@code ExitWatch}).
      */
     private static void killForGood(Process program) throws InterruptedException {
         ProcessHandle.of(program.pid()).ifPresent(h -> {
