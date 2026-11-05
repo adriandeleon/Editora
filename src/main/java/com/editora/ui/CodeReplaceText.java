@@ -84,4 +84,43 @@ final class CodeReplaceText {
         String n = noticed == null ? "" : noticed.strip();
         return r.isEmpty() || (!n.isEmpty() && r.contains(n));
     }
+
+    /**
+     * What to say after a replace left running methods on their old code (review 3, B209), given the stopped
+     * thread's frame names as java-debug gives them after the replace (top first; a method left on its old code
+     * reads {@code Main.Obsolete method()[native method]}). Restart Frame runs a method again only when something
+     * called it: when the one old-code frame is the bottom one ({@code main}), the hint says it keeps the old code
+     * until the program restarts. With no such frame known, the Restart Frame hint.
+     */
+    static String oldCodeHint(List<String> frames) {
+        if (frames == null || frames.isEmpty()) {
+            return tr("debug.hcr.restartFrameHint");
+        }
+        for (int i = 0; i < frames.size() - 1; i++) {
+            if (DebugPanelText.isObsoleteFrame(frames.get(i))) {
+                return tr("debug.hcr.restartFrameHint");
+            }
+        }
+        String bottom = frames.get(frames.size() - 1);
+        if (DebugPanelText.isObsoleteFrame(bottom)) {
+            String cls = frameClass(bottom);
+            return tr("debug.hcr.restartProgramHint", cls == null ? "" : cls);
+        }
+        return tr("debug.hcr.restartFrameHint");
+    }
+
+    /** The simple class of a frame named {@code a.b.Main.work(int)} or {@code Main.Obsolete method()} — {@code Main}. */
+    static @Nullable String frameClass(String frame) {
+        if (frame == null) {
+            return null;
+        }
+        int paren = frame.indexOf('(');
+        String head = paren < 0 ? frame : frame.substring(0, paren);
+        int dot = head.lastIndexOf('.');
+        if (dot <= 0) {
+            return null;
+        }
+        String cls = head.substring(0, dot);
+        return cls.substring(cls.lastIndexOf('.') + 1);
+    }
 }

@@ -78,6 +78,8 @@ public final class DapModels {
      * one child of {@code variablesReference} holds it. java-debug 0.53.2 sends every object whose class has its
      * own {@code toString()} this way ({@code Integer}, enums, records, dates): the row reads {@code Integer@62}
      * and its value hides one level down. {@link LazyValues} resolves such a row before anyone shows it.
+     *
+     * <p>{@code note} says why a row shows less than its value ({@code null}: nothing to say).
      */
     public record VariableInfo(
             String name,
@@ -86,7 +88,19 @@ public final class DapModels {
             int variablesReference,
             int namedVariables,
             int indexedVariables,
-            boolean lazy) {
+            boolean lazy,
+            @Nullable ValueNote note) {
+
+        public VariableInfo(
+                String name,
+                String value,
+                String type,
+                int variablesReference,
+                int namedVariables,
+                int indexedVariables,
+                boolean lazy) {
+            this(name, value, type, variablesReference, namedVariables, indexedVariables, lazy, null);
+        }
 
         public VariableInfo(
                 String name,
@@ -101,6 +115,21 @@ public final class DapModels {
         public VariableInfo(String name, String value, String type, int variablesReference) {
             this(name, value, type, variablesReference, 0, 0);
         }
+    }
+
+    /**
+     * Why a variable shows only {@code Type@id} (Java debugging review 3, B201/B202): its {@code toString()} was
+     * not run within the stop's time budget (a click loads it), cannot run after Pause, or failed.
+     */
+    public enum ValueNote {
+        /** Not loaded within the stop's budget: still lazy, loaded on click or expand. */
+        NOT_LOADED,
+        /** The thread was stopped by Pause, and java-debug runs methods only on a thread stopped by a step or breakpoint. */
+        NO_TO_STRING_AFTER_PAUSE,
+        /** {@code toString()} threw (or gave nothing). */
+        TO_STRING_FAILED,
+        /** A click asked for a {@link #NOT_LOADED} row and the answer has not come yet (the Variables tree only). */
+        LOADING
     }
 
     /** Where execution is currently suspended (top frame), used to highlight + jump the editor. */

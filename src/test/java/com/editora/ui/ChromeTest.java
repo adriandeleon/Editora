@@ -764,4 +764,23 @@ class ChromeTest {
         assertFalse(Chrome.indentGuides(true, true, false), "Zen");
         assertFalse(Chrome.indentGuides(true, false, true), "Simple");
     }
+
+    /** Review 3, C206: Pause was lit in the menu and palette while the program was paused, and did nothing. */
+    @Test
+    void pauseNeedsARunningProgram() {
+        Chrome.PaletteContext paused = new Chrome.PaletteContext(
+                true, true, true, true, true, true, true, true, true, true, false, true, true, true, true, true, false);
+        assertFalse(Chrome.contextEnabled("debug.pause", paused));
+        assertEquals(
+                "palette.disabled.needsRunning",
+                Chrome.disabledReason("debug.pause", allOn(), paused).messageKey());
+        assertTrue(Chrome.contextEnabled("debug.stop", paused), "Stop still applies");
+        Chrome.PaletteContext building = new Chrome.PaletteContext(
+                true, true, true, true, true, true, true, true, false, true, false, true, true, true, true, true,
+                false);
+        assertFalse(Chrome.contextEnabled("debug.pause", building), "a launch being built has nothing to pause");
+        Chrome.PaletteContext running = new Chrome.PaletteContext(
+                true, true, true, true, true, true, true, true, false, true, false, true, true, true, true, true, true);
+        assertTrue(Chrome.contextEnabled("debug.pause", running));
+    }
 }

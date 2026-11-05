@@ -42,6 +42,7 @@ com.editora.ui.KotlinServerProbeFxTest
 com.editora.ui.MenuShadowCostProbeTest
 com.editora.lsp.LemminxMavenProbeTest
 com.editora.ui.MavenDebugTestProbeFxTest
+com.editora.ui.PlainFolderDebugProbeFxTest
 
 # Need a local Maven repository or a copy of Maven Central's catalog (-Darchetype.catalog=<file>); the runner
 # has neither.

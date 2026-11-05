@@ -449,6 +449,9 @@ final class DebugCoordinator {
     /** What Debug ▸ Stop runs while a test run waits for its JVM to attach (no session yet). */
     private @Nullable Runnable pendingAttachStop;
 
+    /** The test file of {@link #pendingAttachStop}'s run: F5 there again says it is starting (review 3, A208). */
+    private @Nullable Path pendingAttachFile;
+
     /**
      * A Debug Test run is waiting for its suspended JVM ({@code cancel} ends that build), or no longer is
      * ({@code null}): the window opens with Stop usable and its spinner on, like a before-launch build.
@@ -457,12 +460,16 @@ final class DebugCoordinator {
         boolean was = pendingAttachStop != null;
         pendingAttachStop = cancel;
         if (cancel != null && !was) {
+            EditorBuffer active = host.activeBuffer(); // Debug Test runs the active file's test
+            pendingAttachFile = active == null ? null : active.getPath();
             ops.openToolWindow();
+        } else if (cancel == null) {
+            pendingAttachFile = null;
         }
         // A session being debugged keeps its own buttons (Continue, Stop through ownerStop): the waiting state
         // shows once it ends, when the run's next fork is what Stop would end (see the state listener).
         if (!beforeLaunch.isActive() && pendingBuild == null && !dapManager.isActive()) {
-            panel().setPreparing(cancel != null);
+            panel().setPreparing(cancel != null, tr("debugpanel.state.waitingTest"));
         }
         updateDebugAvailability();
     }
@@ -531,6 +538,11 @@ final class DebugCoordinator {
         persistDebounce.stop();
         flushPendingPersist(); // a breakpoint moved by an edit in the last 300 ms is not lost with the window
         beforeLaunchService.shutdown();
+    }
+
+    /** The session's program is running (not paused, starting or being built for): what Pause acts on (C206). */
+    boolean programRunning() {
+        return dapManager.isActive() && dapManager.state() == DapManager.State.RUNNING;
     }
 
     /** A session is starting, running, paused or being built for — the states Stop / Restart act on. */
@@ -618,7 +630,8 @@ final class DebugCoordinator {
         dapManager.setJavaDebugSettings(new com.editora.dap.JavaDebugSettings(
                 s.isDebugStepFilters(),
                 s.isDebugShowStatics(),
-                com.editora.dap.JavaDebugSettings.parseExceptionTypes(s.getDebugExceptionTypes())));
+                com.editora.dap.JavaDebugSettings.parseExceptionTypes(s.getDebugExceptionTypes()),
+                s.isDebugShowToString()));
         List<String> bundles = on ? dapManager.bundlePaths() : List.of();
         boolean changed = !bundles.equals(appliedDebugBundles);
         lspManager.setDebugBundles(bundles); // set before sessions start — jdtls always gets the bundle
@@ -1296,7 +1309,8 @@ final class DebugCoordinator {
                 } else if (state == DapManager.State.INACTIVE
                         && pendingAttachStop != null
                         && !beforeLaunch.isActive()) {
-                    panel().setPreparing(true); // a Debug Test run still waits for its next fork: Stop ends it
+                    // A Debug Test run still waits for its next fork: Stop ends it.
+                    panel().setPreparing(true, tr("debugpanel.state.waitingTest"));
                 }
                 boolean starting = state == DapManager.State.STARTING;
                 ops.setStatusDebugLoading(starting);
@@ -1311,6 +1325,7 @@ final class DebugCoordinator {
             @Override
             public void onStopped(int threadId, String reason, List<DapModels.StackFrameInfo> stopFrames) {
                 List<DapModels.StackFrameInfo> frames = currentLines(stopFrames);
+                oldCodeHintFrom(stopFrames); // B209: the stack after a replace names the old-code frames
                 panel().setStopReason(reason);
                 // The frame that threw: its line is drawn red while it is the one shown (review C13).
                 exceptionFrameId = "exception".equals(reason) && !frames.isEmpty()
@@ -1403,6 +1418,16 @@ final class DebugCoordinator {
             @Override
             public void onStatus(String message) {
                 host.setStatus(message);
+            }
+
+            @Override
+            public void onOutputTrailing() {
+                panel().showOutputTrailing(); // choice 27: no longer "Running" while the last output arrives
+            }
+
+            @Override
+            public void onCompileFailed() { // javac refused it: the header says so, as for a failed build (A201)
+                panel().setLaunchRefused(tr("debugpanel.state.buildFailed"));
             }
         };
     }
@@ -1548,6 +1573,31 @@ final class DebugCoordinator {
             @Override
             public void setVariable(int parentRef, String name, String value, Consumer<String> cb) {
                 dapManager.setVariable(parentRef, name, value, cb);
+            }
+
+            @Override
+            public void setVariable(
+                    int parentRef, String name, String value, String assignTo, int frameId, Consumer<String> cb) {
+                dapManager.setVariable(parentRef, name, value, assignTo, frameId, cb);
+            }
+
+            @Override
+            public void loadValue(DapModels.VariableInfo row, Consumer<DapModels.VariableInfo> cb) {
+                dapManager.loadValue(row, cb);
+            }
+
+            @Override
+            public boolean refreshValues() {
+                DapModels.StackFrameInfo frame = shownFrame;
+                if (frame == null || dapManager.state() != DapManager.State.SUSPENDED) {
+                    return false;
+                }
+                dapManager.forgetValues(); // B205: what the program now says, not this stop's first answers
+                dapManager.scopes(frame.id(), scopes -> {
+                    panel().setScopes(scopes);
+                    applyInlineValues(frame, scopes);
+                });
+                return true;
             }
         };
     }
@@ -1742,46 +1792,106 @@ final class DebugCoordinator {
      */
     void debugStart() {
         EditorBuffer b = host.activeBuffer();
-        // A session is live — or still getting ready (a build before it, a compile, the main-class picker). While
-        // SUSPENDED (or mid-step) the green button keeps its Continue semantics: never yank a paused session.
-        // Otherwise the same file is already being debugged (said so), and another debuggable file replaces it —
-        // after asking, since that ends the running program (review A106: a starting launch was replaced unasked).
-        Path path = b == null ? null : b.getPath();
-        boolean preparing = pendingBuild != null && !dapManager.isActive();
-        Path sessionFile = preparing ? pendingBuildFile : dapManager.debugFile();
-        boolean differentFile = path != null && !samePath(path, sessionFile);
-        boolean debuggable = b != null && path != null && debugEffectiveFor(b.getLanguage(), path);
-        switch (DebugStartChoice.of(
-                dapManager.isActive(),
-                dapManager.state(),
-                dapManager.isStepping(),
-                preparing,
-                differentFile,
-                debuggable)) {
-            case CONTINUE -> {
-                dapManager.resume(); // F5-style continue
-                return;
-            }
-            case ALREADY_RUNNING -> {
-                host.setStatus(tr("status.debug.alreadyRunning", sessionLabel));
-                return;
-            }
-            case ASK_RETARGET -> {
-                if (path == null
-                        || !confirmRetarget(tr("dialog.debug.retargetContent", sessionLabel, path.getFileName()))) {
-                    return;
-                }
-                dropPendingBuild();
-                dapManager.stop(); // retarget to the newly active file below
-            }
-            case LAUNCH -> {
-                // nothing to end first
-            }
-        }
-        if (debugsTest(b)) {
+        if (!clearToStart(b, true)) {
             return;
         }
+        startCleared = true; // Debug Test's own check (clearToDebugTest) has been answered here
+        try {
+            if (debugsTest(b)) {
+                return;
+            }
+        } finally {
+            startCleared = false;
+        }
         launchBuffer(b);
+    }
+
+    /** Debug File (the editor menu, the Debug File handler): {@code b}, after the same check as F5's. */
+    void debugFile(EditorBuffer b) {
+        if (clearToStart(b, false)) {
+            launchBuffer(b);
+        }
+    }
+
+    /** Debug Test at the caret or from the editor menu: false when a live launch stays (said, or asked and kept). */
+    boolean clearToDebugTest() {
+        return startCleared || clearToStart(host.activeBuffer(), false);
+    }
+
+    /** F5 is starting a test: its check has been made (see {@link #clearToDebugTest}). */
+    private boolean startCleared;
+
+    /**
+     * The one check every way to start goes through (review 3, C202–C204, A208, A209). A launch is live — or still
+     * getting ready: a build before it, a before-launch step, a test run waiting for its JVM, a compile, the
+     * main-class picker. For F5 ({@code f5}) a paused (or mid-step) session is continued: never yank a paused
+     * session. Otherwise the same file is already being debugged (said so, in words that fit how far it has got),
+     * and another file replaces it — after asking, since that ends the program (review A106: a starting launch was
+     * replaced unasked; review 3 C202: the editor menu's Debug File ended a paused session unasked). True when
+     * {@code b} may be launched now.
+     */
+    private boolean clearToStart(@Nullable EditorBuffer b, boolean f5) {
+        Path path = b == null ? null : b.getPath();
+        boolean preparing = launchPreparing();
+        Path liveFile = preparing ? preparingFile() : dapManager.debugFile();
+        boolean differentFile = path != null && !samePath(path, liveFile);
+        boolean debuggable = b != null && path != null && debugEffectiveFor(b.getLanguage(), path);
+        boolean active = dapManager.isActive();
+        DapManager.State state = dapManager.state();
+        DebugStartChoice choice = f5
+                ? DebugStartChoice.of(active, state, dapManager.isStepping(), preparing, differentFile, debuggable)
+                : DebugStartChoice.forFile(active, state, preparing, differentFile);
+        DebugStartChoice.Phase phase = DebugStartChoice.Phase.of(active, state, dapManager.isStepping(), preparing);
+        String label = preparing && pendingBuild == null && pendingAttachFile != null
+                ? String.valueOf(pendingAttachFile.getFileName())
+                : sessionLabel;
+        switch (choice) {
+            case CONTINUE -> {
+                dapManager.resume(); // F5-style continue
+                return false;
+            }
+            case ALREADY_RUNNING -> {
+                host.setStatus(tr(phase.busyKey, label));
+                return false;
+            }
+            case ASK_RETARGET -> {
+                if (path == null || !confirmRetarget(tr(phase.retargetKey, label, path.getFileName()))) {
+                    return false;
+                }
+                endLiveLaunch(); // retarget to the file asked for
+                return true;
+            }
+            default -> {
+                return true; // nothing to end first
+            }
+        }
+    }
+
+    /** A launch is getting ready with no session yet: a jdtls build, a before-launch step, a test run's JVM. */
+    private boolean launchPreparing() {
+        return !dapManager.isActive() && (pendingBuild != null || beforeLaunch.isActive() || pendingAttachStop != null);
+    }
+
+    /** The file the launch getting ready is for, when known. */
+    private @Nullable Path preparingFile() {
+        return pendingBuild != null ? pendingBuildFile : pendingAttachStop != null ? pendingAttachFile : null;
+    }
+
+    /** A launch of {@code file} is live or getting ready. */
+    private boolean launchLiveFor(Path file) {
+        if (launchPreparing()) {
+            return samePath(file, preparingFile());
+        }
+        return dapManager.state() != DapManager.State.INACTIVE && samePath(file, dapManager.debugFile());
+    }
+
+    /** Ends whatever launch is live or getting ready, for a launch of another file. */
+    private void endLiveLaunch() {
+        if (beforeLaunch.isActive()) {
+            beforeLaunch.stop();
+        }
+        dropPendingBuild();
+        stop(); // the session, or a test run waiting for its JVM
     }
 
     /** Debugs a JUnit test at the caret ({@code true}: the whole class), as the gutter's Debug Test; set by the
@@ -1911,6 +2021,8 @@ final class DebugCoordinator {
         }
         ops.openToolWindow();
         nameSession(path.getFileName().toString());
+        // Said once it runs: "Saved …" or the last run's exit stood in the status bar while it was paused (choice 12).
+        announceStart = true;
         dapManager.setProgramArgs(fileArgs);
         dapManager.setVmArgs(""); // no user VM args on a plain debug
         dapManager.setHostJavaExec("");
@@ -1952,9 +2064,12 @@ final class DebugCoordinator {
         // A remote file's program runs on its host: none of this machine's JDK setting, PATH or JAVA_HOME.
         // A Groovy script runs on the Settings JDK too (its JAVA_HOME), as Run runs it.
         boolean jvmScript = com.editora.run.JvmScriptRun.supports(language);
-        String jdkHome = !(java || jvmScript) || !com.editora.process.ExecTargets.runsHere(path)
-                ? ""
-                : compactSource || jvmScript ? host.settings().getMavenJdkHome() : configuredJdkHome(projectRoot, null);
+        String jdkHome = presentJdk(
+                !(java || jvmScript) || !com.editora.process.ExecTargets.runsHere(path)
+                        ? ""
+                        : compactSource || jvmScript
+                                ? host.settings().getMavenJdkHome()
+                                : configuredJdkHome(projectRoot, null));
         String selectedJava = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
         // A Java file without a build tool runs on Run's JDK: the Settings JDK, else PATH's java (review 2, B102).
         String javaExec = java && projectRoot == null && com.editora.process.ExecTargets.runsHere(path)
@@ -2003,6 +2118,23 @@ final class DebugCoordinator {
 
     // --- Java launch preparation (review A2, B3, D1) ------------------------------------------------------
 
+    /**
+     * {@code home}, or "" — PATH's java — when it names a JDK that is no longer there: the Debug console and the
+     * status bar say so and where to choose another, where java-debug's raw "Cannot run program" stood beside an
+     * empty console (review 3, A206).
+     */
+    private String presentJdk(String home) {
+        if (!com.editora.run.JdkToolchain.isGone(home)) {
+            return home;
+        }
+        String said = tr("debug.console.defaultJdkMissing", home.strip());
+        panel().clearConsole(); // this launch's console: kept when its session starts
+        panel().appendNotice(said);
+        consoleStarted = true;
+        host.setStatus(said);
+        return "";
+    }
+
     /** The {@code java} a file without a build tool runs on: {@code selected} (the Settings JDK's), else PATH's. */
     private static String looseJava(String selected) {
         if (selected != null && !selected.isBlank()) {
@@ -2017,13 +2149,15 @@ final class DebugCoordinator {
      * project (review 2, A101). jdtls built that folder's classes once, at import, and nothing rebuilt them: every
      * later launch ran old code, and a file that did not compile ran as "Unresolved compilation problem". Its
      * source folder is corrected first (a packaged class in a folder jdtls guessed wrong would not build), then
-     * jdtls builds it, compile errors stop the launch, and only a launch whose build succeeded may use jdtls's
-     * output ({@link DapManager#setLooseClassesBuilt}); any other compiles the file itself.
+     * jdtls builds it, and only a launch whose build succeeded may use jdtls's output
+     * ({@link DapManager#setLooseClassesBuilt}); any other compiles the file with javac from its declared source
+     * root, and javac's errors — only those the program reaches — stop it ({@link JavaLaunchPrep#afterBuild}).
      */
     private void looseBuildThenLaunch(Path routing, Runnable launch) {
         lsp.ensureManaged(routing);
         Object token = new Object();
         pendingBuild = token;
+        showPreparing(routing); // from the first moment: the source-folder step can wait seconds on jdtls (C203)
         com.editora.dap.JavaSourceRootFix.correct(
                 lspManager,
                 routing,
@@ -2034,6 +2168,22 @@ final class DebugCoordinator {
                         buildThenLaunch(routing, launch, true);
                     }
                 });
+    }
+
+    /**
+     * The build before {@code routing}'s launch has begun: the Debug window opens with "Building…", a Stop that cancels
+     * it and the spinner, and F5 there says the launch is still starting (review 3, C203, C204).
+     */
+    private void showPreparing(Path routing) {
+        boolean shown = pendingBuildFile != null && samePath(pendingBuildFile, routing);
+        pendingBuildFile = routing;
+        ops.openToolWindow();
+        panel().setPreparing(true);
+        ops.setStatusDebugLoading(true);
+        updateDebugAvailability();
+        if (!shown) {
+            host.setStatus(tr("status.debug.building", String.valueOf(routing.getFileName())));
+        }
     }
 
     /** The build before a project launch in flight; replaced or cleared to drop its result (Stop). */
@@ -2099,12 +2249,8 @@ final class DebugCoordinator {
     private void buildThenLaunch(Path routing, Runnable launch, boolean loose) {
         Object token = new Object();
         pendingBuild = token;
-        pendingBuildFile = routing;
         lsp.ensureManaged(routing);
-        ops.openToolWindow();
-        panel().setPreparing(true);
-        ops.setStatusDebugLoading(true);
-        updateDebugAvailability();
+        showPreparing(routing);
         lspManager.buildJavaWorkspaceForLaunch(routing, result -> {
             if (pendingBuild != token) {
                 return; // stopped, or replaced by another launch
@@ -2113,14 +2259,13 @@ final class DebugCoordinator {
             pendingBuildFile = null;
             panel().setPreparing(false);
             ops.setStatusDebugLoading(false);
-            if (result.outcome() == LspManager.BuildOutcome.WITH_ERRORS) {
-                // A loose file in a window without a project: errors outside its own folder do not stop it.
-                Runnable proceed = loose ? launch : null;
-                showBuildErrors(routing, result.errors(), BUILD_ERROR_WAITS, proceed);
+            JavaLaunchPrep.AfterBuild next = JavaLaunchPrep.afterBuild(result.outcome(), loose);
+            if (next == JavaLaunchPrep.AfterBuild.REFUSE) {
+                showBuildErrors(routing, result.errors(), BUILD_ERROR_WAITS);
                 return;
             }
-            if (loose) {
-                dapManager.setLooseClassesBuilt(result.outcome() == LspManager.BuildOutcome.SUCCEEDED);
+            if (loose) { // without jdtls's output, javac compiles it from its declared source root (review 3, A201)
+                dapManager.setLooseClassesBuilt(next == JavaLaunchPrep.AfterBuild.LAUNCH_BUILT);
             }
             launch.run();
         });
@@ -2133,11 +2278,7 @@ final class DebugCoordinator {
      * every Java file of the project was saved first) — and may still be on their way, so with none known yet
      * this looks again a few times before saying only that there are errors.
      */
-    private void showBuildErrors(
-            Path routing,
-            Map<Path, List<com.editora.text.LspDiagnostic>> published,
-            int waits,
-            @Nullable Runnable loose) {
+    private void showBuildErrors(Path routing, Map<Path, List<com.editora.text.LspDiagnostic>> published, int waits) {
         Map<Path, List<com.editora.text.LspDiagnostic>> found = new java.util.TreeMap<>(lsp.problems());
         found.putAll(published);
         // Only this launch's project: the Problems window holds every open file's, of every language (review 2, A104).
@@ -2148,14 +2289,8 @@ final class DebugCoordinator {
         if (errors == 0 && importErrors.isEmpty() && waits > 0) {
             javafx.animation.PauseTransition later =
                     new javafx.animation.PauseTransition(javafx.util.Duration.millis(250));
-            later.setOnFinished(e -> showBuildErrors(routing, published, waits - 1, loose));
+            later.setOnFinished(e -> showBuildErrors(routing, published, waits - 1));
             later.play();
-            return;
-        }
-        if (errors == 0 && importErrors.isEmpty() && loose != null && project == null) {
-            // A loose file whose own folder compiles: the errors are elsewhere in the folder it was opened from.
-            dapManager.setLooseClassesBuilt(true);
-            loose.run();
             return;
         }
         panel().clearConsole();
@@ -2570,8 +2705,9 @@ final class DebugCoordinator {
                     } else if (!hasStep) {
                         buildToolThenLaunch(
                                 buildRoot, routing, shortName(cfg.mainClass()), plan.jdkEnvironment(), launch);
-                    } else {
-                        launch.run();
+                    } else { // the user's step built it; a Gradle launch still runs jdtls's bin/main (A202)
+                        afterToolBuild(buildRoot == null ? null : BuildBeforeLaunch.toolAt(buildRoot), routing, launch)
+                                .run();
                     }
                 });
     }
@@ -2607,8 +2743,13 @@ final class DebugCoordinator {
                 buildRoot,
                 env,
                 beforeLaunchConsole(),
-                launch);
+                afterToolBuild(tool, source, launch));
         updateDebugAvailability();
+    }
+
+    /** {@code launch}, after jdtls's build too when the launch runs jdtls's output, not the tool's (Gradle, A202). */
+    private Runnable afterToolBuild(com.editora.build.@Nullable BuildTool tool, Path source, Runnable launch) {
+        return BuildBeforeLaunch.jdtlsBuildsAfter(tool) ? () -> buildThenLaunch(source, launch) : launch;
     }
 
     /**
@@ -2912,15 +3053,17 @@ final class DebugCoordinator {
     }
 
     private String configuredJavaExecutable(@Nullable Path root, @Nullable RunConfiguration cfg) {
-        String selected = com.editora.run.JdkToolchain.javaExecutable(configuredJdkHome(root, cfg));
+        String selected = com.editora.run.JdkToolchain.javaExecutable(presentJdk(configuredJdkHome(root, cfg)));
         // No build tool (a plain folder): the Settings JDK, else PATH's java, as Run (review 2, B102).
         return root == null ? looseJava(selected) : selected;
     }
 
     private java.util.Map<String, String> configuredJdkEnvironment(
             @Nullable Path root, @Nullable RunConfiguration cfg) {
+        String home = configuredJdkHome(root, cfg);
         return com.editora.run.JdkToolchain.environment(
-                configuredJdkHome(root, cfg), com.editora.process.ProcessRunner.augmentedPath());
+                com.editora.run.JdkToolchain.isGone(home) ? "" : home,
+                com.editora.process.ProcessRunner.augmentedPath());
     }
 
     /** The simple class name of a fully-qualified main class (for the session label). */
@@ -3663,7 +3806,11 @@ final class DebugCoordinator {
                     .findFirst()
                     .orElse(f));
         }
-        return tr("status.debug.exceptionFilters", debugAdapterLabel(language), String.join(", ", labels));
+        // While muted, the choice is kept but stops nothing: it must not read as active (review 3, note on Mute).
+        return tr(
+                breakpointsMuted ? "status.debug.exceptionFiltersMuted" : "status.debug.exceptionFilters",
+                debugAdapterLabel(language),
+                String.join(", ", labels));
     }
 
     // --- adapter pickers ---------------------------------------------------------------------------
@@ -3699,8 +3846,8 @@ final class DebugCoordinator {
         buffer.setDebugHoverEvaluator((expr, cb) -> dapManager.evaluateHover(expr, debugFrameId, cb));
         buffer.setDebugValuePresenter(valuePopup()); // an object's fields unfold in the popup (follow-up 6)
         // "Debug File" beside "Run File" in the editor's menu: Debug was only in the Run menu and the palette.
-        buffer.setDebugFileHandler(
-                () -> launchBuffer(buffer), () -> debugSupportEnabled() && isDebuggableBuffer(buffer));
+        // Through F5's check: a live launch of another file is replaced only after asking (review 3, C202).
+        buffer.setDebugFileHandler(() -> debugFile(buffer), () -> debugSupportEnabled() && isDebuggableBuffer(buffer));
         buffer.setGutterBreakpointMenu(this::showGutterMenu); // right-click a breakpoint: Edit / Disable / Remove
         buffer.setDebugMenuContributor(() -> editorMenuItems(buffer));
     }
@@ -3870,7 +4017,7 @@ final class DebugCoordinator {
                 } else {
                     // Methods that were running keep their old code (java-debug's "obsolete methods"): say how to
                     // run one again with the new code (review 2, B103).
-                    panel().appendNotice(tr("debug.hcr.restartFrameHint"));
+                    explainOldCode();
                     host.setStatus(tr("debug.hcr.appliedOldStatus", names));
                 }
                 savedSinceReplace.removeAll(covered);
@@ -3884,6 +4031,10 @@ final class DebugCoordinator {
             case COMPILE_ERRORS -> {
                 panel().appendNotice(tr("debug.hcr.compileErrors"));
                 host.setStatus(tr("debug.hcr.compileErrors"));
+            }
+            case JAVAC_CLASSES -> {
+                panel().appendNotice(tr("debug.hcr.javacClasses"));
+                host.setStatus(tr("debug.hcr.javacClassesStatus"));
             }
             case FAILED -> {
                 String explained = explainCodeReplace(outcome.message());
@@ -3901,6 +4052,48 @@ final class DebugCoordinator {
                 host.setStatus(tr("debug.hcr.buildFailed"));
             }
             case NO_SESSION -> host.setStatus(tr("debug.hcr.noSession"));
+        }
+    }
+
+    /**
+     * Says how to run a method left on its old code again — Restart Frame, or, when the only such method is the
+     * thread's first one ({@code main}), restarting the program (review 3, B209). java-debug names an old-code frame
+     * {@code Obsolete method()} only in the stack it stops on after the replace, so the hint waits for that stack (a
+     * second at most; then it reads the stack shown).
+     */
+    private void explainOldCode() {
+        // While java-debug replaces, the program reads as running: the stack it stops on again names the frames.
+        List<String> shown =
+                panel().callStack().stream().map(DapModels.StackFrameInfo::name).toList();
+        if (shown.stream().anyMatch(DebugPanelText::isObsoleteFrame)) {
+            panel().appendNotice(CodeReplaceText.oldCodeHint(shown)); // that stack came before the answer
+            return;
+        }
+        long asked = ++oldCodeHintAsked;
+        oldCodeHintPending = asked;
+        javafx.animation.PauseTransition wait = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(1));
+        wait.setOnFinished(e -> {
+            if (oldCodeHintPending == asked) {
+                oldCodeHintPending = 0;
+                panel().appendNotice(CodeReplaceText.oldCodeHint(panel().callStack().stream()
+                        .map(DapModels.StackFrameInfo::name)
+                        .toList()));
+            }
+        });
+        wait.play();
+    }
+
+    /** The replace whose old-code hint waits for the next stack ({@link #explainOldCode}); 0 when none. */
+    private long oldCodeHintPending;
+
+    private long oldCodeHintAsked;
+
+    /** A stack arrived: say the waiting old-code hint from it (B209). */
+    private void oldCodeHintFrom(List<DapModels.StackFrameInfo> frames) {
+        if (oldCodeHintPending != 0) {
+            oldCodeHintPending = 0;
+            panel().appendNotice(CodeReplaceText.oldCodeHint(
+                    frames.stream().map(DapModels.StackFrameInfo::name).toList()));
         }
     }
 
@@ -3943,6 +4136,12 @@ final class DebugCoordinator {
         }
         if (!dapManager.supportsRestartFrame()) {
             host.setStatus(tr("debug.restartFrame.unsupported"));
+            return;
+        }
+        List<DapModels.StackFrameInfo> frames = panel().callStack();
+        if (frames.contains(frame) && !canRestartFrame(true, true, frame, frames)) {
+            // The thread's first method: nothing called it, so nothing can call it again (review 3, B209).
+            host.setStatus(tr("debug.restartFrame.bottom"));
             return;
         }
         dapManager.restartFrame(frame.id());
@@ -4137,8 +4336,7 @@ final class DebugCoordinator {
         }
         // Bare titles, as every other row of this menu ("Debug: Edit Breakpoint…" beside "Remove Breakpoint",
         // review 2 C110).
-        javafx.scene.control.MenuItem edit = menuItem("debug.editBreakpoint", Icons.edit(), () -> {});
-        edit.setOnAction(ev -> {
+        javafx.scene.control.MenuItem edit = menuItem("debug.editBreakpoint", Icons.edit(), () -> {
             b.getFocusedArea().moveTo(line, 0);
             editBreakpointAtCaret();
         });
@@ -4181,13 +4379,14 @@ final class DebugCoordinator {
                 && b.getPath() != null
                 && "java".equals(b.getLanguage())
                 && JavaProjectRoot.find(b.getPath()) == null
-                // Not while this file is being debugged: it offered a second launch of it (review 2 C110).
-                && !(dapManager.isActive() && b.getPath().equals(dapManager.sessionFile()))) {
+                // Not while this file is being debugged or built for it: it offered a second launch of it (review 2
+                // C110). Another file's live launch is replaced only after asking (review 3, C202).
+                && !launchLiveFor(b.getPath())) {
             // A classic main class in a plain folder has no Run File / Debug File entry of its own (those are
             // for runnable files); Debug was then only in the Run menu and the palette.
             javafx.scene.control.MenuItem debugFile = new javafx.scene.control.MenuItem(tr("editmenu.debugFile"));
             debugFile.setGraphic(Icons.debug());
-            debugFile.setOnAction(e -> launchBuffer(b));
+            debugFile.setOnAction(e -> debugFile(b));
             items.add(debugFile);
         }
         // Icons like the rest of the editor menu (review 2 C110).

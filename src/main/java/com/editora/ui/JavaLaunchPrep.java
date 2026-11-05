@@ -57,40 +57,40 @@ final class JavaLaunchPrep {
         return inside(path, scope);
     }
 
-    /**
-     * A build's compile errors in {@code project} as Debug console lines, {@code path:line: error: message} —
-     * javac's form, which the console turns into links — sorted by file, at most {@code limit} of them
-     * ({@link #errorCount} says how many there are). Errors outside the project are not this launch's.
-     */
-    static List<String> errorLines(Map<Path, List<LspDiagnostic>> errors, @Nullable Path project, int limit) {
-        List<String> out = new ArrayList<>();
-        for (Map.Entry<Path, List<LspDiagnostic>> e : new java.util.TreeMap<>(errors).entrySet()) {
-            if (project != null && !inside(e.getKey(), project)) {
-                continue;
-            }
-            for (LspDiagnostic d : e.getValue()) {
-                if (d.severity() != LspDiagnostic.Severity.ERROR) {
-                    continue;
-                }
-                if (out.size() < limit) {
-                    out.add(e.getKey() + ":" + (d.startLine() + 1) + ": error: " + d.message());
-                }
-            }
-        }
-        return out;
+    // --- review 3, A201/A203/choice 10: what a launch does after jdtls's build ---------------------------------
+
+    /** What a Java launch does once jdtls's build before it has finished. */
+    enum AfterBuild {
+        /** Launch jdtls's output: its build brought it up to date. */
+        LAUNCH_BUILT,
+        /** Compile the launched file with javac from its declared source root, and launch that (or say why not). */
+        COMPILE_WITH_JAVAC,
+        /** List the build's compile errors; nothing is launched. */
+        REFUSE
     }
 
-    /** How many error diagnostics of {@code errors} are in {@code project}. */
-    static int errorCount(Map<Path, List<LspDiagnostic>> errors, @Nullable Path project) {
-        int n = 0;
-        for (Map.Entry<Path, List<LspDiagnostic>> e : errors.entrySet()) {
-            if (project == null || inside(e.getKey(), project)) {
-                n += (int) e.getValue().stream()
-                        .filter(d -> d.severity() == LspDiagnostic.Severity.ERROR)
-                        .count();
-            }
+    /**
+     * What a launch does after jdtls's build ended with {@code outcome}. A Maven or Gradle project ({@code loose}
+     * false) is refused on compile errors, as its build tool would refuse it, and otherwise launched (a build that
+     * could not run leaves the launch to check its class files). A file without a build tool — a loose file or a
+     * plain-folder project — runs jdtls's output only when that build succeeded; on errors, or with no build, javac
+     * compiles it from the source root its {@code package} line declares, and only javac's own errors stop it.
+     * jdtls guesses a plain folder's source roots and can nest one inside another, so a two-package folder that
+     * javac compiles was refused for "does not match the expected package" (review 3, A201). javac also compiles
+     * only what the launched file reaches, so a broken unrelated file, or a JUnit test without JUnit on the class
+     * path, no longer stops a {@code main} (choice 10), and jdtls's "Unresolved compilation problem" classes never
+     * run (A203). Pure.
+     */
+    static AfterBuild afterBuild(com.editora.lsp.LspManager.BuildOutcome outcome, boolean loose) {
+        if (outcome == com.editora.lsp.LspManager.BuildOutcome.SUCCEEDED) {
+            return AfterBuild.LAUNCH_BUILT;
         }
-        return n;
+        if (loose) {
+            return AfterBuild.COMPILE_WITH_JAVAC;
+        }
+        return outcome == com.editora.lsp.LspManager.BuildOutcome.WITH_ERRORS
+                ? AfterBuild.REFUSE
+                : AfterBuild.LAUNCH_BUILT;
     }
 
     // --- review 2, A103/A104: the build errors a launch shows -------------------------------------------------

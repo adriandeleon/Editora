@@ -544,6 +544,10 @@ final class TestNavigationCoordinator {
     /** Runs/debugs a test method (or its whole class) at the caret. */
     void runTestAtCaret(boolean classLevel, boolean debug) {
         EditorBuffer b = host.activeBuffer();
+        // A live or starting debug launch: the same check as F5's — said, or asked about (review 3, A208).
+        if (debug && host.debugCoordinator() != null && !host.debugCoordinator().clearToDebugTest()) {
+            return;
+        }
         // A pytest file's test at the caret is debugged with debugpy running pytest (Fixer D's hunk).
         if (debug && host.debugCoordinator() != null && host.debugCoordinator().debugPythonTestAtCaret(b, classLevel)) {
             return;
@@ -566,6 +570,9 @@ final class TestNavigationCoordinator {
 
     /** Editor context-menu path for a scanned JUnit class/method. */
     void debugSingleTest(com.editora.test.JavaTestScanner.TestTarget target) {
+        if (host.debugCoordinator() != null && !host.debugCoordinator().clearToDebugTest()) {
+            return; // the editor menu's Debug Test: F5's check (review 3, A208)
+        }
         // A pytest test's ▶ (its editor-menu Debug Test): debugpy runs it under pytest (Fixer D's hunk).
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.isPython() && host.debugCoordinator() != null) {

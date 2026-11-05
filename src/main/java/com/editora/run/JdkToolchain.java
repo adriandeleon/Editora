@@ -31,6 +31,22 @@ public final class JdkToolchain {
     }
 
     /**
+     * Whether {@code jdkHome} names a JDK whose {@code java} is not there — removed or moved since it was chosen: a
+     * launch then falls back to PATH's java and says why (Java debug review 3, A206). False for none chosen.
+     */
+    public static boolean isGone(@Nullable String jdkHome) {
+        String home = clean(jdkHome);
+        if (home.isEmpty()) {
+            return false;
+        }
+        try {
+            return !java.nio.file.Files.isRegularFile(Path.of(javaExecutable(home)));
+        } catch (RuntimeException e) {
+            return false; // not a path this machine reads: left to the launch
+        }
+    }
+
+    /**
      * The {@code java} a launch uses with no JDK selected (review D18): {@code $JAVA_HOME/bin/java} when
      * {@code environment} (this process's, which a Maven build inherits and compiles with) names a
      * {@code JAVA_HOME} whose launcher exists, else blank — PATH's {@code java}, which may be another version

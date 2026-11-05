@@ -278,4 +278,22 @@ class MenuBarModelTest {
             assertTrue(all.contains(id), id + " is not in the Run menu");
         }
     }
+
+    /** Review 3, choice 5: Start / Continue covers Continue; "Debug: Continue" read unevenly among bare rows. */
+    @Test
+    void theDebuggerSubmenuHasNoSeparateContinue() {
+        MenuBarModel.MenuSpec run = MenuBarModel.menus().stream()
+                .filter(m -> m.titleKey().equals("menubar.run"))
+                .findFirst()
+                .orElseThrow();
+        MenuBarModel.MenuSpec debugger = run.submenus().stream()
+                .filter(m -> m.titleKey().equals("menubar.run.debugger"))
+                .findFirst()
+                .orElseThrow();
+        assertFalse(
+                debugger.entries().contains("debug.continue"),
+                debugger.entries().toString());
+        assertTrue(run.entries().contains("debug.start"), "Start / Continue is in the Run menu itself");
+        assertTrue(debugger.entries().contains("debug.pause"));
+    }
 }

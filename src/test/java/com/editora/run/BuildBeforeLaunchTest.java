@@ -28,6 +28,22 @@ class BuildBeforeLaunchTest {
     }
 
     @Test
+    void editorasOwnGradleDaemonStopsAfterTenIdleMinutesAsJdtlssDo() {
+        // review 3, A's note: `gradle -q compileJava` left a daemon with Gradle's three-hour idle timeout
+        assertEquals("-Dorg.gradle.daemon.idletimeout=600000", BuildBeforeLaunch.GRADLE_DAEMON_IDLE);
+        assertFalse(BuildBeforeLaunch.compileArgv(BuildTool.MAVEN, List.of("mvn"), false)
+                .contains(BuildBeforeLaunch.GRADLE_DAEMON_IDLE));
+    }
+
+    @Test
+    void onlyAGradleLaunchNeedsJdtlsToBuildAfterItsCompile() {
+        // review 3, A202: Gradle compiles to build/classes, the launch runs jdtls's bin/main
+        assertTrue(BuildBeforeLaunch.jdtlsBuildsAfter(BuildTool.GRADLE));
+        assertFalse(BuildBeforeLaunch.jdtlsBuildsAfter(BuildTool.MAVEN));
+        assertFalse(BuildBeforeLaunch.jdtlsBuildsAfter(null));
+    }
+
+    @Test
     void theCompileCommandFollowsTheToolAndTheSourceTree() {
         assertEquals(
                 List.of("./mvnw", "-q", "compile"),
@@ -36,10 +52,10 @@ class BuildBeforeLaunchTest {
                 List.of("mvn", "-q", "test-compile"),
                 BuildBeforeLaunch.compileArgv(BuildTool.MAVEN, List.of("mvn"), true));
         assertEquals(
-                List.of("/p/gradlew", "-q", "compileJava"),
+                List.of("/p/gradlew", "-q", "compileJava", BuildBeforeLaunch.GRADLE_DAEMON_IDLE),
                 BuildBeforeLaunch.compileArgv(BuildTool.GRADLE, List.of("/p/gradlew"), false));
         assertEquals(
-                List.of("gradle", "-q", "compileTestJava"),
+                List.of("gradle", "-q", "compileTestJava", BuildBeforeLaunch.GRADLE_DAEMON_IDLE),
                 BuildBeforeLaunch.compileArgv(BuildTool.GRADLE, List.of("gradle"), true));
         Path root = Path.of("/proj");
         assertTrue(BuildBeforeLaunch.isTestSource(root.resolve("src/test/java/a/T.java"), root));

@@ -4761,6 +4761,8 @@
 .debug-panel .debug-val-plain { -fx-fill: -color-fg-default; }
 /* A watch the adapter could not evaluate: its message, not a value. */
 .debug-panel .debug-val-error { -fx-fill: -state-red; -fx-font-style: italic; }
+/* Why a row shows only Type@id: "click to load", "toString() not available after Pause" (review 3, B201/B202). */
+.debug-panel .debug-val-note { -fx-fill: -color-fg-muted; -fx-font-style: italic; }
 /* The UI theme and the editor theme disagree on light vs dark (review 2 C111): the editor's token colours are
    made for the editor's background and vanished on the panel's, so names and values take the UI's colours. */
 .debug-panel:plain-values .debug-token { -fx-fill: -color-fg-default; }

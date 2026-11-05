@@ -66,6 +66,14 @@
    bold weight and BUILD SUCCESS / FAILURE never showed green or red under Editora Light or any other named
    theme (Maven review B3). Restated with the `.editor-area` prefix (0,3,0), as run-stderr below already is.
    BuildConsoleColorsFxTest checks the rendered Text fills under the editor themes. */
+/* A Debug or Run console under a UI theme and an editor theme that disagree on light vs dark (review 3, C205,
+   com.editora.ui.ConsoleColours): its own lines are drawn in the UI's colours (stderr, Editora's muted lines, a
+   program's ANSI colours), which measured 2.6:1 on the editor's background — so the console takes the UI's
+   background and ink as well. Before the rules below, which restate their colours at the same 0,3,0 specificity
+   and so still win; the editor theme's `.editor-area .text` (0,2,0) does not. */
+.editor-area:ui-colours { -fx-background-color: -color-bg-default; }
+.editor-area:ui-colours .text { -fx-fill: -color-fg-default; }
+.editor-area:ui-colours .text.console-url { -fx-fill: -color-accent-fg; }
 .editor-area .text.log-error     { -fx-fill: -color-danger-fg; -fx-font-weight: bold; }
 .editor-area .text.log-warn      { -fx-fill: -color-warning-fg; -fx-font-weight: bold; }
 .editor-area .text.log-info      { -fx-fill: -color-success-fg; }

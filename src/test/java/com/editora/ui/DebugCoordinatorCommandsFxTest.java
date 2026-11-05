@@ -21,6 +21,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.lsp.FakeLanguageServer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
+import com.editora.run.BuildBeforeLaunch;
 import com.editora.run.StackTraceLinks;
 import org.fxmisc.richtext.CodeArea;
 import org.junit.jupiter.api.AfterEach;
@@ -132,7 +133,16 @@ class DebugCoordinatorCommandsFxTest {
         }
     }
 
+    /** The build tool command the Ops hands out (null: the tool's own name). */
+    private volatile List<String> buildCommand;
+
     private final class Ops implements DebugCoordinator.Ops {
+        @Override
+        public List<String> buildExecutable(com.editora.build.BuildTool tool, Path root) {
+            List<String> given = buildCommand;
+            return given != null ? given : List.of(tool.commandExample());
+        }
+
         @Override
         public void openToolWindow() {}
 
@@ -264,11 +274,33 @@ class DebugCoordinatorCommandsFxTest {
         }
     }
 
+    /**
+     * Whether {@code message} is a launch's progress line, "Building X for debugging…" or "Debugging X." (review 3,
+     * C203 and choice 12): every launch says them, so the checks below look only at the other messages.
+     */
+    static boolean progress(String message) {
+        return framed(message, "status.debug.building") || framed(message, "status.debug.sessionStartedNamed");
+    }
+
+    /** Whether {@code message} is the {@code key} message around a file name. */
+    private static boolean framed(String message, String key) {
+        String[] parts = com.editora.i18n.Messages.tr(key, "\u0001").split("\u0001", -1);
+        if (message.length() <= parts[0].length() + parts[1].length()
+                || !message.startsWith(parts[0])
+                || !message.endsWith(parts[1])) {
+            return false;
+        }
+        // The test files' names have no spaces: "Debugging is unavailable for this file …" is not "Debugging X.".
+        return !message.substring(parts[0].length(), message.length() - parts[1].length())
+                .contains(" ");
+    }
+
     private List<String> statuses() {
         synchronized (log) {
             return log.stream()
                     .filter(e -> e.startsWith("status:"))
                     .map(e -> e.substring("status:".length()))
+                    .filter(m -> !progress(m))
                     .toList();
         }
     }
@@ -638,6 +670,131 @@ class DebugCoordinatorCommandsFxTest {
         assertTrue(Files.isRegularFile(Path.of(String.valueOf(cp.get(0))).resolve("Main.class")), "compiled: " + cp);
         assertFalse(
                 statuses().contains(tr("status.debug.noProject")), statuses().toString());
+    }
+
+    /**
+     * Review 3, A201 and choice 10: a plain folder whose jdtls build reports errors — jdtls's nested source root
+     * ("The declared package … does not match the expected package") — is compiled by javac from the source root
+     * its package line declares, and runs. A broken file the program does not reach does not stop it; only javac's
+     * own errors do, said as a failed build.
+     */
+    @Test
+    void aPlainFolderJdtlsCannotBuildIsCompiledWithJavacAndOnlyErrorsItReachesStopIt() throws Exception {
+        windowProject = loose;
+        Path util = loose.resolve("src/com/acme/util/Util.java");
+        Files.createDirectories(util.getParent());
+        Files.writeString(
+                util,
+                "package com.acme.util;\npublic class Util {\n    public static int twice(int x) { return 2 * x; }\n}\n");
+        Files.writeString(loose.resolve("src/Unrelated.java"), "class Unrelated { int x = \"not an int\"; }\n");
+        Path main = loose.resolve("src/com/acme/app/Main.java");
+        String source = "package com.acme.app;\nimport com.acme.util.Util;\npublic class Main {\n"
+                + "    public static void main(String[] a) { System.out.println(Util.twice(21)); }\n}\n";
+        buffer(main, source);
+        lspManager.openDocument(main, loose, "java", source);
+        for (FakeLanguageServer fake : fakes) {
+            fake.executeCommandHandler = params -> {
+                commands.add(params.getCommand());
+                return replies.get(params.getCommand());
+            };
+        }
+        replies.put(
+                "vscode.java.resolveMainClass",
+                List.of(Map.of("mainClass", "Main", "projectName", "loose_1", "filePath", main.toString())));
+        replies.put("vscode.java.resolveJavaExecutable", javaExecutable());
+        for (FakeLanguageServer fake : fakes) { // jdtls's build: its nested source root's errors (status 2)
+            fake.rawHandler = raw -> {
+                if (!"java/buildWorkspace".equals(raw.method())) {
+                    return null;
+                }
+                var d = new org.eclipse.lsp4j.Diagnostic(
+                        new org.eclipse.lsp4j.Range(
+                                new org.eclipse.lsp4j.Position(0, 0), new org.eclipse.lsp4j.Position(0, 7)),
+                        "The declared package \"com.acme.util\" does not match the expected package \"\"");
+                d.setSeverity(org.eclipse.lsp4j.DiagnosticSeverity.Error);
+                LspTestHooks.publishDiagnostics(
+                        lspManager,
+                        main,
+                        new org.eclipse.lsp4j.PublishDiagnosticsParams(
+                                util.toUri().toString(), List.of(d)));
+                return 2;
+            };
+        }
+
+        FakeDebugAdapter.Session first = launch();
+
+        assertEquals("com.acme.app.Main", first.launchArgs.get("mainClass"));
+        Path classes = Path.of(String.valueOf(((List<?>) first.launchArgs.get("classPaths")).get(0)));
+        assertTrue(
+                Files.isRegularFile(classes.resolve("com/acme/util/Util.class")), "javac compiled the other package");
+        assertFalse(Files.exists(classes.resolve("Unrelated.class")), "nor what the program does not reach");
+        assertFalse(
+                statuses().contains(tr("status.debug.buildErrors", 1)),
+                statuses().toString());
+
+        // A compile error the program reaches: javac's report, and the launch is refused as a failed build.
+        FxTestSupport.runOnFx(() -> debug.stop());
+        assertTrue(first.disconnected.await(10, TimeUnit.SECONDS));
+        awaitState(null);
+        Files.writeString(
+                util,
+                "package com.acme.util;\npublic class Util {\n    public static int twice(int x) { return \"no\"; }\n}\n");
+        clearLog();
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        awaitStatus(tr("status.debug.error", tr("status.debug.compileFailed", main.getFileName())));
+        FxTestSupport.drainFx();
+        CodeArea console = FxTestSupport.field(debug.panel(), "console");
+        assertTrue(FxTestSupport.callOnFx(console::getText).contains("Util.java:3: error"), "javac's own report");
+        javafx.scene.control.Label header = FxTestSupport.field(debug.panel(), "status");
+        assertEquals(tr("debugpanel.state.buildFailed"), FxTestSupport.callOnFx(header::getText));
+        assertEquals(1, adapter.sessionCount(), "nothing was launched the second time");
+    }
+
+    /**
+     * Review 3, A202: a Gradle launch runs on jdtls's class path (Buildship's bin/main), which only jdtls writes, while
+     * {@code gradle compileJava} writes build/classes. Debug Main Class now runs jdtls's build after Gradle's compile.
+     */
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // the stand-in Gradle is a /bin/sh command
+    void aGradleMainClassIsBuiltByJdtlsAfterGradlesCompile() throws Exception {
+        Path gp = Files.createDirectories(loose.resolve("gp"));
+        Files.writeString(gp.resolve("build.gradle"), "plugins { id 'application' }\n");
+        Path app = gp.resolve("src/main/java/demo/App.java");
+        String source = "package demo;\npublic class App {\n    public static void main(String[] a) {}\n}\n";
+        buffer(app, source);
+        lspManager.openDocument(app, gp, "java", source);
+        Path ran = loose.resolve("gradle-ran.txt");
+        buildCommand = List.of("/bin/sh", "-c", "printf '%s' \"$*\" > '" + ran + "'", "gradle");
+        FxTestSupport.runOnFx(() -> host.settings.setBuildBeforeRun(true));
+        List<Boolean> gradleFirst = new java.util.concurrent.CopyOnWriteArrayList<>();
+        for (FakeLanguageServer fake : fakes) {
+            fake.executeCommandHandler = params -> {
+                commands.add(params.getCommand());
+                return replies.get(params.getCommand());
+            };
+            fake.rawHandler = raw -> {
+                if ("java/buildWorkspace".equals(raw.method())) {
+                    gradleFirst.add(Files.exists(ran));
+                    return 1;
+                }
+                return null;
+            };
+        }
+        Path bin = Files.createDirectories(gp.resolve("bin/main"));
+        replies.put(
+                "vscode.java.resolveMainClass",
+                List.of(Map.of("mainClass", "demo.App", "projectName", "gp", "filePath", app.toString())));
+        replies.put("vscode.java.resolveClasspath", List.of(List.of(), List.of(bin.toString())));
+        replies.put("vscode.java.resolveJavaExecutable", javaExecutable());
+
+        FxTestSupport.runOnFx(() -> debug.debugMainClass());
+
+        FakeDebugAdapter.Session session = session("launch");
+        assertEquals("demo.App", session.launchArgs.get("mainClass"));
+        assertEquals(List.of(true), gradleFirst, "jdtls built once, after Gradle's compile");
+        assertTrue(
+                Files.readString(ran).contains("compileJava " + BuildBeforeLaunch.GRADLE_DAEMON_IDLE),
+                "the 10-minute daemon");
     }
 
     /**
@@ -1473,6 +1630,7 @@ class DebugCoordinatorCommandsFxTest {
     void aCompactSourceIsCompiledWithTheSelectedJdkAndDebuggedAsTheClassNamedAfterIt() throws Exception {
         Path jdk = loose.resolve("jdk");
         Path javac = Files.createDirectories(jdk.resolve("bin")).resolve("javac");
+        Files.writeString(jdk.resolve("bin").resolve("java"), ""); // a JDK that exists (review 3, A206)
         Files.writeString(javac, "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + loose.resolve("javac-args.txt") + "'\n");
         Files.setPosixFilePermissions(javac, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
         host.settings.setMavenJdkHome(jdk.toString());

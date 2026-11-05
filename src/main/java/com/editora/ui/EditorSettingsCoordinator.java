@@ -1296,6 +1296,7 @@ final class EditorSettingsCoordinator {
         WikiLinks.enabled = settings.isMarkdownWikiLinks();
         host.applyEditorTheme(settings.getEditorTheme());
         host.debugCoordinator().refreshValueColours(); // values legible on mixed light / dark themes
+        host.runCoordinator().refreshConsoleColours(); // and the Run console's own lines (review 3, C205)
         host.chrome().applyChromeVisibility();
         host.applyProjectSupport();
         host.git().applySupport();

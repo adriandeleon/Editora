@@ -127,6 +127,11 @@ final class DebugPanelText {
     private static final Pattern OBSOLETE_FRAME =
             Pattern.compile("^(.*?)\\.?Obsolete method\\(\\)(?:\\[native method])?$");
 
+    /** Whether java-debug names this frame as running a method hot code replace has since replaced. */
+    static boolean isObsoleteFrame(String name) {
+        return name != null && OBSOLETE_FRAME.matcher(name).matches();
+    }
+
     /**
      * How a frame is named in the call stack: a hidden lambda class shows as {@code <lambda>.accept(Object)}, and
      * a method hot code replace left on its old code as {@code Main — old code (Restart Frame runs it again)}
@@ -234,6 +239,16 @@ final class DebugPanelText {
             }
         }
         return sb.toString();
+    }
+
+    /** What a Variables row adds after a value it could not show in full (review 3, B201/B202). */
+    static String valueNote(com.editora.dap.DapModels.ValueNote note) {
+        return switch (note) {
+            case NOT_LOADED -> tr("debugpanel.note.notLoaded");
+            case NO_TO_STRING_AFTER_PAUSE -> tr("debugpanel.note.afterPause");
+            case TO_STRING_FAILED -> tr("debugpanel.note.toStringFailed");
+            case LOADING -> tr("debugpanel.note.loading");
+        };
     }
 
     /** One line of a failed watch's message: a long, wrapped error drew over the rows below it (review C17). */

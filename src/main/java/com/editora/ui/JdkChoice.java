@@ -20,7 +20,12 @@ record JdkChoice(String home, int major) {
 
     static List<JdkChoice> discover(String selectedHome) {
         Map<String, JdkChoice> byPath = new LinkedHashMap<>();
-        for (JavaRuntimes.Jdk jdk : JavaRuntimes.discover()) {
+        List<JavaRuntimes.Jdk> jdks = JavaRuntimes.discover();
+        if (com.editora.process.ProcessRunner.augmentedPathReady()) {
+            // PATH's JDK, wherever it is installed, is one to choose too (review 3, A204); never waits for the shell
+            jdks = JavaRuntimes.withPreferred(jdks, JavaRuntimes.pathJavaHome());
+        }
+        for (JavaRuntimes.Jdk jdk : jdks) {
             byPath.putIfAbsent(jdk.path(), new JdkChoice(jdk.path(), jdk.major()));
         }
         String selected = selectedHome == null ? "" : selectedHome.strip();

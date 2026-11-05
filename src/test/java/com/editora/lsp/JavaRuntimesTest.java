@@ -642,4 +642,58 @@ class JavaRuntimesTest {
                 java.get("import"));
         assertEquals(Map.of("a", 1), LspManager.withRuntimes(Map.of("a", 1), List.of()), "no JDKs known: unchanged");
     }
+
+    // --- Java debug review 3, A204 / C201: only a real JDK counts, and one discover() missed is still given ----
+
+    private static java.nio.file.Path fakeJdk(java.nio.file.Path dir, int major) throws Exception {
+        java.nio.file.Files.createDirectories(dir.resolve("bin"));
+        java.nio.file.Files.writeString(dir.resolve("bin").resolve("java"), "");
+        java.nio.file.Files.writeString(dir.resolve("bin").resolve("javac"), "");
+        java.nio.file.Files.writeString(dir.resolve("release"), "JAVA_VERSION=\"" + major + ".0.2\"\n");
+        return dir;
+    }
+
+    @Test
+    void aJavaLauncherOutsideAJdkHasNoHome(@TempDir java.nio.file.Path tmp) throws Exception {
+        // macOS's /usr/bin/java is a stub binary, not a link: its folder above bin/ is no JDK (C201)
+        java.nio.file.Path usr = java.nio.file.Files.createDirectories(tmp.resolve("usr/bin"));
+        java.nio.file.Files.writeString(usr.resolve("java"), "");
+        assertNull(JavaRuntimes.homeOf(usr.resolve("java").toString()));
+        assertFalse(JavaRuntimes.isJdkHome(tmp.resolve("usr").toString()));
+
+        java.nio.file.Path jdk = fakeJdk(tmp.resolve("jdk-21"), 21);
+        assertEquals(
+                jdk.toRealPath().toString(),
+                JavaRuntimes.homeOf(jdk.resolve("bin/java").toString()));
+        assertTrue(JavaRuntimes.isJdkHome(jdk.toString()));
+
+        java.nio.file.Path modulesOnly = java.nio.file.Files.createDirectories(tmp.resolve("img/lib"));
+        java.nio.file.Files.writeString(modulesOnly.resolve("modules"), "");
+        assertTrue(JavaRuntimes.isJdkHome(tmp.resolve("img").toString()), "a lib/modules image is a Java install");
+        assertFalse(JavaRuntimes.isJdkHome(null));
+        assertFalse(JavaRuntimes.isJdkHome(" "));
+    }
+
+    @Test
+    void thePreferredJdkIsGivenToJdtlsEvenWhenNoSearchedFolderHoldsIt(@TempDir java.nio.file.Path tmp)
+            throws Exception {
+        // PATH's java from a tarball in /opt: discover() never looks there (A204)
+        java.nio.file.Path opt = fakeJdk(tmp.resolve("opt/jdk-21-custom"), 21);
+        List<JavaRuntimes.Jdk> found =
+                List.of(new JavaRuntimes.Jdk(27, "/sdk/27"), new JavaRuntimes.Jdk(25, "/sdk/25"));
+
+        List<Map<String, Object>> runtimes = JavaRuntimes.runtimes(found, opt.toString(), true);
+
+        assertEquals(opt.toRealPath().toString(), JavaRuntimes.defaultPath(runtimes), "not the newest, 27");
+        assertEquals(21, JavaRuntimes.defaultMajor(runtimes));
+        assertEquals(3, runtimes.size());
+        // a remote host's JDKs are not looked for on this machine's disk
+        assertEquals("/sdk/27", JavaRuntimes.defaultPath(JavaRuntimes.runtimes(found, opt.toString(), false)));
+        // nothing to add when it is no JDK, or already known
+        assertEquals(
+                found, JavaRuntimes.withPreferred(found, tmp.resolve("gone").toString()));
+        assertEquals(found, JavaRuntimes.withPreferred(found, null));
+        List<JavaRuntimes.Jdk> withIt = JavaRuntimes.withPreferred(found, opt.toString());
+        assertEquals(withIt, JavaRuntimes.withPreferred(withIt, opt.toString()));
+    }
 }

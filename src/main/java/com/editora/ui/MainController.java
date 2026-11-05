@@ -1150,7 +1150,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                         && b.getFocusedArea() != null
                         && b.getFocusedArea().getSelection().getLength() > 0,
                 projectPanel != null && projectPanel.isMapOutputAvailable(),
-                terminalCoordinator != null && terminalCoordinator.hasTerminals());
+                terminalCoordinator != null && terminalCoordinator.hasTerminals(),
+                debugCoordinator != null && debugCoordinator.programRunning());
     }
 
     private void setupRecentFiles() {
@@ -9823,8 +9824,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 host, title, body, field, tr("dialog.ok"), null, () -> onAccept.accept(field.getText()), null, false);
     }
 
-    /** Opens the Debug Log window (captured java.util.logging output + uncaught exceptions). Backs the
-     *  {@code view.debugLog} command and the Settings → Advanced "Show Debug Log" button. */
+    /** Opens the Application Log window: {@code view.debugLog} and Settings → Advanced's "Show Application Log". */
     void showDebugLog() {
         debugLogWindow.show(stage);
     }

@@ -44,11 +44,14 @@ final class DebugValues {
     /**
      * A value as one row shows it: its first non-blank line, with " … }" (or " …") for the rest. vscode-js-debug
      * describes a function by its whole source, which made a Variables row four lines tall and filled an inline
-     * value with the function's body (review D9); Copy Value keeps the full text.
+     * value with the function's body (review D9); Copy Value keeps the full text. At most {@link #MAX_SHOWN}
+     * characters, then "…": a 1 MB String made every row a million characters wide, and the tree drew none of the
+     * rows below it (review 3, B204). JavaFX's tree still drops rows below one a few thousand pixels wide (500
+     * characters hid two of ten), so the cut is well under that. Show Value and Copy Value give the whole text.
      */
     static String display(String value) {
         if (value == null || (value.indexOf('\n') < 0 && value.indexOf('\r') < 0)) {
-            return value;
+            return capped(value);
         }
         String[] lines = value.split("\\R");
         String first = "";
@@ -60,7 +63,21 @@ final class DebugValues {
         }
         String last = lines[lines.length - 1].strip();
         boolean closes = last.equals("}") || last.equals("};");
-        return first + (first.endsWith("{") && closes ? " … }" : " …");
+        return capped(first) + (first.endsWith("{") && closes ? " … }" : " …");
+    }
+
+    /** The most characters a Variables row shows of one value. */
+    static final int MAX_SHOWN = 200;
+
+    /** {@code value} cut to {@link #MAX_SHOWN} characters with "…", never between the halves of an emoji. */
+    static String capped(String value) {
+        if (value == null || value.length() <= MAX_SHOWN) {
+            return value;
+        }
+        int end = Character.isLowSurrogate(value.charAt(MAX_SHOWN)) ? MAX_SHOWN - 1 : MAX_SHOWN;
+        // a quoted String keeps its closing quote, so it still reads (and colours) as a string
+        String tail = value.endsWith("\"") ? "…\"" : "…";
+        return value.substring(0, end) + tail;
     }
 
     /**

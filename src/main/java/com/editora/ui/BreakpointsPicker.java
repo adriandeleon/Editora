@@ -67,6 +67,9 @@ final class BreakpointsPicker {
                 this::jump);
         // The kind in the glyph's shape and colour, as in the gutter: a logpoint is a diamond (review 2 C107).
         picker.setItemIcon(e -> glyph(e.breakpoint()));
+        // Wider than a file picker: a row carries the line's code and what the breakpoint does, and the key legend
+        // has five actions — at 620 px both were cut ("Condition: lengths.size…", "esc / C-g c…", review 3 C107).
+        picker.setPreferredSize(WIDTH, 1);
         picker.addRowAction(
                 new KeyCodeCombination(KeyCode.E, KeyCombination.ALT_DOWN),
                 tr("debug.breakpoints.keyEnable", "Alt+E"),
@@ -127,8 +130,21 @@ final class BreakpointsPicker {
         String name = e.file().getFileName() == null
                 ? e.file().toString()
                 : e.file().getFileName().toString();
-        String text = e.breakpoint().lineText().strip();
+        String text = shortCode(e.breakpoint().lineText().strip());
         return name + ":" + (e.line() + 1) + (text.isEmpty() ? "" : "  " + text);
+    }
+
+    /** The list's width (px). */
+    static final double WIDTH = 820;
+
+    /** The most of a line's code a row shows: the rest of the row is the condition or log message. */
+    static final int CODE_CHARS = 48;
+
+    /** {@code code} cut to {@link #CODE_CHARS} with an ellipsis: a long line took the room of the condition. */
+    static String shortCode(String code) {
+        return code.length() <= CODE_CHARS
+                ? code
+                : code.substring(0, CODE_CHARS - 1).stripTrailing() + "…";
     }
 
     /** The gutter's mark for a breakpoint: ◆ a logpoint, ● any other; hollow when disabled. */

@@ -136,6 +136,15 @@ public final class DapManager {
         /** A short message for the status bar about a control that cannot act now (not an error). */
         default void onStatus(String message) {}
 
+        /** The launched file did not compile (javac's report is already in the console): no program was started. */
+        default void onCompileFailed() {}
+
+        /**
+         * The program has ended, and the session still waits for its output to stop arriving (the program console
+         * off: java-debug's copy of a flood trails the exit by seconds). The session ends when the output does.
+         */
+        default void onOutputTrailing() {}
+
         /**
          * The session launched its program with {@code runtime} — the interpreter or {@code java} argv the
          * adapter starts it with, before the program's own arguments — in {@code where} (its folder, so its
@@ -1086,6 +1095,12 @@ public final class DapManager {
         resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch, compile);
     }
 
+    /**
+     * The epoch of the session that runs classes javac compiled (a compact source file, or a loose file or plain
+     * folder jdtls could not build); -1 when none. A replace there that jdtls can't build is not the user's error.
+     */
+    private volatile long javacEpoch = -1;
+
     /** Whether jdtls built a file without a build project for the launch now starting; set by the caller. */
     private volatile boolean looseBuilt;
 
@@ -1481,6 +1496,7 @@ public final class DapManager {
             @Nullable Integer sourceVersion,
             @Nullable Path workingDir,
             Path routing) {
+        javacEpoch = epoch; // this session runs javac's classes, not jdtls's output (review 3 verify, A201)
         // A remote file is compiled on its host, with its javac, into a folder of the host's cache.
         boolean remote = !com.editora.process.ExecTargets.runsHere(file);
         DapPaths paths = pathsFor(file);
@@ -1529,7 +1545,8 @@ public final class DapManager {
                     failWithConsole(
                             epoch,
                             JavaLaunchSupport.compilerReport(r.out(), r.err(), compileFile, file),
-                            com.editora.i18n.Messages.tr("status.debug.compileFailed", file.getFileName()));
+                            com.editora.i18n.Messages.tr("status.debug.compileFailed", file.getFileName()),
+                            true);
                     return;
                 }
                 synchronized (sessionLock) {
@@ -3447,7 +3464,9 @@ public final class DapManager {
             cb.accept(List.of());
             return;
         }
-        c.variables(ref, filter, start, count)
+        // One request per stop however many views ask (the tree and the inline values both read Locals: B207).
+        lazyValues
+                .reply(ref + "/" + filter + "/" + start + "/" + count, () -> c.variables(ref, filter, start, count))
                 .thenCompose(vars -> lazyValues.resolveAll(vars, child -> c.variables(child, null, 0, 0)))
                 .thenCompose(vars -> repairStrings(c, vars))
                 .whenComplete((vars, e) -> Platform.runLater(() -> {
@@ -3457,7 +3476,35 @@ public final class DapManager {
                 }));
     }
 
-    /** Lazy rows resolved during the current stop (B101); forgotten whenever the program runs. */
+    /**
+     * Loads one row the stop's budget left unloaded ({@link DapModels.ValueNote#NOT_LOADED}): a click on it. {@code
+     * cb} gets the resolved row (FX thread), or the row as it was when the adapter did not answer.
+     */
+    public void loadValue(DapModels.VariableInfo row, Consumer<DapModels.VariableInfo> cb) {
+        DapClient c = client;
+        if (c == null) {
+            cb.accept(row);
+            return;
+        }
+        lazyValues
+                .resolveNow(row, child -> c.variables(child, null, 0, 0))
+                .thenCompose(r -> repairStrings(c, List.of(r)))
+                .whenComplete((rows, e) -> Platform.runLater(() -> {
+                    if (client == c) {
+                        cb.accept(rows == null || rows.isEmpty() ? row : rows.get(0));
+                    }
+                }));
+    }
+
+    /**
+     * Forgets the values this stop has fetched, so the next look asks again: a console evaluation or Set Value
+     * may have changed them (B205).
+     */
+    public void forgetValues() {
+        lazyValues.clear();
+    }
+
+    /** Lazy rows resolved during the current stop (B101, B201); forgotten whenever the program runs. */
     private final LazyValues lazyValues = new LazyValues();
 
     // --- strings java-debug garbles (follow-up 4: emoji arrive as two wrong characters) -------------------
@@ -3520,6 +3567,13 @@ public final class DapManager {
 
     /** Refuses a control while a console evaluation runs, saying why (FX thread); true when refused. */
     private boolean refuseWhileEvaluating() {
+        String toString = lazyValues.stuck();
+        if (toString != null) {
+            // java-debug runs a toString() on the stopped thread and takes no other request until it returns: a
+            // step sent now would wait for it, and one that never returns would never step (review 3, B201).
+            listener.onStatus(tr("status.debug.toStringRunning", toString));
+            return true;
+        }
         if (!evaluationRunning()) {
             return false;
         }
@@ -3584,6 +3638,17 @@ public final class DapManager {
      * {@code cb} uncalled, so the caller never shows the typed text as if it were the variable's new value.
      */
     public void setVariable(int ref, String name, String value, Consumer<String> cb) {
+        setVariable(ref, name, value, null, -1, cb);
+    }
+
+    /**
+     * {@link #setVariable(int, String, String, Consumer)}, and when the adapter cannot set a variable of that type
+     * (java-debug sets only primitives and Strings: an {@code Integer}, a record or an enum failed with "Set value
+     * is not supported yet for type java.lang.Integer"), assigns it instead by evaluating {@code assignTo = value}
+     * in frame {@code frameId}, as IntelliJ does (review 3, B208). {@code assignTo} null: no such fallback.
+     */
+    public void setVariable(
+            int ref, String name, String value, @Nullable String assignTo, int frameId, Consumer<String> cb) {
         DapClient c = client;
         if (c == null) {
             return; // no session: nothing was set
@@ -3593,10 +3658,28 @@ public final class DapManager {
                     if (client != c) {
                         return;
                     }
-                    if (e != null) {
-                        listener.onError(msg(e));
-                    } else {
+                    if (e == null) {
                         cb.accept(r == null ? value : r);
+                    } else if (SetValueText.unsupportedType(msg(e)) && assignTo != null && frameId >= 0) {
+                        assign(c, name, SetValueText.assignment(assignTo, value), frameId, cb);
+                    } else {
+                        listener.onError(
+                                SetValueText.unsupportedType(msg(e)) ? tr("debug.setValue.unsupported", name) : msg(e));
+                    }
+                }));
+    }
+
+    private void assign(DapClient c, String name, String assignment, int frameId, Consumer<String> cb) {
+        c.evaluateFull(assignment, frameId, "repl")
+                .thenCompose(r -> repairString(c, r))
+                .whenComplete((r, e) -> Platform.runLater(() -> {
+                    if (client != c) {
+                        return;
+                    }
+                    if (e != null || r == null) {
+                        listener.onError(tr("debug.setValue.failed", name, e == null ? "" : msg(e)));
+                    } else {
+                        cb.accept(r.result());
                     }
                 }));
     }
@@ -3646,6 +3729,7 @@ public final class DapManager {
                     stopCount++;
                     stepInFlight = false;
                     currentThreadId = threadId;
+                    lazyValues.newStop("pause".equals(stoppedThreads.get(threadId))); // B202
                     state = State.SUSPENDED;
                     listener.onState(State.SUSPENDED);
                     listener.onStopped(threadId, reason, originalFrames(frames));
@@ -3764,6 +3848,30 @@ public final class DapManager {
     /** The session whose exit report waits for its trailing output; -1 for none. */
     private long exitAwaitingOutput = -1;
 
+    /** How long a program's output may trail its end before the console says so (choice 27). */
+    static final long TRAILING_NOTICE_MILLIS = 1000;
+
+    /** The session whose program ended while its output still arrives; -1 for none (see {@link #outputTrailing}). */
+    private long trailingEpoch = -1;
+
+    /**
+     * The program of {@code epoch} ended and its output is still arriving: if the session still waits a moment
+     * later, the listener is told once, so the state stops saying Running (review 3, choice 27). FX thread.
+     */
+    private void outputTrailing(long epoch) {
+        if (trailingEpoch == epoch) {
+            return;
+        }
+        trailingEpoch = epoch;
+        CompletableFuture.delayedExecutor(TRAILING_NOTICE_MILLIS, TimeUnit.MILLISECONDS)
+                .execute(() -> Platform.runLater(() -> {
+                    if (isCurrent(epoch) && state != State.INACTIVE) {
+                        outputPump.flush(); // after the output that came before it
+                        listener.onOutputTrailing();
+                    }
+                }));
+    }
+
     /** Reports the exit of {@code epoch} if it is still waiting for the output before it (FX thread). */
     private void reportAwaitedExit(long epoch) {
         if (exitAwaitingOutput == epoch) {
@@ -3812,6 +3920,7 @@ public final class DapManager {
                 return;
             }
             if (isCurrent(epoch) && outputTrails(epoch)) {
+                outputTrailing(epoch);
                 whenOutputQuiet(epoch, System.nanoTime(), () -> {
                     reportAwaitedExit(epoch);
                     endSession(epoch);
@@ -3965,6 +4074,7 @@ public final class DapManager {
                 // says only that the program ended, not a code that is not its own (review A10). It waits for
                 // the output still on its way, which would otherwise come after it (E104).
                 exitAwaitingOutput = epoch;
+                outputTrailing(epoch);
                 whenOutputQuiet(epoch, System.nanoTime(), () -> reportAwaitedExit(epoch));
                 return;
             }
@@ -4086,6 +4196,7 @@ public final class DapManager {
             lazyValues.clear(); // the program ran (or ended): references and values are stale
         }
         if (s == State.INACTIVE || s == State.STARTING) {
+            lazyValues.reset(); // nor can a toString() the last session never finished
             consoleEvaluations = 0; // an answer that never comes cannot hold the next session's controls
             stoppedThreads.clear();
         }
@@ -4233,6 +4344,11 @@ public final class DapManager {
      * the Debug console (as error output, links and all) and {@code status} to the status line.
      */
     private void failWithConsole(long epoch, String console, String status) {
+        failWithConsole(epoch, console, status, false);
+    }
+
+    /** As above; {@code compileFailed}: the launched file did not compile, so nothing was started (review 3, A201). */
+    private void failWithConsole(long epoch, String console, String status, boolean compileFailed) {
         Platform.runLater(() -> {
             if (!isCurrent(epoch)) {
                 return;
@@ -4241,6 +4357,9 @@ public final class DapManager {
                 listener.onOutput(console.endsWith("\n") ? console : console + "\n", "stderr");
             }
             listener.onError(status);
+            if (compileFailed) {
+                listener.onCompileFailed();
+            }
             stop();
         });
     }
@@ -4325,6 +4444,11 @@ public final class DapManager {
         NOTHING_CHANGED,
         /** The project has compile errors: nothing was replaced (a broken method would throw when it runs). */
         COMPILE_ERRORS,
+        /**
+         * The session runs classes javac compiled because jdtls could not build the folder (its guessed source roots
+         * are wrong), and jdtls still can't: there is nothing to load. Restarting compiles the edits with javac.
+         */
+        JAVAC_CLASSES,
         /** java-debug refused (an added or removed method or field, a JVM without redefinition…): restart. */
         FAILED,
         /** jdtls could not build: no Java server for the file, or the build failed or was cancelled. */
@@ -4413,7 +4537,11 @@ public final class DapManager {
                 return;
             }
             switch (built) {
-                case WITH_ERRORS -> cb.accept(new CodeReplaceOutcome(CodeReplaceResult.COMPILE_ERRORS, List.of(), ""));
+                case WITH_ERRORS ->
+                    cb.accept(new CodeReplaceOutcome(
+                            javacEpoch == epoch ? CodeReplaceResult.JAVAC_CLASSES : CodeReplaceResult.COMPILE_ERRORS,
+                            List.of(),
+                            ""));
                 case SUCCEEDED ->
                     c.redefineClasses()
                             .whenComplete((r, e) -> Platform.runLater(() -> {

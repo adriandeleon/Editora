@@ -316,8 +316,9 @@ final class MenuBarModel {
                                                 "tool.buildOutput")),
                                 new MenuSpec(
                                         "menubar.run.debugger",
+                                        // No "Debug: Continue": Start / Continue above does it, and its prefixed
+                                        // title read unevenly among the bare rows (review 3, choice 5).
                                         List.of(
-                                                "debug.continue",
                                                 "debug.pause",
                                                 "debug.stepOver",
                                                 "debug.stepInto",

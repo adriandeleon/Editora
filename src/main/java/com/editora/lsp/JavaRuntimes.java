@@ -126,6 +126,24 @@ public final class JavaRuntimes {
         }
     }
 
+    /**
+     * {@code jdks} plus the JDK at {@code preferredHome} when it is one that {@link #discover} did not find — PATH's
+     * java from a tarball in {@code /opt}, a Default JDK in a folder no search covers. jdtls was not told about it
+     * and built for the newest JDK instead, so the program's JDK could not load the classes or replace them, and
+     * JDK frames showed another JDK's source (review 3, A204).
+     */
+    public static List<Jdk> withPreferred(@Nullable List<Jdk> jdks, @Nullable String preferredHome) {
+        List<Jdk> all = jdks == null ? List.of() : jdks;
+        String preferred = realPath(preferredHome);
+        if (preferred == null
+                || all.stream().anyMatch(j -> j != null && j.path() != null && preferred.equals(realPath(j.path())))) {
+            return all;
+        }
+        List<Jdk> out = new ArrayList<>(all);
+        addJdk(out, java.nio.file.Path.of(preferred));
+        return out.size() == all.size() ? all : List.copyOf(out);
+    }
+
     /** jdtls understands {@code JavaSE-1.8} for 8 and {@code JavaSE-N} from 9 on. */
     static String executionEnvironment(int major) {
         return major <= 8 ? "JavaSE-1." + major : "JavaSE-" + major;
@@ -215,6 +233,9 @@ public final class JavaRuntimes {
      * sources can be read here. A remote host's are not looked for on this machine's disk.
      */
     public static List<Map<String, Object>> runtimes(List<Jdk> jdks, @Nullable String preferredHome, boolean local) {
+        if (local) {
+            jdks = withPreferred(jdks, preferredHome);
+        }
         if (jdks == null || jdks.isEmpty()) {
             return List.of();
         }
@@ -284,6 +305,7 @@ public final class JavaRuntimes {
      * {@link #runtimes} already prefers a twin with sources, so a JDK listed here has none.
      */
     public static List<Jdk> allWithoutSources(List<Jdk> jdks, @Nullable String preferredHome) {
+        jdks = withPreferred(jdks, preferredHome); // as runtimes() gives them, so its major is known
         List<Jdk> out = new ArrayList<>();
         for (Map<String, Object> entry : runtimes(jdks, preferredHome)) {
             String path = String.valueOf(entry.get("path"));
@@ -807,6 +829,35 @@ public final class JavaRuntimes {
         return javaHome == null || javaHome.isBlank() ? null : javaHome.strip();
     }
 
+    /**
+     * {@link #preferredHome(String, String, String)} as this machine has it: the Settings home and {@code JAVA_HOME}
+     * count only when they are a JDK ({@link #isJdkHome}), so a Default JDK that was removed falls back to PATH's
+     * java (review 3, A206) rather than naming a folder jdtls cannot use. Scans PATH: off the FX thread.
+     */
+    public static @Nullable String preferredHomeHere(@Nullable String settingHome) {
+        String javaHome = System.getenv("JAVA_HOME");
+        return preferredHome(
+                isJdkHome(settingHome) ? settingHome : null, pathJavaHome(), isJdkHome(javaHome) ? javaHome : null);
+    }
+
+    /**
+     * Whether {@code home} is a Java installation: it has a {@code release} file or a {@code lib/modules} image. A
+     * {@code <x>/bin/java} alone is not enough: macOS's {@code /usr/bin/java} is a stub, not a link, and made
+     * {@code /usr} "the JDK", so JAVA_HOME was ignored and jdtls built for the newest JDK (review 3, C201).
+     */
+    public static boolean isJdkHome(@Nullable String home) {
+        if (home == null || home.isBlank()) {
+            return false;
+        }
+        try {
+            java.nio.file.Path dir = java.nio.file.Path.of(home.strip());
+            return java.nio.file.Files.isRegularFile(dir.resolve("release"))
+                    || java.nio.file.Files.isRegularFile(dir.resolve("lib").resolve("modules"));
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     /** The home of the JDK whose {@code java} is first on the (augmented) PATH, links followed; null when none. */
     public static @Nullable String pathJavaHome() {
         List<String> resolved = com.editora.process.ProcessRunner.resolveExecutable(List.of("java"));
@@ -816,7 +867,7 @@ public final class JavaRuntimes {
     /**
      * The JDK home of a {@code java} launcher ({@code <home>/bin/java}), links followed — sdkman's {@code current}
      * and a distribution's {@code /usr/bin/java} alternatives are links — or null when it is not a JDK's (a bare
-     * {@code java} that was not found on PATH, say).
+     * {@code java} that was not found on PATH, say, or a folder that is no Java installation, {@link #isJdkHome}).
      */
     public static @Nullable String homeOf(@Nullable String javaExecutable) {
         if (javaExecutable == null || javaExecutable.isBlank()) {
@@ -828,7 +879,8 @@ public final class JavaRuntimes {
                 return null;
             }
             java.nio.file.Path real = java.nio.file.Files.exists(launcher) ? launcher.toRealPath() : launcher;
-            return homeOfPath(real);
+            String home = homeOfPath(real);
+            return isJdkHome(home) ? home : null; // macOS's /usr/bin/java stub is no JDK's (review 3, C201)
         } catch (java.io.IOException | RuntimeException e) {
             return null;
         }

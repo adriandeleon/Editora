@@ -114,7 +114,7 @@ public interface PluginContext {
     /** Editora's config directory ({@code ~/.editora} or {@code ~/.editora-dev}). */
     Path configDir();
 
-    /** Writes a message to the app's debug log (visible via View: Debug Log). */
+    /** Writes a message to the app's application log (visible via View: Application Log). */
     void log(String message);
 
     /** Shows a transient message in the status-bar echo area. */
