@@ -9,6 +9,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 import com.editora.editor.EditorBuffer;
 import com.editora.text.SemanticToken;
@@ -68,7 +69,62 @@ public final class HighlightPass {
             int dirtyStart,
             int dirtyEnd,
             boolean brackets,
-            @Nullable List<SemanticToken> semantic) {}
+            @Nullable List<SemanticToken> semantic,
+            int previewLines,
+            @Nullable Consumer<StyleSpans<Collection<String>>> preview) {
+
+        /** A request with no early preview of the first lines. */
+        public Request(
+                String text,
+                IGrammar grammar,
+                @Nullable Lines lines,
+                List<TextMateHighlighter.Symbol> symbols,
+                int dirtyStart,
+                int dirtyEnd,
+                boolean brackets,
+                @Nullable List<SemanticToken> semantic) {
+            this(text, grammar, lines, symbols, dirtyStart, dirtyEnd, brackets, semantic, 0, null);
+        }
+
+        /** This request, showing its first {@code previewLines} lines early on a whole-document pass. */
+        public Request withPreview(int previewLines, Consumer<StyleSpans<Collection<String>>> preview) {
+            return new Request(
+                    text, grammar, lines, symbols, dirtyStart, dirtyEnd, brackets, semantic, previewLines, preview);
+        }
+    }
+
+    /** A whole-document pass shows its first lines early only when the document is this many times longer. */
+    private static final int PREVIEW_FACTOR = 4;
+
+    /**
+     * A whole-document pass over a long file (the first pass after opening it) hands {@code r.preview()} the
+     * styles of its first {@code r.previewLines()} lines — the screen — before it tokenizes the rest: a 50,000
+     * line file used to sit uncoloured for seconds, until the last line was done (review 2 E105). The prefix
+     * is tokenized on its own from the same start state, so its token styles are the full pass's (bracket colours and
+     * the semantic overlay come with the full pass).
+     */
+    private static void preview(Request r, String text, BooleanSupplier cancelled) {
+        Consumer<StyleSpans<Collection<String>>> sink = r.preview();
+        int lines = r.previewLines();
+        if (sink == null || lines <= 0) {
+            return;
+        }
+        int end = 0;
+        for (int i = 0; i < lines; i++) {
+            int nl = text.indexOf('\n', end);
+            if (nl < 0) {
+                return; // a short document: the pass itself is quick
+            }
+            end = nl + 1;
+        }
+        if ((long) end * PREVIEW_FACTOR > text.length()) {
+            return; // the screen is most of the document: nothing to gain
+        }
+        StyleSpans<Collection<String>> spans = TextMateHighlighter.compute(text.substring(0, end), r.grammar());
+        if (spans != null && !cancelled.getAsBoolean()) {
+            sink.accept(spans);
+        }
+    }
 
     /**
      * @param fromOffset where {@code spans} start
@@ -134,6 +190,7 @@ public final class HighlightPass {
         if (!resume) {
             first = 0;
             from = 0;
+            preview(r, text, cancelled);
         }
         boolean canConverge = resume;
         int firstLine = first;
