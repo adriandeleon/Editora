@@ -1095,6 +1095,12 @@ public final class DapManager {
         resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch, compile);
     }
 
+    /**
+     * The epoch of the session that runs classes javac compiled (a compact source file, or a loose file or plain
+     * folder jdtls could not build); -1 when none. A replace there that jdtls can't build is not the user's error.
+     */
+    private volatile long javacEpoch = -1;
+
     /** Whether jdtls built a file without a build project for the launch now starting; set by the caller. */
     private volatile boolean looseBuilt;
 
@@ -1490,6 +1496,7 @@ public final class DapManager {
             @Nullable Integer sourceVersion,
             @Nullable Path workingDir,
             Path routing) {
+        javacEpoch = epoch; // this session runs javac's classes, not jdtls's output (review 3 verify, A201)
         // A remote file is compiled on its host, with its javac, into a folder of the host's cache.
         boolean remote = !com.editora.process.ExecTargets.runsHere(file);
         DapPaths paths = pathsFor(file);
@@ -4437,6 +4444,11 @@ public final class DapManager {
         NOTHING_CHANGED,
         /** The project has compile errors: nothing was replaced (a broken method would throw when it runs). */
         COMPILE_ERRORS,
+        /**
+         * The session runs classes javac compiled because jdtls could not build the folder (its guessed source roots
+         * are wrong), and jdtls still can't: there is nothing to load. Restarting compiles the edits with javac.
+         */
+        JAVAC_CLASSES,
         /** java-debug refused (an added or removed method or field, a JVM without redefinition…): restart. */
         FAILED,
         /** jdtls could not build: no Java server for the file, or the build failed or was cancelled. */
@@ -4525,7 +4537,11 @@ public final class DapManager {
                 return;
             }
             switch (built) {
-                case WITH_ERRORS -> cb.accept(new CodeReplaceOutcome(CodeReplaceResult.COMPILE_ERRORS, List.of(), ""));
+                case WITH_ERRORS ->
+                    cb.accept(new CodeReplaceOutcome(
+                            javacEpoch == epoch ? CodeReplaceResult.JAVAC_CLASSES : CodeReplaceResult.COMPILE_ERRORS,
+                            List.of(),
+                            ""));
                 case SUCCEEDED ->
                     c.redefineClasses()
                             .whenComplete((r, e) -> Platform.runLater(() -> {

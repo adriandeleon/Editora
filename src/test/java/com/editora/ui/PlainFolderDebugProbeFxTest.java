@@ -117,6 +117,11 @@ class PlainFolderDebugProbeFxTest {
                     "a stop in the edited program",
                     900,
                     () -> FxTestSupport.callOnFx(dap::state) == DapManager.State.SUSPENDED);
+            // javac compiled this session's classes, because jdtls can't build the folder: a save while paused says
+            // so, and does not blame the user's code (review 3 verify).
+            edit(c, registry, util, "return 3 * x;", "return 3 * x; // paused");
+            await(debug, "the code-changes notice", 300, () -> console(debug).contains(tr("debug.hcr.javacClasses")));
+            assertTrue(!console(debug).contains(tr("debug.hcr.compileErrors")), console(debug));
             FxTestSupport.runOnFx(() -> registry.run("debug.continue"));
             await(debug, "the edited code's output", 300, () -> console(debug).contains("twice 63"));
             await(debug, "the end of the session", 300, () -> !FxTestSupport.callOnFx(dap::isActive));

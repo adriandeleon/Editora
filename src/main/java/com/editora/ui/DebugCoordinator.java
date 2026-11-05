@@ -4032,6 +4032,10 @@ final class DebugCoordinator {
                 panel().appendNotice(tr("debug.hcr.compileErrors"));
                 host.setStatus(tr("debug.hcr.compileErrors"));
             }
+            case JAVAC_CLASSES -> {
+                panel().appendNotice(tr("debug.hcr.javacClasses"));
+                host.setStatus(tr("debug.hcr.javacClassesStatus"));
+            }
             case FAILED -> {
                 String explained = explainCodeReplace(outcome.message());
                 if (explained != null && !explained.equals(lastCodeReplaceError)) {
