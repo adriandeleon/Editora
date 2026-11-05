@@ -528,9 +528,20 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 new javafx.scene.control.ContextMenu(new javafx.scene.control.MenuItem());
         varsMenu.setOnShowing(e -> rebuildVarsMenu(varsMenu));
         variables.setContextMenu(varsMenu);
+        // From the Menu key or Shift+F10 it opens at the selected row, as in the other trees — not in the middle of
+        // the tree (review 3, C207). A filter, so the control's own handler does not show it there first.
+        variables.addEventFilter(javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED, e -> {
+            javafx.geometry.Bounds row = e.isKeyboardTrigger() ? RowContextMenu.selectedRowOnScreen(variables) : null;
+            if (row != null) {
+                e.consume();
+                varsMenu.show(variables, row.getMinX() + RowContextMenu.anchorX(row.getWidth()), row.getMaxY());
+            }
+        });
 
         console.setEditable(false);
-        console.setWrapText(false);
+        // Wrapped: the console is a third of the strip, and a build error or the Attach hint was cut at its edge
+        // with no way to read the rest but scrolling sideways (review 3, A104).
+        console.setWrapText(true);
         console.getStyleClass().addAll("editor-area", "debug-console");
         installLinkClicks(); // click a stack-trace line → jump (review C21)
         // Tab leaves the read-only console for the evaluate field, Shift+Tab for Variables: the console's own Tab
@@ -657,6 +668,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Draws names and values in the UI's text colours instead of the editor theme's (see {@link #TOKEN}). */
     public void setPlainValueColours(boolean plain) {
         pseudoClassStateChanged(PLAIN_VALUES, plain);
+        ConsoleColours.apply(console, plain); // the console's own lines too (review 3, C205)
     }
 
     /** Whether {@code node} (the Debug window, or the value popup's root) draws values in plain colours. */

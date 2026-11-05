@@ -201,6 +201,11 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         this.onUrl = onUrl;
     }
 
+    /** Draws the console in the UI's colours when the UI and editor themes disagree (see {@link ConsoleColours}). */
+    public void setUiColours(boolean ui) {
+        ConsoleColours.apply(output, ui);
+    }
+
     /** Matches the console font to the editor's code-area font (family + effective size). */
     public void setOutputFont(String family, int size) {
         output.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");

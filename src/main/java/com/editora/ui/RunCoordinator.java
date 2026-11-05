@@ -316,8 +316,16 @@ final class RunCoordinator {
             if (outputFontFamily != null) {
                 panel.setOutputFont(outputFontFamily, outputFontSize);
             }
+            panel.setUiColours(ConsoleColours.needed(host.settings()));
         }
         return panel;
+    }
+
+    /** Re-reads the UI and editor themes for the console's colours (each settings apply; review 3, C205). */
+    void refreshConsoleColours() {
+        if (panel != null) {
+            panel.setUiColours(ConsoleColours.needed(host.settings()));
+        }
     }
 
     /** Matches the console font to the editor font; remembered for a panel not built yet. */
