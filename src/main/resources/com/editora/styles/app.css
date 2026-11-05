@@ -5847,12 +5847,14 @@
     -fx-border-color: transparent transparent -color-border-muted transparent;
     -fx-border-width: 0 0 1 0;
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.18), 6, 0, 0, 2);
-    -fx-padding: 0;
+    /* No -fx-padding: StickyScrollBar sets the left inset to the code's text column, and a stylesheet value
+       would win over it on every CSS pass. */
 }
 /* No vertical padding: StickyScrollBar holds each row to one code line, so the rows cover exactly the lines
    they stand in for. */
+/* No left padding: StickyScrollBar insets the rows to where the code's text starts, past the gutter. */
 .sticky-scroll-row {
-    -fx-padding: 0 6 0 6;
+    -fx-padding: 0 6 0 0;
     -fx-cursor: hand;
 }
 .sticky-scroll-row:hover {
