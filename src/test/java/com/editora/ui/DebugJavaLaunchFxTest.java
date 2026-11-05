@@ -236,7 +236,11 @@ class DebugJavaLaunchFxTest {
         assertEquals(
                 "app.core/app.core.ModMain", launch.get("mainClass"), "the launch keeps the module-qualified name");
         assertEquals(project.toString(), launch.get("cwd"));
-        assertEquals(List.of(), statuses);
+        assertEquals(
+                List.of(),
+                statuses.stream()
+                        .filter(m -> !DebugCoordinatorCommandsFxTest.progress(m))
+                        .toList());
     }
 
     /** Debug on the active file of a project runs where Run and the gutter do: the project root. */

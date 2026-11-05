@@ -274,11 +274,33 @@ class DebugCoordinatorCommandsFxTest {
         }
     }
 
+    /**
+     * Whether {@code message} is a launch's progress line, "Building X for debugging…" or "Debugging X." (review 3,
+     * C203 and choice 12): every launch says them, so the checks below look only at the other messages.
+     */
+    static boolean progress(String message) {
+        return framed(message, "status.debug.building") || framed(message, "status.debug.sessionStartedNamed");
+    }
+
+    /** Whether {@code message} is the {@code key} message around a file name. */
+    private static boolean framed(String message, String key) {
+        String[] parts = com.editora.i18n.Messages.tr(key, "\u0001").split("\u0001", -1);
+        if (message.length() <= parts[0].length() + parts[1].length()
+                || !message.startsWith(parts[0])
+                || !message.endsWith(parts[1])) {
+            return false;
+        }
+        // The test files' names have no spaces: "Debugging is unavailable for this file …" is not "Debugging X.".
+        return !message.substring(parts[0].length(), message.length() - parts[1].length())
+                .contains(" ");
+    }
+
     private List<String> statuses() {
         synchronized (log) {
             return log.stream()
                     .filter(e -> e.startsWith("status:"))
                     .map(e -> e.substring("status:".length()))
+                    .filter(m -> !progress(m))
                     .toList();
         }
     }

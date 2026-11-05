@@ -51,6 +51,12 @@ class BeforeLaunchGateFxTest {
     private static final class RecordingHost extends CoordinatorHostStub {
         private final List<String> statuses = new java.util.ArrayList<>();
         private volatile CountDownLatch settled;
+        private final com.editora.config.Settings settings = new com.editora.config.Settings();
+
+        @Override
+        public com.editora.config.Settings settings() {
+            return settings; // the Run panel reads the themes when it opens (review 3, C205)
+        }
 
         @Override
         public void setStatus(String message) {

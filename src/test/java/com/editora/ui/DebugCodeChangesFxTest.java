@@ -305,7 +305,10 @@ class DebugCodeChangesFxTest {
     @Test
     void restartFrameRestartsTheSelectedFrame() throws Exception {
         FakeDebugAdapter.Session session = connect();
-        session.framePath = file.toString();
+        // A called method: the thread's first one (main) can't be restarted (review 3, B209).
+        session.frames = List.of(
+                FakeDebugAdapter.Session.frame(1, "Main.work(int)", file.toString(), 7),
+                FakeDebugAdapter.Session.frame(2, "Main.main(String[])", file.toString(), 3));
         session.stop(7, "breakpoint");
         await("the stop", () -> FxTestSupport.callOnFx(dap::state) == DapManager.State.SUSPENDED);
         DapModels.StackFrameInfo[] shown = new DapModels.StackFrameInfo[1];
@@ -315,6 +318,22 @@ class DebugCodeChangesFxTest {
 
         session.awaitRequest("restartFrame");
         assertEquals(List.of(shown[0].id()), session.restartedFrames);
+    }
+
+    @Test
+    void restartFrameOnTheThreadsFirstMethodIsRefusedInPlainWords() throws Exception {
+        FakeDebugAdapter.Session session = connect();
+        session.framePath = file.toString(); // one frame: main, which nothing called
+        session.stop(7, "breakpoint");
+        await("the stop", () -> FxTestSupport.callOnFx(dap::state) == DapManager.State.SUSPENDED);
+        await("the frame to show", () -> FxTestSupport.field(debug, "shownFrame") != null);
+
+        FxTestSupport.runOnFx(() -> registry.run("debug.restartFrame"));
+        FxTestSupport.drainFx();
+
+        assertTrue(
+                statuses().contains(tr("debug.restartFrame.bottom")), statuses().toString());
+        assertFalse(session.requests.contains("restartFrame"));
     }
 
     @Test
