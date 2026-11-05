@@ -182,6 +182,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Node.js on a remote host, in WSL or in a container honours the project's `.nvmrc`.** Run, a test file's ▶ and
+  Debug now read a `.nvmrc` or `.node-version` on the host (from the file's folder up to the project, or the package
+  root) and run the Node.js of that version from the host's nvm (`$NVM_DIR`, then `~/.nvm`), as a local run does. A
+  version the host's nvm does not have, or an alias such as `lts/*`, falls back to the host's Node.js setting or its
+  `node`, and the console says so. The runtime chip says why that Node.js was chosen on a host too.
 - **Java debugging (second debugging review, 38 findings).** A loose `.java` file or a plain-folder project is built
   before every Debug and stops on compile errors: edits always run, where the code as first built used to run, and
   code that does not compile no longer runs. Hot code replace works in those folders (it failed with "…: null" when
