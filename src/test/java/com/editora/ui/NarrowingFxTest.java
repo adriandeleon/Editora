@@ -521,4 +521,31 @@ class NarrowingFxTest {
         assertTrue(FxTestSupport.callOnFx(() -> b.getUndoHistory().isEmpty()), "widening dropped them too");
         assertEquals(DOC, content(b));
     }
+
+    @Test
+    void pythonNarrowsToTheMethodWithItsDecoratorAndTheBannerEndsOnItsLastLine() throws Exception {
+        // Review 2 A102: the column-0 rule narrowed to the whole class (or to a decorator alone).
+        String py =
+                "MAX = 1\n\n\nclass A:\n    @property\n    def norm(self):\n        return 1\n\n    def other(self):\n        pass\n";
+        EditorBuffer b = open(py);
+        FxTestSupport.runOnFx(() -> {
+            b.setLanguageOverride("python");
+            b.getArea().moveTo(at(py, 6, 8));
+        });
+        run("edit.narrowToDefun");
+        assertEquals("    @property\n    def norm(self):\n        return 1\n", visible(b));
+        assertEquals("Narrowed to lines 5–7 of 11 — the rest of the file is out of reach", bannerText(b));
+        run("edit.widen");
+        // On the decorator: the method it decorates, not the lines above it.
+        FxTestSupport.runOnFx(() -> b.getArea().moveTo(at(py, 4, 4)));
+        run("edit.narrowToDefun");
+        assertEquals("    @property\n    def norm(self):\n        return 1\n", visible(b));
+        run("edit.widen");
+        // The defun motions use the same rule.
+        FxTestSupport.runOnFx(() -> b.getArea().moveTo(at(py, 6, 8)));
+        run("nav.beginningOfDefun");
+        assertEquals(
+                at(py, 4, 0), (int) FxTestSupport.callOnFx(() -> b.getArea().getCaretPosition()));
+        assertEquals(py, content(b), "narrowing changes nothing");
+    }
 }

@@ -1726,6 +1726,14 @@ final class EditingCoordinator {
     boolean narrowToDefunAt(EditorBuffer buffer, int pos) {
         String text = buffer.getContent();
         int at = Math.max(0, Math.min(pos, text.length()));
+        if (buffer.isPython()) { // the innermost def/class with its decorators, not a column-0 line (review 2 A102)
+            int[] defun = com.editora.editops.PythonDefun.bounds(text, at);
+            if (defun == null) {
+                host.setStatus(tr("status.narrow.noDefun"));
+                return false;
+            }
+            return applyNarrowDocument(buffer, defun[0], defun[1]);
+        }
         int start = com.editora.editops.SexpNav.beginningOfDefun(text, at);
         int end = com.editora.editops.SexpNav.endOfDefun(text, at);
         if (start >= end || !com.editora.editops.SexpNav.isDefunStart(text, start)) {
@@ -2018,6 +2026,16 @@ final class EditingCoordinator {
     }
 
     /** Emacs structural caret motion (forward/backward-sexp, beginning/end-of-defun); honors the mark. */
+    /** {@code nav.beginningOfDefun} / {@code nav.endOfDefun}: Python's def/class, else the column-0 rule. */
+    void defunMove(boolean end) {
+        EditorBuffer b = host.activeBuffer();
+        if (b != null && b.isPython()) {
+            sexpMove(end ? com.editora.editops.PythonDefun::end : com.editora.editops.PythonDefun::beginning);
+        } else {
+            sexpMove(end ? com.editora.editops.SexpNav::endOfDefun : com.editora.editops.SexpNav::beginningOfDefun);
+        }
+    }
+
     void sexpMove(java.util.function.BiFunction<String, Integer, Integer> nav) {
         moveAndFollow(a -> a.moveTo(nav.apply(a.getText(), a.getCaretPosition()), host.selPolicy()));
     }
