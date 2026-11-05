@@ -393,14 +393,12 @@ public final class LspManager {
     }
 
     /**
-     * The JDK jdtls makes its default ({@link JavaRuntimes#preferredHome(String, String, String)}): {@code setting}
-     * (the Default JDK), else PATH's java, else {@code JAVA_HOME}; null for {@code setting} null (a remote or
-     * non-Java server). Scans PATH: off the FX thread.
+     * The JDK jdtls makes its default ({@link JavaRuntimes#preferredHomeHere}): {@code setting} (the Default JDK),
+     * else PATH's java, else {@code JAVA_HOME}, each only when it is a JDK; null for {@code setting} null (a remote
+     * or non-Java server). Scans PATH: off the FX thread.
      */
     static @Nullable String javaPreferredHome(@Nullable String setting) {
-        return setting == null
-                ? null
-                : JavaRuntimes.preferredHome(setting, JavaRuntimes.pathJavaHome(), System.getenv("JAVA_HOME"));
+        return setting == null ? null : JavaRuntimes.preferredHomeHere(setting);
     }
 
     /**
@@ -7932,12 +7930,38 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(new BuildResult(BuildOutcome.UNAVAILABLE, Map.of())));
             return;
         }
-        build(s, false, first -> {
+        Runnable launchBuild = () -> build(s, false, first -> {
             if (first.outcome() == BuildOutcome.WITH_ERRORS && first.errors().isEmpty()) {
                 build(s, true, cb);
             } else {
                 cb.accept(first);
             }
+        });
+        Path root = s.root();
+        if (root == null || !com.editora.process.ExecTargets.runsHere(root)) {
+            launchBuild.run();
+            return;
+        }
+        // What was written on disk just now may not have reached jdtls through a watcher yet (review 3, A207).
+        Thread.ofVirtual().name("java-launch-fresh-sources").start(() -> {
+            List<WatchedFile> fresh = FreshJavaSources.since(
+                    root, System.currentTimeMillis() - FreshJavaSources.WINDOW_MS, FreshJavaSources.MAX_VISITED);
+            Platform.runLater(() -> {
+                // an open file's edits reach jdtls as its document's; only files changed outside Editora count
+                List<org.eclipse.lsp4j.FileEvent> events = eventsUnderRoot(fresh, root, s.uris()).stream()
+                        .filter(e -> !s.isOpen(e.getUri()))
+                        .toList();
+                if (events.isEmpty()) {
+                    launchBuild.run();
+                    return;
+                }
+                s.didChangeWatchedFiles(events);
+                // jdtls takes watched-file events in on a thread of its own: give it a moment before the build
+                javafx.animation.PauseTransition settle =
+                        new javafx.animation.PauseTransition(javafx.util.Duration.millis(FreshJavaSources.SETTLE_MS));
+                settle.setOnFinished(e -> launchBuild.run());
+                settle.play();
+            });
         });
     }
 

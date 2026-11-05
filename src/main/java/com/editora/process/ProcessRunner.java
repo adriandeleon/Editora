@@ -609,6 +609,11 @@ public final class ProcessRunner {
 
     private static final AtomicBoolean PATH_WARM_STARTED = new AtomicBoolean();
 
+    /** Whether {@link #augmentedPath()} is known, so a lookup on it does not wait for the login shell (FX-safe). */
+    public static boolean augmentedPathReady() {
+        return cachedPath != null;
+    }
+
     /**
      * Resolves and caches the {@link #augmentedPath() augmented PATH} on a virtual thread, once per process,
      * so the first caller on the FX thread (an LSP session start, Run, Build, Debug) does not wait for the

@@ -101,4 +101,28 @@ class JavaLaunchPrepTest {
         assertEquals("shelf-debug-demo", JavaLaunchPrep.projectLabel("shelf-debug-demo"));
         assertEquals("", JavaLaunchPrep.projectLabel(null));
     }
+
+    // --- review 3, A201 / A203 / choice 10 ----------------------------------------------------------------------
+
+    @Test
+    void withoutABuildToolJavacDecidesWheneverJdtlsDidNotBuildIt() {
+        var o = com.editora.lsp.LspManager.BuildOutcome.class;
+        for (var outcome : o.getEnumConstants()) {
+            JavaLaunchPrep.AfterBuild loose = JavaLaunchPrep.afterBuild(outcome, true);
+            JavaLaunchPrep.AfterBuild project = JavaLaunchPrep.afterBuild(outcome, false);
+            if (outcome == com.editora.lsp.LspManager.BuildOutcome.SUCCEEDED) {
+                assertEquals(JavaLaunchPrep.AfterBuild.LAUNCH_BUILT, loose, "jdtls's fresh output");
+                assertEquals(JavaLaunchPrep.AfterBuild.LAUNCH_BUILT, project);
+            } else {
+                // never refused for jdtls's errors, never jdtls's "Unresolved compilation problem" classes
+                assertEquals(JavaLaunchPrep.AfterBuild.COMPILE_WITH_JAVAC, loose, outcome.name());
+                assertEquals(
+                        outcome == com.editora.lsp.LspManager.BuildOutcome.WITH_ERRORS
+                                ? JavaLaunchPrep.AfterBuild.REFUSE
+                                : JavaLaunchPrep.AfterBuild.LAUNCH_BUILT,
+                        project,
+                        "a Maven or Gradle project: " + outcome);
+            }
+        }
+    }
 }

@@ -3940,12 +3940,7 @@ public class EditorBuffer implements TabContent {
     }
 
     private com.editora.test.JavaTestScanner.@Nullable TestTarget testTargetAt(int caret, boolean classLevel) {
-        com.editora.test.JavaTestScanner.TestTarget best = null;
-        for (var e : testLines.entrySet()) {
-            if (e.getKey() <= caret && (best == null || e.getKey() > best.line())) {
-                best = e.getValue();
-            }
-        }
+        var best = com.editora.test.JavaTestScanner.targetAt(getContent(), testLines, caret); // review 3, A205
         if (best == null) {
             return classLevel ? testClassTarget() : null; // above the class line: the class's (sixth review BS3)
         }

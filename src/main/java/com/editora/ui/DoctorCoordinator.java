@@ -1079,8 +1079,7 @@ final class DoctorCoordinator {
         var java = com.editora.lsp.JavaRuntimes.serverJava(
                 launcher,
                 com.editora.lsp.JavaRuntimes.discover(),
-                com.editora.lsp.JavaRuntimes.preferredHome(
-                        defaultJdk, com.editora.lsp.JavaRuntimes.pathJavaHome(), System.getenv("JAVA_HOME")),
+                com.editora.lsp.JavaRuntimes.preferredHomeHere(defaultJdk),
                 min);
         if (java.missing()) {
             // the floor the installed jdtls states, not a fixed 21: 1.63 needs 25 (sixth review DS1)
@@ -1103,8 +1102,7 @@ final class DoctorCoordinator {
         // only the JDKs this window's project gets, each named (eighth review DQ4)
         var bare = com.editora.lsp.JavaRuntimes.withoutSourcesFor(
                 com.editora.lsp.JavaRuntimes.discover(),
-                com.editora.lsp.JavaRuntimes.preferredHome(
-                        defaultJdk, com.editora.lsp.JavaRuntimes.pathJavaHome(), System.getenv("JAVA_HOME")),
+                com.editora.lsp.JavaRuntimes.preferredHomeHere(defaultJdk),
                 projectRoot);
         if (bare.isEmpty() || named.status() != com.editora.doctor.DoctorStatus.OK) {
             return named;

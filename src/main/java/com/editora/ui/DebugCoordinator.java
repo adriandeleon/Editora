@@ -1422,6 +1422,11 @@ final class DebugCoordinator {
             public void onOutputTrailing() {
                 panel().showOutputTrailing(); // choice 27: no longer "Running" while the last output arrives
             }
+
+            @Override
+            public void onCompileFailed() { // javac refused it: the header says so, as for a failed build (A201)
+                panel().setLaunchRefused(tr("debugpanel.state.buildFailed"));
+            }
         };
     }
 
@@ -2032,9 +2037,12 @@ final class DebugCoordinator {
         // A remote file's program runs on its host: none of this machine's JDK setting, PATH or JAVA_HOME.
         // A Groovy script runs on the Settings JDK too (its JAVA_HOME), as Run runs it.
         boolean jvmScript = com.editora.run.JvmScriptRun.supports(language);
-        String jdkHome = !(java || jvmScript) || !com.editora.process.ExecTargets.runsHere(path)
-                ? ""
-                : compactSource || jvmScript ? host.settings().getMavenJdkHome() : configuredJdkHome(projectRoot, null);
+        String jdkHome = presentJdk(
+                !(java || jvmScript) || !com.editora.process.ExecTargets.runsHere(path)
+                        ? ""
+                        : compactSource || jvmScript
+                                ? host.settings().getMavenJdkHome()
+                                : configuredJdkHome(projectRoot, null));
         String selectedJava = com.editora.run.JdkToolchain.javaExecutable(jdkHome);
         // A Java file without a build tool runs on Run's JDK: the Settings JDK, else PATH's java (review 2, B102).
         String javaExec = java && projectRoot == null && com.editora.process.ExecTargets.runsHere(path)
@@ -2083,6 +2091,23 @@ final class DebugCoordinator {
 
     // --- Java launch preparation (review A2, B3, D1) ------------------------------------------------------
 
+    /**
+     * {@code home}, or "" — PATH's java — when it names a JDK that is no longer there: the Debug console and the
+     * status bar say so and where to choose another, where java-debug's raw "Cannot run program" stood beside an
+     * empty console (review 3, A206).
+     */
+    private String presentJdk(String home) {
+        if (!com.editora.run.JdkToolchain.isGone(home)) {
+            return home;
+        }
+        String said = tr("debug.console.defaultJdkMissing", home.strip());
+        panel().clearConsole(); // this launch's console: kept when its session starts
+        panel().appendNotice(said);
+        consoleStarted = true;
+        host.setStatus(said);
+        return "";
+    }
+
     /** The {@code java} a file without a build tool runs on: {@code selected} (the Settings JDK's), else PATH's. */
     private static String looseJava(String selected) {
         if (selected != null && !selected.isBlank()) {
@@ -2097,8 +2122,9 @@ final class DebugCoordinator {
      * project (review 2, A101). jdtls built that folder's classes once, at import, and nothing rebuilt them: every
      * later launch ran old code, and a file that did not compile ran as "Unresolved compilation problem". Its
      * source folder is corrected first (a packaged class in a folder jdtls guessed wrong would not build), then
-     * jdtls builds it, compile errors stop the launch, and only a launch whose build succeeded may use jdtls's
-     * output ({@link DapManager#setLooseClassesBuilt}); any other compiles the file itself.
+     * jdtls builds it, and only a launch whose build succeeded may use jdtls's output
+     * ({@link DapManager#setLooseClassesBuilt}); any other compiles the file with javac from its declared source
+     * root, and javac's errors — only those the program reaches — stop it ({@link JavaLaunchPrep#afterBuild}).
      */
     private void looseBuildThenLaunch(Path routing, Runnable launch) {
         lsp.ensureManaged(routing);
@@ -2206,14 +2232,13 @@ final class DebugCoordinator {
             pendingBuildFile = null;
             panel().setPreparing(false);
             ops.setStatusDebugLoading(false);
-            if (result.outcome() == LspManager.BuildOutcome.WITH_ERRORS) {
-                // A loose file in a window without a project: errors outside its own folder do not stop it.
-                Runnable proceed = loose ? launch : null;
-                showBuildErrors(routing, result.errors(), BUILD_ERROR_WAITS, proceed);
+            JavaLaunchPrep.AfterBuild next = JavaLaunchPrep.afterBuild(result.outcome(), loose);
+            if (next == JavaLaunchPrep.AfterBuild.REFUSE) {
+                showBuildErrors(routing, result.errors(), BUILD_ERROR_WAITS);
                 return;
             }
-            if (loose) {
-                dapManager.setLooseClassesBuilt(result.outcome() == LspManager.BuildOutcome.SUCCEEDED);
+            if (loose) { // without jdtls's output, javac compiles it from its declared source root (review 3, A201)
+                dapManager.setLooseClassesBuilt(next == JavaLaunchPrep.AfterBuild.LAUNCH_BUILT);
             }
             launch.run();
         });
@@ -2226,11 +2251,7 @@ final class DebugCoordinator {
      * every Java file of the project was saved first) — and may still be on their way, so with none known yet
      * this looks again a few times before saying only that there are errors.
      */
-    private void showBuildErrors(
-            Path routing,
-            Map<Path, List<com.editora.text.LspDiagnostic>> published,
-            int waits,
-            @Nullable Runnable loose) {
+    private void showBuildErrors(Path routing, Map<Path, List<com.editora.text.LspDiagnostic>> published, int waits) {
         Map<Path, List<com.editora.text.LspDiagnostic>> found = new java.util.TreeMap<>(lsp.problems());
         found.putAll(published);
         // Only this launch's project: the Problems window holds every open file's, of every language (review 2, A104).
@@ -2241,14 +2262,8 @@ final class DebugCoordinator {
         if (errors == 0 && importErrors.isEmpty() && waits > 0) {
             javafx.animation.PauseTransition later =
                     new javafx.animation.PauseTransition(javafx.util.Duration.millis(250));
-            later.setOnFinished(e -> showBuildErrors(routing, published, waits - 1, loose));
+            later.setOnFinished(e -> showBuildErrors(routing, published, waits - 1));
             later.play();
-            return;
-        }
-        if (errors == 0 && importErrors.isEmpty() && loose != null && project == null) {
-            // A loose file whose own folder compiles: the errors are elsewhere in the folder it was opened from.
-            dapManager.setLooseClassesBuilt(true);
-            loose.run();
             return;
         }
         panel().clearConsole();
@@ -2663,8 +2678,9 @@ final class DebugCoordinator {
                     } else if (!hasStep) {
                         buildToolThenLaunch(
                                 buildRoot, routing, shortName(cfg.mainClass()), plan.jdkEnvironment(), launch);
-                    } else {
-                        launch.run();
+                    } else { // the user's step built it; a Gradle launch still runs jdtls's bin/main (A202)
+                        afterToolBuild(buildRoot == null ? null : BuildBeforeLaunch.toolAt(buildRoot), routing, launch)
+                                .run();
                     }
                 });
     }
@@ -2700,8 +2716,13 @@ final class DebugCoordinator {
                 buildRoot,
                 env,
                 beforeLaunchConsole(),
-                launch);
+                afterToolBuild(tool, source, launch));
         updateDebugAvailability();
+    }
+
+    /** {@code launch}, after jdtls's build too when the launch runs jdtls's output, not the tool's (Gradle, A202). */
+    private Runnable afterToolBuild(com.editora.build.@Nullable BuildTool tool, Path source, Runnable launch) {
+        return BuildBeforeLaunch.jdtlsBuildsAfter(tool) ? () -> buildThenLaunch(source, launch) : launch;
     }
 
     /**
@@ -3005,15 +3026,17 @@ final class DebugCoordinator {
     }
 
     private String configuredJavaExecutable(@Nullable Path root, @Nullable RunConfiguration cfg) {
-        String selected = com.editora.run.JdkToolchain.javaExecutable(configuredJdkHome(root, cfg));
+        String selected = com.editora.run.JdkToolchain.javaExecutable(presentJdk(configuredJdkHome(root, cfg)));
         // No build tool (a plain folder): the Settings JDK, else PATH's java, as Run (review 2, B102).
         return root == null ? looseJava(selected) : selected;
     }
 
     private java.util.Map<String, String> configuredJdkEnvironment(
             @Nullable Path root, @Nullable RunConfiguration cfg) {
+        String home = configuredJdkHome(root, cfg);
         return com.editora.run.JdkToolchain.environment(
-                configuredJdkHome(root, cfg), com.editora.process.ProcessRunner.augmentedPath());
+                com.editora.run.JdkToolchain.isGone(home) ? "" : home,
+                com.editora.process.ProcessRunner.augmentedPath());
     }
 
     /** The simple class name of a fully-qualified main class (for the session label). */
