@@ -859,6 +859,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         boolean wasRunning = lastState == DapManager.State.RUNNING;
         lastState = state;
         if (state == DapManager.State.STARTING) {
+            refused = null;
             exitCode = null; // a new session: the last one's outcome is no longer what the status says
             ansiParsers.clear(); // and none of its colours is still on
         }
@@ -925,6 +926,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      */
     public void setPreparing(boolean preparing) {
         this.preparing = preparing;
+        if (preparing) {
+            refused = null;
+        }
         boolean active = lastState != DapManager.State.INACTIVE;
         start.setDisable(preparing || !(!active || lastState == DapManager.State.SUSPENDED));
         stop.setDisable(!active && !preparing);
@@ -947,7 +951,27 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         refreshStatus();
     }
 
+    /**
+     * A launch that never started — its build failed — says so in the state line ({@code text}) until the next
+     * launch: the last session's "Exited with code 0" stood beside the build's errors (review 2, A105).
+     */
+    public void setLaunchRefused(@Nullable String text) {
+        refused = text == null || text.isBlank() ? null : text;
+        if (refused != null) {
+            sessionFile = "";
+        }
+        refreshStatus();
+    }
+
+    /** The state line of a launch its build stopped ({@link #setLaunchRefused}); null otherwise. */
+    private @Nullable String refused;
+
     private void refreshStatus() {
+        if (refused != null && lastState == DapManager.State.INACTIVE) {
+            status.setText(refused);
+            RunPanel.showSpinner(busy, preparing);
+            return;
+        }
         String state = stoppedOnException && lastState == DapManager.State.SUSPENDED
                 ? (stoppedException.isEmpty()
                         ? tr("debugpanel.state.exception")

@@ -266,6 +266,67 @@ class JavaDebugRealAdapterProbeFxTest {
         }
     }
 
+    /**
+     * jdtls builds a loose file's folder once, at import; a launch that reused that output ran the code as it was
+     * then, after any edit (Java debug review 2, A101). A launch with no build of its own compiles the file.
+     */
+    @Test
+    void aLooseFileRunsItsSavedCodeOnEveryLaunch(@TempDir Path dir) throws Exception {
+        assumeRealAdapter();
+        Path root = Files.createDirectory(dir.resolve("loose"));
+        Path file = root.resolve("EditProbe.java");
+        String v1 = "public class EditProbe {\n    public static void main(String[] a) {\n"
+                + "        System.out.println(\"edit-v1\");\n    }\n}\n";
+        Files.writeString(file, v1);
+        try (Harness h = new Harness(dir)) {
+            h.open(dir, file, root, List.of());
+            FxTestSupport.runOnFx(
+                    () -> h.dap.startLaunch(file, "java", (o, c) -> c.accept(o.getFirst()), javaExec(), null));
+            assertEquals(0, h.exit.get(LONG, TimeUnit.SECONDS), "errors=" + h.errors);
+            assertTrue(h.output.toString().contains("edit-v1"), h.output.toString());
+            await("the first session never ended", 30, () -> h.state == DapManager.State.INACTIVE);
+
+            Files.writeString(file, v1.replace("edit-v1", "edit-v2")); // saved, as Debug saves it first
+            CompletableFuture<Integer> second = new CompletableFuture<>();
+            h.output.setLength(0);
+            h.dap.setListener(relay(h, second));
+            FxTestSupport.runOnFx(
+                    () -> h.dap.startLaunch(file, "java", (o, c) -> c.accept(o.getFirst()), javaExec(), null));
+            assertEquals(0, second.get(LONG, TimeUnit.SECONDS), "errors=" + h.errors);
+            assertTrue(h.output.toString().contains("edit-v2"), "the saved code ran: " + h.output);
+        }
+    }
+
+    /** {@code h}'s listener, with the program's exit code also going to {@code exit}. */
+    private static DapManager.Listener relay(Harness h, CompletableFuture<Integer> exit) {
+        return new DapManager.Listener() {
+            @Override
+            public void onState(DapManager.State s) {
+                h.state = s;
+            }
+
+            @Override
+            public void onStopped(int threadId, String reason, List<DapModels.StackFrameInfo> frames) {
+                h.stops.add(frames);
+            }
+
+            @Override
+            public void onOutput(String text, String category) {
+                h.output.append(text);
+            }
+
+            @Override
+            public void onError(String message) {
+                h.errors.add(message);
+            }
+
+            @Override
+            public void onProgramExit(int code) {
+                exit.complete(code);
+            }
+        };
+    }
+
     @Test
     void aProgramEditoraStartsItselfReadsWhatIsTypedToItAndEndsWithItsExitCode(@TempDir Path dir) throws Exception {
         assumeRealAdapter();
