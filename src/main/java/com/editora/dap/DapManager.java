@@ -4306,9 +4306,13 @@ public final class DapManager {
         if (reply == null || (!reply.failed() && reply.changedClasses().isEmpty())) {
             return new CodeReplaceOutcome(CodeReplaceResult.NOTHING_CHANGED, List.of(), "");
         }
-        return reply.failed()
-                ? new CodeReplaceOutcome(CodeReplaceResult.FAILED, reply.changedClasses(), reply.error())
-                : new CodeReplaceOutcome(CodeReplaceResult.APPLIED, reply.changedClasses(), "");
+        // java-debug words "JVM contains obsolete methods" as an error although the classes were replaced: a method
+        // that was running when the code changed (main's loop, typically) goes on with its old code. That is a
+        // replace that worked, with a note (review 2, B103) — it used to read "not applied, restart".
+        if (!reply.failed() || !reply.changedClasses().isEmpty() || reply.obsoleteMethods()) {
+            return new CodeReplaceOutcome(CodeReplaceResult.APPLIED, reply.changedClasses(), reply.error());
+        }
+        return new CodeReplaceOutcome(CodeReplaceResult.FAILED, reply.changedClasses(), reply.error());
     }
 
     /** Whether the session's adapter can restart a frame ({@code restartFrame}). */

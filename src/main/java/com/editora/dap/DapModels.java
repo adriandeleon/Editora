@@ -201,6 +201,14 @@ public final class DapModels {
         public boolean failed() {
             return !error.isEmpty();
         }
+
+        /**
+         * Whether the error is java-debug's "JVM contains obsolete methods": the classes were replaced, but methods
+         * that were running when the code changed go on with their old code until they return.
+         */
+        public boolean obsoleteMethods() {
+            return error.toLowerCase(java.util.Locale.ROOT).contains("obsolete methods");
+        }
     }
 
     /**

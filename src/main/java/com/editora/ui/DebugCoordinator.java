@@ -3582,9 +3582,16 @@ final class DebugCoordinator {
     private void reportCodeReplace(DapManager.CodeReplaceOutcome outcome, Set<Path> covered, boolean asked) {
         switch (outcome.result()) {
             case APPLIED -> {
-                String names = CodeReplaceText.classList(outcome.classes());
+                String names = CodeReplaceText.appliedNames(outcome.classes(), covered);
                 panel().appendNotice(tr("debug.hcr.applied", names));
-                host.setStatus(tr("debug.hcr.appliedStatus", names));
+                if (outcome.message() == null || outcome.message().isEmpty()) {
+                    host.setStatus(tr("debug.hcr.appliedStatus", names));
+                } else {
+                    // Methods that were running keep their old code (java-debug's "obsolete methods"): say how to
+                    // run one again with the new code (review 2, B103).
+                    panel().appendNotice(tr("debug.hcr.restartFrameHint"));
+                    host.setStatus(tr("debug.hcr.appliedOldStatus", names));
+                }
                 savedSinceReplace.removeAll(covered);
                 codeReplaced(covered);
             }
