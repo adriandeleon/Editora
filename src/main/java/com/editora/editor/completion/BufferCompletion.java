@@ -783,6 +783,13 @@ public final class BufferCompletion {
             if (completionPopup == null || !completionPopup.isShowing()) {
                 return;
             }
+            if (!completionPopup.hasRows()) { // only "Waiting for Pyright…": keys keep their meaning (E103)
+                switch (e.getCode()) {
+                    case DOWN, UP, PAGE_DOWN, PAGE_UP, ENTER, TAB, LEFT, RIGHT, HOME, END -> hideCompletion();
+                    default -> {}
+                }
+                return;
+            }
             // Emacs-style C-n / C-p move the selection too (the area takes just these chords while the popup
             // is open — see LIST_CHORDS — so the global dispatcher leaves them for us).
             if (e.isControlDown() && !e.isAltDown() && !e.isMetaDown()) {
@@ -1682,6 +1689,47 @@ public final class BufferCompletion {
                     renderCompletion(a, requested, localItems);
                     if (result.incomplete() && lastRequestVersion != host.docVersion()) updateCompletion(a, false);
                 });
+        waitingTimer.setOnFinished(e -> showWaiting(a, requested, gen, localItems, source.serverName()));
+        waitingTimer.playFromStart();
+    }
+
+    /** How long a server may take before the list says it is waiting for it (Python review 2 E103). */
+    static final javafx.util.Duration WAITING_AFTER = javafx.util.Duration.millis(300);
+
+    private final javafx.animation.PauseTransition waitingTimer = new javafx.animation.PauseTransition(WAITING_AFTER);
+
+    /**
+     * The server has not answered {@code requested} within {@link #WAITING_AFTER}: shows the buffer's own rows with
+     * "Waiting for Pyright…" under them. A 49,000-line Python file kept Pyright busy for 13 s, and the popup showed
+     * nothing at all meanwhile (Python review 2 E103). The answer, when it lands, replaces this list.
+     */
+    private void showWaiting(
+            CodeArea a, CompletionSession requested, long gen, List<Completion> localItems, @Nullable String server) {
+        if (gen != completionGen
+                || session != requested
+                || requested.result() != null
+                || a.getScene() == null
+                || !a.isFocused()
+                || !requested.matches(a.getCaretPosition(), host.docVersion())
+                || codeActionsShowing()) return;
+        Bounds bounds = caretAnchorBounds(a);
+        if (bounds == null) return;
+        completionAnchorStart = a.getCaretPosition() - requested.prefix().length();
+        completionAnchor = bounds;
+        completionArea = a;
+        if (!localItems.isEmpty()) a.getProperties().put(OWNED_CHORDS, LIST_CHORDS);
+        completionPopup().setQuery(requested.prefix());
+        completionPopup()
+                .showWaiting(
+                        a.getScene().getWindow(),
+                        bounds,
+                        localItems,
+                        server == null
+                                ? com.editora.i18n.Messages.tr("completion.waitingServer")
+                                : com.editora.i18n.Messages.tr("completion.waiting", server));
+        localShown = true;
+        localCaret = a.getCaretPosition();
+        localVersion = host.docVersion();
     }
 
     private void renderCompletion(CodeArea a, CompletionSession context, List<Completion> localItems) {

@@ -4101,21 +4101,22 @@ final class LspCoordinator {
                 inlayScrollSettle.playFromStart();
             }
         });
-        buffer.setLspCompletionSource((line, column, kind, trigger, cb) -> {
-            Path path = lspPath(buffer);
-            if (path != null && lspManager.isManaged(path)) {
-                return lspManager.completion(
-                        path,
-                        line,
-                        column,
-                        kind,
-                        trigger,
-                        item -> autoImportAccept(buffer, item),
-                        pomCompletionFilter(buffer, line, column, kind, trigger, cb));
-            }
-            cb.accept(com.editora.completion.CompletionResult.EMPTY);
-            return () -> {};
-        });
+        buffer.setLspCompletionSource(com.editora.completion.CompletionSource.named(
+                () -> LspFeatureNotice.nameOf(serverOf(buffer)), (line, column, kind, trigger, cb) -> {
+                    Path path = lspPath(buffer);
+                    if (path != null && lspManager.isManaged(path)) {
+                        return lspManager.completion(
+                                path,
+                                line,
+                                column,
+                                kind,
+                                trigger,
+                                item -> autoImportAccept(buffer, item),
+                                pomCompletionFilter(buffer, line, column, kind, trigger, cb));
+                    }
+                    cb.accept(com.editora.completion.CompletionResult.EMPTY);
+                    return () -> {};
+                }));
         // Lazy documentation for the completion doc side-popup: resolve the item's docs on demand.
         buffer.setCompletionDocResolver((token, cb) -> {
             Path path = lspPath(buffer);
