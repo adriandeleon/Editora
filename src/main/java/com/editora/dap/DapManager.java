@@ -87,7 +87,8 @@ public final class DapManager {
 
     /** Lets the controller present a chooser when several main classes are found (QuickOpen). */
     public interface MainClassPicker {
-        void pick(List<MainClassOption> options, Consumer<MainClassOption> chosen);
+        /** {@code chosen} gets null when the user dismissed the chooser. */
+        void pick(List<MainClassOption> options, Consumer<@Nullable MainClassOption> chosen);
     }
 
     /** UI sink (implemented by the controller / Debug panel); all calls arrive on the FX thread. */
@@ -4279,7 +4280,7 @@ public final class DapManager {
      * Apply Code Changes: has jdtls build {@code file}'s workspace (incrementally — Editora runs it without
      * autobuild, so nothing else compiles a saved file), then asks java-debug to load the rebuilt classes into
      * the running program. A build with compile errors replaces nothing. {@code cb} runs on the FX thread,
-     * and not at all when the session ended meanwhile.
+     * exactly once — with {@link CodeReplaceResult#NO_SESSION} when the session ended meanwhile.
      */
     public void applyCodeChanges(@Nullable Path file, Consumer<CodeReplaceOutcome> cb) {
         DapClient c = client;
@@ -4290,6 +4291,7 @@ public final class DapManager {
         long epoch = sessionEpoch;
         lsp.buildJavaWorkspace(file, false, built -> {
             if (!isCurrent(epoch, c)) {
+                cb.accept(ended()); // the caller waits for an answer (review D101)
                 return;
             }
             switch (built) {
@@ -4297,13 +4299,19 @@ public final class DapManager {
                 case SUCCEEDED ->
                     c.redefineClasses()
                             .whenComplete((r, e) -> Platform.runLater(() -> {
-                                if (isCurrent(epoch, c)) {
-                                    cb.accept(codeReplaceOutcome(r, e == null ? null : msg(e)));
-                                }
+                                cb.accept(
+                                        isCurrent(epoch, c)
+                                                ? codeReplaceOutcome(r, e == null ? null : msg(e))
+                                                : ended());
                             }));
                 default -> cb.accept(new CodeReplaceOutcome(CodeReplaceResult.BUILD_FAILED, List.of(), ""));
             }
         });
+    }
+
+    /** The outcome of a replace whose session ended before it finished. */
+    private static CodeReplaceOutcome ended() {
+        return new CodeReplaceOutcome(CodeReplaceResult.NO_SESSION, List.of(), "");
     }
 
     /** Pure: the outcome of a {@code redefineClasses} answer, or of the request failing with {@code error}. */

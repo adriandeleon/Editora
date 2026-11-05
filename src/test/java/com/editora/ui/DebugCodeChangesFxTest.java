@@ -213,6 +213,30 @@ class DebugCodeChangesFxTest {
                 statuses().toString());
     }
 
+    /**
+     * Review D101: a session that ended while its replace was still running left the replace "running" for good, so
+     * every later save — and Apply Code Changes — in the window did nothing at all.
+     */
+    @Test
+    void aSessionThatEndsDuringAReplaceLeavesTheNextSessionsReplacesWorking() throws Exception {
+        FakeDebugAdapter.Session first = connect();
+        first.redefineGate = new java.util.concurrent.CompletableFuture<>();
+        editAndSave("\"v1\"", "\"v2\"");
+        first.awaitRequest("redefineClasses");
+        FxTestSupport.runOnFx(dap::stop);
+        first.redefineGate.complete(null); // the ended session's answer arrives late, and is not this window's
+        FxTestSupport.drainFx();
+
+        FakeDebugAdapter.Session next = connect();
+        next.redefineAnswer = Map.of("changedClasses", List.of("App"));
+        editAndSave("\"v2\"", "\"v3\"");
+
+        next.awaitRequest("redefineClasses");
+        String applied = tr("debug.hcr.applied", "App");
+        await("the console line", () -> console().contains(applied));
+        assertFalse(statuses().contains(tr("debug.hcr.noSession")), "the late answer said nothing: " + statuses());
+    }
+
     @Test
     void aReplaceJavaDebugRefusesTellsTheUserToRestart() throws Exception {
         FakeDebugAdapter.Session session = connect();
