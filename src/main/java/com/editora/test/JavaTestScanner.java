@@ -165,6 +165,70 @@ public final class JavaTestScanner {
         return out;
     }
 
+    /**
+     * The target the caret on {@code caret} (0-based) means, among {@code targets} (by line, from {@link #scan}), or
+     * null outside every test class (Java debug review 3, A205):
+     * <ul>
+     *   <li>on a target's own line, that target;
+     *   <li>on its annotations, or a comment right above them, the target they lead to — as in IntelliJ, where
+     *       they are part of the declaration; the last target above used to run, even one in a nested class above;
+     *   <li>elsewhere, the innermost target whose body holds the caret: a test method, else its class — a blank
+     *       line between two tests is the class's, as in IntelliJ, and after a nested class's closing brace the
+     *       caret is in the outer class again.
+     * </ul>
+     * Pure.
+     */
+    public static @Nullable TestTarget targetAt(String source, java.util.Map<Integer, TestTarget> targets, int caret) {
+        if (source == null || targets == null || targets.isEmpty() || caret < 0) {
+            return null;
+        }
+        String[] lines = blank(source).split("\n", -1);
+        String[] raw = source.split("\n", -1);
+        if (caret < lines.length && caret < raw.length && !raw[caret].isBlank()) {
+            int line = caret;
+            while (line < lines.length && !targets.containsKey(line) && leadsToDeclaration(lines[line])) {
+                line++; // over annotations, comments, and blank lines between them
+            }
+            if (targets.containsKey(line)) {
+                return targets.get(line);
+            }
+        }
+        java.util.NavigableMap<Integer, TestTarget> above = new java.util.TreeMap<>(targets).headMap(caret, true);
+        for (TestTarget t : above.descendingMap().values()) {
+            if (caret <= bodyEnd(lines, t.line())) {
+                return t;
+            }
+        }
+        return null;
+    }
+
+    /** A line of a declaration's lead-in: an annotation, a comment (blanked), or a blank line among them. */
+    private static boolean leadsToDeclaration(String blankedLine) {
+        String t = blankedLine.strip();
+        return t.isEmpty() || t.startsWith("@");
+    }
+
+    /** The line of the brace that closes the body opened on or after {@code from}; {@code from} when none opens. */
+    private static int bodyEnd(String[] lines, int from) {
+        int depth = 0;
+        boolean opened = false;
+        for (int li = from; li < lines.length; li++) {
+            String line = lines[li];
+            for (int i = 0; i < line.length(); i++) {
+                char c = line.charAt(i);
+                if (c == '{') {
+                    depth++;
+                    opened = true;
+                } else if (c == '}' && opened && --depth == 0) {
+                    return li;
+                } else if (c == ';' && !opened) {
+                    return li; // an abstract or interface method: no body
+                }
+            }
+        }
+        return opened ? lines.length - 1 : from;
+    }
+
     private static String fqcn(String pkg, String cls) {
         return pkg.isEmpty() ? cls : pkg + "." + cls;
     }
