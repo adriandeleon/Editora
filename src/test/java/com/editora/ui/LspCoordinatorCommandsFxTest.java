@@ -294,14 +294,12 @@ class LspCoordinatorCommandsFxTest {
     }
 
     @Test
-    void aNewDefaultJdkWhileJdtlsRunsSaysToRestart() throws Exception {
+    void aNewDefaultJdkWhileJdtlsRunsIsPushedWithoutARestartHint() throws Exception {
         fx.open("A.java", SOURCE);
         fx.host.settings.setMavenJdkHome("/jdk/re-review");
-        fx.run(() -> fx.coordinator.applyOnTypeFormatting());
-        assertEquals(tr("status.lsp.javaJdkChanged"), fx.host.lastStatus(), "re-review CN7");
         fx.host.statuses.clear();
         fx.run(() -> fx.coordinator.applyOnTypeFormatting());
-        assertTrue(fx.host.statuses.isEmpty(), "unchanged: nothing to say");
+        assertTrue(fx.host.statuses.isEmpty(), "jdtls gets the new JDK at once: nothing to restart (review 2 B102)");
     }
 
     @Test

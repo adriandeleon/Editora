@@ -403,13 +403,6 @@ public final class LspManager {
     }
 
     /**
-     * The JDK the user chose in Settings (Build Tools ▸ Default JDK, "" for none). A Java server marks it as its
-     * default runtime (else PATH's java, {@link #javaPreferredHome}) and runs Gradle on it; one started after this
-     * also runs on it itself when the launcher's own Java is older than jdtls needs. A running local server is
-     * sent the new default at once (Java debug review 2, B102), so what it builds and the JDK sources it shows
-     * follow the program's JDK; only the JDK it runs on itself waits for a restart. Always false: nothing to say.
-     */
-    /**
      * The Java version jdtls builds {@code file}'s folder for when it has no build file: its default runtime's
      * ({@code JavaSE-25} → 25); null when no local Java server serves it or none is known.
      */
@@ -418,7 +411,14 @@ public final class LspManager {
         return s == null ? null : JavaRuntimes.defaultMajor(s.javaRuntimes());
     }
 
-    public boolean setJavaDefaultJdk(@Nullable String home) {
+    /**
+     * The JDK the user chose in Settings (Build Tools ▸ Default JDK, "" for none). A Java server marks it as its
+     * default runtime (else PATH's java, {@link #javaPreferredHome}) and runs Gradle on it; one started after this
+     * also runs on it itself when the launcher's own Java is older than jdtls needs. A running local server is
+     * sent the new default at once (Java debug review 2, B102), so what it builds and the JDK sources it shows
+     * follow the program's JDK; only the JDK it runs on itself waits for a restart.
+     */
+    public void setJavaDefaultJdk(@Nullable String home) {
         String next = home == null ? "" : home;
         boolean changed = !next.equals(javaDefaultJdk);
         javaDefaultJdk = next;
@@ -437,7 +437,6 @@ public final class LspManager {
                 });
             }
         }
-        return false;
     }
 
     /** The clean-ups jdtls's {@code java/cleanup} runs ({@code java.cleanup.actions}); every Java session gets them. */
