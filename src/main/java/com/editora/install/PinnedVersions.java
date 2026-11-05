@@ -88,6 +88,13 @@ public final class PinnedVersions {
             new Pin(InstallCatalog.LEMMINX_STEP, InstallCatalog.LEMMINX_VERSION, "xml", null, false),
             // one package for HTML, CSS and JSON: forServer answers all three with it (HTML review A12)
             new Pin(InstallCatalog.WEB_LS_PACKAGE, InstallCatalog.WEB_LS_VERSION, "html", null, false),
+            // npm --prefix with TypeScript 5.9 beside it: a newer server needs a newer Node.js (JS review follow-up)
+            new Pin(
+                    TypeScriptServerInstall.PROGRAM,
+                    InstallCatalog.TYPESCRIPT_LS_VERSION,
+                    TypeScriptServerInstall.SERVER_ID,
+                    Lang.JAVASCRIPT,
+                    false),
             new Pin("shellcheck", InstallCatalog.SHELLCHECK_VERSION, null, null, true),
             new Pin("shfmt", InstallCatalog.SHFMT_VERSION, null, null, true));
 
@@ -173,7 +180,7 @@ public final class PinnedVersions {
     /**
      * The version an install shows without a receipt, or null: the core bundle's name for jdtls
      * ({@code location} may be its launcher), a jar's name for the Maven, Groovy and Scala servers, the bundle's
-     * own constant for vscode-js-debug. The Kotlin server and the native tools say nothing in their files.
+     * own constant for vscode-js-debug, the npm package.json for the web servers and typescript-language-server. The Kotlin server and the native tools say nothing in their files.
      */
     public static @Nullable String fingerprint(String stepId, Path location) {
         try {
@@ -187,6 +194,7 @@ public final class PinnedVersions {
                 case "metals" -> jarVersion(location.resolve("lib"), METALS_JAR);
                 case "js-debug" -> jsDebugVersion(location.resolve("js-debug/src/dapDebugServer.js"));
                 case InstallCatalog.WEB_LS_PACKAGE -> WebServerInstall.installedVersion(location);
+                case TypeScriptServerInstall.PROGRAM -> TypeScriptServerInstall.installedVersion(location);
                 default -> null;
             };
         } catch (IOException | RuntimeException e) {
