@@ -74,11 +74,6 @@ public final class DoctorNeeds {
         return ids;
     }
 
-    /** Whether the project root's file names mark it as a Python project (for the formatter row). */
-    public static boolean pythonProject(Collection<String> fileNames) {
-        return serversForRootFiles(fileNames).contains("python");
-    }
-
     /**
      * Whether a missing server should count as a problem: a file it serves is open ({@code openServers}), the
      * project calls for it ({@code rootServers}), or the user configured its command.
