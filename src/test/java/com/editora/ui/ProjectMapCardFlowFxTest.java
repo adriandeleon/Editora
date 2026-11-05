@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 
 import javafx.scene.Scene;
 import javafx.scene.input.KeyCode;
@@ -300,7 +301,7 @@ class ProjectMapCardFlowFxTest {
             enterOn(column, "sub");
             ProjectMapPreview declaration = waitForCard(map, sub);
             waitFor(() -> rowDrawn(column, sub), "the row drawn");
-            FxTestSupport.runOnFx(() -> assertConnectedTo(map, sub, column.rowBounds(sub), "the file card's column"));
+            awaitConnectedTo(map, sub, () -> column.rowBounds(sub), "the file card's column");
 
             // A click on the declaration's row in the Map's Structure column: the card goes beside that column, and
             // its connector starts at that row.
@@ -318,8 +319,14 @@ class ProjectMapCardFlowFxTest {
                         MapCards.drawnBounds(declaration),
                         site.column(),
                         site.row());
-                assertConnectedTo(map, sub, site.row(), "the Map's column");
             });
+            awaitConnectedTo(
+                    map,
+                    sub,
+                    () -> ((MapCards.Site)
+                                    FxTestSupport.call(map.surface(), "cardSite", new Class<?>[] {Path.class}, sub))
+                            .row(),
+                    "the Map's column");
 
             // Asked for from the file card's column again: back beside that one.
             enterOn(column, "sub");
@@ -328,8 +335,8 @@ class ProjectMapCardFlowFxTest {
                 double[] card = MapCards.drawnBounds(declaration);
                 double[] owner = MapCards.drawnBounds(file);
                 assertTrue(card[0] >= owner[0] + owner[2] - 1, "right of the file card again");
-                assertConnectedTo(map, sub, column.rowBounds(sub), "the file card's column again");
             });
+            awaitConnectedTo(map, sub, () -> column.rowBounds(sub), "the file card's column again");
         } finally {
             FxTestSupport.runOnFx(map.view()::dispose);
         }
@@ -356,6 +363,26 @@ class ProjectMapCardFlowFxTest {
             return FxTestSupport.callOnFx(() -> column.rowBounds(key)) != null;
         } catch (Exception e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * Waits (up to 10 s) for the connector of {@code key}'s card to start at the row box {@code row}, then asserts it.
+     * Connectors are redrawn once per frame, a pulse after the row moves, so a check straight after the row is drawn
+     * can read the previous frame's connector — or none yet — on a slow machine.
+     */
+    private static void awaitConnectedTo(Fixture map, Path key, Supplier<double[]> row, String what) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (true) {
+            try {
+                FxTestSupport.runOnFx(() -> assertConnectedTo(map, key, row.get(), what));
+                return;
+            } catch (AssertionError | RuntimeException e) {
+                if (System.nanoTime() >= deadline) {
+                    throw e;
+                }
+            }
+            Thread.sleep(25);
         }
     }
 
