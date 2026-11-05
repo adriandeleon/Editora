@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Find File opens a folder as a project.** In the Find File popup (C-x C-f in Emacs), C-d opens the highlighted
+  folder as a project instead of descending into it. With the field ending in a separator and the highlight not
+  moved, it opens the folder being listed; on a file, the folder the file is in. The legend shows the key when
+  project support is on and the keymap lets C-d reach the popup (it is a global command in the IntelliJ macOS
+  keymap, Start Debugging, so the popup leaves it alone there).
 - **JavaScript and TypeScript: ESLint, Prettier/Biome and actions on save.** A project's own ESLint (from
   `node_modules`, with an `eslint.config.*`, `.eslintrc*` or `package.json` `eslintConfig`) now checks JS/TS files
   when they are shown, after a pause in typing and on save; its problems join the TypeScript server's (source

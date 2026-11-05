@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -24,6 +25,8 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Window;
 
+import com.editora.command.KeyDispatcher;
+import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
 import org.jspecify.annotations.Nullable;
 
@@ -34,7 +37,8 @@ import static com.editora.i18n.Messages.tr;
  * listing of the current directory. Type to filter, {@code Tab} to complete the common prefix, Enter
  * to descend into a folder or open a file (a non-existent path opens a new buffer to be written on
  * save), ↑/↓ (or the keymap's line-up/down chords) to move, {@code Esc} (or the keymap's cancel) to cancel.
- * Keyboard-only; see {@link PickerKeys}.
+ * When {@link #setOpenAsProject} wires it, {@code C-d} opens the highlighted folder (or the folder being listed)
+ * as a project. Keyboard-only; see {@link PickerKeys}.
  */
 public class FileFinder {
 
@@ -46,6 +50,21 @@ public class FileFinder {
     private final boolean pickDirectory;
 
     private final String title;
+
+    /** The chord that opens a folder as a project, when the keymap lets it reach the card. */
+    static final String PROJECT_CHORD = "C-d";
+
+    /** Opens a folder as a project ({@link #PROJECT_CHORD}); null when this finder offers no such key. */
+    private @Nullable Consumer<Path> onOpenProject;
+
+    /** Whether opening a project is possible right now (project support may be switched off). */
+    private BooleanSupplier openProjectAvailable = () -> true;
+
+    /** The raw chord token that opens a folder as a project in this showing, or null when there is none. */
+    private @Nullable String projectChord;
+
+    /** True once the user moved the highlight in the current listing (it no longer just sits on row one). */
+    private boolean highlightMoved;
 
     private final TextField input = new TextField();
     private final ListView<Path> list = new ListView<>();
@@ -104,6 +123,17 @@ public class FileFinder {
         content.getProperties().put("editora.ownsKeys", Boolean.TRUE);
     }
 
+    /**
+     * Offers {@link #PROJECT_CHORD} in this finder: it hands the highlighted folder — or, when the field names
+     * the listed folder itself, that folder — to {@code action}, while {@code available} says so (it is asked
+     * each time the finder is shown, so the key and its legend follow a settings change). Not for a folder
+     * picker, whose Enter already chooses a folder.
+     */
+    public void setOpenAsProject(Consumer<Path> action, BooleanSupplier available) {
+        this.onOpenProject = action;
+        this.openProjectAvailable = available;
+    }
+
     /** Injects the shared overlay host used to show the picker card. */
     public void setOverlayHost(OverlayHost overlayHost) {
         this.overlayHost = overlayHost;
@@ -119,7 +149,17 @@ public class FileFinder {
         currentDir = null;
         listing = DirectoryListing.UNREADABLE;
         listGeneration++; // a read still in flight belongs to the previous showing
-        hint.setText(PickerKeys.legend(PickerKeys.hint("complete", "tab"), PickerKeys.hint("open", "↵")));
+        KeymapManager keymap = TextInputKeymap.sharedKeymap();
+        projectChord = onOpenProject != null && !pickDirectory && openProjectAvailable.getAsBoolean()
+                ? PickerKeys.reachingChord(keymap, PROJECT_CHORD)
+                : null;
+        hint.setText(PickerKeys.legend(
+                keymap,
+                PickerKeys.hint("complete", "tab"),
+                PickerKeys.hint("open", "↵"),
+                PickerKeys.hint(
+                        "openProject",
+                        projectChord == null || keymap == null ? projectChord : keymap.display(projectChord))));
         // Pre-fill with the start directory + separator so the user types a name straight away.
         input.setText(dir.toString().endsWith(SEP) ? dir.toString() : dir + SEP);
         input.positionCaret(input.getText().length());
@@ -203,6 +243,7 @@ public class FileFinder {
             }
         }
         items.setAll(matches);
+        highlightMoved = false;
         if (!items.isEmpty()) {
             list.getSelectionModel().select(0);
         }
@@ -216,7 +257,11 @@ public class FileFinder {
             default -> {
                 if (e.getCode() == javafx.scene.input.KeyCode.TAB) {
                     autocomplete();
-                } else if (!PickerKeys.navigate(list, action)) {
+                } else if (projectChord != null && projectChord.equals(KeyDispatcher.chord(e))) {
+                    openAsProject();
+                } else if (PickerKeys.navigate(list, action)) {
+                    highlightMoved = true;
+                } else {
                     return;
                 }
             }
@@ -246,6 +291,42 @@ public class FileFinder {
             hide();
             onChoose.accept(target);
         }
+    }
+
+    /** {@link #PROJECT_CHORD}: open the folder {@link #projectFolder} picks as a project and close the finder. */
+    private void openAsProject() {
+        Consumer<Path> action = onOpenProject;
+        Path selected = list.getSelectionModel().getSelectedItem();
+        Path folder = projectFolder(
+                input.getText(),
+                listing.readable() ? currentDir : null,
+                selected,
+                selected != null && listing.isDirectory(selected),
+                highlightMoved);
+        if (action == null || folder == null) {
+            return;
+        }
+        hide();
+        action.accept(folder);
+    }
+
+    /**
+     * The folder {@link #PROJECT_CHORD} opens: the highlighted row when it is a folder the user picked — by typing
+     * a name or by moving onto it — else the folder being listed ({@code listedDir}, null while it is unread or
+     * unreadable). With the field ending in a separator and the highlight untouched, the user is "in" the listed
+     * folder, so that is the one meant, not the first child that happens to sit on row one. Pure.
+     */
+    static @Nullable Path projectFolder(
+            String text,
+            @Nullable Path listedDir,
+            @Nullable Path highlighted,
+            boolean highlightedIsDir,
+            boolean highlightMoved) {
+        boolean picked = highlightMoved || !prefixPart(text).isEmpty();
+        if (highlighted != null && highlightedIsDir && picked) {
+            return highlighted;
+        }
+        return listedDir;
     }
 
     /** The selected list entry, or the literal typed path when nothing is selected. */

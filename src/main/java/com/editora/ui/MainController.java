@@ -1716,6 +1716,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Keyboard "Open Project Folder" — mirrors the file finder, but picks a directory.
         navigation.folderFinder =
                 new FileFinder(navigation::finderStartDir, this::openProjectRoot, true, tr("project.openFolder.title"));
+        // Find File's C-d: open the highlighted folder as a project instead of descending into it (gated like
+        // Open Project Folder, so it is neither offered nor run with project support off).
+        navigation.fileFinder.setOpenAsProject(this::openProjectRoot, this::projectsEnabled);
         // Which project this window edits (and its session file) is set by WindowManager via
         // setWindowContext(); the global window just keeps the default workspace-state.json.
         refreshProjectPanelList();

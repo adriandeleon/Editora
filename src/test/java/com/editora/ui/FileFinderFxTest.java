@@ -39,6 +39,11 @@ class FileFinderFxTest {
 
     private static final String SEP = File.separator;
 
+    /** The legend entry's words without its key (the key's spelling follows the active keymap). */
+    private static String openProject() {
+        return com.editora.i18n.Messages.tr("pickerKeys.openProject", "").trim();
+    }
+
     @BeforeAll
     static void boot() throws Exception {
         FxTestSupport.bootToolkit();
@@ -48,6 +53,11 @@ class FileFinderFxTest {
     private static final class Shown implements AutoCloseable {
         final AsyncTestScope async = new AsyncTestScope();
         final List<Path> chosen = new ArrayList<>();
+        /** Folders C-d opened as a project. */
+        final List<Path> projects = new ArrayList<>();
+        /** Whether project support is on: asked each time the finder is shown. */
+        volatile boolean projectsOn = true;
+
         final FileFinder finder;
         final TextField input;
         final ListView<Path> list;
@@ -70,6 +80,7 @@ class FileFinderFxTest {
                 host = new OverlayHost();
                 host.install(pane);
                 finder.setOverlayHost(host);
+                finder.setOpenAsProject(projects::add, () -> projectsOn);
                 finder.show(stage);
             });
             async.onClose(() -> FxTestSupport.runOnFx(stage::close));
@@ -87,6 +98,20 @@ class FileFinderFxTest {
                 FxTestSupport.invokeWith(finder, "onKey", KeyEvent.class, e);
                 return e.isConsumed();
             });
+        }
+
+        /** Delivers {@code Ctrl} + {@code code} to the finder's handler; true when it was consumed. */
+        boolean pressCtrl(KeyCode code) throws Exception {
+            return FxTestSupport.callOnFx(() -> {
+                KeyEvent e = new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, false, true, false, false);
+                FxTestSupport.invokeWith(finder, "onKey", KeyEvent.class, e);
+                return e.isConsumed();
+            });
+        }
+
+        String hint() throws Exception {
+            return FxTestSupport.callOnFx(
+                    () -> FxTestSupport.<Label>field(finder, "hint").getText());
         }
 
         void type(String text) throws Exception {
@@ -367,6 +392,75 @@ class FileFinderFxTest {
                 assertFalse(s.finder.isShown());
             });
         }
+    }
+
+    @Test
+    void ctrlDInTheListedFolderOpensThatFolderAsAProject(@TempDir Path root) throws Exception {
+        tree(root);
+        try (Shown s = new Shown(root, false, 5)) {
+            assertTrue(s.hint().contains(openProject()), "the legend offers the key: " + s.hint());
+            assertEquals(root.resolve("docs"), s.selected(), "row one is highlighted, but nobody picked it");
+            assertTrue(s.pressCtrl(KeyCode.D));
+            assertEquals(List.of(root), s.projects, "the folder the field names, not its first child");
+            assertTrue(s.chosen.isEmpty(), "no file is opened");
+            assertFalse(FxTestSupport.callOnFx(s.finder::isShown));
+        }
+    }
+
+    @Test
+    void ctrlDOpensAFolderTheUserTypedOrMovedTo(@TempDir Path root) throws Exception {
+        tree(root);
+        try (Shown s = new Shown(root, false, 5)) {
+            s.type(root + SEP + "sr");
+            assertTrue(s.pressCtrl(KeyCode.D));
+            assertEquals(List.of(root.resolve("src")), s.projects, "the folder whose name was typed");
+        }
+        try (Shown s = new Shown(root, false, 5)) {
+            assertTrue(s.press(KeyCode.DOWN));
+            assertEquals(root.resolve("src"), s.selected());
+            assertTrue(s.pressCtrl(KeyCode.D));
+            assertEquals(List.of(root.resolve("src")), s.projects, "the folder the highlight was moved to");
+        }
+        try (Shown s = new Shown(root, false, 5)) {
+            s.type(root + SEP + "be");
+            assertTrue(s.pressCtrl(KeyCode.D));
+            assertEquals(List.of(root), s.projects, "a highlighted file stands for the folder it is in");
+        }
+    }
+
+    @Test
+    void ctrlDIsNeitherOfferedNorRunWithoutProjectsOrInTheFolderPicker(@TempDir Path root) throws Exception {
+        tree(root);
+        try (Shown s = new Shown(root, false, 5)) {
+            s.projectsOn = false;
+            FxTestSupport.runOnFx(() -> {
+                s.finder.hide();
+                s.finder.show(s.stage); // availability is read when shown
+            });
+            s.awaitRows(5);
+            assertFalse(s.hint().contains(openProject()), "no legend entry: " + s.hint());
+            assertFalse(s.pressCtrl(KeyCode.D), "left to the path field (delete-char)");
+            assertTrue(s.projects.isEmpty());
+            assertTrue(FxTestSupport.callOnFx(s.finder::isShown));
+        }
+        try (Shown s = new Shown(root, true, 2)) {
+            assertFalse(s.hint().contains(openProject()), "Enter already chooses the folder there: " + s.hint());
+            assertFalse(s.pressCtrl(KeyCode.D));
+            assertTrue(s.projects.isEmpty());
+        }
+    }
+
+    @Test
+    void theProjectFolderIsThePickedFolderElseTheListedOne() {
+        Path dir = Path.of("work");
+        Path child = dir.resolve("app");
+        String inDir = dir + SEP;
+        assertEquals(dir, FileFinder.projectFolder(inDir, dir, child, true, false), "row one, untouched");
+        assertEquals(child, FileFinder.projectFolder(inDir, dir, child, true, true), "moved onto it");
+        assertEquals(child, FileFinder.projectFolder(inDir + "ap", dir, child, true, false), "typed its name");
+        assertEquals(dir, FileFinder.projectFolder(inDir + "ap", dir, child, false, true), "a file: its folder");
+        assertEquals(dir, FileFinder.projectFolder(inDir + "zz", dir, null, false, false), "no match");
+        assertNull(FileFinder.projectFolder(inDir, null, null, false, false), "listing not read (yet)");
     }
 
     private static void updateItem(ListCell<Path> cell, Path item, boolean empty) {
