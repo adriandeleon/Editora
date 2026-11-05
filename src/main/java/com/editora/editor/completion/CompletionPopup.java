@@ -37,6 +37,9 @@ import org.jspecify.annotations.Nullable;
 public final class CompletionPopup {
 
     private static final int VISIBLE_ROWS = 9;
+    /** Rows {@link #contentWidth} measures (E106: server lists are no longer capped at 50). */
+    static final int MEASURED_ROWS = 200;
+
     private static final double ROW_HEIGHT = 24;
     private static final double MIN_WIDTH = 360;
     // A jdtls method row carries its whole parameter list in the label (CompletionMapper appends
@@ -260,7 +263,9 @@ public final class CompletionPopup {
         Text measure = new Text();
         double widest = 0;
         boolean overflow = items.size() > VISIBLE_ROWS;
-        for (Completion c : items) {
+        // The first rows are enough to size the popup; measuring all of a 5,000-row server list on the FX thread
+        // is not (the list itself is virtual). Longer labels further down ellipsize.
+        for (Completion c : items.subList(0, Math.min(items.size(), MEASURED_ROWS))) {
             measure.setFont(labelFont);
             measure.setText(c.label() == null ? "" : c.label());
             double labelW = measure.getLayoutBounds().getWidth();
