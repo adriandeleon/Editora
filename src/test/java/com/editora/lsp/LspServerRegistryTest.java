@@ -311,10 +311,6 @@ class LspServerRegistryTest {
         assertEquals("shellscript", LspServerRegistry.protocolLanguageId("shell"), "LSP's id for shell scripts");
     }
 
-    /**
-     * The large-source tier (10,000 lines by default) turns language servers off; Python keeps Pyright to
-     * 50,000 lines, which it checks in seconds (Python review B10).
-     */
     /** A file ending in a line break has an empty last paragraph, which is not a line (Python review 2 E109). */
     @Test
     void aFinalLineBreakIsNotALine() {
@@ -326,6 +322,10 @@ class LspServerRegistryTest {
                 "50,000 lines and a final newline");
     }
 
+    /**
+     * The large-source tier (10,000 lines by default) turns language servers off; Python keeps Pyright to
+     * 50,000 lines, which it checks in seconds (Python review B10).
+     */
     @Test
     void pythonKeepsItsServerInTheLargeFileTier() {
         assertTrue(LspServerRegistry.lspAllowedForSize("python", true, 12_000));

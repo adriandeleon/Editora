@@ -78,12 +78,6 @@ final class CompletionDocPopup {
     }
 
     /**
-     * Shows the declaration {@code signature} (wrapping monospace header) and optional rendered
-     * {@code docNode} beside the completion popup ({@code listBounds} in screen coordinates): to its
-     * right, or flipped to its left when it would overflow the screen's visible bounds. Hides when there
-     * is nothing to show.
-     */
-    /**
      * Pure: the panel's width for documentation {@code markdown} — wide enough for its longest code line, as the hover
      * card is, between the usual {@link #WIDTH} and {@link #MAX_WIDTH}. Pyright's overload signatures were cut behind a
      * sideways scroll bar at 420 px (Python review 2, C106).
@@ -116,7 +110,12 @@ final class CompletionDocPopup {
         show(owner, listBounds, signature, docNode, "");
     }
 
-    /** Shows the panel; {@code markdown} (the documentation's source) sets its width. */
+    /**
+     * Shows the declaration {@code signature} (wrapping monospace header) and optional rendered
+     * {@code docNode} beside the completion popup ({@code listBounds} in screen coordinates): to its
+     * right, or flipped to its left when it would overflow the screen's visible bounds. Hides when there
+     * is nothing to show. {@code markdown} (the documentation's source) sets its width.
+     */
     void show(Window owner, Bounds listBounds, String signature, @Nullable Node docNode, @Nullable String markdown) {
         boolean hasSig = signature != null && !signature.isBlank();
         if (owner == null || listBounds == null || (!hasSig && docNode == null)) {

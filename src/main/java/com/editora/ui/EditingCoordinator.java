@@ -2025,7 +2025,6 @@ final class EditingCoordinator {
         area.requestFocus();
     }
 
-    /** Emacs structural caret motion (forward/backward-sexp, beginning/end-of-defun); honors the mark. */
     /** {@code nav.beginningOfDefun} / {@code nav.endOfDefun}: Python's def/class, else the column-0 rule. */
     void defunMove(boolean end) {
         EditorBuffer b = host.activeBuffer();
