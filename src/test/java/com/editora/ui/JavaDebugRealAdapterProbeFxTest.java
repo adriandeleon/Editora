@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -89,6 +90,7 @@ class JavaDebugRealAdapterProbeFxTest {
         final CountDownLatch ready = new CountDownLatch(1);
         final LinkedBlockingQueue<List<DapModels.StackFrameInfo>> stops = new LinkedBlockingQueue<>();
         final List<String> errors = new CopyOnWriteArrayList<>();
+        final List<String> statuses = new CopyOnWriteArrayList<>();
         final StringBuffer output = new StringBuffer();
         final CompletableFuture<Integer> exit = new CompletableFuture<>();
         volatile boolean input;
@@ -121,6 +123,11 @@ class JavaDebugRealAdapterProbeFxTest {
                 @Override
                 public void onError(String message) {
                     errors.add(message);
+                }
+
+                @Override
+                public void onStatus(String message) {
+                    statuses.add(message);
                 }
 
                 @Override
@@ -187,9 +194,11 @@ class JavaDebugRealAdapterProbeFxTest {
                 package demo;
 
                 public class ProbeApp {
+                    static class Loops { public String toString() { while (true) { Thread.onSpinWait(); } } }
                     public static void main(String[] args) {
                         System.out.println("cp=" + System.getProperty("java.class.path"));
                         Integer boxed = 41;
+                        Loops loops = new Loops();
                         int answer = boxed;
                         answer++;
                         System.out.println("answer=" + answer);
@@ -209,7 +218,7 @@ class JavaDebugRealAdapterProbeFxTest {
                 .inheritIO()
                 .start();
         assertEquals(0, javac.waitFor());
-        int breakpointLine = 7; // answer++;
+        int breakpointLine = 9; // answer++;
         try (Harness h = new Harness(dir)) {
             h.open(
                     dir,
@@ -244,12 +253,31 @@ class JavaDebugRealAdapterProbeFxTest {
             FxTestSupport.runOnFx(() -> h.dap.scopes(frameId, scopes::complete));
             int locals = scopes.get(LONG, TimeUnit.SECONDS).getFirst().variablesReference();
             CompletableFuture<List<DapModels.VariableInfo>> vars = new CompletableFuture<>();
+            long asked = System.nanoTime();
             FxTestSupport.runOnFx(() -> h.dap.variables(locals, vars::complete));
-            DapModels.VariableInfo boxed = vars.get(LONG, TimeUnit.SECONDS).stream()
+            List<DapModels.VariableInfo> shown = vars.get(LONG, TimeUnit.SECONDS);
+            long tookMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - asked);
+            DapModels.VariableInfo boxed = shown.stream()
                     .filter(v -> v.name().equals("boxed"))
                     .findFirst()
                     .orElseThrow();
             assertEquals("41", boxed.value(), "a boxed Integer shows its value: " + boxed);
+            // Review 3, B201: a toString() that never returns no longer holds Variables for 30 s; its row waits for
+            // a click, and a step says why it cannot go on instead of doing nothing.
+            DapModels.VariableInfo loops = shown.stream()
+                    .filter(v -> v.name().equals("loops"))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(DapModels.ValueNote.NOT_LOADED, loops.note(), "past the budget: " + loops);
+            assertTrue(tookMs < 10_000, "Variables waited " + tookMs + " ms");
+            Thread.sleep(2_000); // the toString() is now older than the budget
+            FxTestSupport.runOnFx(h.dap::stepOver);
+            await(
+                    "a step behind a running toString() says so",
+                    10,
+                    () -> h.statuses.stream()
+                            .anyMatch(m -> m.equals(tr("status.debug.toStringRunning", loops.value()))));
+            assertEquals(DapManager.State.SUSPENDED, h.state);
             await("the program's first line never reached the console", 30, () -> h.output.indexOf("cp=") >= 0);
             assertTrue(
                     h.output.toString().contains(classes.toRealPath().toString())

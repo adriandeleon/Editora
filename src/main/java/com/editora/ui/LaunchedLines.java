@@ -150,14 +150,22 @@ final class LaunchedLines {
                     l++;
                     c++;
                 }
-                // A line edited in place (a typo fixed, a comment added) is still the launched line: its code is
-                // in the running program. Only lines a change adds beyond those it replaces are new (review 2,
-                // B104 — an edited line used to drop its breakpoint and push a stop on it one line down).
-                int paired =
-                        Math.min(delta.getSource().size(), delta.getTarget().size());
-                for (int k = 0; k < paired; k++) {
-                    toLaunched[cs + k] = ls + k;
-                    toCurrent[ls + k] = cs + k;
+                // A line edited in place (a typo fixed, a comment added), re-indented or wrapped in a block is still
+                // the launched line: its code is in the running program (review 2, B104; review 3, B203).
+                int[] pairs = pairByContent(
+                        delta.getSource().getLines(), delta.getTarget().getLines());
+                for (int k = 0; k < pairs.length; k++) {
+                    if (pairs[k] >= 0) {
+                        toLaunched[cs + pairs[k]] = ls + k;
+                        toCurrent[ls + k] = cs + pairs[k];
+                    }
+                }
+                // Two lines joined into one: the second launched line is in the joined line too.
+                for (int k = 1; k < pairs.length; k++) {
+                    int joined = toCurrent[ls + k - 1];
+                    if (pairs[k] < 0 && joined >= 0 && contains(current.get(joined), launched.get(ls + k))) {
+                        toCurrent[ls + k] = joined;
+                    }
                 }
                 l = ls + delta.getSource().size();
                 c = cs + delta.getTarget().size();
@@ -178,6 +186,119 @@ final class LaunchedLines {
                 }
             }
             return new Mapping(toLaunched, toCurrent);
+        }
+
+        /** Above this many line pairs in one changed region, only equal lines are paired by content. */
+        private static final int FUZZY_PAIRS = 2_500;
+
+        /** Above this many, the region is paired from the top (B104's rule), as diffing it would cost too much. */
+        private static final int EXACT_PAIRS = 1_000_000;
+
+        /**
+         * Pure: which line of {@code after} each line of {@code before} became, inside one changed region (-1:
+         * gone). Lines are paired by content, in order (review 3, B203): the same text once trimmed (re-indented,
+         * wrapped in a block), else a similar line (a typo fixed, a value changed) — the pairing with the most
+         * likeness wins. A region where nothing is alike — a line rewritten — pairs from the top, as before: the
+         * running program still has that line's code.
+         */
+        static int[] pairByContent(List<String> before, List<String> after) {
+            int m = before.size();
+            int n = after.size();
+            int[] out = new int[m];
+            Arrays.fill(out, -1);
+            if (m == 0 || n == 0) {
+                return out;
+            }
+            long size = (long) m * n;
+            if (size <= EXACT_PAIRS) {
+                boolean fuzzy = size <= FUZZY_PAIRS;
+                String[] a = before.stream().map(String::strip).toArray(String[]::new);
+                String[] b = after.stream().map(String::strip).toArray(String[]::new);
+                double[][] score = new double[m + 1][n + 1]; // best likeness pairing a[i..] with b[j..]
+                for (int i = m - 1; i >= 0; i--) {
+                    for (int j = n - 1; j >= 0; j--) {
+                        double best = Math.max(score[i + 1][j], score[i][j + 1]);
+                        double like = likeness(a[i], b[j], fuzzy);
+                        if (like > 0) {
+                            best = Math.max(best, like + score[i + 1][j + 1]);
+                        }
+                        score[i][j] = best;
+                    }
+                }
+                boolean any = false;
+                for (int i = 0, j = 0; i < m && j < n; ) {
+                    double like = likeness(a[i], b[j], fuzzy);
+                    if (like > 0 && score[i][j] == like + score[i + 1][j + 1]) {
+                        out[i++] = j++;
+                        any = true;
+                    } else if (score[i][j] == score[i + 1][j]) {
+                        i++;
+                    } else {
+                        j++;
+                    }
+                }
+                if (any) {
+                    return out;
+                }
+            }
+            for (int k = 0; k < Math.min(m, n); k++) {
+                out[k] = k;
+            }
+            return out;
+        }
+
+        /**
+         * Pure: how alike two trimmed lines are, 0 when not enough to be the same line. Equal text counts most; a
+         * blank line little (blank lines are everywhere); then one line holding the other ({@code c();} wrapped as
+         * {@code if (ok) c();}), or an edit distance under half the longer line.
+         */
+        static double likeness(String a, String b, boolean fuzzy) {
+            if (a.equals(b)) {
+                return a.isEmpty() ? 0.25 : 2;
+            }
+            if (!fuzzy || a.isEmpty() || b.isEmpty()) {
+                return 0;
+            }
+            if (Math.min(a.length(), b.length()) >= 3 && (a.contains(b) || b.contains(a))) {
+                return 0.75;
+            }
+            int longer = Math.max(a.length(), b.length());
+            if (Math.abs(a.length() - b.length()) * 2 >= longer) {
+                return 0; // the distance is at least half the longer line
+            }
+            double distance = (double) distance(a, b, longer / 2) / longer;
+            return distance < 0.5 ? 1 - distance : 0;
+        }
+
+        /** Levenshtein distance between {@code a} and {@code b}, or {@code limit + 1} once it is over {@code limit}. */
+        private static int distance(String a, String b, int limit) {
+            int[] prev = new int[b.length() + 1];
+            int[] cur = new int[b.length() + 1];
+            for (int j = 0; j <= b.length(); j++) {
+                prev[j] = j;
+            }
+            for (int i = 1; i <= a.length(); i++) {
+                cur[0] = i;
+                int rowMin = cur[0];
+                for (int j = 1; j <= b.length(); j++) {
+                    int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                    cur[j] = Math.min(Math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+                    rowMin = Math.min(rowMin, cur[j]);
+                }
+                if (rowMin > limit) {
+                    return limit + 1;
+                }
+                int[] t = prev;
+                prev = cur;
+                cur = t;
+            }
+            return prev[b.length()];
+        }
+
+        /** Whether the current line {@code joined} holds the launched line {@code part} (two lines joined). */
+        private static boolean contains(String joined, String part) {
+            String p = part.strip();
+            return p.length() >= 2 && joined.contains(p);
         }
     }
 }

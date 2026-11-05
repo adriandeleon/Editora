@@ -456,6 +456,7 @@ public class SettingsWindow {
 
     private CheckBox debugStepFiltersCheck;
     private CheckBox debugShowStaticsCheck;
+    private CheckBox debugShowToStringCheck;
     private TextField debugExceptionTypesField;
     /** The Node.js for Run, Debug, npm scripts and code intelligence (Settings.nodePath; blank = automatic). */
     private TextField nodePathField;
@@ -2046,6 +2047,11 @@ public class SettingsWindow {
         debugShowStaticsCheck = new CheckBox(tr("settings.debug.showStatics"));
         debugShowStaticsCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setDebugShowStatics(now);
+            apply();
+        });
+        debugShowToStringCheck = new CheckBox(tr("settings.debug.showToString"));
+        debugShowToStringCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugShowToString(now);
             apply();
         });
         debugExceptionTypesField = new TextField();
@@ -7084,6 +7090,12 @@ public class SettingsWindow {
                         tr("settings.debug.stepFilters.hint"),
                         "debug java step into filter skip jdk library synthetic");
                 checkRow(c, Category.DEBUG, debugShowStaticsCheck, null, "debug java static fields variables statics");
+                checkRow(
+                        c,
+                        Category.DEBUG,
+                        debugShowToStringCheck,
+                        tr("settings.debug.showToString.hint"),
+                        "debug java tostring object view values variables slow");
                 debugExceptionTypesField.setPrefWidth(PATH_FIELD_WIDTH);
                 controlRow(
                         c,
@@ -9178,6 +9190,7 @@ public class SettingsWindow {
             debugHotCodeReplaceCombo.setValue(settings.getDebugHotCodeReplace());
             debugStepFiltersCheck.setSelected(settings.isDebugStepFilters());
             debugShowStaticsCheck.setSelected(settings.isDebugShowStatics());
+            debugShowToStringCheck.setSelected(settings.isDebugShowToString());
             debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
             nodePathField.setText(settings.getNodePath());
             for (DebugAdapterUi dbg : debugAdapterUis()) {

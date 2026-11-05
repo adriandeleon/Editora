@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 157;
+    public static final int SCHEMA_VERSION = 158;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -855,6 +855,12 @@ public class Settings {
     private boolean debugStepFilters = true;
     /** Java debugging: a class's static fields are shown among the variables (java-debug hides them otherwise). */
     private boolean debugShowStatics = true;
+    /**
+     * Java debugging: objects show their {@code toString()} in Variables ({@code Point[x=3, y=4]}), which runs the
+     * program's own code at every stop (java-debug's {@code showToString}). Off shows {@code Type@id}, as IntelliJ's
+     * "Enable toString() object view" does when cleared.
+     */
+    private boolean debugShowToString = true;
     /**
      * Java debugging: the exception classes the exception breakpoints are limited to, separated by commas
      * (e.g. {@code java.lang.IllegalStateException}); blank = every exception.
@@ -3534,6 +3540,14 @@ public class Settings {
 
     public void setDebugShowStatics(boolean debugShowStatics) {
         this.debugShowStatics = debugShowStatics;
+    }
+
+    public boolean isDebugShowToString() {
+        return debugShowToString;
+    }
+
+    public void setDebugShowToString(boolean debugShowToString) {
+        this.debugShowToString = debugShowToString;
     }
 
     public String getDebugExceptionTypes() {

@@ -18,8 +18,11 @@ import com.google.gson.Gson;
  *     are not skipped: they are the user's code)
  * @param showStatics show a class's static fields among the variables
  * @param exceptionTypes exception classes the exception breakpoints are limited to (empty: every exception)
+ * @param showToString objects show their {@code toString()} (off: {@code Type@id}, and no program code runs to show
+ *     a value — review 3, B201)
  */
-public record JavaDebugSettings(boolean stepFilters, boolean showStatics, List<String> exceptionTypes) {
+public record JavaDebugSettings(
+        boolean stepFilters, boolean showStatics, List<String> exceptionTypes, boolean showToString) {
 
     /** The jdtls command java-debug registers for these settings. */
     public static final String COMMAND = "vscode.java.updateDebugSettings";
@@ -35,9 +38,13 @@ public record JavaDebugSettings(boolean stepFilters, boolean showStatics, List<S
         exceptionTypes = exceptionTypes == null ? List.of() : List.copyOf(exceptionTypes);
     }
 
-    /** The defaults: step filters on, statics shown, every exception. */
+    public JavaDebugSettings(boolean stepFilters, boolean showStatics, List<String> exceptionTypes) {
+        this(stepFilters, showStatics, exceptionTypes, true);
+    }
+
+    /** The defaults: step filters on, statics and toString() values shown, every exception. */
     public static JavaDebugSettings defaults() {
-        return new JavaDebugSettings(true, true, List.of());
+        return new JavaDebugSettings(true, true, List.of(), true);
     }
 
     /** Pure: the exception classes in {@code text} — separated by commas, spaces or semicolons — in order. */
@@ -69,6 +76,7 @@ public record JavaDebugSettings(boolean stepFilters, boolean showStatics, List<S
         // level is missing: Level.parse(null).
         settings.put("logLevel", "WARNING");
         settings.put("showStaticVariables", showStatics);
+        settings.put("showToString", showToString);
         settings.put("stepFilters", filters);
         settings.put("exceptionFilters", exceptions);
         // Re-applies the exception breakpoints of a live session with the new types.
