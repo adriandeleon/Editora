@@ -1468,7 +1468,7 @@ final class DebugCoordinator {
             }
 
             @Override
-            public void evaluate(String expr, int frameId, Consumer<String> cb) {
+            public void evaluate(String expr, int frameId, Consumer<com.editora.dap.ConsoleEvaluation> cb) {
                 dapManager.evaluate(expr, frameId, "repl", cb);
             }
 

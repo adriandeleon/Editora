@@ -82,6 +82,21 @@ class JavaExitCodeWrapperTest {
         }
     }
 
+    /**
+     * Review D105: every wrapper registered five {@code deleteOnExit} paths, kept by the JVM until it exits — the
+     * list grew with each debug session. A wrapper is now remembered only until it is deleted.
+     */
+    @Test
+    void aDeletedWrapperIsForgottenNotKeptForTheJvmsExit() throws Exception {
+        Path java = fakeJava("exit 0\n");
+        int before = JavaExitCodeWrapper.pendingCount();
+        JavaExitCodeWrapper w = JavaExitCodeWrapper.create(java.toString());
+        assertEquals(before + 1, JavaExitCodeWrapper.pendingCount());
+        w.delete();
+        assertEquals(before, JavaExitCodeWrapper.pendingCount());
+        assertFalse(Files.exists(w.script()), "its folder is gone");
+    }
+
     @Test
     void noRecordedCodeIsNull() throws Exception {
         JavaExitCodeWrapper w = JavaExitCodeWrapper.create("/no/java");

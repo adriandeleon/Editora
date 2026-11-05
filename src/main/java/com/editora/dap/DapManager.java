@@ -3419,10 +3419,10 @@ public final class DapManager {
         return javaDebugSession() ? JdwpStringRepair.repair(c, result) : CompletableFuture.completedFuture(result);
     }
 
-    public void evaluate(String expression, int frameId, String context, Consumer<String> cb) {
+    public void evaluate(String expression, int frameId, String context, Consumer<ConsoleEvaluation> cb) {
         DapClient c = client;
         if (c == null) {
-            cb.accept("");
+            cb.accept(ConsoleEvaluation.value(""));
             return;
         }
         boolean console = "repl".equals(context);
@@ -3439,8 +3439,8 @@ public final class DapManager {
                         String r = full == null ? null : full.result();
                         cb.accept(
                                 e != null
-                                        ? "error: " + (isTimeout(e) ? stillEvaluating() : msg(e))
-                                        : (r == null ? "" : r));
+                                        ? ConsoleEvaluation.failure(isTimeout(e) ? stillEvaluating() : msg(e))
+                                        : ConsoleEvaluation.value(r == null ? "" : r));
                     }
                 }));
     }

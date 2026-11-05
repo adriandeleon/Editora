@@ -133,7 +133,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
 
         /** Evaluate {@code expression} in the selected frame ({@code frameId}) and deliver the result. */
-        void evaluate(String expression, int frameId, Consumer<String> cb);
+        void evaluate(String expression, int frameId, Consumer<com.editora.dap.ConsoleEvaluation> cb);
 
         /** Evaluate a watch expression (context "watch") keeping the expandable reference + type. */
         void evaluateWatch(String expression, int frameId, Consumer<DapModels.EvalResult> cb);
@@ -1601,8 +1601,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         appendOutput("> " + expr + "\n", DapManager.COMMAND_CATEGORY);
         evalInput.clear();
         actions.evaluate(expr, selectedFrameId, result -> {
-            String text = result == null ? "" : result;
-            appendOutput(text + "\n", text.startsWith("error: ") ? "stderr" : "console");
+            String text = result == null ? "" : result.text();
+            appendOutput(text + "\n", result != null && result.failed() ? "stderr" : "console");
         });
     }
 
