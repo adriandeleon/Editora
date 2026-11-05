@@ -15,10 +15,6 @@ final class CodeReplaceText {
     private CodeReplaceText() {}
 
     /**
-     * The replaced classes by simple name ({@code com.acme.Main$Inner} → {@code Main$Inner}), in their order,
-     * the first {@link #MAX_NAMED} named and the rest counted.
-     */
-    /**
      * What a replace that worked names: its classes, or — java-debug sends none with its "obsolete methods" warning
      * (review 2, B103) — the saved files, so the message never reads "Code changes applied: ".
      */
@@ -37,6 +33,10 @@ final class CodeReplaceText {
         return classList(fileNames);
     }
 
+    /**
+     * The replaced classes by simple name ({@code com.acme.Main$Inner} → {@code Main$Inner}), in their order,
+     * the first {@link #MAX_NAMED} named and the rest counted.
+     */
     static String classList(List<String> classes) {
         if (classes == null || classes.isEmpty()) {
             return "";

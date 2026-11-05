@@ -750,7 +750,6 @@ public final class JavaRuntimes {
         }
     }
 
-    /** The path of the runtime {@link #runtimes} marked default, or null when there is none. */
     /** The major version of {@code runtimes}' default entry ({@code JavaSE-25} → 25, {@code JavaSE-1.8} → 8), or null. Pure. */
     public static @Nullable Integer defaultMajor(List<Map<String, Object>> runtimes) {
         for (Map<String, Object> entry : runtimes) {
@@ -769,6 +768,7 @@ public final class JavaRuntimes {
         return null;
     }
 
+    /** The path of the runtime {@link #runtimes} marked default, or null when there is none. */
     public static @Nullable String defaultPath(List<Map<String, Object>> runtimes) {
         for (Map<String, Object> entry : runtimes) {
             if (Boolean.TRUE.equals(entry.get("default")) && entry.get("path") instanceof String path) {

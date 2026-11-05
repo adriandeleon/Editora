@@ -1,5 +1,7 @@
 package com.editora.ui;
 
+import com.editora.i18n.Messages;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -9,6 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** A hot code replace refused with no reason, said with its JDK reason (Java debug review 2, B102). */
 class CodeReplaceJdkTest {
+
+    @BeforeAll
+    static void english() {
+        Messages.init("en"); // run alone, the catalog is not loaded yet
+    }
 
     @Test
     void aRefusalWithoutAReasonIsRecognised() {

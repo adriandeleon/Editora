@@ -3993,7 +3993,7 @@ final class DebugCoordinator {
         }
         String lineText = shownLineText();
         dapManager.stepInTargets(found -> {
-            List<DapModels.StepTarget> targets = com.editora.editor.debug.StepTargetOrder.sort(found, lineText);
+            List<DapModels.StepTarget> targets = StepTargetOrder.sort(found, lineText);
             if (targets.isEmpty()) {
                 host.setStatus(tr("debug.smartStep.none"));
             } else if (targets.size() == 1) {

@@ -119,7 +119,8 @@ class PomServerSupportTest {
 
         assertEquals(
                 "Maven completion is off: lemminx-maven could not build a pom in reactor, probably "
-                        + Path.of("dup", "pom.xml") + " (<dependencies> appears twice, line 13). See the Application Log.",
+                        + Path.of("dup", "pom.xml")
+                        + " (<dependencies> appears twice, line 13). See the Application Log.",
                 PomServerSupport.completionOffStatus(root, dup));
         assertEquals(
                 "Maven completion is off: lemminx-maven could not build a pom in reactor (see the Application Log).",

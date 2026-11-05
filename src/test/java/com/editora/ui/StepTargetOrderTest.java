@@ -1,4 +1,4 @@
-package com.editora.editor.debug;
+package com.editora.ui;
 
 import java.util.List;
 
