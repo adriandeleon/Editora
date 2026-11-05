@@ -393,14 +393,12 @@ public final class LspManager {
     }
 
     /**
-     * The JDK jdtls makes its default ({@link JavaRuntimes#preferredHome(String, String, String)}): {@code setting}
-     * (the Default JDK), else PATH's java, else {@code JAVA_HOME}; null for {@code setting} null (a remote or
-     * non-Java server). Scans PATH: off the FX thread.
+     * The JDK jdtls makes its default ({@link JavaRuntimes#preferredHomeHere}): {@code setting} (the Default JDK),
+     * else PATH's java, else {@code JAVA_HOME}, each only when it is a JDK; null for {@code setting} null (a remote
+     * or non-Java server). Scans PATH: off the FX thread.
      */
     static @Nullable String javaPreferredHome(@Nullable String setting) {
-        return setting == null
-                ? null
-                : JavaRuntimes.preferredHome(setting, JavaRuntimes.pathJavaHome(), System.getenv("JAVA_HOME"));
+        return setting == null ? null : JavaRuntimes.preferredHomeHere(setting);
     }
 
     /**
