@@ -223,7 +223,14 @@ class JavaCodeChangesProbeFxTest {
                 w.registry().run("file.save");
             });
             await(w, "the change to be reported", 300, () -> console(w).contains(tr("debug.hcr.applied", "Main")));
-            assertTrue(console(w).contains(tr("debug.hcr.restartFrameHint")), console(w));
+            // The hint waits for the stack java-debug stops on after the replace (a second at most); with only main
+            // on old code it says the program must restart, else Restart Frame (review 3, B209).
+            await(
+                    w,
+                    "the old-code hint",
+                    100,
+                    () -> console(w).contains(tr("debug.hcr.restartFrameHint"))
+                            || console(w).contains(tr("debug.hcr.restartProgramHint", "Main")));
             assertTrue(!console(w).contains(tr("debug.hcr.restartNeeded")), "not reported as failed");
             int before = console(w).length();
             FxTestSupport.runOnFx(() -> w.registry().run("debug.continue"));
