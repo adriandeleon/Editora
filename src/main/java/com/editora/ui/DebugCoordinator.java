@@ -449,6 +449,9 @@ final class DebugCoordinator {
     /** What Debug ▸ Stop runs while a test run waits for its JVM to attach (no session yet). */
     private @Nullable Runnable pendingAttachStop;
 
+    /** The test file of {@link #pendingAttachStop}'s run: F5 there again says it is starting (review 3, A208). */
+    private @Nullable Path pendingAttachFile;
+
     /**
      * A Debug Test run is waiting for its suspended JVM ({@code cancel} ends that build), or no longer is
      * ({@code null}): the window opens with Stop usable and its spinner on, like a before-launch build.
@@ -457,12 +460,16 @@ final class DebugCoordinator {
         boolean was = pendingAttachStop != null;
         pendingAttachStop = cancel;
         if (cancel != null && !was) {
+            EditorBuffer active = host.activeBuffer(); // Debug Test runs the active file's test
+            pendingAttachFile = active == null ? null : active.getPath();
             ops.openToolWindow();
+        } else if (cancel == null) {
+            pendingAttachFile = null;
         }
         // A session being debugged keeps its own buttons (Continue, Stop through ownerStop): the waiting state
         // shows once it ends, when the run's next fork is what Stop would end (see the state listener).
         if (!beforeLaunch.isActive() && pendingBuild == null && !dapManager.isActive()) {
-            panel().setPreparing(cancel != null);
+            panel().setPreparing(cancel != null, tr("debugpanel.state.waitingTest"));
         }
         updateDebugAvailability();
     }
@@ -1296,7 +1303,8 @@ final class DebugCoordinator {
                 } else if (state == DapManager.State.INACTIVE
                         && pendingAttachStop != null
                         && !beforeLaunch.isActive()) {
-                    panel().setPreparing(true); // a Debug Test run still waits for its next fork: Stop ends it
+                    // A Debug Test run still waits for its next fork: Stop ends it.
+                    panel().setPreparing(true, tr("debugpanel.state.waitingTest"));
                 }
                 boolean starting = state == DapManager.State.STARTING;
                 ops.setStatusDebugLoading(starting);
@@ -1403,6 +1411,11 @@ final class DebugCoordinator {
             @Override
             public void onStatus(String message) {
                 host.setStatus(message);
+            }
+
+            @Override
+            public void onOutputTrailing() {
+                panel().showOutputTrailing(); // choice 27: no longer "Running" while the last output arrives
             }
         };
     }
@@ -1742,46 +1755,106 @@ final class DebugCoordinator {
      */
     void debugStart() {
         EditorBuffer b = host.activeBuffer();
-        // A session is live — or still getting ready (a build before it, a compile, the main-class picker). While
-        // SUSPENDED (or mid-step) the green button keeps its Continue semantics: never yank a paused session.
-        // Otherwise the same file is already being debugged (said so), and another debuggable file replaces it —
-        // after asking, since that ends the running program (review A106: a starting launch was replaced unasked).
-        Path path = b == null ? null : b.getPath();
-        boolean preparing = pendingBuild != null && !dapManager.isActive();
-        Path sessionFile = preparing ? pendingBuildFile : dapManager.debugFile();
-        boolean differentFile = path != null && !samePath(path, sessionFile);
-        boolean debuggable = b != null && path != null && debugEffectiveFor(b.getLanguage(), path);
-        switch (DebugStartChoice.of(
-                dapManager.isActive(),
-                dapManager.state(),
-                dapManager.isStepping(),
-                preparing,
-                differentFile,
-                debuggable)) {
-            case CONTINUE -> {
-                dapManager.resume(); // F5-style continue
-                return;
-            }
-            case ALREADY_RUNNING -> {
-                host.setStatus(tr("status.debug.alreadyRunning", sessionLabel));
-                return;
-            }
-            case ASK_RETARGET -> {
-                if (path == null
-                        || !confirmRetarget(tr("dialog.debug.retargetContent", sessionLabel, path.getFileName()))) {
-                    return;
-                }
-                dropPendingBuild();
-                dapManager.stop(); // retarget to the newly active file below
-            }
-            case LAUNCH -> {
-                // nothing to end first
-            }
-        }
-        if (debugsTest(b)) {
+        if (!clearToStart(b, true)) {
             return;
         }
+        startCleared = true; // Debug Test's own check (clearToDebugTest) has been answered here
+        try {
+            if (debugsTest(b)) {
+                return;
+            }
+        } finally {
+            startCleared = false;
+        }
         launchBuffer(b);
+    }
+
+    /** Debug File (the editor menu, the Debug File handler): {@code b}, after the same check as F5's. */
+    void debugFile(EditorBuffer b) {
+        if (clearToStart(b, false)) {
+            launchBuffer(b);
+        }
+    }
+
+    /** Debug Test at the caret or from the editor menu: false when a live launch stays (said, or asked and kept). */
+    boolean clearToDebugTest() {
+        return startCleared || clearToStart(host.activeBuffer(), false);
+    }
+
+    /** F5 is starting a test: its check has been made (see {@link #clearToDebugTest}). */
+    private boolean startCleared;
+
+    /**
+     * The one check every way to start goes through (review 3, C202–C204, A208, A209). A launch is live — or still
+     * getting ready: a build before it, a before-launch step, a test run waiting for its JVM, a compile, the
+     * main-class picker. For F5 ({@code f5}) a paused (or mid-step) session is continued: never yank a paused
+     * session. Otherwise the same file is already being debugged (said so, in words that fit how far it has got),
+     * and another file replaces it — after asking, since that ends the program (review A106: a starting launch was
+     * replaced unasked; review 3 C202: the editor menu's Debug File ended a paused session unasked). True when
+     * {@code b} may be launched now.
+     */
+    private boolean clearToStart(@Nullable EditorBuffer b, boolean f5) {
+        Path path = b == null ? null : b.getPath();
+        boolean preparing = launchPreparing();
+        Path liveFile = preparing ? preparingFile() : dapManager.debugFile();
+        boolean differentFile = path != null && !samePath(path, liveFile);
+        boolean debuggable = b != null && path != null && debugEffectiveFor(b.getLanguage(), path);
+        boolean active = dapManager.isActive();
+        DapManager.State state = dapManager.state();
+        DebugStartChoice choice = f5
+                ? DebugStartChoice.of(active, state, dapManager.isStepping(), preparing, differentFile, debuggable)
+                : DebugStartChoice.forFile(active, state, preparing, differentFile);
+        DebugStartChoice.Phase phase = DebugStartChoice.Phase.of(active, state, dapManager.isStepping(), preparing);
+        String label = preparing && pendingBuild == null && pendingAttachFile != null
+                ? String.valueOf(pendingAttachFile.getFileName())
+                : sessionLabel;
+        switch (choice) {
+            case CONTINUE -> {
+                dapManager.resume(); // F5-style continue
+                return false;
+            }
+            case ALREADY_RUNNING -> {
+                host.setStatus(tr(phase.busyKey, label));
+                return false;
+            }
+            case ASK_RETARGET -> {
+                if (path == null || !confirmRetarget(tr(phase.retargetKey, label, path.getFileName()))) {
+                    return false;
+                }
+                endLiveLaunch(); // retarget to the file asked for
+                return true;
+            }
+            default -> {
+                return true; // nothing to end first
+            }
+        }
+    }
+
+    /** A launch is getting ready with no session yet: a jdtls build, a before-launch step, a test run's JVM. */
+    private boolean launchPreparing() {
+        return !dapManager.isActive() && (pendingBuild != null || beforeLaunch.isActive() || pendingAttachStop != null);
+    }
+
+    /** The file the launch getting ready is for, when known. */
+    private @Nullable Path preparingFile() {
+        return pendingBuild != null ? pendingBuildFile : pendingAttachStop != null ? pendingAttachFile : null;
+    }
+
+    /** A launch of {@code file} is live or getting ready. */
+    private boolean launchLiveFor(Path file) {
+        if (launchPreparing()) {
+            return samePath(file, preparingFile());
+        }
+        return dapManager.state() != DapManager.State.INACTIVE && samePath(file, dapManager.debugFile());
+    }
+
+    /** Ends whatever launch is live or getting ready, for a launch of another file. */
+    private void endLiveLaunch() {
+        if (beforeLaunch.isActive()) {
+            beforeLaunch.stop();
+        }
+        dropPendingBuild();
+        stop(); // the session, or a test run waiting for its JVM
     }
 
     /** Debugs a JUnit test at the caret ({@code true}: the whole class), as the gutter's Debug Test; set by the
@@ -1911,6 +1984,8 @@ final class DebugCoordinator {
         }
         ops.openToolWindow();
         nameSession(path.getFileName().toString());
+        // Said once it runs: "Saved …" or the last run's exit stood in the status bar while it was paused (choice 12).
+        announceStart = true;
         dapManager.setProgramArgs(fileArgs);
         dapManager.setVmArgs(""); // no user VM args on a plain debug
         dapManager.setHostJavaExec("");
@@ -2024,6 +2099,7 @@ final class DebugCoordinator {
         lsp.ensureManaged(routing);
         Object token = new Object();
         pendingBuild = token;
+        showPreparing(routing); // from the first moment: the source-folder step can wait seconds on jdtls (C203)
         com.editora.dap.JavaSourceRootFix.correct(
                 lspManager,
                 routing,
@@ -2034,6 +2110,22 @@ final class DebugCoordinator {
                         buildThenLaunch(routing, launch, true);
                     }
                 });
+    }
+
+    /**
+     * The build before {@code routing}'s launch has begun: the Debug window opens with "Building…", a Stop that cancels
+     * it and the spinner, and F5 there says the launch is still starting (review 3, C203, C204).
+     */
+    private void showPreparing(Path routing) {
+        boolean shown = pendingBuildFile != null && samePath(pendingBuildFile, routing);
+        pendingBuildFile = routing;
+        ops.openToolWindow();
+        panel().setPreparing(true);
+        ops.setStatusDebugLoading(true);
+        updateDebugAvailability();
+        if (!shown) {
+            host.setStatus(tr("status.debug.building", String.valueOf(routing.getFileName())));
+        }
     }
 
     /** The build before a project launch in flight; replaced or cleared to drop its result (Stop). */
@@ -2099,12 +2191,8 @@ final class DebugCoordinator {
     private void buildThenLaunch(Path routing, Runnable launch, boolean loose) {
         Object token = new Object();
         pendingBuild = token;
-        pendingBuildFile = routing;
         lsp.ensureManaged(routing);
-        ops.openToolWindow();
-        panel().setPreparing(true);
-        ops.setStatusDebugLoading(true);
-        updateDebugAvailability();
+        showPreparing(routing);
         lspManager.buildJavaWorkspaceForLaunch(routing, result -> {
             if (pendingBuild != token) {
                 return; // stopped, or replaced by another launch
@@ -3699,8 +3787,8 @@ final class DebugCoordinator {
         buffer.setDebugHoverEvaluator((expr, cb) -> dapManager.evaluateHover(expr, debugFrameId, cb));
         buffer.setDebugValuePresenter(valuePopup()); // an object's fields unfold in the popup (follow-up 6)
         // "Debug File" beside "Run File" in the editor's menu: Debug was only in the Run menu and the palette.
-        buffer.setDebugFileHandler(
-                () -> launchBuffer(buffer), () -> debugSupportEnabled() && isDebuggableBuffer(buffer));
+        // Through F5's check: a live launch of another file is replaced only after asking (review 3, C202).
+        buffer.setDebugFileHandler(() -> debugFile(buffer), () -> debugSupportEnabled() && isDebuggableBuffer(buffer));
         buffer.setGutterBreakpointMenu(this::showGutterMenu); // right-click a breakpoint: Edit / Disable / Remove
         buffer.setDebugMenuContributor(() -> editorMenuItems(buffer));
     }
@@ -4181,13 +4269,14 @@ final class DebugCoordinator {
                 && b.getPath() != null
                 && "java".equals(b.getLanguage())
                 && JavaProjectRoot.find(b.getPath()) == null
-                // Not while this file is being debugged: it offered a second launch of it (review 2 C110).
-                && !(dapManager.isActive() && b.getPath().equals(dapManager.sessionFile()))) {
+                // Not while this file is being debugged or built for it: it offered a second launch of it (review 2
+                // C110). Another file's live launch is replaced only after asking (review 3, C202).
+                && !launchLiveFor(b.getPath())) {
             // A classic main class in a plain folder has no Run File / Debug File entry of its own (those are
             // for runnable files); Debug was then only in the Run menu and the palette.
             javafx.scene.control.MenuItem debugFile = new javafx.scene.control.MenuItem(tr("editmenu.debugFile"));
             debugFile.setGraphic(Icons.debug());
-            debugFile.setOnAction(e -> launchBuffer(b));
+            debugFile.setOnAction(e -> debugFile(b));
             items.add(debugFile);
         }
         // Icons like the rest of the editor menu (review 2 C110).

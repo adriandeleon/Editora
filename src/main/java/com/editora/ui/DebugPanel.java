@@ -781,6 +781,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** What the empty call stack says while there is no session: how to start one (review C22). */
     private String emptyHint() {
+        if (preparing) {
+            return tr("debugpanel.preparingHint"); // the launch is on its way: Stop cancels it (review 3, C204)
+        }
         String chord = chordFor.apply("debug.start");
         boolean bound = chord != null && !chord.isBlank();
         if (exitCode != null) {
@@ -858,6 +861,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     public void setState(DapManager.State state) {
         boolean wasRunning = lastState == DapManager.State.RUNNING;
         lastState = state;
+        outputTrailing = false;
         if (state == DapManager.State.STARTING) {
             refused = null;
             exitCode = null; // a new session: the last one's outcome is no longer what the status says
@@ -925,7 +929,16 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      * cancel the build and Start must not begin a second one.
      */
     public void setPreparing(boolean preparing) {
+        setPreparing(preparing, null);
+    }
+
+    /**
+     * As {@link #setPreparing(boolean)}, with the state line to show meanwhile ({@code null}: "Building…"). It said
+     * "Not debugging", or the last session's "Exited with code 0", beside the spinner (review 3, C204).
+     */
+    public void setPreparing(boolean preparing, @Nullable String text) {
         this.preparing = preparing;
+        preparingText = text;
         if (preparing) {
             refused = null;
         }
@@ -933,7 +946,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         start.setDisable(preparing || !(!active || lastState == DapManager.State.SUSPENDED));
         stop.setDisable(!active && !preparing);
         refreshStatus();
+        refreshTooltips(); // the call stack's hint: how to cancel, not how to start
     }
+
+    /** The state line while {@link #preparing} with no session yet; null for "Building…". */
+    private @Nullable String preparingText;
 
     /** The runtime the session's program runs under, once its probe answers; {@code null} hides the chip. */
     public void setRuntime(com.editora.run.@Nullable RuntimeVersion version) {
@@ -972,18 +989,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             RunPanel.showSpinner(busy, preparing);
             return;
         }
-        String state = stoppedOnException && lastState == DapManager.State.SUSPENDED
-                ? (stoppedException.isEmpty()
-                        ? tr("debugpanel.state.exception")
-                        : tr("debugpanel.state.exceptionNamed", stoppedException))
-                : lastState == DapManager.State.INACTIVE && exitCode != null
-                        ? tr("debugpanel.state.exited", exitCode)
-                        : lastState == DapManager.State.SUSPENDED
-                                        && !stoppedIn.isEmpty()
-                                        && !stoppedIn.equals(sessionFile)
-                                // Stopped in a child process or worker, not the session's own file (review D109).
-                                ? tr("debugpanel.state.suspendedIn", stoppedIn)
-                                : tr("debugpanel.state." + lastState.name().toLowerCase(java.util.Locale.ROOT));
+        String state = stateText();
         if (breakpointsMuted) {
             state = state + " · " + tr("debugpanel.muted");
         }
@@ -992,6 +998,29 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         status.setText((sessionFile.isEmpty() ? state : state + " — " + sessionFile) + trimNote);
         RunPanel.showSpinner(
                 busy, preparing || lastState == DapManager.State.STARTING || lastState == DapManager.State.RUNNING);
+    }
+
+    /** The state line's state: how far the session has got, or the launch getting ready for it. */
+    private String stateText() {
+        boolean idle = lastState == DapManager.State.INACTIVE;
+        if (stoppedOnException && lastState == DapManager.State.SUSPENDED) {
+            return stoppedException.isEmpty()
+                    ? tr("debugpanel.state.exception")
+                    : tr("debugpanel.state.exceptionNamed", stoppedException);
+        }
+        if (lastState == DapManager.State.RUNNING && outputTrailing) {
+            return tr("debugpanel.state.ending"); // the program has ended; its last output is arriving (choice 27)
+        }
+        if (idle && preparing) {
+            return preparingText != null ? preparingText : tr("debugpanel.state.building"); // review 3, C204
+        }
+        if (idle && exitCode != null) {
+            return tr("debugpanel.state.exited", exitCode);
+        }
+        if (lastState == DapManager.State.SUSPENDED && !stoppedIn.isEmpty() && !stoppedIn.equals(sessionFile)) {
+            return tr("debugpanel.state.suspendedIn", stoppedIn); // a child process or worker, not its file (D109)
+        }
+        return tr("debugpanel.state." + lastState.name().toLowerCase(java.util.Locale.ROOT));
     }
 
     /**
@@ -1646,11 +1675,29 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      * short of a newline (a prompt), and the notice must not read as part of it.
      */
     public void appendNotice(String line) {
+        appendLine(line, "console");
+    }
+
+    private void appendLine(String line, String category) {
         appender.flush(); // the line break below is decided by what the console ends with
         int length = console.getLength();
         boolean midLine = length > 0 && !"\n".equals(console.getText(length - 1, length));
-        appendOutput((midLine ? "\n" : "") + line + "\n", "console");
+        appendOutput((midLine ? "\n" : "") + line + "\n", category);
     }
+
+    /**
+     * The program has ended and its output is still arriving (the program console off, a flood): one muted line says
+     * so, and the state line no longer says Running, nor is Pause offered (review 3, choice 27).
+     */
+    public void showOutputTrailing() {
+        appendLine(tr("debug.notice.outputTrailing"), DapManager.COMMAND_CATEGORY);
+        outputTrailing = true;
+        pause.setDisable(true);
+        refreshStatus();
+    }
+
+    /** {@link #showOutputTrailing} was said for the session there is (reset by the next state change). */
+    private boolean outputTrailing;
 
     private void runEval() {
         String expr = evalInput.getText();

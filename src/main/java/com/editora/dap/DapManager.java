@@ -137,6 +137,12 @@ public final class DapManager {
         default void onStatus(String message) {}
 
         /**
+         * The program has ended, and the session still waits for its output to stop arriving (the program console
+         * off: java-debug's copy of a flood trails the exit by seconds). The session ends when the output does.
+         */
+        default void onOutputTrailing() {}
+
+        /**
          * The session launched its program with {@code runtime} — the interpreter or {@code java} argv the
          * adapter starts it with, before the program's own arguments — in {@code where} (its folder, so its
          * host) with {@code env} on top of the user's environment. Not reported for an attach: the program
@@ -3764,6 +3770,30 @@ public final class DapManager {
     /** The session whose exit report waits for its trailing output; -1 for none. */
     private long exitAwaitingOutput = -1;
 
+    /** How long a program's output may trail its end before the console says so (choice 27). */
+    static final long TRAILING_NOTICE_MILLIS = 1000;
+
+    /** The session whose program ended while its output still arrives; -1 for none (see {@link #outputTrailing}). */
+    private long trailingEpoch = -1;
+
+    /**
+     * The program of {@code epoch} ended and its output is still arriving: if the session still waits a moment
+     * later, the listener is told once, so the state stops saying Running (review 3, choice 27). FX thread.
+     */
+    private void outputTrailing(long epoch) {
+        if (trailingEpoch == epoch) {
+            return;
+        }
+        trailingEpoch = epoch;
+        CompletableFuture.delayedExecutor(TRAILING_NOTICE_MILLIS, TimeUnit.MILLISECONDS)
+                .execute(() -> Platform.runLater(() -> {
+                    if (isCurrent(epoch) && state != State.INACTIVE) {
+                        outputPump.flush(); // after the output that came before it
+                        listener.onOutputTrailing();
+                    }
+                }));
+    }
+
     /** Reports the exit of {@code epoch} if it is still waiting for the output before it (FX thread). */
     private void reportAwaitedExit(long epoch) {
         if (exitAwaitingOutput == epoch) {
@@ -3812,6 +3842,7 @@ public final class DapManager {
                 return;
             }
             if (isCurrent(epoch) && outputTrails(epoch)) {
+                outputTrailing(epoch);
                 whenOutputQuiet(epoch, System.nanoTime(), () -> {
                     reportAwaitedExit(epoch);
                     endSession(epoch);
@@ -3965,6 +3996,7 @@ public final class DapManager {
                 // says only that the program ended, not a code that is not its own (review A10). It waits for
                 // the output still on its way, which would otherwise come after it (E104).
                 exitAwaitingOutput = epoch;
+                outputTrailing(epoch);
                 whenOutputQuiet(epoch, System.nanoTime(), () -> reportAwaitedExit(epoch));
                 return;
             }
