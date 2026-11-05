@@ -190,6 +190,10 @@ public final class HighlightPass {
         if (!resume) {
             first = 0;
             from = 0;
+        }
+        // The text arrived whole (an open, a reload): a pass that starts at line 0 with little or nothing to
+        // resume from — the empty document's one-line table, say — shows the screen first.
+        if (first == 0 && (old == null || !resume || (long) old.count() * PREVIEW_FACTOR < lineCount)) {
             preview(r, text, cancelled);
         }
         boolean canConverge = resume;

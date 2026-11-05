@@ -726,6 +726,18 @@ class HighlightPassTest {
                         .withPreview(100, previews::add),
                 () -> false);
         assertTrue(previews.isEmpty(), "an edit's pass resumes: no preview");
+
+        // A file opens into an empty buffer: its first pass resumes from the empty text's one-line table.
+        HighlightPass.Result empty = HighlightPass.run(
+                new HighlightPass.Request("", python, null, List.of(), -1, 0, false, null), () -> false);
+        HighlightPass.Lines emptyLines = empty == null
+                ? new HighlightPass.Lines(new org.eclipse.tm4e.core.grammar.IStateStack[1], null)
+                : empty.lines();
+        HighlightPass.run(
+                new HighlightPass.Request(text, python, emptyLines, List.of(), 0, text.length(), false, null)
+                        .withPreview(100, previews::add),
+                () -> false);
+        assertEquals(1, previews.size(), "the loaded text's first pass shows the screen early too");
     }
 
     private static List<Collection<String>> perChar(org.fxmisc.richtext.model.StyleSpans<Collection<String>> spans) {
