@@ -115,4 +115,15 @@ class PythonInterpreterRemoteFxTest {
         sftp.dropConnection();
         assertNull(c.pythonPathForServerRoot(root), "dropped: the host's own python3, Pyright's default");
     }
+
+    /**
+     * A remote Python file is not handed to Pyright (which cannot format) nor run through this machine's Ruff: Format
+     * Document says remote formatting is not supported yet (Python review 2, A112).
+     */
+    @Test
+    void aRemotePythonFileSaysItCannotBeFormattedYet() {
+        assertEquals(
+                "status.python.formatRemote",
+                PythonFormatCoordinator.refusal(sftp.remotePath("app/main.py"), false, true));
+    }
 }

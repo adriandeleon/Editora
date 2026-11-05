@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -79,6 +80,25 @@ class PythonBannersFxTest {
             Button turnOn = button(c, tr("install.banner.turnOn"));
             FxTestSupport.runOnFx(turnOn::fire);
             assertTrue(fx.shared.getSettings().isLspSupport(), "Turn on switched language servers on");
+        }
+    }
+
+    /** "Enable Python (Pyright)" off: turning language servers on would start nothing for Python, so the first
+     *  Python file does not offer it (Python review 2, C108). */
+    @Test
+    void aSwitchedOffPythonServerIsNotOfferedToBeTurnedOn() throws Exception {
+        FxTestSupport.bootToolkit();
+        Path app = Files.writeString(Files.createDirectories(work.resolve("p")).resolve("app.py"), "import os\n");
+        try (FxWindowFixture fx = FxWindowFixture.create(
+                Files.createDirectories(work.resolve("cfg")),
+                shared -> shared.getSettings().setPythonLspEnabled(false))) {
+            MainController c = fx.controller;
+            FxTestSupport.runOnFx(() -> c.openAndNavigate(app, 1));
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+            while (System.nanoTime() < deadline) {
+                FxTestSupport.drainFx();
+                assertNotEquals(tr("install.banner.enablePython"), bannerTitle(c));
+            }
         }
     }
 

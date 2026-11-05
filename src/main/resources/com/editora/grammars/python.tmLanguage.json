@@ -1,4 +1,15 @@
 {
+  "information_for_contributors": [
+    "The python grammar of the shiki tm-grammars collection (MagicPython, as Microsoft Visual Studio Code ships it),",
+    "vendored in Editora commit 295b93a21 (2026-05-28) from a tm-grammars release before 1.32.22. MIT License.",
+    "Local changes, kept when the grammar is refreshed (PythonGrammarTest checks them; the first patch is commit d412f1dfb):",
+    "- PEP 695 type parameters on def/class (`def f[T]`, `class C[T: int, *Ts, **P]`) and the `type X[T] = ...` alias statement.",
+    "- PEP 750 t-string prefixes (t, tr, rt) beside the f-string ones.",
+    "- An strftime-style f-string format spec (`f\"{when:%Y-%m-%d}\"`).",
+    "- match/case as keywords only on a statement that ends in a colon, so `match(x)` is a call.",
+    "- def/class/decorator names that shadow a builtin or are dunders (`def open`, `def __init__`, `@property`) scoped as declarations.",
+    "- PEP 614 decorators: a subscript in a decorator (`@buttons[0].clicked.connect`) is an item access, not invalid."
+  ],
   "displayName": "Python",
   "name": "python",
   "patterns": [
@@ -380,6 +391,31 @@
         },
         {
           "include": "#line-continuation"
+        },
+        {
+          "begin": "(\\[)",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.arguments.begin.python"
+            }
+          },
+          "contentName": "meta.item-access.arguments.python",
+          "end": "(\\])",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.definition.arguments.end.python"
+            }
+          },
+          "name": "meta.item-access.python",
+          "patterns": [
+            {
+              "match": ":",
+              "name": "punctuation.separator.slice.python"
+            },
+            {
+              "include": "#expression"
+            }
+          ]
         },
         {
           "captures": {

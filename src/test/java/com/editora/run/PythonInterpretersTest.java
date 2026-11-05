@@ -73,10 +73,11 @@ class PythonInterpretersTest {
     }
 
     @Test
-    void withNoProjectTheWalkStopsAtTheFirstProjectMarker() throws Exception {
+    void withNoProjectTheWalkStopsAtTheRepositoryTop() throws Exception {
         venv(tmp.resolve(".venv"));
         Path repo = tmp.resolve("repo");
         Files.createDirectories(repo.resolve(".git"));
+        Files.writeString(repo.resolve(".git/HEAD"), "ref: refs/heads/main\n");
         Path file = repo.resolve("tools/x.py");
         Files.createDirectories(file.getParent());
 
@@ -87,6 +88,46 @@ class PythonInterpretersTest {
         Path v = venv(repo.resolve("venv"));
         var py = PythonInterpreters.resolve(in(file, null, "", "", "", Map.of()));
         assertEquals(v.resolve("bin/python").toString(), py.executable());
+    }
+
+    /**
+     * A uv workspace member opened with no project: its own {@code pyproject.toml} no longer ends the search, so
+     * the workspace's one {@code .venv} two folders up is found (Python review 2, B104).
+     */
+    @Test
+    void aWorkspaceMembersEnvironmentIsTheWorkspacesOne() throws Exception {
+        Path repo = tmp.resolve("repo");
+        Files.createDirectories(repo.resolve(".git"));
+        Files.writeString(repo.resolve(".git/HEAD"), "ref: refs/heads/main\n");
+        Files.writeString(repo.resolve("pyproject.toml"), "[tool.uv.workspace]\nmembers = [\"packages/*\"]\n");
+        Path v = venv(repo.resolve(".venv"));
+        Path member = repo.resolve("packages/a");
+        Files.createDirectories(member);
+        Files.writeString(member.resolve("pyproject.toml"), "[project]\nname = \"a\"\n");
+        Path file = member.resolve("src/a/deep/mod.py");
+        Files.createDirectories(file.getParent());
+
+        assertEquals(
+                v,
+                PythonInterpreters.resolve(in(file, null, "", "", "", Map.of())).venv());
+        // the server's view: a file directly in the member's folder
+        assertEquals(
+                v,
+                PythonInterpreters.resolve(in(member.resolve("__editora__.py"), null, "", "", "", Map.of()))
+                        .venv());
+    }
+
+    @Test
+    void aMarkerLetsTheSearchGoOnlyAFewFoldersHigher() throws Exception {
+        venv(tmp.resolve(".venv")); // four folders above the project's marker: not its environment
+        Path proj = tmp.resolve("a/b/c/proj");
+        Files.createDirectories(proj);
+        Files.writeString(proj.resolve("pyproject.toml"), "[project]\n");
+
+        assertEquals(
+                Source.PATH,
+                PythonInterpreters.resolve(in(proj.resolve("x.py"), null, "", "", "", Map.of()))
+                        .source());
     }
 
     @Test

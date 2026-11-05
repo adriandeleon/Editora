@@ -126,6 +126,25 @@ final class ProblemCounter extends HBox {
     }
 
     /**
+     * Pure: errors, warnings and notes among {@code diagnostics}. A tag-only hint (Pyright's "x is not accessed",
+     * drawn faded) is not counted: Problems leaves it out too, so the counter agreed with nothing it opened
+     * (Python review 2, C104).
+     */
+    static int[] tally(List<LspDiagnostic> diagnostics) {
+        int[] counts = new int[3];
+        for (LspDiagnostic d : diagnostics) {
+            if (d.tagOnlyHint()) {
+                continue;
+            }
+            counts[
+                    d.severity() == LspDiagnostic.Severity.ERROR
+                            ? 0
+                            : d.severity() == LspDiagnostic.Severity.WARNING ? 1 : 2]++;
+        }
+        return counts;
+    }
+
+    /**
      * Counts {@code diagnostics}' errors, warnings and notes; the arrows go only when there is somewhere to go. The
      * check means no problem at all: ShellCheck reports its commonest findings (unquoted variables) as information,
      * and a script full of them showed "No problems found" with no arrows to reach them (Bash review C5). With a
@@ -146,18 +165,10 @@ final class ProblemCounter extends HBox {
             next.setManaged(false);
             return;
         }
-        int e = 0;
-        int w = 0;
-        int n = 0;
-        for (LspDiagnostic d : diagnostics) {
-            if (d.severity() == LspDiagnostic.Severity.ERROR) {
-                e++;
-            } else if (d.severity() == LspDiagnostic.Severity.WARNING) {
-                w++;
-            } else {
-                n++;
-            }
-        }
+        int[] tally = tally(diagnostics);
+        int e = tally[0];
+        int w = tally[1];
+        int n = tally[2];
         if (e == errorCount && w == warningCount && n == noteCount) {
             return;
         }

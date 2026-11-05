@@ -245,7 +245,9 @@ class SettingsControlsFxTest {
             CheckBox console = rig.control("debugProgramConsoleCheck");
             debug.setSelected(false);
             assertFalse(settings.isDebugSupport());
-            assertTrue(fields.get("python").isDisabled());
+            // The Python interpreter is on the LSP page's Python card, editable with debugging off (Python 2, C101).
+            assertFalse(fields.get("python").isDisabled());
+            assertTrue(fields.get("javascript").isDisabled());
             assertTrue(fields.get("java").isDisabled(), "the Java card too (it holds the console switch)");
             debug.setSelected(true);
             assertTrue(settings.isDebugSupport());

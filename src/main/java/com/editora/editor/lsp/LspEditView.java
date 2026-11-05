@@ -42,7 +42,7 @@ public final class LspEditView {
                 ? caret
                 : target(a, before.anchor(), before.anchorLine(), before.anchorCol(), ranges, texts);
         a.selectRange(anchor, caret);
-        // As for restyles (setStyleSpansPreservingScroll): a commit that replaces every paragraph drops the
+        // As for restyles (ScrollAnchor.setStyleSpans): a commit that replaces every paragraph drops the
         // virtual flow's scroll to the top. Restoring only an actual collapse keeps ordinary edits untouched.
         Double after = a.estimatedScrollYProperty().getValue();
         if (before.scrollY() != null && before.scrollY() > 1 && (after == null || after <= 1)) {

@@ -437,11 +437,11 @@ final class DoctorCoordinator {
 
     /**
      * What this window needs, read on the FX thread when the catalog is built: the language servers its open
-     * files use, whether a shell or Python file is open, and — lazily, on the probe pool — the file names in the
+     * files use, whether a shell file is open, and — lazily, on the probe pool — the file names in the
      * project root (a local root only; a remote one is not listed). A tool nothing here needs is neutral when
      * absent rather than red (review A1/A2).
      */
-    record Needs(Set<String> openServers, boolean shellOpen, boolean pythonOpen, Supplier<List<String>> rootFiles) {
+    record Needs(Set<String> openServers, boolean shellOpen, Supplier<List<String>> rootFiles) {
 
         Set<String> rootServers() {
             return DoctorNeeds.serversForRootFiles(rootFiles.get());
@@ -455,7 +455,7 @@ final class DoctorCoordinator {
 
     private Needs needs() {
         Set<String> servers = new HashSet<>();
-        boolean[] shellPython = new boolean[2];
+        boolean[] shell = new boolean[1];
         host.forEachBuffer(b -> {
             String id = com.editora.lsp.LspServerRegistry.serverIdFor(b.getLanguage());
             if (id != null) {
@@ -468,13 +468,12 @@ final class DoctorCoordinator {
                             p.getFileName().toString())) {
                 servers.add(com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID);
             }
-            shellPython[0] |= b.isShell();
-            shellPython[1] |= b.isPython();
+            shell[0] |= b.isShell();
         });
         Path root = ops.projectRoot();
         boolean localRoot = root != null && root.getFileSystem() == java.nio.file.FileSystems.getDefault();
         Supplier<List<String>> files = memoize(() -> localRoot ? rootFileNames(root) : List.of());
-        return new Needs(Set.copyOf(servers), shellPython[0], shellPython[1], files);
+        return new Needs(Set.copyOf(servers), shell[0], files);
     }
 
     /** The names of the files directly in {@code root} (its markers); empty when it cannot be listed. Blocking. */
@@ -675,7 +674,7 @@ final class DoctorCoordinator {
                             .withSettings("lsp"),
                     "lsp")));
         }
-        specs.add(pythonFormatterRow(needs)); // Format Document on .py works with the language server off too
+        specs.add(pythonFormatterRow(s.isPythonFormatOnSave())); // Format Document on .py works with LSP off too
         specs.addAll(JsToolDoctorRows.rows( // the project's own ESLint, Prettier and Biome (they need no server)
                 ops.projectRoot(), host.projectScope().trustSnapshot(), s.isEslintEnabled(), s.getJsFormatter()));
 
@@ -1400,8 +1399,8 @@ final class DoctorCoordinator {
         });
     }
 
-    /** Ruff or Black for Format Document on Python files (adl's decision 4); needed once Python is in play. */
-    private DoctorService.CheckSpec pythonFormatterRow(Needs needs) {
+    /** Ruff or Black for Format Document on Python files (adl's decision 4). */
+    private DoctorService.CheckSpec pythonFormatterRow(boolean formatOnSave) {
         var resolver = ops.pythonInterpreter();
         DoctorCheck row = DoctorCheck.checking(
                         "python.formatter", "format", tr("doctor.label.pythonFormatter"), "ruff / black")
@@ -1413,11 +1412,7 @@ final class DoctorCoordinator {
             }
             var found = com.editora.format.PythonFormatter.findLocal(venv);
             if (found.isEmpty()) {
-                boolean needed = needs.pythonOpen()
-                        || DoctorNeeds.pythonProject(needs.rootFiles().get());
-                return needed
-                        ? base.warn("", "doctor.tip.pythonFormatter")
-                        : base.optional("doctor.tip.pythonFormatter");
+                return formatterAbsent(base, formatOnSave);
             }
             DoctorProbes.Presence p = DoctorProbes.version(List.of(found.get().executable()));
             String version = p.present() && !p.version().isBlank()
@@ -1425,6 +1420,17 @@ final class DoctorCoordinator {
                     : found.get().name();
             return base.ok(version + " — " + found.get().executable());
         });
+    }
+
+    /**
+     * Pure: the Python formatter row when neither Ruff nor Black is found. Formatting is optional, so that is a note
+     * ("not installed"), not a warning beside real problems — unless Format on save asks for one (Python review 2,
+     * C111).
+     */
+    static DoctorCheck formatterAbsent(DoctorCheck base, boolean formatOnSave) {
+        return formatOnSave
+                ? base.warn("", "doctor.tip.pythonFormatterOnSave")
+                : base.optional("doctor.tip.pythonFormatter");
     }
 
     /**
@@ -1552,7 +1558,7 @@ final class DoctorCoordinator {
         var resolver = ops.pythonInterpreter();
         boolean elsewhere = resolver != null && ops.pythonInterpreterElsewhere();
         DoctorCheck row = DoctorCheck.checking("run.python", "run", tr("doctor.label.pythonInterpreter"), "python")
-                .withSettings("debug");
+                .withSettings("lsp"); // the LSP page's Python card, editable with debugging off (Python 2, C101)
         return probe(row, base -> {
             com.editora.run.PythonInterpreters.PythonInterpreter py = resolver != null
                     ? resolver.get()

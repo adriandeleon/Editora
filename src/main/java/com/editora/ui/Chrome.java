@@ -214,6 +214,16 @@ final class Chrome {
             simpleRule(PaletteGates::plugins, "plugins.", "view.togglePlugins"),
             // External Tools has no setting of its own — Simple UI mode is the only thing that turns it off.
             simpleRule(PaletteGates::externalTools, "externalTool.", "view.toggleSimpleMode", "tool.externalTools"),
+            // Language support installs a language server and debugger, which Simple UI mode turns off (Python
+            // review 2, C109); Python: Select Interpreter stays, as Run File still uses it.
+            simpleRule(
+                    g -> !g.simpleMode(),
+                    "install.languageServer",
+                    "view.toggleSimpleMode",
+                    "install.javaSupport",
+                    "install.pythonSupport",
+                    "install.jsSupport",
+                    "install.shellTools"),
             simpleRule(PaletteGates::log, "log.", "view.toggleLogViewer"),
             simpleRule(PaletteGates::testRunner, "test.", "view.toggleTestRunner", "tool.testResults"),
             simpleRule(PaletteGates::debug, "debug.", "view.toggleDebug", "tool.debug"),

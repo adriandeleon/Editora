@@ -26,6 +26,7 @@ com.editora.lsp.JdtlsTypingProbeTest
 com.editora.lsp.JdtlsUpgradeProbeTest
 com.editora.lsp.HtmlServerNodeProbeFxTest
 com.editora.lsp.TypeScriptServerNodeProbeFxTest
+com.editora.ui.PyrightProbeFxTest
 com.editora.lsp.HtmlServerFormatNodeProbeFxTest
 com.editora.ui.CompactSourceDebugProbeFxTest
 com.editora.ui.ClojureServerProbeFxTest

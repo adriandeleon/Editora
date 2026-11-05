@@ -22,4 +22,11 @@ final class LspDocumentFacts {
                 .withDocument(
                         buffer.getEditorConfigProps().maxLineLength(), last > 0 && area.getParagraphLength(last) == 0);
     }
+
+    /** {@code buffer}'s line count as a reader means it: a final line break does not start a line (E109). */
+    static int lines(EditorBuffer buffer) {
+        CodeArea area = buffer.getArea();
+        int paragraphs = area.getParagraphs().size();
+        return com.editora.lsp.LspServerRegistry.lineCount(paragraphs, area.getParagraphLength(paragraphs - 1) == 0);
+    }
 }

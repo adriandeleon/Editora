@@ -68,6 +68,27 @@ final class PythonInterpreterCoordinator {
         this.host = host;
     }
 
+    /**
+     * A Python buffer → the root of the language server that serves (or will serve) it; asked only while language
+     * servers and the Python one are on. Its interpreter is what the status item shows: the item said {@code (.venv)}
+     * while Pyright, resolved from another folder, analysed with {@code /usr/bin/python3} (Python review 2, B101).
+     */
+    private java.util.function.Function<EditorBuffer, @Nullable Path> serverRoots = b -> null;
+
+    /** Installs how a buffer's server root is found (FX thread). */
+    void setServerRoots(java.util.function.Function<EditorBuffer, @Nullable Path> roots) {
+        serverRoots = roots;
+    }
+
+    /**
+     * An environment was created or deleted under a server's root (Python review 2, B103): versions are probed
+     * again, and the servers and the item follow the new answer (FX thread).
+     */
+    void environmentChanged() {
+        versions.clear();
+        host.interpreterChanged();
+    }
+
     /** Re-reads the project root, the pick and the setting (FX thread). */
     void captureSnapshot() {
         com.editora.config.ConfigManager config = host.config();
@@ -114,7 +135,19 @@ final class PythonInterpreterCoordinator {
             return null;
         }
         // A file directly in the root: the venv search starts at the root itself and walks up to the project.
-        return PythonInterpreterView.pythonPathForServer(resolve(root.resolve("__editora__.py")));
+        // A bare name (a setting of `python3.12`) is told as this machine's PATH finds it (review 2, D104). On
+        // another host it is left to the server there: asking that host's PATH is a round trip per start and
+        // refresh, which a dropped connection held up until the server's start timed out.
+        return PythonInterpreterView.pythonPathForServer(
+                resolve(serverFile(root)),
+                elsewhere(root)
+                        ? name -> java.util.Optional.empty()
+                        : com.editora.run.PythonInterpreters::onAugmentedPath);
+    }
+
+    /** The made-up file a server root's interpreter is resolved for: one directly in the root. */
+    private static Path serverFile(Path root) {
+        return root.resolve("__editora__.py");
     }
 
     /** Updates the status-bar item for the active buffer: shown on Python files, local or remote (FX thread). */
@@ -125,10 +158,16 @@ final class PythonInterpreterCoordinator {
             return;
         }
         Path path = buffer.getPath();
+        com.editora.config.ConfigManager config = host.config();
+        boolean served = config != null
+                && config.getSettings().isLspSupport()
+                && config.getSettings().isPythonLspEnabled();
+        Path serverRoot = served ? serverRoots.apply(buffer) : null;
         captureSnapshot();
         boolean remote = elsewhere(path);
         Thread.ofVirtual().name("python-interpreter-status").start(() -> {
-            PythonInterpreter interp = resolve(path);
+            // What the buffer's server was told when one serves it, else what Run would use for the file.
+            PythonInterpreter interp = resolve(serverRoot != null ? serverFile(serverRoot) : path);
             // A remote interpreter is not run here for its version: the item names it and says why.
             String version = remote ? "" : versionOf(interp.executablePath());
             Platform.runLater(() -> {
@@ -171,13 +210,24 @@ final class PythonInterpreterCoordinator {
             // a version.
             List<PythonInterpreterView.Choice> choices = PythonInterpreterView.choices(
                     current,
+                    root,
                     found,
                     windows,
                     machine.toTarget(),
                     machine.onPath(),
-                    machine.local() ? this::versionOf : exe -> "");
+                    machine.local() ? this::versionOf : exe -> "",
+                    machine.local() ? PythonInterpreterCoordinator::realPath : exe -> exe);
             Platform.runLater(() -> showPicker(choices, root));
         });
+    }
+
+    /** The file {@code executable} resolves to (symlinks followed), or itself. Blocking: off the FX thread. */
+    private static String realPath(String executable) {
+        try {
+            return Path.of(executable).toRealPath().toString();
+        } catch (java.io.IOException | RuntimeException e) {
+            return executable;
+        }
     }
 
     private void showPicker(List<PythonInterpreterView.Choice> choices, @Nullable Path root) {
@@ -187,6 +237,7 @@ final class PythonInterpreterCoordinator {
                 () -> choices,
                 PythonInterpreterView.Choice::label,
                 PythonInterpreterView.Choice::detail,
+                PythonInterpreterView::searchKey, // "venv" or a path finds its row (Python review 2, C103)
                 c -> {
                     if (c != null) {
                         choose(c, root);
@@ -216,18 +267,32 @@ final class PythonInterpreterCoordinator {
             chooser.setInitialDirectory(from.toFile());
         }
         java.io.File picked = chooser.showOpenDialog(host.window());
-        if (picked != null) {
-            store(picked.getAbsolutePath());
+        if (picked == null) {
+            return;
         }
+        // Any file could be picked, and Pyright would then be told to analyse with it: only a Python is stored
+        // (Python review 2, C103). Running it for its version blocks, so off the FX thread.
+        String path = picked.getAbsolutePath();
+        Thread.ofVirtual().name("python-interpreter-check").start(() -> {
+            boolean python =
+                    !PythonInterpreterView.parseVersion(versionOf(path)).isEmpty();
+            Platform.runLater(() -> {
+                if (python) {
+                    store(PythonInterpreterView.commandText(List.of(path)));
+                } else {
+                    host.setStatus(tr("python.interpreter.pick.notPython", picked.getName()));
+                }
+            });
+        });
     }
 
-    /** Stores {@code executable} as the project's pick ("" = detect automatically) and tells everyone. */
-    void store(String executable) {
+    /** Stores {@code command} (one line, as a picker row has it) as the project's pick ("" = detect automatically). */
+    void store(String command) {
         com.editora.config.ConfigManager config = host.config();
         if (config == null) {
             return;
         }
-        String stored = executable.isEmpty() ? "" : PythonInterpreterView.storedChoice(host.projectRoot(), executable);
+        String stored = command.isEmpty() ? "" : PythonInterpreterView.storedChoice(host.projectRoot(), command);
         config.getWorkspaceState().setPythonInterpreter(stored);
         config.saveAsync();
         captureSnapshot();

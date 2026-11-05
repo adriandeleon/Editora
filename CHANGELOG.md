@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Python: quick fixes and format on save.** Code Actions and the lightbulb on a Python error offer Import X
+  (from Pyright, else the standard-library module a common name comes from), Remove unused import and Ignore on this
+  line (`# pyright: ignore[rule]`); Pyright itself gives none. Ruff or Black can format a Python file after an
+  explicit save (Settings → LSP → Python → Format on save, off by default).
+- **Python sub-projects get their own Pyright.** A folder inside a project with its own `pyproject.toml`,
+  `setup.py`, `setup.cfg` or `pyrightconfig.json` is analysed by its own Pyright, with its own `.venv`, `src/` and
+  `[tool.pyright]`; a uv workspace member shares its workspace's. Problems → Whole project now checks every Python
+  file, not only the open ones.
+- **Starlark, Cython and SCons files open with Python highlighting** (BUILD.bazel, `.bzl`, `.star`, Tiltfile,
+  `.pyx`/`.pxd`/`.pxi`, SConstruct/SConscript, `.pythonrc`), and ipython, graalpy, micropython and pythonw shebangs
+  are recognised.
 - **The Map's Project overview card has −/+ and opens first.** Like a file's preview card, its title bar has −/+
   to make its text smaller or larger; the next overview opens at the same size. It now opens before the project's
   own column, the way the map flows — left of it left to right, right of it right to left, above it top to bottom,
@@ -110,6 +121,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Python interpreter setting is on Settings → LSP → Python**, editable with debugging off, next to a Choose…
+  button that opens Python: Select Interpreter and Format on save (Ruff/Black). The picker names each environment by
+  its folder, can be filtered by path, lists one interpreter once, checks a Browse… pick and keeps its arguments.
+  The status-bar interpreter is the one Pyright analyses with.
+- **Python snippets:** the one-letter triggers `s`, `#` and `__` are now `self`, `doc` and `dunder`, and Tab after
+  `obj.` never expands a snippet in any language. Narrow to Defun in Python takes the def or class you are in, with
+  its decorators. Structure lists module constants and class fields without LSP and marks async, property and
+  classmethod defs.
+- **Completion** shows the server's whole list (`os.` has all its members, not 50) and "Waiting for Pyright…" while a
+  slow server answers. Turning on inlay hints, semantic highlighting or code lenses says when the file's server gives
+  none. Doctor shows a missing Ruff/Black as optional unless Format on save is on.
 - **Java debugging: Run ▸ Debugger and the Debug window (second debugging review).** The Run menu keeps Start /
   Continue, Debug Main Class, Attach, Stop, Restart and Toggle Breakpoint; stepping, watches, breakpoint and exception
   items moved into a **Run ▸ Debugger** submenu (the menu fits a 1080p screen again). Caught and Uncaught exception
@@ -208,6 +230,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spaces (a token, a hash or base64 in a string, a template, a regex or code) took time that grew with the square of
   its length to colour: 0.2–0.5 s for 2,000 letters and 7–8 s for 10,000, while that tab and every other JavaScript
   or TypeScript tab waited for colours. It now takes a few milliseconds, and every colour is the same as before.
+- **Python editing:** the first `case` of a `match` stays inside it (one Enter on a correct `case` line used to move
+  it out), `finally` lines up with its `try`, Tab indents the way Enter does, Enter between `"""` and `"""` opens a
+  line, f-strings with nested quotes no longer confuse the indenter, and the status bar warns when tabs and spaces
+  are mixed the way Python rejects. PEP 614 decorators are no longer painted as errors.
+- **Pyright and the venv:** a venv created after the project was opened, and packages installed into it with pip,
+  are picked up without a restart; a venv in a subfolder, a uv workspace's shared venv and a bare interpreter name
+  such as `python3.12` reach Pyright; files in the project's `.venv` open read-only. Remote (SSH, WSL, container)
+  projects pick up files changed on the host when the window comes back to the front, or within a minute.
+- **Format Document (Python)** no longer empties a file Black skips (`force-exclude`), never applies a cut-off
+  result, and no longer adds a blank line when Ruff writes CRLF line endings (the same line-ending fix applies to
+  Prettier, Biome and ESLint fixes). A narrowed, read-only or remote file says why it was not formatted.
+- **Find References from a Python call lists that call**, and from a function's only call it no longer jumps to the
+  definition. Unused imports stay faded after LSP is turned on; the problem counter matches Problems; completion
+  documentation is as wide as its signature; a library file opened by Go to Definition says Read-Only; a 50,000-line
+  Python file with a final newline keeps Pyright; the Python banner is not shown when Pyright is switched off.
+- **All languages:** sticky-scroll headers line up with the code they name, a long file's screen is coloured within a
+  fraction of a second, regex group names no longer appear in Structure, and `def f` is no longer shown as
+  `f() : de`. Status-bar items are keyboard buttons, and completion rows have spoken names. VS Code keymap:
+  Shift+Alt+O organizes imports, Ctrl+Shift+Space shows parameter hints; CUA: Ctrl+Space completes.
 - **Map: a Java file's Structure column opens its class again.** With the Java language server running, the Map's
   Structure column (and a file card's) stopped at the package and the class, because the server lists the package as
   a top-level entry of its own. A lone package, namespace or module line no longer counts, so the class's members are

@@ -579,6 +579,31 @@ class ChromeTest {
         assertEquals("view.toggleNotes", notes.commandArg());
     }
 
+    /**
+     * Simple UI mode has no language server or debugger, so installing a language's support is greyed there; Python:
+     * Select Interpreter stays, as Run File uses it (Python review 2, C109). Outside Simple mode they stay, LSP off too.
+     */
+    @Test
+    void simpleModeGreysLanguageSupportInstalls() {
+        PaletteGates simple = gates(true, true, "lsp", "debug");
+        for (String id : new String[] {
+            "install.pythonSupport",
+            "install.javaSupport",
+            "install.jsSupport",
+            "install.languageServer",
+            "install.shellTools"
+        }) {
+            assertEquals(
+                    "palette.disabled.simpleMode",
+                    Chrome.disabledReason(id, simple, ctx()).messageKey(),
+                    id);
+        }
+        assertTrue(Chrome.paletteVisible("python.selectInterpreter", simple));
+        assertTrue(Chrome.paletteVisible("install.mermaidSupport", simple));
+        assertTrue(Chrome.paletteVisible("install.pythonSupport", allOn()));
+        assertTrue(Chrome.paletteVisible("install.pythonSupport", only("lsp")), "install before turning LSP on");
+    }
+
     @Test
     void everyFeatureRuleCanExplainItselfWithARealToggleCommand() {
         // A rule that grays commands without naming a way back would leave the user stuck.

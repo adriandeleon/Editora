@@ -365,4 +365,52 @@ class StickyScrollFxTest {
         });
         assertTrue(pinnedFor(b, 40).isEmpty(), "there is nothing to pin in prose");
     }
+
+    @Test
+    void pinnedHeadersStartWhereTheCodesTextStarts() throws Exception {
+        // Review 2 A109: the rows started at the window edge, over the line numbers, a gutter's width left of
+        // the code they name.
+        EditorBuffer b = buffer();
+        Object[] host = FxTestSupport.callOnFx(() -> {
+            javafx.scene.layout.StackPane pane = new javafx.scene.layout.StackPane(b.getNode());
+            javafx.scene.Scene scene = new javafx.scene.Scene(pane, 900, 600);
+            scene.getStylesheets()
+                    .add(EditorBuffer.class
+                            .getResource("/com/editora/styles/app.css")
+                            .toExternalForm());
+            javafx.stage.Stage stage = new javafx.stage.Stage();
+            stage.setScene(scene);
+            stage.show();
+            pane.applyCss();
+            pane.layout();
+            b.getArea().showParagraphAtTop(100);
+            pane.layout();
+            return new Object[] {pane, stage};
+        });
+        javafx.scene.layout.StackPane pane = (javafx.scene.layout.StackPane) host[0];
+        FxTestSupport.runOnFx(() -> {
+            call(b, "stickyLinesFor", int.class, 100);
+            pane.applyCss();
+            pane.layout();
+        });
+        FxTestSupport.drainFx();
+        double[] xs = FxTestSupport.callOnFx(() -> {
+            pane.applyCss();
+            pane.layout();
+            javafx.scene.layout.Region bar = (javafx.scene.layout.Region) call(b, "stickyScrollNode");
+            javafx.scene.layout.HBox row =
+                    (javafx.scene.layout.HBox) bar.getChildrenUnmodifiable().get(0);
+            javafx.scene.Node first = row.getChildren().get(0);
+            double rowText = first.localToScene(first.getBoundsInLocal()).getMinX();
+            int par = b.getArea().firstVisibleParToAllParIndex() + 3;
+            int at = b.getArea().getAbsolutePosition(par, 0);
+            javafx.geometry.Bounds ch =
+                    b.getArea().getCharacterBoundsOnScreen(at, at + 1).orElseThrow();
+            double code = pane.getScene().getRoot().screenToLocal(ch).getMinX();
+            return new double[] {rowText, code};
+        });
+        FxTestSupport.runOnFx(((javafx.stage.Stage) host[1])::hide);
+        assertTrue(xs[1] > 20, "the code starts past a gutter: " + xs[1]);
+        assertTrue(Math.abs(xs[0] - xs[1]) < 2, "pinned row text at " + xs[0] + ", code text at " + xs[1]);
+    }
 }

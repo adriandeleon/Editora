@@ -1284,6 +1284,18 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
+    /** Whether this Python session checks its whole project, not only the open files (review 2, B105). */
+    private volatile boolean pythonWorkspaceDiagnostics;
+
+    /** Sets {@link #pythonWorkspaceDiagnostics}; a running Python server is pushed the change. */
+    void setPythonWorkspaceDiagnostics(boolean workspace) {
+        boolean changed = pythonWorkspaceDiagnostics != workspace;
+        pythonWorkspaceDiagnostics = workspace;
+        if (changed && "python".equals(serverId) && ready()) {
+            pushConfiguration();
+        }
+    }
+
     /** The interpreter last given to this session (null = none). */
     @Nullable
     String pythonPath() {
@@ -1376,7 +1388,8 @@ final class LanguageServerSession implements LanguageClient {
     private void pushConfiguration() {
         java.util.Map<String, Object> settings = TypeScriptServer.SERVER_ID.equals(serverId)
                 ? typeScriptSettings
-                : LspServerSettings.push(serverId, javaOnTypeFormatting, effectiveBashIde(), pythonPath);
+                : LspServerSettings.push(
+                        serverId, javaOnTypeFormatting, effectiveBashIde(), pythonPath, pythonWorkspaceDiagnostics);
         java.util.Map<String, Object> xml = xmlSettings;
         if (xml != null && XmlServerSettings.isLemminx(serverId)) {
             settings = Map.of(XmlServerSettings.SECTION, xml); // lemminx's own; for a pom, with lemminx-maven's
@@ -2749,7 +2762,7 @@ final class LanguageServerSession implements LanguageClient {
         }
         // Usages only: with the declaration included, Find References on an unused symbol answered with the
         // declaration alone, and the lone result was "jumped to" — the caret stayed put (Java review B5).
-        if (BashShims.isBash(serverId)) {
+        if (BashShims.dropsRequestedOccurrence(serverId)) {
             return bashReferences(uri, pos);
         }
         ReferenceParams params = new ReferenceParams(doc(uri), pos, new ReferenceContext(false));
@@ -2757,8 +2770,8 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /**
-     * bash-language-server reads {@code includeDeclaration: false} as "without the occurrence at the request
-     * position": from a call the list held the definition and not the call (Bash review C4, B9). It is asked with
+     * bash-language-server and Pyright read {@code includeDeclaration: false} as "without the occurrence at the request
+     * position": from a call the list held the definition and not the call (Bash review C4, B9; Python 2 C102). Asked with
      * the declaration included, and the declaration — where {@code textDocument/definition} says it is — is left
      * out here. Should the definition request fail, the whole list is shown.
      */
@@ -3348,7 +3361,8 @@ final class LanguageServerSession implements LanguageClient {
         if (HtmlServerSettings.SERVER_ID.equals(serverId)) { // per document: its wrap column and final newline
             return htmlSettings.answer(item.getSection(), indentForUri(item.getScopeUri()));
         }
-        Object answer = LspServerSettings.answer(serverId, item.getSection(), effectiveBashIde(), pythonPath);
+        Object answer = LspServerSettings.answer(
+                serverId, item.getSection(), effectiveBashIde(), pythonPath, pythonWorkspaceDiagnostics);
         if (answer == null && LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && item.getScopeUri() != null) {
             answer = LspServerSettings.javaFormatAnswer(item.getSection(), indentForUri(item.getScopeUri()));
         }

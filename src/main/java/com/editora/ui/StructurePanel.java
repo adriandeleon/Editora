@@ -967,6 +967,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                     || !java.util.Objects.equals(x.region(), y.region())
                     || !x.detail().equals(y.detail())
                     || !x.doc().equals(y.doc())
+                    || !x.marker().equals(y.marker())
                     || !x.nameRuns().equals(y.nameRuns())
                     || !x.returnRuns().equals(y.returnRuns())
                     || !sameModel(x.children(), y.children())) {
@@ -1071,7 +1072,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             attachHeadingStyle(nodes);
             return;
         }
-        attachSyntaxStyles(buffer.getArea(), buffer.narrowFirstLine(), nodes);
+        attachSyntaxStyles(buffer.getArea(), buffer.narrowFirstLine(), nodes, buffer.isPython());
     }
 
     private static void attachHeadingStyle(List<StructureNode> nodes) {
@@ -1081,10 +1082,18 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private static void attachSyntaxStyles(CodeArea area, int base, List<StructureNode> nodes) {
+    private static void attachSyntaxStyles(CodeArea area, int base, List<StructureNode> nodes, boolean python) {
         for (StructureNode node : nodes) {
             attachSyntaxStyles(area, base, node);
-            attachSyntaxStyles(area, base, node.children());
+            if (python) { // `async`, `property`, `classmethod` … beside the row, with or without LSP (review 2 C113)
+                int line = node.line() - base;
+                node.setMarker(
+                        line < 0 || line >= area.getParagraphs().size()
+                                ? ""
+                                : PythonOutlineSymbols.marker(
+                                        i -> area.getParagraph(i).getText(), line));
+            }
+            attachSyntaxStyles(area, base, node.children(), python);
         }
     }
 
@@ -1100,7 +1109,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
 
         String sourceLine = area.getParagraph(line).getText();
         String stem = callableStem(label);
-        int column = sourceLine.indexOf(stem);
+        int column = nameColumn(sourceLine, stem);
         if (column < 0 || stem.isEmpty()) {
             node.setNameRuns(List.of(fallbackRun(label, node.kind())));
             return;
@@ -1129,6 +1138,32 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         return column < 0
                 ? List.of(fallbackRun(text, kind))
                 : styledDisplayRuns(area, line, text, sourceLine, column, kind);
+    }
+
+    /**
+     * Where {@code stem} (a symbol's name) stands in {@code line} as a whole word: {@code def f(} names {@code f}
+     * at column 4, not the {@code f} inside {@code def}, whose leftovers then read as a return type "de"
+     * (review 2 A105). The first plain occurrence when it never stands alone; -1 when it is not there.
+     */
+    static int nameColumn(String line, String stem) {
+        if (stem.isEmpty()) {
+            return -1;
+        }
+        boolean wordStart = isNameChar(stem.charAt(0));
+        boolean wordEnd = isNameChar(stem.charAt(stem.length() - 1));
+        for (int at = line.indexOf(stem); at >= 0; at = line.indexOf(stem, at + 1)) {
+            int after = at + stem.length();
+            boolean startOk = !wordStart || at == 0 || !isNameChar(line.charAt(at - 1));
+            boolean endOk = !wordEnd || after >= line.length() || !isNameChar(line.charAt(after));
+            if (startOk && endOk) {
+                return at;
+            }
+        }
+        return line.indexOf(stem);
+    }
+
+    private static boolean isNameChar(char c) {
+        return Character.isLetterOrDigit(c) || c == '_' || c == '$';
     }
 
     private static String callableStem(String label) {
@@ -1622,6 +1657,11 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                 for (SyntaxRun run : item.returnRuns()) {
                     box.getChildren().add(styledText(run, "structure-return-type"));
                 }
+            }
+            if (!item.marker().isEmpty()) {
+                javafx.scene.text.Text marker = new javafx.scene.text.Text("  " + item.marker());
+                marker.getStyleClass().add("structure-marker");
+                box.getChildren().add(marker);
             }
             javafx.scene.text.Text line = new javafx.scene.text.Text("  " + tr("structure.line", item.line() + 1));
             line.getStyleClass().add("structure-line-number");

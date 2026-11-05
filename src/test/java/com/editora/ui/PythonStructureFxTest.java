@@ -54,26 +54,6 @@ class PythonStructureFxTest {
 
     @Test
     void methodsNestUnderTheirClassWithTheirReturnTypes() throws Exception {
-        List<String> rows = FxTestSupport.callOnFx(() -> {
-            StructurePanel p = new StructurePanel();
-            new Scene(new StackPane(p), 600, 400);
-            EditorBuffer b = new EditorBuffer();
-            b.setLanguageOverride("python");
-            b.setContent(SOURCE);
-            var field = EditorBuffer.class.getDeclaredField("symbols");
-            field.setAccessible(true);
-            field.set(
-                    b,
-                    TextMateHighlighter.analyze(SOURCE, GrammarRegistry.shared().forLanguageName("python"))
-                            .symbols());
-            b.getFoldManager().setServerRegions(FoldRegions.detect(SOURCE, "python"));
-            p.attach(b);
-            @SuppressWarnings("unchecked")
-            TreeView<Object> tree = (TreeView<Object>) FxTestSupport.<TreeView<?>>field(p, "tree");
-            List<String> out = new ArrayList<>();
-            collect(tree, tree.getRoot(), "", out);
-            return out;
-        });
         assertEquals(
                 List.of(
                         "Greeter",
@@ -81,7 +61,81 @@ class PythonStructureFxTest {
                         "  upper() : str",
                         "  make() : \"Greeter\"",
                         "table() : dict[str, int]"),
-                rows);
+                rows(SOURCE));
+    }
+
+    @Test
+    void constantsFieldsAndDefKindsShowWithoutAServer() throws Exception {
+        // Review 2 C113 (constants, fields, async/property markers), A105 (`def f` read "de" as a return type),
+        // A104 (a regex named group listed as a symbol).
+        String source = String.join(
+                "\n",
+                "import re",
+                "MAX_SIDES = 6",
+                "_registry: dict[str, int] = {}",
+                "PATTERN = re.compile(r\"(?P<year>\\d{4})\")",
+                "",
+                "class Shape:",
+                "    radius: float",
+                "    sides = 3",
+                "",
+                "    @property",
+                "    def area(self) -> float:",
+                "        local = 1",
+                "        return local",
+                "",
+                "    @classmethod",
+                "    def make(cls): ...",
+                "",
+                "    async def fetch(self): ...",
+                "",
+                "    class Meta:",
+                "        ordering = 1",
+                "",
+                "    tail = 0",
+                "",
+                "def f(match, case):",
+                "    pass",
+                "");
+        assertEquals(
+                List.of(
+                        "MAX_SIDES",
+                        "_registry",
+                        "PATTERN",
+                        "Shape",
+                        "  radius",
+                        "  sides",
+                        "  area() : float  property",
+                        "  make()  classmethod",
+                        "  fetch()  async",
+                        "  Meta",
+                        "    ordering",
+                        "  tail",
+                        "f()"),
+                rows(source));
+    }
+
+    private static List<String> rows(String source) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            StructurePanel p = new StructurePanel();
+            new Scene(new StackPane(p), 600, 400);
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride("python");
+            b.setContent(source);
+            var field = EditorBuffer.class.getDeclaredField("symbols");
+            field.setAccessible(true);
+            field.set(
+                    b,
+                    TextMateHighlighter.analyze(source, GrammarRegistry.shared().forLanguageName("python"))
+                            .symbols());
+            b.getFoldManager().setServerRegions(FoldRegions.detect(source, "python"));
+            p.attach(b);
+            @SuppressWarnings("unchecked")
+            TreeView<Object> tree = (TreeView<Object>) FxTestSupport.<TreeView<?>>field(p, "tree");
+            List<String> out = new ArrayList<>();
+            collect(tree, tree.getRoot(), "", out);
+            return out;
+        });
     }
 
     private static void collect(TreeView<Object> tree, TreeItem<Object> parent, String indent, List<String> out) {

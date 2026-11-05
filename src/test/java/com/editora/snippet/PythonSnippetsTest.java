@@ -40,4 +40,16 @@ class PythonSnippetsTest {
         assertTrue(r.text().contains("\nif __name__ == \"__main__\":\n    main()\n"), r.text());
         assertEquals(r.text().indexOf("def main() -> None:\n    ") + "def main() -> None:\n    ".length(), r.caret());
     }
+
+    @Test
+    void noPythonTriggerIsASingleCharacter(@TempDir Path dir) {
+        // Review 2 A107: `s` + Tab turned a variable into `self.`, `#` + Tab a comment mark into a docstring.
+        SnippetManager m = new SnippetManager(new ConfigManager(dir));
+        for (Snippet s : m.forLanguage("python")) {
+            assertTrue(s.prefix().length() > 1, "a one-character trigger: " + s.prefix());
+        }
+        assertEquals("self.$0", m.byPrefix("python", "self").body());
+        assertTrue(m.byPrefix("python", "doc").body().startsWith("\"\"\""));
+        assertTrue(m.byPrefix("python", "dunder").body().startsWith("__${1:init}__"));
+    }
 }

@@ -94,6 +94,10 @@ public final class JsToolRun {
     public static Output run(Invocation inv, String text, ProcessRunner.@Nullable Cancellation cancel) {
         ProcessRunner.BytesResult r = ProcessRunner.runBytesWithInput(
                 inv.dir(), TIMEOUT, inv.argv(), inv.env(), text.getBytes(StandardCharsets.UTF_8), false, cancel);
+        if (r.outTruncated() && !ProcessRunner.cancelled(r) && !ProcessRunner.timedOut(r)) {
+            // Cut short at the capture limit: a format of it would drop the file's tail (Python review 2, D102)
+            return new Output(-1, "", "output larger than the 10 MB limit", false, false);
+        }
         return new Output(
                 r.exit(),
                 new String(r.out(), StandardCharsets.UTF_8),
@@ -123,7 +127,7 @@ public final class JsToolRun {
             if (o.out().isEmpty() && !input.isEmpty()) {
                 return new FormatOutcome(null, kind.displayName() + ": no output");
             }
-            return new FormatOutcome(o.out(), null);
+            return new FormatOutcome(com.editora.format.FormatterOutput.lf(o.out()), null); // CRLF tools (A103)
         }
         String line = firstLine(o.err()).or(() -> firstLine(o.out())).orElse("exit " + o.exit());
         return new FormatOutcome(null, kind.displayName() + ": " + line);

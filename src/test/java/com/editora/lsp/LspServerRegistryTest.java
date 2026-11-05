@@ -78,6 +78,11 @@ class LspServerRegistryTest {
         assertEquals("python", spec.serverId());
         assertEquals(List.of("pyright-langserver", "--stdio"), spec.command());
         assertTrue(spec.rootMarkers().contains("pyproject.toml"));
+        // a pyrightconfig.json makes a Python project of its own too (Python review 2, B101)
+        assertTrue(spec.rootMarkers().contains("pyrightconfig.json"));
+        assertEquals(
+                LspServerRegistry.PYTHON_PROJECT_MARKERS,
+                LspServerRegistry.rootMarkerTiersForServer("python").get(0));
     }
 
     @Test
@@ -306,6 +311,17 @@ class LspServerRegistryTest {
         assertEquals("shellscript", LspServerRegistry.protocolLanguageId("shell"), "LSP's id for shell scripts");
     }
 
+    /** A file ending in a line break has an empty last paragraph, which is not a line (Python review 2 E109). */
+    @Test
+    void aFinalLineBreakIsNotALine() {
+        assertEquals(49_999, LspServerRegistry.lineCount(50_000, true));
+        assertEquals(50_000, LspServerRegistry.lineCount(50_000, false));
+        assertEquals(1, LspServerRegistry.lineCount(1, true), "an empty file is one line");
+        assertTrue(
+                LspServerRegistry.lspAllowedForSize("python", true, LspServerRegistry.lineCount(50_001, true)),
+                "50,000 lines and a final newline");
+    }
+
     /**
      * The large-source tier (10,000 lines by default) turns language servers off; Python keeps Pyright to
      * 50,000 lines, which it checks in seconds (Python review B10).
@@ -313,13 +329,14 @@ class LspServerRegistryTest {
     @Test
     void pythonKeepsItsServerInTheLargeFileTier() {
         assertTrue(LspServerRegistry.lspAllowedForSize("python", true, 12_000));
-        assertFalse(LspServerRegistry.lspAllowedForSize("python", true, 50_000));
+        assertTrue(LspServerRegistry.lspAllowedForSize("python", true, 50_000), "up to 50,000 lines, inclusive");
+        assertFalse(LspServerRegistry.lspAllowedForSize("python", true, 50_001));
         assertTrue(LspServerRegistry.lspAllowedForSize("java", true, 12_000), "Java keeps jdtls to 50,000 lines (C16)");
         assertTrue(
                 LspServerRegistry.lspAllowedForSize("typescript", true, 20_000),
                 "tsserver keeps a 20k-line file (E103)");
         assertTrue(LspServerRegistry.lspAllowedForSize("javascriptreact", true, 45_125), "lib.dom.d.ts-sized");
-        assertFalse(LspServerRegistry.lspAllowedForSize("typescript", true, 50_000));
+        assertFalse(LspServerRegistry.lspAllowedForSize("typescript", true, 50_001));
         assertFalse(LspServerRegistry.lspAllowedForSize("go", true, 12_000), "others keep the tier's default");
         assertTrue(LspServerRegistry.lspAllowedForSize("java", false, 12_000), "below the tier: always");
     }
@@ -365,7 +382,7 @@ class LspServerRegistryTest {
     void htmlKeepsItsServerUpTo50000Lines() {
         assertEquals(50_000, LspServerRegistry.heavyFileLspLineLimit("html"));
         assertTrue(LspServerRegistry.lspAllowedForSize("html", true, 48_004));
-        assertFalse(LspServerRegistry.lspAllowedForSize("html", true, 50_000));
+        assertFalse(LspServerRegistry.lspAllowedForSize("html", true, 50_001));
         assertEquals(0, LspServerRegistry.heavyFileLspLineLimit("css"));
     }
 }

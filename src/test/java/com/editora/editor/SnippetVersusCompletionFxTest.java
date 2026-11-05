@@ -207,7 +207,29 @@ class SnippetVersusCompletionFxTest {
         assertEquals("case", rows.get(0).label());
         assertSame(caseSnippet, rows.get(1).snippet(), "right after the keyword");
         assertTrue(rows.stream().noneMatch(c -> c.label().equals("case") && c.snippet() == null && c != rows.get(0)));
-        assertTrue(rows.stream().anyMatch(c -> c.snippet() == echo), "kept though the list is capped");
-        assertEquals(50, rows.size());
+        assertTrue(rows.stream().anyMatch(c -> c.snippet() == echo), "kept in a long list");
+        assertEquals(64, rows.size(), "62 server rows (the shadowed template goes) and both snippets");
+    }
+
+    /**
+     * Every server row stays: `os.` gives 419 members, and a 50-row cap left path, getcwd and sep unreachable by
+     * scrolling (Python review 2 E106). Buffer words only fill a list up to 50 rows.
+     */
+    @Test
+    void serverRowsAreNeverCutAndBufferWordsOnlyFillUpTo50() {
+        List<Completion> server = new java.util.ArrayList<>();
+        for (int i = 0; i < 419; i++) {
+            server.add(Completion.lsp("member" + i, "member" + i, "os"));
+        }
+        server.add(Completion.lsp("path", "path", "module"));
+        List<Completion> words = List.of(Completion.word("pathlib_word", null));
+
+        List<Completion> rows = BufferCompletion.mergeCompletions(server, words);
+
+        assertEquals(420, rows.size(), "all server rows, no words past 50");
+        assertTrue(rows.stream().anyMatch(c -> c.label().equals("path")));
+
+        List<Completion> few = BufferCompletion.mergeCompletions(server.subList(0, 3), words);
+        assertEquals(4, few.size(), "a short list still gets the buffer's words");
     }
 }

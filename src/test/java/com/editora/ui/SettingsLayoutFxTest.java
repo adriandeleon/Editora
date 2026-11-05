@@ -225,9 +225,16 @@ class SettingsLayoutFxTest {
             }
             open(stage, sidebar, scroll, "DEBUG");
             Map<String, TextField> debugFields = FxTestSupport.field(window, "debugCommandFields");
-            for (TextField field : debugFields.values()) {
-                assertTrue(field.getWidth() >= 300, "a path field is " + field.getWidth() + "px wide");
+            for (var e : debugFields.entrySet()) {
+                if (!e.getKey().equals("python")) { // on the LSP page's Python card (Python review 2, C101)
+                    assertTrue(
+                            e.getValue().getWidth() >= 300,
+                            "a path field is " + e.getValue().getWidth() + "px wide");
+                }
             }
+            open(stage, sidebar, scroll, "LSP");
+            TextField python = debugFields.get("python");
+            assertTrue(python.getWidth() >= 300, "the Python interpreter field is " + python.getWidth() + "px wide");
         });
     }
 

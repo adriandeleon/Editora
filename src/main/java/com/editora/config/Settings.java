@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 156;
+    public static final int SCHEMA_VERSION = 157;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -625,6 +625,8 @@ public class Settings {
     private boolean jsFormatOnSave;
     /** After an explicit save of a JS/TS file, organize its imports through the TypeScript server. Off by default. */
     private boolean jsOrganizeImportsOnSave;
+    /** After an explicit save of a Python file, format it with Ruff or Black and save again if that changed it. Off by default. */
+    private boolean pythonFormatOnSave;
     /** Seconds one HTTP response handler may run before it is stopped (1–600). */
     private int httpScriptTimeoutSeconds = 10;
     /**
@@ -1263,6 +1265,14 @@ public class Settings {
 
     public void setJsFormatOnSave(boolean jsFormatOnSave) {
         this.jsFormatOnSave = jsFormatOnSave;
+    }
+
+    public boolean isPythonFormatOnSave() {
+        return pythonFormatOnSave;
+    }
+
+    public void setPythonFormatOnSave(boolean pythonFormatOnSave) {
+        this.pythonFormatOnSave = pythonFormatOnSave;
     }
 
     public boolean isJsOrganizeImportsOnSave() {

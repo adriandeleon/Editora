@@ -485,4 +485,22 @@ class KeymapsTest {
                     "lsp.formatDocument", km.commandFor("M-S-f"), "vscode" + (mac ? " mac" : ""));
         }
     }
+
+    /**
+     * VS Code's Organize Imports (Shift+Alt+O) and Trigger Parameter Hints (Ctrl+Shift+Space, Shift+Cmd+Space on macOS),
+     * and Ctrl+Space completion in CUA, which had none (Python review 2, C110).
+     */
+    @org.junit.jupiter.api.Test
+    void vsCodeOrganizesImportsAndShowsParameterHintsAndCuaCompletes() {
+        for (boolean mac : new boolean[] {false, true}) {
+            KeymapManager km = new KeymapManager();
+            km.loadNamed("vscode", mac);
+            org.junit.jupiter.api.Assertions.assertEquals("lsp.organizeImports", km.commandFor("M-S-o"));
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    "lsp.signatureHelp", km.commandFor(mac ? "Cmd-S-space" : "C-S-space"));
+            KeymapManager cua = new KeymapManager();
+            cua.loadNamed("cua", mac);
+            org.junit.jupiter.api.Assertions.assertEquals("edit.completion", cua.commandFor("C-space"));
+        }
+    }
 }

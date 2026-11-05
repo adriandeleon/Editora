@@ -90,7 +90,7 @@ public final class FoldRegions {
             case "typst" -> typst(text);
             case "http" -> http(text);
             case "shell" -> shell(text);
-            case "python" -> python(text);
+            case "python", "cython", "starlark" -> python(text);
             // plaintext and the other line/indentation-based languages have no delimiter folding.
             default -> List.of();
         };

@@ -121,6 +121,18 @@ class CommandPaletteRankTest {
                 "the first word must begin a word of the name");
     }
 
+    /** "pyright" finds the Python commands: Pyright's own command names, and the install's title (Python review 2, C109). */
+    @Test
+    void pyrightFindsThePythonCommands() {
+        com.editora.i18n.Messages.init("en");
+        var organize = com.editora.command.Command.of("lsp.organizeImports", () -> {});
+        var restart = com.editora.command.Command.of("lsp.restartServers", () -> {});
+        var install = com.editora.command.Command.of("install.pythonSupport", () -> {});
+        var hover = com.editora.command.Command.of("lsp.hover", () -> {});
+        var found = CommandPalette.orderedMatches(java.util.List.of(organize, restart, install, hover), "pyright");
+        assertEquals(java.util.Set.of(organize, restart, install), java.util.Set.copyOf(found));
+    }
+
     /** The whole of another IDE's name leads fuzzy title matches: "go to test" is Related File (sixth review ES1). */
     @Test
     void anotherIdesWholeNameLeadsFuzzyTitles() {

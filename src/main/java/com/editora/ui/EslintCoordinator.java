@@ -504,7 +504,8 @@ final class EslintCoordinator {
             finish(done, false);
             return;
         }
-        String fixed = report.output();
+        String output = report.output();
+        String fixed = output == null ? null : com.editora.format.FormatterOutput.lf(output); // CRLF fixes (A103)
         int[] span = fixed == null ? null : com.editora.format.PythonFormatter.changedSpan(text, fixed);
         if (fixed == null || span == null) {
             if (!quiet) {
