@@ -1700,7 +1700,37 @@ final class DebugCoordinator {
             }
             dapManager.stop(); // retarget to the newly active file below
         }
+        if (debugsTest(b)) {
+            return;
+        }
         launchBuffer(b);
+    }
+
+    /** Debugs a JUnit test at the caret ({@code true}: the whole class), as the gutter's Debug Test; set by the
+     *  window. Null: Debug ▶ launches a test file like any other. */
+    private @Nullable Consumer<Boolean> testDebugger;
+
+    void setTestDebugger(Consumer<Boolean> testDebugger) {
+        this.testDebugger = testDebugger;
+    }
+
+    /** Debug ▶ in a JUnit test file debugs the test at the caret, or its class (review A102); true when it did. */
+    private boolean debugsTest(@Nullable EditorBuffer b) {
+        if (b == null || testDebugger == null || !"java".equals(b.getLanguage())) {
+            return false;
+        }
+        b.settleRunScan(); // the test lines come from the load's off-FX scan
+        DebugTestRoute.Route route = DebugTestRoute.route(
+                true,
+                b.isCompactSource(),
+                b.testClassTarget() != null,
+                ownMainClass(b.getContent()) != null,
+                b.testTargetAtCaret(false) != null);
+        if (route == DebugTestRoute.Route.LAUNCH) {
+            return false;
+        }
+        testDebugger.accept(route == DebugTestRoute.Route.TEST_CLASS);
+        return true;
     }
 
     /**

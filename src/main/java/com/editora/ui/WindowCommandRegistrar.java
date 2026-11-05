@@ -2083,6 +2083,9 @@ final class WindowCommandRegistrar {
         }));
         host.registry().register(Command.of("test.runClassAtCaret", () -> host.runTestAtCaret(true, false)));
         host.registry().register(Command.of("test.debugAtCaret", () -> host.runTestAtCaret(false, true)));
+        if (host.debugCoordinator() != null) { // Debug ▶ in a JUnit file debugs its test (review A102)
+            host.debugCoordinator().setTestDebugger(classLevel -> host.runTestAtCaret(classLevel, true));
+        }
         host.registry().register(Command.of("test.rerun", host.testRunCoordinator()::rerun));
         host.registry().register(Command.of("test.rerunFailed", host.testRunCoordinator()::rerunFailed));
         host.registry().register(Command.of("test.stop", host.testRunCoordinator()::stop));
