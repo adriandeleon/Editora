@@ -44,12 +44,16 @@ final class ProjectMapOverviewCard extends StackPane {
     static final double DEFAULT_HEIGHT = 520;
     static final double MIN_WIDTH = 320;
     static final double MIN_HEIGHT = 220;
+    /** The sections' text size at a text zoom of 1.0; headings and notes are a point smaller (see app.css). */
+    static final double TEXT_SIZE = 12;
 
     private final BorderPane frame = new BorderPane();
     private final HBox titleBar = new HBox(7);
     private final Label title = new Label();
     private final VBox sections = new VBox(10);
     private final ScrollPane scroll = new ScrollPane(sections);
+    private final Button zoomOut = new Button("−");
+    private final Button zoomIn = new Button("+");
     private final Button close = new Button("×");
     private final Region resizeGrip = new Region();
     private final Scale mapZoom = new Scale(1, 1, 0, 0);
@@ -59,6 +63,10 @@ final class ProjectMapOverviewCard extends StackPane {
     private Runnable onEscape = () -> onClose.run();
     private Consumer<Path> onReveal = path -> {};
     private Consumer<Path> onOpen = path -> {};
+    private java.util.function.DoubleConsumer onTextZoomed = zoom -> {};
+    /** The sections' text zoom (−/+), as a code card's: 1.0 at {@link #TEXT_SIZE}. */
+    private double textZoom = 1.0;
+
     private @Nullable Path root;
     /** The most changed folders and the owners (Map explore positions 3, 4), refilled as they arrive. */
     private final VBox activityBox = new VBox(10);
@@ -87,17 +95,35 @@ final class ProjectMapOverviewCard extends StackPane {
         title.setMnemonicParsing(false);
         title.setGraphic(Icons.fitView());
         HBox.setHgrow(title, Priority.ALWAYS);
+        for (Button button : List.of(zoomOut, zoomIn)) {
+            button.getStyleClass().add("project-map-preview-button");
+            button.setMinWidth(Region.USE_PREF_SIZE);
+        }
+        zoomOut.setTooltip(new Tooltip(tr("project.map.overview.zoomOut")));
+        zoomOut.setAccessibleText(tr("project.map.overview.zoomOut"));
+        zoomIn.setTooltip(new Tooltip(tr("project.map.overview.zoomIn")));
+        zoomIn.setAccessibleText(tr("project.map.overview.zoomIn"));
+        zoomOut.setOnAction(event -> {
+            setTextZoom(textZoom / 1.1);
+            onTextZoomed.accept(textZoom); // the next Overview opens at this zoom
+        });
+        zoomIn.setOnAction(event -> {
+            setTextZoom(textZoom * 1.1);
+            onTextZoomed.accept(textZoom);
+        });
         close.getStyleClass().add("project-map-preview-button");
+        close.setMinWidth(Region.USE_PREF_SIZE);
         close.setTooltip(new Tooltip(tr("project.map.preview.close")));
         close.setAccessibleText(tr("project.map.preview.close"));
         close.setOnAction(event -> onClose.run());
         titleBar.getStyleClass().addAll("project-map-preview-header", "project-map-overview-header");
         titleBar.setAlignment(Pos.CENTER_LEFT);
-        titleBar.getChildren().setAll(title, close);
+        titleBar.getChildren().setAll(title, zoomOut, zoomIn, close);
         titleBar.addEventHandler(MouseEvent.MOUSE_PRESSED, this::dragPressed);
         titleBar.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::dragged);
         sections.setPadding(new Insets(10, 12, 12, 12));
         sections.getStyleClass().add("project-map-overview-sections");
+        setTextZoom(1.0);
         scroll.setFitToWidth(true);
         scroll.getStyleClass().add("project-map-overview-scroll");
         frame.getStyleClass().add("project-map-preview-frame");
@@ -224,6 +250,25 @@ final class ProjectMapOverviewCard extends StackPane {
     /** What the README's Open button does: the file opens in the editor. */
     void setOnOpen(Consumer<Path> action) {
         onOpen = action == null ? path -> {} : action;
+    }
+
+    /** What −/+ tell the owner, so the next Overview opens at the same text zoom. */
+    void setOnTextZoomed(java.util.function.DoubleConsumer action) {
+        onTextZoomed = action == null ? zoom -> {} : action;
+    }
+
+    /** The sections' text zoom (−/+), 1.0 at {@link #TEXT_SIZE}. */
+    double textZoom() {
+        return textZoom;
+    }
+
+    /**
+     * Sets the sections' text zoom, clamped to 0.5–3.0 as a code card's. Every size in the sections is in {@code em}
+     * of the size set here (app.css), so headings, notes and links grow together; the title bar keeps its size.
+     */
+    void setTextZoom(double requested) {
+        textZoom = ProjectMapPreview.clamp(requested, 0.5, 3.0);
+        sections.setStyle("-fx-font-size: " + TEXT_SIZE * textZoom + "px;");
     }
 
     /** Moves the keyboard into the card: its first button. */

@@ -484,8 +484,9 @@ final class ProjectMapCardStructure implements CardAttachment {
                 && view.problem() == ProjectMapStructure.Problem.NONE
                 && !view.roots().isEmpty()) {
             autoExpanded = true;
-            if (view.roots().size() == 1 && view.roots().getFirst().symbol().branches()) {
-                expanded.add(view.roots().getFirst().path()); // most Java files: one class, its members are the point
+            ProjectMapStructure.Node lone = ProjectMapStructure.loneBranch(view.roots());
+            if (lone != null) {
+                expanded.add(lone.path()); // most Java files: one class, its members are the point
             }
         }
         ProjectMapStructure.Node was = selectedNode();
