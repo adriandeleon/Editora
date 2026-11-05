@@ -371,6 +371,13 @@ class DebugReviewCWindowFxTest {
         List<String> labels = FxTestSupport.callOnFx(
                 () -> debug.editorMenuItems(b).stream().map(MenuItem::getText).toList());
         assertEquals(tr("editmenu.debugFile"), labels.getFirst(), labels.toString());
+        // Review 2 C110: not while that file is being debugged — it offered a second launch of it.
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            connect(adapter, main);
+            List<String> during = FxTestSupport.callOnFx(() ->
+                    debug.editorMenuItems(b).stream().map(MenuItem::getText).toList());
+            assertFalse(during.contains(tr("editmenu.debugFile")), during.toString());
+        }
     }
 
     @Test
@@ -392,11 +399,11 @@ class DebugReviewCWindowFxTest {
                 () -> menu.getItems().stream().map(MenuItem::getText).toList());
         assertEquals(
                 java.util.Arrays.asList(
-                        tr("command.debug.editBreakpoint"),
+                        DebugPanelText.bareTitle(tr("command.debug.editBreakpoint")), // bare, as its neighbours (C110)
                         tr("debug.gutter.disable"),
                         tr("debug.gutter.remove"),
                         null,
-                        tr("command.debug.breakpoints")),
+                        DebugPanelText.bareTitle(tr("command.debug.breakpoints"))),
                 labels);
         FxTestSupport.runOnFx(() -> {
             menu.hide();
@@ -427,8 +434,8 @@ class DebugReviewCWindowFxTest {
                 entries.stream().filter(e -> e.file().equals(util)).toList();
         assertEquals(
                 List.of(1, 2), mine.stream().map(BreakpointsPicker.Entry::line).toList());
-        assertTrue(
-                BreakpointsPicker.label(mine.get(0)).startsWith("● util.py:2"), BreakpointsPicker.label(mine.get(0)));
+        assertTrue(BreakpointsPicker.label(mine.get(0)).startsWith("util.py:2"), BreakpointsPicker.label(mine.get(0)));
+        assertEquals("●", BreakpointsPicker.mark(mine.get(0).breakpoint())); // the kind is the row's glyph now
 
         FxTestSupport.runOnFx(() -> picker.toggleEnabled(mine.get(0)));
         assertFalse(FxTestSupport.callOnFx(() -> b.getBreakpointManager().get(1).enabled()));

@@ -299,12 +299,34 @@ final class DebugCoordinator {
             if (consoleFontFamily != null) {
                 built.setConsoleFont(consoleFontFamily, consoleFontSize);
             }
+            built.setPlainValueColours(plainValueColours()); // values legible on mixed themes (C111)
             built.setState(dapManager.state()); // a session may already be running (the window opened mid-session)
             debugPanel = built;
             refreshExceptionToggles();
             built.setBreakpointsMuted(breakpointsMuted); // the state line says so from the start
         }
         return debugPanel;
+    }
+
+    /**
+     * Re-reads the UI and editor themes (the panel and the popup are built, and each settings apply). When one is light
+     * and the other dark, the Variables tree and the value popup draw values in the UI's colours: the editor theme's
+     * token colours vanished on the panel's background (review 2 C111).
+     */
+    void refreshValueColours() {
+        boolean plain = plainValueColours();
+        if (debugPanel != null) {
+            debugPanel.setPlainValueColours(plain);
+        }
+        if (valuePopup != null && valuePopup.popup().getSkin() != null) {
+            DebugPanel.setPlainValueColours(valuePopup.popup().getSkin().getNode(), plain);
+        }
+    }
+
+    private boolean plainValueColours() {
+        var s = host.settings();
+        return DebugPanel.themesDisagree(
+                Themes.backgroundFor(s.getTheme()), EditorThemes.editorBackgroundFor(s.getEditorTheme()));
     }
 
     /** Matches the console font to the editor font; remembered for a panel not built yet. */
@@ -3325,27 +3347,32 @@ final class DebugCoordinator {
         DebugCompletion.attach(logMessage, completionSource(true));
         TextField hitCondition = new TextField(bp.hitCondition());
         hitCondition.setPrefColumnCount(32);
-        hitCondition.setPromptText(tr("dialog.debug.hitConditionPrompt"));
+        hitCondition.setPromptText(BreakpointFormText.hitConditionPrompt(b.getLanguage()));
         CheckBox enabled = new CheckBox(tr("dialog.debug.breakpointEnabled"));
         enabled.setSelected(bp.enabled());
 
         GridPane grid = new GridPane();
         grid.setHgap(8);
         grid.setVgap(8);
-        grid.add(new Label(tr("dialog.debug.conditionLabel")), 0, 0);
-        grid.add(condition, 1, 0);
-        grid.add(new Label(tr("dialog.debug.logMessageLabel")), 0, 1);
-        grid.add(logMessage, 1, 1);
-        grid.add(new Label(tr("dialog.debug.hitConditionLabel")), 0, 2);
-        grid.add(hitCondition, 1, 2);
-        grid.add(enabled, 1, 3);
-        grid.add(note(tr("dialog.debug.logMessageHint")), 1, 4);
+        // The line the breakpoint is on: the card covers the editor, often that very line (review 2 C106).
+        Label lineText = new Label(
+                BreakpointFormText.lineText(b.getArea().getParagraph(line).getText(), 64));
+        lineText.getStyleClass().add("debug-breakpoint-line");
+        grid.add(lineText, 0, 0, 2, 1);
+        grid.add(new Label(tr("dialog.debug.conditionLabel")), 0, 1);
+        grid.add(condition, 1, 1);
+        grid.add(new Label(tr("dialog.debug.logMessageLabel")), 0, 2);
+        grid.add(logMessage, 1, 2);
+        grid.add(new Label(tr("dialog.debug.hitConditionLabel")), 0, 3);
+        grid.add(hitCondition, 1, 3);
+        grid.add(enabled, 1, 4);
+        grid.add(note(tr("dialog.debug.logMessageHint")), 1, 5);
         GridPane.setHgrow(condition, Priority.ALWAYS);
         GridPane.setHgrow(logMessage, Priority.ALWAYS);
 
         OverlayInput.show(
                 host.overlayHost(),
-                tr("dialog.debug.breakpointTitle"),
+                BreakpointFormText.title(b.getPath(), line),
                 grid,
                 condition,
                 tr("dialog.ok"),
@@ -3588,6 +3615,7 @@ final class DebugCoordinator {
     }
 
     void addWatch() {
+        ops.openToolWindow(); // also while idle (review 2 C109): the watch is added where the user sees it
         panel().addWatch();
     }
 
@@ -3978,7 +4006,9 @@ final class DebugCoordinator {
         if (bp == null) {
             return;
         }
-        javafx.scene.control.MenuItem edit = new javafx.scene.control.MenuItem(tr("command.debug.editBreakpoint"));
+        // Bare titles, as every other row of this menu ("Debug: Edit Breakpoint…" beside "Remove Breakpoint",
+        // review 2 C110).
+        javafx.scene.control.MenuItem edit = menuItem("debug.editBreakpoint", Icons.edit(), () -> {});
         edit.setOnAction(ev -> {
             b.getFocusedArea().moveTo(line, 0);
             editBreakpointAtCaret();
@@ -3991,13 +4021,13 @@ final class DebugCoordinator {
             b.refreshGutterLine(line);
         });
         javafx.scene.control.MenuItem remove = new javafx.scene.control.MenuItem(tr("debug.gutter.remove"));
+        remove.setGraphic(Icons.remove());
         remove.setOnAction(ev -> {
             if (mgr.isBreakpoint(line)) {
                 b.toggleBreakpoint(line);
             }
         });
-        javafx.scene.control.MenuItem list = new javafx.scene.control.MenuItem(tr("command.debug.breakpoints"));
-        list.setOnAction(ev -> showBreakpoints());
+        javafx.scene.control.MenuItem list = menuItem("debug.breakpoints", null, this::showBreakpoints);
         gutterMenu.getItems().setAll(edit, flip, remove, new javafx.scene.control.SeparatorMenuItem(), list);
         Node source = e.getSource() instanceof Node n ? n : null;
         if (source != null && source.getScene() != null && source.getScene().getWindow() != null) {
@@ -4021,18 +4051,22 @@ final class DebugCoordinator {
         if (!b.isRunnable()
                 && b.getPath() != null
                 && "java".equals(b.getLanguage())
-                && JavaProjectRoot.find(b.getPath()) == null) {
+                && JavaProjectRoot.find(b.getPath()) == null
+                // Not while this file is being debugged: it offered a second launch of it (review 2 C110).
+                && !(dapManager.isActive() && b.getPath().equals(dapManager.sessionFile()))) {
             // A classic main class in a plain folder has no Run File / Debug File entry of its own (those are
             // for runnable files); Debug was then only in the Run menu and the palette.
             javafx.scene.control.MenuItem debugFile = new javafx.scene.control.MenuItem(tr("editmenu.debugFile"));
+            debugFile.setGraphic(Icons.debug());
             debugFile.setOnAction(e -> launchBuffer(b));
             items.add(debugFile);
         }
-        items.add(menuItem("debug.toggleBreakpoint", this::toggleBreakpointAtCaret));
-        items.add(menuItem("debug.editBreakpoint", this::editBreakpointAtCaret));
+        // Icons like the rest of the editor menu (review 2 C110).
+        items.add(menuItem("debug.toggleBreakpoint", breakpointGlyph(), this::toggleBreakpointAtCaret));
+        items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
         if (dapManager.state() == DapManager.State.SUSPENDED) {
-            items.add(menuItem("debug.runToCursor", this::debugRunToCursor));
-            items.add(menuItem("debug.showValue", this::showValueAtCaret));
+            items.add(menuItem("debug.runToCursor", Icons.debugRunToCursor(), this::debugRunToCursor));
+            items.add(menuItem("debug.showValue", Icons.find(), this::showValueAtCaret));
             var area = b.getFocusedArea();
             String selected = area.getSelectedText();
             String expression = selected != null && !selected.isBlank() && !selected.contains("\n")
@@ -4041,6 +4075,7 @@ final class DebugCoordinator {
             if (expression != null) {
                 javafx.scene.control.MenuItem watch =
                         new javafx.scene.control.MenuItem(tr("debugpanel.addToWatches", expression));
+                watch.setGraphic(Icons.newFile()); // as Add to Watches in the Variables menu
                 watch.setOnAction(ev -> {
                     ops.openToolWindow();
                     panel().addWatchPrompt(expression);
@@ -4051,11 +4086,19 @@ final class DebugCoordinator {
         return items;
     }
 
-    private static javafx.scene.control.MenuItem menuItem(String commandId, Runnable action) {
+    private static javafx.scene.control.MenuItem menuItem(String commandId, @Nullable Node icon, Runnable action) {
         javafx.scene.control.MenuItem item =
                 new javafx.scene.control.MenuItem(DebugPanelText.bareTitle(tr("command." + commandId)));
+        item.setGraphic(icon);
         item.setOnAction(e -> action.run());
         return item;
+    }
+
+    /** A small breakpoint dot for Toggle Breakpoint in the editor menu (the gutter's red, from CSS). */
+    private static Node breakpointGlyph() {
+        javafx.scene.shape.Circle dot = new javafx.scene.shape.Circle(4);
+        dot.getStyleClass().add("debug-menu-breakpoint");
+        return dot;
     }
 
     // --- follow-ups 5 and 6: completion in expression fields, the expandable value popup ----------------
@@ -4129,6 +4172,9 @@ final class DebugCoordinator {
                     panel().addWatchPrompt(expression);
                 }
             });
+            if (valuePopup.popup().getSkin() != null) {
+                DebugPanel.setPlainValueColours(valuePopup.popup().getSkin().getNode(), plainValueColours()); // C111
+            }
         }
         return valuePopup;
     }

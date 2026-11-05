@@ -8337,7 +8337,7 @@ public class SettingsWindow {
                 debugSection,
                 Category.ADVANCED,
                 debugBox,
-                "debug log logs errors warnings exceptions diagnostics bug report console");
+                "application log debug log logs errors warnings exceptions diagnostics bug report console");
         updatesAndTrustCards(p); // moved from Workspace (B20)
         return p;
     }

@@ -4744,6 +4744,10 @@
 .debug-panel .debug-val-plain { -fx-fill: -color-fg-default; }
 /* A watch the adapter could not evaluate: its message, not a value. */
 .debug-panel .debug-val-error { -fx-fill: -state-red; -fx-font-style: italic; }
+/* The UI theme and the editor theme disagree on light vs dark (review 2 C111): the editor's token colours are
+   made for the editor's background and vanished on the panel's, so names and values take the UI's colours. */
+.debug-panel:plain-values .debug-token { -fx-fill: -color-fg-default; }
+.debug-panel:plain-values .debug-token.type { -fx-fill: -color-fg-muted; }
 /* Hover value tooltip in the editor while suspended (IntelliJ's value popup). */
 .debug-value-tooltip {
     -fx-font-size: 12px;
@@ -4790,6 +4794,22 @@
 /* The empty call stack's "how to start" hint (review C22). */
 .debug-panel .debug-empty-hint { -fx-text-fill: -color-fg-muted; -fx-padding: 8; }
 .debug-panel .debug-start:disabled { -fx-opacity: 0.5; }
+/* The exception-breakpoint button (review 2 C104): icon-sized like its neighbours, a small arrow, and the icon in
+   the accent colour while caught or uncaught exceptions stop the program. */
+.debug-panel .debug-exceptions { -fx-padding: 0; }
+.debug-panel .debug-exceptions > .label { -fx-padding: 3 2 3 6; }
+.debug-panel .debug-exceptions > .arrow-button { -fx-padding: 0 4 0 2; }
+.debug-panel .debug-exceptions > .arrow-button > .arrow { -fx-padding: 2 3 2 3; }
+.debug-panel .debug-exceptions:on .icon-line { -fx-stroke: -color-accent-fg; }
+.debug-panel .debug-exceptions:on { -fx-background-color: -color-accent-subtle; -fx-background-radius: 4; }
+/* The Edit Breakpoint form's first row: the code on the breakpoint's line (review 2 C106). */
+.debug-breakpoint-line {
+    -fx-font-family: "JetBrains Mono", monospace;
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-muted;
+}
+/* Toggle Breakpoint's dot in the editor's right-click menu (review 2 C110). */
+.debug-menu-breakpoint { -fx-fill: -state-red; }
 /* The Run console's stdin field (compact, like the Debug evaluate field). */
 .run-panel .run-input {
     -fx-font-size: 12px;
@@ -5004,11 +5024,14 @@
 .merge-result-label { -fx-font-weight: bold; -fx-text-fill: -color-fg-default; }
 .merge-result { -fx-border-color: -color-border-muted; -fx-border-radius: 3; }
 
-/* Debug Log window: monospace read-only log area + a muted file-path footer. */
+/* Application Log window: monospace read-only log area + a muted file-path footer. */
 .debug-log-area {
     -fx-font-family: "JetBrains Mono", "Consolas", monospace;
     -fx-font-size: 12px;
 }
+/* An empty log still says so while the area has focus (it gets it when the window opens): the theme hides a
+   focused field's prompt text, and the window was a blank box (review 2 C112). */
+.text-area.debug-log-area:focused { -fx-prompt-text-fill: -color-fg-muted; }
 .debug-log-file {
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 11px;

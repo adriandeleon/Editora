@@ -469,9 +469,12 @@ final class Chrome {
             "terminal.moveTabLeft",
             "terminal.moveTabRight");
 
-    /** Debug commands that drive a live session (as opposed to starting/attaching/setting breakpoints). */
+    /**
+     * Debug commands that drive a live session (as opposed to starting/attaching/setting breakpoints). Apply Code
+     * Changes was enabled with no session, to answer with a status line (review 2 C109).
+     */
     private static final java.util.Set<String> DEBUG_NEEDS_SESSION =
-            java.util.Set.of("debug.stop", "debug.restart", "debug.pause");
+            java.util.Set.of("debug.stop", "debug.restart", "debug.pause", "debug.applyCodeChanges");
 
     /**
      * Git commands that must stay enabled <b>outside</b> a repository, because that is where they are
@@ -519,7 +522,8 @@ final class Chrome {
             "debug.runToCursor",
             "debug.jumpToLine",
             "debug.evaluate",
-            "debug.addWatch",
+            // Not debug.addWatch: watches are kept between sessions and the Debug window adds them at any time,
+            // so the menu and palette greying it out while idle disagreed with the window (review 2 C109).
             "debug.setValue",
             "debug.showValue",
             "debug.smartStepInto",

@@ -56,13 +56,17 @@ final class BreakpointsPicker {
     }
 
     void show() {
+        Path root = ops.projectRoot();
+        Path home = homeDir();
         QuickOpen<Entry> picker = new QuickOpen<>(
-                tr("command.debug.breakpoints"),
+                tr("debug.breakpoints.title"),
                 tr("debug.breakpoints.prompt"),
                 this::entries,
                 BreakpointsPicker::label,
-                BreakpointsPicker::detail,
+                e -> detail(e, root, home),
                 this::jump);
+        // The kind in the glyph's shape and colour, as in the gutter: a logpoint is a diamond (review 2 C107).
+        picker.setItemIcon(e -> glyph(e.breakpoint()));
         picker.addRowAction(
                 new KeyCodeCombination(KeyCode.E, KeyCombination.ALT_DOWN),
                 tr("debug.breakpoints.keyEnable", "Alt+E"),
@@ -76,10 +80,11 @@ final class BreakpointsPicker {
                 tr("debug.breakpoints.keyMute", "Alt+M"),
                 e -> toggleMute.run());
         picker.setOverlayHost(host.overlayHost());
-        picker.show(host.window());
         if (entries().isEmpty()) {
-            host.setStatus(tr("status.debug.noBreakpoints"));
+            // Said in the list itself: the status bar is far from where the user is looking (review 2 C107).
+            picker.setPlaceholder(tr("status.debug.noBreakpoints"));
         }
+        picker.show(host.window());
     }
 
     /** Every breakpoint: those of open tabs as they are now, then the saved ones of files with no tab. */
@@ -122,18 +127,64 @@ final class BreakpointsPicker {
         String name = e.file().getFileName() == null
                 ? e.file().toString()
                 : e.file().getFileName().toString();
-        String mark = e.breakpoint().enabled() ? "● " : "○ ";
         String text = e.breakpoint().lineText().strip();
-        return mark + name + ":" + (e.line() + 1) + (text.isEmpty() ? "" : "  " + text);
+        return name + ":" + (e.line() + 1) + (text.isEmpty() ? "" : "  " + text);
     }
 
-    static String detail(Entry e) {
+    /** The gutter's mark for a breakpoint: ◆ a logpoint, ● any other; hollow when disabled. */
+    static String mark(Breakpoint bp) {
+        boolean log = bp.isLogpoint();
+        return bp.enabled() ? (log ? "◆" : "●") : (log ? "◇" : "○");
+    }
+
+    /** The gutter glyph's style class for a breakpoint (its colour), as {@code BreakpointManager} picks it. */
+    static String kindClass(Breakpoint bp) {
+        if (!bp.enabled()) {
+            return "breakpoint-disabled";
+        }
+        if (bp.isLogpoint()) {
+            return "breakpoint-logpoint";
+        }
+        return bp.isConditional() ? "breakpoint-conditional" : "breakpoint-plain";
+    }
+
+    private static javafx.scene.Node glyph(Breakpoint bp) {
+        javafx.scene.text.Text t = new javafx.scene.text.Text(mark(bp) + " ");
+        t.getStyleClass().addAll("breakpoint-marker", "breakpoint-list-mark", kindClass(bp));
+        return t;
+    }
+
+    /**
+     * The row's second line: what the breakpoint does (condition, log message…) first, then its folder — relative
+     * to the project, or with the home folder as {@code ~}. The whole absolute folder took the row's width, and the
+     * condition was cut off (review 2 C107).
+     */
+    static String detail(Entry e, @Nullable Path projectRoot, @Nullable Path home) {
         List<String> parts = new ArrayList<>(BreakpointDescription.lines(e.breakpoint()));
-        Path parent = e.file().getParent();
-        if (parent != null) {
-            parts.add(parent.toString());
+        String folder = folder(e.file().getParent(), projectRoot, home);
+        if (!folder.isEmpty()) {
+            parts.add(folder);
         }
         return String.join("  ·  ", parts);
+    }
+
+    /** {@code dir} as the list shows it: project-relative ("" at the project root), else {@code ~}-shortened. */
+    static String folder(@Nullable Path dir, @Nullable Path projectRoot, @Nullable Path home) {
+        if (dir == null) {
+            return "";
+        }
+        if (projectRoot != null && dir.startsWith(projectRoot)) {
+            return projectRoot.relativize(dir).toString().replace('\\', '/');
+        }
+        if (home != null && dir.startsWith(home) && !dir.equals(home)) {
+            return "~/" + home.relativize(dir).toString().replace('\\', '/');
+        }
+        return dir.toString();
+    }
+
+    private static @Nullable Path homeDir() {
+        String home = System.getProperty("user.home");
+        return home == null || home.isBlank() ? null : Path.of(home);
     }
 
     private void jump(Entry e) {

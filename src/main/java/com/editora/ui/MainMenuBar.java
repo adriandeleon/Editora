@@ -344,7 +344,7 @@ final class MainMenuBar {
             Row row = e.getValue();
             MenuItem item = row.item();
             String title = menuTitles.get(id);
-            String chord = chords.get(id);
+            String chord = DebugPanelText.chordOf(chords::get, id); // Step Into's F11 lives on a wrapper command
             boolean bound = chord != null && !chord.isBlank();
             // No accelerators (see the class javadoc), so the chord is written by hand — into its own
             // right-aligned label in-window, or appended to the text on the system menu bar.
