@@ -1277,6 +1277,7 @@ final class EditorSettingsCoordinator {
     void applyViewSettingsToAllBuffers(Settings settings) {
         WikiLinks.enabled = settings.isMarkdownWikiLinks();
         host.applyEditorTheme(settings.getEditorTheme());
+        host.debugCoordinator().refreshValueColours(); // values legible on mixed light / dark themes
         host.chrome().applyChromeVisibility();
         host.applyProjectSupport();
         host.git().applySupport();

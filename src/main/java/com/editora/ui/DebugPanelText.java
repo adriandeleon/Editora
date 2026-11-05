@@ -10,6 +10,8 @@ import javafx.scene.input.KeyCode;
 import com.editora.dap.DapModels;
 import org.jspecify.annotations.Nullable;
 
+import static com.editora.i18n.Messages.tr;
+
 /**
  * Pure text and key decisions of the {@link DebugPanel}: which letter fires which control, what a toolbar
  * tooltip says, how a frame and a thread are named, what Copy Value copies, and the evaluate field's history.
@@ -74,7 +76,7 @@ final class DebugPanelText {
      * "Step Over  (F10 · in this window: N)". The tooltip used to show only the letter, so the keymap's own chord
      * was nowhere on the panel (review C18).
      */
-    static String tooltip(String title, String chord, String panelKey, String inPanelLabel) {
+    static String tooltip(String title, @Nullable String chord, String panelKey, String inPanelLabel) {
         StringBuilder sb = new StringBuilder(bareTitle(title));
         List<String> keys = new ArrayList<>();
         if (chord != null && !chord.isBlank()) {
@@ -87,6 +89,32 @@ final class DebugPanelText {
             sb.append("  (").append(String.join(" · ", keys)).append(')');
         }
         return sb.toString();
+    }
+
+    /**
+     * Commands whose key is bound to a wrapper command instead: CUA and Sublime put F11 on "Step Into, or Full Screen
+     * when not paused", so Step Into itself had no chord in its tooltip or the Run menu (review 2 C108).
+     */
+    private static final java.util.Map<String, String> CHORD_ALIASES =
+            java.util.Map.of("debug.stepInto", "debug.stepIntoOrFullScreen");
+
+    /** The chord {@code lookup} gives {@code id}, else the chord of the command that wraps it; null when none. */
+    static @Nullable String chordOf(java.util.function.Function<String, @Nullable String> lookup, String id) {
+        String chord = lookup.apply(id);
+        if ((chord == null || chord.isBlank()) && CHORD_ALIASES.containsKey(id)) {
+            chord = lookup.apply(CHORD_ALIASES.get(id));
+        }
+        return chord == null || chord.isBlank() ? null : chord;
+    }
+
+    /** The exception-breakpoint button's tooltip: which of caught / uncaught exceptions stop the program. */
+    static String exceptionsTip(boolean caught, boolean uncaught) {
+        String which = caught && uncaught
+                ? tr("debugpanel.exceptions.both")
+                : caught
+                        ? tr("debugpanel.exceptions.caught")
+                        : uncaught ? tr("debugpanel.exceptions.uncaught") : tr("debugpanel.exceptions.off");
+        return tr("debugpanel.exceptions.tip", which);
     }
 
     /** A frame of a JVM hidden class (a lambda's proxy): {@code 0x000000003f040c00.accept(Object)}. */

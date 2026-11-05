@@ -1269,11 +1269,21 @@ class DebugUiFlowFxTest {
             new javafx.scene.Scene(box).getStylesheets().setAll(stage.getScene().getStylesheets());
             box.applyCss();
             List<javafx.scene.Node> runs = flow.getChildren();
-            assertEquals(List.of("text", "variable"), List.copyOf(runs.get(0).getStyleClass()));
-            assertEquals(List.of("text", "string"), List.copyOf(runs.get(2).getStyleClass()));
-            assertEquals(List.of("text", "type"), List.copyOf(runs.get(3).getStyleClass()));
+            assertEquals(
+                    List.of("text", "variable", DebugPanel.TOKEN),
+                    List.copyOf(runs.get(0).getStyleClass()));
+            assertEquals(
+                    List.of("text", "string", DebugPanel.TOKEN),
+                    List.copyOf(runs.get(2).getStyleClass()));
+            assertEquals(
+                    List.of("text", "type", DebugPanel.TOKEN),
+                    List.copyOf(runs.get(3).getStyleClass()));
             assertEquals(string.getFill(), ((javafx.scene.text.Text) runs.get(2)).getFill());
             assertNotEquals(plain.getFill(), ((javafx.scene.text.Text) runs.get(2)).getFill());
+            // Review 2 C111: on a UI theme and an editor theme of opposite lightness the token colours give way.
+            DebugPanel.setPlainValueColours(box, true);
+            box.applyCss();
+            assertNotEquals(string.getFill(), ((javafx.scene.text.Text) runs.get(2)).getFill());
             return null;
         });
     }

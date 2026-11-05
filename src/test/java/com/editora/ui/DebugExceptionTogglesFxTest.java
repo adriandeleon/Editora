@@ -5,10 +5,10 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
+import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuBar;
 import javafx.scene.control.MenuItem;
-import javafx.scene.control.ToggleButton;
 
 import com.editora.config.SharedConfig;
 import com.editora.dap.DapManager;
@@ -56,15 +56,30 @@ class DebugExceptionTogglesFxTest {
             menuBar.refreshEnablement(); // what opening a menu does
             MenuBar bar = FxTestSupport.field(menuBar, "bar");
             for (Menu menu : bar.getMenus()) {
-                for (MenuItem item : menu.getItems()) {
-                    String text = MainMenuBar.displayTextOf(item);
-                    if (text != null && text.contains(title)) {
-                        return text;
-                    }
+                String found = find(menu.getItems(), title);
+                if (found != null) {
+                    return found;
                 }
             }
             return null;
         });
+    }
+
+    /** The row reading {@code title} in {@code items} or a submenu of them (the Debugger submenu, review 2 C103). */
+    private static String find(List<MenuItem> items, String title) {
+        for (MenuItem item : items) {
+            String text = MainMenuBar.displayTextOf(item);
+            if (text != null && text.contains(title)) {
+                return text;
+            }
+            if (item instanceof Menu sub) {
+                String inner = find(sub.getItems(), title);
+                if (inner != null) {
+                    return inner;
+                }
+            }
+        }
+        return null;
     }
 
     @Test
@@ -83,8 +98,8 @@ class DebugExceptionTogglesFxTest {
         assertTrue(runMenuItem(c, caughtTitle).startsWith(MainMenuBar.CHECK), runMenuItem(c, caughtTitle));
         DebugCoordinator debug = FxTestSupport.field(c, "debugCoordinator");
         boolean shown = FxTestSupport.callOnFx(() -> {
-            ToggleButton caught = FxTestSupport.field(debug.panel(), "caughtToggle");
-            ToggleButton uncaught = FxTestSupport.field(debug.panel(), "uncaughtToggle");
+            CheckMenuItem caught = FxTestSupport.field(debug.panel(), "caughtToggle");
+            CheckMenuItem uncaught = FxTestSupport.field(debug.panel(), "uncaughtToggle");
             return caught.isSelected() && !uncaught.isSelected();
         });
         assertTrue(shown, "the Debug window's Caught toggle is on, Uncaught off");
@@ -97,7 +112,7 @@ class DebugExceptionTogglesFxTest {
 
         // the Debug window's toggle turns it off again
         FxTestSupport.runOnFx(() -> {
-            ToggleButton caught = FxTestSupport.field(debug.panel(), "caughtToggle");
+            CheckMenuItem caught = FxTestSupport.field(debug.panel(), "caughtToggle");
             caught.fire();
         });
         assertFalse(runMenuItem(c, caughtTitle).startsWith(MainMenuBar.CHECK));
