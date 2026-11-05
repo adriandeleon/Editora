@@ -463,7 +463,7 @@ public final class BufferCompletion {
         if (anchor == null || completionArea == null || completionArea.getScene() == null) {
             return;
         }
-        docPopup().show(completionArea.getScene().getWindow(), anchor, signature, rendered);
+        docPopup().show(completionArea.getScene().getWindow(), anchor, signature, rendered, doc);
     }
 
     /** Opens a link clicked in a completion's documentation: the window's own link opener. */
