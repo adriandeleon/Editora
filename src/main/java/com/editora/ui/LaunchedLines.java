@@ -150,6 +150,15 @@ final class LaunchedLines {
                     l++;
                     c++;
                 }
+                // A line edited in place (a typo fixed, a comment added) is still the launched line: its code is
+                // in the running program. Only lines a change adds beyond those it replaces are new (review 2,
+                // B104 — an edited line used to drop its breakpoint and push a stop on it one line down).
+                int paired =
+                        Math.min(delta.getSource().size(), delta.getTarget().size());
+                for (int k = 0; k < paired; k++) {
+                    toLaunched[cs + k] = ls + k;
+                    toCurrent[ls + k] = cs + k;
+                }
                 l = ls + delta.getSource().size();
                 c = cs + delta.getTarget().size();
             }
