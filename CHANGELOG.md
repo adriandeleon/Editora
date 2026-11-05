@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Find File opens a folder as a project.** In the Find File popup (C-x C-f in Emacs), C-d opens the highlighted
+  folder as a project instead of descending into it. With the field ending in a separator and the highlight not
+  moved, it opens the folder being listed; on a file, the folder the file is in. The legend shows the key when
+  project support is on and the keymap lets C-d reach the popup (it is a global command in the IntelliJ macOS
+  keymap, Start Debugging, so the popup leaves it alone there).
 - **JavaScript and TypeScript: ESLint, Prettier/Biome and actions on save.** A project's own ESLint (from
   `node_modules`, with an `eslint.config.*`, `.eslintrc*` or `package.json` `eslintConfig`) now checks JS/TS files
   when they are shown, after a pause in typing and on save; its problems join the TypeScript server's (source
@@ -193,6 +198,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explains a port nothing listens on, and evaluation errors, library stops and Smart Step Into (calls in run order)
   read plainly. Names stay readable with a dark UI and a light editor theme.
 
+- **Doctor no longer offers a newer typescript-language-server than Editora installs.** Check for Newer Versions
+  looked it up on npm although Editora pins 5.3.0, whose next release needs Node.js 22.22.2. It is now pinned like the
+  HTML, CSS and JSON servers: not looked up, and Install… replaces an own copy older than the pin.
+- **The trust dialogs point at Settings → Advanced.** The build, HTTP and folder trust messages said Trusted Folders
+  was under Workspace, in every language.
 - **A terminal no longer ties up a shared background thread while it is open.** Each open terminal, and each
   program run on an SSH host, kept one of the JVM's shared background threads waiting for its end; the pool has one
   thread fewer than the machine has cores. With a program that never ended they could all be taken, and then

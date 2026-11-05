@@ -71,7 +71,8 @@ class PinnedVersionsTest {
             boolean pinnedRelease = exact.contains(s.kind())
                     || s.id().equals("jdtls")
                     || s.id().equals("js-debug")
-                    || s.id().equals(InstallCatalog.WEB_LS_PACKAGE); // npm, pinned with a receipt (HTML A12)
+                    || s.id().equals(InstallCatalog.WEB_LS_PACKAGE) // npm, pinned with a receipt (HTML A12)
+                    || s.id().equals(TypeScriptServerInstall.PROGRAM); // npm --prefix, pinned with TypeScript 5.9
             assertEquals(
                     pinnedRelease,
                     PinnedVersions.forStep(s.id()).isPresent(),
@@ -95,6 +96,10 @@ class PinnedVersionsTest {
                     PinnedVersions.forServer(web).orElseThrow().stepId(),
                     web);
         }
+        assertEquals(
+                InstallCatalog.TYPESCRIPT_LS_VERSION,
+                PinnedVersions.forServer("typescript").orElseThrow().version(),
+                "a newer typescript-language-server needs a newer Node.js");
         assertTrue(PinnedVersions.forServer("python").isEmpty(), "Pyright installs whatever npm has");
         assertTrue(PinnedVersions.forServer(null).isEmpty());
     }
@@ -197,6 +202,19 @@ class PinnedVersionsTest {
 
         assertEquals("1.112.0", PinnedVersions.fingerprint("js-debug", dir));
         assertEquals(Freshness.OUTDATED, PinnedVersions.installedFreshness(pin("js-debug"), config));
+    }
+
+    /** A copy from before receipts is read from the server's package.json beside it. */
+    @Test
+    void typescriptServerIsReadFromItsPackageJson() throws IOException {
+        Path dir = config.resolve(TypeScriptServerInstall.DEST);
+        Path pkg = Files.createDirectories(dir.resolve("node_modules/typescript-language-server"));
+        Files.writeString(
+                pkg.resolve("package.json"), "{ \"name\": \"typescript-language-server\", \"version\": \"4.3.3\" }");
+
+        assertEquals("4.3.3", PinnedVersions.fingerprint(TypeScriptServerInstall.PROGRAM, dir));
+        assertEquals(
+                Freshness.OUTDATED, PinnedVersions.installedFreshness(pin(TypeScriptServerInstall.PROGRAM), config));
     }
 
     @Test

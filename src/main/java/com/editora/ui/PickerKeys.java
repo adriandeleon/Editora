@@ -272,4 +272,28 @@ final class PickerKeys {
         }
         return null;
     }
+
+    /**
+     * The first of {@code candidates} (raw chord tokens) that reaches a key-owning picker card: one the keymap
+     * leaves free, or binds to an editor-context command ({@code edit.*} / {@code nav.*}, which the dispatcher
+     * leaves to the focused card), and that starts no prefix. Unlike {@link #freeChord} this lets a picker take
+     * over a text-editing chord of its query field (Emacs {@code C-d}, delete-char). A chord the picker already
+     * uses (move, cancel) never qualifies. Null when none does; with no keymap, the first candidate.
+     */
+    static @Nullable String reachingChord(@Nullable KeymapManager keymap, String... candidates) {
+        for (String candidate : candidates) {
+            if (keymap == null) {
+                return candidate;
+            }
+            if (keymap.isPrefix(candidate)) {
+                continue;
+            }
+            String commandId = keymap.commandFor(candidate);
+            boolean reaches = commandId == null || KeyDispatcher.isEditorContext(commandId);
+            if (reaches && resolve(candidate, commandId, true) == Action.NONE) {
+                return candidate;
+            }
+        }
+        return null;
+    }
 }
