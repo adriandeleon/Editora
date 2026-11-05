@@ -182,6 +182,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JavaScript and TypeScript with no TypeScript that can run.** When the only TypeScript beside the TypeScript server
+  is a TypeScript 7 (which has no tsserver), or there is none, the file's install banner now offers Install, which
+  adds Editora's own TypeScript 5.9.3 and typescript-language-server 5.3.0 to its own folder (never `npm install -g`).
+  "Not now" and the install-prompts setting hold for it as for a missing server. The status line says the action
+  first ("Install TypeScript 5.9 (Settings → LSP) …") and is no longer cut off before it in a 1300 px window.
+
 - **Java debugging (second debugging review, 38 findings).** A loose `.java` file or a plain-folder project is built
   before every Debug and stops on compile errors: edits always run, where the code as first built used to run, and
   code that does not compile no longer runs. Hot code replace works in those folders (it failed with "…: null" when

@@ -1032,6 +1032,9 @@ final class LspCoordinator {
             return;
         }
         startBlocked.add(crashKey(serverId, root));
+        noTypeScript.put(
+                crashKey(serverId, root),
+                refusal.kind() == com.editora.lsp.StartRefusal.Kind.NO_TYPESCRIPT ? refusal : null);
         host.forEachBuffer(b -> {
             Path p = lspPath(b);
             if (p != null
@@ -1057,6 +1060,18 @@ final class LspCoordinator {
         host.setError(said);
         Platform.runLater(() -> host.setError(said));
         updateStatusBar();
+        ops.onDetectionSettled(); // NO_TYPESCRIPT: the install banner offers Editora's own TypeScript (JS review B113)
+    }
+
+    /** By {@link #crashKey}: the TypeScript server's NO_TYPESCRIPT refusal, valid while its key is start-blocked. */
+    private final Map<String, com.editora.lsp.@Nullable StartRefusal> noTypeScript = new java.util.HashMap<>();
+
+    /** The NO_TYPESCRIPT refusal holding back {@code b}'s TypeScript server, or null (JS review B113). */
+    com.editora.lsp.@Nullable StartRefusal noTypeScriptFor(EditorBuffer b) {
+        String id = com.editora.lsp.TypeScriptServer.SERVER_ID, key = crashKey(id, lspRootFor(b, id));
+        return lspPath(b) != null && id.equals(serverIdForBuffer(b)) && startBlocked.contains(key)
+                ? noTypeScript.get(key)
+                : null;
     }
 
     /** Servers Editora would not start with their command (the lemminx-maven guard), by id → what the status said. */
@@ -1682,6 +1697,7 @@ final class LspCoordinator {
         if (!trouble.equals(appliedTrouble)) { // an install, a trust decision, a command: not a theme (JS B112)
             appliedTrouble = trouble;
             startBlocked.clear(); // a settings change (an install, a trust decision) may be what the server lacked
+            noTypeScript.clear();
             failingServers.clear();
             crashedServers.clear();
             refusedServers.clear();
@@ -3831,6 +3847,7 @@ final class LspCoordinator {
     /** Restarts every running server, clears diagnostics, then re-gates each buffer ({@code lsp.restartServers}). */
     void restartServers() {
         startBlocked.clear();
+        noTypeScript.clear();
         failingServers.clear();
         crashedServers.clear();
         refusedServers.clear();
