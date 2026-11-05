@@ -24,7 +24,7 @@ final class PythonOutlineSymbols {
     private PythonOutlineSymbols() {}
 
     /** `NAME =` (not `==`), `NAME: T`, `NAME: T = …` at the start of a statement. */
-    private static final Pattern ASSIGNMENT = Pattern.compile("([A-Za-z_][A-Za-z0-9_]*)\\s*(?::(?!=)|=(?!=))");
+    private static final Pattern ASSIGNMENT = Pattern.compile("([\\p{L}_][\\p{L}\\p{N}_]*)\\s*(?::(?!=)|=(?!=))");
 
     private static final Set<String> KEYWORDS = Set.of(
             "if",
