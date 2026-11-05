@@ -40,7 +40,7 @@ final class LazyValues {
     static final long BUDGET_MILLIS = 1_500;
 
     /** How many children are asked for at once: enough to hide the round trips, few enough to stop at the budget. */
-    private static final int LANES = 4;
+    private static final int LANES = 16;
 
     private final LongSupplier clock;
 

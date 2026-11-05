@@ -46,7 +46,8 @@ final class DebugValues {
      * describes a function by its whole source, which made a Variables row four lines tall and filled an inline
      * value with the function's body (review D9); Copy Value keeps the full text. At most {@link #MAX_SHOWN}
      * characters, then "…": a 1 MB String made every row a million characters wide, and the tree drew none of the
-     * rows below it (review 3, B204). Show Value and Copy Value give the whole text.
+     * rows below it (review 3, B204). JavaFX's tree still drops rows below one a few thousand pixels wide (500
+     * characters hid two of ten), so the cut is well under that. Show Value and Copy Value give the whole text.
      */
     static String display(String value) {
         if (value == null || (value.indexOf('\n') < 0 && value.indexOf('\r') < 0)) {
@@ -66,7 +67,7 @@ final class DebugValues {
     }
 
     /** The most characters a Variables row shows of one value. */
-    static final int MAX_SHOWN = 500;
+    static final int MAX_SHOWN = 200;
 
     /** {@code value} cut to {@link #MAX_SHOWN} characters with "…", never between the halves of an emoji. */
     static String capped(String value) {

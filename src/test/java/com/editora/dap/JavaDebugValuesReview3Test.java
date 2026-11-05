@@ -87,7 +87,10 @@ class JavaDebugValuesReview3Test {
         now.addAndGet(TimeUnit.SECONDS.toNanos(30)); // the user looks at the stop for half a minute
         assertEquals(
                 "Point@2 \"p\"",
-                values.resolveAll(List.of(lazy("b", "Point@2", 2)), fetch).join().get(0).value(),
+                values.resolveAll(List.of(lazy("b", "Point@2", 2)), fetch)
+                        .join()
+                        .get(0)
+                        .value(),
                 "expanding a list later still shows its values");
     }
 
@@ -103,7 +106,8 @@ class JavaDebugValuesReview3Test {
             return slow;
         };
         // java-debug hands out a fresh reference with every reply: the same object comes as 7, then 19.
-        CompletableFuture<List<DapModels.VariableInfo>> tree = values.resolveAll(List.of(lazy("p", "Point@5", 7)), fetch);
+        CompletableFuture<List<DapModels.VariableInfo>> tree =
+                values.resolveAll(List.of(lazy("p", "Point@5", 7)), fetch);
         CompletableFuture<List<DapModels.VariableInfo>> inline =
                 values.resolveAll(List.of(lazy("p", "Point@5", 19)), fetch);
         slow.complete(child("Point@5 \"Point[x=3, y=4]\"", 31));
@@ -163,8 +167,8 @@ class JavaDebugValuesReview3Test {
     @Test
     void afterPauseAnObjectKeepsTypeAtIdWithANoteNotNull() {
         DapModels.VariableInfo boxed = lazy("boxed", "Integer@13", 9);
-        DapModels.VariableInfo paused = LazyValues.resolved(
-                boxed, new DapModels.VariableInfo("", "Integer@13 null", "", 40, 1, 0), true);
+        DapModels.VariableInfo paused =
+                LazyValues.resolved(boxed, new DapModels.VariableInfo("", "Integer@13 null", "", 40, 1, 0), true);
         assertEquals("Integer@13", paused.value(), "not \"Integer@13 null\"");
         assertEquals(DapModels.ValueNote.NO_TO_STRING_AFTER_PAUSE, paused.note());
         assertEquals(40, paused.variablesReference(), "its fields (value = 42) are still one click away");
@@ -176,8 +180,10 @@ class JavaDebugValuesReview3Test {
         assertEquals(DapModels.ValueNote.TO_STRING_FAILED, thrown.note());
 
         assertFalse(LazyValues.noToString("Point@1", "Point@1 \"null\""), "a toString() that returned \"null\"");
-        assertEquals("42", LazyValues.resolved(boxed, new DapModels.VariableInfo("", "Integer@13 \"42\"", "", 40))
-                .value());
+        assertEquals(
+                "42",
+                LazyValues.resolved(boxed, new DapModels.VariableInfo("", "Integer@13 \"42\"", "", 40))
+                        .value());
     }
 
     @Test
@@ -189,8 +195,9 @@ class JavaDebugValuesReview3Test {
             asked.incrementAndGet();
             return CompletableFuture.completedFuture(child("Point@5 null", 31));
         };
-        DapModels.VariableInfo first =
-                values.resolveAll(List.of(lazy("p", "Point@5", 7)), fetch).join().get(0);
+        DapModels.VariableInfo first = values.resolveAll(List.of(lazy("p", "Point@5", 7)), fetch)
+                .join()
+                .get(0);
         assertEquals(DapModels.ValueNote.NO_TO_STRING_AFTER_PAUSE, first.note());
         values.resolveAll(List.of(lazy("p", "Point@5", 8)), fetch).join();
         assertEquals(2, asked.get());
@@ -204,8 +211,7 @@ class JavaDebugValuesReview3Test {
                 JavaValueText.tidy(new DapModels.EvalResult("Integer@17 \"42\"", 23, "java.lang.Integer"));
         assertEquals("42", watch.result());
         assertEquals(0, watch.variablesReference(), "no tree of BYTES, digits, MAX_VALUE…");
-        DapModels.EvalResult record =
-                new DapModels.EvalResult("Main$Point@20 \"Point[x=3, y=4]\"", 24, "Main$Point");
+        DapModels.EvalResult record = new DapModels.EvalResult("Main$Point@20 \"Point[x=3, y=4]\"", 24, "Main$Point");
         assertSame(record, JavaValueText.tidy(record), "a record keeps its fields");
         DapModels.EvalResult failed = DapModels.EvalResult.failure("Integer@17 \"42\"");
         assertSame(failed, JavaValueText.tidy(failed));
@@ -215,8 +221,8 @@ class JavaDebugValuesReview3Test {
 
     @Test
     void setValueOnAnObjectTypeBecomesAnAssignment() {
-        assertTrue(SetValueText.unsupportedType("Failed to set variable. Reason: Set value is not supported yet for "
-                + "type java.lang.Integer."));
+        assertTrue(SetValueText.unsupportedType(
+                "Failed to set variable. Reason: Set value is not supported yet for " + "type java.lang.Integer."));
         assertFalse(SetValueText.unsupportedType("Failed to set variable. Reason: not a number"));
         assertFalse(SetValueText.unsupportedType(null));
         assertEquals("boxed = 44", SetValueText.assignment("boxed", " 44 "));

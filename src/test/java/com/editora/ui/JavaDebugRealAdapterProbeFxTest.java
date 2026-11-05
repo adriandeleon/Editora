@@ -272,8 +272,11 @@ class JavaDebugRealAdapterProbeFxTest {
             assertTrue(tookMs < 10_000, "Variables waited " + tookMs + " ms");
             Thread.sleep(2_000); // the toString() is now older than the budget
             FxTestSupport.runOnFx(h.dap::stepOver);
-            await("a step behind a running toString() says so", 10, () -> h.statuses.stream()
-                    .anyMatch(m -> m.equals(tr("status.debug.toStringRunning", loops.value()))));
+            await(
+                    "a step behind a running toString() says so",
+                    10,
+                    () -> h.statuses.stream()
+                            .anyMatch(m -> m.equals(tr("status.debug.toStringRunning", loops.value()))));
             assertEquals(DapManager.State.SUSPENDED, h.state);
             await("the program's first line never reached the console", 30, () -> h.output.indexOf("cp=") >= 0);
             assertTrue(
