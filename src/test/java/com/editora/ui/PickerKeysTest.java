@@ -157,4 +157,19 @@ class PickerKeysTest {
         assertNull(PickerKeys.freeChord(cua, "C-h", "f1", "S-f1"), "a prefix is taken too");
         assertEquals("C-h", PickerKeys.freeChord(null, "C-h", "f1"));
     }
+
+    @Test
+    void aPickerMayTakeOverAnEditingChordButNotAGlobalOneOrItsOwnKeys() {
+        // Find File's C-d: delete-char in Emacs (an edit.* chord the dispatcher leaves to the card) — it reaches.
+        assertEquals("C-d", PickerKeys.reachingChord(keymap("emacs"), "C-d"));
+        KeymapManager km = keymap("emacs");
+        km.applyOverrides(Map.of("C-d", "debug.start")); // a global command runs before the card sees the key
+        assertNull(PickerKeys.reachingChord(km, "C-d"));
+        km.applyOverrides(Map.of("C-d", "nav.lineDown")); // already the picker's own "move"
+        assertNull(PickerKeys.reachingChord(km, "C-d"));
+        km.applyOverrides(Map.of("C-d x", "file.save")); // a prefix waits for a second key
+        assertNull(PickerKeys.reachingChord(km, "C-d"));
+        assertEquals("C-d", PickerKeys.reachingChord(null, "C-d"));
+        assertEquals("C-y", PickerKeys.reachingChord(km, "C-d", "C-y"), "the next candidate stands in");
+    }
 }

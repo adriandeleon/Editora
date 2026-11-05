@@ -588,7 +588,7 @@ public class KeyDispatcher {
      * focused key-owning window swallows (it reuses them for its own navigation). Jump/window/view
      * commands stay global. Keyed by id prefix: {@code nav.*} (caret) and {@code edit.*} (text).
      */
-    static boolean isEditorContext(@Nullable String commandId) {
+    public static boolean isEditorContext(@Nullable String commandId) {
         return commandId != null && (commandId.startsWith("nav.") || commandId.startsWith("edit."));
     }
 
