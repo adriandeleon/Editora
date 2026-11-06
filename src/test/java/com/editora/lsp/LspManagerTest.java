@@ -389,14 +389,14 @@ class LspManagerTest {
 
     @Test
     void hierarchyProvidersDetectedFromEitherForm() {
-        assertFalse(LspNavigation.callHierarchyProvider(null));
-        assertFalse(LspNavigation.typeHierarchyProvider(new ServerCapabilities()));
+        assertFalse(LspNavigationRequests.callHierarchyProvider(null));
+        assertFalse(LspNavigationRequests.typeHierarchyProvider(new ServerCapabilities()));
         ServerCapabilities calls = new ServerCapabilities();
         calls.setCallHierarchyProvider(true);
-        assertTrue(LspNavigation.callHierarchyProvider(calls));
+        assertTrue(LspNavigationRequests.callHierarchyProvider(calls));
         ServerCapabilities types = new ServerCapabilities();
         types.setTypeHierarchyProvider(new org.eclipse.lsp4j.TypeHierarchyRegistrationOptions());
-        assertTrue(LspNavigation.typeHierarchyProvider(types));
+        assertTrue(LspNavigationRequests.typeHierarchyProvider(types));
     }
 
     // --- Rename (#676) -------------------------------------------------------------------------
@@ -940,7 +940,7 @@ class LspManagerTest {
         var appendAgain =
                 new LspManager.HierarchyNode("append(String)", "StringBuilder", "method", null, 90, 4, "x2", 2);
         var report = new LspManager.HierarchyNode("report()", "demo.A", "method", a, 3, 8, "x3");
-        var merged = LspNavigation.mergeCalls(java.util.List.of(append, report, appendAgain));
+        var merged = LspNavigationRequests.mergeCalls(java.util.List.of(append, report, appendAgain));
         org.junit.jupiter.api.Assertions.assertEquals(
                 java.util.List.of("append(String)x3", "report()x1"),
                 merged.stream().map(n -> n.name() + "x" + n.calls()).toList(),

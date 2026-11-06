@@ -22,11 +22,11 @@ import org.jspecify.annotations.Nullable;
  * method, references, document links, and the call and type hierarchies. Every answer reaches its callback on the
  * FX thread; an unserved file answers empty.
  */
-final class LspNavigation {
+final class LspNavigationRequests {
 
     private final LspManager m;
 
-    LspNavigation(LspManager m) {
+    LspNavigationRequests(LspManager m) {
         this.m = m;
     }
 

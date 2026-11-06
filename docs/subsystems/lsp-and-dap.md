@@ -94,7 +94,7 @@ language id — so js/ts/jsx/tsx in one project share a single `tsserver`. It ow
   definition/references) marshaled to the FX thread via `Platform.runLater`.
 
 The session lifecycle stays in `LspManager`; each request family lives in a package-private class it holds and
-forwards its public methods to, so callers still see one facade: `LspNavigation` (definition, references,
+forwards its public methods to, so callers still see one facade: `LspNavigationRequests` (definition, references,
 hierarchies), `LspAssists` (completion, signature help, highlights, hover), `LspCodeActions` (code actions and every
 server edit on its way to the editor, planned by the pure `WorkspaceEditDrafts`), `LspFormatting`,
 `LspDocumentSymbols` (outline, folding, selection ranges, colours, symbol search), `LspInlineHints` (code lenses,

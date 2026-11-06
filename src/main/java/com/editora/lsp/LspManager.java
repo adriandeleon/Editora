@@ -71,7 +71,7 @@ public final class LspManager {
     private volatile RefreshHandler onRefreshRequested = (kind, origin) -> {};
 
     /** Definition, references, hierarchies and the other "where does this lead" requests. */
-    private final LspNavigation navigation = new LspNavigation(this);
+    private final LspNavigationRequests navigation = new LspNavigationRequests(this);
 
     /** Completion, signature help, highlights and hover. */
     private final LspAssists assists = new LspAssists(this);
@@ -1553,7 +1553,7 @@ public final class LspManager {
         return file != null && servable(file) && (sessionFor(file) != null || runningSessionFor(file) != null);
     }
 
-    /** See {@link LspNavigation#supportsReferences}. */
+    /** See {@link LspNavigationRequests#supportsReferences}. */
     public boolean supportsReferences(Path file) {
         return navigation.supportsReferences(file);
     }
@@ -2802,39 +2802,39 @@ public final class LspManager {
         }
     }
 
-    /** See {@link LspNavigation#supportsCallHierarchy}. */
+    /** See {@link LspNavigationRequests#supportsCallHierarchy}. */
     public boolean supportsCallHierarchy(Path file) {
         return navigation.supportsCallHierarchy(file);
     }
 
-    /** See {@link LspNavigation#supportsTypeHierarchy}. */
+    /** See {@link LspNavigationRequests#supportsTypeHierarchy}. */
     public boolean supportsTypeHierarchy(Path file) {
         return navigation.supportsTypeHierarchy(file);
     }
 
-    /** See {@link LspNavigation#prepareCallHierarchy}. */
+    /** See {@link LspNavigationRequests#prepareCallHierarchy}. */
     public void prepareCallHierarchy(Path file, int line, int character, Consumer<List<HierarchyNode>> cb) {
         navigation.prepareCallHierarchy(file, line, character, cb);
     }
 
-    /** See {@link LspNavigation#prepareCallHierarchy}. */
+    /** See {@link LspNavigationRequests#prepareCallHierarchy}. */
     public void prepareCallHierarchy(
             Path file, int line, int character, Consumer<List<HierarchyNode>> cb, @Nullable Consumer<String> onError) {
         navigation.prepareCallHierarchy(file, line, character, cb, onError);
     }
 
-    /** See {@link LspNavigation#prepareCallHierarchyAt}. */
+    /** See {@link LspNavigationRequests#prepareCallHierarchyAt}. */
     public void prepareCallHierarchyAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<HierarchyNode>> cb) {
         navigation.prepareCallHierarchyAt(anchor, documentUri, line, character, cb);
     }
 
-    /** See {@link LspNavigation#callHierarchyChildren}. */
+    /** See {@link LspNavigationRequests#callHierarchyChildren}. */
     public void callHierarchyChildren(Path anchor, Object raw, boolean incoming, Consumer<List<HierarchyNode>> cb) {
         navigation.callHierarchyChildren(anchor, raw, incoming, cb);
     }
 
-    /** See {@link LspNavigation#callHierarchyChildren}. */
+    /** See {@link LspNavigationRequests#callHierarchyChildren}. */
     public void callHierarchyChildren(
             Path anchor,
             Object raw,
@@ -2844,18 +2844,18 @@ public final class LspManager {
         navigation.callHierarchyChildren(anchor, raw, incoming, cb, onError);
     }
 
-    /** See {@link LspNavigation#prepareTypeHierarchy}. */
+    /** See {@link LspNavigationRequests#prepareTypeHierarchy}. */
     public void prepareTypeHierarchy(Path file, int line, int character, Consumer<List<HierarchyNode>> cb) {
         navigation.prepareTypeHierarchy(file, line, character, cb);
     }
 
-    /** See {@link LspNavigation#prepareTypeHierarchyAt}. */
+    /** See {@link LspNavigationRequests#prepareTypeHierarchyAt}. */
     public void prepareTypeHierarchyAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<HierarchyNode>> cb) {
         navigation.prepareTypeHierarchyAt(anchor, documentUri, line, character, cb);
     }
 
-    /** See {@link LspNavigation#prepareTypeHierarchyAt}. */
+    /** See {@link LspNavigationRequests#prepareTypeHierarchyAt}. */
     public void prepareTypeHierarchyAt(
             Path anchor,
             @Nullable Path file,
@@ -2866,7 +2866,7 @@ public final class LspManager {
         navigation.prepareTypeHierarchyAt(anchor, file, libraryUri, line, character, cb);
     }
 
-    /** See {@link LspNavigation#typeHierarchyChildren}. */
+    /** See {@link LspNavigationRequests#typeHierarchyChildren}. */
     public void typeHierarchyChildren(Path anchor, Object raw, boolean supertypes, Consumer<List<HierarchyNode>> cb) {
         navigation.typeHierarchyChildren(anchor, raw, supertypes, cb);
     }
@@ -3177,29 +3177,29 @@ public final class LspManager {
         assists.hoverAt(anchor, documentUri, line, character, cb, onFailure);
     }
 
-    /** See {@link LspNavigation#definition}. */
+    /** See {@link LspNavigationRequests#definition}. */
     public void definition(Path file, int line, int character, Consumer<List<Target>> cb) {
         navigation.definition(file, line, character, cb);
     }
 
-    /** See {@link LspNavigation#definitionAt}. */
+    /** See {@link LspNavigationRequests#definitionAt}. */
     public void definitionAt(
             Path anchorFile, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
         navigation.definitionAt(anchorFile, documentUri, line, character, cb);
     }
 
-    /** See {@link LspNavigation#implementation}. */
+    /** See {@link LspNavigationRequests#implementation}. */
     public void implementation(Path file, int line, int character, Consumer<List<Target>> cb) {
         navigation.implementation(file, line, character, cb);
     }
 
-    /** See {@link LspNavigation#implementationAt}. */
+    /** See {@link LspNavigationRequests#implementationAt}. */
     public void implementationAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
         navigation.implementationAt(anchor, documentUri, line, character, cb);
     }
 
-    /** See {@link LspNavigation#implementationAt}. */
+    /** See {@link LspNavigationRequests#implementationAt}. */
     public void implementationAt(
             Path anchor,
             @Nullable String documentUri,
@@ -3210,18 +3210,18 @@ public final class LspManager {
         navigation.implementationAt(anchor, documentUri, line, character, cb, onError);
     }
 
-    /** See {@link LspNavigation#typeDefinition}. */
+    /** See {@link LspNavigationRequests#typeDefinition}. */
     public void typeDefinition(Path file, int line, int character, Consumer<List<Target>> cb) {
         navigation.typeDefinition(file, line, character, cb);
     }
 
-    /** See {@link LspNavigation#typeDefinitionAt}. */
+    /** See {@link LspNavigationRequests#typeDefinitionAt}. */
     public void typeDefinitionAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
         navigation.typeDefinitionAt(anchor, documentUri, line, character, cb);
     }
 
-    /** See {@link LspNavigation#typeDefinitionAt}. */
+    /** See {@link LspNavigationRequests#typeDefinitionAt}. */
     public void typeDefinitionAt(
             Path anchor,
             @Nullable String documentUri,
@@ -3232,7 +3232,7 @@ public final class LspManager {
         navigation.typeDefinitionAt(anchor, documentUri, line, character, cb, onError);
     }
 
-    /** See {@link LspNavigation#superMethodAt}. */
+    /** See {@link LspNavigationRequests#superMethodAt}. */
     public void superMethodAt(
             Path anchor,
             @Nullable String documentUri,
@@ -3243,23 +3243,23 @@ public final class LspManager {
         navigation.superMethodAt(anchor, documentUri, line, character, cb, onError);
     }
 
-    /** See {@link LspNavigation#supportsSuperMethod}. */
+    /** See {@link LspNavigationRequests#supportsSuperMethod}. */
     public boolean supportsSuperMethod(Path file) {
         return navigation.supportsSuperMethod(file);
     }
 
-    /** See {@link LspNavigation#declaration}. */
+    /** See {@link LspNavigationRequests#declaration}. */
     public void declaration(Path file, int line, int character, Consumer<List<Target>> cb) {
         navigation.declaration(file, line, character, cb);
     }
 
-    /** See {@link LspNavigation#declarationAt}. */
+    /** See {@link LspNavigationRequests#declarationAt}. */
     public void declarationAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
         navigation.declarationAt(anchor, documentUri, line, character, cb);
     }
 
-    /** See {@link LspNavigation#declarationAt}. */
+    /** See {@link LspNavigationRequests#declarationAt}. */
     public void declarationAt(
             Path anchor,
             @Nullable String documentUri,
@@ -3270,28 +3270,28 @@ public final class LspManager {
         navigation.declarationAt(anchor, documentUri, line, character, cb, onError);
     }
 
-    /** See {@link LspNavigation#supportsImplementation}. */
+    /** See {@link LspNavigationRequests#supportsImplementation}. */
     public boolean supportsImplementation(Path file) {
         return navigation.supportsImplementation(file);
     }
 
-    /** See {@link LspNavigation#supportsTypeDefinition}. */
+    /** See {@link LspNavigationRequests#supportsTypeDefinition}. */
     public boolean supportsTypeDefinition(Path file) {
         return navigation.supportsTypeDefinition(file);
     }
 
-    /** See {@link LspNavigation#supportsDeclaration}. */
+    /** See {@link LspNavigationRequests#supportsDeclaration}. */
     public boolean supportsDeclaration(Path file) {
         return navigation.supportsDeclaration(file);
     }
 
-    /** See {@link LspNavigation#documentLinkTarget}. */
+    /** See {@link LspNavigationRequests#documentLinkTarget}. */
     public void documentLinkTarget(
             Path file, int line, int character, Consumer<com.editora.editops.HtmlLinks.@Nullable Target> cb) {
         navigation.documentLinkTarget(file, line, character, cb);
     }
 
-    /** See {@link LspNavigation#lastMissingInclude}. */
+    /** See {@link LspNavigationRequests#lastMissingInclude}. */
     public @Nullable String lastMissingInclude() {
         return navigation.lastMissingInclude();
     }
@@ -3423,18 +3423,18 @@ public final class LspManager {
         return cause instanceof java.util.concurrent.TimeoutException ? "timeout" : String.valueOf(cause.getMessage());
     }
 
-    /** See {@link LspNavigation#references}. */
+    /** See {@link LspNavigationRequests#references}. */
     public void references(Path file, int line, int character, Consumer<List<Target>> cb) {
         navigation.references(file, line, character, cb);
     }
 
-    /** See {@link LspNavigation#references}. */
+    /** See {@link LspNavigationRequests#references}. */
     public void references(
             Path file, int line, int character, Consumer<List<Target>> cb, @Nullable Consumer<String> onError) {
         navigation.references(file, line, character, cb, onError);
     }
 
-    /** See {@link LspNavigation#referencesAt}. */
+    /** See {@link LspNavigationRequests#referencesAt}. */
     public void referencesAt(
             Path anchor,
             @Nullable String documentUri,
