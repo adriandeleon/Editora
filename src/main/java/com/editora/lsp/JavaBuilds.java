@@ -33,7 +33,7 @@ final class JavaBuilds {
     /**
      * Rebuilds the project and republishes its diagnostics ({@code java.project.refreshDiagnostics}, #743).
      *
-     * <p>Editora runs jdtls with {@code autobuild} disabled (see {@link #javaInitOptions}), so nothing ever
+     * <p>Editora runs jdtls with {@code autobuild} disabled (see {@link ServerInitOptions#javaInitOptions}), so nothing ever
      * recomputes diagnostics for files that aren't open — this is the manual trigger. The results arrive the
      * usual way, as {@code publishDiagnostics} notifications, not as this command's return value.
      *

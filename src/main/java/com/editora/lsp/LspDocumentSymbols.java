@@ -63,7 +63,7 @@ final class LspDocumentSymbols {
     static final java.time.Duration CLOSED_FILE_OUTLINE_TIMEOUT = java.time.Duration.ofSeconds(8);
 
     /**
-     * Whether the server that already runs in this window for {@code file} ({@link #runsFor}) answers the
+     * Whether the server that already runs in this window for {@code file} ({@link LspManager#runsFor}) answers the
      * document-symbol outline: the Project Map's Structure columns for a file with no tab (Map explore round, position
      * 10). Never starts a server.
      */
@@ -77,7 +77,7 @@ final class LspDocumentSymbols {
 
     /**
      * The document-symbol outline of {@code text}, the content of {@code file}, from the server {@link
-     * #outlinesClosedFile} names. A file no window has open is lent to it for this request ({@link #lendDocument}) and
+     * #outlinesClosedFile} names. A file no window has open is lent to it for this request ({@link LspManager#lendDocument}) and
      * the loan ends when the answer is in; a file another window has open on that session is asked about as it is, so
      * its unsaved text is never replaced by the disk's. {@code cb} gets the symbols on the FX thread, or null when no
      * such server runs, it fails or it takes longer than {@link #CLOSED_FILE_OUTLINE_TIMEOUT}. Never starts a server.

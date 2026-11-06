@@ -293,7 +293,7 @@ final class ServerInitOptions {
      *       {@code .json}/{@code .css}/{@code .html} even though the server would format (#468; verified by
      *       driving the real servers: the flag flips the advertised capability from false to true).</li>
      *   <li><b>astro</b> (astro-ls): {@code typescript.tsdk} points at a <i>trusted</i> folder's own TypeScript
-     *       SDK, or the SDK installed beside the language server ({@link #astroTypeScriptSdk}). Astro refuses
+     *       SDK, or the SDK installed beside the language server ({@link NodeServerPaths#astroTypeScriptSdk}). Astro refuses
      *       initialization without it, so with neither the server is not started.</li>
      *   <li><b>maven-pom</b> (JVM lemminx + lemminx-maven): {@code settings.xml.maven.central.skip=true} —
      *       the lemminx-maven settings live under an {@code xml.maven} object (schema verified against the
@@ -301,7 +301,7 @@ final class ServerInitOptions {
      *       search.maven.org (its {@code RemoteCentralRepositorySearcher}; there is no index download since 0.5)
      *       as completion is typed, so coordinates come from the local {@code ~/.m2} repository only —
      *       network-conservative, matching how Git/LSP/update-check are gated — unless Settings → LSP "Search Maven
-     *       Central when completing pom.xml coordinates" is on ({@link #setMavenCentralIndex}, review C10, D13).
+     *       Central when completing pom.xml coordinates" is on ({@link LspManager#setMavenCentralIndex}, review C10, D13).
      *       Sending any {@code xml.maven} object is also what activates the extension's POM awareness in the
      *       first place.</li>
      * </ul>
@@ -310,7 +310,7 @@ final class ServerInitOptions {
         return initOptionsFor(serverId, debugBundles, null, false);
     }
 
-    /** {@code astroTsdk} is the SDK {@link #astroTypeScriptSdk} chose; it is only read for the Astro server. */
+    /** {@code astroTsdk} is the SDK {@link NodeServerPaths#astroTypeScriptSdk} chose; it is only read for the Astro server. */
     static @Nullable Object initOptionsFor(
             String serverId, List<String> debugBundles, @Nullable Path astroTsdk, boolean javaOnTypeFormatting) {
         return initOptionsFor(serverId, debugBundles, astroTsdk, javaOnTypeFormatting, null);

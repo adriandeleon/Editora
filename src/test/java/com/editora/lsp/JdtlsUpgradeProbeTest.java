@@ -33,10 +33,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <ol>
  *   <li><b>extendedClientCapabilities</b> — the code actions at a field with and without
- *       {@link LspManager#javaExtendedClientCapabilities}. Without them jdtls withholds the Generate / Override /
+ *       {@link ServerInitOptions#javaExtendedClientCapabilities}. Without them jdtls withholds the Generate / Override /
  *       Extract Interface actions; 1.60 went from 9 to 16.</li>
  *   <li><b>The inlay-hint off-by-one (#715)</b> — a range ending one line past the document returns an empty list,
- *       not an error; {@link LspManager#inclusiveLineRange} clamps it. Recorded either way, so a server that
+ *       not an error; {@link LspInlineHints#inclusiveLineRange} clamps it. Recorded either way, so a server that
  *       stops doing this shows up as {@code pastTheEnd > 0}.</li>
  *   <li><b>The blind {@code java/…} requests</b> — Editora sends them without any capability to gate on (they are
  *       never listed in {@code executeCommandProvider.commands}), so each must still exist: anything but

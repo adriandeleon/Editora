@@ -1008,7 +1008,7 @@ public final class LspManager {
     }
 
     /** Where servers' questions are asked (FX thread); null: unanswered, as before a window installs one. */
-    private volatile @Nullable LspClientUi clientUi;
+    volatile @Nullable LspClientUi clientUi;
 
     /**
      * Installs the window's answers to server questions ({@code window/showMessageRequest}, Metals' input box,
@@ -1024,89 +1024,7 @@ public final class LspManager {
     }
 
     /** {@link #clientUi} reached from a session's reader thread: every call is posted to the FX thread. */
-    private final LspClientUi fxClientUi = new LspClientUi() {
-        @Override
-        public java.util.concurrent.CompletableFuture<String> chooseAction(
-                String serverId, org.eclipse.lsp4j.MessageType type, String message, List<String> actions) {
-            return onFx(ui -> ui.chooseAction(serverId, type, message, actions));
-        }
-
-        @Override
-        public java.util.concurrent.CompletableFuture<String> inputBox(
-                String serverId, @Nullable String prompt, @Nullable String value, @Nullable String placeHolder) {
-            return onFx(ui -> ui.inputBox(serverId, prompt, value, placeHolder));
-        }
-
-        @Override
-        public java.util.concurrent.CompletableFuture<String> quickPick(
-                String serverId, @Nullable String placeHolder, List<PickItem> items) {
-            return onFx(ui -> ui.quickPick(serverId, placeHolder, items));
-        }
-
-        @Override
-        public java.util.concurrent.CompletableFuture<String> chooseImport(
-                String serverId, String simpleName, int line, List<PickItem> items) {
-            return onFx(ui -> ui.chooseImport(serverId, simpleName, line, items));
-        }
-
-        @Override
-        public void openLocation(String serverId, Path file, int line, int column) {
-            Platform.runLater(() -> {
-                LspClientUi ui = clientUi;
-                if (ui != null && !closed) {
-                    ui.openLocation(serverId, file, line, column);
-                }
-            });
-        }
-
-        @Override
-        public java.util.concurrent.CompletableFuture<Object> clientCommand(
-                String serverId, String command, List<Object> arguments) {
-            var answer = new java.util.concurrent.CompletableFuture<Object>();
-            Platform.runLater(() -> {
-                LspClientUi ui = clientUi;
-                if (ui == null || closed) {
-                    answer.complete(null);
-                    return;
-                }
-                try {
-                    ui.clientCommand(serverId, command, arguments)
-                            .whenComplete((v, e) -> answer.complete(e == null ? v : null));
-                } catch (RuntimeException e) {
-                    LOG.log(java.util.logging.Level.FINE, "client command not run: " + command, e);
-                    answer.complete(null);
-                }
-            });
-            return answer;
-        }
-
-        private java.util.concurrent.CompletableFuture<String> onFx(
-                java.util.function.Function<LspClientUi, java.util.concurrent.CompletableFuture<String>> ask) {
-            var answer = new java.util.concurrent.CompletableFuture<String>();
-            Platform.runLater(() -> {
-                LspClientUi ui = clientUi;
-                if (ui == null || closed || answer.isDone()) {
-                    answer.complete(null);
-                    return;
-                }
-                try {
-                    var shown = ask.apply(ui);
-                    shown.whenComplete((v, e) -> answer.complete(e == null ? v : null));
-                    // The session cancels the question when the request that asked it ends: the picker goes too.
-                    // Cancelling only this wrapper left the picker on screen, answering nothing (sixth review DV1).
-                    answer.whenComplete((v, e) -> {
-                        if (answer.isCancelled()) {
-                            shown.cancel(false);
-                        }
-                    });
-                } catch (RuntimeException e) {
-                    LOG.log(java.util.logging.Level.FINE, "server question not shown", e);
-                    answer.complete(null);
-                }
-            });
-            return answer;
-        }
-    };
+    private final LspClientUi fxClientUi = new FxClientUi(this);
 
     /** Whether {@code file}'s server is waiting on the user's answer to an import question (sixth review AS2). */
     public boolean questionOpen(Path file) {

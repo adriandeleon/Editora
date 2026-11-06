@@ -163,7 +163,7 @@ final class JdtlsCommands {
         jdtlsApplyEdit(file, method, params, expectedAtAction, confirm, onRename, null, cb);
     }
 
-    /** As above; {@code preview} sees the planned edit before it is applied (see {@link #applyWorkspaceEdit}). */
+    /** As above; {@code preview} sees the planned edit before it is applied (see {@link LspCodeActions#applyWorkspaceEdit}). */
     public void jdtlsApplyEdit(
             Path file,
             String method,

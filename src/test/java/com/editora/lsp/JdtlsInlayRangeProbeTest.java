@@ -56,7 +56,7 @@ import org.junit.jupiter.api.Test;
  *
  * <ol>
  *   <li><b>BROKEN</b> — {@code Position(lineCount, 0)}, the old behaviour (one past the last line)</li>
- *   <li><b>FIXED</b> — the range {@link LspManager#inclusiveLineRange} produces, i.e. the production path</li>
+ *   <li><b>FIXED</b> — the range {@link LspInlineHints#inclusiveLineRange} produces, i.e. the production path</li>
  *   <li><b>FIXED, padded</b> — the same through the coordinator's over-scan, which is what actually runs
  *       (the clamp has to survive the padding)</li>
  * </ol>

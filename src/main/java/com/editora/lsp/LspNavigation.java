@@ -220,7 +220,7 @@ final class LspNavigation {
 
     /**
      * As above at a position in {@code file} (another file of {@code anchor}'s session), or in {@code libraryUri} (a
-     * class file's), as {@link #memberSpans} reads one.
+     * class file's), as {@link LspManager#memberSpans} reads one.
      */
     public void prepareTypeHierarchyAt(
             Path anchor,
