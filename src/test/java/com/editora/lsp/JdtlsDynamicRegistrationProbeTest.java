@@ -94,7 +94,7 @@ class JdtlsDynamicRegistrationProbeTest {
                     eventually(() -> session.capabilities().getDocumentOnTypeFormattingProvider() != null, 60),
                     "jdtls must register on-type formatting once java.format.onType.enabled is set");
             assertTrue(
-                    eventually(() -> LspManager.renameProvider(session.capabilities()), 60),
+                    eventually(() -> LspRename.renameProvider(session.capabilities()), 60),
                     "jdtls must register rename");
             var rename = session.capabilities().getRenameProvider();
             assertTrue(rename.isRight(), "the rename registration must keep its options: " + rename);

@@ -95,10 +95,10 @@ class LspDynamicRegistrationTest {
         var rename = s.capabilities().getRenameProvider();
         assertTrue(rename.isRight(), "the options object must be kept");
         assertTrue(rename.getRight().getPrepareProvider());
-        assertTrue(LspManager.renameProvider(s.capabilities()));
+        assertTrue(LspRename.renameProvider(s.capabilities()));
 
         s.unregisterCapability(new UnregistrationParams(List.of(new Unregistration("rn", "textDocument/rename"))));
-        assertFalse(LspManager.renameProvider(s.capabilities()), "unregistering must switch rename off again");
+        assertFalse(LspRename.renameProvider(s.capabilities()), "unregistering must switch rename off again");
     }
 
     /** A registration without options is still a plain "on". */
@@ -106,7 +106,7 @@ class LspDynamicRegistrationTest {
     void renameRegistrationWithoutOptionsIsEnabled() {
         var s = session(new ServerCapabilities());
         s.registerCapability(new RegistrationParams(List.of(registration("rn", "textDocument/rename", null))));
-        assertTrue(LspManager.renameProvider(s.capabilities()));
+        assertTrue(LspRename.renameProvider(s.capabilities()));
     }
 
     @Test

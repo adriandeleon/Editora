@@ -111,7 +111,7 @@ class JdtlsExtensionContractProbeTest {
                 if (libUri.startsWith("jdt:")) {
                     Object source = get(s.rawRequest("java/classFileContents", new TextDocumentIdentifier(libUri)));
                     record("librarySourceRaw", source);
-                    String sourceText = LspManager.rawStringResult(source);
+                    String sourceText = JdtlsCommands.rawStringResult(source);
                     record("librarySourceLength", sourceText == null ? null : sourceText.length());
                     assertNotNull(sourceText, "library-source response must survive LSP4J dispatch");
                     assertFalse(sourceText.isBlank(), "library-source response must contain source text");

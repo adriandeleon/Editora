@@ -403,34 +403,34 @@ class LspManagerTest {
 
     @Test
     void renameProviderDetectedFromEitherForm() {
-        assertFalse(LspManager.renameProvider(null));
-        assertFalse(LspManager.renameProvider(new ServerCapabilities()));
+        assertFalse(LspRename.renameProvider(null));
+        assertFalse(LspRename.renameProvider(new ServerCapabilities()));
         ServerCapabilities bool = new ServerCapabilities();
         bool.setRenameProvider(true);
-        assertTrue(LspManager.renameProvider(bool));
+        assertTrue(LspRename.renameProvider(bool));
         ServerCapabilities opts = new ServerCapabilities();
         opts.setRenameProvider(new org.eclipse.lsp4j.RenameOptions());
-        assertTrue(LspManager.renameProvider(opts));
+        assertTrue(LspRename.renameProvider(opts));
     }
 
     @Test
     void mapPrepareHandlesAllThreeShapesAndRefusal() {
-        assertFalse(LspManager.mapPrepare(null).allowed(), "null response = rename not valid here");
+        assertFalse(LspRename.mapPrepare(null).allowed(), "null response = rename not valid here");
         var range =
                 new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(1, 4), new org.eclipse.lsp4j.Position(1, 9));
-        var fromRange = LspManager.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forFirst(range));
+        var fromRange = LspRename.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forFirst(range));
         assertTrue(fromRange.allowed());
         assertEquals(4, fromRange.startCol());
         var prep = new org.eclipse.lsp4j.PrepareRenameResult(range, "oldName");
-        var fromPrep = LspManager.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forSecond(prep));
+        var fromPrep = LspRename.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forSecond(prep));
         assertTrue(fromPrep.allowed());
         assertEquals("oldName", fromPrep.placeholder());
-        var fromDefault = LspManager.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forThird(
+        var fromDefault = LspRename.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forThird(
                 new org.eclipse.lsp4j.PrepareRenameDefaultBehavior(true)));
         assertTrue(fromDefault.allowed());
         assertEquals("", fromDefault.placeholder());
         // lemminx on an attribute value (XML review B11): the server declines, as VS Code's client reads it.
-        assertFalse(LspManager.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forThird(
+        assertFalse(LspRename.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forThird(
                         new org.eclipse.lsp4j.PrepareRenameDefaultBehavior(false)))
                 .allowed());
     }
@@ -502,11 +502,11 @@ class LspManagerTest {
 
     @Test
     void rawStringResultAcceptsStringAndGsonStringPrimitiveOnly() {
-        assertEquals("src", LspManager.rawStringResult("src"));
-        assertEquals("src", LspManager.rawStringResult(new com.google.gson.JsonPrimitive("src")));
-        assertNull(LspManager.rawStringResult(new com.google.gson.JsonPrimitive(42)));
-        assertNull(LspManager.rawStringResult(null));
-        assertNull(LspManager.rawStringResult(List.of()));
+        assertEquals("src", JdtlsCommands.rawStringResult("src"));
+        assertEquals("src", JdtlsCommands.rawStringResult(new com.google.gson.JsonPrimitive("src")));
+        assertNull(JdtlsCommands.rawStringResult(new com.google.gson.JsonPrimitive(42)));
+        assertNull(JdtlsCommands.rawStringResult(null));
+        assertNull(JdtlsCommands.rawStringResult(List.of()));
     }
 
     // --- jdtls -data workspace claims (#668) ---------------------------------------------------
@@ -954,13 +954,13 @@ class LspManagerTest {
             throws Exception {
         java.nio.file.Path tools = java.nio.file.Files.createDirectories(dir.resolve("src/tools/build"));
         java.nio.file.Files.writeString(tools.resolve("Builder.java"), "package tools.build;");
-        org.junit.jupiter.api.Assertions.assertTrue(LspManager.holdsJava(dir.resolve("src/tools")));
+        org.junit.jupiter.api.Assertions.assertTrue(LspRename.holdsJava(dir.resolve("src/tools")));
 
         java.nio.file.Path module = java.nio.file.Files.createDirectories(dir.resolve("lib"));
         java.nio.file.Files.writeString(module.resolve("pom.xml"), "<project/>");
         java.nio.file.Files.createDirectories(module.resolve("target/gen"));
         java.nio.file.Files.writeString(module.resolve("target/gen/Gen.java"), "class Gen {}");
-        org.junit.jupiter.api.Assertions.assertFalse(LspManager.holdsJava(module), "only the build output has Java");
+        org.junit.jupiter.api.Assertions.assertFalse(LspRename.holdsJava(module), "only the build output has Java");
     }
 
     /** A completion's docs: Markdown as sent, plain text escaped so it reads as written (HTML review D7). */
