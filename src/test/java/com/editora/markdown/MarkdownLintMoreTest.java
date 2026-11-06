@@ -555,6 +555,12 @@ class MarkdownLintMoreTest {
         }
     }
 
+    /**
+     * The wiki-link parse is quadratic in the links of one paragraph, so past a bound the document is parsed
+     * without it. Every wiki link here leads nowhere, so a LINK003 for each shows the wiki parse ran and none shows
+     * it did not: the bound is asserted on the result, not the clock. (A wall-clock ratio over megabytes of brackets
+     * measured the garbage collector and the cache of a loaded CI runner, and failed there at 41-86x.)
+     */
     @Test
     void aWallOfWikiLinksIsLintedWithoutThemRatherThanSlowly() {
         MarkdownLint.LinkTargets targets = notes(Map.of());
@@ -565,16 +571,12 @@ class MarkdownLintMoreTest {
                 wiki("[[a]] ".repeat(2_000) + "\n\n" + "[[b]] ".repeat(2_000) + "\n", targets)
                         .size(),
                 "per paragraph");
-        long start = System.nanoTime();
-        MarkdownLint.lint("[[".repeat(100_000) + "\n", Set.of(), DEFAULTS, targets);
-        MarkdownLint.lint("[[a]] ".repeat(4_000) + "\n", Set.of(), DEFAULTS, targets);
-        long small = System.nanoTime() - start;
-        start = System.nanoTime();
-        MarkdownLint.lint("[[".repeat(1_000_000) + "\n", Set.of(), DEFAULTS, targets);
-        MarkdownLint.lint("[[a]] ".repeat(40_000) + "\n", Set.of(), DEFAULTS, targets);
-        long large = System.nanoTime() - start;
-        assertTrue(
-                large < Math.max(small, 5_000_000L) * 40,
-                "10x the input took " + large / Math.max(1, small) + "x the time");
+        assertEquals(1, wiki("[[".repeat(1_999) + "[[a]]\n", targets).size(), "unclosed openers up to the bound");
+        assertEquals(List.of(), wiki("[[".repeat(2_000) + "[[a]]\n", targets), "unclosed openers count too");
+        assertEquals(List.of(), wiki("[[a]] ".repeat(40_000) + "\n", targets), "a wall far past the bound stands down");
+        assertEquals(
+                List.of(),
+                wiki("[[a]]\n".repeat(2_001), targets),
+                "a paragraph runs over lines: one link a line counts as one paragraph");
     }
 }

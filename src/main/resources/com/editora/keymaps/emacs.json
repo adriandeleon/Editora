@@ -157,7 +157,6 @@
   "C-c [": "bookmarks.previous",
   "C-c n": "notes.add",
   "C-c e": "notes.editNote",
-  "M-g s": "notes.search",
   "M-g v": "undoHistory.jump",
   "C-c C-s b": "markdown.bold",
   "C-c C-s i": "markdown.italic",
