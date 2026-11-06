@@ -611,8 +611,7 @@ class RemoteSaveFxTest {
 
     private static RemoteCoordinator remoteCoordinator(FxWindowFixture fx, EmbeddedSftpFixture sftp) {
         CoordinatorHost host = FxTestSupport.field(fx.controller, "coordinatorHost");
-        RemoteCoordinator.Ops ops =
-                (RemoteCoordinator.Ops) FxTestSupport.call(fx.controller, "remoteOps", new Class<?>[] {});
+        RemoteCoordinator.Ops ops = new RemoteOpsHost(fx.controller);
         return new RemoteCoordinator(host, ops, sftp.fileSystems());
     }
 
