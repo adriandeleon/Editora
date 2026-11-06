@@ -3454,6 +3454,16 @@ final class ProjectMapView extends VBox {
             }
 
             @Override
+            public List<double[]> allColumns() {
+                return surface.cardAllColumns();
+            }
+
+            @Override
+            public boolean focusNewCards() {
+                return focusNewColumn.isSelected();
+            }
+
+            @Override
             public double @Nullable [] rootColumn() {
                 return surface.cardRootColumn();
             }
