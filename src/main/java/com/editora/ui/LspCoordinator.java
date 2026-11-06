@@ -5817,11 +5817,13 @@ final class LspCoordinator {
                         java.nio.file.Path base = ops.lspProjectRoot();
                         List<String> excluded = lspManager.javaFilteredTypes();
                         java.util.function.Function<LspManager.Target, String> label =
-                                t -> names.getOrDefault(t, implementationLabel(t));
+                                t -> names.getOrDefault(t, ImplementationTargets.implementationLabel(t));
                         List<LspManager.Target> listed = targets.stream() // no sun.awt.util.IdentityArrayList (BN4)
                                 .filter(t -> t.file() != null
                                         || !SymbolRanking.excluded(
-                                                libraryPackage(t) + "." + implementationLabel(t), excluded))
+                                                ImplementationTargets.libraryPackage(t) + "."
+                                                        + ImplementationTargets.implementationLabel(t),
+                                                excluded))
                                 // by class and line, so a class's own rows sit together in order (fourth review BN4)
                                 .sorted(java.util.Comparator.comparing(label).thenComparingInt(LspManager.Target::line))
                                 .toList();
@@ -5832,7 +5834,7 @@ final class LspCoordinator {
                                 tr("picker.implementations.prompt"),
                                 listed.isEmpty() ? targets : listed,
                                 label,
-                                t -> implementationDetail(t, base),
+                                t -> ImplementationTargets.implementationDetail(t, base),
                                 chosen -> openTarget(anchor, chosen));
                     });
                 });
@@ -5876,40 +5878,6 @@ final class LspCoordinator {
     }
 
     private static final int NESTED_NAME_FILES = 24;
-
-    /** An implementation's picker row: its class (a library's {@code ArrayList}) or its file's name. */
-    static String implementationLabel(LspManager.Target t) {
-        if (t.file() != null) {
-            return t.file().getFileName().toString();
-        }
-        String title = LspManager.classFileTitle(t.classFileUri());
-        return title.replaceFirst("\\.(class|java)$", "");
-    }
-
-    /** Where it is: the library class's package, or the file relative to the project, with its line. */
-    static String implementationDetail(LspManager.Target t, java.nio.file.@Nullable Path base) {
-        if (t.file() != null) {
-            Path file = t.file();
-            String where = base != null && file.startsWith(base)
-                    ? base.relativize(file).toString()
-                    : file.toString();
-            return where + ":" + (t.line() + 1);
-        }
-        // the line tells apart the classes one file holds: AbstractList's SubList, its iterators (third review BN4)
-        String pkg = libraryPackage(t);
-        String line = tr("structure.line", t.line() + 1);
-        return pkg.isEmpty() ? line : pkg + "  ·  " + line;
-    }
-
-    /** The package of a library target's class file ({@code java.util}), or "". */
-    static String libraryPackage(LspManager.Target t) {
-        String uri = t.classFileUri() == null ? "" : t.classFileUri();
-        int q = uri.indexOf('?');
-        String path = q >= 0 ? uri.substring(0, q) : uri;
-        int last = path.lastIndexOf('/');
-        int before = last > 0 ? path.lastIndexOf('/', last - 1) : -1;
-        return before >= 0 ? path.substring(before + 1, last) : "";
-    }
 
     /** Go to Type Definition ({@code lsp.gotoTypeDefinition}, #736) — from a symbol to its type's declaration. */
     void gotoTypeDefinition() {
@@ -6216,7 +6184,7 @@ final class LspCoordinator {
 
     static List<SuperTarget> labelled(List<LspManager.Target> targets) {
         return targets.stream()
-                .map(t -> new SuperTarget(t, implementationLabel(t)))
+                .map(t -> new SuperTarget(t, ImplementationTargets.implementationLabel(t)))
                 .toList();
     }
 
@@ -6362,7 +6330,7 @@ final class LspCoordinator {
                 tr("picker.superMethod.prompt"),
                 targets,
                 SuperTarget::label,
-                t -> implementationDetail(t.target(), base),
+                t -> ImplementationTargets.implementationDetail(t.target(), base),
                 chosen -> openTarget(ask.path(), chosen.target()));
     }
 
