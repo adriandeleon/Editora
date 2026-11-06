@@ -285,7 +285,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     // registry to an LLM agent. Static so only the first window with the feature on starts it (the
     // setting is shared); that window's controller is the bridge. (Multi-window caveat: if the owner
     // window closes, the server stops until a settings re-apply re-arms it from another window.)
-    private static com.editora.mcp.@Nullable McpServer mcpServer;
+    static com.editora.mcp.@Nullable McpServer mcpServer;
     private static @Nullable MainController mcpOwner;
     /** LSP: manager (one server per workspace root). Diagnostics route to {@link #lspCoordinator} via the
      *  thin {@link #onLspDiagnostics} delegate — a method ref (not a direct field read) so it isn't an
@@ -634,132 +634,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 config,
                 pluginManager,
                 pluginOps());
-        this.settingsWindow.setPluginActions(
-                pluginCoordinator::browse,
-                pluginCoordinator::installFromDisk,
-                pluginCoordinator::uninstall,
-                pluginCoordinator::enableFromSettings,
-                pluginCoordinator::disableFromSettings);
-        this.settingsWindow.setDictionaryActions(
-                this::openTechnicalDictionary, this::openPersonalDictionary); // Spell Check file links
-        this.settingsWindow.setInstallActions(installCoordinator::installSettingsKey); // Settings "Install…" buttons
-        this.settingsWindow.setInstallServerActions(installCoordinator::installServer); // per-LSP-server Install
-        this.settingsWindow.setOpenUrl(this::openExternalUrl); // Diagrams' "How to install" docs link
-        this.settingsWindow.setInstallToolActions(
-                id -> installCoordinator.installTools(java.util.List.of(id), ok -> {}));
-        this.settingsWindow.setSnippetManager(snippets); // backs the Settings → Snippets management page
-        // Read on each Add click, not now: the Settings window outlives whichever tab is in front.
-        this.settingsWindow.setRunConfigSuggestion(this::suggestedMainClass);
-        this.settingsWindow.setRunConfigScriptSuggestion(this::suggestedScriptConfiguration, this::windowProjectRoot);
-        this.settingsWindow.setTemplateRegistry(
-                templateActions.templates); // backs the Settings → Templates management page
-        this.settingsWindow.setMcpConfirm(this::confirmEnableMcp); // security notice before enabling MCP
-        this.settingsWindow.setOnRestart(() -> registry.run("app.restart")); // footer's Restart now
-        this.settingsWindow.setRunCommand(registry::run); // Advanced → Import…, LSP → Python → Choose…
-        this.settingsWindow.setMcpActions(new SettingsWindow.McpActions( // the MCP page's status and buttons
-                () -> mcpServer == null || !mcpServer.isRunning() ? "" : mcpServer.url(), this::copyMcpEndpoint, () -> {
-                    if (mcpServer != null) { // the buttons only show while it runs
-                        mcpServer.newToken();
-                    }
-                    setStatus(tr("status.mcp.newToken"));
-                }));
-        this.settingsWindow.setRemoteConnect(site -> remoteCoordinator.connect(site)); // Remote page's Connect…
-        this.settingsWindow.setEditDeployments(deployments::editDeployments); // Run on → Deployments…
-        this.settingsWindow.setTrustActions(new SettingsWindow.TrustActions() {
-            @Override
-            public List<String> trustedRoots() {
-                return config.getTrustStore().trustedRoots();
-            }
-
-            @Override
-            public void revoke(String root) {
-                config.getTrustStore().revoke(java.nio.file.Path.of(root));
-                saveTrustDecision();
-            }
-
-            @Override
-            public void revokeAll() {
-                config.getTrustStore().revokeAll();
-                saveTrustDecision();
-            }
-        });
-        this.settingsWindow.setRipgrepProbe(
-                searchCoordinator::probeRipgrep); // Settings → Search found/not-found status
-        this.settingsWindow.setAiConnectionProbe(
-                aiCoordinator::checkConnection); // Settings → AI Actions green/red connection status
-        this.settingsWindow.setProjectLsp(lspCoordinator); // project scope (User / Project) + LSP override notes
-        this.settingsWindow.setProjectName(() -> windowProject == null ? null : windowProject.name());
-        this.settingsWindow.setOnKeymapChanged(editorSettings::reloadKeymap); // picker/combo → live keymap switch
-        this.settingsWindow.setShortcutActions(new SettingsWindow.ShortcutActions() {
-            @Override
-            public java.util.List<SettingsWindow.Shortcut> rows() {
-                return editorSettings.shortcutRows();
-            }
-
-            @Override
-            public java.util.List<com.editora.command.KeybindingEdits.Conflict> conflicts(
-                    String chordSeq, String commandId) {
-                return com.editora.command.KeybindingEdits.conflicts(keymap.bindings(), chordSeq, commandId);
-            }
-
-            @Override
-            public void rebind(String commandId, String chordSeq) {
-                editorSettings.rebindShortcut(commandId, chordSeq);
-            }
-
-            @Override
-            public void reset(String commandId) {
-                editorSettings.resetShortcut(commandId);
-            }
-
-            @Override
-            public void resetAll() {
-                editorSettings.resetAllShortcuts();
-            }
-
-            @Override
-            public String display(String chordSeq) {
-                return keymap.display(chordSeq);
-            }
-
-            @Override
-            public void clear(String commandId) {
-                editorSettings.clearShortcut(commandId);
-            }
-
-            @Override
-            public java.util.List<com.editora.command.KeybindingEdits.Conflict> takenDefaults(String commandId) {
-                return editorSettings.takenDefaults(commandId);
-            }
-
-            @Override
-            public void forget(String commandId) {
-                editorSettings.forgetShortcut(commandId);
-            }
-        });
-        this.settingsWindow.setRunConfigsChangedHandler(
-                runConfigurations
-                        ::refreshRunConfigs); // Run Configurations page edits → repopulate the toolbar selector
-        this.settingsWindow.setMacrosChangedHandler(
-                this::refreshSavedMacroCommandsAllWindows); // Macros page edits → re-register commands everywhere
-        this.settingsWindow.setAgentCoordinator(agentCoordinator); // AI Agent page: per-client status + combo
-        // Toolbar page ↔ the (later-constructed) ToolbarCoordinator; the lambdas resolve the field lazily.
-        this.settingsWindow.setToolbarActions(new SettingsWindow.ToolbarActions() {
-            @Override
-            public java.util.List<String> current() {
-                return toolbarCoordinator.effectiveLayout();
-            }
-
-            @Override
-            public void apply(java.util.List<String> layout) {
-                toolbarCoordinator.setLayout(layout);
-            }
-
-            @Override
-            public void restoreDefault() {
-                toolbarCoordinator.restoreDefault();
-            }
-        });
+        SettingsWindowWiring.wire(
+                this, settingsWindow, templateActions.templates); // its pages' actions, probes and suggestions
         debugLogWindow.setSessionFile(DebugLog.sessionFile(config.getConfigDir()));
         debugLogWindow.setOnReport(() -> registry.run("help.reportProblem"));
         this.switcher = new Switcher(
@@ -3024,7 +2900,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * A security-notice confirmation shown before the MCP server is enabled (from the palette toggle and
      * the Settings checkbox). Returns true to proceed. Mirrors {@link #confirmEnablePlugin}.
      */
-    private boolean confirmEnableMcp() {
+    boolean confirmEnableMcp() {
         Alert confirm =
                 new Alert(Alert.AlertType.WARNING, tr("dialog.mcp.enableBody"), ButtonType.OK, ButtonType.CANCEL);
         confirm.initOwner(stage);
@@ -3041,7 +2917,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Persists a trust change and lets every window re-resolve what its project may now override. */
-    private void saveTrustDecision() {
+    void saveTrustDecision() {
         config.saveTrust();
         if (windowManager != null) {
             windowManager.broadcastTrustChanged();
@@ -3960,7 +3836,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Opens the personal dictionary ({@code dictionary.txt}) in the editor, creating it empty if it doesn't
      *  exist yet (so the link works even before any word is added). Backs the Settings → Spell Check link. */
-    private void openPersonalDictionary() {
+    void openPersonalDictionary() {
         Path file = config.getDictionaryFile();
         try {
             if (!Files.exists(file)) {
@@ -3975,7 +3851,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Opens the bundled technical-terms dictionary in a read-only tab so the user can browse what it covers.
      *  It's a classpath resource (inside the jar), so there's no on-disk path to open. */
-    private void openTechnicalDictionary() {
+    void openTechnicalDictionary() {
         String text;
         try (var in = MainController.class.getResourceAsStream("/com/editora/dictionaries/technical.txt")) {
             if (in == null) {
@@ -5525,7 +5401,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** After the saved-macro set changes, re-register the synthetic commands in every open window. */
-    private void refreshSavedMacroCommandsAllWindows() {
+    void refreshSavedMacroCommandsAllWindows() {
         if (windowManager != null) {
             windowManager.broadcastMacrosChanged();
         } else {
