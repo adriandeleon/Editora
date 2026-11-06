@@ -339,7 +339,7 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed, Tab
      * <p>A line-mode target on the document's last line can be the end of the document, where there is no
      * character to its right. Asking {@code getCharacterBoundsOnScreen} for that empty range makes
      * RichTextFX build a throwaway {@code CaretNode} whose blink timer is never stopped — one leaked pulse
-     * receiver per repaint. So, as {@code EditorBuffer.caretBounds} does, the last character's right edge is
+     * receiver per repaint. So, as {@code BufferRuler.caretBounds} does, the last character's right edge is
      * measured instead, and an empty last line takes its row from the paragraph and its x from the text's
      * left edge.
      */

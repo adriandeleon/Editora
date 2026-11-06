@@ -4,14 +4,13 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 
 /**
  * "Rainbow" per-column CSV highlighting: assigns each column a cycling color so field boundaries are easy
  * to read (the VS Code Rainbow CSV idiom). Computed directly in Java — TextMate can't count columns — as
- * {@link StyleSpans} over the whole document, used by {@link EditorBuffer#applyHighlighting} for CSV buffers
+ * {@link StyleSpans} over the whole document, used by {@code BufferHighlighter.applyHighlighting} for CSV buffers
  * when rainbow is on (in place of the {@code source.csv} grammar).
  *
  * <p>The pure {@link #segments} (no toolkit) is unit-tested; {@link #buildSpans} is the thin RichTextFX

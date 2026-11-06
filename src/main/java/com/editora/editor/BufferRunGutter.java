@@ -255,7 +255,7 @@ final class BufferRunGutter {
         }
     }
 
-    /** Discards an in-flight background run scan whose result would be stale (mirrors {@link EditorBuffer#todoGen}). */
+    /** Discards an in-flight background run scan whose result would be stale (mirrors {@link BufferTodos#todoGen}). */
     long runScanGen;
     /** True while the load's (or a settle's) text scan is on the pool and its result has not landed. */
     private boolean runScanInFlight;
@@ -279,7 +279,7 @@ final class BufferRunGutter {
     /**
      * As {@link #recomputeRun()}; {@code settled} is the pass after an edit settles — or after a load — whose
      * scan of the text ({@link RunScan}) runs off the FX thread: a generation counter drops a superseded
-     * result, as for {@link EditorBuffer#refreshTodoMarks}. The load's pass lands a few milliseconds after the document
+     * result, as for {@link BufferTodos#refreshTodoMarks}. The load's pass lands a few milliseconds after the document
      * does rather than scanning up to 256 KiB on the FX thread inside the open. Every other caller (Save As,
      * a feature toggle) needs the answer now.
      */

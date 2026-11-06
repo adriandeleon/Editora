@@ -492,7 +492,7 @@ Editora does not use jdtls's own `java.saveActions.cleanup`, which needs `willSa
 
 jdtls's "Javadoc comment" completion is offered only on a `/**` line that is already closed. In a Java
 buffer with the server on, the `*` that makes a line `/**` therefore inserts `* */` and requests completion
-(`EditorBuffer.closeJavadocOpening`, rule in `CommentContinuation.closesDocOpening`).
+(`BufferTyping.closeJavadocOpening`, rule in `CommentContinuation.closesDocOpening`).
 
 ### Files written behind the server's back
 
@@ -695,7 +695,7 @@ settle; `EditorBuffer.setCodeLenses` draws each as an inlay after the end of its
 `editor/CodeLensShift` moves them with line edits until the next answer, and a click puts the caret on
 the declaration and runs Find References or Go to Implementation. A references lens always opens the
 References tool window — also for one reference (the command jumps straight there) and for none.
-The fork's inlay labels are mouse-transparent, so `EditorBuffer.installCodeLensClick` finds the lens
+The fork's inlay labels are mouse-transparent, so `BufferInlays.installCodeLensClick` finds the lens
 under the pointer by its bounds and sets the hover pseudo-class (`lens-hover`) and hand cursor itself; a
 test that fires a click must pick the area, not the label.
 

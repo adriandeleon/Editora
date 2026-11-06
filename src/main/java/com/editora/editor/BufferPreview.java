@@ -121,7 +121,7 @@ final class BufferPreview {
      * Off-thread Markdown parsing + syntax tokenizing, shared across <b>all</b> open buffers so the
      * threads don't accumulate one pair per file (each pool thread is a ~1-2 MB daemon stack — a session
      * with dozens of tabs previously meant dozens of mostly-idle threads). Sharing is safe because every
-     * background result is re-validated against the per-buffer {@link #previewGen}/{@link EditorBuffer#highlightGen}
+     * background result is re-validated against the per-buffer {@link #previewGen}/{@link BufferHighlighter#highlightGen}
      * counters (bumped on the FX thread at submit) before it touches buffer state — overlapping work for
      * one buffer just means only the latest generation's result is applied. Different buffers already
      * tokenize concurrently against the shared {@link GrammarRegistry} grammar, so a shared pool adds no

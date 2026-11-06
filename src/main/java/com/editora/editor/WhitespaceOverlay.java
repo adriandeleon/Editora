@@ -49,7 +49,7 @@ final class WhitespaceOverlay extends Region implements SecondaryPane.Followed, 
 
     /**
      * Layout queries (character bounds and hit tests) issued by all whitespace overlays — the test seam that
-     * pins the per-viewport budget, like {@code EditorBuffer.RULER_MEASURES_FOR_TEST}.
+     * pins the per-viewport budget, like {@code BufferRuler.RULER_MEASURES_FOR_TEST}.
      */
     static final java.util.concurrent.atomic.AtomicInteger LAYOUT_QUERIES_FOR_TEST =
             new java.util.concurrent.atomic.AtomicInteger();
