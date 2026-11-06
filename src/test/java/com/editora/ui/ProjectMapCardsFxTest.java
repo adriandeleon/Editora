@@ -153,6 +153,69 @@ class ProjectMapCardsFxTest {
     }
 
     @Test
+    void outputDrawsTheOpenCardsAndTheirConnectorsWhereTheyStandOnTheMap() throws Exception {
+        root = projectRoot();
+        Path file = Files.writeString(root.resolve("Card.txt"), "card text\n".repeat(20));
+        Files.writeString(root.resolve("Other.txt"), "other\n");
+        MapFixture map = openMap(1_200, 800, path -> null);
+        try {
+            waitForRow(map, file);
+            AtomicReference<ProjectMapOutput> job = new AtomicReference<>();
+            ProjectMapOutput.Rendered without = FxTestSupport.callOnFx(() -> {
+                map.view.setOutputActions(ignored -> {}, job::set);
+                FxTestSupport.call(map.view, "setOutputEnabled", new Class<?>[] {boolean.class}, true);
+                FxTestSupport.<javafx.scene.control.MenuItem>field(map.view, "exportPdfButton")
+                        .fire();
+                return job.get().render(20_000, 20_000);
+            });
+            FxTestSupport.runOnFx(() -> openPreview(map, file));
+            ProjectMapPreview card = FxTestSupport.callOnFx(() -> codeCards(map).get(file));
+            waitFor(() -> card.getWidth() > 0, "the card must be placed");
+            FxTestSupport.runOnFx(() -> {
+                double zoom = FxTestSupport.field(map.surface, "zoom");
+                double offsetX = FxTestSupport.field(map.surface, "offsetX");
+                double offsetY = FxTestSupport.field(map.surface, "offsetY");
+                ProjectMapOutputPlan.Cell before = without.plan().pages().getFirst();
+                // The right edge of the map without the card (its paper margin included), in world pixels.
+                double mapRight = before.x() + before.width();
+                // The card stands well clear of the columns, right of the map: only it and its connector are there.
+                card.relocate(offsetX + (mapRight + 300) * zoom, card.getLayoutY());
+                map.view.layout();
+                javafx.geometry.Bounds drawn = card.getBoundsInParent();
+
+                ProjectMapOutput.Rendered with = job.get().render(20_000, 20_000);
+
+                assertEquals(1, with.pages().size());
+                ProjectMapOutputPlan.Cell cell = with.plan().pages().getFirst();
+                double scale = with.plan().renderScale();
+                double cardLeft = ((drawn.getMinX() - offsetX) / zoom - cell.x()) * scale;
+                double cardTop = ((drawn.getMinY() - offsetY) / zoom - cell.y()) * scale;
+                double cardRight = ((drawn.getMaxX() - offsetX) / zoom - cell.x()) * scale;
+                double cardBottom = ((drawn.getMaxY() - offsetY) / zoom - cell.y()) * scale;
+                Image image = with.pages().getFirst();
+                assertTrue(
+                        image.getWidth() >= cardRight - 1,
+                        () -> "the page reaches past the card: " + image.getWidth() + " < " + cardRight);
+                PixelReader pixels = image.getPixelReader();
+                assertTrue(
+                        hasInk(
+                                pixels,
+                                (int) cardLeft + 4,
+                                (int) cardTop + 4,
+                                (int) cardRight - 4,
+                                (int) cardBottom - 4),
+                        "the card is drawn where it stands on the map");
+                int gapLeft = (int) ((mapRight - cell.x()) * scale) + 2;
+                assertTrue(
+                        hasInk(pixels, gapLeft, 0, (int) cardLeft - 4, (int) image.getHeight()),
+                        "its connector crosses the empty paper between the map and the card");
+            });
+        } finally {
+            map.close();
+        }
+    }
+
+    @Test
     void outputIsTiledAtALegibleScaleAndSaysSo() throws Exception {
         root = projectRoot();
         // 120 rows: sixty would now fit one page at the 6 pt the plan allows when that saves a page.

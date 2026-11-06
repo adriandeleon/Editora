@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   column or card already there — and the map pans to centre it, keeping its row in sight. With the option off, cards
   keep taking free room in view without panning.
 
+### Fixed
+
+- **Map Print and Export PDF include the open cards.** Preview, note and Overview cards, what is stuck on them
+  (sticky notes, Structure columns, link chips) and their connectors are drawn on the pages where they stand on the
+  map, as on screen; the pages grow to take in a card standing beyond the columns. Export ▸ SVG still leaves the
+  cards out.
+
 ## [0.27.0] - 2026-11-05
 
 ### Added
