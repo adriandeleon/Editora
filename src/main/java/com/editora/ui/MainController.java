@@ -9701,7 +9701,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Whether the app (AtlantaFX) theme is dark — seeds/decides the "follow app" preview theme + glyph. */
     private boolean appThemeDark() {
-        return Themes.backgroundFor(config.getSettings().getTheme()).getBrightness() < 0.5;
+        return Themes.isDark(config.getSettings().getTheme());
     }
 
     /**
@@ -9900,7 +9900,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             terminalCoordinator.applySettings();
             terminalCoordinator.applyTheme();
         }
-        ExtendedWindow.matchButtonsToTheme(stage, appThemeDark()); // also every apply: cheap, and idempotent
         Color highlight = EditorThemes.lineHighlightFor(themeName);
         Color mmText = EditorThemes.minimapTextFor(themeName);
         Color mmViewport = EditorThemes.minimapViewportFor(themeName);

@@ -65,17 +65,12 @@ class ExtendedWindowHeaderFxTest {
         FxTestSupport.runOnFx(() -> {
             Stage stage = new Stage();
             stage.initStyle(StageStyle.EXTENDED);
-            ExtendedWindow.matchButtonsToTheme(stage, true);
+            stage.setScene(new Scene(new BorderPane()));
+            // The buttons' colour scheme falls back to the scene's, which is what the app theme now sets.
+            WindowColorScheme.applyTo(stage.getScene(), true);
             assertEquals(ColorScheme.DARK, HeaderBar.getSystemColorScheme(stage), "a dark theme: light glyphs");
-            ExtendedWindow.matchButtonsToTheme(stage, false);
+            WindowColorScheme.applyTo(stage.getScene(), false);
             assertEquals(ColorScheme.LIGHT, HeaderBar.getSystemColorScheme(stage), "and back, without a restart");
-
-            // Unset, the property falls back to the desktop's scheme — the very fallback that hid the buttons.
-            Stage decorated = new Stage();
-            ColorScheme desktop = HeaderBar.getSystemColorScheme(decorated);
-            ExtendedWindow.matchButtonsToTheme(decorated, desktop != ColorScheme.DARK);
-            assertEquals(
-                    desktop, HeaderBar.getSystemColorScheme(decorated), "the OS draws a decorated window's buttons");
         });
     }
 

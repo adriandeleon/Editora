@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The window buttons show with a dark theme.** On Linux, minimise, maximise and close were drawn dark grey on
+  the dark title bar, all but invisible, whenever the theme was dark and the desktop's was not: JavaFX styles the
+  window frame and its buttons from the desktop's light or dark setting. Every window, dialogs included, now takes
+  it from Editora's theme, as it opens and when the theme changes.
 - **A trail stop's note no longer covers its card.** Since cards open centred, a wide card could leave too little
   room for the note on either side, and the note was laid over the stop's lines (on macOS at the default size).
   The map now pans just far enough for the note to stand beside the card.
