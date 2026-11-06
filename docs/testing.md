@@ -288,6 +288,12 @@ server or a debug adapter. Until 19 October 2026 every pull request ran all of i
 ten minutes, but with five macOS runners for the account and several pull requests open at once a run took
 13 to 35 minutes, and every merge waited for the slowest macOS shard.
 
+A Map FX test that fails only on macOS is often font metrics: the Map measures its columns in the UI font CSS gives
+it, so a column, and everything placed from it, is a few pixels narrower on macOS than on Linux. Reproduce it on
+Linux by giving the test's `ProjectMapView` a narrower installed family, e.g. `view.setStyle("-fx-font-family:
+'Carlito';")` (how the trail-note placement failure behind `ProjectMapTrailNote.viewsRoomPan` was found: the card
+stood 242 px from the edge instead of 259, short of the note's 256).
+
 **Locally,** run `mvn spotless:apply` and the tests for what you changed (`mvn -Dtest='Foo*Test' test`),
 not the whole suite: CI's four shards run it in about ten minutes, and several sessions share this
 machine.

@@ -47,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The Emacs keymap no longer lists `M-g s` twice.** The key was bound to both Search Notes and Go to Symbol in
   Workspace; only Go to Symbol ever ran, while the command catalogs showed `M-g s` for Search Notes too. Search Notes
   is a palette command, and a test now rejects any keymap file that lists a chord twice.
+- **A trail stop's note no longer covers its card.** Since cards open centred, a wide card could leave too little
+  room for the note on either side, and the note was laid over the stop's lines (on macOS at the default size).
+  The map now pans just far enough for the note to stand beside the card.
 - **Map caller and reference cards no longer pile up.** With Focus new column on, Show Callers or References as
   Cards opened every result card on one spot, at full width, instead of beside the card asked from. Each now opens
   beside that card at the narrower result width, in a place of its own, stacking above or below the ones there.
