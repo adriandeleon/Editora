@@ -319,7 +319,7 @@ final class LspRename {
             // jdtls answers null for a package it has not heard of: a folder made a moment ago, before the
             // watcher's batch reached it, or any new folder of an SSH project (fourth review DF3). Saying it
             // exists is idempotent, and goes out before the request on the same channel.
-            s.didChangeWatchedFiles(LspManager.eventsUnderRoot(
+            s.didChangeWatchedFiles(LspFileWatching.eventsUnderRoot(
                     List.of(new WatchedFile(into, WatchedKind.CREATED)), s.root(), s.uris()));
         }
         // A .java file moved to another folder whose package line does not fit it: the case where an empty answer

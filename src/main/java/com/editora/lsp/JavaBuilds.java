@@ -141,9 +141,10 @@ final class JavaBuilds {
                     root, System.currentTimeMillis() - FreshJavaSources.WINDOW_MS, FreshJavaSources.MAX_VISITED);
             Platform.runLater(() -> {
                 // an open file's edits reach jdtls as its document's; only files changed outside Editora count
-                List<org.eclipse.lsp4j.FileEvent> events = LspManager.eventsUnderRoot(fresh, root, s.uris()).stream()
-                        .filter(e -> !s.isOpen(e.getUri()))
-                        .toList();
+                List<org.eclipse.lsp4j.FileEvent> events =
+                        LspFileWatching.eventsUnderRoot(fresh, root, s.uris()).stream()
+                                .filter(e -> !s.isOpen(e.getUri()))
+                                .toList();
                 if (events.isEmpty()) {
                     launchBuild.run();
                     return;

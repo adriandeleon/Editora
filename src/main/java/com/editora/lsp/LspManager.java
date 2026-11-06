@@ -52,7 +52,7 @@ public final class LspManager {
     /** The scheme jdtls uses for class-file (JDK/dependency) contents — a URI no filesystem can open. */
     static final String JDT_SCHEME = "jdt://";
 
-    private final BiConsumer<Path, List<LspDiagnostic>> onDiagnostics;
+    final BiConsumer<Path, List<LspDiagnostic>> onDiagnostics;
     /** Server status: {@code accept(type, message)} (e.g. "ServiceReady"/"Ready"), posted to the FX thread. */
     private final BiConsumer<String, String> onStatus;
     /** Fired (on the FX thread) when a session died on its own — crash or failed handshake, never a
@@ -98,10 +98,16 @@ public final class LspManager {
     private final JdtlsCommands jdtls = new JdtlsCommands(this);
 
     /** Java project builds through jdtls. */
-    private final JavaBuilds builds = new JavaBuilds(this);
+    final JavaBuilds builds = new JavaBuilds(this);
 
     /** Organize Imports, per server. */
     private final LspOrganizeImports imports = new LspOrganizeImports(this);
+
+    /** Published and pulled diagnostics, and the raw ones code actions send back. */
+    private final LspDiagnostics diagnostics = new LspDiagnostics(this);
+
+    /** Root watchers and remote scanners, and the file changes they forward to the servers. */
+    private final LspFileWatching watching = new LspFileWatching(this);
 
     /** One unanswered request per document and kind; see {@link LatestRequests}. */
     final LatestRequests latest = new LatestRequests();
@@ -121,8 +127,8 @@ public final class LspManager {
         return t;
     });
 
-    private final Map<String, LanguageServerSession> sessionsByRoot = new ConcurrentHashMap<>();
-    private final Map<String, LanguageServerSession> sessionByDocUri = new ConcurrentHashMap<>();
+    final Map<String, LanguageServerSession> sessionsByRoot = new ConcurrentHashMap<>();
+    final Map<String, LanguageServerSession> sessionByDocUri = new ConcurrentHashMap<>();
 
     /**
      * The Java servers of every window in this process, by session key (Java review C12). A second window on a
@@ -186,7 +192,7 @@ public final class LspManager {
     private final java.util.Set<LanguageServerSession> endedHere = ConcurrentHashMap.newKeySet();
 
     /** Whether this window has the focus: a question a shared server asks goes to the focused window. */
-    private volatile java.util.function.BooleanSupplier windowFocused = () -> false;
+    volatile java.util.function.BooleanSupplier windowFocused = () -> false;
 
     public void setWindowFocused(java.util.function.BooleanSupplier focused) {
         windowFocused = focused == null ? () -> false : focused;
@@ -203,7 +209,7 @@ public final class LspManager {
      * Told (on the FX thread) of the files this manager's own watchers saw change outside Editora, after the servers
      * were: a pom fixed by a git pull re-imports a failed project as a save does (fourteenth check CJ8).
      */
-    private volatile java.util.function.Consumer<List<WatchedFile>> onWatchedFiles = changes -> {};
+    volatile java.util.function.Consumer<List<WatchedFile>> onWatchedFiles = changes -> {};
 
     public void setOnWatchedFiles(java.util.function.Consumer<List<WatchedFile>> handler) {
         onWatchedFiles = handler == null ? changes -> {} : handler;
@@ -412,7 +418,7 @@ public final class LspManager {
         if (enabled) {
             ProcessRunner.warmAugmentedPathAsync(); // before the first session start reads it on FX
         } else {
-            closeRootWatchers(); // no server to tell: a folder watcher left running held an inotify instance
+            watching.closeRootWatchers(); // no server to tell: a folder watcher left running held an inotify instance
             pythonLibraries.closeAll();
             shutdownAll();
             com.editora.perf.AfterFirstPaint.run(ProcessRunner::warmAugmentedPathAsync);
@@ -645,22 +651,9 @@ public final class LspManager {
         }
     }
 
-    /** Whether Editora's own markup check joins the HTML server's diagnostics (HTML review D5); read off the FX thread. */
-    private volatile java.util.function.BooleanSupplier htmlMarkupChecks = () -> true;
-
-    /** Sets what says whether the markup check runs (Settings → Editor → HTML markup checks). */
+    /** See {@link LspDiagnostics#setHtmlMarkupChecks}. */
     public void setHtmlMarkupChecks(java.util.function.BooleanSupplier on) {
-        htmlMarkupChecks = on == null ? () -> true : on;
-    }
-
-    /** {@code mapped} with the markup check's diagnostics added for an HTML page (D5); null stays null. */
-    private @Nullable List<LspDiagnostic> withMarkupChecks(
-            LanguageServerSession s, @Nullable String documentUri, Path file, @Nullable List<LspDiagnostic> mapped) {
-        String text = documentUri == null || mapped == null
-                ? null
-                : s.documentSnapshots().get(documentUri);
-        return HtmlMarkupLint.merged(
-                s.serverId(), file, text, s.root(), mapped, text != null && htmlMarkupChecks.getAsBoolean());
+        diagnostics.setHtmlMarkupChecks(on);
     }
 
     /** The XML servers' settings (Settings → LSP → XML); each session gets them for its own root. */
@@ -813,7 +806,7 @@ public final class LspManager {
      * An environment folder appeared or went: told now and twice more, since {@code python -m venv} writes the
      * folder first and its {@code pyvenv.cfg} and interpreter a moment later, inside a folder no watcher reports.
      */
-    private void pythonEnvironmentChanged() {
+    void pythonEnvironmentChanged() {
         Platform.runLater(() -> onPythonEnvironmentChanged.run());
         Thread.ofVirtual().name("lsp-python-environment").start(() -> {
             for (long wait : new long[] {2_000, 4_000}) {
@@ -860,172 +853,26 @@ public final class LspManager {
     }
 
     /** Re-reads shell files changed on disk for the Bash server, which has no watched-files support (B7). */
-    private final BashReanalysis bashReanalysis = new BashReanalysis(Platform::runLater);
+    final BashReanalysis bashReanalysis = new BashReanalysis(Platform::runLater);
 
-    /** Root → its watcher; at most {@link #MAX_ROOT_WATCHERS}, closed with the manager. */
-    private final Map<Path, RootWatcher> rootWatchers = new ConcurrentHashMap<>();
-
-    static final int MAX_ROOT_WATCHERS = 8;
-
-    /**
-     * The grammar files lemminx registers to be told of ({@code **}{@code /*.xsd}, {@code *.dtd}, {@code *.rng},
-     * {@code *.rnc}), plus the DTD fragments it reads ({@code .ent}, {@code .mod}).
-     */
-    private static final java.util.Set<String> XML_GRAMMAR_EXTENSIONS =
-            java.util.Set.of("xsd", "dtd", "rng", "rnc", "ent", "mod");
-
-    /** Whether a file is one an XML server revalidates its documents against when it changes (XML review B9). */
-    static boolean xmlGrammarFile(Path file) {
-        Path name = file.getFileName();
-        String n = name == null ? "" : name.toString();
-        int dot = n.lastIndexOf('.');
-        return dot > 0 && XML_GRAMMAR_EXTENSIONS.contains(n.substring(dot + 1).toLowerCase(java.util.Locale.ROOT));
-    }
-
-    /** The build files jdtls updates a project's configuration from when told they changed. */
-    private static final java.util.Set<String> JAVA_BUILD_FILES =
-            java.util.Set.of("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts");
-
-    /**
-     * Whether a file is one a server rebuilds its model from when it changes: an XML grammar (XML review B9) or a
-     * Java build file (twelfth review CL1).
-     */
-    static boolean modelFile(Path file) {
-        Path name = file.getFileName();
-        return xmlGrammarFile(file) || (name != null && JAVA_BUILD_FILES.contains(name.toString()));
-    }
-
-    /**
-     * Starts watching a local server's {@code root}, the whole tree, when nothing watches it yet (any thread). The
-     * Project panel watches only the folders it shows expanded, so a file changed by git, a terminal or another
-     * editor in a collapsed one never reached the servers: a schema regenerated there left lemminx's errors stale
-     * (XML review B9), a module's pom.xml left jdtls's classpath stale (twelfth review CL1), a sourced library left
-     * the Bash server's lines and functions stale (Bash review B16, B7). The panel's own events are forwarded only for
-     * the files this watcher does not report ({@link #reportsChangesTo}). One watcher per root, none for a root
-     * inside one already watched, at most {@link #MAX_ROOT_WATCHERS}; each bounded by {@link RootWatcher#MAX_DIRS}
-     * folders, skipping hidden, dependency and {@code .gitignore}d ones.
-     */
-    private void ensureRootWatcher(Path root, String serverId) {
-        if (closed
-                || root == null
-                || !com.editora.process.ExecTargets.runsHere(root)
-                || RootResolver.isBroadRoot(root)) {
-            return;
-        }
-        Path key = root.toAbsolutePath().normalize();
-        synchronized (rootWatchers) {
-            if (rootWatchers.containsKey(key)
-                    || rootWatchers.size() >= MAX_ROOT_WATCHERS
-                    || rootWatchers.values().stream().anyMatch(w -> key.startsWith(w.root()) && w.watches(key))) {
-                return;
-            }
-            java.util.function.Consumer<List<WatchedFile>> sink = batch -> Platform.runLater(() -> {
-                notifyWatchedFiles(batch);
-                onWatchedFiles.accept(batch);
-            });
-            RootWatcher w = RootWatcher.start(key, sink);
-            if (w == null) {
-                return;
-            }
-            rootWatchers
-                    .entrySet()
-                    .removeIf(
-                            e -> { // a root inside this one: its events would go out twice
-                                boolean inside = e.getKey().startsWith(key);
-                                if (inside) {
-                                    e.getValue().close();
-                                }
-                                return inside;
-                            });
-            rootWatchers.put(key, w);
-        }
-        if (closed) {
-            closeRootWatchers();
-        }
-    }
-
-    private void closeRootWatchers() {
-        synchronized (rootWatchers) {
-            rootWatchers.values().forEach(RootWatcher::close);
-            rootWatchers.clear();
-            remoteScanners.values().forEach(RemoteRootScanner::close);
-            remoteScanners.clear();
-        }
-    }
-
-    /** Remote root → its scanner ({@link RemoteRootScanner}); at most {@link #MAX_ROOT_WATCHERS}. */
-    private final Map<Path, RemoteRootScanner> remoteScanners = new ConcurrentHashMap<>();
-
-    /**
-     * Starts listing a server's folder on another machine — an SSH host, WSL, a container — when the window comes
-     * to the front, so a file {@code git pull} created there reaches the server (Python review 2, B108). Any thread.
-     */
-    private void ensureRemoteScanner(Path root) {
-        if (closed || root == null) {
-            return;
-        }
-        synchronized (rootWatchers) {
-            remoteScanners
-                    .entrySet()
-                    .removeIf(
-                            e -> { // a dropped connection's: its tabs moved to the new one
-                                boolean gone = !e.getKey().getFileSystem().isOpen();
-                                if (gone) {
-                                    e.getValue().close();
-                                }
-                                return gone;
-                            });
-            if (remoteScanners.containsKey(root)
-                    || remoteScanners.size() >= MAX_ROOT_WATCHERS
-                    || remoteScanners.keySet().stream() // paths of two connections cannot be compared
-                            .anyMatch(k -> k.getFileSystem() == root.getFileSystem() && root.startsWith(k))) {
-                return;
-            }
-            remoteScanners.put(
-                    root,
-                    new RemoteRootScanner(
-                                    root,
-                                    batch -> Platform.runLater(() -> {
-                                        if (!closed) {
-                                            notifyWatchedFiles(batch);
-                                            onWatchedFiles.accept(batch);
-                                        }
-                                    }),
-                                    () -> windowFocused.getAsBoolean())
-                            .start());
-        }
-    }
-
-    /** The remote roots being listed (tests). */
+    /** See {@link LspFileWatching#scannedRemoteRoots}. */
     java.util.Set<Path> scannedRemoteRoots() {
-        return java.util.Set.copyOf(remoteScanners.keySet());
+        return watching.scannedRemoteRoots();
     }
 
-    /**
-     * Whether a watcher of this manager's own reports changes to {@code file}, a build file or a grammar: one that
-     * watches the file's own folder, not merely its root, which a large tree is watched only in part of (thirteenth
-     * review CK3).
-     */
+    /** See {@link LspFileWatching#watchesModelFile}. */
     public boolean watchesModelFile(Path file) {
-        return modelFile(file.toAbsolutePath().normalize()) && reportsChangesTo(file);
+        return watching.watchesModelFile(file);
     }
 
-    private static boolean watches(RootWatcher w, Path file) {
-        return file.startsWith(w.root()) && file.getParent() != null && w.watches(file.getParent());
-    }
-
-    /**
-     * Whether a watcher of this manager's own reports changes to {@code file} (its folder is watched): the Project
-     * panel's own event for it would go out twice (twelfth review CL1, Bash review B16).
-     */
+    /** See {@link LspFileWatching#reportsChangesTo}. */
     public boolean reportsChangesTo(Path file) {
-        Path at = file.toAbsolutePath().normalize();
-        return rootWatchers.values().stream().anyMatch(w -> watches(w, at));
+        return watching.reportsChangesTo(file);
     }
 
-    /** The roots watched by this manager itself (tests). */
+    /** See {@link LspFileWatching#watchedRoots}. */
     java.util.Set<Path> watchedRoots() {
-        return java.util.Set.copyOf(rootWatchers.keySet());
+        return watching.watchedRoots();
     }
 
     /** The workspace root of the session serving {@code file}, or null when none does. */
@@ -1630,10 +1477,10 @@ public final class LspManager {
         semanticTokens.wholeDocumentTokens.remove(uri);
         // Removed, not bumped: generations are unique across documents (see nextDiagnosticGeneration), so a
         // reply still on its way finds no entry — or a later one — and is rejected either way.
-        diagnosticRequestGeneration.remove(uri);
+        diagnostics.diagnosticRequestGeneration.remove(uri);
         latest.cancelAll(uri);
         DocumentUris.forget(file);
-        rawDiagnostics.remove(uri); // open-documents-only retention (#670); keyed by this, our own, URI
+        diagnostics.rawDiagnostics.remove(uri); // open-documents-only retention (#670); keyed by this, our own, URI
         deleteJavaScriptShadow(javaScriptShadows.remove(uri));
         if (s != null) {
             s.didClose(uri, this);
@@ -2106,7 +1953,8 @@ public final class LspManager {
      */
     private @Nullable LanguageServerSession join(String key, LanguageServerSession session) {
         LanguageServerSession.Client client = new LanguageServerSession.Client(
-                params -> onPublishDiagnostics(session, params), statusSink(session.serverId(), () -> session));
+                params -> diagnostics.onPublishDiagnostics(session, params),
+                statusSink(session.serverId(), () -> session));
         configureClient(client, key, session);
         if (!session.attach(client)) {
             sharedServers.remove(key, session);
@@ -2118,7 +1966,7 @@ public final class LspManager {
             return prev;
         }
         clientOf.put(session, client);
-        ensureRootWatcher(session.root(), session.serverId());
+        watching.ensureRootWatcher(session.root(), session.serverId());
         if (session.isInitialized()) {
             // the project's own problems first, so its verdict can name them (seventh review CR2)
             session.projectDiagnostics().forEach(client.diagnostics::accept);
@@ -2211,7 +2059,7 @@ public final class LspManager {
         LanguageServerSession session = new LanguageServerSession(
                 spec,
                 root,
-                params -> onPublishDiagnostics(diagnosticSource[0], params),
+                params -> diagnostics.onPublishDiagnostics(diagnosticSource[0], params),
                 statusSink(spec.serverId(), () -> diagnosticSource[0]));
         diagnosticSource[0] = session;
         session.setClientThread(Platform::runLater); // a re-sync must not race the FX thread's own document sync
@@ -2267,7 +2115,7 @@ public final class LspManager {
                 pythonLibraries.update(session);
                 session.setPythonWorkspaceDiagnostics(pythonWholeProject);
             }
-            ensureRootWatcher(root, serverId);
+            watching.ensureRootWatcher(root, serverId);
             sessionStarterForTest.accept(session); // TEST SEAM (see the field): attach a fake, never fork
             return session;
         }
@@ -2494,9 +2342,10 @@ public final class LspManager {
                 session.setPythonWorkspaceDiagnostics(pythonWholeProject);
             }
             if (!remote) {
-                ensureRootWatcher(root, serverId); // file changes nobody else reports reach this server (B7)
+                watching.ensureRootWatcher(root, serverId); // file changes nobody else reports reach this server (B7)
             } else {
-                ensureRemoteScanner(root); // no watcher here can follow it: listed when the window returns (2, B108)
+                watching.ensureRemoteScanner(
+                        root); // no watcher here can follow it: listed when the window returns (2, B108)
             }
             session.configureStart(startCommand, remoteEnvironment, () -> {
                 Object options = ServerInitOptions.startOptions(
@@ -2927,110 +2776,14 @@ public final class LspManager {
         };
     }
 
-    /**
-     * Forwards external file changes to every live session whose root contains them
-     * ({@code workspace/didChangeWatchedFiles}) — how a git checkout / CLI build / external editor reaches
-     * the servers' project models instead of leaving them stale until restart (#677). Callers coalesce
-     * bursts (a branch switch touches hundreds of files); one notification per session per batch.
-     */
+    /** See {@link LspFileWatching#notifyWatchedFiles}. */
     public void notifyWatchedFiles(List<WatchedFile> changes) {
-        if (!enabled || changes == null || changes.isEmpty()) {
-            return;
-        }
-        for (LanguageServerSession s : sessionsByRoot.values()) {
-            List<org.eclipse.lsp4j.FileEvent> events = eventsUnderRoot(changes, s.root(), s.uris());
-            if (!events.isEmpty()) {
-                s.didChangeWatchedFiles(events);
-                bashReanalysis.changed(s, changes); // the Bash server ignores the notification (Bash review B7)
-                openGrammarsChanged(s, changes);
-            }
-        }
-        changes.stream().map(WatchedFile::file).filter(f -> f != null).forEach(this::projectStyleChanged);
-        if (PythonLibraryWatchers.touchesEnvironment(changes)) {
-            pythonEnvironmentChanged(); // python -m venv .venv after the server started (review 2, B103)
-        }
+        watching.notifyWatchedFiles(changes);
     }
 
-    /**
-     * lemminx revalidates the documents that use a grammar when that grammar is saved, and treats a watched-file
-     * change as a save only for a file the client does not hold open (XML/pom review 4, B31): a schema open in a tab
-     * and rewritten on disk by a pull or a build left every document using it with its old errors. Such a change is
-     * told as the save it is on disk; the tab's own text is the editor's to reload.
-     */
-    private static void openGrammarsChanged(LanguageServerSession s, List<WatchedFile> changes) {
-        if (!XmlServerSettings.isLemminx(s.serverId())) {
-            return;
-        }
-        for (WatchedFile c : openGrammarChanges(changes, s::isOpen)) {
-            s.didSave(uri(c.file()), null);
-        }
-    }
-
-    /** Pure: the changes to a grammar file ({@link #xmlGrammarFile}) still on disk whose document {@code open} holds. */
-    static List<WatchedFile> openGrammarChanges(List<WatchedFile> changes, java.util.function.Predicate<String> open) {
-        return changes.stream()
-                .filter(c -> c != null && c.file() != null && c.kind() != WatchedKind.DELETED)
-                .filter(c -> xmlGrammarFile(c.file()) && open.test(uri(c.file())))
-                .toList();
-    }
-
-    /**
-     * {@code file} changed (saved here, or seen by a watcher): when it is one the project's Java style is read
-     * from, the Java servers whose project holds it get the style again (re-review AN5).
-     */
+    /** See {@link LspFileWatching#projectStyleChanged}. */
     public void projectStyleChanged(Path file) {
-        if (file == null || !JavaProjectSettings.isStyleSource(file)) {
-            return;
-        }
-        Path at = file.toAbsolutePath().normalize();
-        refreshStyleUnder(at);
-        String name = at.getFileName() == null ? "" : at.getFileName().toString();
-        if (name.equals(".settings") || name.equals("config")) {
-            // the folder came, or went, with its profile: read again once the files in it have landed too (DN4)
-            CompletableFuture.delayedExecutor(1, java.util.concurrent.TimeUnit.SECONDS)
-                    .execute(() -> Platform.runLater(() -> {
-                        if (!closed) {
-                            refreshStyleUnder(at);
-                        }
-                    }));
-        }
-    }
-
-    private void refreshStyleUnder(Path at) {
-        for (Map.Entry<String, LanguageServerSession> e : sessionsByRoot.entrySet()) {
-            LanguageServerSession s = e.getValue();
-            if (e.getKey().startsWith(sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID))
-                    && at.startsWith(s.root().toAbsolutePath().normalize())) {
-                s.refreshProjectSettings();
-            }
-        }
-    }
-
-    /** Pure: the {@code FileEvent}s for the changes under {@code root} (path-component containment). */
-    static List<org.eclipse.lsp4j.FileEvent> eventsUnderRoot(List<WatchedFile> changes, Path root) {
-        return eventsUnderRoot(changes, root, WireUris.LOCAL);
-    }
-
-    /** As above, with each file named the way {@code uris}'s server names it. */
-    static List<org.eclipse.lsp4j.FileEvent> eventsUnderRoot(List<WatchedFile> changes, Path root, WireUris uris) {
-        Path rootNorm = root.toAbsolutePath().normalize();
-        List<org.eclipse.lsp4j.FileEvent> out = new ArrayList<>();
-        for (WatchedFile c : changes) {
-            if (c == null || c.file() == null) {
-                continue;
-            }
-            Path p = c.file().toAbsolutePath().normalize();
-            if (!p.startsWith(rootNorm)) {
-                continue;
-            }
-            var type = switch (c.kind()) {
-                case CREATED -> org.eclipse.lsp4j.FileChangeType.Created;
-                case CHANGED -> org.eclipse.lsp4j.FileChangeType.Changed;
-                case DELETED -> org.eclipse.lsp4j.FileChangeType.Deleted;
-            };
-            out.add(new org.eclipse.lsp4j.FileEvent(uris.toWire(DocumentUris.of(p)), type));
-        }
-        return out;
+        watching.projectStyleChanged(file);
     }
 
     /**
@@ -3464,22 +3217,9 @@ public final class LspManager {
         return e != null && (e.isRight() || Boolean.TRUE.equals(e.getLeft()));
     }
 
-    private final Map<String, Long> diagnosticRequestGeneration = new ConcurrentHashMap<>();
-    /** Source of {@link #diagnosticRequestGeneration} values. One counter for every document, so a value is
-     *  never reused: an entry can then be removed when its document closes without a late reply for the
-     *  closed document ever matching the generation of a reopened one. */
-    private final java.util.concurrent.atomic.AtomicLong diagnosticGenerations =
-            new java.util.concurrent.atomic.AtomicLong();
-
-    private long nextDiagnosticGeneration(String uri) {
-        long generation = diagnosticGenerations.incrementAndGet();
-        diagnosticRequestGeneration.put(uri, generation);
-        return generation;
-    }
-
-    /** Tracked documents — package-private so a test can show closing one releases its entry. */
+    /** See {@link LspDiagnostics#diagnosticGenerationEntries}. */
     int diagnosticGenerationEntries() {
-        return diagnosticRequestGeneration.size();
+        return diagnostics.diagnosticGenerationEntries();
     }
 
     /** See {@link SemanticTokenRequests#wholeDocumentTokensCurrent}. */
@@ -3698,21 +3438,9 @@ public final class LspManager {
         return null;
     }
 
-    /**
-     * Last raw published diagnostics per <b>managed document URI</b> — the spelling this client opened the
-     * document under, never the one the server reported it under (open documents only — see
-     * {@link #onPublishDiagnostics}); the context a code-action request sends back to the server.
-     *
-     * <p>Keying by the server's string lost them whenever the server spelled the URI differently
-     * ({@code file:///c%3A/…} for our {@code file:///C:/…}, or a symlink-resolved path): the lookup below
-     * missed, the request went out with empty {@code context.diagnostics}, and every quick fix that keys off
-     * a diagnostic silently disappeared.
-     */
-    private final Map<String, List<org.eclipse.lsp4j.Diagnostic>> rawDiagnostics = new ConcurrentHashMap<>();
-
-    /** The retained raw diagnostics for {@code file}. */
+    /** See {@link LspDiagnostics#rawDiagnosticsFor}. */
     List<org.eclipse.lsp4j.Diagnostic> rawDiagnosticsFor(Path file) {
-        return rawDiagnostics.getOrDefault(uri(file), List.of());
+        return diagnostics.rawDiagnosticsFor(file);
     }
 
     /** See {@link LspCodeActions#codeActions}. */
@@ -3913,68 +3641,14 @@ public final class LspManager {
         return NodeServerPaths.findTypeScriptSdk(start, ceiling);
     }
 
-    /** Told (FX thread) that a document's diagnostics are confirmed unchanged by its server. */
-    private volatile Consumer<Path> onDiagnosticsUnchanged = file -> {};
-
+    /** See {@link LspDiagnostics#setOnDiagnosticsUnchanged}. */
     public void setOnDiagnosticsUnchanged(Consumer<Path> handler) {
-        onDiagnosticsUnchanged = handler == null ? file -> {} : handler;
+        diagnostics.setOnDiagnosticsUnchanged(handler);
     }
 
-    /**
-     * Requests <em>pull</em> diagnostics ({@code textDocument/diagnostic}) for {@code file} and routes the
-     * result through the same diagnostics callback as pushed {@code publishDiagnostics}. A no-op unless the
-     * file's server advertises a {@code diagnosticProvider} (so push-only servers like jdtls/pyright/tsserver
-     * are untouched). An "unchanged" report leaves the current diagnostics in place.
-     */
+    /** See {@link LspDiagnostics#pullDiagnostics}. */
     public void pullDiagnostics(Path file) {
-        if (file == null) {
-            return;
-        }
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || s.capabilities() == null || s.capabilities().getDiagnosticProvider() == null) {
-            return;
-        }
-        String documentUri = uri(file);
-        Integer requestedVersion = s.documentVersion(documentUri);
-        // The generation is taken when the request is really sent: a call that finds the same pull still
-        // unanswered sends nothing and must not outdate the answer it is waiting for along with it.
-        long[] sent = new long[1];
-        java.util.function.Supplier<CompletableFuture<org.eclipse.lsp4j.DocumentDiagnosticReport>> send = () -> {
-            sent[0] = nextDiagnosticGeneration(documentUri);
-            return s.diagnostic(documentUri);
-        };
-        latest.issue(documentUri, "diagnostic", stamp(s, documentUri, null), false, send, (report, error) -> {
-            long generation = sent[0];
-            if (error != null) {
-                return;
-            }
-            List<LspDiagnostic> mapped = withMarkupChecks(s, documentUri, file, DiagnosticMapper.mapReport(report));
-            if (mapped == null) {
-                // An "unchanged" report: what was shown before the edit is still right. The editor cleared
-                // its marks on the edit, so say so rather than leave it showing a clean file.
-                Platform.runLater(() -> {
-                    if (sessionFor(file) == s
-                            && java.util.Objects.equals(diagnosticRequestGeneration.get(documentUri), generation)) {
-                        onDiagnosticsUnchanged.accept(file);
-                    }
-                });
-                return;
-            }
-            var full = report == null ? null : report.getRelatedFullDocumentDiagnosticReport();
-            List<org.eclipse.lsp4j.Diagnostic> raw =
-                    full == null || full.getItems() == null ? List.of() : List.copyOf(full.getItems());
-            Platform.runLater(() -> {
-                if (sessionFor(file) == s
-                        && java.util.Objects.equals(diagnosticRequestGeneration.get(documentUri), generation)
-                        && java.util.Objects.equals(s.documentVersion(documentUri), requestedVersion)) {
-                    // The code-action context is built from these. A pull-only server (vscode-css, ruby-lsp)
-                    // never publishes, so without this it was always asked with an empty context and offered
-                    // no quick fix for a diagnostic the editor was showing.
-                    rawDiagnostics.put(documentUri, raw);
-                    onDiagnostics.accept(file, mapped);
-                }
-            });
-        });
+        diagnostics.pullDiagnostics(file);
     }
 
     /**
@@ -3989,7 +3663,7 @@ public final class LspManager {
         MANAGERS.remove(this);
         closed = true;
         enabled = false;
-        closeRootWatchers();
+        watching.closeRootWatchers();
         pythonLibraries.close();
         shutdownAll();
         pendingEvictions.values().forEach(timer -> timer.cancel(false));
@@ -4032,12 +3706,12 @@ public final class LspManager {
             sessions.entrySet().removeIf(e -> leaveShared(e.getKey(), e.getValue()));
         }
         sessionByDocUri.clear();
-        rawDiagnostics.clear();
+        diagnostics.rawDiagnostics.clear();
         semanticTokens.semanticTokenState.clear();
         semanticTokens.semanticRequestGeneration.clear();
         semanticTokens.wholeDocumentTokens.clear();
         latest.clear();
-        diagnosticRequestGeneration.clear();
+        diagnostics.diagnosticRequestGeneration.clear();
         codeActions.pendingApplyExpected.clear();
         javaScriptShadows.values().forEach(LspManager::deleteJavaScriptShadow);
         javaScriptShadows.clear();
@@ -4114,9 +3788,6 @@ public final class LspManager {
 
     // --- Internals -----------------------------------------------------------------------------
 
-    /** Whether diagnostics published for a file that is not open on the publishing server are dropped. */
-    private volatile boolean openDocumentDiagnosticsOnly;
-
     /** Whether Problems shows the whole project, which Pyright then checks file by file (review 2, B105). */
     private volatile boolean pythonWholeProject;
 
@@ -4125,7 +3796,7 @@ public final class LspManager {
      * scope). It then never sees a publish for any other file. Off by default: everything is delivered.
      */
     public void setOpenDocumentDiagnosticsOnly(boolean openDocumentsOnly) {
-        openDocumentDiagnosticsOnly = openDocumentsOnly;
+        diagnostics.openDocumentDiagnosticsOnly = openDocumentsOnly;
         pythonWholeProject = !openDocumentsOnly;
         for (LanguageServerSession s : sessionsByRoot.values()) {
             if (PYTHON_SERVER_ID.equals(s.serverId())) {
@@ -4150,97 +3821,6 @@ public final class LspManager {
                 || name.equals("settings.gradle")
                 || name.equals("settings.gradle.kts")
                 || java.nio.file.Files.isDirectory(file);
-    }
-
-    private void onPublishDiagnostics(LanguageServerSession source, org.eclipse.lsp4j.PublishDiagnosticsParams params) {
-        if (source == null || source.isDisposed()) {
-            return;
-        }
-        String reported = source.uris().toKey(params.getUri());
-        Path file = DocumentUris.toPath(reported);
-        if (file == null) {
-            return;
-        }
-        params.setDiagnostics(BashLsp.diagnostics(source.serverId(), file, params.getDiagnostics())); // D2, A15
-        String sourceUri = managedDocumentUri(source, file, reported);
-        if (params.getVersion() != null
-                && (sourceUri == null
-                        || !java.util.Objects.equals(params.getVersion(), source.documentVersion(sourceUri)))) {
-            return; // ranges from an older server snapshot must never replace current diagnostics
-        }
-        if (!builds.buildCaptures.isEmpty()) {
-            builds.captureBuildErrors(source, file, DiagnosticMapper.map(params.getDiagnostics()));
-        }
-        if (sourceUri == null && openDocumentDiagnosticsOnly && !projectLevel(file)) {
-            // Nobody shows a file that is not open here, and a server publishes for its whole project
-            // (jdtls: once per file on import). Dropped on this, the reader, thread: each one used to
-            // cost the FX thread a queued task, a search of the tabs and a path resolution to learn that.
-            return;
-        }
-        // Only an open document is tracked: successive publishes for any other file are applied in the
-        // order they were queued, and one entry per file a server ever mentioned was never released.
-        long generation = sourceUri == null ? 0 : nextDiagnosticGeneration(sourceUri);
-        // Retain the RAW lsp4j diagnostics for open documents: a code-action request must send the
-        // originals as context (their code/source/data are what a quick fix keys off — the mapped neutral
-        // LspDiagnostic loses them). Open-documents-only, so a server's project-wide publishes don't
-        // accumulate (#670).
-        Integer acceptedVersion = params.getVersion();
-        List<org.eclipse.lsp4j.Diagnostic> raw =
-                params.getDiagnostics() == null ? List.of() : List.copyOf(params.getDiagnostics());
-        List<LspDiagnostic> mapped = withMarkupChecks(
-                source,
-                sourceUri,
-                file,
-                MavenPomServer.adjustDiagnostics(
-                        serverDisplayName(source.serverId()), DiagnosticMapper.map(params.getDiagnostics())));
-        Platform.runLater(() -> {
-            if (source.isDisposed()
-                    || !sessionsByRoot.containsValue(source)
-                    || sourceUri != null
-                            && !java.util.Objects.equals(diagnosticRequestGeneration.get(sourceUri), generation)
-                    || sourceUri != null && sessionByDocUri.get(sourceUri) != source
-                    || acceptedVersion != null
-                            && !java.util.Objects.equals(acceptedVersion, source.documentVersion(sourceUri))) {
-                return;
-            }
-            if (sourceUri != null) {
-                rawDiagnostics.put(sourceUri, raw);
-            }
-            onDiagnostics.accept(file, mapped);
-        });
-    }
-
-    /** The name a diagnostic without a {@code source} is attributed to: the server's display name, else its id. */
-    private static String serverDisplayName(String serverId) {
-        String name = LspServerRegistry.displayNameFor(serverId);
-        return name != null ? name : serverId;
-    }
-
-    private @Nullable String managedDocumentUri(LanguageServerSession source, Path file, String reportedUri) {
-        if (sessionByDocUri.get(reportedUri) == source) {
-            return reportedUri;
-        }
-        Path canonical = null;
-        for (var entry : sessionByDocUri.entrySet()) {
-            if (entry.getValue() == source) {
-                Path openPath = DocumentUris.toPath(entry.getKey());
-                if (openPath == null) {
-                    continue;
-                }
-                if (com.editora.config.PathKeys.sameNormalized(openPath, file)) {
-                    return entry.getKey();
-                }
-                // A server may report the symlink-resolved path (/private/tmp for /tmp). Off the FX thread
-                // (the reader thread), and the resolution is cached.
-                if (canonical == null) {
-                    canonical = com.editora.config.PathKeys.canonical(file);
-                }
-                if (canonical.equals(com.editora.config.PathKeys.canonical(openPath))) {
-                    return entry.getKey();
-                }
-            }
-        }
-        return null;
     }
 
     /** See {@link JdtlsCommands#jdtlsGenerateCandidates}. */

@@ -75,7 +75,7 @@ final class PythonLibraryWatchers implements AutoCloseable {
             closeEntry(entries.remove(session));
             return;
         }
-        var events = LspManager.eventsUnderRoot(batch, dir, session.uris());
+        var events = LspFileWatching.eventsUnderRoot(batch, dir, session.uris());
         if (!events.isEmpty()) {
             session.didChangeWatchedFiles(events);
         }
