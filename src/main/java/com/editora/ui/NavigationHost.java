@@ -110,7 +110,7 @@ final class NavigationHost implements NavigationCoordinator.Host {
 
     @Override
     public List<Tab> openTabsForSwitcher() {
-        return mc.openTabsForSwitcher();
+        return mc.tabListeners.openTabsForSwitcher();
     }
 
     @Override

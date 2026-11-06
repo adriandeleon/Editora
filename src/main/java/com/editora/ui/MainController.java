@@ -6,14 +6,12 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
 import javafx.application.Platform;
-import javafx.collections.ListChangeListener;
 import javafx.collections.ObservableList;
 import javafx.css.PseudoClass;
 import javafx.fxml.FXML;
@@ -240,10 +238,13 @@ public class MainController implements com.editora.mcp.McpBridge {
     ToolWindow notesToolWindow;
     ToolWindow fileInfoToolWindow;
     /** The File Information / Undo History / Structure panels; each null until its accessor builds it. */
-    private @Nullable FileInformationPanel fileInfoPanel;
+    @Nullable
+    FileInformationPanel fileInfoPanel;
 
     ToolWindow undoHistoryToolWindow;
-    private @Nullable UndoHistoryPanel undoHistoryPanel;
+
+    @Nullable
+    UndoHistoryPanel undoHistoryPanel;
 
     @Nullable
     StructurePanel structurePanel;
@@ -376,8 +377,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     ToolWindow fileHistoryToolWindow;
 
     Switcher switcher;
-    /** Most-recently-used tab order, head = most recent. */
-    private final LinkedList<Tab> mru = new LinkedList<>();
+    /** The tab-selection and tab-list listeners, and the MRU order they keep; see {@link EditorTabListeners}. */
+    final EditorTabListeners tabListeners = new EditorTabListeners(this);
     /** Pinned tabs (identity-based): kept grouped at the front and skipped by bulk-close actions. */
     final Set<Tab> pinned = Collections.newSetFromMap(new IdentityHashMap<>());
     /** The editor-theme override stylesheet currently on the scene, or null for the default theme. */
@@ -396,7 +397,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     @Nullable
     Tab doctorTab;
     /** The hint the editor area shows once its last tab is closed (Open File, Command Palette, …). */
-    private @Nullable EditorEmptyState editorEmptyState;
+    @Nullable
+    EditorEmptyState editorEmptyState;
     /** Opens external URLs (the Welcome page's home-page link) in the system browser; set from {@code App}. */
     private javafx.application.@Nullable HostServices hostServices;
 
@@ -770,7 +772,12 @@ public class MainController implements com.editora.mcp.McpBridge {
             statusBar.setBackgroundTasks(t == null ? null : t.label(), backgroundTasks.count());
         });
         exports.exported = fileWorkflows::reloadViewerTab; // an export over an open PDF refreshes its tab
-        setupMruTracking();
+        tabListeners.install();
+        // The listeners' last step, kept here: NullAway reads this check as part of init's set-up of projectPanel.
+        if (projectPanel != null) {
+            EditorBuffer selected = activeBuffer();
+            projectPanel.setActiveFile(selected == null ? null : selected.getPath());
+        }
         windowCommands.registerCommands();
         recovery.registerCommands(registry);
         setupToolbar();
@@ -1209,7 +1216,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** The File Information panel, built on its first use; it attaches the active buffer as it is built. */
-    private FileInformationPanel fileInfoPanel() {
+    FileInformationPanel fileInfoPanel() {
         if (fileInfoPanel == null) {
             fileInfoPanel = new FileInformationPanel();
             fileInfoPanel.attach(activeBuffer());
@@ -1218,7 +1225,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** The Undo History panel, built on its first use; it attaches the active buffer as it is built. */
-    private UndoHistoryPanel undoHistoryPanel() {
+    UndoHistoryPanel undoHistoryPanel() {
         if (undoHistoryPanel == null) {
             undoHistoryPanel = new UndoHistoryPanel();
             undoHistoryPanel.attach(activeBuffer());
@@ -1490,7 +1497,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * holding a lock on the file), and an image tab kept its decoded texture pinned. Closing the same tab by
      * clicking the ✕ leaked nothing — which is exactly why this survived manual testing.
      */
-    private void disposeViewerTab(Tab tab) {
+    void disposeViewerTab(Tab tab) {
         if (tab.getUserData() instanceof ImageViewerPane image) {
             image.dispose();
         } else if (tab.getUserData() instanceof HexViewerPane hex) {
@@ -2113,154 +2120,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    private void setupMruTracking() {
-        // A mouse click in the editor area repositions the caret, which ends an Emacs mark session.
-        editorArea.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> editing.deactivateMark());
-        TabFocus.install(editorArea, this::activeBuffer); // a tab header's click focuses its editor (AQ2)
-        // A selected tab always has its buffer: a restore placeholder is built before any listener runs.
-        editorArea.setTabMaterializer(tab -> sessions.materialize(tab, true));
-        editorArea.addSelectionListener((obs, was, now) -> findBar.onActiveBufferChanged());
-        editorArea.addSelectionListener((obs, was, now) -> {
-            if (now != null) {
-                mru.remove(now);
-                mru.addFirst(now);
-            }
-            // Release the outgoing buffer's per-tab GPU caches (minimap snapshot) and restore the
-            // incoming one's, so retained VRAM doesn't grow with the number of open files.
-            EditorBuffer outgoing = bufferOf(was);
-            if (outgoing != null) {
-                outgoing.setRenderingActive(false);
-            }
-            EditorBuffer buffer = bufferOf(now);
-            if (buffer != null) {
-                buffer.setRenderingActive(true);
-                buffer.onTabShown(); // force a repaint: a switched-to area can come up blank until the next pulse
-                // A restored background tab defers its language server until it's actually looked at.
-                lspCoordinator.onBufferShown(buffer);
-            }
-            // A panel not built yet attaches the active buffer when it is (see the accessors).
-            if (fileInfoPanel != null) {
-                fileInfoPanel.attach(buffer);
-            }
-            if (structurePanel != null) {
-                structurePanel.attach(buffer);
-            }
-            if (undoHistoryPanel != null) {
-                undoHistoryPanel.attach(buffer);
-            }
-            lspCoordinator.requestStructureSymbols(
-                    buffer); // upgrade the outline to LSP symbols when the server supports them
-            statusBar.attach(buffer);
-            breadcrumb.setActiveBuffer(buffer);
-            // Sort the Problems / TODO tool windows so the active file's group is on top (IDE convention).
-            // Problems is keyed by canonical (LSP) paths; TODO by as-walked (scan) paths.
-            Path activePath = buffer == null ? null : buffer.getPath();
-            if (projectPanel != null) {
-                projectPanel.setActiveFile(activePath);
-            }
-            lspCoordinator.setProblemsActiveFile(activePath == null ? null : canonicalPath(activePath));
-            todoCoordinator.setActiveFile(
-                    activePath == null ? null : activePath.toAbsolutePath().normalize());
-            updateWindowTitle(); // show the active file's name + path in the window title bar
-            updateProjectFolderView(); // global window: retarget the tree at the new file's folder
-            searchCoordinator.refreshScope(); // Find-in-Files "current folder" tracks the active file
-            if (FileWorkflowCoordinator.AUTOSAVE_FOCUS.equals(fileWorkflows.autoSaveMode())) {
-                fileWorkflows.autoSaveAllDirty(); // saves the outgoing buffer (and any other dirty ones)
-            }
-            toolbar.refreshSplitButtons();
-            toolbar.refreshEditState(); // save/undo/redo/cut/copy enablement for the new tab
-            toolbar.refreshPasteState(); // clipboard read off the keystroke path
-            chrome.updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
-            chrome.updateExpertButton(); // and the Expert "E"
-            fileWorkflows.checkExternalChanges(); // prompt if the file we just switched to changed on disk
-            git.refresh(); // update branch/status + this file's gutter change bars
-            refreshBuildTools(); // re-detect marker files for the newly active file/project
-            startupFocus.repositoryStateComputed(); // the first focus after show need not repeat these two
-            lspCoordinator
-                    .updateStatusBar(); // show/hide the "LSP: <server>" segment + Problems window for the new file
-            debugCoordinator.updateDebugAvailability(); // Debug window only for a debuggable file / live session
-            updateRunButton(); // show the Run button only for a compact source file
-            updateBufferToolWindows(); // hide buffer-only tool windows when there's no actionable buffer
-            csvCoordinator.refreshFor(activeBuffer()); // re-target the CSV grid at the new active buffer
-            httpClient.refreshFor(activeBuffer()); // …and the .http response preview
-            refreshHttpEnvSegment(); // the status bar's "Env: dev" follows the active .http file
-            historyCoordinator.refresh(); // re-gate + reload the Local File History list for the new active file
-            installPrompts.maybeOfferInstall(
-                    activeBuffer()); // offer to install this language's LSP/DAP if it's missing
-            refreshMenuEnablement(); // buffer-shaped menu items (preview, CSV, .http, Typst) follow the tab
-            requestSave(); // the session's active file — captured by the coalesced save, not only on exit
-        });
-        editorArea.addTabsListener((ListChangeListener<Tab>) c -> {
-            // After the change settles: moving a tab between groups empties one for a moment.
-            Platform.runLater(() -> {
-                if (editorEmptyState != null) {
-                    editorEmptyState.update(editorArea.isEmpty());
-                }
-            });
-            boolean membershipChanged = false;
-            while (c.next()) {
-                membershipChanged |= c.wasAdded() || c.wasRemoved();
-                // A tab added in the background (e.g. session restore opening many at once) starts
-                // rendering-inactive so it holds no minimap snapshot until it's first shown.
-                if (c.wasAdded()) {
-                    Tab selected = editorArea.selectedTab();
-                    for (Tab added : c.getAddedSubList()) {
-                        EditorBuffer b = bufferOf(added);
-                        if (b != null && added != selected) {
-                            b.setRenderingActive(false);
-                        }
-                        recovery.track(b); // unsaved text of this buffer is kept for crash recovery
-                    }
-                }
-                // A pin reorder removes+re-adds the same tab, and so does moving one between editor groups
-                // (EditorArea.isRelocating) — in both cases the tab is not closing, so skip the cleanup or
-                // the buffer would be disposed and its language server shut down out from under a live tab.
-                if (c.wasRemoved() && !editorArea.isRelocating()) {
-                    mru.removeAll(c.getRemoved());
-                    pinned.removeAll(c.getRemoved());
-                    // Tear down each closed buffer. dispose() bumps the generation guards so any in-flight
-                    // preview/highlight/TODO task discards its result instead of touching a dead buffer, and drops the
-                    // preview subscription. It does NOT stop threads: the preview/highlight executors are shared
-                    // app-lifetime pools, not one pair per buffer (measured: 4 highlighter threads with 24 files open).
-                    // See EditorBuffer.dispose.
-                    for (Tab removed : c.getRemoved()) {
-                        EditorBuffer closed = bufferOf(removed);
-                        if (closed != null) {
-                            fileWorkflows.invalidatePendingWrites(closed);
-                            if (closed.getPath() != null && lspManager.isManaged(closed.getPath())) {
-                                lspManager.closeDocument(closed.getPath());
-                                lspCoordinator.clearDiagnostics(closed.getPath());
-                            }
-                            logViewer.onBufferClosed(closed); // cancel tail-follow + drop per-buffer state
-                            csvCoordinator.onBufferClosed(closed); // drop the CSV grid's edit listener
-                            httpClient.onBufferClosed(closed); // drop this buffer's HTTP response panel
-                            htmlPreview.onBufferClosed(closed); // the HTML preview serves its file from disk again
-                            httpVariableHints.forget(closed);
-                            recovery.untrack(closed); // closed by choice: its recovery copy goes with it
-                            if (closed.getPath() != null && tabForPath(closed.getPath()) == null) {
-                                git.service().forgetBlame(closed.getPath()); // per-line records of a closed file
-                                historyCoordinator.pathClosed(closed.getPath());
-                            }
-                            closed.dispose();
-                        } else {
-                            // Tab.setOnClosed only fires for a click on the ✕ — never for a programmatic
-                            // remove (Ctrl-W, Close All/Others/Left/Right, window close). See disposeViewerTab.
-                            disposeViewerTab(removed);
-                        }
-                    }
-                }
-            }
-            if (membershipChanged && projectPanel != null) {
-                projectPanel.refreshOpenFiles();
-            }
-            requestSave(); // the session's open-file list survives a crash, not just a clean close
-        });
-        if (projectPanel != null) {
-            EditorBuffer selected = activeBuffer();
-            projectPanel.setActiveFile(selected == null ? null : selected.getPath());
-        }
-    }
-
     private void closeTabFromSwitcher(Tab tab) {
         closeTab(tab);
     }
@@ -2277,26 +2136,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         editorArea.select(tab);
         Platform.runLater(
                 () -> TabFocus.focusTab(tab, MainController::bufferOf)); // a page tab: its page (twelfth review AL1)
-    }
-
-    /**
-     * All open tabs for the Switcher, most-recently-used first. The MRU only records tabs that have
-     * been selected, so any open-but-never-activated tab (e.g. a restored background tab) is appended
-     * in tab-strip order — ensuring every open file is listed.
-     */
-    List<Tab> openTabsForSwitcher() {
-        List<Tab> ordered = new ArrayList<>();
-        for (Tab tab : mru) {
-            if (editorArea.contains(tab)) {
-                ordered.add(tab);
-            }
-        }
-        for (Tab tab : editorArea.tabs()) {
-            if (!ordered.contains(tab)) {
-                ordered.add(tab);
-            }
-        }
-        return ordered;
     }
 
     /**
@@ -2696,7 +2535,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     final CoordinatorHost coordinatorHost = new WindowServicesHost(this);
 
     /** Crash recovery for this window's unsaved buffers (see {@link RecoveryCoordinator}). */
-    private final RecoveryCoordinator recovery =
+    final RecoveryCoordinator recovery =
             new RecoveryCoordinator(coordinatorHost, fileWorkflows, this::restorePerFileState, () -> projectKey);
 
     final GitCoordinator git = new GitCoordinator(coordinatorHost, new GitOpsHost(this));
@@ -3117,7 +2956,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Shows the active {@code .http} file's environment in the status bar ("Env: dev"), or hides the segment. */
-    private void refreshHttpEnvSegment() {
+    void refreshHttpEnvSegment() {
         if (statusBar == null) {
             return;
         }

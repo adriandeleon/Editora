@@ -119,7 +119,7 @@ class SessionRestoreDeferredViewFxTest {
                 false,
                 false,
                 List.of(),
-                c -> mruAtBuild.add(List.copyOf(FxTestSupport.<java.util.List<Tab>>field(c, "mru"))));
+                c -> mruAtBuild.add(List.copyOf(FxTestSupport.<java.util.List<Tab>>field(c.tabListeners, "mru"))));
         try {
             Tab activeTab = FxTestSupport.callOnFx(() -> tabOf(fx.controller, active));
             // The most-recently-used list is written by the fan-out, once per tab it ran for.
