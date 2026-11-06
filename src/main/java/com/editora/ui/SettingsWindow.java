@@ -79,7 +79,7 @@ public class SettingsWindow {
     private static final double MAX_SCREEN_FRACTION = 0.92;
 
     /** Wide enough to read a path or a command in; SettingRowPane puts the field under its title when the row is narrow. */
-    private static final double PATH_FIELD_WIDTH = 320;
+    static final double PATH_FIELD_WIDTH = 320;
     /** Wide enough to show a whole {@code https://github.com/<owner>/<repository>.git}. */
     static final double REPO_URL_FIELD_WIDTH = 480;
 
@@ -423,23 +423,7 @@ public class SettingsWindow {
     private final ToolStatusRow httpNodeStatus = new ToolStatusRow("node");
 
     private TextField mmdcPathField;
-    private CheckBox debugCheck;
-    private CheckBox debugProgramConsoleCheck;
-    private CheckBox debugProgramInTerminalCheck;
-    /** Java hot code replace: auto / manual / off ({@code Settings.debugHotCodeReplace}). */
-    private ComboBox<String> debugHotCodeReplaceCombo;
 
-    private CheckBox debugStepFiltersCheck;
-    private CheckBox debugShowStaticsCheck;
-    private CheckBox debugShowToStringCheck;
-    private TextField debugExceptionTypesField;
-    /** The Node.js for Run, Debug, npm scripts and code intelligence (Settings.nodePath; blank = automatic). */
-    private TextField nodePathField;
-    /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
-    private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
-
-    private final java.util.Map<String, TextField> debugCommandFields = new java.util.LinkedHashMap<>();
-    private final java.util.Map<String, ToolStatusRow> debugStatusLabels = new java.util.LinkedHashMap<>();
     private TextField maidPathField;
     private TextField templateAuthorField;
     private final ToolStatusRow mmdcStatus = new ToolStatusRow("mmdc");
@@ -481,7 +465,7 @@ public class SettingsWindow {
     private final java.util.Map<String, TextField> lspCommandFields = new java.util.LinkedHashMap<>();
     private final java.util.Map<String, ToolStatusRow> lspStatusLabels = new java.util.LinkedHashMap<>();
     /** Install buttons keyed by install-language ({@code java}/{@code python}/{@code javascript}/{@code mermaid}). */
-    private final java.util.Map<String, Button> installButtons = new java.util.HashMap<>();
+    final java.util.Map<String, Button> installButtons = new java.util.HashMap<>();
     /** Injected by MainController: runs {@code InstallCoordinator.installSupport} for the given language key. */
     private java.util.function.@Nullable Consumer<String> onInstallSupport;
     /** Injected by MainController: runs {@code InstallCoordinator.installServer} for the given LSP server id. */
@@ -504,7 +488,7 @@ public class SettingsWindow {
     private Spinner<Integer> autoSaveDelaySpinner;
 
     // --- shell ---
-    private ListView<Object> sidebar; // mixed rows: Group headers + Category items
+    ListView<Object> sidebar; // mixed rows: Group headers + Category items
     private ScrollPane contentScroll;
     private TextField searchField;
     private final Map<Category, Region> pages = new EnumMap<>(Category.class);
@@ -567,6 +551,7 @@ public class SettingsWindow {
         this.syncPage = new SettingsSyncPage(this, config);
         this.pluginsPage = new SettingsPluginsPage(this, config);
         this.aiPages = new SettingsAiPages(this, config);
+        this.debugPage = new SettingsDebugPage(this, config, dapManager);
         if (com.editora.AppInfo.isSnapshot()) {
             // Start the (background, bounded) branch lookup now, so About has it without ever waiting on git.
             com.editora.AppInfo.gitBranchAsync();
@@ -823,7 +808,7 @@ public class SettingsWindow {
      *  MainController after an in-app install completes so the now-installed tools flip to "Installed". */
     public void refreshDetectionStatus() {
         refreshLspStatus();
-        refreshDebugStatus();
+        debugPage.refreshDebugStatus();
         refreshMermaidStatus();
         refreshGithubStatus();
         refreshBuildToolStatus();
@@ -839,9 +824,6 @@ public class SettingsWindow {
             default -> null;
         };
     }
-
-    /** The Debugging page's line saying Java debugging needs LSP; empty while it is on. */
-    private @Nullable Label javaDebugLspNote;
 
     /**
      * The key a language server's Install button is tracked under. Not the bare server id: the Typst page's
@@ -1803,100 +1785,7 @@ public class SettingsWindow {
             apply();
         });
 
-        debugCheck = new CheckBox(tr("settings.enableDebug"));
-        debugCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDebugSupport(now);
-            apply();
-            refreshToolWindowRows(); // reflect on the Tool Windows page's Debug row
-            refreshDebugStatus();
-        });
-        debugProgramConsoleCheck = new CheckBox(tr("settings.debug.programConsole"));
-        debugProgramConsoleCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDebugProgramConsole(now);
-            apply();
-        });
-        debugProgramInTerminalCheck = new CheckBox(tr("settings.debug.programInTerminal"));
-        debugProgramInTerminalCheck
-                .disableProperty()
-                .bind(debugProgramConsoleCheck.selectedProperty().not());
-        debugProgramInTerminalCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDebugProgramInTerminal(now);
-            apply();
-        });
-        debugHotCodeReplaceCombo = new ComboBox<>();
-        debugHotCodeReplaceCombo.getItems().setAll("auto", "manual", "off");
-        debugHotCodeReplaceCombo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(String key) {
-                return key == null ? "" : tr("settings.debug.hotCodeReplace." + key);
-            }
-
-            @Override
-            public String fromString(String label) {
-                return label;
-            }
-        });
-        debugHotCodeReplaceCombo.setMinWidth(170);
-        debugHotCodeReplaceCombo.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
-                return;
-            }
-            config.getSettings().setDebugHotCodeReplace(now);
-            apply();
-        });
-        debugStepFiltersCheck = new CheckBox(tr("settings.debug.stepFilters"));
-        debugStepFiltersCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDebugStepFilters(now);
-            apply();
-        });
-        debugShowStaticsCheck = new CheckBox(tr("settings.debug.showStatics"));
-        debugShowStaticsCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDebugShowStatics(now);
-            apply();
-        });
-        debugShowToStringCheck = new CheckBox(tr("settings.debug.showToString"));
-        debugShowToStringCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDebugShowToString(now);
-            apply();
-        });
-        debugExceptionTypesField = new TextField();
-        debugExceptionTypesField.setPromptText(tr("settings.debug.exceptionTypes.prompt"));
-        commitOnEnterOrBlur(debugExceptionTypesField, () -> config.getSettings().getDebugExceptionTypes(), now -> {
-            config.getSettings().setDebugExceptionTypes(now);
-            apply();
-        });
-        nodePathField = new TextField();
-        nodePathField.setPromptText(tr("settings.debug.nodePath.prompt"));
-        commitOnEnterOrBlur(nodePathField, () -> config.getSettings().getNodePath(), now -> {
-            config.getSettings().setNodePath(now.strip());
-            apply();
-            refreshDebugStatus();
-            refreshHttpNodeStatus(); // the Web page's Node.js row follows this field
-        });
-        for (DebugAdapterUi dbg : debugAdapterUis()) {
-            if (dbg.setEnabled() instanceof java.util.function.Consumer<Boolean> setEnabled
-                    && dbg.enableLabelKey() instanceof String labelKey) { // the two are set together
-                CheckBox enable = new CheckBox(tr(labelKey));
-                enable.selectedProperty().addListener((obs, was, now) -> {
-                    setEnabled.accept(now);
-                    apply();
-                    refreshDebugStatus();
-                });
-                debugEnableChecks.put(dbg.id(), enable);
-            }
-            TextField field = new TextField();
-            field.setPromptText(dbg.commandPrompt());
-            String debugKey = "debug." + dbg.id();
-            commitOnEnterOrBlur(
-                    field, () -> scopeUi.shown(debugKey, dbg.getCommand().get()), now -> {
-                        if (!scopeUi.write(debugKey, now)) {
-                            dbg.setCommand().accept(now);
-                        }
-                        apply();
-                        refreshDebugStatus();
-                    });
-            debugCommandFields.put(dbg.id(), field);
-        }
+        debugPage.buildControls();
 
         lspCheck = new CheckBox(tr("settings.enableLsp"));
         lspCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -2076,7 +1965,7 @@ public class SettingsWindow {
         pages.put(Category.SEARCH, searchPage());
         // Languages & Tools
         pages.put(Category.LSP, lspPage());
-        pages.put(Category.DEBUG, debugPage());
+        pages.put(Category.DEBUG, debugPage.build());
         pages.put(Category.MARKDOWN, markdownPage());
         pages.put(Category.MERMAID, mermaidPage());
         pages.put(Category.DIAGRAMS, diagramsPage());
@@ -4299,7 +4188,7 @@ public class SettingsWindow {
      * SettingsModified} finds the controls there by field name.
      */
     List<Object> controlOwners() {
-        return List.of(this, syncPage, pluginsPage, aiPages);
+        return List.of(this, syncPage, pluginsPage, aiPages, debugPage);
     }
 
     /** Settings → AI, AI Agent, AI Actions and MCP Server; see {@link SettingsAiPages}. */
@@ -4325,6 +4214,9 @@ public class SettingsWindow {
             java.util.function.BiConsumer<Boolean, java.util.function.BiConsumer<Boolean, String>> probe) {
         aiPages.setAiConnectionProbe(probe);
     }
+
+    /** Settings → Debugging; see {@link SettingsDebugPage}. */
+    private final SettingsDebugPage debugPage;
 
     /** Settings → Sync; see {@link SettingsSyncPage}. */
     private final SettingsSyncPage syncPage;
@@ -4560,7 +4452,7 @@ public class SettingsWindow {
     }
 
     /** Whether the node the HTTP scripts run is there (a lookup, no process), like the Bash tool rows. */
-    private void refreshHttpNodeStatus() {
+    void refreshHttpNodeStatus() {
         // Blank: the shared Node.js setting, as the run uses it (review E6).
         String shown = com.editora.http.HttpNodeChoice.displayed(
                 config.getSettings().getHttpNodePath(), config.getSettings().getNodePath());
@@ -4650,7 +4542,7 @@ public class SettingsWindow {
     }
 
     /** The Install… action of the LSP, Debugging, Mermaid and Typst rows (the injected installer, if any). */
-    private void installSupport(String key) {
+    void installSupport(String key) {
         if (onInstallSupport != null) {
             onInstallSupport.accept(key);
         }
@@ -4766,14 +4658,14 @@ public class SettingsWindow {
                 // One Node.js for Run, npm scripts, Debug, the language servers and HTTP scripts (review E102):
                 // beside npm, never greyed out by another feature's switch.
                 Card nodeCard = card(p, "Node.js");
-                nodePathField.setPrefWidth(PATH_FIELD_WIDTH);
+                debugPage.nodePathField.setPrefWidth(PATH_FIELD_WIDTH);
                 String node = tr("settings.debug.nodePath");
                 controlRow(
                         nodeCard,
                         Category.BUILD_TOOLS,
                         node,
                         tr("settings.debug.nodePath.hint"),
-                        new HBox(6, nodePathField, browseButton(node, nodePathField)),
+                        new HBox(6, debugPage.nodePathField, browseButton(node, debugPage.nodePathField)),
                         "node nodejs node.js runtime nvm nvmrc version run debug npm typescript executable path");
             }
             Card c = card(p, bt.displayName());
@@ -5632,189 +5524,6 @@ public class SettingsWindow {
         return row;
     }
 
-    private VBox debugPage() {
-        VBox p = page(tr("settings.cat.debug"), tr("settings.debug.subtitle"));
-        Card master = card(p, null);
-        checkRow(
-                master,
-                Category.DEBUG,
-                debugCheck,
-                tr("settings.debug.note"),
-                "debug dap breakpoint step variables enable install plugin vscode mason jdtls debugpy js-debug");
-        // The Python interpreter is on the LSP page, editable with debugging off (Python review 2, C101).
-        Hyperlink pythonLink = new Hyperlink(tr("settings.debug.pythonInterpreterLink"));
-        pythonLink.setWrapText(true);
-        pythonLink.setOnAction(e -> sidebar.getSelectionModel().select(Category.LSP));
-        row(p, Category.DEBUG, null, pythonLink, "debug python interpreter venv path lsp language servers");
-        // One card per adapter, titled with the language (Java has no per-adapter enable — it rides
-        // the Java LSP server; see DebugCoordinator.debugEffectiveFor).
-        dependsOn(p, debugCheck);
-        // Where the debugged program runs: Java, Python and JavaScript alike, so not on the Java card (E108).
-        Card programs = card(p, tr("settings.debug.programs"));
-        SettingsDependents.bind(debugCheck.selectedProperty(), programs.box());
-        for (CheckBox check : List.of(debugProgramConsoleCheck, debugProgramInTerminalCheck)) {
-            String key = check == debugProgramConsoleCheck ? "programConsole" : "programInTerminal";
-            String words = "debug python javascript program console input stdin terminal tab tty screen keys";
-            checkRow(programs, Category.DEBUG, check, tr("settings.debug." + key + ".hint"), words);
-        }
-        for (DebugAdapterUi dbg : debugAdapterUis()) {
-            Card c = card(p, tr(dbg.sectionKey()));
-            SettingsDependents.bind(debugCheck.selectedProperty(), c.box());
-            CheckBox enable = debugEnableChecks.get(dbg.id());
-            if (enable != null) {
-                checkRow(c, Category.DEBUG, enable, null, dbg.keywords());
-            }
-            if ("java".equals(dbg.id())) {
-                // Java debugging runs through the Java language server: the card says when that is off (review
-                // C6); its Install (below) fetches jdtls and java-debug together, as the LSP page's Java row does.
-                javaDebugLspNote = note("");
-                javaDebugLspNote.setWrapText(true);
-                javaDebugLspNote.setMaxWidth(440);
-                javaDebugLspNote.getStyleClass().add("settings-row"); // own row: a wrapper left a gap (C209)
-                cardRow(c, Category.DEBUG, javaDebugLspNote, "debug java lsp language server jdtls off");
-                controlRow(
-                        c,
-                        Category.DEBUG,
-                        tr("settings.debug.hotCodeReplace"),
-                        tr("settings.debug.hotCodeReplace.hint"),
-                        debugHotCodeReplaceCombo,
-                        "debug java hot code replace hotswap apply code changes reload save running");
-                checkRow(
-                        c,
-                        Category.DEBUG,
-                        debugStepFiltersCheck,
-                        tr("settings.debug.stepFilters.hint"),
-                        "debug java step into filter skip jdk library synthetic");
-                checkRow(c, Category.DEBUG, debugShowStaticsCheck, null, "debug java static fields variables statics");
-                checkRow(
-                        c,
-                        Category.DEBUG,
-                        debugShowToStringCheck,
-                        tr("settings.debug.showToString.hint"),
-                        "debug java tostring object view values variables slow");
-                debugExceptionTypesField.setPrefWidth(PATH_FIELD_WIDTH);
-                controlRow(
-                        c,
-                        Category.DEBUG,
-                        tr("settings.debug.exceptionTypes"),
-                        tr("settings.debug.exceptionTypes.hint"),
-                        debugExceptionTypesField,
-                        "debug java exception breakpoint class type filter caught uncaught");
-            }
-            if ("javascript".equals(dbg.id())) {
-                // The one Node.js setting lives on Build Tools, editable with debugging off (review E102).
-                Hyperlink nodeLink = new Hyperlink(tr("settings.debug.nodePathLink"));
-                nodeLink.setWrapText(true);
-                nodeLink.setOnAction(e -> sidebar.getSelectionModel().select(Category.BUILD_TOOLS));
-                cardRow(c, Category.DEBUG, nodeLink, "node nodejs node.js runtime path debug build tools");
-            }
-            // Install fetches what this language's support lacks — the adapter included — keyed on the adapter.
-            ToolStatusRow status = new ToolStatusRow(
-                            switch (dbg.id()) {
-                                case "java" -> "java-debug";
-                                case "python" -> "debugpy";
-                                default -> "js-debug";
-                            })
-                    .install(() -> installSupport("javascript".equals(dbg.id()) ? "js-debug" : dbg.id())); // D111
-            debugStatusLabels.put(dbg.id(), status);
-            installButtons.put("debug:" + dbg.id(), status.installButton());
-            if ("python".equals(dbg.id())) { // its field is on the LSP page's Python card
-                controlRow(c, Category.DEBUG, tr("settings.git.detected"), null, status.node(), dbg.keywords());
-                continue;
-            }
-            String title = tr(dbg.commandLabelKey());
-            toolRows(c, Category.DEBUG, title, null, debugCommandFields.get(dbg.id()), null, status, dbg.keywords());
-        }
-        return p;
-    }
-
-    /** A per-language debug-adapter Settings row group (data-driven, mirroring {@link LspServerUi}).
-     *  {@code setEnabled}/{@code getEnabled} are null for java (it has no separate enable flag — it is
-     *  gated by the java LSP server). {@code detect} runs the availability probe and reports found. */
-    private record DebugAdapterUi(
-            String id,
-            String sectionKey,
-            @Nullable String enableLabelKey,
-            String commandLabelKey,
-            String commandPrompt,
-            String keywords,
-            java.util.function.@Nullable Consumer<Boolean> setEnabled,
-            java.util.function.@Nullable BooleanSupplier getEnabled,
-            java.util.function.Consumer<String> setCommand,
-            java.util.function.Supplier<String> getCommand,
-            java.util.function.Consumer<java.util.function.BiConsumer<Boolean, String>> detect) {}
-
-    /** The three debug adapters (java/python/javascript), in display order. */
-    private java.util.List<DebugAdapterUi> debugAdapterUis() {
-        return java.util.List.of(
-                new DebugAdapterUi(
-                        "java",
-                        "settings.debug.java",
-                        null,
-                        "settings.debug.pluginPath",
-                        "com.microsoft.java.debug.plugin-*.jar",
-                        "debug java jdtls java-debug plugin jar path found",
-                        null,
-                        null,
-                        v -> config.getSettings().setJavaDebugPluginPath(v),
-                        () -> config.getSettings().getJavaDebugPluginPath(),
-                        cb -> { // lists the VS Code / mason folders: off the FX thread, like the other probes
-                            String configured = config.getSettings().getJavaDebugPluginPath();
-                            Thread.ofVirtual().name("settings-java-debug-probe").start(() -> {
-                                String jar = com.editora.dap.DebugAdapterLocator.locate(
-                                                configured, java.nio.file.Path.of(System.getProperty("user.home", "")))
-                                        .map(Object::toString)
-                                        .orElse(null);
-                                // A jdtls that ships java-debug has no jar to find (review A7).
-                                boolean served = jar == null && dapManager != null && dapManager.isJavaDebugInstalled();
-                                javafx.application.Platform.runLater(() -> cb.accept(jar != null || served, jar));
-                            });
-                        }),
-                new DebugAdapterUi(
-                        "python",
-                        "settings.debug.python",
-                        "settings.debug.enablePython",
-                        "settings.debug.pythonCommand",
-                        com.editora.dap.DapServerRegistry.DEFAULT_PYTHON_INTERPRETER,
-                        "debug python debugpy interpreter command path found",
-                        v -> config.getSettings().setPythonDebugEnabled(v),
-                        () -> config.getSettings().isPythonDebugEnabled(),
-                        v -> config.getSettings().setPythonDebugCommand(v),
-                        () -> config.getSettings().getPythonDebugCommand(),
-                        cb -> {
-                            if (dapManager != null) {
-                                // installed, whether or not switched on; the detail is the interpreter that has it
-                                dapManager.detectPythonInstalled(found -> cb.accept(
-                                        found,
-                                        ToolStatusRow.pathOf(com.editora.dap.DapServerRegistry.interpreterArgv(
-                                                "python", config.getSettings().getPythonDebugCommand()))));
-                            } else {
-                                cb.accept(false, "");
-                            }
-                        }),
-                new DebugAdapterUi(
-                        "javascript",
-                        "settings.debug.javascript",
-                        "settings.debug.enableJs",
-                        "settings.debug.jsPath",
-                        "dapDebugServer.js",
-                        "debug javascript node js-debug vscode dapDebugServer path found",
-                        v -> config.getSettings().setJsDebugEnabled(v),
-                        () -> config.getSettings().isJsDebugEnabled(),
-                        v -> config.getSettings().setJsDebugPath(v),
-                        () -> config.getSettings().getJsDebugPath(),
-                        cb -> {
-                            if (dapManager != null) {
-                                // installed, whether or not switched on (review D13): its version and the Node.js
-                                dapManager.detectJsInstalled(js -> cb.accept(
-                                        js.server() != null && js.nodeVersion() != null,
-                                        ToolStatusRow.jsDebugDetail(js)));
-                            } else {
-                                cb.accept(false, "");
-                            }
-                        }));
-    }
-
     private VBox lspPage() {
         VBox p = page(tr("settings.cat.lsp"), tr("settings.lsp.subtitle"));
         Card master = card(p, null);
@@ -5911,7 +5620,7 @@ public class SettingsWindow {
     private void pythonCard(VBox p) {
         String words = "python interpreter venv virtual environment pyright run debug tests ";
         Card c = card(p, tr("settings.lsp.python.title"));
-        TextField field = debugCommandFields.get("python");
+        TextField field = debugPage.debugCommandFields.get("python");
         if (field != null) { // build() makes one per adapter
             String title = tr("settings.debug.pythonCommand");
             field.setPrefWidth(PATH_FIELD_WIDTH);
@@ -6566,27 +6275,6 @@ public class SettingsWindow {
                 .getStyleClass()
                 .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
         ripgrepStatusLabel.setText(found ? tr("settings.search.found") : tr("settings.search.notFound"));
-    }
-
-    /** Re-checks each debug adapter's availability (java plugin jar / debugpy / js-debug+node) and colors
-     *  its status label green/red, like the LSP/Mermaid status. java locate is cheap; python/js probe a
-     *  subprocess off-thread and call back on the FX thread. */
-    private void refreshDebugStatus() {
-        for (DebugAdapterUi dbg : debugAdapterUis()) {
-            ToolStatusRow status = debugStatusLabels.get(dbg.id());
-            if (status != null) {
-                status.checking();
-                dbg.detect().accept((found, detail) -> status.show(found, detail, debugCheck.isSelected()));
-            }
-        }
-        if (javaDebugLspNote != null) {
-            String why = !config.getSettings().isLspSupport()
-                    ? tr("status.debug.javaNeedsLsp")
-                    : !config.getSettings().isJavaLspEnabled() ? tr("status.debug.javaServerOff") : "";
-            javaDebugLspNote.setText(why);
-            javaDebugLspNote.setVisible(!why.isEmpty());
-            javaDebugLspNote.setManaged(!why.isEmpty());
-        }
     }
 
     /** Per LSP server card: what this window's project file overrides (hidden when it overrides nothing). */
@@ -7490,7 +7178,7 @@ public class SettingsWindow {
      * Project scope (F4): the User / Project switch, the two save rules that exist only per project, and how
      * this window reaches its project (its {@link LspCoordinator}, which owns the window's project scope).
      */
-    private final ProjectScopeSettings scopeUi = new ProjectScopeSettings(
+    final ProjectScopeSettings scopeUi = new ProjectScopeSettings(
             this::projectScope, this::apply, this::isLoading, this::load, this::trustProject, () -> stage);
 
     private final ComboBox<String> trimOnSaveCombo = scopeUi.projectOnlyCombo("editor.trimTrailingWhitespace");
@@ -7537,7 +7225,7 @@ public class SettingsWindow {
         scopeUi.register("editor.spellLanguage", spellLanguageCombo, v -> spellLanguageCombo.setValue((String) v));
         buildToolCommandFields.forEach((bt, field) ->
                 scopeUi.register("build." + ProjectScope.toolId(bt), field, v -> field.setText((String) v)));
-        debugCommandFields.forEach(
+        debugPage.debugCommandFields.forEach(
                 (id, field) -> scopeUi.register("debug." + id, field, v -> field.setText((String) v)));
         lspCommandFields.forEach(
                 (id, field) -> scopeUi.register("lspCommands." + id, field, v -> field.setText((String) v)));
@@ -7744,26 +7432,7 @@ public class SettingsWindow {
             htmlPreviewCheck.setSelected(settings.isHtmlPreviewSupport());
             aiPages.load(settings);
             pluginsPage.load(settings);
-            debugCheck.setSelected(settings.isDebugSupport());
-            debugProgramConsoleCheck.setSelected(settings.isDebugProgramConsole());
-            debugProgramInTerminalCheck.setSelected(settings.isDebugProgramInTerminal());
-            debugHotCodeReplaceCombo.setValue(settings.getDebugHotCodeReplace());
-            debugStepFiltersCheck.setSelected(settings.isDebugStepFilters());
-            debugShowStaticsCheck.setSelected(settings.isDebugShowStatics());
-            debugShowToStringCheck.setSelected(settings.isDebugShowToString());
-            debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
-            nodePathField.setText(settings.getNodePath());
-            for (DebugAdapterUi dbg : debugAdapterUis()) {
-                CheckBox enable = debugEnableChecks.get(dbg.id());
-                if (enable != null && dbg.getEnabled() != null) {
-                    enable.setSelected(dbg.getEnabled().getAsBoolean());
-                }
-                TextField field = debugCommandFields.get(dbg.id());
-                if (field != null) {
-                    field.setText(dbg.getCommand().get());
-                }
-            }
-            refreshDebugStatus();
+            debugPage.load(settings);
             lspCheck.setSelected(settings.isLspSupport());
             for (LspServerUi srv : lspServerUis()) {
                 CheckBox enable = lspEnableChecks.get(srv.id());
@@ -7807,7 +7476,7 @@ public class SettingsWindow {
     private @Nullable String gitProbedFor; // the git command last probed while this window is open; null = probe again
 
     /** Re-applies the Tool Windows rows' feature gates (Projects, Git, Notes, LSP, Debugging changed). */
-    private void refreshToolWindowRows() {
+    void refreshToolWindowRows() {
         if (toolWindowSettings != null) {
             toolWindowSettings.refresh();
         }
