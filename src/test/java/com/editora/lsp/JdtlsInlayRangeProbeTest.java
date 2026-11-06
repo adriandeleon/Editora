@@ -119,12 +119,12 @@ class JdtlsInlayRangeProbeTest {
         System.out.println("\n=== 1. BROKEN (pre-fix): end = Position(" + lineCount + ",0) ===");
         int broken = report(server, uri, new Range(new Position(0, 0), new Position(lineCount, 0)));
 
-        System.out.println("\n=== 2. FIXED: LspManager.inclusiveLineRange(0, " + lastLine + ", …) ===");
-        int fixed = report(server, uri, LspManager.inclusiveLineRange(0, lastLine, lineCount, lastLineLength));
+        System.out.println("\n=== 2. FIXED: LspInlineHints.inclusiveLineRange(0, " + lastLine + ", …) ===");
+        int fixed = report(server, uri, LspInlineHints.inclusiveLineRange(0, lastLine, lineCount, lastLineLength));
 
         System.out.println("\n=== 3. FIXED with the coordinator's +" + PAD + " over-scan ===");
         int padded =
-                report(server, uri, LspManager.inclusiveLineRange(-PAD, lastLine + PAD, lineCount, lastLineLength));
+                report(server, uri, LspInlineHints.inclusiveLineRange(-PAD, lastLine + PAD, lineCount, lastLineLength));
 
         System.out.println("\n##### VERDICT: broken=" + broken + "  fixed=" + fixed + "  fixed+padded=" + padded);
         proc.destroyForcibly();

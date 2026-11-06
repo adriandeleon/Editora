@@ -211,7 +211,7 @@ class JdtlsUpgradeProbeTest {
         String[] lines = SOURCE.split("\n", -1);
         int lineCount = lines.length;
         int lastLine = lineCount - 1;
-        Range clamped = LspManager.inclusiveLineRange(0, lastLine, lineCount, lines[lastLine].length());
+        Range clamped = LspInlineHints.inclusiveLineRange(0, lastLine, lineCount, lines[lastLine].length());
         // Hints can lag the import; poll the range that is known to work before comparing.
         int inRange = 0;
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
@@ -222,7 +222,8 @@ class JdtlsUpgradeProbeTest {
         int pastTheEnd = get(s.inlayHint(uri, new Range(new Position(0, 0), new Position(lineCount, 0))))
                 .size();
         int padded = get(s.inlayHint(
-                        uri, LspManager.inclusiveLineRange(-200, lastLine + 200, lineCount, lines[lastLine].length())))
+                        uri,
+                        LspInlineHints.inclusiveLineRange(-200, lastLine + 200, lineCount, lines[lastLine].length())))
                 .size();
         record("inlay.lines", lineCount);
         record("inlay.pastTheEnd", pastTheEnd);

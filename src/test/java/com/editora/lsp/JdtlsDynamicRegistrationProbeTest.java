@@ -99,7 +99,7 @@ class JdtlsDynamicRegistrationProbeTest {
             var rename = session.capabilities().getRenameProvider();
             assertTrue(rename.isRight(), "the rename registration must keep its options: " + rename);
             assertTrue(Boolean.TRUE.equals(rename.getRight().getPrepareProvider()), "prepareProvider was dropped");
-            assertNotNull(LspManager.semanticTokensProvider(session.capabilities()), "semantic tokens");
+            assertNotNull(SemanticTokenRequests.semanticTokensProvider(session.capabilities()), "semantic tokens");
 
             session.setJavaOnTypeFormatting(false);
             assertTrue(

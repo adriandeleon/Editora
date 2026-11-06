@@ -49,17 +49,17 @@ class LspManagerTest {
 
     @Test
     void workspaceSymbolProviderDetectedFromEitherForm() {
-        assertFalse(LspManager.workspaceSymbolProvider(null));
-        assertFalse(LspManager.workspaceSymbolProvider(new ServerCapabilities())); // unset
+        assertFalse(LspDocumentSymbols.workspaceSymbolProvider(null));
+        assertFalse(LspDocumentSymbols.workspaceSymbolProvider(new ServerCapabilities())); // unset
         ServerCapabilities bool = new ServerCapabilities();
         bool.setWorkspaceSymbolProvider(true);
-        assertTrue(LspManager.workspaceSymbolProvider(bool));
+        assertTrue(LspDocumentSymbols.workspaceSymbolProvider(bool));
         ServerCapabilities off = new ServerCapabilities();
         off.setWorkspaceSymbolProvider(false);
-        assertFalse(LspManager.workspaceSymbolProvider(off));
+        assertFalse(LspDocumentSymbols.workspaceSymbolProvider(off));
         ServerCapabilities opts = new ServerCapabilities();
         opts.setWorkspaceSymbolProvider(new org.eclipse.lsp4j.WorkspaceSymbolOptions()); // options form → supported
-        assertTrue(LspManager.workspaceSymbolProvider(opts));
+        assertTrue(LspDocumentSymbols.workspaceSymbolProvider(opts));
     }
 
     @Test
@@ -82,11 +82,11 @@ class LspManagerTest {
     void semanticTokensProviderSupportedWithRangeOrFull() {
         ServerCapabilities range = new ServerCapabilities();
         range.setSemanticTokensProvider(stProvider(true, true, null));
-        assertNotNull(LspManager.semanticTokensProvider(range)); // legend + range → supported
+        assertNotNull(SemanticTokenRequests.semanticTokensProvider(range)); // legend + range → supported
 
         ServerCapabilities fullOnly = new ServerCapabilities();
         fullOnly.setSemanticTokensProvider(stProvider(true, false, true));
-        assertNotNull(LspManager.semanticTokensProvider(
+        assertNotNull(SemanticTokenRequests.semanticTokensProvider(
                 fullOnly)); // full-only (e.g. some servers) → supported, full fallback
     }
 
@@ -94,20 +94,20 @@ class LspManagerTest {
     void semanticTokensProviderNullWhenNeitherRangeNorFull() {
         ServerCapabilities neither = new ServerCapabilities();
         neither.setSemanticTokensProvider(stProvider(true, false, false));
-        assertNull(LspManager.semanticTokensProvider(neither));
+        assertNull(SemanticTokenRequests.semanticTokensProvider(neither));
 
         ServerCapabilities unset = new ServerCapabilities();
         unset.setSemanticTokensProvider(stProvider(true, null, null));
-        assertNull(LspManager.semanticTokensProvider(unset)); // range + full both unset
+        assertNull(SemanticTokenRequests.semanticTokensProvider(unset)); // range + full both unset
     }
 
     @Test
     void semanticTokensProviderNullWhenAbsentOrNoLegend() {
-        assertNull(LspManager.semanticTokensProvider(null));
-        assertNull(LspManager.semanticTokensProvider(new ServerCapabilities())); // no provider at all
+        assertNull(SemanticTokenRequests.semanticTokensProvider(null));
+        assertNull(SemanticTokenRequests.semanticTokensProvider(new ServerCapabilities())); // no provider at all
         ServerCapabilities noLegend = new ServerCapabilities();
         noLegend.setSemanticTokensProvider(stProvider(false, true, true));
-        assertNull(LspManager.semanticTokensProvider(noLegend)); // can't decode without a legend
+        assertNull(SemanticTokenRequests.semanticTokensProvider(noLegend)); // can't decode without a legend
     }
 
     /**
@@ -328,17 +328,17 @@ class LspManagerTest {
 
     @Test
     void fullDeltaSupportDetectedOnlyFromTheOptionsFormWithDeltaTrue() {
-        assertFalse(LspManager.fullDeltaSupported(null));
+        assertFalse(SemanticTokenRequests.fullDeltaSupported(null));
         var boolFull = stProvider(true, false, true); // full=true (boolean form) — no delta
-        assertFalse(LspManager.fullDeltaSupported(boolFull));
+        assertFalse(SemanticTokenRequests.fullDeltaSupported(boolFull));
         var opts = new SemanticTokensWithRegistrationOptions();
         opts.setLegend(new SemanticTokensLegend(List.of("keyword"), List.of()));
         var fullOpts = new org.eclipse.lsp4j.SemanticTokensServerFull(true); // delta=true
         opts.setFull(fullOpts);
-        assertTrue(LspManager.fullDeltaSupported(opts));
+        assertTrue(SemanticTokenRequests.fullDeltaSupported(opts));
         var noDelta = new SemanticTokensWithRegistrationOptions();
         noDelta.setFull(new org.eclipse.lsp4j.SemanticTokensServerFull(false));
-        assertFalse(LspManager.fullDeltaSupported(noDelta));
+        assertFalse(SemanticTokenRequests.fullDeltaSupported(noDelta));
     }
 
     // --- Watched files (#677) ------------------------------------------------------------------
@@ -362,27 +362,27 @@ class LspManagerTest {
 
     @Test
     void inlayHintProviderDetectedFromEitherForm() {
-        assertFalse(LspManager.inlayHintProvider(null));
-        assertFalse(LspManager.inlayHintProvider(new ServerCapabilities()));
+        assertFalse(LspInlineHints.inlayHintProvider(null));
+        assertFalse(LspInlineHints.inlayHintProvider(new ServerCapabilities()));
         ServerCapabilities bool = new ServerCapabilities();
         bool.setInlayHintProvider(true);
-        assertTrue(LspManager.inlayHintProvider(bool));
+        assertTrue(LspInlineHints.inlayHintProvider(bool));
         ServerCapabilities opts = new ServerCapabilities();
         opts.setInlayHintProvider(new org.eclipse.lsp4j.InlayHintRegistrationOptions());
-        assertTrue(LspManager.inlayHintProvider(opts));
+        assertTrue(LspInlineHints.inlayHintProvider(opts));
     }
 
     @Test
     void inlayLabelJoinsPartsAndStrips() {
         var plain = new org.eclipse.lsp4j.InlayHint(
                 new org.eclipse.lsp4j.Position(0, 0), org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(" x: "));
-        assertEquals("x:", LspManager.inlayLabel(plain));
+        assertEquals("x:", LspInlineHints.inlayLabel(plain));
         var parts = new org.eclipse.lsp4j.InlayHint(
                 new org.eclipse.lsp4j.Position(0, 0),
                 org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(List.of(
                         new org.eclipse.lsp4j.InlayHintLabelPart("a"),
                         new org.eclipse.lsp4j.InlayHintLabelPart(": int"))));
-        assertEquals("a: int", LspManager.inlayLabel(parts));
+        assertEquals("a: int", LspInlineHints.inlayLabel(parts));
     }
 
     // --- Call / type hierarchy (#682) ----------------------------------------------------------
@@ -583,7 +583,7 @@ class LspManagerTest {
         caps.setDocumentOnTypeFormattingProvider(
                 new org.eclipse.lsp4j.DocumentOnTypeFormattingOptions(";", List.of("\n", "}")));
 
-        assertEquals(java.util.Set.of(';', '\n', '}'), LspManager.onTypeTriggersOf(caps));
+        assertEquals(java.util.Set.of(';', '\n', '}'), LspFormatting.onTypeTriggersOf(caps));
     }
 
     @Test
@@ -591,14 +591,14 @@ class LspManagerTest {
         ServerCapabilities caps = new ServerCapabilities();
         caps.setDocumentOnTypeFormattingProvider(new org.eclipse.lsp4j.DocumentOnTypeFormattingOptions(";"));
 
-        assertEquals(java.util.Set.of(';'), LspManager.onTypeTriggersOf(caps));
+        assertEquals(java.util.Set.of(';'), LspFormatting.onTypeTriggersOf(caps));
     }
 
     /** No provider means the feature stays inert for that server — an empty set, never a null or a throw. */
     @Test
     void onTypeTriggersIsEmptyWithoutAProvider() {
-        assertTrue(LspManager.onTypeTriggersOf(null).isEmpty());
-        assertTrue(LspManager.onTypeTriggersOf(new ServerCapabilities()).isEmpty());
+        assertTrue(LspFormatting.onTypeTriggersOf(null).isEmpty());
+        assertTrue(LspFormatting.onTypeTriggersOf(new ServerCapabilities()).isEmpty());
     }
 
     @Test
@@ -608,7 +608,7 @@ class LspManagerTest {
         options.setMoreTriggerCharacter(java.util.Arrays.asList(null, "", "}"));
         caps.setDocumentOnTypeFormattingProvider(options);
 
-        assertEquals(java.util.Set.of('}'), LspManager.onTypeTriggersOf(caps));
+        assertEquals(java.util.Set.of('}'), LspFormatting.onTypeTriggersOf(caps));
     }
 
     // --- jdtls extendedClientCapabilities (#741) ----------------------------------------------------
@@ -783,23 +783,24 @@ class LspManagerTest {
     void aLensIsClassifiedByItsCommand() {
         assertEquals(
                 LspManager.CodeLensKind.REFERENCES,
-                LspManager.codeLensKind(new org.eclipse.lsp4j.Command("2 references", "java.show.references")));
+                LspInlineHints.codeLensKind(new org.eclipse.lsp4j.Command("2 references", "java.show.references")));
         assertEquals(
                 LspManager.CodeLensKind.IMPLEMENTATIONS,
-                LspManager.codeLensKind(
+                LspInlineHints.codeLensKind(
                         new org.eclipse.lsp4j.Command("1 implementation", "java.show.implementations")));
         assertEquals(
                 LspManager.CodeLensKind.REFERENCES,
-                LspManager.codeLensKind(new org.eclipse.lsp4j.Command("3 references", "editor.action.showReferences")));
+                LspInlineHints.codeLensKind(
+                        new org.eclipse.lsp4j.Command("3 references", "editor.action.showReferences")));
         assertNull(
-                LspManager.codeLensKind(new org.eclipse.lsp4j.Command("Run", "rust-analyzer.runSingle")),
+                LspInlineHints.codeLensKind(new org.eclipse.lsp4j.Command("Run", "rust-analyzer.runSingle")),
                 "a lens that runs something is the server's own editor integration");
-        assertNull(LspManager.codeLensKind(null));
+        assertNull(LspInlineHints.codeLensKind(null));
     }
 
     @Test
     void onlyCountingLensesBecomeSpansInLineOrder() {
-        var spans = LspManager.codeLensSpans(java.util.Arrays.asList(
+        var spans = LspInlineHints.codeLensSpans(java.util.Arrays.asList(
                 lens(9, 4, "1 implementation", "java.show.implementations"),
                 lens(9, 4, "2 references", "java.show.references"),
                 lens(3, 13, " 5 references ", "java.show.references"),
@@ -816,7 +817,7 @@ class LspManagerTest {
                         new LspManager.CodeLensSpan(9, 4, "2 references", LspManager.CodeLensKind.REFERENCES),
                         new LspManager.CodeLensSpan(9, 4, "1 implementation", LspManager.CodeLensKind.IMPLEMENTATIONS)),
                 spans);
-        assertTrue(LspManager.codeLensSpans(null).isEmpty());
+        assertTrue(LspInlineHints.codeLensSpans(null).isEmpty());
     }
 
     /**

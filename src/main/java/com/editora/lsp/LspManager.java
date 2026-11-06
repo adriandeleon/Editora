@@ -21,7 +21,6 @@ import com.editora.text.LspDiagnostic;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.jspecify.annotations.Nullable;
 
@@ -82,6 +81,18 @@ public final class LspManager {
 
     /** Code actions, and every server edit on its way to the editor. */
     final LspCodeActions codeActions = new LspCodeActions(this);
+
+    /** Document, range and on-type formatting. */
+    private final LspFormatting formatting = new LspFormatting(this);
+
+    /** Outlines, folding and selection ranges, colours and symbol search. */
+    private final LspDocumentSymbols outline = new LspDocumentSymbols(this);
+
+    /** Code lenses and inlay hints. */
+    private final LspInlineHints inlineHints = new LspInlineHints(this);
+
+    /** Semantic tokens and the per-document state their deltas need. */
+    final SemanticTokenRequests semanticTokens = new SemanticTokenRequests(this);
 
     /** One unanswered request per document and kind; see {@link LatestRequests}. */
     final LatestRequests latest = new LatestRequests();
@@ -345,7 +356,7 @@ public final class LspManager {
             for (String kind : REFRESHABLE_KINDS) {
                 latest.cancel(uri, kind);
             }
-            wholeDocumentTokens.remove(uri);
+            semanticTokens.wholeDocumentTokens.remove(uri);
         }
     }
 
@@ -369,7 +380,7 @@ public final class LspManager {
             String uri = uri(file);
             latest.cancel(uri, kind);
             if (kind.equals("semanticTokens")) {
-                wholeDocumentTokens.remove(uri);
+                semanticTokens.wholeDocumentTokens.remove(uri);
             }
         }
     }
@@ -713,42 +724,6 @@ public final class LspManager {
             @Nullable Path projectRoot) {
         HtmlServerSettings own = HtmlServerSettings.of(user);
         setHtmlSettings(HtmlServerSettings.perRoot(own.withProject(projectHtml), own, projectRoot));
-    }
-
-    /**
-     * A formatting request's options for {@code s}: {@code indent}'s, and for the HTML server the document's wrap
-     * column and final newline too, which it takes from settings it may have cached before they changed (A3, D6).
-     */
-    private static org.eclipse.lsp4j.FormattingOptions formattingOptions(
-            LanguageServerSession s, FormattingIndent indent) {
-        return HtmlServerSettings.SERVER_ID.equals(s.serverId())
-                ? s.htmlSettings().formattingOptions(indent)
-                : indent.options();
-    }
-
-    /**
-     * {@code edits}, the HTML server's format of {@code sent}, with the final newline Editora keeps itself (HTML
-     * review 2, B104); any other server's as they are. {@code whole}: a Format Document, not a selection's.
-     */
-    private static List<com.editora.text.LspTextEdit> keptFinalNewline(
-            LanguageServerSession s,
-            FormattingIndent indent,
-            @Nullable String sent,
-            List<com.editora.text.LspTextEdit> edits,
-            boolean whole) {
-        Boolean want = HtmlServerSettings.SERVER_ID.equals(s.serverId())
-                ? s.htmlSettings().finalNewline(indent)
-                : null;
-        return want == null || sent == null
-                ? edits
-                : com.editora.text.LspTextEdits.withFinalNewline(sent, edits, want, whole);
-    }
-
-    /** The text an HTML server holds for {@code file}, what its format edits are against; null for other servers. */
-    private static @Nullable String htmlText(LanguageServerSession s, Path file) {
-        return HtmlServerSettings.SERVER_ID.equals(s.serverId())
-                ? s.documentSnapshots().get(uri(file))
-                : null;
     }
 
     /**
@@ -1418,7 +1393,7 @@ public final class LspManager {
      * Whether {@code file} can be served: its tools run here, or where they run (a remote host, a container,
      * WSL) can run commands now — its server runs there.
      */
-    private static boolean servable(Path file) {
+    static boolean servable(Path file) {
         return com.editora.process.ExecTargets.forPath(file).isAvailable();
     }
 
@@ -1641,9 +1616,9 @@ public final class LspManager {
         String uri = uri(file);
         LanguageServerSession s = sessionByDocUri.remove(uri);
         documentIndents.remove(uri);
-        semanticTokenState.remove(uri); // the next open starts from a full request (#679)
-        semanticRequestGeneration.remove(uri);
-        wholeDocumentTokens.remove(uri);
+        semanticTokens.semanticTokenState.remove(uri); // the next open starts from a full request (#679)
+        semanticTokens.semanticRequestGeneration.remove(uri);
+        semanticTokens.wholeDocumentTokens.remove(uri);
         // Removed, not bumped: generations are unique across documents (see nextDiagnosticGeneration), so a
         // reply still on its way finds no entry — or a later one — and is rejected either way.
         diagnosticRequestGeneration.remove(uri);
@@ -1813,7 +1788,8 @@ public final class LspManager {
      * The session of this window, started and initialised, that would serve {@code file}: its language's server at
      * the deepest root that holds it. Null when there is none; nothing is started.
      */
-    private @Nullable LanguageServerSession runningSessionFor(Path file) {
+    @Nullable
+    LanguageServerSession runningSessionFor(Path file) {
         String name = file.getFileName() == null ? "" : file.getFileName().toString();
         String serverId = LspServerRegistry.serverIdFor(com.editora.text.LanguageRegistry.forFileName(name));
         if (serverId == null) {
@@ -2838,10 +2814,9 @@ public final class LspManager {
         assists.resolveCompletionDoc(file, token, cb);
     }
 
-    /** True if {@code file}'s server is ready and advertises whole-document formatting. */
+    /** See {@link LspFormatting#supportsFormatting}. */
     public boolean supportsFormatting(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && formattingProvider(s.capabilities());
+        return formatting.supportsFormatting(file);
     }
 
     /** See {@link LspAssists#supportsSignatureHelp}. */
@@ -3088,123 +3063,22 @@ public final class LspManager {
     /** One code lens: where its declaration's name starts, what it says, and what it counts. */
     public record CodeLensSpan(int line, int col, String title, CodeLensKind kind) {}
 
-    /** True if {@code file}'s server is ready and advertises code lenses. */
+    /** See {@link LspInlineHints#supportsCodeLens}. */
     public boolean supportsCodeLens(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && s.capabilities() != null && s.capabilities().getCodeLensProvider() != null;
+        return inlineHints.supportsCodeLens(file);
     }
 
-    /**
-     * Pure: what a lens counts, read off its command id ({@code java.show.references},
-     * {@code java.show.implementations}, {@code editor.action.showReferences}, …) — or null for a lens that
-     * does something else (a "Run | Debug" lens), which is not shown: its command is the server's own
-     * editor integration and nothing here could carry it out.
-     */
-    static @Nullable CodeLensKind codeLensKind(org.eclipse.lsp4j.Command command) {
-        String id = command == null || command.getCommand() == null
-                ? ""
-                : command.getCommand().toLowerCase(java.util.Locale.ROOT);
-        if (id.contains("implementation")) {
-            return CodeLensKind.IMPLEMENTATIONS;
-        }
-        return id.contains("reference") ? CodeLensKind.REFERENCES : null;
-    }
-
-    /** Pure: the lenses worth showing, as neutral spans in line order. */
-    static List<CodeLensSpan> codeLensSpans(List<org.eclipse.lsp4j.CodeLens> lenses) {
-        List<CodeLensSpan> out = new ArrayList<>();
-        if (lenses == null) {
-            return out;
-        }
-        for (org.eclipse.lsp4j.CodeLens lens : lenses) {
-            if (lens == null || lens.getRange() == null || lens.getCommand() == null) {
-                continue;
-            }
-            CodeLensKind kind = codeLensKind(lens.getCommand());
-            String title = lens.getCommand().getTitle();
-            if (kind == CodeLensKind.IMPLEMENTATIONS
-                    && title != null
-                    && title.strip().startsWith("0 ")) {
-                continue; // jdtls answers for every type and method; "0 implementations" on each is noise
-            }
-            if (kind != null && title != null && !title.isBlank()) {
-                Position start = lens.getRange().getStart();
-                out.add(new CodeLensSpan(start.getLine(), start.getCharacter(), title.strip(), kind));
-            }
-        }
-        out.sort(java.util.Comparator.comparingInt(CodeLensSpan::line).thenComparing(CodeLensSpan::kind));
-        return out;
-    }
-
-    /**
-     * Requests the code lenses on lines {@code [startLine..endLine]}, delivered as neutral spans on the FX
-     * thread — empty when unsupported or failed.
-     */
+    /** See {@link LspInlineHints#requestCodeLens}. */
     public void requestCodeLens(Path file, int startLine, int endLine, Consumer<List<CodeLensSpan>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        String uri = uri(file);
-        latest.issue(
-                uri,
-                "codeLens",
-                stamp(s, uri, List.of(startLine, endLine)),
-                true,
-                () -> s.codeLens(uri, startLine, endLine),
-                (lenses, error) -> {
-                    List<CodeLensSpan> out = error == null ? codeLensSpans(lenses) : List.of();
-                    Platform.runLater(() -> cb.accept(out));
-                });
+        inlineHints.requestCodeLens(file, startLine, endLine, cb);
     }
 
-    /** True if {@code file}'s server is ready and advertises inlay hints (#681). */
+    /** See {@link LspInlineHints#supportsInlayHints}. */
     public boolean supportsInlayHints(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && inlayHintProvider(s.capabilities());
+        return inlineHints.supportsInlayHints(file);
     }
 
-    /** Pure: whether a server's capabilities include {@code inlayHintProvider} (null-safe, either form). */
-    static boolean inlayHintProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return false;
-        }
-        var p = caps.getInlayHintProvider();
-        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
-    }
-
-    /**
-     * The LSP range covering lines {@code [startLine..endLine]} <b>inclusive</b> of a document with
-     * {@code lineCount} lines whose last line is {@code lastLineLength} characters long. Pure; unit-tested.
-     *
-     * <p>Covering line {@code endLine} means an exclusive end of {@code Position(endLine + 1, 0)} — but for
-     * the <em>last</em> line that names a line the document does not have, and <b>jdtls answers an
-     * out-of-range range with an empty list rather than an error</b>. That is the whole of #715: inlay hints
-     * silently never appeared because the padded window always reached past the end of the file, and the
-     * empty response is indistinguishable from "this file has no hints". Measured on jdtls 1.60 with a
-     * 27-line file (last line index 26): end {@code Position(27,0)} → 0 hints, {@code Position(26,0)} → 6.
-     * Unchanged in 1.62 ({@code JdtlsUpgradeProbeTest}: 0 hints past the end, 5 clamped).
-     *
-     * <p>So when {@code endLine + 1} would leave the document, the end becomes the true document end —
-     * {@code Position(lastLine, lastLineLength)} — which still covers the last line in full.
-     */
-    static org.eclipse.lsp4j.Range inclusiveLineRange(int startLine, int endLine, int lineCount, int lastLineLength) {
-        int lastLine = Math.max(0, lineCount - 1);
-        int start = Math.min(Math.max(0, startLine), lastLine);
-        int endExclusive = Math.max(start, Math.max(0, endLine)) + 1;
-        Position end = endExclusive <= lastLine
-                ? new Position(endExclusive, 0)
-                : new Position(lastLine, Math.max(0, lastLineLength));
-        return new org.eclipse.lsp4j.Range(new Position(start, 0), end);
-    }
-
-    /**
-     * Requests inlay hints over the line window {@code [startLine..endLine]} (inclusive), delivered as
-     * neutral spans on the FX thread — empty when unsupported/failed (#681). {@code lineCount} and
-     * {@code lastLineLength} describe the document so the range can be clamped to it: a range reaching past
-     * the last line makes jdtls return nothing at all (see {@link #inclusiveLineRange} — #715).
-     */
+    /** See {@link LspInlineHints#requestInlayHints}. */
     public void requestInlayHints(
             Path file,
             int startLine,
@@ -3212,74 +3086,7 @@ public final class LspManager {
             int lineCount,
             int lastLineLength,
             Consumer<List<InlayHintSpan>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        var range = inclusiveLineRange(startLine, endLine, lineCount, lastLineLength);
-        String uri = uri(file);
-        latest.issue(uri, "inlayHint", stamp(s, uri, range), true, () -> s.inlayHint(uri, range), (hints, error) -> {
-            List<InlayHintSpan> out = new ArrayList<>();
-            if (error == null && hints != null) {
-                for (var h : hints) {
-                    if (h == null || h.getPosition() == null) {
-                        continue;
-                    }
-                    String label = inlayLabel(h);
-                    if (!label.isBlank()) {
-                        out.add(new InlayHintSpan(
-                                h.getPosition().getLine(),
-                                h.getPosition().getCharacter(),
-                                label,
-                                isParameterHint(h.getKind(), label),
-                                Boolean.TRUE.equals(h.getPaddingLeft()),
-                                Boolean.TRUE.equals(h.getPaddingRight())));
-                    }
-                }
-            }
-            Platform.runLater(() -> cb.accept(out));
-        });
-    }
-
-    /**
-     * Pure: whether a hint names an argument (parameter) rather than an inferred type, used to decide
-     * what filtering may touch (#823).
-     *
-     * <p>{@code kind} is <b>optional</b> in the protocol, and a server that omits it would otherwise have
-     * every hint treated as a parameter — so an unkinded {@code : String} would become filterable. The
-     * fallback reads the label instead: a parameter name ends with {@code :} or {@code =} ({@code count:},
-     * {@code ...args:}); anything else is a type — jdtls, which sends no kind, labels a {@code var} with
-     * {@code : int} and a lambda parameter with a bare {@code String}.
-     */
-    static boolean isParameterHint(org.eclipse.lsp4j.InlayHintKind kind, String label) {
-        if (kind == org.eclipse.lsp4j.InlayHintKind.Parameter) {
-            return true;
-        }
-        if (kind == org.eclipse.lsp4j.InlayHintKind.Type) {
-            return false;
-        }
-        String l = label == null ? "" : label.strip();
-        return !l.startsWith(":") && (l.endsWith(":") || l.endsWith("="));
-    }
-
-    /** Pure: an inlay hint's display label — the plain string, or its label parts joined. */
-    static String inlayLabel(org.eclipse.lsp4j.InlayHint h) {
-        if (h.getLabel() == null) {
-            return "";
-        }
-        if (h.getLabel().isLeft()) {
-            return h.getLabel().getLeft() == null ? "" : h.getLabel().getLeft().strip();
-        }
-        StringBuilder sb = new StringBuilder();
-        if (h.getLabel().getRight() != null) {
-            for (var part : h.getLabel().getRight()) {
-                if (part != null && part.getValue() != null) {
-                    sb.append(part.getValue());
-                }
-            }
-        }
-        return sb.toString().strip();
+        inlineHints.requestInlayHints(file, startLine, endLine, lineCount, lastLineLength, cb);
     }
 
     // --- Call / type hierarchy (#682) ----------------------------------------------------------
@@ -3541,67 +3348,17 @@ public final class LspManager {
         return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
     }
 
-    /** Pure: whether a server's capabilities include {@code documentFormattingProvider} (null-safe). */
-    static boolean formattingProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return false;
-        }
-        var p = caps.getDocumentFormattingProvider();
-        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
-    }
-
-    /** True if {@code file}'s server is ready and advertises range formatting (for Tab line re-indent). */
+    /** See {@link LspFormatting#supportsRangeFormatting}. */
     public boolean supportsRangeFormatting(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && rangeFormattingProvider(s.capabilities());
+        return formatting.supportsRangeFormatting(file);
     }
 
-    /** Pure: whether a server's capabilities include {@code documentRangeFormattingProvider} (null-safe). */
-    static boolean rangeFormattingProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return false;
-        }
-        var p = caps.getDocumentRangeFormattingProvider();
-        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
-    }
-
-    /**
-     * Pure: the characters a server formats on ({@code documentOnTypeFormattingProvider}), collected into one
-     * set — the spec splits them into a mandatory {@code firstTriggerCharacter} and an optional
-     * {@code moreTriggerCharacter} list, a distinction that matters to the server and not to us (#740).
-     * Empty when the server has no provider, which is also how the feature stays inert for those servers.
-     */
-    static java.util.Set<Character> onTypeTriggersOf(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null || caps.getDocumentOnTypeFormattingProvider() == null) {
-            return java.util.Set.of();
-        }
-        var provider = caps.getDocumentOnTypeFormattingProvider();
-        java.util.Set<Character> out = new java.util.HashSet<>();
-        String first = provider.getFirstTriggerCharacter();
-        if (first != null && !first.isEmpty()) {
-            out.add(first.charAt(0));
-        }
-        if (provider.getMoreTriggerCharacter() != null) {
-            for (String more : provider.getMoreTriggerCharacter()) {
-                if (more != null && !more.isEmpty()) {
-                    out.add(more.charAt(0));
-                }
-            }
-        }
-        return out;
-    }
-
-    /** The on-type formatting trigger characters for {@code file}'s server; empty when unsupported (#740). */
+    /** See {@link LspFormatting#onTypeTriggerCharacters}. */
     public java.util.Set<Character> onTypeTriggerCharacters(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s == null ? java.util.Set.of() : onTypeTriggersOf(s.capabilities());
+        return formatting.onTypeTriggerCharacters(file);
     }
 
-    /**
-     * On-type formatting ({@code textDocument/onTypeFormatting}, #740): the edits the server would apply
-     * having just seen {@code ch} typed at the given position. Delivered on the FX thread; empty when the
-     * server has no provider or the request fails.
-     */
+    /** See {@link LspFormatting#onTypeFormatting}. */
     public void onTypeFormatting(
             Path file,
             int line,
@@ -3610,39 +3367,10 @@ public final class LspManager {
             int tabSize,
             boolean insertSpaces,
             Consumer<List<com.editora.text.LspTextEdit>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || onTypeTriggersOf(s.capabilities()).isEmpty()) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        s.onTypeFormatting(
-                        uri(file),
-                        new Position(line, character),
-                        String.valueOf(ch),
-                        new org.eclipse.lsp4j.FormattingOptions(tabSize, insertSpaces))
-                .whenComplete((result, error) -> {
-                    List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
-                    if (error == null && result != null) {
-                        for (org.eclipse.lsp4j.TextEdit e : result) {
-                            if (e != null && e.getRange() != null) {
-                                edits.add(new com.editora.text.LspTextEdit(
-                                        e.getRange().getStart().getLine(),
-                                        e.getRange().getStart().getCharacter(),
-                                        e.getRange().getEnd().getLine(),
-                                        e.getRange().getEnd().getCharacter(),
-                                        e.getNewText() == null ? "" : e.getNewText()));
-                            }
-                        }
-                    }
-                    Platform.runLater(() -> cb.accept(edits));
-                });
+        formatting.onTypeFormatting(file, line, character, ch, tabSize, insertSpaces, cb);
     }
 
-    /**
-     * Requests range formatting ({@code textDocument/rangeFormatting}) over the line range
-     * {@code [startLine..endLine]} and delivers the resulting edits to {@code cb} on the FX thread (empty
-     * on error / unsupported). Used by Tab to re-indent the current line to the server's convention.
-     */
+    /** See {@link LspFormatting#rangeFormatting}. */
     public void rangeFormatting(
             Path file,
             int startLine,
@@ -3652,10 +3380,10 @@ public final class LspManager {
             int tabSize,
             boolean insertSpaces,
             Consumer<List<com.editora.text.LspTextEdit>> cb) {
-        rangeFormatting(file, startLine, startChar, endLine, endChar, new FormattingIndent(tabSize, insertSpaces), cb);
+        formatting.rangeFormatting(file, startLine, startChar, endLine, endChar, tabSize, insertSpaces, cb);
     }
 
-    /** As above, with the file's save rules in the request's options (Format Selection). */
+    /** See {@link LspFormatting#rangeFormatting}. */
     public void rangeFormatting(
             Path file,
             int startLine,
@@ -3664,232 +3392,59 @@ public final class LspManager {
             int endChar,
             FormattingIndent indent,
             Consumer<List<com.editora.text.LspTextEdit>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        org.eclipse.lsp4j.Range range =
-                new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
-        String sent = htmlText(s, file);
-        s.rangeFormatting(uri(file), range, formattingOptions(s, indent)).whenComplete((result, error) -> {
-            noteFormatOutcome(file, error);
-            List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
-            if (error == null && result != null) {
-                for (org.eclipse.lsp4j.TextEdit e : result) {
-                    if (e != null && e.getRange() != null) {
-                        edits.add(new com.editora.text.LspTextEdit(
-                                e.getRange().getStart().getLine(),
-                                e.getRange().getStart().getCharacter(),
-                                e.getRange().getEnd().getLine(),
-                                e.getRange().getEnd().getCharacter(),
-                                e.getNewText() == null ? "" : e.getNewText()));
-                    }
-                }
-            }
-            List<com.editora.text.LspTextEdit> kept = keptFinalNewline(s, indent, sent, edits, false);
-            Platform.runLater(() -> cb.accept(kept));
-        });
+        formatting.rangeFormatting(file, startLine, startChar, endLine, endChar, indent, cb);
     }
 
-    /**
-     * Why the last format request of each file failed — {@link FormatFailure} — while it is the last outcome: a
-     * failed, timed-out or abandoned request delivers no edits, which read as "Already formatted" (HTML review A5).
-     */
-    private final Map<Path, FormatFailure> formatFailures = new ConcurrentHashMap<>();
-
-    /** How the last format request of {@code file} failed, or null when it was answered (or none was sent). */
+    /** See {@link LspFormatting#formatFailure}. */
     public @Nullable FormatFailure formatFailure(Path file) {
-        return formatFailures.get(file);
+        return formatting.formatFailure(file);
     }
 
-    private void noteFormatOutcome(Path file, @Nullable Throwable error) {
-        if (error == null) {
-            formatFailures.remove(file);
-        } else {
-            formatFailures.put(file, FormatFailure.of(error));
-        }
-    }
-
-    /**
-     * Requests whole-document formatting ({@code textDocument/formatting}) for {@code file} and delivers the
-     * resulting edits to {@code cb} on the FX thread (empty list if the server returns nothing or errors; {@link
-     * #formatFailure} then says which).
-     * {@code tabSize}/{@code insertSpaces} are formatter hints (many formatters use their own config).
-     */
+    /** See {@link LspFormatting#formatDocument}. */
     public void formatDocument(
             Path file, int tabSize, boolean insertSpaces, Consumer<List<com.editora.text.LspTextEdit>> cb) {
-        formatDocument(file, new FormattingIndent(tabSize, insertSpaces), cb);
+        formatting.formatDocument(file, tabSize, insertSpaces, cb);
     }
 
-    /** As above, with the file's save rules in the request's options (see {@link FormattingIndent#options}). */
+    /** See {@link LspFormatting#formatDocument}. */
     public void formatDocument(Path file, FormattingIndent indent, Consumer<List<com.editora.text.LspTextEdit>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            noteFormatOutcome(file, new IllegalStateException("language server not available"));
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        String sent = htmlText(s, file);
-        s.formatting(uri(file), formattingOptions(s, indent)).whenComplete((result, error) -> {
-            noteFormatOutcome(file, error);
-            List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
-            if (error == null && result != null) {
-                for (org.eclipse.lsp4j.TextEdit e : result) {
-                    if (e != null && e.getRange() != null) {
-                        edits.add(new com.editora.text.LspTextEdit(
-                                e.getRange().getStart().getLine(),
-                                e.getRange().getStart().getCharacter(),
-                                e.getRange().getEnd().getLine(),
-                                e.getRange().getEnd().getCharacter(),
-                                e.getNewText() == null ? "" : e.getNewText()));
-                    }
-                }
-            }
-            List<com.editora.text.LspTextEdit> kept = keptFinalNewline(s, indent, sent, edits, true);
-            Platform.runLater(() -> cb.accept(kept));
-        });
+        formatting.formatDocument(file, indent, cb);
     }
 
-    /** True if {@code file}'s server is ready and advertises the document-symbol outline (Structure window). */
+    /** See {@link LspDocumentSymbols#supportsDocumentSymbols}. */
     public boolean supportsDocumentSymbols(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && documentSymbolProvider(s.capabilities());
+        return outline.supportsDocumentSymbols(file);
     }
 
-    /** Pure: whether a server's capabilities include {@code documentSymbolProvider} (null-safe). */
-    static boolean documentSymbolProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return false;
-        }
-        var p = caps.getDocumentSymbolProvider();
-        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
-    }
-
-    /**
-     * Requests the document-symbol outline ({@code textDocument/documentSymbol}) for {@code file} and delivers
-     * the mapped {@link SymbolNode} tree to {@code cb} on the FX thread (empty when unsupported / on error).
-     * Powers the Structure tool window for LSP-served files.
-     */
+    /** See {@link LspDocumentSymbols#documentSymbols}. */
     public void documentSymbols(Path file, Consumer<List<SymbolNode>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        s.documentSymbol(uri(file)).whenComplete((result, error) -> {
-            List<SymbolNode> symbols = error == null && result != null ? DocumentSymbolMapper.map(result) : List.of();
-            Platform.runLater(() -> cb.accept(symbols));
-        });
+        outline.documentSymbols(file, cb);
     }
 
-    /** How long the Project Map waits for a running server's outline of a file with no tab. */
-    static final java.time.Duration CLOSED_FILE_OUTLINE_TIMEOUT = java.time.Duration.ofSeconds(8);
-
-    /**
-     * Whether the server that already runs in this window for {@code file} ({@link #runsFor}) answers the
-     * document-symbol outline: the Project Map's Structure columns for a file with no tab (Map explore round, position
-     * 10). Never starts a server.
-     */
+    /** See {@link LspDocumentSymbols#outlinesClosedFile}. */
     public boolean outlinesClosedFile(@Nullable Path file) {
-        if (closed || !enabled || file == null || !servable(file)) {
-            return false;
-        }
-        LanguageServerSession s = runningSessionFor(file);
-        return s != null && documentSymbolProvider(s.capabilities());
+        return outline.outlinesClosedFile(file);
     }
 
-    /**
-     * The document-symbol outline of {@code text}, the content of {@code file}, from the server {@link
-     * #outlinesClosedFile} names. A file no window has open is lent to it for this request ({@link #lendDocument}) and
-     * the loan ends when the answer is in; a file another window has open on that session is asked about as it is, so
-     * its unsaved text is never replaced by the disk's. {@code cb} gets the symbols on the FX thread, or null when no
-     * such server runs, it fails or it takes longer than {@link #CLOSED_FILE_OUTLINE_TIMEOUT}. Never starts a server.
-     * FX thread.
-     */
+    /** See {@link LspDocumentSymbols#closedFileSymbols}. */
     public void closedFileSymbols(Path file, String text, Consumer<@Nullable List<SymbolNode>> cb) {
-        LanguageServerSession s = outlinesClosedFile(file) ? runningSessionFor(file) : null;
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(null));
-            return;
-        }
-        String uri = uri(file);
-        Runnable loan = s.isOpen(uri) ? () -> {} : lendDocument(file, text);
-        if (loan == null) {
-            Platform.runLater(() -> cb.accept(null));
-            return;
-        }
-        s.documentSymbol(uri)
-                .orTimeout(CLOSED_FILE_OUTLINE_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)
-                .whenComplete((result, error) -> {
-                    List<SymbolNode> symbols =
-                            error == null && result != null ? DocumentSymbolMapper.map(result) : null;
-                    Platform.runLater(() -> {
-                        loan.run(); // didClose once nothing else holds the document
-                        cb.accept(symbols);
-                    });
-                });
+        outline.closedFileSymbols(file, text, cb);
     }
 
-    /**
-     * The members of {@code libraryUri} (a {@code jdt://} class file), else of {@code file}, else of {@code anchor},
-     * with their whole extents, asked on {@code anchor}'s session (Go to Super Method, eighth review BQ1).
-     */
+    /** See {@link LspDocumentSymbols#memberSpans}. */
     public void memberSpans(
             Path anchor, @Nullable Path file, @Nullable String libraryUri, Consumer<List<MemberSpan>> cb) {
-        LanguageServerSession s = sessionFor(anchor);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        String document = libraryUri != null ? libraryUri : uri(file != null ? file : anchor);
-        Map<String, List<MemberSpan>> cache = libraryUri == null || !jdkClassFile(libraryUri)
-                ? null
-                : libraryOutlines.computeIfAbsent(s, k -> new ConcurrentHashMap<>());
-        List<MemberSpan> cached = cache == null ? null : cache.get(libraryUri);
-        if (cached != null) {
-            Platform.runLater(() -> cb.accept(cached));
-            return;
-        }
-        s.documentSymbol(document).whenComplete((result, error) -> {
-            List<MemberSpan> members =
-                    error == null && result != null ? DocumentSymbolMapper.members(result) : List.of();
-            if (cache != null && !members.isEmpty()) {
-                cache.put(libraryUri, members); // a JDK class does not change while its server runs (BP5)
-            }
-            Platform.runLater(() -> cb.accept(members));
-        });
+        outline.memberSpans(anchor, file, libraryUri, cb);
     }
 
-    /**
-     * Whether {@code libraryUri} is a JDK class ({@code jdt://contents/java.base/…jrt-fs.jar…}): a dependency's jar can
-     * be rebuilt in place ({@code mvn install} of a SNAPSHOT) under the same URI (tenth review DO4).
-     */
+    /** See {@link LspDocumentSymbols#jdkClassFile}. */
     public static boolean jdkClassFile(String libraryUri) {
-        return libraryUri.contains("jrt-fs.jar");
+        return LspDocumentSymbols.jdkClassFile(libraryUri);
     }
 
-    /** JDK class files' outlines per session, read once: a Go to Super Method walk reads many (ninth review BP5). */
-    private final Map<LanguageServerSession, Map<String, List<MemberSpan>>> libraryOutlines =
-            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
-
-    /**
-     * {@link #documentSymbols} for a caller that only ever wants the latest outline (the Structure window,
-     * re-asked on every typing pause): a request for an older document version is cancelled, one already
-     * running for this version is not repeated, and a superseded request never calls {@code cb}. A caller
-     * that waits for its own answer must use {@link #documentSymbols}.
-     */
+    /** See {@link LspDocumentSymbols#latestDocumentSymbols}. */
     public void latestDocumentSymbols(Path file, Consumer<List<SymbolNode>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        String uri = uri(file);
-        latest.issue(uri, "documentSymbol", stamp(s, uri, null), true, () -> s.documentSymbol(uri), (result, error) -> {
-            List<SymbolNode> symbols = error == null && result != null ? DocumentSymbolMapper.map(result) : List.of();
-            Platform.runLater(() -> cb.accept(symbols));
-        });
+        outline.latestDocumentSymbols(file, cb);
     }
 
     /** What a deduplicated request's answer depends on: equal stamps mean the server is asked the same thing. */
@@ -3904,116 +3459,34 @@ public final class LspManager {
 
     // --- folding ranges (#738) / selection ranges (#739) ---------------------------------------------
 
-    /** Pure: whether a server's capabilities include {@code foldingRangeProvider} (null-safe). */
-    static boolean foldingRangeProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        return caps != null && eitherTrue(caps.getFoldingRangeProvider());
-    }
-
-    /** Pure: whether a server's capabilities include {@code selectionRangeProvider} (null-safe). */
-    static boolean selectionRangeProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        return caps != null && eitherTrue(caps.getSelectionRangeProvider());
-    }
-
-    /** True if {@code file}'s server is ready and advertises folding ranges (#738). */
+    /** See {@link LspDocumentSymbols#supportsFoldingRanges}. */
     public boolean supportsFoldingRanges(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && foldingRangeProvider(s.capabilities());
+        return outline.supportsFoldingRanges(file);
     }
 
-    /** True if {@code file}'s server is ready and advertises selection ranges (#739). */
+    /** See {@link LspDocumentSymbols#supportsSelectionRanges}. */
     public boolean supportsSelectionRanges(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && selectionRangeProvider(s.capabilities());
+        return outline.supportsSelectionRanges(file);
     }
 
-    /**
-     * Requests the document's foldable regions and delivers them on the FX thread as editor
-     * {@link com.editora.text.FoldRegions.Region}s, ordered the way the built-in detector emits them
-     * (see {@link LspFolding#toRegions}). Empty when the server has no folding provider — the caller then
-     * keeps the heuristic regions rather than un-folding the file.
-     */
+    /** See {@link LspDocumentSymbols#foldingRanges}. */
     public void foldingRanges(Path file, Consumer<List<com.editora.text.FoldRegions.Region>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || !foldingRangeProvider(s.capabilities())) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        String uri = uri(file);
-        latest.issue(uri, "foldingRange", stamp(s, uri, null), true, () -> s.foldingRange(uri), (ranges, error) -> {
-            List<com.editora.text.FoldRegions.Region> regions =
-                    error == null ? LspFolding.toRegions(ranges) : List.of();
-            Platform.runLater(() -> cb.accept(regions));
-        });
+        outline.foldingRanges(file, cb);
     }
 
-    /** True if {@code file}'s server is ready and advertises {@code colorProvider} (HTML review D9). */
+    /** See {@link LspDocumentSymbols#supportsDocumentColor}. */
     public boolean supportsDocumentColor(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        var caps = s == null ? null : s.capabilities();
-        return caps != null && eitherTrue(caps.getColorProvider());
+        return outline.supportsDocumentColor(file);
     }
 
-    /**
-     * Requests the document's colour literals and delivers them on the FX thread, in document order (D9). Empty
-     * when the server has none or no colour provider.
-     */
+    /** See {@link LspDocumentSymbols#documentColors}. */
     public void documentColors(Path file, Consumer<List<com.editora.text.ColorSwatch>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || !supportsDocumentColor(file)) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        String uri = uri(file);
-        latest.issue(uri, "documentColor", stamp(s, uri, null), true, () -> s.documentColor(uri), (colors, error) -> {
-            List<com.editora.text.ColorSwatch> out = error == null ? swatches(colors) : List.of();
-            Platform.runLater(() -> cb.accept(out));
-        });
+        outline.documentColors(file, cb);
     }
 
-    /** Pure: the server's colour informations as swatches, in document order (null-safe). */
-    static List<com.editora.text.ColorSwatch> swatches(@Nullable List<org.eclipse.lsp4j.ColorInformation> colors) {
-        if (colors == null || colors.isEmpty()) {
-            return List.of();
-        }
-        List<com.editora.text.ColorSwatch> out = new ArrayList<>(colors.size());
-        for (org.eclipse.lsp4j.ColorInformation c : colors) {
-            if (c == null || c.getRange() == null || c.getRange().getStart() == null || c.getColor() == null) {
-                continue;
-            }
-            Position at = c.getRange().getStart();
-            var color = c.getColor();
-            out.add(new com.editora.text.ColorSwatch(
-                    at.getLine(),
-                    at.getCharacter(),
-                    color.getRed(),
-                    color.getGreen(),
-                    color.getBlue(),
-                    color.getAlpha()));
-        }
-        out.sort(java.util.Comparator.comparingInt(com.editora.text.ColorSwatch::line)
-                .thenComparingInt(com.editora.text.ColorSwatch::column));
-        return List.copyOf(out);
-    }
-
-    /**
-     * Requests the nested selection-range chain at one position and delivers it on the FX thread as
-     * {@code [start, end]} offset pairs, innermost first (see {@link LspSelection#toOffsetChain}). Empty when
-     * the server has no provider or answers nothing, so the caller falls back to the local ladder.
-     *
-     * <p>{@code lineLengths} maps the document's lines to their lengths — the response is in LSP
-     * line/character coordinates and the caller works in offsets, and doing the conversion here keeps the
-     * editor free of {@code lsp4j}.
-     */
+    /** See {@link LspDocumentSymbols#selectionRanges}. */
     public void selectionRanges(Path file, int line, int character, int[] lineStarts, Consumer<List<int[]>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || !selectionRangeProvider(s.capabilities())) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        s.selectionRange(uri(file), List.of(new Position(line, character))).whenComplete((ranges, error) -> {
-            List<int[]> chain = error == null ? LspSelection.toOffsetChain(ranges, lineStarts) : List.of();
-            Platform.runLater(() -> cb.accept(chain));
-        });
+        outline.selectionRanges(file, line, character, lineStarts, cb);
     }
 
     /**
@@ -4056,145 +3529,24 @@ public final class LspManager {
         }
     }
 
-    /** True if {@code file}'s server is ready and advertises {@code workspace/symbol} (Go to Symbol). */
+    /** See {@link LspDocumentSymbols#supportsWorkspaceSymbols}. */
     public boolean supportsWorkspaceSymbols(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && workspaceSymbolProvider(s.capabilities());
+        return outline.supportsWorkspaceSymbols(file);
     }
 
-    /** Pure: whether the server advertises {@code workspace/symbol} (Boolean or options form). Null-safe. */
-    static boolean workspaceSymbolProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        return caps != null && eitherTrue(caps.getWorkspaceSymbolProvider());
-    }
-
-    /**
-     * Runs {@code workspace/symbol} on {@code anchorFile}'s server for {@code query} and delivers the matches
-     * on the FX thread. Empty when the file has no server. Handles both the legacy flat {@code SymbolInformation}
-     * and the modern {@code WorkspaceSymbol} response shapes (the latter may carry a range-less URI-only
-     * location, mapped to line 0).
-     */
+    /** See {@link LspDocumentSymbols#workspaceSymbols}. */
     public void workspaceSymbols(Path anchorFile, String query, Consumer<List<WorkspaceSymbolMatch>> cb) {
-        workspaceSymbols(sessionFor(anchorFile), query, cb);
+        outline.workspaceSymbols(anchorFile, query, cb);
     }
 
-    private static void workspaceSymbols(
-            @Nullable LanguageServerSession s, String query, Consumer<List<WorkspaceSymbolMatch>> cb) {
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        s.workspaceSymbol(query).whenComplete((result, error) -> {
-            List<WorkspaceSymbolMatch> out = new ArrayList<>();
-            if (error == null && result != null) {
-                if (result.isLeft()) {
-                    for (org.eclipse.lsp4j.SymbolInformation si : result.getLeft()) {
-                        addSymbol(out, si.getName(), si.getContainerName(), si.getKind(), si.getLocation(), s.uris());
-                    }
-                } else if (result.getRight() != null) {
-                    for (org.eclipse.lsp4j.WorkspaceSymbol ws : result.getRight()) {
-                        addSymbol(out, ws.getName(), ws.getContainerName(), ws.getKind(), ws.getLocation(), s.uris());
-                    }
-                }
-            }
-            Platform.runLater(() -> cb.accept(out));
-        });
-    }
-
-    /**
-     * The JDK and dependency types ({@code jdt://}) matching {@code query}, from the Java server of the project
-     * holding {@code underRoot} — the classes the server-free index cannot see (Java review E8). Empty without
-     * one. Delivered on the FX thread.
-     */
+    /** See {@link LspDocumentSymbols#javaLibraryTypes}. */
     public void javaLibraryTypes(@Nullable Path underRoot, String query, Consumer<List<WorkspaceSymbolMatch>> cb) {
-        LanguageServerSession s = javaSessionFor(underRoot);
-        if (s == null || s.capabilities() == null) { // none, or not initialized yet
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        workspaceSymbols(s, query, all -> {
-            List<WorkspaceSymbolMatch> types = new ArrayList<>();
-            for (WorkspaceSymbolMatch m : all) {
-                if (m.libraryUri() != null && LIBRARY_TYPE_KINDS.contains(m.kind())) {
-                    types.add(m);
-                }
-            }
-            cb.accept(types);
-        });
+        outline.javaLibraryTypes(underRoot, query, cb);
     }
 
-    private static final java.util.Set<String> LIBRARY_TYPE_KINDS =
-            java.util.Set.of("class", "interface", "enum", "struct");
-
-    /** Adds a {@code SymbolInformation} match (its location always carries a range). */
-    private static void addSymbol(
-            List<WorkspaceSymbolMatch> out,
-            String name,
-            String container,
-            org.eclipse.lsp4j.SymbolKind kind,
-            Location loc,
-            WireUris uris) {
-        if (loc == null) {
-            return;
-        }
-        Path p = uris.toPath(loc.getUri());
-        Position start = loc.getRange() != null ? loc.getRange().getStart() : new Position(0, 0);
-        if (p == null) {
-            // A JDK or dependency symbol (jdtls's jdt:// class-file URI): kept, opened as library source.
-            if (loc.getUri() != null && loc.getUri().startsWith(JDT_SCHEME)) {
-                out.add(new WorkspaceSymbolMatch(
-                        name, container, kindName(kind), null, start.getLine(), start.getCharacter(), loc.getUri()));
-            }
-            return;
-        }
-        out.add(new WorkspaceSymbolMatch(name, container, kindName(kind), p, start.getLine(), start.getCharacter()));
-    }
-
-    /** Adds a {@code WorkspaceSymbol} match whose location is {@code Either<Location, URI-only>}. */
-    private static void addSymbol(
-            List<WorkspaceSymbolMatch> out,
-            String name,
-            String container,
-            org.eclipse.lsp4j.SymbolKind kind,
-            org.eclipse.lsp4j.jsonrpc.messages.Either<Location, org.eclipse.lsp4j.WorkspaceSymbolLocation> loc,
-            WireUris uris) {
-        if (loc == null) {
-            return;
-        }
-        if (loc.isLeft()) {
-            addSymbol(out, name, container, kind, loc.getLeft(), uris);
-        } else if (loc.getRight() != null) {
-            Path p = uris.toPath(loc.getRight().getUri());
-            if (p != null) {
-                out.add(new WorkspaceSymbolMatch(name, container, kindName(kind), p, 0, 0));
-            }
-        }
-    }
-
-    private static String kindName(org.eclipse.lsp4j.SymbolKind k) {
-        return k == null ? "" : k.toString().toLowerCase(java.util.Locale.ROOT);
-    }
-
-    /** True if {@code file}'s server is ready and advertises range semantic tokens (viewport highlighting). */
+    /** See {@link SemanticTokenRequests#supportsSemanticTokens}. */
     public boolean supportsSemanticTokens(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && semanticTokensProvider(s.capabilities()) != null;
-    }
-
-    /**
-     * Pure: the server's semantic-tokens registration options if it supports range <em>or</em> full
-     * requests (and carries a legend), else {@code null}. Null-safe — gates {@link #requestSemanticTokens},
-     * which prefers range (viewport) and falls back to full for range-less servers.
-     */
-    static org.eclipse.lsp4j.@Nullable SemanticTokensWithRegistrationOptions semanticTokensProvider(
-            org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return null;
-        }
-        var p = caps.getSemanticTokensProvider();
-        if (p == null || p.getLegend() == null) {
-            return null;
-        }
-        return (eitherTrue(p.getRange()) || eitherTrue(p.getFull())) ? p : null;
+        return semanticTokens.supportsSemanticTokens(file);
     }
 
     /** True if an LSP {@code Either<Boolean, ?>} capability is present (right form) or explicitly true. */
@@ -4202,12 +3554,6 @@ public final class LspManager {
         return e != null && (e.isRight() || Boolean.TRUE.equals(e.getLeft()));
     }
 
-    /** The cached whole-document token state for delta requests (#679): the server's {@code resultId} +
-     *  the full data array it identifies. Keyed by document URI; dropped on close/shutdown/error. */
-    private record TokenState(LanguageServerSession session, String resultId, List<Integer> data) {}
-
-    private final Map<String, TokenState> semanticTokenState = new ConcurrentHashMap<>();
-    private final Map<String, Long> semanticRequestGeneration = new ConcurrentHashMap<>();
     private final Map<String, Long> diagnosticRequestGeneration = new ConcurrentHashMap<>();
     /** Source of {@link #diagnosticRequestGeneration} values. One counter for every document, so a value is
      *  never reused: an entry can then be removed when its document closes without a late reply for the
@@ -4226,41 +3572,12 @@ public final class LspManager {
         return diagnosticRequestGeneration.size();
     }
 
-    /** The document version a whole-document token set was last delivered for, per URI. */
-    private record TokenMark(
-            LanguageServerSession session, @Nullable Integer version) {}
-
-    private final Map<String, TokenMark> wholeDocumentTokens = new ConcurrentHashMap<>();
-
-    /**
-     * Whether the server would answer a semantic-tokens request for {@code file} with what it last sent:
-     * it has no range requests (so every request covers the whole document) and the document has not
-     * changed on the server since that answer. Scrolling such a document shows nothing new, so the
-     * scroll-settle re-request — a whole-document transfer and decode per scroll — can be skipped.
-     */
+    /** See {@link SemanticTokenRequests#wholeDocumentTokensCurrent}. */
     public boolean wholeDocumentTokensCurrent(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        var prov = s == null ? null : semanticTokensProvider(s.capabilities());
-        if (prov == null || eitherTrue(prov.getRange())) {
-            return false;
-        }
-        String uri = uri(file);
-        TokenMark mark = wholeDocumentTokens.get(uri);
-        return mark != null && mark.session() == s && java.util.Objects.equals(mark.version(), s.documentVersion(uri));
+        return semanticTokens.wholeDocumentTokensCurrent(file);
     }
 
-    /**
-     * Requests semantic tokens over the line window {@code [startLine..endLine]} (inclusive) and delivers
-     * the decoded, CSS-classed {@link com.editora.text.SemanticToken}s to {@code cb} on the FX thread
-     * (empty when unsupported / on error). The window bounds cost on large files — the caller passes the
-     * visible paragraph range. Decoding uses the server's effective legend, never hardcoded indices.
-     *
-     * <p>Range-less servers (jdtls advertises {@code range=false}) take the whole-document path, which —
-     * when the server supports {@code full.delta} and we hold its previous {@code resultId} — asks for a
-     * <b>delta</b> and splices it onto the cached array ({@link SemanticTokensSplice}) instead of
-     * re-transferring every token on each 300 ms edit pulse (#679). Any error/stale delta falls back to a
-     * plain full request.
-     */
+    /** See {@link SemanticTokenRequests#requestSemanticTokens}. */
     public void requestSemanticTokens(
             Path file,
             int startLine,
@@ -4268,138 +3585,7 @@ public final class LspManager {
             int lineCount,
             int lastLineLength,
             Consumer<List<com.editora.text.SemanticToken>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        var prov = s == null ? null : semanticTokensProvider(s.capabilities());
-        if (s == null || prov == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        var legend = prov.getLegend();
-        String uri = uri(file);
-        long requestGeneration = semanticRequestGeneration.merge(uri, 1L, Long::sum);
-        // Prefer a range (viewport) request to bound cost; fall back to a whole-document request for a
-        // server that advertises only `full` (no range).
-        if (eitherTrue(prov.getRange())) {
-            // Clamped to the document — a range past the last line makes a server return nothing (#715).
-            var range = inclusiveLineRange(startLine, endLine, lineCount, lastLineLength);
-            latest.issue(
-                    uri,
-                    SEMANTIC,
-                    stamp(s, uri, range),
-                    true,
-                    () -> s.semanticTokensRange(uri, range),
-                    (tokens, error) -> {
-                        if (!currentSemanticRequest(file, s, uri, requestGeneration)) {
-                            return;
-                        }
-                        List<com.editora.text.SemanticToken> out = (error != null || tokens == null)
-                                ? List.of()
-                                : SemanticTokensDecoder.decode(
-                                        tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
-                        Platform.runLater(() -> cb.accept(out));
-                    });
-            return;
-        }
-        boolean deltaSupported = fullDeltaSupported(prov);
-        TokenState prev = deltaSupported ? semanticTokenState.get(uri) : null;
-        if (prev != null && prev.session() != s) {
-            semanticTokenState.remove(uri, prev);
-            prev = null;
-        }
-        if (prev != null) {
-            TokenState deltaBase = prev;
-            Integer version = s.documentVersion(uri);
-            var delta = stamp(s, uri, "delta:" + deltaBase.resultId());
-            latest.issue(
-                    uri,
-                    SEMANTIC,
-                    delta,
-                    true,
-                    () -> s.semanticTokensFullDelta(uri, deltaBase.resultId()),
-                    (either, error) -> {
-                        if (!currentSemanticRequest(file, s, uri, requestGeneration)) {
-                            return;
-                        }
-                        List<Integer> data = null;
-                        String resultId = null;
-                        if (error == null && either != null) {
-                            if (either.isLeft() && either.getLeft() != null) {
-                                data = either.getLeft().getData(); // server chose to answer with a fresh full set
-                                resultId = either.getLeft().getResultId();
-                            } else if (either.isRight() && either.getRight() != null) {
-                                data = SemanticTokensSplice.apply(
-                                        deltaBase.data(), either.getRight().getEdits());
-                                resultId = either.getRight().getResultId();
-                            }
-                        }
-                        if (data == null) {
-                            semanticTokenState.remove(uri); // stale/failed delta — re-request full
-                            requestSemanticTokensFull(s, file, legend, requestGeneration, cb);
-                            return;
-                        }
-                        rememberTokenState(s, uri, resultId, data);
-                        wholeDocumentTokens.put(uri, new TokenMark(s, version));
-                        List<Integer> decoded = data;
-                        List<com.editora.text.SemanticToken> out = SemanticTokensDecoder.decode(
-                                decoded, legend.getTokenTypes(), legend.getTokenModifiers());
-                        Platform.runLater(() -> cb.accept(out));
-                    });
-            return;
-        }
-        requestSemanticTokensFull(s, file, legend, requestGeneration, cb);
-    }
-
-    /** Plain whole-document request; caches {@code resultId}+data when the server supplies one (#679). */
-    private void requestSemanticTokensFull(
-            LanguageServerSession s,
-            Path file,
-            org.eclipse.lsp4j.SemanticTokensLegend legend,
-            long requestGeneration,
-            Consumer<List<com.editora.text.SemanticToken>> cb) {
-        String uri = uri(file);
-        Integer version = s.documentVersion(uri);
-        latest.issue(uri, SEMANTIC, stamp(s, uri, "full"), true, () -> s.semanticTokensFull(uri), (tokens, error) -> {
-            if (!currentSemanticRequest(file, s, uri, requestGeneration)) {
-                return;
-            }
-            if (error != null || tokens == null) {
-                wholeDocumentTokens.remove(uri);
-                Platform.runLater(() -> cb.accept(List.of()));
-                return;
-            }
-            rememberTokenState(s, uri, tokens.getResultId(), tokens.getData());
-            wholeDocumentTokens.put(uri, new TokenMark(s, version));
-            List<com.editora.text.SemanticToken> out =
-                    SemanticTokensDecoder.decode(tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
-            Platform.runLater(() -> cb.accept(out));
-        });
-    }
-
-    /** The {@link LatestRequests} kind shared by the range, full and delta forms: they answer one question. */
-    private static final String SEMANTIC = "semanticTokens";
-
-    private boolean currentSemanticRequest(
-            Path file, @Nullable LanguageServerSession session, String uri, long requestGeneration) {
-        return sessionFor(file) == session
-                && java.util.Objects.equals(semanticRequestGeneration.get(uri), requestGeneration);
-    }
-
-    private void rememberTokenState(
-            LanguageServerSession session, String uri, @Nullable String resultId, List<Integer> data) {
-        if (resultId != null && data != null) {
-            semanticTokenState.put(uri, new TokenState(session, resultId, List.copyOf(data)));
-        } else {
-            semanticTokenState.remove(uri); // no resultId ⇒ the server can't delta from this response
-        }
-    }
-
-    /** Pure: whether the provider's {@code full} form advertises delta support (null-safe). */
-    static boolean fullDeltaSupported(org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions prov) {
-        var full = prov == null ? null : prov.getFull();
-        return full != null
-                && full.isRight()
-                && full.getRight() != null
-                && Boolean.TRUE.equals(full.getRight().getDelta());
+        semanticTokens.requestSemanticTokens(file, startLine, endLine, lineCount, lastLineLength, cb);
     }
 
     /** See {@link LspAssists#hover}. */
@@ -4937,9 +4123,9 @@ public final class LspManager {
         }
         sessionByDocUri.clear();
         rawDiagnostics.clear();
-        semanticTokenState.clear();
-        semanticRequestGeneration.clear();
-        wholeDocumentTokens.clear();
+        semanticTokens.semanticTokenState.clear();
+        semanticTokens.semanticRequestGeneration.clear();
+        semanticTokens.wholeDocumentTokens.clear();
         latest.clear();
         diagnosticRequestGeneration.clear();
         codeActions.pendingApplyExpected.clear();

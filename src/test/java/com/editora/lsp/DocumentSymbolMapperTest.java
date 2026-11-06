@@ -179,10 +179,10 @@ class DocumentSymbolMapperTest {
 
     @Test
     void documentSymbolProviderCapabilityIsNullSafe() {
-        assertFalse(LspManager.documentSymbolProvider(null));
+        assertFalse(LspDocumentSymbols.documentSymbolProvider(null));
         ServerCapabilities caps = new ServerCapabilities();
-        assertFalse(LspManager.documentSymbolProvider(caps));
+        assertFalse(LspDocumentSymbols.documentSymbolProvider(caps));
         caps.setDocumentSymbolProvider(true);
-        assertTrue(LspManager.documentSymbolProvider(caps));
+        assertTrue(LspDocumentSymbols.documentSymbolProvider(caps));
     }
 }

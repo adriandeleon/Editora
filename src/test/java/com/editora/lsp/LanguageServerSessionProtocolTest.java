@@ -206,7 +206,7 @@ class LanguageServerSessionProtocolTest {
     @Test
     void inlayHintRangeNeverLeavesTheDocument() {
         var s = session(caps());
-        s.inlayHint(URI, LspManager.inclusiveLineRange(0, 26, 27, 0));
+        s.inlayHint(URI, LspInlineHints.inclusiveLineRange(0, 26, 27, 0));
 
         var p = FakeLanguageServer.last(fake.inlayHints);
         assertNotNull(p, "no inlayHint request was sent");
@@ -218,7 +218,7 @@ class LanguageServerSessionProtocolTest {
     @Test
     void inlayHintRangeCoversALastLineWithContent() {
         var s = session(caps());
-        s.inlayHint(URI, LspManager.inclusiveLineRange(0, 9, 10, 42));
+        s.inlayHint(URI, LspInlineHints.inclusiveLineRange(0, 9, 10, 42));
 
         var p = FakeLanguageServer.last(fake.inlayHints);
         assertEquals(9, p.getRange().getEnd().getLine());

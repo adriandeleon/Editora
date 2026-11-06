@@ -61,7 +61,7 @@ class LspDynamicRegistrationTest {
         assertTrue(provider.getRange().isLeft() && provider.getRange().getLeft(), "range support was dropped");
         assertTrue(provider.getFull().isRight(), "full must keep its options object");
         assertTrue(provider.getFull().getRight().getDelta(), "delta support was dropped");
-        assertNotNull(LspManager.semanticTokensProvider(s.capabilities()), "the manager's gate must see it");
+        assertNotNull(SemanticTokenRequests.semanticTokensProvider(s.capabilities()), "the manager's gate must see it");
     }
 
     /** One unusable registration must not take the rest of the batch (or the response) down with it. */

@@ -290,17 +290,17 @@ class JdtlsClientSettingsProbeTest {
                     hints.stream().map(h -> label(h) + "=" + h.getKind()).toList());
             assertTrue(
                     labels.stream().anyMatch(l -> l.startsWith("prefix")), "A10: a hint for the non-literal `label`");
-            // jdtls leaves the kind out; LspManager.isParameterHint reads the label, and a type hint must not be
+            // jdtls leaves the kind out; LspInlineHints.isParameterHint reads the label, and a type hint must not be
             // classed as a parameter hint, which Editora's literals filter could drop.
             assertTrue(
                     hints.stream()
-                            .anyMatch(h ->
-                                    label(h).startsWith(": int") && !LspManager.isParameterHint(h.getKind(), label(h))),
+                            .anyMatch(h -> label(h).startsWith(": int")
+                                    && !LspInlineHints.isParameterHint(h.getKind(), label(h))),
                     "A10: a type hint for `var` (java.inlayHints.variableTypes.enabled)");
             assertTrue(
                     hints.stream()
-                            .anyMatch(h ->
-                                    label(h).equals("String") && !LspManager.isParameterHint(h.getKind(), label(h))),
+                            .anyMatch(h -> label(h).equals("String")
+                                    && !LspInlineHints.isParameterHint(h.getKind(), label(h))),
                     "A10: a type hint for a lambda parameter (java.inlayHints.parameterTypes.enabled)");
             assertFalse(labels.stream().anyMatch(l -> l.startsWith("e1")), "A15: suppressWhenSameNameNumbered");
 
