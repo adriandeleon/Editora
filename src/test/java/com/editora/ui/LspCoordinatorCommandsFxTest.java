@@ -1377,6 +1377,40 @@ class LspCoordinatorCommandsFxTest {
         assertEquals(tr("status.lsp.noProblems"), fx.host.lastStatus());
     }
 
+    /**
+     * The counter's arrows (and F2) select the problem they step to in an open Problems window, which follows
+     * without taking the focus: the caret stays in the editor.
+     */
+    @Test
+    void stepsThroughProblemsSelectTheRowInAnOpenProblemsWindowWithoutFocusingIt() throws Exception {
+        EditorBuffer b = fx.open("A.java", PROBLEMS);
+        var x = problem(1, 12, 13, com.editora.text.LspDiagnostic.Severity.ERROR, "x cannot be resolved");
+        var y = problem(2, 12, 13, com.editora.text.LspDiagnostic.Severity.ERROR, "y cannot be resolved");
+        fx.run(() -> fx.coordinator.onDiagnostics(b.getPath(), List.of(y, x)));
+        ProblemsPanel panel = FxTestSupport.callOnFx(() -> fx.coordinator.problemsPanel());
+        javafx.scene.Scene window = FxTestSupport.callOnFx(
+                () -> new javafx.scene.Scene(new javafx.scene.layout.StackPane(panel), 300, 400)); // open
+        @SuppressWarnings("unchecked")
+        javafx.scene.control.TreeView<Object> tree = (javafx.scene.control.TreeView<Object>)
+                FxTestSupport.<javafx.scene.control.TreeView<?>>field(panel, "tree");
+        java.util.concurrent.Callable<String> selected = () -> FxTestSupport.callOnFx(() -> {
+            var item = tree.getSelectionModel().getSelectedItem();
+            return item == null ? null : String.valueOf(item.getValue());
+        });
+        fx.caret(b, 0, 0);
+
+        fx.run(() -> fx.coordinator.gotoProblem(b, true, true)); // the counter's down arrow
+        assertTrue(selected.call().contains("x cannot be resolved"), selected.call());
+        fx.run(() -> fx.coordinator.gotoProblem(b, true, true));
+        assertTrue(selected.call().contains("y cannot be resolved"), selected.call());
+        fx.run(() -> fx.coordinator.gotoProblem(false)); // Previous Problem
+        assertTrue(selected.call().contains("x cannot be resolved"), selected.call());
+        assertEquals(List.of(1, 12), List.of(caretOf(b)[0], caretOf(b)[1]));
+        assertFalse(
+                FxTestSupport.callOnFx(() -> window.getFocusOwner() == tree || tree.isFocused()),
+                "the Problems window followed without taking the focus");
+    }
+
     @Test
     void showProblemAtCaretSaysTheLinesProblem() throws Exception {
         EditorBuffer b = fx.open("A.java", PROBLEMS);

@@ -250,6 +250,55 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         rebuild();
     }
 
+    /**
+     * Selects {@code diag}'s row of {@code canonicalFile} and scrolls it into view, as Next / Previous Problem
+     * (the editor's counter arrows, F2) step through a file, so an open Problems window follows them. It never
+     * takes the focus — the caret stays in the editor — and a closed window is left alone. Returns whether the
+     * row was found.
+     */
+    boolean reveal(Path canonicalFile, LspDiagnostic diag) {
+        if (!visible()) {
+            return false;
+        }
+        if (!lastByFile.equals(rendered)) {
+            rebuild(); // the paced refresh has not shown the latest diagnostics yet
+        }
+        for (TreeItem<Row> lang : tree.getRoot().getChildren()) {
+            for (TreeItem<Row> file : lang.getChildren()) {
+                if (!com.editora.config.PathKeys.samePath(file.getValue().file(), canonicalFile)) {
+                    continue;
+                }
+                for (TreeItem<Row> row : file.getChildren()) {
+                    if (diag.equals(row.getValue().diag())) {
+                        lang.setExpanded(true); // a header the user folded opens to show where the caret went
+                        file.setExpanded(true);
+                        tree.getSelectionModel().select(row);
+                        ensureVisible(tree.getRow(row));
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /** Scrolls the tree only when {@code index} is outside the rows it shows (as the Structure panel does). */
+    private void ensureVisible(int index) {
+        if (index < 0) {
+            return;
+        }
+        javafx.scene.Node node = tree.lookup(".virtual-flow");
+        if (node instanceof javafx.scene.control.skin.VirtualFlow<?> flow) {
+            javafx.scene.control.IndexedCell<?> first = flow.getFirstVisibleCell();
+            javafx.scene.control.IndexedCell<?> last = flow.getLastVisibleCell();
+            if (first != null && last != null && index >= first.getIndex() && index <= last.getIndex()) {
+                return;
+            }
+        }
+        tree.scrollTo(index);
+    }
+
     private void rebuild() {
         rebuilds++;
         activeFileChanged = false;
