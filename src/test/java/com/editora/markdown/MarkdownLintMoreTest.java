@@ -565,16 +565,34 @@ class MarkdownLintMoreTest {
                 wiki("[[a]] ".repeat(2_000) + "\n\n" + "[[b]] ".repeat(2_000) + "\n", targets)
                         .size(),
                 "per paragraph");
-        long start = System.nanoTime();
-        MarkdownLint.lint("[[".repeat(100_000) + "\n", Set.of(), DEFAULTS, targets);
-        MarkdownLint.lint("[[a]] ".repeat(4_000) + "\n", Set.of(), DEFAULTS, targets);
-        long small = System.nanoTime() - start;
-        start = System.nanoTime();
-        MarkdownLint.lint("[[".repeat(1_000_000) + "\n", Set.of(), DEFAULTS, targets);
-        MarkdownLint.lint("[[a]] ".repeat(40_000) + "\n", Set.of(), DEFAULTS, targets);
-        long large = System.nanoTime() - start;
+        // Linear is 10x and the wiki-link parse this bound guards against is 100x (75x measured with the
+        // bound removed), so 40x leaves room for a busy runner. Each wall is timed on its own, warmed up,
+        // and best of three, and both walls stay small enough that commonmark's own cost on them is still
+        // linear: a million "[[" grows its allocation super-linearly, and that, with GC in a shared test fork,
+        // was what this test measured (40-86x on CI) rather than LINK003.
+        assertScalesLinearly("[[", 20_000, targets);
+        assertScalesLinearly("[[a]] ", 4_000, targets);
+    }
+
+    /** Linting {@code unit} repeated {@code 10 * n} times takes well under 40x as long as {@code n} times. */
+    private static void assertScalesLinearly(String unit, int n, MarkdownLint.LinkTargets targets) {
+        String small = unit.repeat(n) + "\n";
+        String large = unit.repeat(n * 10) + "\n";
+        fastestLint(small, targets);
+        long smallNanos = Math.max(fastestLint(small, targets), 5_000_000L);
+        long largeNanos = fastestLint(large, targets);
         assertTrue(
-                large < Math.max(small, 5_000_000L) * 40,
-                "10x the input took " + large / Math.max(1, small) + "x the time");
+                largeNanos < smallNanos * 40,
+                "10x the " + unit.strip() + " took " + largeNanos / smallNanos + "x the time");
+    }
+
+    private static long fastestLint(String md, MarkdownLint.LinkTargets targets) {
+        long fastest = Long.MAX_VALUE;
+        for (int i = 0; i < 3; i++) {
+            long start = System.nanoTime();
+            MarkdownLint.lint(md, Set.of(), DEFAULTS, targets);
+            fastest = Math.min(fastest, System.nanoTime() - start);
+        }
+        return fastest;
     }
 }
