@@ -76,7 +76,7 @@ class RemoteWorkspaceEditFxTest {
             LspCoordinator coordinator = FxTestSupport.callOnFx(() -> {
                 LspCoordinator c = new LspCoordinator(
                         host, manager, ops, LspCoordinator.WorkspaceFileOperations.SYSTEM, Runnable::run);
-                c.workspaceEditJournalDir = journals();
+                c.workspaceEdits.workspaceEditJournalDir = journals();
                 return c;
             });
             var mapped = new WorkspaceEditMapper.Mapped(
@@ -215,8 +215,9 @@ class RemoteWorkspaceEditFxTest {
         try {
             LspCoordinator coordinator = FxTestSupport.callOnFx(() -> {
                 LspCoordinator c = new LspCoordinator(host, manager, ops, disk, worker);
-                c.workspaceEditJournalDir = journals();
-                c.destructiveEditConfirmer = hazards -> true; // a folder delete is asked about: answer yes
+                c.workspaceEdits.workspaceEditJournalDir = journals();
+                c.workspaceEdits.destructiveEditConfirmer =
+                        hazards -> true; // a folder delete is asked about: answer yes
                 return c;
             });
             var mapped = new WorkspaceEditMapper.Mapped(

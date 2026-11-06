@@ -847,7 +847,7 @@ class LspCoordinatorCodeActionsFxTest {
             return confirmed ? moved : json("{\"errorMessage\":\"helper may be null\",\"confirmationToken\":\"t-1\"}");
         };
         List<String> shown = new ArrayList<>();
-        fx.coordinator.moveProblemsConfirmer = problems -> {
+        fx.coordinator.refactorings.moveProblemsConfirmer = problems -> {
             shown.add(problems);
             return false;
         };
@@ -859,7 +859,7 @@ class LspCoordinatorCodeActionsFxTest {
         assertEquals(tr("status.lsp.refactorCancelled", "Move method"), fx.host.lastStatus());
         assertEquals(1, rawMethods().stream().filter("java/move"::equals).count());
 
-        fx.coordinator.moveProblemsConfirmer = problems -> true;
+        fx.coordinator.refactorings.moveProblemsConfirmer = problems -> true;
         runAction("Move method");
         fx.run(() -> fx.choose(0));
         assertEquals("t-1", lastRawParams().get("confirmationToken").getAsString());

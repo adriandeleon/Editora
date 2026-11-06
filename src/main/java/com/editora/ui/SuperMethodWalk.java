@@ -13,22 +13,22 @@ import org.jspecify.annotations.Nullable;
  * gives it, else any), the superclass's branch first. A hit in a type that another hit's type extends is dropped, as
  * IntelliJ merges them (ninth review EP3), and so is the method asked about. An anonymous class starts from the type
  * it instantiates. JDK outlines are cached for the session, and {@code Object} is read only for its own methods'
- * names (BP5). Go to Super Method's ({@link LspCoordinator}), apart for its size.
+ * names (BP5). Go to Super Method's ({@link LspSuperMethods}), apart for its size.
  */
 final class SuperMethodWalk {
     private static final int MAX_DEPTH = 8;
     private static final java.util.Set<String> OBJECT_METHODS =
             java.util.Set.of("equals", "hashCode", "toString", "clone", "finalize");
     private final LspManager lspManager;
-    private final LspCoordinator.SuperAsk ask;
+    private final LspSuperMethods.SuperAsk ask;
     private final String text;
     private final com.editora.lsp.MemberSpan anchor;
     private final String method;
-    private final java.util.function.Consumer<List<LspCoordinator.SuperTarget>> done;
+    private final java.util.function.Consumer<List<LspSuperMethods.SuperTarget>> done;
     private final java.util.function.Function<Path, @Nullable String> openText;
     private final List<String> anchorTypeParameters;
     private final Map<Path, java.util.Optional<String>> texts = new java.util.HashMap<>();
-    private final java.util.TreeMap<String, LspCoordinator.SuperTarget> found = new java.util.TreeMap<>();
+    private final java.util.TreeMap<String, LspSuperMethods.SuperTarget> found = new java.util.TreeMap<>();
     private final Map<String, String> foundIn = new java.util.HashMap<>();
     private final java.util.Set<String> seen = new java.util.HashSet<>();
     private final java.util.Set<String> covered = new java.util.HashSet<>();
@@ -42,11 +42,11 @@ final class SuperMethodWalk {
      */
     SuperMethodWalk(
             LspManager lspManager,
-            LspCoordinator.SuperAsk ask,
+            LspSuperMethods.SuperAsk ask,
             String text,
             com.editora.lsp.MemberSpan anchor,
             java.util.function.Function<Path, @Nullable String> openText,
-            java.util.function.Consumer<List<LspCoordinator.SuperTarget>> done) {
+            java.util.function.Consumer<List<LspSuperMethods.SuperTarget>> done) {
         this.lspManager = lspManager;
         this.ask = ask;
         this.text = text;
@@ -56,18 +56,18 @@ final class SuperMethodWalk {
         this.done = done;
         this.anchorTypeParameters = com.editora.lsp.JavaMembers.methodTypeParameters(
                 text,
-                LspCoordinator.offsetOf(text, anchor.startLine()),
-                LspCoordinator.offsetOf(text, anchor.nameLine()) + anchor.nameColumn());
+                LspSuperMethods.offsetOf(text, anchor.startLine()),
+                LspSuperMethods.offsetOf(text, anchor.nameLine()) + anchor.nameColumn());
     }
 
     /**
      * The constructor a constructor with no {@code super(...)} calls: {@code type}'s superclass's no-argument one, else
      * the superclass itself; {@code done} gets null for none ({@code Object}'s), and nothing once {@code ask} is stale.
-     * Go to Super Method's ({@link LspCoordinator}), apart for its size.
+     * Go to Super Method's ({@link LspSuperMethods}), apart for its size.
      */
     static void implicitSuperConstructor(
             LspManager lspManager,
-            LspCoordinator.SuperAsk ask,
+            LspSuperMethods.SuperAsk ask,
             com.editora.lsp.MemberSpan type,
             java.util.function.Consumer<LspManager.@Nullable Target> done) {
         lspManager.prepareTypeHierarchyAt(ask.path(), ask.libraryUri(), type.nameLine(), type.nameColumn(), roots -> {
@@ -120,14 +120,14 @@ final class SuperMethodWalk {
      */
     static void anonymousMethod(
             LspManager lspManager,
-            LspCoordinator.SuperAsk ask,
+            LspSuperMethods.SuperAsk ask,
             String text,
             int[] anonymous,
             java.util.function.Function<Path, @Nullable String> openText,
-            java.util.function.Consumer<List<LspCoordinator.SuperTarget>> done,
+            java.util.function.Consumer<List<LspSuperMethods.SuperTarget>> done,
             java.util.function.Consumer<String> failed) {
-        int[] name = LspCoordinator.lineColumn(text, anonymous[1]);
-        int[] type = LspCoordinator.lineColumn(text, anonymous[0]);
+        int[] name = LspSuperMethods.lineColumn(text, anonymous[1]);
+        int[] type = LspSuperMethods.lineColumn(text, anonymous[0]);
         lspManager.superMethodAt(
                 ask.path(),
                 ask.libraryUri(),
@@ -138,7 +138,7 @@ final class SuperMethodWalk {
                         return;
                     }
                     if (!linked.isEmpty()) {
-                        done.accept(LspCoordinator.labelled(linked));
+                        done.accept(LspSuperMethods.labelled(linked));
                         return;
                     }
                     var method = new com.editora.lsp.MemberSpan(
@@ -172,14 +172,14 @@ final class SuperMethodWalk {
 
     void start(com.editora.lsp.MemberSpan type) {
         pending++;
-        int name = LspCoordinator.offsetOf(text, type.nameLine()) + type.nameColumn();
+        int name = LspSuperMethods.offsetOf(text, type.nameLine()) + type.nameColumn();
         // an anonymous class from the type it instantiates, checked against its written name (thirteenth review BK1)
         int at = type.isAnonymous() ? com.editora.lsp.JavaMembers.lastSegment(text, name) : name;
         fromAnonymous = type.isAnonymous();
         Header header = new Header(
                 text,
                 at,
-                type.isAnonymous() ? LspCoordinator.offsetOf(text, type.startLine()) : -1,
+                type.isAnonymous() ? LspSuperMethods.offsetOf(text, type.startLine()) : -1,
                 Map.of(),
                 type.name(),
                 !type.isAnonymous());
@@ -337,7 +337,7 @@ final class SuperMethodWalk {
                         ? declared.name()
                         : com.editora.lsp.JavaMembers.withTypeParameters(
                                 own,
-                                LspCoordinator.offsetOf(own, declared.nameLine()) + declared.nameColumn(),
+                                LspSuperMethods.offsetOf(own, declared.nameLine()) + declared.nameColumn(),
                                 declared.name());
         Map<String, String> bindings = declared == null || subtype == null ? Map.of() : subtype.bindingsFor(name);
         java.util.Set<String> typeVariables = new java.util.HashSet<>();
@@ -353,7 +353,7 @@ final class SuperMethodWalk {
             com.editora.lsp.MemberSpan hit = hits.get(i);
             found.put(
                     order + i,
-                    new LspCoordinator.SuperTarget(
+                    new LspSuperMethods.SuperTarget(
                             new LspManager.Target(
                                     type.file(),
                                     onDisk(type.file(), hit.nameLine()),
@@ -366,7 +366,7 @@ final class SuperMethodWalk {
                 ? null
                 : new Header(
                         own,
-                        own == null ? -1 : LspCoordinator.offsetOf(own, declared.nameLine()) + declared.nameColumn(),
+                        own == null ? -1 : LspSuperMethods.offsetOf(own, declared.nameLine()) + declared.nameColumn(),
                         -1,
                         bindings,
                         name,
@@ -379,7 +379,7 @@ final class SuperMethodWalk {
         if (--pending > 0 || !ask.current().getAsBoolean()) {
             return;
         }
-        List<LspCoordinator.SuperTarget> out = new java.util.ArrayList<>();
+        List<LspSuperMethods.SuperTarget> out = new java.util.ArrayList<>();
         found.forEach((order, target) -> {
             if (!covered.contains(foundIn.get(order)) && !isAnchor(target.target())) {
                 out.add(target);
@@ -417,7 +417,7 @@ final class SuperMethodWalk {
                 for (int i = 0; i < hits.size(); i++) {
                     found.put(
                             "z" + i,
-                            new LspCoordinator.SuperTarget(
+                            new LspSuperMethods.SuperTarget(
                                     new LspManager.Target(
                                             null,
                                             hits.get(i).nameLine(),
@@ -444,8 +444,8 @@ final class SuperMethodWalk {
         }
         List<String> theirs = com.editora.lsp.JavaMembers.methodTypeParameters(
                 own,
-                LspCoordinator.offsetOf(own, m.startLine()),
-                LspCoordinator.offsetOf(own, m.nameLine()) + m.nameColumn());
+                LspSuperMethods.offsetOf(own, m.startLine()),
+                LspSuperMethods.offsetOf(own, m.nameLine()) + m.nameColumn());
         Map<String, @Nullable String> out = new java.util.HashMap<>();
         for (int i = 0; i < theirs.size(); i++) {
             out.put(theirs.get(i), theirs.size() == anchorTypeParameters.size() ? anchorTypeParameters.get(i) : null);

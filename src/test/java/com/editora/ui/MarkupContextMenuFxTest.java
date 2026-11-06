@@ -55,9 +55,14 @@ class MarkupContextMenuFxTest {
         @SuppressWarnings("unchecked")
         List<MenuItem> actions = markdown
                 ? (List<MenuItem>) markdownMenus("items", EditorBuffer.class, buffer)
-                : (List<MenuItem>) FxTestSupport.call(buffer, "typstMenuItems", new Class[0]);
-        return (Menu)
-                FxTestSupport.call(buffer, "markupMenu", new Class[] {String.class, List.class}, tr(titleKey), actions);
+                : (List<MenuItem>)
+                        FxTestSupport.call(FxTestSupport.field(buffer, "editorMenu"), "typstMenuItems", new Class[0]);
+        return (Menu) FxTestSupport.call(
+                FxTestSupport.field(buffer, "editorMenu"),
+                "markupMenu",
+                new Class[] {String.class, List.class},
+                tr(titleKey),
+                actions);
     }
 
     /** {@code editor.MarkdownMenus} is package-private: the Markdown submenu's builder and its labelling rule. */
@@ -226,7 +231,7 @@ class MarkupContextMenuFxTest {
             CodeArea area = FxTestSupport.field(buffer, "area");
             Event.fireEvent(
                     area, new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 5, 5, false, null));
-            ContextMenu menu = FxTestSupport.field(buffer, "contextMenu");
+            ContextMenu menu = FxTestSupport.field(FxTestSupport.field(buffer, "editorMenu"), "contextMenu");
             List<MenuItem> items = List.copyOf(menu.getItems());
             menu.hide();
             stage.hide();

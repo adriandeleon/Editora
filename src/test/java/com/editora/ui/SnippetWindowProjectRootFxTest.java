@@ -45,7 +45,8 @@ class SnippetWindowProjectRootFxTest {
             FxTestSupport.runOnFx(() -> fx.windowManager.openOrFocus(pb)); // its own window; becomes "active"
             FxTestSupport.drainFx();
 
-            UnaryOperator<Path> workspace = FxTestSupport.field(buffer, "snippetWorkspaceRoot");
+            UnaryOperator<Path> workspace =
+                    FxTestSupport.field(FxTestSupport.field(buffer, "snippetKeys"), "snippetWorkspaceRoot");
             assertEquals(
                     a, FxTestSupport.callOnFx(() -> workspace.apply(file)), "a snippet in window A is in project A");
         } finally {

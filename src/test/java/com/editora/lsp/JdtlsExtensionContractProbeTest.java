@@ -74,7 +74,7 @@ class JdtlsExtensionContractProbeTest {
                 project,
                 diagnostics::add,
                 (type, message) -> record("status", type + " " + message),
-                LspManager.javaInitOptions(List.of()));
+                ServerInitOptions.javaInitOptions(List.of()));
         long start = System.nanoTime();
         try {
             assertTrue(s.start());
@@ -111,7 +111,7 @@ class JdtlsExtensionContractProbeTest {
                 if (libUri.startsWith("jdt:")) {
                     Object source = get(s.rawRequest("java/classFileContents", new TextDocumentIdentifier(libUri)));
                     record("librarySourceRaw", source);
-                    String sourceText = LspManager.rawStringResult(source);
+                    String sourceText = JdtlsCommands.rawStringResult(source);
                     record("librarySourceLength", sourceText == null ? null : sourceText.length());
                     assertNotNull(sourceText, "library-source response must survive LSP4J dispatch");
                     assertFalse(sourceText.isBlank(), "library-source response must contain source text");
@@ -264,7 +264,7 @@ class JdtlsExtensionContractProbeTest {
                 root,
                 diagnostics -> {},
                 (type, message) -> record("gradleStatus", type + " " + message),
-                LspManager.javaInitOptions(List.of()));
+                ServerInitOptions.javaInitOptions(List.of()));
         try {
             assertTrue(session.start());
             session.didOpen(api.toUri().toString(), "java", apiText);

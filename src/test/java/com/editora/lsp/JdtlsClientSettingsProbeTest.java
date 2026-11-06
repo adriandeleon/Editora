@@ -230,7 +230,7 @@ class JdtlsClientSettingsProbeTest {
                         imported.countDown();
                     }
                 },
-                LspManager.javaInitOptions(List.of()));
+                ServerInitOptions.javaInitOptions(List.of()));
         // The document's indentation, as LspManager.setDocumentIndent records it: four spaces.
         s.setIndentForUri(uri -> new FormattingIndent(4, true));
         try {
@@ -290,17 +290,17 @@ class JdtlsClientSettingsProbeTest {
                     hints.stream().map(h -> label(h) + "=" + h.getKind()).toList());
             assertTrue(
                     labels.stream().anyMatch(l -> l.startsWith("prefix")), "A10: a hint for the non-literal `label`");
-            // jdtls leaves the kind out; LspManager.isParameterHint reads the label, and a type hint must not be
+            // jdtls leaves the kind out; LspInlineHints.isParameterHint reads the label, and a type hint must not be
             // classed as a parameter hint, which Editora's literals filter could drop.
             assertTrue(
                     hints.stream()
-                            .anyMatch(h ->
-                                    label(h).startsWith(": int") && !LspManager.isParameterHint(h.getKind(), label(h))),
+                            .anyMatch(h -> label(h).startsWith(": int")
+                                    && !LspInlineHints.isParameterHint(h.getKind(), label(h))),
                     "A10: a type hint for `var` (java.inlayHints.variableTypes.enabled)");
             assertTrue(
                     hints.stream()
-                            .anyMatch(h ->
-                                    label(h).equals("String") && !LspManager.isParameterHint(h.getKind(), label(h))),
+                            .anyMatch(h -> label(h).equals("String")
+                                    && !LspInlineHints.isParameterHint(h.getKind(), label(h))),
                     "A10: a type hint for a lambda parameter (java.inlayHints.parameterTypes.enabled)");
             assertFalse(labels.stream().anyMatch(l -> l.startsWith("e1")), "A15: suppressWhenSameNameNumbered");
 
@@ -391,7 +391,7 @@ class JdtlsClientSettingsProbeTest {
             assertTrue(repeat.getUri().startsWith("jdt:"), "B7: the definition is library source");
             Position inLibrary = repeat.getRange().getStart();
             Hover libraryHover = get(s.hover(repeat.getUri(), inLibrary));
-            String hoverText = LspManager.hoverText(libraryHover);
+            String hoverText = LspAssists.hoverText(libraryHover);
             record("B7 hover", hoverText.lines().findFirst().orElse(""));
             assertFalse(hoverText.isBlank(), "B7: hover answers inside library source");
             var libraryRefs = get(s.references(repeat.getUri(), inLibrary));

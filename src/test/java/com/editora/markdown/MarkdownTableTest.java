@@ -330,7 +330,7 @@ class MarkdownTableTest {
      * {@code lastIndexOf} searches backward from *and including* {@code fromIndex}, so the old
      * {@code Math.max(0, caret - 1)} clamp made a caret at offset 0 find a leading newline — yielding
      * {@code substring(1, 0)}. It threw for any document starting with a blank line, table or not, and
-     * {@code EditorBuffer.applyEnter} calls this on every Enter in a Markdown buffer: Ctrl+Home then Enter
+     * {@code BufferTyping.applyEnter} calls this on every Enter in a Markdown buffer: Ctrl+Home then Enter
      * lost the keystroke and dumped an exception.
      */
     @Test

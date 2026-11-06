@@ -93,6 +93,17 @@ language id — so js/ts/jsx/tsx in one project share a single `tsserver`. It ow
   request methods, each returning **neutral** results (`Target(file, line, character)` for
   definition/references) marshaled to the FX thread via `Platform.runLater`.
 
+The session lifecycle stays in `LspManager`; each request family lives in a package-private class it holds and
+forwards its public methods to, so callers still see one facade: `LspNavigationRequests` (definition, references,
+hierarchies), `LspAssists` (completion, signature help, highlights, hover), `LspCodeActions` (code actions and every
+server edit on its way to the editor, planned by the pure `WorkspaceEditDrafts`), `LspFormatting`,
+`LspDocumentSymbols` (outline, folding, selection ranges, colours, symbol search), `LspInlineHints` (code lenses,
+inlay hints), `SemanticTokenRequests`, `LspRename` (symbol and file renames), `LspOrganizeImports`, `JdtlsCommands`
+(jdtls's own requests), `JavaBuilds`, `LspDiagnostics` (published and pulled diagnostics) and `LspFileWatching`
+(root watchers and `didChangeWatchedFiles`). What a server starts with is in `ServerInitOptions` (its
+`initializationOptions`), `NodeServerPaths` (tsserver, TypeScript SDK, Node.js) and `JdtlsWorkspaces` (the
+process-wide `-data` claims); `FxClientUi` posts a server's questions to the FX thread.
+
 `LspManager` warms the augmented PATH off-thread in its constructor (`ProcessRunner::augmentedPath`),
 since both detection and the FX-thread session start read it. A remote (SFTP) file is served by a server on
 its host, and debugged there; how documents are named across the connection (`WireUris`, `DapPaths`), where
@@ -396,7 +407,7 @@ folded into that same effective object, so static and post-initialize providers 
 
 Some jdtls code actions answer with a command the **client** must carry out — sending it back as
 `workspace/executeCommand` fails. Which actions do so is decided by `extendedClientCapabilities`
-(`LspManager.javaExtendedClientCapabilities`): a flag is declared only together with the code that
+(`ServerInitOptions.javaExtendedClientCapabilities`): a flag is declared only together with the code that
 drives its command.
 
 - [`lsp/JdtlsGenerate`](../../src/main/java/com/editora/lsp/JdtlsGenerate.java) — the
@@ -429,7 +440,7 @@ drives its command.
 
 ### Library source tabs
 
-A `jdt://` definition opens as a read-only, path-less buffer (`LspCoordinator.openLibraryDefinition`),
+A `jdt://` definition opens as a read-only, path-less buffer (`LspNavigation.openLibraryDefinition`),
 remembered in `librarySources` with the workspace file whose session produced it. Position requests from
 such a tab — definition, hover, references, implementation, type definition, declaration and both
 hierarchy prepares — go through `navOrigin()`: the anchor file's session, asked about the tab's `jdt://`
@@ -473,7 +484,7 @@ vscode-java's `completion.favoriteStaticMembers` and the `compile.nullAnalysis` 
 **A project's own preferences.** `JavaProjectSettings.forRoot(root)` reads IntelliJ's `ij_java_imports_layout`
 and import-on-demand counts from `.editorconfig` (`EditorConfig.rawFor`, which keeps keys Editora does not
 interpret) and the Eclipse formatter profile Spotless names (else `eclipse-formatter.xml` and friends at the root),
-and is merged into `settings.java` at `initialize` (`LspManager.withProjectSettings`) and in every push
+and is merged into `settings.java` at `initialize` (`ServerInitOptions.withProjectSettings`) and in every push
 (`LanguageServerSession.pushConfiguration`). `JdtlsProjectStyleProbeTest` checks the star threshold, the profile
 and chain completion (`completion.chain.enabled`) against a real jdtls.
 
@@ -492,16 +503,16 @@ Editora does not use jdtls's own `java.saveActions.cleanup`, which needs `willSa
 
 jdtls's "Javadoc comment" completion is offered only on a `/**` line that is already closed. In a Java
 buffer with the server on, the `*` that makes a line `/**` therefore inserts `* */` and requests completion
-(`EditorBuffer.closeJavadocOpening`, rule in `CommentContinuation.closesDocOpening`).
+(`BufferTyping.closeJavadocOpening`, rule in `CommentContinuation.closesDocOpening`).
 
 ### Files written behind the server's back
 
 jdtls tracks a file only through `didOpen` or `workspace/didChangeWatchedFiles`. A workspace edit that
 writes a file with no tab (`WorkspaceFileOperations` saves it straight to disk), a file the edit creates,
-and a Project-tree rename are each announced with `didChangeWatchedFiles` (`LspCoordinator.resourceEvents`,
+and a Project-tree rename are each announced with `didChangeWatchedFiles` (`WorkspaceEditStaging.resourceEvents`,
 `afterWorkspaceEdit`); without it the next rename skipped the file and left it broken. A Project-tree rename of
 a `.java` file, and each file of a drag-move (`ProjectPanel.moveThrough`, also Undo Move), goes through
-`workspace/willRenameFiles` first (`LspCoordinator.willRenameFile`); jdtls rewrites a moved file's package only
+`workspace/willRenameFiles` first (`LspRefactoringUndo.willRenameFile`); jdtls rewrites a moved file's package only
 for a target package it knows: the edit the
 server answers is applied and saved, and the move is recorded with it, so Undo Last Refactoring moves the
 file back and reverts the edit together. A folder rename is applied but not undoable as one. Saving a Java file
@@ -519,7 +530,7 @@ launched on the Java its installed bundles require (`JavaRuntimes.serverMinMajor
 `Bundle-RequiredExecutionEnvironment`), not on its launcher's own floor. A shared session keeps jdtls's last
 `ProjectStatus` and its project-level diagnostics, and replays them to a window that joins; while jdtls has not
 said `ServiceReady` itself (it is still importing) a joining window is told "Starting", not the handshake's ready.
-Go to Super Method (`LspCoordinator.gotoSuperMethod`) finds the member at the caret in `MemberSpan`s (whole ranges,
+Go to Super Method (`LspSuperMethods.gotoSuperMethod`) finds the member at the caret in `MemberSpan`s (whole ranges,
 every child kept, unlike the Structure outline), reads lambdas and `super(...)` calls with `JavaMembers`, and walks
 the type hierarchy (`SuperMethodWalk`) for what `java/findLinks` misses: findLinks answers first and is exact for a class's
 method (empty means none: a static, private or overloading method, unless it is marked `@Override`: findLinks misses
@@ -613,7 +624,7 @@ said with that folder's name ("jdtls (tools)").
 jdtls updates a project's classpath from a build file only when told it changed, lemminx revalidates against a
 grammar only when told it changed, and the Bash server never re-reads a sourced library on its own. The Project panel
 reports changes from its expanded folders alone, so every local server root gets a recursive watcher of its own
-(`LspManager.ensureRootWatcher`, one `RootWatcher` per root, none for a root inside one already watched, at most eight),
+(`LspFileWatching.ensureRootWatcher`, one `RootWatcher` per root, none for a root inside one already watched, at most eight),
 project or not. It skips hidden, dependency and virtual-environment folders and the folders the root's `.gitignore`
 files leave out (nested ones too). A watcher registers at most 2,000 folders (300 when polling), level by level so build files near the top come
 first, and it reports a file only when its own folder is registered (`RootWatcher.watches`), not anything under its root; the panel's own event for a
@@ -651,7 +662,7 @@ fixes against the text the session sent.
 
 jdtls's defaults assume vscode-java, which sends its own `package.json` defaults; several features stay
 off for a client that sends nothing. `LspServerSettings.javaSettings` is the one `java` object, sent at
-`initialize` (inside `LspManager.javaSettings`, with autobuild and the runtimes) and pushed after it:
+`initialize` (inside `ServerInitOptions.javaSettings`, with autobuild and the runtimes) and pushed after it:
 `signatureHelp.enabled` and `signatureHelp.description.enabled` (the Javadoc in signature help; jdtls
 reads dotted keys through the nested maps, so `description: true` resolved to no key at all),
 `completion.filteredTypes` (vscode-java's list; jdtls's own default list is not installed unless one is
@@ -678,7 +689,7 @@ A package node from `java/getMoveDestinations` carries two paths: `path` is the 
 (`/geo-demo/src/main/java/com/example`) and `uri` the folder on disk. Only `uri` names a real folder, so
 `JdtlsRefactor.folderOf` reads it, and Move ▸ New package… builds its folder under the source root it gives.
 
-`LspCoordinator.runGeneratePrompt` / `runRefactorCommand` intercept these before `applyCodeAction`;
+`LspRefactorings.runGeneratePrompt` / `runRefactorCommand` intercept these before `applyCodeAction`;
 `LspManager.jdtlsRequest` / `jdtlsApplyEdit` send the custom requests, which must be registered on
 `JdtLanguageServer` or LSP4J drops their results. The server's own `errorMessage` is shown when it
 refuses. The opt-in `JdtlsRefactorProbeTest` runs every flow against a real jdtls
@@ -695,7 +706,7 @@ settle; `EditorBuffer.setCodeLenses` draws each as an inlay after the end of its
 `editor/CodeLensShift` moves them with line edits until the next answer, and a click puts the caret on
 the declaration and runs Find References or Go to Implementation. A references lens always opens the
 References tool window — also for one reference (the command jumps straight there) and for none.
-The fork's inlay labels are mouse-transparent, so `EditorBuffer.installCodeLensClick` finds the lens
+The fork's inlay labels are mouse-transparent, so `BufferInlays.installCodeLensClick` finds the lens
 under the pointer by its bounds and sets the hover pseudo-class (`lens-hover`) and hand cursor itself; a
 test that fires a click must pick the area, not the label.
 
@@ -708,6 +719,15 @@ settings apply) sets the jdtls workspace base, calls `lspManager.configure(...)`
 detection (the package-private `SERVER_IDS` array) and gating. `wireBuffer` installs the per-buffer
 hooks (didChange, pull diagnostics, semantic tokens, completion, nav actions). `LspManager` itself
 stays a `MainController` field (the DAP layer and the MCP bridge read it) and is passed in.
+
+Its larger workflows are package-private classes it constructs and forwards to, each reaching back through
+a small `Host` of its own: `LspWorkspaceEdits` (applying workspace edits, their outcome reports, interrupted
+edits) with `WorkspaceEditStaging` (the filesystem transaction and its journal), `LspRefactoringUndo` (Undo
+Last Refactoring and the Project tree's rename participant), `LspRefactorings` (Rename and the jdtls
+generate/refactor prompts), `LspNavigation` (definition, references, implementations, hierarchies, workspace
+symbols, library-source tabs; it owns the navigation request generation), `LspSuperMethods` (Go to Super
+Method) and `LspPopups` (hover card, signature help, Smart Type). The commands and other windows still call
+`LspCoordinator`.
 
 Workspace edits retain protocol versions and request-time text snapshots. Create, rename, and delete resource
 operations are staged with overwrite backups and rolled back as a batch on failure or stale text. Production
@@ -749,7 +769,7 @@ source and delete target is resolved, with the buffer's own path, *before* the f
 afterwards the file is gone, so the server's spelling of the old path can no longer be canonicalised, and
 when it differs from the tab's (a project opened through a symlink; `/tmp` on macOS) a second lookup finds
 nothing. The remap then uses the tab's own old path, closes the LSP document under that path, and writes the
-destination in the tab's spelling (`LspCoordinator.inSpellingOf`) so the tab stays under the project and
+destination in the tab's spelling (`LspWorkspaceEdits.inSpellingOf`) so the tab stays under the project and
 LSP root it was opened in. A tab that changed or closed while the transaction was staging rolls the edit
 back; one that still did not follow its file is reported (`status.lsp.editTabNotRemapped`) and the edit is
 **not** reported as applied. `MainController.remapProjectFileLocal` looks the tab up before it clears the

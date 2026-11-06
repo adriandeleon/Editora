@@ -81,14 +81,14 @@ class HtmlMarkupLintTest {
     void theServersColoursBecomeSwatchesInDocumentOrder() {
         ColorInformation red = new ColorInformation(range(8, 41), new Color(1, 0, 0, 1));
         ColorInformation translucent = new ColorInformation(range(2, 4), new Color(0, 0.5, 1, 0.5));
-        List<ColorSwatch> swatches = LspManager.swatches(List.of(red, translucent));
+        List<ColorSwatch> swatches = LspDocumentSymbols.swatches(List.of(red, translucent));
         assertEquals(2, swatches.size());
         assertEquals(2, swatches.get(0).line());
         assertEquals("0080ff80", swatches.get(0).hex());
         assertEquals(8, swatches.get(1).line());
         assertEquals(41, swatches.get(1).column());
         assertEquals("ff0000ff", swatches.get(1).hex());
-        assertEquals(List.of(), LspManager.swatches(null));
+        assertEquals(List.of(), LspDocumentSymbols.swatches(null));
         assertEquals("000000ff", new ColorSwatch(0, 0, -1, Double.NaN, 0, 2).hex(), "channels are clamped");
     }
 

@@ -120,7 +120,8 @@ class PreviewOnlyFxTest {
         FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(MarkdownViewMode.PREVIEW));
         javafx.scene.control.ScrollPane[] pane = new javafx.scene.control.ScrollPane[1];
         for (int i = 0; i < 300; i++) {
-            pane[0] = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "previewPane"));
+            pane[0] = FxTestSupport.callOnFx(
+                    () -> FxTestSupport.field(FxTestSupport.field(b, "previewPanes"), "previewPane"));
             boolean ready = FxTestSupport.callOnFx(() -> {
                 b.getNode().applyCss();
                 b.getNode().layout();

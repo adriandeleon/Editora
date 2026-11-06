@@ -11,8 +11,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The window services a {@link LogViewerCoordinator}-style feature coordinator may need, in one shared
- * interface. {@code MainController} provides a single implementation (its inner {@code Services} adapter,
- * delegating to its private helpers) and hands the same instance to every coordinator, instead of a
+ * interface. {@code MainController} provides a single implementation ({@link WindowServicesHost},
+ * delegating to the controller's helpers) and hands the same instance to every coordinator, instead of a
  * bespoke anonymous adapter per feature. Each coordinator uses only the subset of methods it needs.
  *
  * <p>For tests, {@code CoordinatorHostStub} (test sources) is a no-op implementation a fake can extend,

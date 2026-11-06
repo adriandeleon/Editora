@@ -253,8 +253,9 @@ class EditorBufferFxTest {
         FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(MarkdownViewMode.PREVIEW));
 
         FxTestSupport.runOnFx(() -> b.setPreviewLoading(true, "Generating…"));
-        Node overlay = FxTestSupport.field(b, "previewLoadingOverlay");
-        javafx.scene.control.Label label = FxTestSupport.field(b, "previewLoadingLabel");
+        Node overlay = FxTestSupport.field(FxTestSupport.field(b, "previewPanes"), "previewLoadingOverlay");
+        javafx.scene.control.Label label =
+                FxTestSupport.field(FxTestSupport.field(b, "previewPanes"), "previewLoadingLabel");
         assertTrue(overlay.isVisible(), "loading overlay shown while generating");
         assertTrue(overlay.isManaged());
         assertEquals("Generating…", label.getText());

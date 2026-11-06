@@ -264,7 +264,7 @@ class KeystrokeCostFxTest {
             buffer.setOnRunnableChanged(runnable::countDown);
 
             buffer.getArea().appendText("all:\n\t@echo hi\n");
-            invoke(buffer, "recomputeRun", true); // what the 150 ms settle does
+            invoke(buffer.runGutter, "recomputeRun", true); // what the 150 ms settle does
             assertFalse(buffer.isRunnable(), "the scan has not run on this (the FX) thread");
         });
         try {
@@ -272,7 +272,7 @@ class KeystrokeCostFxTest {
             runOnFx(() -> {
                 assertTrue(ref.get().isRunnable());
                 ref.get().getArea().replaceText("# gone again\n");
-                invoke(ref.get(), "recomputeRun"); // load / Save As / a toggle still answer at once
+                invoke(ref.get().runGutter, "recomputeRun"); // load / Save As / a toggle still answer at once
                 assertFalse(ref.get().isRunnable());
             });
         } finally {

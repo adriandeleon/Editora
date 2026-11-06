@@ -45,19 +45,19 @@ class LspJdtlsCacheClearTest {
     @Test
     void aWorkspaceClaimedByALiveSessionIsKept() throws Exception {
         Path ws = workspace("clear-claimed", 100);
-        String claimed = LspManager.claimUsableJdtlsWorkspaceName(tempDir, "clear-claimed");
+        String claimed = JdtlsWorkspaces.claimUsableJdtlsWorkspaceName(tempDir, "clear-claimed");
         try {
             assertEquals("clear-claimed", claimed);
             var result = LspManager.clearJdtlsWorkspaces(tempDir);
             assertEquals(new LspManager.JdtlsCacheClearResult(0, 0, 1), result);
             assertTrue(Files.exists(ws.resolve(".metadata/index.dat")));
         } finally {
-            LspManager.releaseJdtlsWorkspaceName(claimed);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(claimed);
         }
         // The clear released only its own claims: the session's claim was still in force above, and the name
         // is claimable again now that the session let it go.
-        String again = LspManager.claimUsableJdtlsWorkspaceName(tempDir, "clear-claimed");
-        LspManager.releaseJdtlsWorkspaceName(again);
+        String again = JdtlsWorkspaces.claimUsableJdtlsWorkspaceName(tempDir, "clear-claimed");
+        JdtlsWorkspaces.releaseJdtlsWorkspaceName(again);
         assertEquals("clear-claimed", again);
     }
 

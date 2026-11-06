@@ -39,11 +39,11 @@ class LmStudioSettingsFxTest {
                     throw new AssertionError(e);
                 }
                 window.syncAiCheck();
-                ComboBox<String> providers = FxTestSupport.field(window, "aiProviderCombo");
-                TextField model = FxTestSupport.field(window, "aiModelField");
-                TextField endpoint = FxTestSupport.field(window, "aiEndpointField");
-                TextField token = FxTestSupport.field(window, "aiApiKeyField");
-                TextField completion = FxTestSupport.field(window, "aiCompletionModelField");
+                ComboBox<String> providers = SettingsRig.control(window, "aiProviderCombo");
+                TextField model = SettingsRig.control(window, "aiModelField");
+                TextField endpoint = SettingsRig.control(window, "aiEndpointField");
+                TextField token = SettingsRig.control(window, "aiApiKeyField");
+                TextField completion = SettingsRig.control(window, "aiCompletionModelField");
                 assertTrue(providers.getItems().contains("lmstudio"));
                 providers.setValue("lmstudio");
                 assertEquals("", model.getText());

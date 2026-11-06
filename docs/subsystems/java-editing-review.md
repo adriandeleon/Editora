@@ -7,7 +7,7 @@ probe. It is **not** a side-by-side IDEA usability study or a claim of feature p
 ## Pipeline and ownership
 
 1. `BufferCompletion.addCompletionKeys`/`installCommitCharacters`, then
-   `EditorBuffer.addSnippetKeys`/`addAutoClose`/`addAutoIndent`, then RichTextFX `CodeArea` input
+   `BufferSnippets.addSnippetKeys`, `BufferTyping.addAutoClose`/`addAutoIndent`, then RichTextFX `CodeArea` input
    handle physical keys. Completion must register first and lower-priority handlers must respect
    consumed events. The two split views share a document.
 2. `plainTextChanges` advances `EditorBuffer.docVersion` synchronously and invalidates the shared
@@ -23,12 +23,12 @@ probe. It is **not** a side-by-side IDEA usability study or a claim of feature p
 6. `CompletionMapper` converts protocol items to neutral `Completion` values; `CompletionEngine`
    ranks and `CompletionPopup` renders, handles selection, and drives `CompletionDocPopup` resolve.
 7. `BufferCompletion.acceptCompletion` applies the range and literal/snippet;
-   `EditorBuffer.startSnippet` → `SnippetParser` → `SnippetSessions`/`SnippetSession` owns nested placeholders/caret/Tab.
+   `BufferSnippets.startSnippet` → `SnippetParser` → `SnippetSessions`/`SnippetSession` owns nested placeholders/caret/Tab.
 8. `LspCoordinator.autoImportAccept` applies eager edits or resolves imports;
    `CompletionEditTracker`/`LspEditShift` translate their ranges and `EditorBuffer.applyLspEdits`
    applies an undoable batch while preserving caret/selection. The item's command runs afterward,
    including JDT LS selection feedback, with the updated document synchronized first.
-9. Signature help travels through `LspCoordinator.signatureHelp`, `SignatureSelection`, `SignatureFormat`, and a popup.
+9. Signature help travels through `LspPopups.signatureHelp`, `SignatureSelection`, `SignatureFormat`, and a popup.
    Diagnostics pass through the session, manager, `DiagnosticMapper`, coordinator, overlays/Problems.
    Hover/navigation/formatting share the same buffer/session routing.
 10. `RootResolver`, `LspServerRegistry`, per-root JDT workspaces, JDK discovery, and initialization

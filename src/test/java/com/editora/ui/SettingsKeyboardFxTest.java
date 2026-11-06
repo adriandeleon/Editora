@@ -85,7 +85,7 @@ class SettingsKeyboardFxTest {
 
     /** The chord label the Keymaps list shows for {@code commandId}. */
     private static String listedChord(SettingsWindow window, String commandId) {
-        Map<String, HBox> rows = FxTestSupport.field(window, "shortcutRowsById");
+        Map<String, HBox> rows = SettingsRig.control(window, "shortcutRowsById");
         List<Label> labels = all(rows.get(commandId), Label.class, new ArrayList<>());
         return labels.get(1).getText();
     }
@@ -145,8 +145,8 @@ class SettingsKeyboardFxTest {
             });
             FxTestSupport.drainFx();
             try {
-                VBox list = FxTestSupport.field(window, "shortcutListBox");
-                Map<String, HBox> rows = FxTestSupport.field(window, "shortcutRowsById");
+                VBox list = SettingsRig.control(window, "shortcutListBox");
+                Map<String, HBox> rows = SettingsRig.control(window, "shortcutRowsById");
                 HBox[] second = new HBox[1];
                 String[] id = new String[1];
                 FxTestSupport.runOnFx(() -> {
@@ -213,8 +213,8 @@ class SettingsKeyboardFxTest {
     @Test
     void theShortcutListAndChordChipsFollowTheKeymap() throws Exception {
         withSettings((fx, window, stage) -> {
-            ComboBox<String> keymap = FxTestSupport.field(window, "keymapCombo");
-            Map<String, Label> chips = FxTestSupport.field(window, "chordChips");
+            ComboBox<String> keymap = SettingsRig.control(window, "keymapCombo");
+            Map<String, Label> chips = SettingsRig.control(window, "chordChips");
             Label blameChip = chips.get("git.toggleBlame");
             keymap.setValue("emacs");
             String emacsSave = chordOf(window, "file.save");
@@ -234,7 +234,7 @@ class SettingsKeyboardFxTest {
             // Rebinding from the list reaches the chip on the Git page too.
             SettingsWindow.ShortcutActions actions = FxTestSupport.field(window, "shortcutActions");
             FxTestSupport.call(
-                    window,
+                    FxTestSupport.field(window, "keymapsPage"),
                     "commitRecording",
                     new Class<?>[] {String.class, String.class},
                     "git.toggleBlame",
@@ -256,7 +256,11 @@ class SettingsKeyboardFxTest {
     void resetAllShortcutsAsksBeforeDroppingEveryBinding() throws Exception {
         withSettings((fx, window, stage) -> {
             FxTestSupport.call(
-                    window, "commitRecording", new Class<?>[] {String.class, String.class}, "file.save", "C-M-S-F7");
+                    FxTestSupport.field(window, "keymapsPage"),
+                    "commitRecording",
+                    new Class<?>[] {String.class, String.class},
+                    "file.save",
+                    "C-M-S-F7");
             String custom = chordOf(window, "file.save");
             Map<?, Region> pages = FxTestSupport.field(window, "pages");
             Button resetAll = null;
@@ -310,11 +314,12 @@ class SettingsKeyboardFxTest {
                             page + ": " + (shift ? "Shift+Tab" : "Ctrl+Tab") + " leaves the body");
                 }
             }
-            assertNull(SettingsWindow.focusEscape(KeyCode.TAB, false, false, false), "plain Tab still types a tab");
-            assertNull(SettingsWindow.focusEscape(KeyCode.A, true, false, false));
+            assertNull(
+                    SettingsSnippetPages.focusEscape(KeyCode.TAB, false, false, false), "plain Tab still types a tab");
+            assertNull(SettingsSnippetPages.focusEscape(KeyCode.A, true, false, false));
             assertEquals(
                     javafx.scene.TraversalDirection.PREVIOUS,
-                    SettingsWindow.focusEscape(KeyCode.TAB, true, true, false));
+                    SettingsSnippetPages.focusEscape(KeyCode.TAB, true, true, false));
         });
     }
 

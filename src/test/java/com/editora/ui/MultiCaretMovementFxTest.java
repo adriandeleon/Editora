@@ -61,7 +61,7 @@ class MultiCaretMovementFxTest {
             area.requestFocus();
             area.moveTo(0);
             // addCaretBelow is geometry-based (no layout headless); add the extra by absolute offset instead.
-            Object controller = FxTestSupport.field(b, "multiCaret");
+            Object controller = FxTestSupport.field(FxTestSupport.field(b, "caretOps"), "multiCaret");
             Object manager = FxTestSupport.call(controller, "getManager", new Class[] {});
             FxTestSupport.call(manager, "addCaretAt", new Class[] {int.class}, 5); // line 1, column 0
             return b;
@@ -97,7 +97,8 @@ class MultiCaretMovementFxTest {
     private List<Integer> carets(EditorBuffer b) throws Exception {
         return FxTestSupport.callOnFx(() -> {
             CodeArea area = FxTestSupport.field(b, "area");
-            Object controller = FxTestSupport.field(b, "multiCaret"); // MultiCaretController
+            Object controller =
+                    FxTestSupport.field(FxTestSupport.field(b, "caretOps"), "multiCaret"); // MultiCaretController
             Object manager = FxTestSupport.call(controller, "getManager", new Class[] {});
             List<?> extras = FxTestSupport.field(manager, "extras");
             List<Integer> out = new ArrayList<>();

@@ -39,9 +39,12 @@ A preference touches five places; miss one and it is applied but never saved, or
 
 1. **Model**: the field, default and getter/setter in `Settings` (with a schema bump and migration, see
    [Config and schema](#config-and-schema)).
-2. **Control**: built once in `SettingsWindow` (or the page's own class), its listener writing the field and
-   calling `apply()` — unless `loading` is set. Text fields commit on Enter or focus loss
-   (`commitOnEnterOrBlur`), numbers use `IntSpinners.editable` (invalid text is marked, never committed).
+2. **Control**: built once in `SettingsWindow` or in the page's own class (`SettingsLspPage`, `SettingsAiPages`,
+   `SettingsSyncPage` and the other `Settings*Page`/`Settings*Pages` classes, each holding one area's controls,
+   layout and load), its listener writing the field and calling `apply()` — unless `loading` is set. Text fields
+   commit on Enter or focus loss (`commitOnEnterOrBlur`), numbers use `IntSpinners.editable` (invalid text is
+   marked, never committed). A control's field name is its row in `settings-controls.properties`; a new page
+   class goes into `SettingsWindow.controlOwners()`, where the modified marks and the settings tests find it.
 3. **Row**: placed on its page with `checkRow` / `controlRow` / `cardRow` and English search keywords. The
    search also reads the row's title, description, prompts and a combo's choices; a list inside a row is not
    searched (see `SettingsSearch`).
@@ -187,8 +190,9 @@ and not checked.
   assigns then counts as non-null, as if the constructor had set it. `MainController.init` (FXMLLoader builds
   the controller, `WindowManager` calls `init` straight after), `NavigationCoordinator.setupJumpPickers` (which
   `init` calls) and `SettingsWindow.build` (the window builds its controls on first show; the methods that can
-  run earlier check first) use it. It is a promise NullAway cannot check, so keep it to that lifecycle; a
-  field set by a setter or a later step stays `@Nullable`. Fields injected by FXML (`@FXML`) are not checked
+  run earlier check first) use it, as do the Settings page classes' `buildControls` (which `build` calls). It is a
+  promise NullAway cannot check, so keep it to that lifecycle; a field set by a setter or a later step stays
+  `@Nullable`. Fields injected by FXML (`@FXML`) are not checked
   for initialization (`ExcludedFieldAnnotations`).
 - **JavaFX returns null more often than it looks**: `Node.getScene()`, `Scene.getWindow()`, `Control.getSkin()`,
   `Node.getParent()`, a selection model's selected item, a `ComboBox` value. Guard where the value is used.

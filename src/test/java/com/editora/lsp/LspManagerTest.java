@@ -44,49 +44,49 @@ class LspManagerTest {
     void extractsTriggerCharactersFromCapabilities() {
         ServerCapabilities caps = new ServerCapabilities();
         caps.setCompletionProvider(new CompletionOptions(false, List.of(".", "<", "/")));
-        assertEquals(Set.of('.', '<', '/'), LspManager.triggerCharsOf(caps));
+        assertEquals(Set.of('.', '<', '/'), LspAssists.triggerCharsOf(caps));
     }
 
     @Test
     void workspaceSymbolProviderDetectedFromEitherForm() {
-        assertFalse(LspManager.workspaceSymbolProvider(null));
-        assertFalse(LspManager.workspaceSymbolProvider(new ServerCapabilities())); // unset
+        assertFalse(LspDocumentSymbols.workspaceSymbolProvider(null));
+        assertFalse(LspDocumentSymbols.workspaceSymbolProvider(new ServerCapabilities())); // unset
         ServerCapabilities bool = new ServerCapabilities();
         bool.setWorkspaceSymbolProvider(true);
-        assertTrue(LspManager.workspaceSymbolProvider(bool));
+        assertTrue(LspDocumentSymbols.workspaceSymbolProvider(bool));
         ServerCapabilities off = new ServerCapabilities();
         off.setWorkspaceSymbolProvider(false);
-        assertFalse(LspManager.workspaceSymbolProvider(off));
+        assertFalse(LspDocumentSymbols.workspaceSymbolProvider(off));
         ServerCapabilities opts = new ServerCapabilities();
         opts.setWorkspaceSymbolProvider(new org.eclipse.lsp4j.WorkspaceSymbolOptions()); // options form → supported
-        assertTrue(LspManager.workspaceSymbolProvider(opts));
+        assertTrue(LspDocumentSymbols.workspaceSymbolProvider(opts));
     }
 
     @Test
     void usesOnlyTheFirstCharOfMultiCharTriggers() {
         ServerCapabilities caps = new ServerCapabilities();
         caps.setCompletionProvider(new CompletionOptions(false, List.of("::", "->")));
-        assertEquals(Set.of(':', '-'), LspManager.triggerCharsOf(caps));
+        assertEquals(Set.of(':', '-'), LspAssists.triggerCharsOf(caps));
     }
 
     @Test
     void emptyWhenNoCompletionProviderOrNoTriggers() {
-        assertTrue(LspManager.triggerCharsOf(null).isEmpty());
-        assertTrue(LspManager.triggerCharsOf(new ServerCapabilities()).isEmpty()); // no completionProvider
+        assertTrue(LspAssists.triggerCharsOf(null).isEmpty());
+        assertTrue(LspAssists.triggerCharsOf(new ServerCapabilities()).isEmpty()); // no completionProvider
         ServerCapabilities noTriggers = new ServerCapabilities();
         noTriggers.setCompletionProvider(new CompletionOptions()); // completionProvider, null triggerCharacters
-        assertTrue(LspManager.triggerCharsOf(noTriggers).isEmpty());
+        assertTrue(LspAssists.triggerCharsOf(noTriggers).isEmpty());
     }
 
     @Test
     void semanticTokensProviderSupportedWithRangeOrFull() {
         ServerCapabilities range = new ServerCapabilities();
         range.setSemanticTokensProvider(stProvider(true, true, null));
-        assertNotNull(LspManager.semanticTokensProvider(range)); // legend + range → supported
+        assertNotNull(SemanticTokenRequests.semanticTokensProvider(range)); // legend + range → supported
 
         ServerCapabilities fullOnly = new ServerCapabilities();
         fullOnly.setSemanticTokensProvider(stProvider(true, false, true));
-        assertNotNull(LspManager.semanticTokensProvider(
+        assertNotNull(SemanticTokenRequests.semanticTokensProvider(
                 fullOnly)); // full-only (e.g. some servers) → supported, full fallback
     }
 
@@ -94,20 +94,20 @@ class LspManagerTest {
     void semanticTokensProviderNullWhenNeitherRangeNorFull() {
         ServerCapabilities neither = new ServerCapabilities();
         neither.setSemanticTokensProvider(stProvider(true, false, false));
-        assertNull(LspManager.semanticTokensProvider(neither));
+        assertNull(SemanticTokenRequests.semanticTokensProvider(neither));
 
         ServerCapabilities unset = new ServerCapabilities();
         unset.setSemanticTokensProvider(stProvider(true, null, null));
-        assertNull(LspManager.semanticTokensProvider(unset)); // range + full both unset
+        assertNull(SemanticTokenRequests.semanticTokensProvider(unset)); // range + full both unset
     }
 
     @Test
     void semanticTokensProviderNullWhenAbsentOrNoLegend() {
-        assertNull(LspManager.semanticTokensProvider(null));
-        assertNull(LspManager.semanticTokensProvider(new ServerCapabilities())); // no provider at all
+        assertNull(SemanticTokenRequests.semanticTokensProvider(null));
+        assertNull(SemanticTokenRequests.semanticTokensProvider(new ServerCapabilities())); // no provider at all
         ServerCapabilities noLegend = new ServerCapabilities();
         noLegend.setSemanticTokensProvider(stProvider(false, true, true));
-        assertNull(LspManager.semanticTokensProvider(noLegend)); // can't decode without a legend
+        assertNull(SemanticTokenRequests.semanticTokensProvider(noLegend)); // can't decode without a legend
     }
 
     /**
@@ -118,9 +118,9 @@ class LspManagerTest {
     void thePomServersMavenObjectCarriesTheLocalRepository() {
         assertEquals(
                 Map.of("central", Map.of("skip", true), "repo", Map.of("local", "/data/m2/repository")),
-                LspManager.mavenSection(false, "/data/m2/repository"));
-        assertEquals(Map.of("central", Map.of("skip", false)), LspManager.mavenSection(true, null));
-        assertEquals(Map.of("central", Map.of("skip", true)), LspManager.mavenSection(false, " "));
+                ServerInitOptions.mavenSection(false, "/data/m2/repository"));
+        assertEquals(Map.of("central", Map.of("skip", false)), ServerInitOptions.mavenSection(true, null));
+        assertEquals(Map.of("central", Map.of("skip", true)), ServerInitOptions.mavenSection(false, " "));
     }
 
     @SuppressWarnings("unchecked")
@@ -128,12 +128,12 @@ class LspManagerTest {
     void initOptionsFor() {
         // json/css/html: provideFormatter flips the servers' advertised documentFormattingProvider to true,
         // so Format Document becomes available (#468; verified against the real servers).
-        assertEquals(Map.of("provideFormatter", true), LspManager.initOptionsFor("json", List.of()));
-        assertEquals(Map.of("provideFormatter", true), LspManager.initOptionsFor("css", List.of()));
-        assertEquals(Map.of("provideFormatter", true), LspManager.initOptionsFor("html", List.of()));
+        assertEquals(Map.of("provideFormatter", true), ServerInitOptions.initOptionsFor("json", List.of()));
+        assertEquals(Map.of("provideFormatter", true), ServerInitOptions.initOptionsFor("css", List.of()));
+        assertEquals(Map.of("provideFormatter", true), ServerInitOptions.initOptionsFor("html", List.of()));
         // go keeps its semanticTokens flag; java delegates to javaInitOptions; others need none.
-        assertEquals(Map.of("semanticTokens", true), LspManager.initOptionsFor("go", List.of()));
-        assertEquals(LspManager.javaInitOptions(List.of()), LspManager.initOptionsFor("java", List.of()));
+        assertEquals(Map.of("semanticTokens", true), ServerInitOptions.initOptionsFor("go", List.of()));
+        assertEquals(ServerInitOptions.javaInitOptions(List.of()), ServerInitOptions.initOptionsFor("java", List.of()));
         // maven-pom (lemminx-maven): turn the extension on with the heavy Central index disabled (local ~/.m2).
         // It is lemminx too: the same protocol extensions as the XML server (review 2, D15).
         assertEquals(
@@ -142,11 +142,11 @@ class LspManagerTest {
                         XmlServer.extendedClientCapabilities(),
                         "settings",
                         Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", true))))),
-                LspManager.initOptionsFor("maven-pom", List.of()));
+                ServerInitOptions.initOptionsFor("maven-pom", List.of()));
         // Pyright publishes: pulled diagnostics covered the open files only (Python review 2, B105)
-        assertEquals(Map.of("disablePullDiagnostics", true), LspManager.initOptionsFor("python", List.of()));
-        assertNull(LspManager.initOptionsFor("typescript", List.of()));
-        assertNull(LspManager.initOptionsFor(null, List.of()));
+        assertEquals(Map.of("disablePullDiagnostics", true), ServerInitOptions.initOptionsFor("python", List.of()));
+        assertNull(ServerInitOptions.initOptionsFor("typescript", List.of()));
+        assertNull(ServerInitOptions.initOptionsFor(null, List.of()));
     }
 
     private java.nio.file.Path typeScriptSdkIn(java.nio.file.Path dir, String marker) throws Exception {
@@ -161,11 +161,12 @@ class LspManagerTest {
     void astroInitOptionsCarryTheChosenTypeScriptSdk() throws Exception {
         var sdk = typeScriptSdkIn(tempDir, "typescript.js");
 
-        var options = (Map<String, Object>) LspManager.initOptionsFor("astro", List.of(), sdk, false);
+        var options = (Map<String, Object>) ServerInitOptions.initOptionsFor("astro", List.of(), sdk, false);
         var typescript = (Map<String, Object>) options.get("typescript");
 
         assertEquals(sdk.toString(), typescript.get("tsdk"));
-        assertNull(LspManager.initOptionsFor("astro", List.of()), "no SDK, no options: the server is not started");
+        assertNull(
+                ServerInitOptions.initOptionsFor("astro", List.of()), "no SDK, no options: the server is not started");
     }
 
     /** Editora's own TypeScript (never a global one npm -g replaced) serves astro-ls in an untrusted folder (B104). */
@@ -173,10 +174,10 @@ class LspManagerTest {
     void editorasOwnTypescriptSdkServesAstroWhereTheFolderIsNotTrusted() throws Exception {
         java.nio.file.Path folder = java.nio.file.Files.createDirectories(tempDir.resolve("site"));
         java.nio.file.Path own = java.nio.file.Files.createDirectories(tempDir.resolve("own/lib"));
-        assertEquals(own, LspManager.astroTypeScriptSdk(folder, null, List.of(), own));
+        assertEquals(own, NodeServerPaths.astroTypeScriptSdk(folder, null, List.of(), own));
         // a trusted folder's own SDK still comes first
         java.nio.file.Path project = typeScriptSdkIn(folder, "typescript.js");
-        assertEquals(project, LspManager.astroTypeScriptSdk(folder, folder, List.of(), own));
+        assertEquals(project, NodeServerPaths.astroTypeScriptSdk(folder, folder, List.of(), own));
     }
 
     /** astro-ls runs the JavaScript in the SDK directory, so an untrusted folder must not supply it. */
@@ -184,22 +185,22 @@ class LspManagerTest {
     void anUntrustedFolderDoesNotSupplyTheAstroTypeScriptSdk() throws Exception {
         typeScriptSdkIn(tempDir, "typescript.js");
 
-        assertNull(LspManager.astroTypeScriptSdk(tempDir, null, List.of()));
-        assertNull(LspManager.astroTypeScriptSdk(tempDir.resolve("packages/site"), null, List.of()));
+        assertNull(NodeServerPaths.astroTypeScriptSdk(tempDir, null, List.of()));
+        assertNull(NodeServerPaths.astroTypeScriptSdk(tempDir.resolve("packages/site"), null, List.of()));
     }
 
     @Test
     void aTrustedFolderSuppliesItsOwnAstroTypeScriptSdk() throws Exception {
         var sdk = typeScriptSdkIn(tempDir, "typescript.js");
 
-        assertEquals(sdk, LspManager.astroTypeScriptSdk(tempDir, tempDir, List.of()));
+        assertEquals(sdk, NodeServerPaths.astroTypeScriptSdk(tempDir, tempDir, List.of()));
     }
 
     @Test
     void astroSdkDiscoveryWalksUpForHoistedTypeScriptInsideTheTrustedFolder() throws Exception {
         var sdk = typeScriptSdkIn(tempDir, "tsserverlibrary.js");
 
-        assertEquals(sdk, LspManager.astroTypeScriptSdk(tempDir.resolve("packages/site"), tempDir, List.of()));
+        assertEquals(sdk, NodeServerPaths.astroTypeScriptSdk(tempDir.resolve("packages/site"), tempDir, List.of()));
     }
 
     /** Only {@code packages} is trusted: the walk must not pick up the SDK of the untrusted folder above it. */
@@ -210,7 +211,7 @@ class LspManagerTest {
 
         assertEquals(
                 site.resolve("node_modules/typescript/lib"),
-                LspManager.astroTypeScriptSdk(site, tempDir.resolve("packages"), List.of()));
+                NodeServerPaths.astroTypeScriptSdk(site, tempDir.resolve("packages"), List.of()));
         assertNull(LspManager.findTypeScriptSdk(site, tempDir.resolve("packages")));
     }
 
@@ -219,9 +220,9 @@ class LspManagerTest {
         var trusted = tempDir.resolve("work");
         var root = trusted.resolve("packages/site");
 
-        assertEquals(trusted, LspManager.trustedCeiling(root, p -> p.startsWith(trusted)));
-        assertNull(LspManager.trustedCeiling(root, p -> false));
-        assertNull(LspManager.trustedCeiling(null, p -> true));
+        assertEquals(trusted, NodeServerPaths.trustedCeiling(root, p -> p.startsWith(trusted)));
+        assertNull(NodeServerPaths.trustedCeiling(root, p -> false));
+        assertNull(NodeServerPaths.trustedCeiling(null, p -> true));
     }
 
     /** The SDK beside the installed server is the user's own, so it serves trusted and untrusted folders. */
@@ -234,12 +235,12 @@ class LspManagerTest {
         var project = tempDir.resolve("project");
         typeScriptSdkIn(project, "typescript.js");
 
-        assertEquals(sdk.toRealPath(), LspManager.astroTypeScriptSdk(project, null, List.of(server.toString())));
+        assertEquals(sdk.toRealPath(), NodeServerPaths.astroTypeScriptSdk(project, null, List.of(server.toString())));
     }
 
     @Test
     void javaInitOptionsAlwaysDisablesAutobuildNoDebugBundles() {
-        Map<String, Object> opts = LspManager.javaInitOptions(List.of());
+        Map<String, Object> opts = ServerInitOptions.javaInitOptions(List.of());
         assertFalse(opts.containsKey("bundles"));
         Map<String, Object> settings = (Map<String, Object>) opts.get("settings");
         Map<String, Object> java = (Map<String, Object>) settings.get("java");
@@ -251,7 +252,7 @@ class LspManagerTest {
     @Test
     void javaInitOptionsIncludesBundlesWhenDebugging() {
         List<String> jars = List.of("/path/to/java-debug.jar");
-        Map<String, Object> opts = LspManager.javaInitOptions(jars);
+        Map<String, Object> opts = ServerInitOptions.javaInitOptions(jars);
         assertEquals(jars, opts.get("bundles"));
         Map<String, Object> settings = (Map<String, Object>) opts.get("settings");
         Map<String, Object> java = (Map<String, Object>) settings.get("java");
@@ -297,15 +298,15 @@ class LspManagerTest {
 
     @Test
     void signatureHelpProviderAndTriggerCharsExtracted() {
-        assertFalse(LspManager.signatureHelpProvider(null));
-        assertFalse(LspManager.signatureHelpProvider(new ServerCapabilities()));
+        assertFalse(LspAssists.signatureHelpProvider(null));
+        assertFalse(LspAssists.signatureHelpProvider(new ServerCapabilities()));
         ServerCapabilities caps = new ServerCapabilities();
         var opts = new org.eclipse.lsp4j.SignatureHelpOptions(List.of("(", ","));
         opts.setRetriggerCharacters(List.of(")"));
         caps.setSignatureHelpProvider(opts);
-        assertTrue(LspManager.signatureHelpProvider(caps));
-        assertEquals(Set.of('(', ',', ')'), LspManager.signatureTriggerCharsOf(caps));
-        assertEquals(Set.of(), LspManager.signatureTriggerCharsOf(null));
+        assertTrue(LspAssists.signatureHelpProvider(caps));
+        assertEquals(Set.of('(', ',', ')'), LspAssists.signatureTriggerCharsOf(caps));
+        assertEquals(Set.of(), LspAssists.signatureTriggerCharsOf(null));
     }
 
     // --- $/progress (#683) ---------------------------------------------------------------------
@@ -327,17 +328,17 @@ class LspManagerTest {
 
     @Test
     void fullDeltaSupportDetectedOnlyFromTheOptionsFormWithDeltaTrue() {
-        assertFalse(LspManager.fullDeltaSupported(null));
+        assertFalse(SemanticTokenRequests.fullDeltaSupported(null));
         var boolFull = stProvider(true, false, true); // full=true (boolean form) — no delta
-        assertFalse(LspManager.fullDeltaSupported(boolFull));
+        assertFalse(SemanticTokenRequests.fullDeltaSupported(boolFull));
         var opts = new SemanticTokensWithRegistrationOptions();
         opts.setLegend(new SemanticTokensLegend(List.of("keyword"), List.of()));
         var fullOpts = new org.eclipse.lsp4j.SemanticTokensServerFull(true); // delta=true
         opts.setFull(fullOpts);
-        assertTrue(LspManager.fullDeltaSupported(opts));
+        assertTrue(SemanticTokenRequests.fullDeltaSupported(opts));
         var noDelta = new SemanticTokensWithRegistrationOptions();
         noDelta.setFull(new org.eclipse.lsp4j.SemanticTokensServerFull(false));
-        assertFalse(LspManager.fullDeltaSupported(noDelta));
+        assertFalse(SemanticTokenRequests.fullDeltaSupported(noDelta));
     }
 
     // --- Watched files (#677) ------------------------------------------------------------------
@@ -350,7 +351,7 @@ class LspManagerTest {
                 new LspManager.WatchedFile(java.nio.file.Path.of("/other/B.java"), LspManager.WatchedKind.DELETED),
                 // /proj2 must NOT be contained by /proj (component containment, not string prefix)
                 new LspManager.WatchedFile(java.nio.file.Path.of("/proj2/C.java"), LspManager.WatchedKind.CHANGED));
-        var events = LspManager.eventsUnderRoot(changes, java.nio.file.Path.of("/proj"));
+        var events = LspFileWatching.eventsUnderRoot(changes, java.nio.file.Path.of("/proj"));
         assertEquals(2, events.size());
         assertEquals(org.eclipse.lsp4j.FileChangeType.Changed, events.get(0).getType());
         assertTrue(events.get(0).getUri().endsWith("A.java"));
@@ -361,75 +362,75 @@ class LspManagerTest {
 
     @Test
     void inlayHintProviderDetectedFromEitherForm() {
-        assertFalse(LspManager.inlayHintProvider(null));
-        assertFalse(LspManager.inlayHintProvider(new ServerCapabilities()));
+        assertFalse(LspInlineHints.inlayHintProvider(null));
+        assertFalse(LspInlineHints.inlayHintProvider(new ServerCapabilities()));
         ServerCapabilities bool = new ServerCapabilities();
         bool.setInlayHintProvider(true);
-        assertTrue(LspManager.inlayHintProvider(bool));
+        assertTrue(LspInlineHints.inlayHintProvider(bool));
         ServerCapabilities opts = new ServerCapabilities();
         opts.setInlayHintProvider(new org.eclipse.lsp4j.InlayHintRegistrationOptions());
-        assertTrue(LspManager.inlayHintProvider(opts));
+        assertTrue(LspInlineHints.inlayHintProvider(opts));
     }
 
     @Test
     void inlayLabelJoinsPartsAndStrips() {
         var plain = new org.eclipse.lsp4j.InlayHint(
                 new org.eclipse.lsp4j.Position(0, 0), org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(" x: "));
-        assertEquals("x:", LspManager.inlayLabel(plain));
+        assertEquals("x:", LspInlineHints.inlayLabel(plain));
         var parts = new org.eclipse.lsp4j.InlayHint(
                 new org.eclipse.lsp4j.Position(0, 0),
                 org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(List.of(
                         new org.eclipse.lsp4j.InlayHintLabelPart("a"),
                         new org.eclipse.lsp4j.InlayHintLabelPart(": int"))));
-        assertEquals("a: int", LspManager.inlayLabel(parts));
+        assertEquals("a: int", LspInlineHints.inlayLabel(parts));
     }
 
     // --- Call / type hierarchy (#682) ----------------------------------------------------------
 
     @Test
     void hierarchyProvidersDetectedFromEitherForm() {
-        assertFalse(LspManager.callHierarchyProvider(null));
-        assertFalse(LspManager.typeHierarchyProvider(new ServerCapabilities()));
+        assertFalse(LspNavigationRequests.callHierarchyProvider(null));
+        assertFalse(LspNavigationRequests.typeHierarchyProvider(new ServerCapabilities()));
         ServerCapabilities calls = new ServerCapabilities();
         calls.setCallHierarchyProvider(true);
-        assertTrue(LspManager.callHierarchyProvider(calls));
+        assertTrue(LspNavigationRequests.callHierarchyProvider(calls));
         ServerCapabilities types = new ServerCapabilities();
         types.setTypeHierarchyProvider(new org.eclipse.lsp4j.TypeHierarchyRegistrationOptions());
-        assertTrue(LspManager.typeHierarchyProvider(types));
+        assertTrue(LspNavigationRequests.typeHierarchyProvider(types));
     }
 
     // --- Rename (#676) -------------------------------------------------------------------------
 
     @Test
     void renameProviderDetectedFromEitherForm() {
-        assertFalse(LspManager.renameProvider(null));
-        assertFalse(LspManager.renameProvider(new ServerCapabilities()));
+        assertFalse(LspRename.renameProvider(null));
+        assertFalse(LspRename.renameProvider(new ServerCapabilities()));
         ServerCapabilities bool = new ServerCapabilities();
         bool.setRenameProvider(true);
-        assertTrue(LspManager.renameProvider(bool));
+        assertTrue(LspRename.renameProvider(bool));
         ServerCapabilities opts = new ServerCapabilities();
         opts.setRenameProvider(new org.eclipse.lsp4j.RenameOptions());
-        assertTrue(LspManager.renameProvider(opts));
+        assertTrue(LspRename.renameProvider(opts));
     }
 
     @Test
     void mapPrepareHandlesAllThreeShapesAndRefusal() {
-        assertFalse(LspManager.mapPrepare(null).allowed(), "null response = rename not valid here");
+        assertFalse(LspRename.mapPrepare(null).allowed(), "null response = rename not valid here");
         var range =
                 new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(1, 4), new org.eclipse.lsp4j.Position(1, 9));
-        var fromRange = LspManager.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forFirst(range));
+        var fromRange = LspRename.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forFirst(range));
         assertTrue(fromRange.allowed());
         assertEquals(4, fromRange.startCol());
         var prep = new org.eclipse.lsp4j.PrepareRenameResult(range, "oldName");
-        var fromPrep = LspManager.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forSecond(prep));
+        var fromPrep = LspRename.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forSecond(prep));
         assertTrue(fromPrep.allowed());
         assertEquals("oldName", fromPrep.placeholder());
-        var fromDefault = LspManager.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forThird(
+        var fromDefault = LspRename.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forThird(
                 new org.eclipse.lsp4j.PrepareRenameDefaultBehavior(true)));
         assertTrue(fromDefault.allowed());
         assertEquals("", fromDefault.placeholder());
         // lemminx on an attribute value (XML review B11): the server declines, as VS Code's client reads it.
-        assertFalse(LspManager.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forThird(
+        assertFalse(LspRename.mapPrepare(org.eclipse.lsp4j.jsonrpc.messages.Either3.forThird(
                         new org.eclipse.lsp4j.PrepareRenameDefaultBehavior(false)))
                 .allowed());
     }
@@ -438,17 +439,17 @@ class LspManagerTest {
 
     @Test
     void documentHighlightProviderDetectedFromEitherForm() {
-        assertFalse(LspManager.documentHighlightProvider(null));
-        assertFalse(LspManager.documentHighlightProvider(new ServerCapabilities()));
+        assertFalse(LspAssists.documentHighlightProvider(null));
+        assertFalse(LspAssists.documentHighlightProvider(new ServerCapabilities()));
         ServerCapabilities bool = new ServerCapabilities();
         bool.setDocumentHighlightProvider(true);
-        assertTrue(LspManager.documentHighlightProvider(bool));
+        assertTrue(LspAssists.documentHighlightProvider(bool));
         ServerCapabilities off = new ServerCapabilities();
         off.setDocumentHighlightProvider(false);
-        assertFalse(LspManager.documentHighlightProvider(off));
+        assertFalse(LspAssists.documentHighlightProvider(off));
         ServerCapabilities opts = new ServerCapabilities();
         opts.setDocumentHighlightProvider(new org.eclipse.lsp4j.DocumentHighlightOptions());
-        assertTrue(LspManager.documentHighlightProvider(opts));
+        assertTrue(LspAssists.documentHighlightProvider(opts));
     }
 
     // --- Code actions (#670) -------------------------------------------------------------------
@@ -475,7 +476,7 @@ class LspManagerTest {
                 new org.eclipse.lsp4j.Diagnostic(range(0, 0, 2, 0), "multi-line, ends where the range starts");
         var before = new org.eclipse.lsp4j.Diagnostic(range(0, 0, 1, 5), "entirely above");
         var after = new org.eclipse.lsp4j.Diagnostic(range(5, 0, 6, 0), "entirely below");
-        var hits = LspManager.diagnosticsOverlapping(
+        var hits = LspCodeActions.diagnosticsOverlapping(
                 java.util.List.of(inRange, touchingEnd, before, after), range(2, 0, 3, 0));
         assertEquals(java.util.List.of(inRange, touchingEnd), hits);
     }
@@ -501,20 +502,20 @@ class LspManagerTest {
 
     @Test
     void rawStringResultAcceptsStringAndGsonStringPrimitiveOnly() {
-        assertEquals("src", LspManager.rawStringResult("src"));
-        assertEquals("src", LspManager.rawStringResult(new com.google.gson.JsonPrimitive("src")));
-        assertNull(LspManager.rawStringResult(new com.google.gson.JsonPrimitive(42)));
-        assertNull(LspManager.rawStringResult(null));
-        assertNull(LspManager.rawStringResult(List.of()));
+        assertEquals("src", JdtlsCommands.rawStringResult("src"));
+        assertEquals("src", JdtlsCommands.rawStringResult(new com.google.gson.JsonPrimitive("src")));
+        assertNull(JdtlsCommands.rawStringResult(new com.google.gson.JsonPrimitive(42)));
+        assertNull(JdtlsCommands.rawStringResult(null));
+        assertNull(JdtlsCommands.rawStringResult(List.of()));
     }
 
     // --- jdtls -data workspace claims (#668) ---------------------------------------------------
 
     @Test
     void workspaceCandidateSuffixesFromTheSecondAttempt() {
-        assertEquals("abc123", LspManager.workspaceCandidate("abc123", 1));
-        assertEquals("abc123-2", LspManager.workspaceCandidate("abc123", 2));
-        assertEquals("abc123-3", LspManager.workspaceCandidate("abc123", 3));
+        assertEquals("abc123", JdtlsWorkspaces.workspaceCandidate("abc123", 1));
+        assertEquals("abc123-2", JdtlsWorkspaces.workspaceCandidate("abc123", 2));
+        assertEquals("abc123-3", JdtlsWorkspaces.workspaceCandidate("abc123", 3));
     }
 
     /** Two live claims of the same root (two windows) must get DIFFERENT dirs — sharing one Eclipse
@@ -522,21 +523,21 @@ class LspManagerTest {
     @Test
     void aSecondClaimOfTheSameRootGetsASuffixedDirAndReleaseRecycles() {
         String base = "test-claim-" + System.nanoTime(); // unique so a parallel test can't collide
-        String first = LspManager.claimJdtlsWorkspaceName(base);
-        String second = LspManager.claimJdtlsWorkspaceName(base);
+        String first = JdtlsWorkspaces.claimJdtlsWorkspaceName(base);
+        String second = JdtlsWorkspaces.claimJdtlsWorkspaceName(base);
         try {
             assertEquals(base, first, "first claimant keeps the canonical dir (persisted index reuse)");
             assertEquals(base + "-2", second, "second claimant is suffixed, never shared");
         } finally {
-            LspManager.releaseJdtlsWorkspaceName(first);
-            LspManager.releaseJdtlsWorkspaceName(second);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(first);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(second);
         }
         // Released → the canonical dir is claimable again (a later window reuses the index).
-        String again = LspManager.claimJdtlsWorkspaceName(base);
+        String again = JdtlsWorkspaces.claimJdtlsWorkspaceName(base);
         try {
             assertEquals(base, again);
         } finally {
-            LspManager.releaseJdtlsWorkspaceName(again);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(again);
         }
     }
 
@@ -582,7 +583,7 @@ class LspManagerTest {
         caps.setDocumentOnTypeFormattingProvider(
                 new org.eclipse.lsp4j.DocumentOnTypeFormattingOptions(";", List.of("\n", "}")));
 
-        assertEquals(java.util.Set.of(';', '\n', '}'), LspManager.onTypeTriggersOf(caps));
+        assertEquals(java.util.Set.of(';', '\n', '}'), LspFormatting.onTypeTriggersOf(caps));
     }
 
     @Test
@@ -590,14 +591,14 @@ class LspManagerTest {
         ServerCapabilities caps = new ServerCapabilities();
         caps.setDocumentOnTypeFormattingProvider(new org.eclipse.lsp4j.DocumentOnTypeFormattingOptions(";"));
 
-        assertEquals(java.util.Set.of(';'), LspManager.onTypeTriggersOf(caps));
+        assertEquals(java.util.Set.of(';'), LspFormatting.onTypeTriggersOf(caps));
     }
 
     /** No provider means the feature stays inert for that server — an empty set, never a null or a throw. */
     @Test
     void onTypeTriggersIsEmptyWithoutAProvider() {
-        assertTrue(LspManager.onTypeTriggersOf(null).isEmpty());
-        assertTrue(LspManager.onTypeTriggersOf(new ServerCapabilities()).isEmpty());
+        assertTrue(LspFormatting.onTypeTriggersOf(null).isEmpty());
+        assertTrue(LspFormatting.onTypeTriggersOf(new ServerCapabilities()).isEmpty());
     }
 
     @Test
@@ -607,7 +608,7 @@ class LspManagerTest {
         options.setMoreTriggerCharacter(java.util.Arrays.asList(null, "", "}"));
         caps.setDocumentOnTypeFormattingProvider(options);
 
-        assertEquals(java.util.Set.of('}'), LspManager.onTypeTriggersOf(caps));
+        assertEquals(java.util.Set.of('}'), LspFormatting.onTypeTriggersOf(caps));
     }
 
     // --- jdtls extendedClientCapabilities (#741) ----------------------------------------------------
@@ -621,7 +622,7 @@ class LspManagerTest {
      */
     @Test
     void everyDeclaredPromptFlagHasAPickerBehindIt() {
-        var caps = LspManager.javaExtendedClientCapabilities();
+        var caps = ServerInitOptions.javaExtendedClientCapabilities();
 
         for (String key : caps.keySet()) {
             if (!key.endsWith("PromptSupport")) {
@@ -637,7 +638,7 @@ class LspManagerTest {
     /** The three flags that need no client UI — each backed by something Editora already implements. */
     @Test
     void theNoUiCapabilitiesAreDeclared() {
-        var caps = LspManager.javaExtendedClientCapabilities();
+        var caps = ServerInitOptions.javaExtendedClientCapabilities();
 
         assertEquals(Boolean.TRUE, caps.get("classFileContentsSupport"), "we open jdt:// source (#665)");
         assertEquals(Boolean.TRUE, caps.get("resolveAdditionalTextEditsSupport"), "we resolve on accept (#410)");
@@ -651,7 +652,7 @@ class LspManagerTest {
      */
     @Test
     void theClientDrivenRefactoringsAreDeclaredWithTheirDrivers() {
-        var caps = LspManager.javaExtendedClientCapabilities();
+        var caps = ServerInitOptions.javaExtendedClientCapabilities();
 
         assertEquals(Boolean.TRUE, caps.get("advancedGenerateAccessorsSupport"));
         assertNotNull(JdtlsGenerate.forCommand("java.action.generateAccessorsPrompt"));
@@ -670,7 +671,7 @@ class LspManagerTest {
      */
     @Test
     void theInferredSelectionAndMoveConfirmationFlowsAreDeclared() {
-        var caps = LspManager.javaExtendedClientCapabilities();
+        var caps = ServerInitOptions.javaExtendedClientCapabilities();
 
         assertEquals(List.of("extractMethod", "extractVariable", "extractField"), caps.get("inferSelectionSupport"));
         assertEquals(Boolean.TRUE, caps.get("advancedIntroduceParameterRefactoringSupport"));
@@ -684,7 +685,7 @@ class LspManagerTest {
      */
     @Test
     void theImportChooserFlowIsDeclared() {
-        var caps = LspManager.javaExtendedClientCapabilities();
+        var caps = ServerInitOptions.javaExtendedClientCapabilities();
 
         assertEquals(Boolean.TRUE, caps.get("advancedOrganizeImportsSupport"), "Add all missing imports asks (D6)");
         assertEquals(Boolean.TRUE, caps.get("executeClientCommandSupport"), "the import chooser answers it (A3)");
@@ -698,8 +699,9 @@ class LspManagerTest {
     @SuppressWarnings("unchecked")
     @Test
     void theJavaPreferencesReachJdtlsUnderTheirReadKeys() {
-        Map<String, Object> init = (Map<String, Object>)
-                ((Map<String, Object>) LspManager.javaInitOptions(List.of()).get("settings")).get("java");
+        Map<String, Object> init = (Map<String, Object>) ((Map<String, Object>)
+                        ServerInitOptions.javaInitOptions(List.of()).get("settings"))
+                .get("java");
         Map<String, Object> pushed =
                 (Map<String, Object>) LspServerSettings.push("java", false).get("java");
         for (Map<String, Object> java : List.of(init, pushed)) {
@@ -733,7 +735,7 @@ class LspManagerTest {
     void gradleRunsOnTheDefaultRuntime() {
         var jdks = List.of(new JavaRuntimes.Jdk(27, "/jdk27"), new JavaRuntimes.Jdk(25, "/jdk25"));
         Map<String, Object> java = (Map<String, Object>)
-                ((Map<String, Object>) LspManager.javaInitOptions(List.of(), false, jdks, "/jdk25")
+                ((Map<String, Object>) ServerInitOptions.javaInitOptions(List.of(), false, jdks, "/jdk25")
                                 .get("settings"))
                         .get("java");
         Map<String, Object> keys = flatten("java", java);
@@ -759,12 +761,13 @@ class LspManagerTest {
     /** The options object must still carry what it did before — the flags are additive to it. */
     @Test
     void initOptionsKeepAutobuildOffAndTheDebugBundles() {
-        var withBundle = LspManager.javaInitOptions(List.of("/tmp/java-debug.jar"));
+        var withBundle = ServerInitOptions.javaInitOptions(List.of("/tmp/java-debug.jar"));
 
         assertNotNull(withBundle.get("settings"));
         assertNotNull(withBundle.get("extendedClientCapabilities"));
         assertEquals(List.of("/tmp/java-debug.jar"), withBundle.get("bundles"));
-        assertFalse(LspManager.javaInitOptions(List.of()).containsKey("bundles"), "no bundles when not debugging");
+        assertFalse(
+                ServerInitOptions.javaInitOptions(List.of()).containsKey("bundles"), "no bundles when not debugging");
     }
 
     // --- code lenses ---------------------------------------------------------------------------------
@@ -780,23 +783,24 @@ class LspManagerTest {
     void aLensIsClassifiedByItsCommand() {
         assertEquals(
                 LspManager.CodeLensKind.REFERENCES,
-                LspManager.codeLensKind(new org.eclipse.lsp4j.Command("2 references", "java.show.references")));
+                LspInlineHints.codeLensKind(new org.eclipse.lsp4j.Command("2 references", "java.show.references")));
         assertEquals(
                 LspManager.CodeLensKind.IMPLEMENTATIONS,
-                LspManager.codeLensKind(
+                LspInlineHints.codeLensKind(
                         new org.eclipse.lsp4j.Command("1 implementation", "java.show.implementations")));
         assertEquals(
                 LspManager.CodeLensKind.REFERENCES,
-                LspManager.codeLensKind(new org.eclipse.lsp4j.Command("3 references", "editor.action.showReferences")));
+                LspInlineHints.codeLensKind(
+                        new org.eclipse.lsp4j.Command("3 references", "editor.action.showReferences")));
         assertNull(
-                LspManager.codeLensKind(new org.eclipse.lsp4j.Command("Run", "rust-analyzer.runSingle")),
+                LspInlineHints.codeLensKind(new org.eclipse.lsp4j.Command("Run", "rust-analyzer.runSingle")),
                 "a lens that runs something is the server's own editor integration");
-        assertNull(LspManager.codeLensKind(null));
+        assertNull(LspInlineHints.codeLensKind(null));
     }
 
     @Test
     void onlyCountingLensesBecomeSpansInLineOrder() {
-        var spans = LspManager.codeLensSpans(java.util.Arrays.asList(
+        var spans = LspInlineHints.codeLensSpans(java.util.Arrays.asList(
                 lens(9, 4, "1 implementation", "java.show.implementations"),
                 lens(9, 4, "2 references", "java.show.references"),
                 lens(3, 13, " 5 references ", "java.show.references"),
@@ -813,7 +817,7 @@ class LspManagerTest {
                         new LspManager.CodeLensSpan(9, 4, "2 references", LspManager.CodeLensKind.REFERENCES),
                         new LspManager.CodeLensSpan(9, 4, "1 implementation", LspManager.CodeLensKind.IMPLEMENTATIONS)),
                 spans);
-        assertTrue(LspManager.codeLensSpans(null).isEmpty());
+        assertTrue(LspInlineHints.codeLensSpans(null).isEmpty());
     }
 
     /**
@@ -886,15 +890,15 @@ class LspManagerTest {
                 "Other");
         var caret =
                 new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(4, 0), new org.eclipse.lsp4j.Position(4, 0));
-        assertEquals(List.of(onLine), LspManager.contextDiagnostics(List.of(onLine, elsewhere), caret));
+        assertEquals(List.of(onLine), LspCodeActions.contextDiagnostics(List.of(onLine, elsewhere), caret));
         var onToken = new org.eclipse.lsp4j.Range(
                 new org.eclipse.lsp4j.Position(4, 10), new org.eclipse.lsp4j.Position(4, 10));
-        assertEquals(List.of(onLine), LspManager.contextDiagnostics(List.of(onLine, elsewhere), onToken));
+        assertEquals(List.of(onLine), LspCodeActions.contextDiagnostics(List.of(onLine, elsewhere), onToken));
         var selection =
                 new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(4, 0), new org.eclipse.lsp4j.Position(4, 2));
         assertEquals(
                 List.of(),
-                LspManager.contextDiagnostics(List.of(onLine, elsewhere), selection),
+                LspCodeActions.contextDiagnostics(List.of(onLine, elsewhere), selection),
                 "a selection is exact");
     }
 
@@ -936,7 +940,7 @@ class LspManagerTest {
         var appendAgain =
                 new LspManager.HierarchyNode("append(String)", "StringBuilder", "method", null, 90, 4, "x2", 2);
         var report = new LspManager.HierarchyNode("report()", "demo.A", "method", a, 3, 8, "x3");
-        var merged = LspManager.mergeCalls(java.util.List.of(append, report, appendAgain));
+        var merged = LspNavigationRequests.mergeCalls(java.util.List.of(append, report, appendAgain));
         org.junit.jupiter.api.Assertions.assertEquals(
                 java.util.List.of("append(String)x3", "report()x1"),
                 merged.stream().map(n -> n.name() + "x" + n.calls()).toList(),
@@ -950,31 +954,31 @@ class LspManagerTest {
             throws Exception {
         java.nio.file.Path tools = java.nio.file.Files.createDirectories(dir.resolve("src/tools/build"));
         java.nio.file.Files.writeString(tools.resolve("Builder.java"), "package tools.build;");
-        org.junit.jupiter.api.Assertions.assertTrue(LspManager.holdsJava(dir.resolve("src/tools")));
+        org.junit.jupiter.api.Assertions.assertTrue(LspRename.holdsJava(dir.resolve("src/tools")));
 
         java.nio.file.Path module = java.nio.file.Files.createDirectories(dir.resolve("lib"));
         java.nio.file.Files.writeString(module.resolve("pom.xml"), "<project/>");
         java.nio.file.Files.createDirectories(module.resolve("target/gen"));
         java.nio.file.Files.writeString(module.resolve("target/gen/Gen.java"), "class Gen {}");
-        org.junit.jupiter.api.Assertions.assertFalse(LspManager.holdsJava(module), "only the build output has Java");
+        org.junit.jupiter.api.Assertions.assertFalse(LspRename.holdsJava(module), "only the build output has Java");
     }
 
     /** A completion's docs: Markdown as sent, plain text escaped so it reads as written (HTML review D7). */
     @Test
     void completionDocumentationKeepsMarkdownAndEscapesPlainText() {
         var item = new org.eclipse.lsp4j.CompletionItem("section");
-        assertNull(LspManager.documentationOf(item));
+        assertNull(LspAssists.documentationOf(item));
         item.setDocumentation(new org.eclipse.lsp4j.MarkupContent(
                 "markdown", "The `<section>` element.\n\n[MDN Reference](https://developer.mozilla.org/x)"));
         assertEquals(
                 "The `<section>` element.\n\n[MDN Reference](https://developer.mozilla.org/x)",
-                LspManager.documentationOf(item));
+                LspAssists.documentationOf(item));
         item.setDocumentation(new org.eclipse.lsp4j.MarkupContent("plaintext", "a *b* <c>"));
-        assertEquals("a \\*b\\* \\<c\\>", LspManager.documentationOf(item));
+        assertEquals("a \\*b\\* \\<c\\>", LspAssists.documentationOf(item));
         item.setDocumentation(new org.eclipse.lsp4j.MarkupContent("plaintext", "  "));
-        assertNull(LspManager.documentationOf(item));
+        assertNull(LspAssists.documentationOf(item));
         item.setDocumentation("**bare** string");
-        assertEquals("**bare** string", LspManager.documentationOf(item), "a bare string is left as it came");
+        assertEquals("**bare** string", LspAssists.documentationOf(item), "a bare string is left as it came");
     }
 
     @Test
@@ -991,12 +995,12 @@ class LspManagerTest {
         String saved = System.getProperty("user.home");
         System.setProperty("user.home", home.toString());
         try {
-            assertEquals(oldBin, LspManager.nodeBinDir(root, "", true), "tsserver keeps the project's Node.js");
-            assertNotEquals(oldBin, LspManager.nodeBinDir(root, "", false), "an npm server ignores the .nvmrc");
+            assertEquals(oldBin, NodeServerPaths.nodeBinDir(root, "", true), "tsserver keeps the project's Node.js");
+            assertNotEquals(oldBin, NodeServerPaths.nodeBinDir(root, "", false), "an npm server ignores the .nvmrc");
             Path chosen = tmp.resolve("node24/bin");
             assertEquals(
                     chosen,
-                    LspManager.nodeBinDir(root, chosen.resolve("node").toString(), false),
+                    NodeServerPaths.nodeBinDir(root, chosen.resolve("node").toString(), false),
                     "the Settings Node.js runs Editora's npm servers");
         } finally {
             System.setProperty("user.home", saved);
@@ -1008,19 +1012,19 @@ class LspManagerTest {
     void theResolvedSignatureLeadsTheCompletionDocumentation() {
         assertEquals(
                 "```typescript\n(method) Array<number>.at(index: number): number | undefined\n```\n\nReturns the item.",
-                LspManager.withResolvedDetail(
+                LspAssists.withResolvedDetail(
                         null,
                         "(method) Array<number>.at(index: number): number | undefined",
                         "Returns the item.",
                         "typescript"));
         assertEquals(
                 "```typescript\nAuto import from './math.js'\nfunction multiply(a: number, b: number): number\n```",
-                LspManager.withResolvedDetail(
+                LspAssists.withResolvedDetail(
                         "./math.js",
                         "Auto import from './math.js'\nfunction multiply(a: number, b: number): number",
                         null,
                         "typescript"));
-        assertEquals("docs", LspManager.withResolvedDetail("String", "String", "docs", ""), "nothing new: as before");
-        assertNull(LspManager.withResolvedDetail(null, " ", null, ""));
+        assertEquals("docs", LspAssists.withResolvedDetail("String", "String", "docs", ""), "nothing new: as before");
+        assertNull(LspAssists.withResolvedDetail(null, " ", null, ""));
     }
 }

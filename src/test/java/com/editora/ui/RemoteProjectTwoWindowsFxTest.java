@@ -41,8 +41,7 @@ class RemoteProjectTwoWindowsFxTest {
             FxTestSupport.runOnFx(() -> fx.shared.getSettings().setProjectSupport(true));
             MainController first = fx.controller;
             CoordinatorHost host = FxTestSupport.field(first, "coordinatorHost");
-            RemoteCoordinator.Ops ops =
-                    (RemoteCoordinator.Ops) FxTestSupport.call(first, "remoteOps", new Class<?>[] {});
+            RemoteCoordinator.Ops ops = new RemoteOpsHost(first);
             // The first window's own engine is the fixture's: it is connected, as after the connect form.
             RemoteCoordinator remote = new RemoteCoordinator(host, ops, sftp.fileSystems());
             Path root = sftp.remotePath("app");

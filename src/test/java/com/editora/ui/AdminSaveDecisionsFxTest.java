@@ -434,6 +434,7 @@ class AdminSaveDecisionsFxTest {
     }
 
     private static boolean offered(EditorBuffer buffer) throws Exception {
-        return FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(buffer, "adminEditAvailable"));
+        return FxTestSupport.callOnFx(
+                () -> FxTestSupport.<Boolean>field(FxTestSupport.field(buffer, "banners"), "adminEditAvailable"));
     }
 }

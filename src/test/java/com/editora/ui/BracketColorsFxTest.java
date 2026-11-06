@@ -158,10 +158,10 @@ class BracketColorsFxTest {
             //   bracketColors false                        → the per-buffer flag never took
             return "hasHighlighting=" + b.hasHighlighting() + " length=" + area.getLength() + " styledChars=" + styled
                     + " styleAtProbe=" + area.getStyleOfChar(probe) + " bracketColors="
-                    + FxTestSupport.field(b, "bracketColors") + " highlightGen="
-                    + FxTestSupport.field(b, "highlightGen") + " highlightDirty="
-                    + FxTestSupport.field(b, "highlightDirty") + " highlightLines="
-                    + FxTestSupport.field(b, "highlightLines");
+                    + FxTestSupport.field(FxTestSupport.field(b, "highlighter"), "bracketColors") + " highlightGen="
+                    + FxTestSupport.field(FxTestSupport.field(b, "highlighter"), "highlightGen") + " highlightDirty="
+                    + FxTestSupport.field(FxTestSupport.field(b, "highlighter"), "highlightDirty") + " highlightLines="
+                    + FxTestSupport.field(FxTestSupport.field(b, "highlighter"), "highlightLines");
         });
         // highlightGen>0 with highlightLines=null means passes were handed to the pool and none ever applied.
         // The thread dump says whether the pool's workers are stuck (and on what — the shared grammar

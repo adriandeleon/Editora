@@ -112,7 +112,23 @@ final class SettingsRig implements AutoCloseable {
     }
 
     <T> T control(String name) {
-        return FxTestSupport.field(window, name);
+        return control(window, name);
+    }
+
+    /**
+     * The field {@code name} of {@code window} or of the page class that holds it ({@link
+     * SettingsWindow#controlOwners}): a page's controls live in its own class.
+     */
+    static <T> T control(SettingsWindow window, String name) {
+        for (Object owner : window.controlOwners()) {
+            try {
+                owner.getClass().getDeclaredField(name);
+            } catch (NoSuchFieldException e) {
+                continue;
+            }
+            return FxTestSupport.field(owner, name);
+        }
+        throw new IllegalArgumentException("no field '" + name + "' on the Settings window or its pages");
     }
 
     /** Opens the page of the category whose enum constant is {@code name} and returns its content. */

@@ -1457,7 +1457,7 @@ final class LanguageServerSession implements LanguageClient {
             completion.put("filteredTypes", javaFilteredTypes);
             merged.put("completion", completion);
             JavaLibrarySources.into(merged, javaDownloadSources);
-            merged = LspManager.withRuntimes(merged, javaRuntimes); // the JDKs, and which one is the default
+            merged = ServerInitOptions.withRuntimes(merged, javaRuntimes); // the JDKs, and which one is the default
             if (buildImportsOff) {
                 merged = UntrustedBuilds.withImportsOff(merged); // an untrusted folder's build stays unloaded
             }

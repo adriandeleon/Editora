@@ -265,12 +265,16 @@ class SettingsListEditorsFxTest {
                 assertEquals(Map.of("omw", "on my way"), fx.shared.abbreviationMap());
                 assertEquals(
                         Map.of("omw", "on my way"),
-                        FxTestSupport.<Map<String, String>>field(buffer, "abbrevTable"),
+                        FxTestSupport.<Map<String, String>>field(
+                                FxTestSupport.field(buffer, "snippetKeys"), "abbrevTable"),
                         "the open buffer expands the new abbreviation without another setting changing");
 
                 answer(w, true);
                 button(pg, tr("settings.abbrev.remove")).fire();
-                assertEquals(Map.of(), FxTestSupport.<Map<String, String>>field(buffer, "abbrevTable"));
+                assertEquals(
+                        Map.of(),
+                        FxTestSupport.<Map<String, String>>field(
+                                FxTestSupport.field(buffer, "snippetKeys"), "abbrevTable"));
                 FxTestSupport.<Stage>field(w, "stage").hide();
             });
         }
@@ -365,7 +369,7 @@ class SettingsListEditorsFxTest {
                     list.requestFocus();
                     assertEquals(List.of(), names(dir), "no user override without an edit");
 
-                    TemplateRegistry registry = FxTestSupport.field(w, "templateRegistry");
+                    TemplateRegistry registry = SettingsRig.control(w, "templateRegistry");
                     button(pg, tr("settings.template.add")).fire();
                     id.setText("mine-a");
                     body.replaceText("BODY A");
@@ -419,7 +423,7 @@ class SettingsListEditorsFxTest {
                 try {
                     SettingsWindow w = shown(fx);
                     Region pg = page(w, "SNIPPETS");
-                    SnippetManager manager = FxTestSupport.field(w, "snippetManager");
+                    SnippetManager manager = SettingsRig.control(w, "snippetManager");
                     ListView<?> list =
                             all(pg, ListView.class, new ArrayList<>()).get(0);
                     @SuppressWarnings("unchecked")
@@ -504,7 +508,7 @@ class SettingsListEditorsFxTest {
                 try {
                     SettingsWindow w = shown(fx);
                     Region pg = page(w, "SNIPPETS");
-                    SnippetManager manager = FxTestSupport.field(w, "snippetManager");
+                    SnippetManager manager = SettingsRig.control(w, "snippetManager");
                     @SuppressWarnings("unchecked")
                     ListView<Snippet> list = (ListView<Snippet>)
                             all(pg, ListView.class, new ArrayList<>()).get(0);
@@ -650,8 +654,8 @@ class SettingsListEditorsFxTest {
                 fx.shared.getSettings().setGitSupport(false);
                 fx.shared.getSettings().setGitPath("/nonexistent/bin/git");
                 SettingsWindow w = shown(fx);
-                TextField path = FxTestSupport.field(w, "gitPathField");
-                CheckBox git = FxTestSupport.field(w, "gitCheck");
+                TextField path = SettingsRig.control(w, "gitPathField");
+                CheckBox git = SettingsRig.control(w, "gitCheck");
                 assertFalse(git.isSelected());
                 assertFalse(path.isDisable(), "the path is how a failed detection gets fixed");
                 FxTestSupport.<Stage>field(w, "stage").hide();

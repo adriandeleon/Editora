@@ -68,7 +68,7 @@ class JdtlsJavaScriptShadowProbeTest {
                 (type, message) -> {
                     if ("ServiceReady".equals(type)) ready.countDown();
                 },
-                LspManager.javaInitOptions(List.of()));
+                ServerInitOptions.javaInitOptions(List.of()));
         try {
             assertTrue(session.start());
             assertTrue(ready.await(70, TimeUnit.SECONDS), "JDT LS should initialize");

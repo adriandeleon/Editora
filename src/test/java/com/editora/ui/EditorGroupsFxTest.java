@@ -496,7 +496,8 @@ class EditorGroupsFxTest {
     }
 
     private long previewGen(EditorBuffer buffer) throws Exception {
-        return FxTestSupport.callOnFx(() -> ((Number) FxTestSupport.field(buffer, "previewGen")).longValue());
+        return FxTestSupport.callOnFx(() ->
+                ((Number) FxTestSupport.field(FxTestSupport.field(buffer, "previewPanes"), "previewGen")).longValue());
     }
 
     private Tab addBuffer() throws Exception {

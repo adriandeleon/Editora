@@ -67,19 +67,19 @@ class LspRestartAfterExitFxTest {
 
         manager.shutdownAll(); // a restart: the old server starts exiting, the caller moves straight on
         var exits = manager.pendingExitsForTest();
-        String whileExiting = LspManager.claimJdtlsWorkspaceName(canonical);
+        String whileExiting = JdtlsWorkspaces.claimJdtlsWorkspaceName(canonical);
         try {
             assertNotEquals(canonical, whileExiting, "the workspace must stay claimed while the old process is alive");
         } finally {
-            LspManager.releaseJdtlsWorkspaceName(whileExiting);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(whileExiting);
         }
 
         exits.get(30, TimeUnit.SECONDS);
-        String afterExit = LspManager.claimJdtlsWorkspaceName(canonical);
+        String afterExit = JdtlsWorkspaces.claimJdtlsWorkspaceName(canonical);
         try {
             assertEquals(canonical, afterExit, "once it has exited the workspace is free again");
         } finally {
-            LspManager.releaseJdtlsWorkspaceName(afterExit);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(afterExit);
         }
         manager.close();
     }

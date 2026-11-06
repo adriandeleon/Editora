@@ -249,7 +249,7 @@ class JavaTypingSoakProbeTest {
         FxTestSupport.runOnFx(() -> {
             scenarioStarted = 0;
             buffer.cancelCompletion();
-            FxTestSupport.call(coordinator, "hideSignaturePopup", new Class<?>[] {});
+            FxTestSupport.call(coordinator.popups, "hideSignaturePopup", new Class<?>[] {});
             String fields = "";
             if (large) {
                 var generated = new StringBuilder();
@@ -337,7 +337,7 @@ class JavaTypingSoakProbeTest {
         if (name.equals("chain")) {
             await(
                     () -> {
-                        javafx.stage.Popup signature = FxTestSupport.field(coordinator, "signaturePopup");
+                        javafx.stage.Popup signature = FxTestSupport.field(coordinator.popups, "signaturePopup");
                         return signature != null && signature.isShowing();
                     },
                     15,

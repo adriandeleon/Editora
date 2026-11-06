@@ -136,7 +136,7 @@ class JdtlsSmartTypeProbeTest {
                         imported.countDown();
                     }
                 },
-                LspManager.withProjectSettings("java", LspManager.javaInitOptions(List.of()), project));
+                ServerInitOptions.withProjectSettings("java", ServerInitOptions.javaInitOptions(List.of()), project));
         try {
             assertTrue(s.start());
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(90);

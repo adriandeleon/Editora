@@ -157,7 +157,7 @@ class JdtlsProjectStyleProbeTest {
                         imported.countDown();
                     }
                 },
-                LspManager.withProjectSettings("java", LspManager.javaInitOptions(List.of()), project));
+                ServerInitOptions.withProjectSettings("java", ServerInitOptions.javaInitOptions(List.of()), project));
         s.setJavaCleanups(List.of("addOverride"));
         try {
             assertTrue(s.start());
