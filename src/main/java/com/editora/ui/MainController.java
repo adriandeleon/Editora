@@ -18,7 +18,6 @@ import javafx.collections.ObservableList;
 import javafx.css.PseudoClass;
 import javafx.fxml.FXML;
 import javafx.geometry.Orientation;
-import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
@@ -117,43 +116,43 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The pinned right end of the bar — never part of the ToolBar, so it never overflows. */
     @FXML
-    private HBox toolbarTail;
+    HBox toolbarTail;
 
     @FXML
-    private Button newButton;
+    Button newButton;
 
     @FXML
     Button newFromTemplateButton;
 
     @FXML
-    private Button openButton;
+    Button openButton;
 
     @FXML
-    private Button openFolderButton;
+    Button openFolderButton;
 
     @FXML
-    private Button saveButton;
+    Button saveButton;
 
     @FXML
-    private Button saveAsButton;
+    Button saveAsButton;
 
     @FXML
-    private Button undoButton;
+    Button undoButton;
 
     @FXML
-    private Button redoButton;
+    Button redoButton;
 
     @FXML
-    private Button cutButton;
+    Button cutButton;
 
     @FXML
-    private Button copyButton;
+    Button copyButton;
 
     @FXML
-    private Button pasteButton;
+    Button pasteButton;
 
     @FXML
-    private Button findButton;
+    Button findButton;
 
     @FXML
     Button findInFilesButton;
@@ -165,16 +164,16 @@ public class MainController implements com.editora.mcp.McpBridge {
     Button splitHorizontalButton;
 
     @FXML
-    private Button paletteButton;
+    Button paletteButton;
 
     @FXML
-    private Button closeTabButton;
+    Button closeTabButton;
 
     @FXML
     Button simpleModeButton;
 
     @FXML
-    private Button settingsButton;
+    Button settingsButton;
 
     @FXML
     MenuButton recentButton;
@@ -229,8 +228,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private String projectKey = "";
 
     QuickOpen<Project> projectPicker;
-    private ProjectCombo toolbarProjectCombo;
-    private Region projectToolbarGap;
     /** Tracks the last-applied project-support state to detect off→on transitions (reveal the panel). */
     private boolean projectSupportApplied;
 
@@ -373,7 +370,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private NoUndoGuard noUndoGuard;
 
     ToolbarCoordinator toolbarCoordinator;
-    java.util.@Nullable Map<String, javafx.scene.Node> toolbarBaseWidgets;
+    /** The toolbar's buttons, fixed tail and button enablement; see {@link WindowToolbar}. */
+    final WindowToolbar toolbar = new WindowToolbar(this);
 
     ToolWindow fileHistoryToolWindow;
 
@@ -853,7 +851,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         fileWorkflows.checkExternalChanges();
         git.refresh(); // another tool may have changed the repo while we were away
         refreshBuildTools(); // a marker file (or the active file's project) may have changed while away
-        refreshPasteState(); // clipboard may have changed in another app while we were away
+        toolbar.refreshPasteState(); // clipboard may have changed in another app while we were away
         if (projectPanel != null) {
             projectPanel.refreshTreeOnRegain(); // pick up files/folders added or removed outside Editora
         }
@@ -1018,7 +1016,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         rebuildRecentMenu(); // later changes arrive through sharedHistoryChanged()
 
-        setupButton(clearRecentButton, Icons.trash(), tr("tooltip.clearRecent"), "file.clearRecent");
+        toolbar.setupButton(clearRecentButton, Icons.trash(), tr("tooltip.clearRecent"), "file.clearRecent");
     }
 
     /**
@@ -1602,8 +1600,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     void refreshProjectPanelList() {
         // The toolbar combo shows THIS window's project as selected (each window is one project).
-        if (toolbarProjectCombo != null) {
-            toolbarProjectCombo.setProjects(projects.list(), projectKey);
+        if (toolbar.toolbarProjectCombo != null) {
+            toolbar.toolbarProjectCombo.setProjects(projects.list(), projectKey);
         }
     }
 
@@ -1647,10 +1645,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         boolean showProjectGroup = on && !chrome.simpleModeActive();
         openFolderButton.setVisible(showProjectGroup);
         openFolderButton.setManaged(showProjectGroup);
-        toolbarProjectCombo.setVisible(showProjectGroup);
-        toolbarProjectCombo.setManaged(showProjectGroup);
-        projectToolbarGap.setVisible(showProjectGroup);
-        projectToolbarGap.setManaged(showProjectGroup);
+        toolbar.toolbarProjectCombo.setVisible(showProjectGroup);
+        toolbar.toolbarProjectCombo.setManaged(showProjectGroup);
+        toolbar.projectToolbarGap.setVisible(showProjectGroup);
+        toolbar.projectToolbarGap.setManaged(showProjectGroup);
         // Project tool window: force-hide when off; reveal once on the off→on transition; otherwise
         // leave it to the user (so it can be hidden/shown normally while projects are enabled).
         if (!on) {
@@ -1666,7 +1664,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * swaps the current window's session in place — it brings up that project's window, leaving this one
      * as-is. The "No Project" sentinel (empty id) opens/focuses the global window.
      */
-    private boolean switchToProject(Project p) {
+    boolean switchToProject(Project p) {
         if (p == null) {
             return false;
         }
@@ -2169,9 +2167,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (FileWorkflowCoordinator.AUTOSAVE_FOCUS.equals(fileWorkflows.autoSaveMode())) {
                 fileWorkflows.autoSaveAllDirty(); // saves the outgoing buffer (and any other dirty ones)
             }
-            refreshSplitButtons();
-            refreshEditState(); // save/undo/redo/cut/copy enablement for the new tab
-            refreshPasteState(); // clipboard read off the keystroke path
+            toolbar.refreshSplitButtons();
+            toolbar.refreshEditState(); // save/undo/redo/cut/copy enablement for the new tab
+            toolbar.refreshPasteState(); // clipboard read off the keystroke path
             chrome.updateZenButton(); // re-position the Zen "Z" if the new file is/isn't Markdown
             chrome.updateExpertButton(); // and the Expert "E"
             fileWorkflows.checkExternalChanges(); // prompt if the file we just switched to changed on disk
@@ -3575,153 +3573,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void setupToolbar() {
-        setupButton(newButton, Icons.newFile(), tr("tooltip.new"), "file.new");
-        setupButton(newFromTemplateButton, Icons.template(), tr("tooltip.newFromTemplate"), "template.new");
-        setupButton(openButton, Icons.open(), tr("tooltip.open"), "file.find");
-        setupButton(openFolderButton, Icons.openFolder(), tr("tooltip.openFolder"), "project.open");
-        setupButton(saveButton, Icons.save(), tr("tooltip.save"), "file.save");
-        setupButton(saveAsButton, Icons.saveAs(), tr("tooltip.saveAs"), "file.saveAs");
-        saveButton.getStyleClass().add("success");
-        saveAsButton.getStyleClass().add("success");
-        setupButton(undoButton, Icons.undo(), tr("tooltip.undo"), "edit.undo");
-        setupButton(redoButton, Icons.redo(), tr("tooltip.redo"), "edit.redo");
-        setupButton(cutButton, Icons.cut(), tr("tooltip.cut"), "edit.cut");
-        setupButton(copyButton, Icons.copy(), tr("tooltip.copy"), "edit.copy");
-        setupButton(pasteButton, Icons.paste(), tr("tooltip.paste"), "edit.paste");
-        setupButton(findButton, Icons.find(), tr("tooltip.find"), "find.show");
-        setupButton(findInFilesButton, Icons.findInFiles(), tr("tooltip.findInFiles"), "search.inFiles");
-        setupButton(splitVerticalButton, Icons.splitVertical(), tr("tooltip.splitVertical"), "view.splitVertical");
-        setupButton(
-                splitHorizontalButton, Icons.splitHorizontal(), tr("tooltip.splitHorizontal"), "view.splitHorizontal");
-        setupButton(runConfigRunButton, Icons.run(), tr("tooltip.runConfigRun"), null);
-        setupButton(runConfigDebugButton, Icons.debug(), tr("tooltip.runConfigDebug"), null);
-        setupButton(runConfigStopButton, Icons.stopSquare(), tr("tooltip.runConfigStop"), null);
-        // The kit's one splash of state colour in the toolbar: green play / accent bug / red stop.
-        runConfigRunButton.getStyleClass().add("run-config-play");
-        runConfigDebugButton.getStyleClass().add("run-config-bug");
-        runConfigStopButton.getStyleClass().add("run-config-stop");
-        runConfigurations.setupRunConfigCombo();
-        setupButton(paletteButton, Icons.palette(), tr("tooltip.palette"), "palette.show");
-        setupButton(closeTabButton, Icons.closeTab(), tr("tooltip.closeTab"), "buffer.close");
-        setupButton(simpleModeButton, Icons.simpleMode(), tr("tooltip.simpleMode"), "view.toggleSimpleMode");
-        setupButton(settingsButton, Icons.settings(), tr("tooltip.settings"), "view.settings");
-
-        // Reflect open/closed state of the palette and find bar in their toolbar buttons.
-        palette.showingProperty().addListener((obs, was, now) -> paletteButton.pseudoClassStateChanged(OPEN, now));
-        findBar.visibleProperty().addListener((obs, was, now) -> findButton.pseudoClassStateChanged(OPEN, now));
-        // Project switcher (placed after the customizable icon cluster by appendFixedTail); shown when enabled.
-        toolbarProjectCombo = new ProjectCombo(this::switchToProject);
-        toolbarProjectCombo.setPrefWidth(184); // 15% longer than the previous 160
-        // No "Project:" label: it is the only labelled control on a bar of unlabelled icons, and the combo
-        // already reads "No Project" or the project's name. Its explanation moves onto the combo itself —
-        // where it was also the one hardcoded English string on the toolbar.
-        toolbarProjectCombo.setTooltip(new Tooltip(tr("toolbar.project.tip")));
-        toolbarProjectCombo.setOnDeleteProject(this::deleteProject); // per-item delete in the dropdown
-        projectToolbarGap = new Region();
-        projectToolbarGap.setMinWidth(78); // ≈ 3 toolbar-icon widths between the icon cluster and the combo
-        projectToolbarGap.setPrefWidth(78);
-        // The ToolBar is the one that gives when the window narrows: it takes whatever width the pinned tail
-        // leaves and moves the icons it cannot fit into its own overflow chevron. Without a zero minimum an
-        // HBox would squeeze the tail instead, which is the behaviour this split exists to prevent.
-        toolBar.setMinWidth(0);
-        // ...and the tail is the one that doesn't. An HBox short of space shrinks EVERY resizable child
-        // toward its minimum, sharing the deficit out, so without this the tail would be squeezed alongside
-        // the ToolBar instead of the ToolBar absorbing all of it. (Same fix, and the same reason, as
-        // StatusBar.pinSegmentWidths.)
-        toolbarTail.setMinWidth(Region.USE_PREF_SIZE);
+        toolbar.install();
         // The customizable icon cluster is built data-driven from the persisted layout; the fixed tail
         // (project group + Settings) is refilled after each rebuild by appendFixedTail().
-        toolbarCoordinator = new ToolbarCoordinator(coordinatorHost, registry, keymap, toolbarOps());
+        toolbarCoordinator = new ToolbarCoordinator(coordinatorHost, registry, keymap, new ToolbarOpsHost(this));
         toolbarCoordinator.rebuild();
-        refreshSplitButtons();
-        refreshEditState(); // start disabled (no buffer yet)
-        refreshPasteState();
-        // Pin the toolbar height so it doesn't jump when the (taller) project combo is hidden — by
-        // Simple UI mode or by disabling Projects. Measured after the first layout pass (skin + CSS applied).
-        Platform.runLater(this::stabilizeToolbarHeight);
-    }
-
-    /**
-     * Keeps the toolbar a constant height regardless of whether the project combo is showing. The
-     * {@link ProjectCombo} is taller than the icon buttons, so toggling its visibility (Simple UI mode, or the
-     * Projects feature being off) would otherwise resize the whole bar. Pinning {@code minHeight} to the
-     * combo-driven height (measured, no magic number) makes that the bar's floor in every mode; it still grows
-     * for any taller child. No-op until the combo has a valid preferred height (after the first layout).
-     */
-    private void stabilizeToolbarHeight() {
-        if (toolbarRow == null || toolbarTail == null || toolbarProjectCombo == null) {
-            return;
-        }
-        double comboH = toolbarProjectCombo.prefHeight(-1); // independent of the combo's current visibility
-        if (comboH <= 0) {
-            return;
-        }
-        javafx.geometry.Insets in = toolbarTail.getInsets();
-        // The row, not the ToolBar: the combo lives in the tail now, so the ToolBar's own height no longer
-        // moves when it is hidden — the row's does.
-        toolbarRow.setMinHeight(Math.ceil(comboH + in.getTop() + in.getBottom()));
-    }
-
-    /**
-     * Fills the fixed, non-customizable toolbar tail — the run-configuration group, the project-combo group
-     * (a gap, the combo, and the Open-Folder icon), an optional {@code snapshot}/{@code --dev} badge, and the
-     * right-pinned Simple-mode toggle and Settings button. Called by {@link ToolbarCoordinator} after it lays out
-     * the customizable cluster.
-     *
-     * <p>The tail is its <b>own container</b> beside the {@link javafx.scene.control.ToolBar}, not items in
-     * it: a ToolBar overflows from its END, so with everything in one bar a narrow window pushed Settings
-     * and the project switcher into the chevron while keeping fourteen icons — exactly backwards. The
-     * ToolBar now takes the leftover width and overflows its own icons, every one of which is also in the
-     * menus and the palette.
-     *
-     * <p>Re-uses the same field instances, so their show/hide state from Simple mode / Projects survives a
-     * rebuild.
-     */
-    void appendFixedTail() {
-        // Cleared here: the coordinator calls this after every rebuild, and the tail is no longer emptied
-        // for us by the ToolBar being cleared.
-        var items = toolbarTail.getChildren();
-        items.clear();
-
-        // Run configurations lead the tail: the selector and its Run/Debug/Stop buttons sit at the right
-        // end of the bar, across the ToolBar's slack from the icon cluster, the way an IDE pins its run
-        // widget. Here rather than in the customizable cluster because the cluster is what overflows into
-        // the chevron when the window narrows, and starting a run is not something to lose to a window
-        // width; the group hides itself when there is nothing to launch (refreshRunConfigToolbar).
-        items.addAll(runConfigCombo, runConfigRunButton, runConfigDebugButton, runConfigStopButton);
-
-        // Project switcher next (a ~3-icon gap keeps it clear of the run controls), with the open-folder
-        // icon immediately to the right of the combobox.
-        // Recent is NOT here any more: it is a file action, so it lives in the customizable cluster's file
-        // group between Save As and Undo (ToolbarCatalog.defaultLayout), not beside the project controls.
-        items.addAll(projectToolbarGap, toolbarProjectCombo, openFolderButton);
-
-        // Snapshot badge when the pom carries -SNAPSHOT, i.e. this was built off master between
-        // releases rather than from a release tag — so a test build is obvious without opening About.
-        if (com.editora.AppInfo.isSnapshot()) {
-            Label snapshotBadge = new Label(tr("badge.snapshot"));
-            snapshotBadge.getStyleClass().add("snapshot-badge");
-            snapshotBadge.setTooltip(new Tooltip(tr("badge.snapshot.tip", com.editora.AppInfo.VERSION)));
-            items.addAll(toolbarGap(14), snapshotBadge);
-        }
-
-        // Dev-mode badge (just left of Settings) when running with --dev, so a development instance is
-        // visually distinct from the production one.
-        if (config.isDev()) {
-            Label devBadge = new Label(tr("badge.devMode"));
-            devBadge.getStyleClass().add("dev-mode-badge");
-            devBadge.setTooltip(
-                    new Tooltip(tr("badge.devMode.tip", config.getConfigDir().toString())));
-            items.addAll(toolbarGap(14), devBadge);
-        }
-
-        // The Simple-mode toggle and Settings close the bar as a pair, set ~2 icons clear of the project
-        // controls. The toggle is pinned here, not in the cluster, because it is the way back out of a mode
-        // that empties much of that cluster, which a narrow window would overflow. About and Quit were
-        // removed: both live in the Help/File menus and the palette, neither is an action anyone takes
-        // mid-edit, and Quit sat directly under the window's own close button — a one-icon-high miss
-        // between "minimise this window" and "exit the application".
-        items.addAll(toolbarGap(40), simpleModeButton, settingsButton);
+        toolbar.initialState();
     }
 
     /**
@@ -3733,45 +3590,6 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     void openDocumentation() {
         openExternalUrl(com.editora.AppInfo.docsUrl());
-    }
-
-    /** Id → the existing {@code @FXML} toolbar widget backing each default/special customizable item. */
-    java.util.Map<String, javafx.scene.Node> toolbarBaseWidgets() {
-        if (toolbarBaseWidgets == null) {
-            java.util.Map<String, javafx.scene.Node> m = new java.util.HashMap<>();
-            m.put("file.new", newButton);
-            m.put("template.new", newFromTemplateButton);
-            m.put("file.find", openButton);
-            m.put("buffer.close", closeTabButton);
-            m.put("file.save", saveButton);
-            m.put("file.saveAs", saveAsButton);
-            m.put("file.clearRecent", clearRecentButton);
-            m.put("toolbar.recent", recentButton);
-            m.put("edit.undo", undoButton);
-            m.put("edit.redo", redoButton);
-            m.put("edit.cut", cutButton);
-            m.put("edit.copy", copyButton);
-            m.put("edit.paste", pasteButton);
-            m.put("find.show", findButton);
-            m.put("search.inFiles", findInFilesButton);
-            m.put("view.splitVertical", splitVerticalButton);
-            m.put("view.splitHorizontal", splitHorizontalButton);
-            m.put("palette.show", paletteButton);
-            toolbarBaseWidgets = m;
-        }
-        return toolbarBaseWidgets;
-    }
-
-    private ToolbarCoordinator.Ops toolbarOps() {
-        return new ToolbarOpsHost(this);
-    }
-
-    /** A fixed-width blank gap used to separate the trailing toolbar group without a separator line. */
-    private static Region toolbarGap(double width) {
-        Region gap = new Region();
-        gap.setMinWidth(width);
-        gap.setPrefWidth(width);
-        return gap;
     }
 
     /** command id -> the chord to show for it, in the active keymap's notation (see KeymapManager.displayChords). */
@@ -3795,7 +3613,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         buffer.toggleSplit(orientation);
-        refreshSplitButtons();
+        toolbar.refreshSplitButtons();
         setStatus(tr(buffer.getSplit() == EditorBuffer.Split.NONE ? "status.editorUnsplit" : "status.editorSplit"));
     }
 
@@ -3809,7 +3627,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (!groupsWereSplit && !bufferWasSplit) {
             toolWindows.closeAllOpen();
         }
-        refreshSplitButtons();
+        toolbar.refreshSplitButtons();
         setStatus(tr(groupsWereSplit ? "status.editorGroupsMerged" : "status.editorUnsplit"));
     }
 
@@ -3838,113 +3656,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Merges every editor group back into one. */
     void unsplitEditorGroups() {
         setStatus(tr(editorArea.unsplit() ? "status.editorGroupsMerged" : "status.editorGroupNotSplit"));
-    }
-
-    /**
-     * Reflects the active buffer's split state in the toolbar toggle buttons, and disables them on a tab
-     * that can't be split at all — the Welcome/Doctor pages and the image/hex/PDF/diff viewers, none of
-     * which is an {@link EditorBuffer}, so {@link #toggleSplit} would silently do nothing there.
-     */
-    private void refreshSplitButtons() {
-        EditorBuffer buffer = activeBuffer();
-        EditorBuffer.Split split = buffer == null ? EditorBuffer.Split.NONE : buffer.getSplit();
-        splitVerticalButton.setDisable(buffer == null);
-        splitHorizontalButton.setDisable(buffer == null);
-        splitVerticalButton.pseudoClassStateChanged(OPEN, split == EditorBuffer.Split.SIDE_BY_SIDE);
-        splitHorizontalButton.pseudoClassStateChanged(OPEN, split == EditorBuffer.Split.STACKED);
-    }
-
-    /** A toolbar button whose tooltip shows the live chord for {@code commandId} (refreshed on keymap switch). */
-    private record ToolbarTip(
-            Button button, String base, @Nullable String commandId) {}
-
-    private final java.util.List<ToolbarTip> toolbarTips = new java.util.ArrayList<>();
-
-    private void setupButton(Button button, Node icon, String tooltip, @Nullable String commandId) {
-        button.setGraphic(icon);
-        button.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
-        // Drop any chord baked into the i18n label (e.g. "Save (C-x C-s)"); the live chord is appended below
-        // so the hint tracks the active keymap instead of being frozen to the Emacs binding.
-        String base = tooltip.replaceAll("\\s*\\([^()]*\\)\\s*$", "");
-        toolbarTips.add(new ToolbarTip(button, base, commandId));
-        applyToolbarTip(button, base, commandId);
-    }
-
-    private void applyToolbarTip(Button button, String base, @Nullable String commandId) {
-        String chord = commandId == null ? null : invertBindings().get(commandId);
-        button.setTooltip(new Tooltip(chord == null || chord.isEmpty() ? base : base + " (" + chord + ")"));
-    }
-
-    /** Re-applies every toolbar tooltip's chord from the current keymap (after a live keymap switch). */
-    void refreshToolbarTooltips() {
-        for (ToolbarTip t : toolbarTips) {
-            applyToolbarTip(t.button(), t.base(), t.commandId());
-        }
-    }
-
-    /**
-     * Enables/disables the state-dependent toolbar edit icons (save/undo/redo/cut/copy) for the active
-     * buffer. A non-buffer tab (Welcome) or no buffer ⇒ all disabled. Runs on tab switch and on the
-     * buffer's own edit/selection/dirty pulses — no polling. Disabling is cosmetic only; the keybinding
-     * commands still work. Clipboard-dependent Paste is handled separately by {@link #refreshPasteState}
-     * to keep the system-clipboard read off the per-keystroke path.
-     */
-    private void refreshEditState() {
-        if (saveButton == null) {
-            return; // toolbar not built yet
-        }
-        EditorBuffer buffer = activeBuffer();
-        CodeArea area = buffer == null ? null : buffer.getFocusedArea();
-        boolean editable = buffer != null && buffer.isEditable();
-        boolean hasSelection = area != null && area.getSelection().getLength() > 0;
-        // The dirty PROPERTY, not isDirty(): the exact answer can compare the whole document (a dirty buffer edited
-        // back to its saved length), deferred to the 150 ms settle on purpose; the property's listener re-runs this.
-        saveButton.setDisable(buffer == null || !buffer.dirtyProperty().get());
-        undoButton.setDisable(area == null || !area.isUndoAvailable());
-        redoButton.setDisable(area == null || !area.isRedoAvailable());
-        cutButton.setDisable(!hasSelection || !editable);
-        copyButton.setDisable(!hasSelection);
-    }
-
-    private boolean editStateRefreshPending; // a refreshEditState is queued (edits and selection moves arrive per key)
-
-    /**
-     * Coalesces {@link #refreshEditState} to one per event-loop turn (the contract's pending-flag shape): a typed
-     * character fires a text change and a selection change, each of which used to re-evaluate five toolbar
-     * buttons inside the keystroke. The refresh reads the active buffer when it runs, so it describes the tab shown.
-     */
-    private void scheduleEditStateRefresh() {
-        if (editStateRefreshPending) {
-            return;
-        }
-        editStateRefreshPending = true;
-        Platform.runLater(() -> {
-            editStateRefreshPending = false;
-            refreshEditState();
-        });
-    }
-
-    /**
-     * Enables/disables Paste from the system clipboard. Kept separate from {@link #refreshEditState} so
-     * the clipboard read happens only on tab switch / window focus-regain / after copy — never per
-     * keystroke.
-     */
-    void refreshPasteState() {
-        if (pasteButton == null) {
-            return;
-        }
-        EditorBuffer buffer = activeBuffer();
-        boolean editable = buffer != null && buffer.isEditable();
-        // hasString() is a round trip to whichever program owns the clipboard (X11, Wayland): asked only
-        // when a buffer could take the paste.
-        pasteButton.setDisable(!editable || !Clipboard.getSystemClipboard().hasString());
-    }
-
-    private final Object pasteRefreshKey = new Object();
-
-    /** {@link #refreshPasteState} after the first painted frame, once however many restored shells land. */
-    private void schedulePasteStateRefresh() {
-        com.editora.perf.AfterFirstPaint.runOnce(pasteRefreshKey, this::refreshPasteState);
     }
 
     /** A startup file to open, with an optional 1-based line/column ({@code 0} = unspecified). */
@@ -4280,7 +3991,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.dirtyProperty().addListener((obs, was, now) -> {
             updateTabMeta(tab, buffer);
             if (buffer == activeBuffer()) {
-                refreshEditState(); // save enablement (e.g. after markClean())
+                toolbar.refreshEditState(); // save enablement (e.g. after markClean())
             }
             if (projectPanel != null) {
                 projectPanel.refreshModified(); // reflect the dirty marker in the Project file tree
@@ -4292,13 +4003,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 fileWorkflows.autoSaveIdleTimer.playFromStart();
             }
             if (buffer == activeBuffer()) {
-                scheduleEditStateRefresh(); // edits change undo/redo (and dirty) availability
+                toolbar.scheduleEditStateRefresh(); // edits change undo/redo (and dirty) availability
             }
         });
         // Selection changes toggle cut/copy enablement (no clipboard read here — that's refreshPasteState).
         buffer.onSelectionChanged(() -> {
             if (buffer == activeBuffer()) {
-                scheduleEditStateRefresh(); // of the split pane in use
+                toolbar.scheduleEditStateRefresh(); // of the split pane in use
             }
         });
         installTabMenu(tab, buffer);
@@ -5640,8 +5351,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         statusBar.refresh();
         if (buffer == activeBuffer()) {
-            refreshEditState(); // editability change affects cut enablement
-            schedulePasteStateRefresh(); // ...and paste enablement (a restored shell flips when it lands)
+            toolbar.refreshEditState(); // editability change affects cut enablement
+            toolbar.schedulePasteStateRefresh(); // ...and paste enablement (a restored shell flips when it lands)
         }
     }
 

@@ -20,12 +20,12 @@ final class ToolbarOpsHost implements ToolbarCoordinator.Ops {
 
     @Override
     public java.util.Map<String, javafx.scene.Node> baseWidgets() {
-        return mc.toolbarBaseWidgets();
+        return mc.toolbar.toolbarBaseWidgets();
     }
 
     @Override
     public void appendFixedTail() {
-        mc.appendFixedTail();
+        mc.toolbar.appendFixedTail();
     }
 
     @Override

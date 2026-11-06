@@ -89,7 +89,7 @@ final class EditingHost implements EditingCoordinator.Host {
 
     @Override
     public void refreshPasteState() {
-        mc.refreshPasteState();
+        mc.toolbar.refreshPasteState();
     }
 
     @Override
