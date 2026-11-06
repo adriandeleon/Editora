@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Refactor:** Go to Implementation's picker-row text (`implementationLabel`, `implementationDetail`,
+  `libraryPackage`) moved from `LspCoordinator` to a new `ImplementationTargets`, which brings `LspCoordinator` back
+  under the 10,000-line `SourceFileSizeTest` limit it crossed in #1445.
 - **Language servers and debugging are no longer marked Beta.** Their Settings pages lose the Beta pill and the
   "Experimental — may be unstable" note.
 - **The Map's preview eye closes an open card.** Clicking the eye on a file row whose preview card is open closes
@@ -44,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A trail stop's note no longer covers its card.** Since cards open centred, a wide card could leave too little
   room for the note on either side, and the note was laid over the stop's lines (on macOS at the default size).
   The map now pans just far enough for the note to stand beside the card.
+- **Map caller and reference cards no longer pile up.** With Focus new column on, Show Callers or References as
+  Cards opened every result card on one spot, at full width, instead of beside the card asked from. Each now opens
+  beside that card at the narrower result width, in a place of its own, stacking above or below the ones there.
 - **An open Problems window follows Next / Previous Problem.** The editor's problem-counter arrows (and F2 /
   Shift+F2) select the problem they step to in the Problems tool window, opening its folded header and scrolling
   it into view, while the focus stays in the editor — even when the last click was in the Problems window.

@@ -328,7 +328,12 @@ group by file). The groups are ranked (`MapCardLinks.linksRank`): code before te
 then nearest the asked file's folder, then path and line order. The first six groups open as declaration cards (a
 file group: a file card) scrolled to the place, the name there selected as find selects a match — the call itself
 in a caller, found from the caller's first line (`ProjectMapPreview.linksRevealPlace`, review 4 C2) — **beside the card asked from** (`MapCards.drawnPlacement` takes that card as the row), at most 460 px wide
-and kept at that width, each joined to it by an **edge**: a line from the result card to the card asked from with an
+and kept at that width. **Each result card gets a place of its own**: besides the free-room spots, it is tried beside
+the card asked from at every level that keeps it level with that card, and above or below it anywhere along it, past
+the result cards already opened (`cardSideLevels`), so the cards of one answer stack around it instead of over it or
+each other; only when the panel has no such room left does the last one take the spot that covers least. "Focus new
+column" never applies to them: `columnRulePlacement` only checks `MapCardLinks.placesBeside`, leaving the card's place
+beside its source for `besideSource` to take when it is placed. Each is joined to it by an **edge**: a line from the result card to the card asked from with an
 arrow at that end, and a label at its middle — "calls", "references", or "by name" (the line dashed), with "· N"
 for more than one place. The rest are listed by a **"+N more"** chip on the card's top edge (under the card when
 there is no room above it); picking one opens its card with its edge. The chip is kept above every card: it is
@@ -1365,7 +1370,9 @@ The focused coverage lives in:
   accessible descriptions, the ranking and the name match's read order; `MapCardLinksReview4FxTest` for review 4's
   links fixes — a result card at the call, the chip over the result cards, pins against a question's places,
   stepping, results closing with their source, pins surviving every automatic close, F3 in a card's find field
-  under Emacs, a failed call hierarchy matched by name, and overlapping loans; `ProjectMapLinksFxTest` for callers and references from a fake language server with the file lent and
+  under Emacs, a failed call hierarchy matched by name, and overlapping loans; `ProjectMapCardFlowFxTest` for
+  several caller cards opened together with Focus new column on, each beside the card asked from and clear of it and
+  of each other; `ProjectMapLinksFxTest` for callers and references from a fake language server with the file lent and
   given back and no editor opened, the by-name answer with dashed "by name" edges, the "+N more" chip, result cards
   outliving the orphan check, and an `@name` Map search through the real `IndexCoordinator`;
 - `ProjectMapStructureTest` for which files get a Structure icon, declaration path segments, a card's lines

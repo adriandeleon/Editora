@@ -195,15 +195,16 @@ class LspCoordinatorCommandsFxTest {
         assertEquals(2, FxTestSupport.callOnFx(fx::pickerRows).size());
         assertEquals(
                 "String",
-                LspCoordinator.implementationLabel(new com.editora.lsp.LspManager.Target(null, 1, 0, JDT_STRING)));
+                ImplementationTargets.implementationLabel(
+                        new com.editora.lsp.LspManager.Target(null, 1, 0, JDT_STRING)));
         assertEquals(
                 "java.lang  ·  " + tr("structure.line", 2),
-                LspCoordinator.implementationDetail(
+                ImplementationTargets.implementationDetail(
                         new com.editora.lsp.LspManager.Target(null, 1, 0, JDT_STRING), null),
                 "the line tells apart the classes one file holds (third review BN4)");
         assertEquals(
                 "IdentityArrayList",
-                LspCoordinator.implementationLabel(new com.editora.lsp.LspManager.Target(
+                ImplementationTargets.implementationLabel(new com.editora.lsp.LspManager.Target(
                         null, 1, 0, "jdt://contents/java.desktop/sun.awt.util/IdentityArrayList.java?=x")));
         FxTestSupport.runOnFx(() -> fx.choose(1)); // rows by class: Other, then String (fourth review BN4)
         fx.settle();
@@ -319,9 +320,9 @@ class LspCoordinatorCommandsFxTest {
 
         Path impl = fx.root.resolve("src/a/Impl.java");
         var target = new com.editora.lsp.LspManager.Target(impl, 4, 0);
-        assertEquals("Impl.java", LspCoordinator.implementationLabel(target));
-        assertEquals(Path.of("src/a/Impl.java") + ":5", LspCoordinator.implementationDetail(target, fx.root));
-        assertEquals(impl + ":5", LspCoordinator.implementationDetail(target, null));
+        assertEquals("Impl.java", ImplementationTargets.implementationLabel(target));
+        assertEquals(Path.of("src/a/Impl.java") + ":5", ImplementationTargets.implementationDetail(target, fx.root));
+        assertEquals(impl + ":5", ImplementationTargets.implementationDetail(target, null));
     }
 
     @Test
