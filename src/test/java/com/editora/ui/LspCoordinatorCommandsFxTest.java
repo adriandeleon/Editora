@@ -285,7 +285,8 @@ class LspCoordinatorCommandsFxTest {
     @Test
     void theRightClickMenusOwnCommandsRunTheirActions() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);
-        java.util.function.Consumer<String> run = FxTestSupport.field(b, "lspCommand");
+        java.util.function.Consumer<String> run =
+                FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "lspCommand");
         fx.run(() -> run.accept("lsp.peekDefinition")); // what it shows is peekDefinition's own tests' business
         fx.run(() -> run.accept("lsp.refactorThis"));
         fx.run(() -> run.accept("lsp.generate"));

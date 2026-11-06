@@ -14,12 +14,8 @@ import javafx.beans.property.SimpleBooleanProperty;
 import javafx.geometry.Bounds;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
-import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
-import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
-import javafx.scene.control.SeparatorMenuItem;
-import javafx.scene.input.Clipboard;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
@@ -85,7 +81,6 @@ import com.editora.editor.markdown.MarkdownFormatBar;
 import com.editora.editor.markdown.MarkdownLintHover;
 import com.editora.editor.markdown.MarkdownLintOverlay;
 import com.editora.editor.markdown.MarkdownLintStripe;
-import com.editora.editor.markdown.MarkdownMenus;
 import com.editora.editor.markdown.MermaidImages;
 import com.editora.editor.markdown.MermaidLintHover;
 import com.editora.editor.markdown.MermaidLintOverlay;
@@ -328,6 +323,10 @@ public class EditorBuffer implements TabContent {
     final BufferTyping typingAids = new BufferTyping(this);
     /** Snippet keys and expansion, and abbrevs ({@link BufferSnippets}). */
     final BufferSnippets snippetKeys = new BufferSnippets(this);
+    /** The right-click menu ({@link BufferContextMenu}). */
+    final BufferContextMenu editorMenu = new BufferContextMenu(this);
+    /** The gutter Run glyphs and their handlers ({@link BufferRunGutter}). */
+    final BufferRunGutter runGutter = new BufferRunGutter(this);
 
     final BooleanProperty dirty = new SimpleBooleanProperty(false);
     /**
@@ -394,7 +393,8 @@ public class EditorBuffer implements TabContent {
     @Nullable
     CodeArea area2;
 
-    private @Nullable VirtualizedScrollPane<CodeArea> scrollPane2;
+    @Nullable
+    VirtualizedScrollPane<CodeArea> scrollPane2;
     /** The secondary view's container (scroll pane + its own minimap), mounted in the SplitPane. */
     @Nullable
     AnchorPane root2;
@@ -408,8 +408,11 @@ public class EditorBuffer implements TabContent {
      *  (and {@link #area2} when split) while {@link #multiCaretEnabled}; transparent with one caret. */
     private boolean multiCaretEnabled;
 
-    private @Nullable MultiCarets multiCaret;
-    private @Nullable MultiCarets multiCaret2;
+    @Nullable
+    MultiCarets multiCaret;
+
+    @Nullable
+    MultiCarets multiCaret2;
 
     /** IntelliJ-style Markdown preview modes (only meaningful for Markdown files). */
     public enum MarkdownViewMode {
@@ -478,7 +481,7 @@ public class EditorBuffer implements TabContent {
     private final SettledEditDispatcher settledEdits = new SettledEditDispatcher();
 
     private @Nullable Subscription settledEditSub;
-    private static final ExecutorService HIGHLIGHT_POOL = Executors.newFixedThreadPool(
+    static final ExecutorService HIGHLIGHT_POOL = Executors.newFixedThreadPool(
             Math.min(4, Math.max(2, Runtime.getRuntime().availableProcessors() / 2)),
             daemonFactory("editor-highlighter"));
 
@@ -540,7 +543,7 @@ public class EditorBuffer implements TabContent {
      *  (see {@code AiCoordinator.applySupport} — never re-probed per selection). */
     private @Nullable AiActionsBar aiActionsBar;
 
-    private boolean aiActionsEnabled;
+    boolean aiActionsEnabled;
     private boolean aiActionsBarUpdatePending;
     private Runnable aiExplainHandler = () -> {};
     private Runnable aiRewriteHandler = () -> {};
@@ -550,7 +553,8 @@ public class EditorBuffer implements TabContent {
     @Nullable
     Runnable insertTypstTableHandler;
 
-    private @Nullable Runnable typstImagePasteHandler;
+    @Nullable
+    Runnable typstImagePasteHandler;
     /** The preview's right-click menu: its export/print actions and what the pointer was on ({@link PreviewMenu}). */
     final PreviewMenu previewMenu = new PreviewMenu(this, () -> previewPanes.markdownPreview);
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
@@ -619,49 +623,17 @@ public class EditorBuffer implements TabContent {
     /** Markdown-lint overview stripe over the scrollbar (beside the TODO/diagnostic stripes); lazily attached
      *  with the Markdown-lint overlay — see {@link #mdLintStripe()}. */
     private @Nullable MarkdownLintStripe mdLintStripe;
-    /** Files above this size are never scanned for compact-source detection (keeps it off the hot path). */
-    private static final int COMPACT_SCAN_LIMIT = 256 * 1024;
-    /** Whether this buffer can run as a local file (remote buffers cannot). */
-    private boolean runFeatureEnabled = true;
     /** Whether the HTTP Client feature is enabled for this buffer (gated by {@code Settings.httpClientSupport},
      *  Simple UI mode and a local file) — a {@code .http} file then shows a Run glyph on every request line. */
-    private boolean httpFeatureEnabled;
+    boolean httpFeatureEnabled;
     /** A {@code .http} buffer's request ▶s, the running ■ and the injected {@link HttpHooks}. */
-    private final HttpGutter httpGutter = new HttpGutter();
+    final HttpGutter httpGutter = new HttpGutter();
     /** A {@code .http} buffer's last results after its request lines, and the ▶ colours they give (U11). */
-    private final HttpResultMarks httpResults = new HttpResultMarks();
-    /** 0-based definition line → target name for a Makefile buffer (each line gets a Run glyph → {@code
-     *  make <target>}); empty for non-Makefile buffers. */
-    private java.util.Map<Integer, String> makeTargets = java.util.Map.of();
-    /** Fired with the clicked target's name when a Makefile Run glyph is clicked (runs {@code make <name>}). */
-    private java.util.function.Consumer<String> makeRunHandler = t -> {};
-    /** JUnit test-gutter gate (Test Runner feature + a detected JVM build tool), pushed by MainController. */
-    private boolean testGutterEnabled;
-    /** 0-based line → JUnit test target (class-decl line + each test method) for the gutter ▶; empty otherwise. */
-    private java.util.Map<Integer, com.editora.test.JavaTestScanner.TestTarget> testLines = java.util.Map.of();
-    /** Fired with a test target when its gutter ▶ is clicked (runs one class/method via the build tool). */
-    private java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> testRunHandler = t -> {};
-    /** Fired with a test target from the editor context menu (debugs one class/method via the build tool). */
-    private java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> testDebugHandler = t -> {};
-    /** Main-method gutter gate (a Java file in a Maven/Gradle project with run/debug available), pushed by
-     *  MainController. When on, {@code public static void main} lines get a green ▶ to run the project class. */
-    private boolean mainGutterEnabled;
-    /** 0-based line → project {@code main} entry point for the gutter ▶; empty otherwise. */
-    private java.util.Map<Integer, com.editora.run.MainMethodScanner.MainMethod> mainLines = java.util.Map.of();
-    /** Fired with a main method when its gutter ▶ is clicked (runs that project main class). */
-    private java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> mainRunHandler = m -> {};
-    /** Fired with a main method for the editor right-click "Debug Main Class" item. */
-    private java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> mainDebugHandler = m -> {};
-    /** Whether this file is runnable (a Java 25 compact source file, a Python script, or — when the Bash
-     *  LSP is enabled — a shell script) — drives the gutter Run glyph + the Run tool window. */
-    private boolean runnable;
-    /** 0-based line the gutter Run glyph sits on (a compact file's {@code main}, a Python {@code __main__}
-     *  guard, else the first line), or -1 when not runnable. */
-    private int runLine = -1;
-    /** Fired (FX thread) when the runnable status flips, so the controller refreshes the Run button. */
-    private Runnable onRunnableChanged = () -> {};
+    final HttpResultMarks httpResults = new HttpResultMarks();
 
-    private @Nullable SearchHighlightOverlay searchOverlay; // lazily attached — see searchOverlay()
+    @Nullable
+    SearchHighlightOverlay searchOverlay; // lazily attached — see searchOverlay()
+
     private @Nullable OccurrenceHighlightOverlay occurrenceOverlay; // lazily attached — see occurrenceOverlay() (#675)
     /** Highlights configured TODO/FIXME-style patterns (per-pattern color), behind the text; lazily attached
      *  with the first non-empty scan result (TODO highlighting is on by default, but most files have no
@@ -692,7 +664,7 @@ public class EditorBuffer implements TabContent {
     /** LSP: overlay active (diagnostics + hover), the debounced didChange sink, and the hover tooltip. */
     boolean lspActive;
 
-    private final java.util.List<CompletionEditTracker> completionEditTrackers = new java.util.ArrayList<>();
+    final java.util.List<CompletionEditTracker> completionEditTrackers = new java.util.ArrayList<>();
 
     private java.util.function.@Nullable Consumer<String> lspChangeListener;
     /** {@link #docVersion} of the document text last sent to the server, so a send whose content hasn't changed
@@ -739,10 +711,10 @@ public class EditorBuffer implements TabContent {
 
     private boolean stickyScrollEnabled;
     private boolean stickyScrollPending;
-    private final BookmarkManager bookmarks = new BookmarkManager(area);
+    final BookmarkManager bookmarks = new BookmarkManager(area);
     /** Handles a bookmark add/remove request for a line (from the right-click menu): the controller adds,
      *  or confirms a removal. Default: toggle. */
-    private java.util.function.BiConsumer<EditorBuffer, Integer> bookmarkToggleRequest =
+    java.util.function.BiConsumer<EditorBuffer, Integer> bookmarkToggleRequest =
             (buffer, line) -> buffer.toggleBookmark(line);
     /** Breakpoints for this buffer (gutter strip + persistence + sent to a live DAP session). */
     private final BreakpointManager breakpoints = new BreakpointManager(area);
@@ -758,7 +730,7 @@ public class EditorBuffer implements TabContent {
 
     private final NoteHighlightOverlay noteOverlay = new NoteHighlightOverlay(area);
     /** When false, the Personal Notes feature is disabled for this buffer (no "Add Note" menu items). */
-    private boolean notesEnabled = false;
+    boolean notesEnabled = false;
     /** When false, the note inline marker + highlight are hidden (the {@code showNoteIndicators} setting). */
     private boolean noteIndicators = true;
     /** Invoked when the user clicks a note's inline start marker — the controller opens the note editor. */
@@ -775,28 +747,13 @@ public class EditorBuffer implements TabContent {
     /** Handles a click on a line's blame annotation (the controller shows that line's commit). Default: no-op. */
     private java.util.function.BiConsumer<EditorBuffer, Integer> gutterBlameClick = (buffer, line) -> {};
     /** Invoked by the "Add Personal Note" context-menu item (the controller prompts + creates). */
-    private java.util.function.Consumer<EditorBuffer> addNoteHandler = b -> {};
-    /** "Run File" context-menu handler (compact source files); null hides the item. */
-    private @Nullable Runnable runHandler;
-    /** "Debug File" beside "Run File" (null: none); shown while {@link #debugFileShown} says it can debug. */
-    private @Nullable Runnable debugFileHandler;
-
-    private java.util.function.BooleanSupplier debugFileShown = () -> false;
+    java.util.function.Consumer<EditorBuffer> addNoteHandler = b -> {};
     /** LSP navigation actions (controller-supplied); shown in the context menu only while LSP is active. */
-    private Runnable lspGotoDefinitionAction = () -> {};
+    Runnable lspGotoDefinitionAction = () -> {};
 
-    private Runnable lspFindReferencesAction = () -> {};
-    private Runnable lspHoverAction = () -> {};
-    private Runnable lspFormatAction = () -> {};
-    private Runnable lspCodeActionsAction = () -> {};
-    private java.util.function.Consumer<String> lspCommand = id -> {}; // runs a command id (Refactor, Generate)
-    private Runnable lspRenameAction = () -> {};
-    private Runnable lspGotoImplementationAction = () -> {};
-    private Runnable lspGotoTypeDefinitionAction = () -> {};
-    /** Whether this buffer's server advertises whole-document formatting (refreshed when it reports ready). */
-    private boolean lspFormatAvailable;
+    Runnable lspCodeActionsAction = () -> {};
     /** Whether this buffer's server advertises code actions (quick fixes) — gates the menu item (#670). */
-    private boolean lspCodeActionsAvailable;
+    boolean lspCodeActionsAvailable;
 
     /** The code-action lightbulb on the caret line (the coordinator gives it its probe). */
     private final CodeActionBulb bulb = new CodeActionBulb(
@@ -808,12 +765,6 @@ public class EditorBuffer implements TabContent {
     /** The file's problem counts at the top right of the editor. */
     private final ProblemCounterSlot problemCounter = new ProblemCounterSlot(
             () -> lspActive && !largeFile, viewLayout::placeCornerControl, viewLayout::removeCornerControl);
-    /** Whether this buffer's server advertises rename — gates the menu item (#676). */
-    private boolean lspRenameAvailable;
-    /** Whether this buffer's server advertises {@code textDocument/implementation} — gates the item (#735). */
-    private boolean lspImplementationAvailable;
-    /** Whether this buffer's server advertises {@code textDocument/typeDefinition} — gates the item (#736). */
-    private boolean lspTypeDefinitionAvailable;
     /** Chars of context captured before/after a note's selection (for re-anchoring). */
     private static final int CONTEXT_CHARS = 40;
 
@@ -821,7 +772,8 @@ public class EditorBuffer implements TabContent {
     Path path;
     /** Suggested name for a still-unsaved buffer (e.g. from {@code --new-file=foo.txt}); drives the tab
      *  title and extension-based highlighting while {@link #path} stays null (so Save prompts Save-As). */
-    private @Nullable String displayName;
+    @Nullable
+    String displayName;
     /** Last-known on-disk identity used to detect external changes; modified time -1 means unknown. */
     private long diskModifiedMillis = -1;
 
@@ -834,11 +786,12 @@ public class EditorBuffer implements TabContent {
     @Nullable
     IGrammar grammar;
     /** {@code --source N} version from a Java compact-source shebang (for the run command), else null. */
-    private @Nullable Integer shebangJavaSource;
+    @Nullable
+    Integer shebangJavaSource;
     /** True once the user explicitly picked a language (status bar), so shebang detection won't fight it. */
     private boolean languageUserOverride;
     /** Spell checking (Lucene Hunspell, drawn by {@link #spellOverlay}); off until the controller enables it. */
-    private final BufferSpell spell = new BufferSpell(
+    final BufferSpell spell = new BufferSpell(
             area, spellOverlay, this::getFocusedArea, () -> language, this::isEditable, () -> largeFile);
     /** Bumped on every highlight request (FX thread only); lets background results discard if stale. Volatile:
      *  read per line by the background tokenize's cancel check. */
@@ -1023,15 +976,15 @@ public class EditorBuffer implements TabContent {
         // Gutter Run glyph: reserved for a runnable file — one entry line for a script, or one per
         // request for a .http file.
         folds.setRunHooks(
-                () -> runnable || !mainLines.isEmpty(),
-                this::isRunGlyphLine,
-                this::onRunGlyph,
-                line -> testLines.containsKey(line)
+                () -> runGutter.runnable || !runGutter.mainLines.isEmpty(),
+                runGutter::isRunGlyphLine,
+                runGutter::onRunGlyph,
+                line -> runGutter.testLines.containsKey(line)
                         ? "test-run-marker"
                         : line == httpGutter.runningGlyphLine(this::isFoldedLine)
                                 ? FoldManager.HTTP_RUNNING_CLASS
                                 : httpResults.glyphClass(line), // the ▶ of a request that ran: its outcome
-                this::runGlyphTooltip);
+                runGutter::runGlyphTooltip);
         // Gutter breakpoint strip: reserved only while debugging is enabled; click toggles a breakpoint.
         folds.setBreakpointHooks(
                 () -> debugEnabled,
@@ -1180,7 +1133,7 @@ public class EditorBuffer implements TabContent {
                 focusedView.set(area);
             }
         });
-        installContextMenu(area);
+        editorMenu.installContextMenu(area);
         installFormatBarListeners(area);
         scrollSync = new PreviewScrollSync(
                 area, () -> markdownViewMode, () -> previewPanes.previewPane, () -> previewPanes.markdownPreview);
@@ -1197,7 +1150,7 @@ public class EditorBuffer implements TabContent {
             resolveDirty();
             sealBaselineIfDirty();
             applyHighlighting();
-            recomputeRun(true); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
+            runGutter.recomputeRun(true); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
         });
         settledEdits.at(
                 Duration.ofMillis(250),
@@ -1859,406 +1812,24 @@ public class EditorBuffer implements TabContent {
         area.requestFocus();
     }
 
-    /** The editor's right-click menu, built on the first request: a {@code ContextMenu} is a popup window
-     *  with a scene of its own, which most buffers never open. */
-    private @Nullable ContextMenu contextMenu;
-    /** The view the context menu was last asked for: its items act where the user clicked, in either pane. */
-    private CodeArea menuView = area;
-    /** Supplies extra right-click items (plugin contributions), injected by the controller; null = none. */
-    private java.util.function.@Nullable Supplier<List<MenuItem>> menuContributor;
-    /** Build-tool actions for this file, shown next to the LSP submenu rather than at the menu's foot. */
-    private java.util.function.@Nullable Supplier<List<MenuItem>> buildMenuContributor;
-    /** Debugger actions at the click (breakpoint, Run to Cursor, Show Value…); null = none (review C10). */
-    private java.util.function.@Nullable Supplier<List<MenuItem>> debugMenuContributor;
-
-    /** Simple UI mode: the right-click menu keeps the editing actions only — see {@link #setSimpleMenu}. */
-    private boolean simpleMenu;
-
-    private ContextMenu contextMenu() {
-        if (contextMenu == null) {
-            contextMenu = new ContextMenu();
-            contextMenu.getStyleClass().setAll("context-menu", "editor-context-menu");
-        }
-        return contextMenu;
-    }
-
-    private void installContextMenu(CodeArea a) {
-        a.setOnContextMenuRequested(e -> {
-            ContextMenu contextMenu = contextMenu();
-            menuView = a;
-            a.requestFocus(); // "at the caret" items read the focused view
-            List<MenuItem> items = new java.util.ArrayList<>();
-            // First, and for every item below: one position the menu is about (and the caret moved to a
-            // right-click outside the selection), so Paste, Run Test, the LSP items and Add Bookmark agree.
-            ContextMenuTarget at = ContextMenuTarget.resolve(a, e, this::collapseCarets);
-            // A JUnit test file runs/debugs the method there (or the class from its declaration)
-            // rather than offering generic "Run File"; anything else runnable keeps that generic action.
-            // Simple UI mode keeps the editing actions only: no Run/Debug, language-server, build, AI, markup,
-            // bookmark or note items, as the Simple menu bar keeps none of them.
-            com.editora.test.JavaTestScanner.TestTarget testTarget = simpleMenu ? null : testTargetAt(at.line(), false);
-            if (testTarget != null) {
-                boolean method = testTarget.methodName() != null;
-                MenuItem runTests = new MenuItem(tr(method ? "editmenu.runTestMethod" : "editmenu.runTests"));
-                runTests.setGraphic(FoldManager.runGlyph("test-run-marker")); // blue, matching the test gutter ▶
-                runTests.setOnAction(ev -> testRunHandler.accept(testTarget));
-                MenuItem debugTest =
-                        new MenuItem(tr(method ? "testrunner.menu.debugTest" : "testrunner.menu.debugClass"));
-                debugTest.setGraphic(MenuIcons.debug());
-                debugTest.setOnAction(ev -> testDebugHandler.accept(testTarget));
-                items.addAll(java.util.List.of(runTests, debugTest));
-                items.add(new SeparatorMenuItem());
-            } else if (!simpleMenu && httpFeatureEnabled && isHttpFile() && runnable) {
-                // A .http file runs requests, never "Run File" (which launched `java requests.http`).
-                MenuItem runRequest = new MenuItem(tr("editmenu.runHttpRequest"));
-                runRequest.setGraphic(FoldManager.runGlyph());
-                runRequest.setOnAction(ev -> httpGutter.hooks().run().accept(at.line()));
-                MenuItem runAll = new MenuItem(tr("editmenu.runHttpFile"));
-                runAll.setOnAction(ev -> httpGutter.hooks().runAll().run());
-                items.addAll(java.util.List.of(runRequest, runAll));
-                if (httpDebugHandler != null
-                        && com.editora.http.HttpScriptLines.requestHasScripts(getContent(), at.line())) {
-                    MenuItem debugRequest = new MenuItem(tr("editmenu.debugHttpRequest"));
-                    debugRequest.setGraphic(MenuIcons.debug());
-                    debugRequest.setOnAction(ev -> {
-                        java.util.function.IntConsumer handler = httpDebugHandler;
-                        if (handler != null) {
-                            handler.accept(at.line());
-                        }
-                    });
-                    items.add(debugRequest);
-                }
-                items.addAll(HttpVariableFixes.menuItems(httpVariableFixesAt(a, at.offset()))); // "Use environment dev"
-                items.add(new SeparatorMenuItem());
-            } else if (!simpleMenu && runnable && runHandler != null && !isHttpFile()) {
-                MenuItem run = new MenuItem(tr("command.file.run"));
-                run.setGraphic(FoldManager.runGlyph()); // green play icon, matching the gutter glyph
-                run.setOnAction(ev -> {
-                    Runnable handler = runHandler;
-                    if (handler != null) {
-                        handler.run();
-                    }
-                });
-                items.add(run);
-                if (debugFileHandler != null && debugFileShown.getAsBoolean()) {
-                    MenuItem debugFile = new MenuItem(tr("editmenu.debugFile"));
-                    debugFile.setGraphic(MenuIcons.debug());
-                    debugFile.setOnAction(ev -> {
-                        Runnable handler = debugFileHandler;
-                        if (handler != null) {
-                            handler.run();
-                        }
-                    });
-                    items.add(debugFile);
-                }
-                items.add(new SeparatorMenuItem());
-            } else if (!simpleMenu) {
-                // A Java class with a project main() gets Run/Debug Main Class items (green ▶ + bug icon).
-                com.editora.run.MainMethodScanner.MainMethod mainTarget = mainTargetAt(at.line());
-                if (mainTarget != null) {
-                    String simple = com.editora.test.TestSourceLocator.simpleName(mainTarget.fqn());
-                    MenuItem runMain = new MenuItem(tr("editmenu.runMainClass", simple));
-                    runMain.setGraphic(FoldManager.runGlyph());
-                    runMain.setOnAction(ev -> mainRunHandler.accept(mainTarget));
-                    MenuItem debugMain = new MenuItem(tr("editmenu.debugMainClass", simple));
-                    debugMain.setGraphic(MenuIcons.debug());
-                    debugMain.setOnAction(ev -> mainDebugHandler.accept(mainTarget));
-                    items.add(runMain);
-                    items.add(debugMain);
-                    items.add(new SeparatorMenuItem());
-                }
-            }
-            List<MenuItem> debugItems = debugMenuContributor == null || simpleMenu ? null : debugMenuContributor.get();
-            if (debugItems != null && !debugItems.isEmpty()) {
-                items.addAll(debugItems);
-                items.add(new SeparatorMenuItem());
-            }
-            // LSP navigation (only when this buffer is served by a language server), for the symbol there.
-            if (lspActive && !simpleMenu) {
-                items.add(lspMenu(at.offset()));
-                items.add(new SeparatorMenuItem());
-            }
-            // Beside the LSP submenu, not with the plugin-contributed items at the foot of the menu: both
-            // are "what this file's toolchain can do", and reading them together is the point.
-            if (buildMenuContributor != null && !simpleMenu) {
-                List<MenuItem> build = buildMenuContributor.get();
-                if (build != null && !build.isEmpty()) {
-                    items.addAll(build);
-                    items.add(new SeparatorMenuItem());
-                }
-            }
-            // Use the same effective gate as the floating selection bar: the master + feature settings
-            // are on and the provider's latest connectivity check succeeded. Keep the submenu available
-            // even without a selection so the menu remains a stable map of enabled features; its
-            // selection-scoped actions are disabled until there is text to act on.
-            if (aiActionsEnabled && !simpleMenu) {
-                items.add(aiActionsMenu());
-                items.add(new SeparatorMenuItem());
-            }
-            items.addAll(spell.menuItems(at.offset(), contextMenu.getItems()));
-            // One submenu per markup language, the way the LSP and build-tool actions are already grouped:
-            // eight flat "Typst: …" entries pushed cut/copy/paste and the spelling suggestions down the menu
-            // and made the file-type actions indistinguishable from the editing ones. Run/Debug stay at the
-            // top level above — they are the actions you reach for without reading the menu.
-            if (!simpleMenu && canFormatMarkdown()) {
-                items.add(markupMenu(tr("editmenu.markdown"), MarkdownMenus.items(this, typstImagePasteHandler)));
-                items.add(new SeparatorMenuItem());
-            } else if (!simpleMenu && isTypst() && isEditable()) {
-                items.add(markupMenu(tr("editmenu.typst"), typstMenuItems()));
-                items.add(new SeparatorMenuItem());
-            }
-            if (supportsComments()) {
-                MenuItem comment = new MenuItem(tr("editmenu.toggleComment"));
-                comment.setGraphic(MenuIcons.comment());
-                comment.setOnAction(ev -> toggleComment());
-                items.add(comment);
-                items.add(new SeparatorMenuItem());
-            }
-            items.addAll(standardMenuItems());
-            // Print / Export to PDF stay in Simple mode, as on its File menu; the controller already leaves out the
-            // External Tools and plugin items there.
-            if (menuContributor != null) { // plugin-contributed items
-                List<MenuItem> extra = menuContributor.get();
-                if (extra != null && !extra.isEmpty()) {
-                    items.add(new SeparatorMenuItem());
-                    items.addAll(extra);
-                }
-            }
-            // Bookmarks: the gutter marker is display-only, so add/remove lives here (and in the palette).
-            if (path != null && !simpleMenu) {
-                items.add(new SeparatorMenuItem());
-                int clickedLine = at.line();
-                boolean marked = bookmarks.isBookmarked(clickedLine);
-                MenuItem bookmark = new MenuItem(tr(marked ? "editmenu.removeBookmark" : "editmenu.addBookmark"));
-                bookmark.setGraphic(MenuIcons.bookmark());
-                bookmark.setOnAction(ev -> bookmarkToggleRequest.accept(this, clickedLine));
-                items.add(bookmark);
-            }
-            if (path != null && notesEnabled && !simpleMenu) {
-                items.add(new SeparatorMenuItem());
-                boolean hasSelection = a.getSelection().getLength() > 0;
-                MenuItem addNote = new MenuItem(tr(hasSelection ? "editmenu.addNoteSelection" : "editmenu.addNote"));
-                addNote.setGraphic(MenuIcons.note());
-                addNote.setOnAction(ev -> addNoteHandler.accept(this));
-                items.add(addNote);
-            }
-            contextMenu.getItems().setAll(items);
-            contextMenu.show(a, at.screenX(), at.screenY());
-            e.consume();
-        });
-    }
-
-    /** Injects a supplier of extra right-click menu items (plugin contributions); null clears it. */
     public void setMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
-        this.menuContributor = contributor;
+        editorMenu.setMenuContributor(contributor);
     }
 
-    /** The debugger's right-click items, placed above the LSP submenu (built per showing; null clears it). */
     public void setDebugMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
-        this.debugMenuContributor = contributor;
+        editorMenu.setDebugMenuContributor(contributor);
     }
 
-    /**
-     * Simple UI mode trims the right-click menu, as it trims the menu bar, to Toggle Comment, the spelling
-     * suggestions, Cut/Copy/Paste, Undo/Redo, Select All and Print / Export to PDF; the preview menu loses
-     * its extra export formats (see {@link PreviewMenu}). Read on each right-click,
-     * so a toggle applies to the next one.
-     */
     public void setSimpleMenu(boolean simple) {
-        this.simpleMenu = simple;
+        editorMenu.setSimpleMenu(simple);
     }
 
-    /** Whether the right-click menus are trimmed for Simple UI mode (the preview menus read it too). */
     public boolean isSimpleMenu() {
-        return simpleMenu;
+        return editorMenu.isSimpleMenu();
     }
 
-    /** Items placed immediately after the LSP submenu — see {@code installContextMenu}. */
     public void setBuildMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
-        this.buildMenuContributor = contributor;
-    }
-
-    /**
-     * Wraps a markup language's formatting actions in one titled submenu — the {@link #lspMenu} shape.
-     *
-     * <p>The items keep their palette titles ("Markdown: Bold"), matching the Maven submenu rather than the
-     * LSP one: those titles are the command titles, shared with the palette and the keybinding editor, and
-     * duplicating them purely to drop a prefix inside the submenu would mean a second set of strings in six
-     * catalogs that could then drift from the commands they name.
-     */
-    private Menu markupMenu(String title, List<MenuItem> actions) {
-        Menu menu = new Menu(title, MenuIcons.textFormat());
-        menu.getItems().addAll(actions);
-        return menu;
-    }
-
-    /** AI selection actions, grouped under one row while the effective enabled-and-connected gate is on. */
-    private Menu aiActionsMenu() {
-        boolean hasSelection = menuView.getSelection().getLength() > 0;
-        MenuItem explain = new MenuItem(tr("command.ai.explainSelection"), MenuIcons.explain());
-        explain.setDisable(!hasSelection);
-        explain.setOnAction(e -> requestExplainSelection());
-        MenuItem rewrite = new MenuItem(tr("command.ai.rewriteSelection"), MenuIcons.rewrite());
-        rewrite.setDisable(!hasSelection || !isEditable());
-        rewrite.setOnAction(e -> requestRewriteSelection());
-        Menu menu = new Menu(tr("editmenu.aiActions"), MenuIcons.ai());
-        menu.getItems().addAll(explain, rewrite);
-        return menu;
-    }
-
-    /**
-     * The language-server actions, gathered under one <b>LSP</b> submenu.
-     *
-     * <p>A submenu rather than the flat list they used to be: a served buffer contributes up to seven items,
-     * which pushed the editing actions everyone uses — cut/copy/paste, the spelling suggestions — far enough
-     * down the menu to hunt for. Grouping them also names what they are, which a bare "Go to Definition"
-     * sitting between "Paste" and a spelling suggestion does not.
-     */
-    private Menu lspMenu(int offset) {
-        Menu menu = new Menu(tr("editmenu.lsp"), MenuIcons.code());
-        menu.getItems().addAll(lspMenuItems(offset));
-        return menu;
-    }
-
-    /** Go to Definition / Find References / Show Documentation — each moves the caret to {@code offset}
-     *  first so it targets the right-clicked symbol, then runs the controller-supplied action. */
-    private List<MenuItem> lspMenuItems(int offset) {
-        List<MenuItem> items = new java.util.ArrayList<>();
-        items.add(lspItem("command.lsp.gotoDefinition", MenuIcons.gotoDefinition(), offset, lspGotoDefinitionAction));
-        if (lspImplementationAvailable) {
-            items.add(lspItem(
-                    "command.lsp.gotoImplementation",
-                    MenuIcons.gotoImplementation(),
-                    offset,
-                    lspGotoImplementationAction));
-        }
-        if (lspTypeDefinitionAvailable) {
-            items.add(lspItem(
-                    "command.lsp.gotoTypeDefinition",
-                    MenuIcons.gotoTypeDefinition(),
-                    offset,
-                    lspGotoTypeDefinitionAction));
-        }
-        items.add(lspItem("command.lsp.findReferences", MenuIcons.find(), offset, lspFindReferencesAction));
-        items.add(lspItem("command.lsp.hover", MenuIcons.about(), offset, lspHoverAction));
-        if (lspCodeActionsAvailable) { // quick fixes target the right-clicked spot
-            items.add(lspItem("command.lsp.codeActions", MenuIcons.codeAction(), offset, lspCodeActionsAction));
-        }
-        if (lspRenameAvailable) { // rename the right-clicked symbol
-            items.add(lspItem("command.lsp.rename", MenuIcons.rename(), offset, lspRenameAction));
-        }
-        items.add(1, lspCommandItem("lsp.peekDefinition", MenuIcons.find(), offset));
-        if (lspCodeActionsAvailable) { // Refactor, Generate, the hierarchies had no right-click entry (Java review B14)
-            items.add(lspCommandItem("lsp.refactorThis", MenuIcons.codeAction(), offset));
-            if ("java".equals(language)) {
-                items.add(lspCommandItem("lsp.generate", MenuIcons.add(), offset));
-                items.add(lspCommandItem("lsp.callHierarchy", MenuIcons.find(), offset));
-                items.add(lspCommandItem("lsp.typeHierarchy", MenuIcons.find(), offset));
-                items.add(lspCommandItem("lsp.gotoSuperMethod", MenuIcons.gotoImplementation(), offset)); // ER3
-            }
-        }
-        if (lspFormatAvailable) {
-            MenuItem format = new MenuItem(MenuTitles.of(tr("command.lsp.formatDocument")));
-            format.setGraphic(MenuIcons.code());
-            format.setOnAction(e -> lspFormatAction.run()); // whole-document — no caret positioning needed
-            items.add(format);
-        }
-        return items;
-    }
-
-    /** A row that runs command {@code id} through the coordinator, at the right-clicked spot. */
-    private MenuItem lspCommandItem(String id, Node icon, int offset) {
-        return lspItem("command." + id, icon, offset, () -> lspCommand.accept(id));
-    }
-
-    private MenuItem lspItem(String titleKey, Node icon, int offset, Runnable action) {
-        MenuItem item = new MenuItem(MenuTitles.of(tr(titleKey)));
-        item.setGraphic(icon);
-        item.setOnAction(e -> {
-            menuView.moveTo(offset); // in the view that was right-clicked
-            action.run();
-        });
-        return item;
-    }
-
-    /** Typst inline-format actions for the right-click menu (Typst buffers only). Typst has no native
-     *  strikethrough/task/pipe-table, so the set is bold/emphasis/raw/link/bullet. */
-    private List<MenuItem> typstMenuItems() {
-        MenuItem bold = new MenuItem(tr("command.typst.bold"));
-        bold.setGraphic(MenuIcons.bold());
-        bold.setOnAction(e -> formatInline("*"));
-        MenuItem emph = new MenuItem(tr("command.typst.emph"));
-        emph.setGraphic(MenuIcons.italic());
-        emph.setOnAction(e -> formatInline("_"));
-        MenuItem raw = new MenuItem(tr("command.typst.raw"));
-        raw.setGraphic(MenuIcons.code());
-        raw.setOnAction(e -> formatInline("`"));
-        MenuItem link = new MenuItem(tr("command.typst.link"));
-        link.setGraphic(MenuIcons.link());
-        link.setOnAction(e -> formatLinkFromClipboard());
-        MenuItem bullet = new MenuItem(tr("command.typst.bulletList"));
-        bullet.setGraphic(MenuIcons.bulletList());
-        bullet.setOnAction(e -> formatBulletList());
-        MenuItem table = new MenuItem(tr("command.typst.insertTable"));
-        table.setGraphic(MenuIcons.table());
-        table.setOnAction(e -> insertTypstTableInteractive());
-        MenuItem outline = new MenuItem(tr("command.typst.outline"));
-        outline.setGraphic(MenuIcons.bulletList());
-        outline.setOnAction(e -> insertTypstOutline());
-        MenuItem image = new MenuItem(tr("command.typst.insertImage"));
-        image.setGraphic(MenuIcons.download());
-        image.setOnAction(e -> {
-            if (typstImagePasteHandler != null) {
-                typstImagePasteHandler.run();
-            }
-        });
-        return List.of(bold, emph, raw, link, bullet, table, outline, image);
-    }
-
-    private static MenuItem tableItem(String key, Node icon, Runnable action) {
-        MenuItem mi = new MenuItem(tr(key));
-        mi.setGraphic(icon);
-        mi.setOnAction(e -> action.run());
-        return mi;
-    }
-
-    /** The Cut/Copy/Paste/Undo/Redo/Select All items, with state for the current selection/clipboard. */
-    private List<MenuItem> standardMenuItems() {
-        // Cut/Copy/Paste route through the multi-caret-aware path first (falling back to the native single-
-        // caret op), so a box/column selection copies *every* caret's selection — matching the edit.cut/
-        // copy/paste commands. Without this, copy() only grabs the primary caret's row. Like one caret,
-        // several carets with nothing selected at any of them have nothing to cut or copy here: the fork's
-        // multi-caret cut/copy would otherwise take their whole lines, whatever the "copy the line when
-        // nothing is selected" setting says (this menu never did that for a single caret either).
-        CodeArea view = menuView;
-        MultiCarets carets = view == area2 ? multiCaret2 : multiCaret;
-        boolean canCopy =
-                carets != null ? carets.anySelection() : view.getSelection().getLength() > 0;
-        boolean editable = isEditable();
-        boolean hasClipboardText = Clipboard.getSystemClipboard().hasString();
-        MenuItem cut = tableItem("editmenu.cut", MenuIcons.cut(), () -> {
-            if (!multiCaretCut()) {
-                view.cut();
-            }
-        });
-        cut.setDisable(!canCopy || !editable);
-        MenuItem copy = tableItem("editmenu.copy", MenuIcons.copy(), () -> {
-            if (!multiCaretCopy()) {
-                view.copy();
-            }
-        });
-        copy.setDisable(!canCopy);
-        MenuItem paste = tableItem("editmenu.paste", MenuIcons.paste(), () -> {
-            if (!multiCaretPaste()) {
-                view.paste();
-            }
-        });
-        paste.setDisable(!hasClipboardText || !editable);
-        MenuItem undo = tableItem("editmenu.undo", MenuIcons.undo(), () -> undoOrRedo(view, false));
-        undo.setDisable(!view.isUndoAvailable());
-        MenuItem redo = tableItem("editmenu.redo", MenuIcons.redo(), () -> undoOrRedo(view, true));
-        redo.setDisable(!view.isRedoAvailable());
-        MenuItem selectAll = tableItem("editmenu.selectAll", MenuIcons.selectAll(), view::selectAll);
-        return List.of(cut, copy, paste, new SeparatorMenuItem(), undo, redo, new SeparatorMenuItem(), selectAll);
+        editorMenu.setBuildMenuContributor(contributor);
     }
 
     /** This buffer's spell checking: its settings, the word at the caret, and what can be done with it. */
@@ -3555,15 +3126,12 @@ public class EditorBuffer implements TabContent {
         this.signatureHelpRequester = requester;
     }
 
-    /** True if this file can be run (a Java 25 compact source file, a Python script, or a shell script
-     *  when the Bash LSP is enabled). */
     public boolean isRunnable() {
-        return runnable;
+        return runGutter.isRunnable();
     }
 
-    /** True when the single-file Run entry is a compact Java source method (rather than a test glyph). */
     public boolean isCompactSource() {
-        return "java".equals(language) && runLine >= 0;
+        return runGutter.isCompactSource();
     }
 
     /** True specifically for Python (the controller picks {@code python}, vs {@code java}, as the runner). */
@@ -3577,18 +3145,13 @@ public class EditorBuffer implements TabContent {
     }
 
     private final List<Runnable> languageListeners = new java.util.ArrayList<>(2); // see addLanguageListener
-    /** Sets the callback fired when {@link #isRunnable()} flips (so the controller refreshes the Run button). */
+
     public void setOnRunnableChanged(Runnable callback) {
-        this.onRunnableChanged = callback == null ? () -> {} : callback;
+        runGutter.setOnRunnableChanged(callback);
     }
 
-    /** Enables/disables the local-file Run affordance. When off, the gutter Run glyph,
-     *  the right-click Run item, and the Run tool window all disappear. */
     public void setRunEnabled(boolean enabled) {
-        if (enabled != runFeatureEnabled) {
-            runFeatureEnabled = enabled;
-            recomputeRun();
-        }
+        runGutter.setRunEnabled(enabled);
     }
 
     /** True for a {@code .http}/{@code .rest} buffer (drives the HTTP Client run glyphs + tool window). */
@@ -3606,17 +3169,13 @@ public class EditorBuffer implements TabContent {
     public void setHttpEnabled(boolean enabled) {
         if (enabled != httpFeatureEnabled) {
             httpFeatureEnabled = enabled;
-            recomputeRun();
+            runGutter.recomputeRun();
         }
         httpVariableMarks.update();
     }
 
-    /** Debug Request for the request at a 0-based line (the editor menu); null when there is none to offer. */
-    private java.util.function.@Nullable IntConsumer httpDebugHandler;
-
-    /** Sets what the editor menu's Debug Request does with the request at a line (null removes the item). */
     public void setHttpDebugHandler(java.util.function.IntConsumer handler) {
-        this.httpDebugHandler = handler;
+        runGutter.setHttpDebugHandler(handler);
     }
 
     /**
@@ -3698,7 +3257,7 @@ public class EditorBuffer implements TabContent {
         return httpResults.activate(line);
     }
 
-    private void repaintHttpResults(java.util.@Nullable Set<Integer> lines) {
+    void repaintHttpResults(java.util.@Nullable Set<Integer> lines) {
         if (lines != null) {
             ensureInlayFactory();
             refreshInlayAreas();
@@ -3707,11 +3266,12 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Whether {@code line} is folded away; false for a line that no longer exists (stale request lines). */
-    private boolean isFoldedLine(int line) {
+    boolean isFoldedLine(int line) {
         return line >= 0 && line < area.getParagraphs().size() && area.isFolded(line);
     }
 
-    private @Nullable String paragraphTextOrNull(int line) {
+    @Nullable
+    String paragraphTextOrNull(int line) {
         return line >= 0 && line < area.getParagraphs().size()
                 ? area.getParagraph(line).getText()
                 : null;
@@ -3728,256 +3288,48 @@ public class EditorBuffer implements TabContent {
         return "makefile".equals(language);
     }
 
-    /** Injects the handler run with a target's name when its Makefile gutter ▶ is clicked. */
     public void setMakeRunHandler(java.util.function.Consumer<String> handler) {
-        this.makeRunHandler = handler == null ? t -> {} : handler;
+        runGutter.setMakeRunHandler(handler);
     }
 
-    /** Enables/disables the JUnit test gutter ▶ (gated by the Test Runner feature + a detected JVM build
-     *  tool). When on, a Java buffer's test class + each test method get a Run glyph. */
     public void setTestGutterEnabled(boolean enabled) {
-        if (enabled != testGutterEnabled) {
-            testGutterEnabled = enabled;
-            recomputeRun();
-        }
+        runGutter.setTestGutterEnabled(enabled);
     }
 
-    /** Injects the handler run with the clicked test target (class ▶ has {@code methodName == null}). */
     public void setTestRunHandler(java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> handler) {
-        this.testRunHandler = handler == null ? t -> {} : handler;
+        runGutter.setTestRunHandler(handler);
     }
 
-    /** Injects the handler that debugs the test class/method selected by the editor context menu. */
     public void setTestDebugHandler(java.util.function.Consumer<com.editora.test.JavaTestScanner.TestTarget> handler) {
-        this.testDebugHandler = handler == null ? t -> {} : handler;
+        runGutter.setTestDebugHandler(handler);
     }
 
-    /** Gate for the project {@code main}-method gutter ▶ (a Java file in a Maven/Gradle project with run/debug
-     *  available); pushed by MainController. */
     public void setMainGutterEnabled(boolean enabled) {
-        if (enabled != mainGutterEnabled) {
-            mainGutterEnabled = enabled;
-            recomputeRun();
-        }
+        runGutter.setMainGutterEnabled(enabled);
     }
 
-    /** Injects the handler run with a clicked {@code main}-method gutter ▶ (runs that project main class). */
     public void setMainRunHandler(java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> handler) {
-        this.mainRunHandler = handler == null ? m -> {} : handler;
+        runGutter.setMainRunHandler(handler);
     }
 
-    /** Injects the handler for the editor "Debug Main Class" item on a {@code main} method. */
     public void setMainDebugHandler(java.util.function.Consumer<com.editora.run.MainMethodScanner.MainMethod> handler) {
-        this.mainDebugHandler = handler == null ? m -> {} : handler;
+        runGutter.setMainDebugHandler(handler);
     }
 
-    /** The project {@code main} entry point at (or nearest above) the caret, else the file's first main, else
-     *  {@code null} — backs the editor right-click Run/Debug Main Class items. */
     public com.editora.run.MainMethodScanner.@Nullable MainMethod mainTargetAtCaret() {
-        return mainTargetAt(focusedArea.getCurrentParagraph());
+        return runGutter.mainTargetAtCaret();
     }
 
-    private com.editora.run.MainMethodScanner.@Nullable MainMethod mainTargetAt(int caret) {
-        if (mainLines.isEmpty()) {
-            return null;
-        }
-        com.editora.run.MainMethodScanner.MainMethod best = null;
-        for (var e : mainLines.entrySet()) {
-            if (e.getKey() <= caret && (best == null || e.getKey() > best.line())) {
-                best = e.getValue();
-            }
-        }
-        return best != null ? best : mainLines.values().iterator().next();
-    }
-
-    /**
-     * The whole-class JUnit target for this buffer (the "Run Tests" context-menu item), or {@code null} when
-     * this isn't a test file / the test gutter is off.
-     */
     public com.editora.test.JavaTestScanner.@Nullable TestTarget testClassTarget() {
-        for (var t : testLines.values()) {
-            if (t.methodName() == null) {
-                return t; // the class-declaration target the scanner emits first
-            }
-        }
-        return null;
+        return runGutter.testClassTarget();
     }
 
-    /**
-     * The JUnit test target at or nearest above the caret, for {@code test.runAtCaret}/{@code runClassAtCaret}.
-     * {@code classLevel} forces the whole-class target (methodName null). Returns null when the caret isn't in
-     * a test class.
-     */
     public com.editora.test.JavaTestScanner.@Nullable TestTarget testTargetAtCaret(boolean classLevel) {
-        return testTargetAt(focusedArea.getCurrentParagraph(), classLevel);
+        return runGutter.testTargetAtCaret(classLevel);
     }
 
-    private com.editora.test.JavaTestScanner.@Nullable TestTarget testTargetAt(int caret, boolean classLevel) {
-        var best = com.editora.test.JavaTestScanner.targetAt(getContent(), testLines, caret); // review 3, A205
-        if (best == null) {
-            return classLevel ? testClassTarget() : null; // above the class line: the class's (sixth review BS3)
-        }
-        return classLevel
-                ? new com.editora.test.JavaTestScanner.TestTarget(best.line(), best.className(), null, false)
-                : best;
-    }
-
-    /** Whether {@code line} draws a Run glyph: every request line for an enabled {@code .http} buffer,
-     *  else the single script entry line. */
-    private boolean isRunGlyphLine(int line) {
-        if (mainLines.containsKey(line)) {
-            return true; // a project main ▶ draws independently of `runnable` (see recomputeRun)
-        }
-        if (!runnable) {
-            return false;
-        }
-        if (testLines.containsKey(line)) {
-            return true;
-        }
-        if (httpFeatureEnabled && isHttpFile()) {
-            return httpGutter.isGlyphLine(line, this::isFoldedLine); // a folded request's ▶ shows on its ### line
-        }
-        if (isMakefile()) {
-            return makeTargets.containsKey(line);
-        }
-        return line == runLine;
-    }
-
-    /** Hover text for a gutter Run glyph: explains what the blue JUnit ▶ runs (class vs method). */
-    private @Nullable String runGlyphTooltip(int line) {
-        com.editora.run.MainMethodScanner.MainMethod m = mainLines.get(line);
-        if (m != null) {
-            return tr("editmenu.runMainTooltip", com.editora.test.TestSourceLocator.simpleName(m.fqn()));
-        }
-        com.editora.test.JavaTestScanner.TestTarget t = testLines.get(line);
-        if (t == null) {
-            if (httpFeatureEnabled && isHttpFile()) {
-                return httpGutter.tooltip(line, this::isFoldedLine); // ■ cancels, ▶ runs its request (names the chord)
-            }
-            return null; // the plain script/Makefile ▶ keeps its untooltipped look
-        }
-        return t.methodName() == null
-                ? t.className().isEmpty() // a Python test file's whole-file ▶
-                        ? tr("testrunner.gutter.runFile")
-                        : tr(
-                                "testrunner.gutter.runClass",
-                                com.editora.test.TestSourceLocator.displayName(t.className()))
-                : tr("testrunner.gutter.runMethod", t.methodName());
-    }
-
-    /** Dispatches a Run-glyph click: a JUnit or main ▶, a {@code .http} request (the clicked line), a Makefile
-     *  target (the clicked target's name), else the script run handler. */
-    private void onRunGlyph(int line) {
-        com.editora.test.JavaTestScanner.TestTarget testTarget = testLines.get(line);
-        com.editora.run.MainMethodScanner.MainMethod mainTarget = mainLines.get(line);
-        if (testTarget != null) {
-            testRunHandler.accept(testTarget); // a JUnit class/method ▶ (never coincides with a compact-source main)
-        } else if (mainTarget != null) {
-            mainRunHandler.accept(mainTarget); // a project main class ▶ (disjoint from test/compact-source lines)
-        } else if (httpFeatureEnabled && isHttpFile()) {
-            httpGutter.click(line, this::isFoldedLine); // the ■ in flight cancels it; a ▶ runs its request
-        } else if (isMakefile()) {
-            String target = makeTargets.get(line);
-            if (target != null) {
-                makeRunHandler.accept(target);
-            }
-        } else if (runHandler != null) {
-            runHandler.run();
-        }
-    }
-
-    /** Discards an in-flight background run scan whose result would be stale (mirrors {@link #todoGen}). */
-    private long runScanGen;
-    /** True while the load's (or a settle's) text scan is on the pool and its result has not landed. */
-    private boolean runScanInFlight;
-
-    /**
-     * Lands a background Run scan now when one is still in flight. The load's scan runs off the FX thread, so
-     * a Run or Debug command issued right after a file opens asks for the answer here before deciding how to
-     * launch; nothing happens when the result has already landed.
-     */
     public void settleRunScan() {
-        if (runScanInFlight) {
-            recomputeRun(false);
-        }
-    }
-
-    /** Recomputes runnable status + the gutter entry line(s); refreshes the gutter and fires the callback. */
-    private void recomputeRun() {
-        recomputeRun(false);
-    }
-
-    /**
-     * As {@link #recomputeRun()}; {@code settled} is the pass after an edit settles — or after a load — whose
-     * scan of the text ({@link RunScan}) runs off the FX thread: a generation counter drops a superseded
-     * result, as for {@link #refreshTodoMarks}. The load's pass lands a few milliseconds after the document
-     * does rather than scanning up to 256 KiB on the FX thread inside the open. Every other caller (Save As,
-     * a feature toggle) needs the answer now.
-     */
-    private void recomputeRun(boolean settled) {
-        maybeApplyShebang(); // an interpreter shebang can set the language before we gate the Run glyph
-        long gen = ++runScanGen; // any newer pass (or dispose) supersedes an in-flight scan
-        boolean small = !largeFile && area.getLength() <= COMPACT_SCAN_LIMIT;
-        // Test gutter: independent of the LSP-gated run feature, so it has its own eligibility (a Java buffer
-        // in a JVM project with the Test Runner on). Additive — a test file also keeps any compact-source ▶.
-        // Project main-method gutter: a Java file in a Maven/Gradle project (gated by MainController).
-        RunScan.Inputs in = new RunScan.Inputs(
-                runFeatureEnabled && small,
-                httpFeatureEnabled && small && isHttpFile(),
-                testGutterEnabled && small && "java".equals(language),
-                mainGutterEnabled && small && "java".equals(language),
-                language,
-                path != null ? path.getFileName().toString() : displayName,
-                shebangJavaSource != null);
-        // Only materialize the whole document when we actually scan it (compact-source / .http / test/main
-        // detection). Otherwise editing a moderately large file (256 KB–5 MB) would allocate the full text on
-        // every 150 ms edit pulse just to discard it as run-ineligible.
-        String text = in.needsText() ? documentTextSnapshot() : "";
-        if (!settled || !in.needsText()) {
-            runScanInFlight = false;
-            applyRunScan(RunScan.scan(in, text));
-            return;
-        }
-        runScanInFlight = true;
-        HIGHLIGHT_POOL.execute(() -> {
-            RunScan.Result found = RunScan.scan(in, text);
-            Platform.runLater(() -> {
-                if (gen == runScanGen) {
-                    runScanInFlight = false;
-                    applyRunScan(found);
-                }
-            });
-        });
-    }
-
-    private void applyRunScan(RunScan.Result now) {
-        boolean changed = now.runnable() != runnable;
-        boolean linesChanged = !now.httpLines().equals(httpGutter.requestLines())
-                || !now.makeTargets().equals(makeTargets)
-                || !now.testLines().equals(testLines)
-                || !now.mainLines().equals(mainLines);
-        int oldLine = runLine;
-        runnable = now.runnable();
-        runLine = now.line();
-        httpGutter.setRequestLines(now.httpLines(), this::paragraphTextOrNull); // the ■ follows its request
-        repaintHttpResults(httpResults.reanchor(now.httpLines(), this::paragraphTextOrNull)); // edited: it goes
-        makeTargets = now.makeTargets();
-        testLines = now.testLines();
-        mainLines = now.mainLines();
-        if (changed) {
-            onRunnableChanged.run();
-            refreshGutter(); // the Run slot appeared/disappeared on every row — rebuild the factory
-        } else if (linesChanged) {
-            refreshGutter(); // requests/targets/test/main methods added/removed — relight the glyphs
-        } else if (runLine != oldLine) {
-            // The entry line moved (edits above it) — repaint just the old and new gutter rows.
-            if (oldLine >= 0) {
-                refreshGutterLine(oldLine);
-            }
-            if (runLine >= 0) {
-                refreshGutterLine(runLine);
-            }
-        }
+        runGutter.settleRunScan();
     }
 
     /** A language whose server copes with this file despite the large-source tier (Python, review B10). */
@@ -4198,7 +3550,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Injects the LSP actions surfaced in the right-click menu while {@link #isLspActive()} (Format and
-     *  Code Actions are shown only when the server advertises them — see {@link #setLspFormatAvailable}/
+     *  Code Actions are shown only when the server advertises them — see {@link BufferContextMenu#setLspFormatAvailable}/
      *  {@link #setLspCodeActionsAvailable}). */
     public void setLspNavActions(
             Runnable gotoDefinition,
@@ -4210,33 +3562,29 @@ public class EditorBuffer implements TabContent {
             Runnable gotoImplementation,
             Runnable gotoTypeDefinition) {
         this.lspGotoDefinitionAction = gotoDefinition == null ? () -> {} : gotoDefinition;
-        this.lspFindReferencesAction = findReferences == null ? () -> {} : findReferences;
-        this.lspHoverAction = hover == null ? () -> {} : hover;
-        this.lspFormatAction = format == null ? () -> {} : format;
+        editorMenu.lspFindReferencesAction = findReferences == null ? () -> {} : findReferences;
+        editorMenu.lspHoverAction = hover == null ? () -> {} : hover;
+        editorMenu.lspFormatAction = format == null ? () -> {} : format;
         this.lspCodeActionsAction = codeActions == null ? () -> {} : codeActions;
-        this.lspRenameAction = rename == null ? () -> {} : rename;
-        this.lspGotoImplementationAction = gotoImplementation == null ? () -> {} : gotoImplementation;
-        this.lspGotoTypeDefinitionAction = gotoTypeDefinition == null ? () -> {} : gotoTypeDefinition;
+        editorMenu.lspRenameAction = rename == null ? () -> {} : rename;
+        editorMenu.lspGotoImplementationAction = gotoImplementation == null ? () -> {} : gotoImplementation;
+        editorMenu.lspGotoTypeDefinitionAction = gotoTypeDefinition == null ? () -> {} : gotoTypeDefinition;
     }
 
-    /** Runs a command by id from the right-click LSP menu: Peek Definition, Refactor This…, Generate…. */
     public void setLspCommandRunner(java.util.function.Consumer<String> run) {
-        this.lspCommand = run;
+        editorMenu.setLspCommandRunner(run);
     }
 
-    /** Whether to offer "Go to Implementation" in the right-click menu (the server's capability, #735). */
     public void setLspImplementationAvailable(boolean available) {
-        this.lspImplementationAvailable = available;
+        editorMenu.setLspImplementationAvailable(available);
     }
 
-    /** Whether to offer "Go to Type Definition" in the right-click menu (the server's capability, #736). */
     public void setLspTypeDefinitionAvailable(boolean available) {
-        this.lspTypeDefinitionAvailable = available;
+        editorMenu.setLspTypeDefinitionAvailable(available);
     }
 
-    /** Whether to offer "Format Document" in the right-click menu (the server's formatting capability). */
     public void setLspFormatAvailable(boolean available) {
-        this.lspFormatAvailable = available;
+        editorMenu.setLspFormatAvailable(available);
     }
 
     /** Whether to offer "Code Actions" in the right-click menu (the server's codeAction capability, #670). */
@@ -4255,9 +3603,8 @@ public class EditorBuffer implements TabContent {
         return problemCounter;
     }
 
-    /** Whether to offer "Rename" in the right-click menu (the server's rename capability, #676). */
     public void setLspRenameAvailable(boolean available) {
-        this.lspRenameAvailable = available;
+        editorMenu.setLspRenameAvailable(available);
     }
 
     /** Requests jdtls's paste auto-import for the freshly pasted range (#742); controller-wired. The
@@ -4868,7 +4215,7 @@ public class EditorBuffer implements TabContent {
         previewPanes.previewGen++; // discard any in-flight preview result for this (now closed) buffer
         highlightGen++; // discard any in-flight highlight result
         todoGen++; // discard any in-flight TODO scan result
-        runScanGen++; // discard any in-flight run scan result
+        runGutter.runScanGen++; // discard any in-flight run scan result
         languageGen++; // discard any in-flight deferred grammar load
         // RichTextFX's own teardown, last: it stops the caret blink timer — a running timer is a GC root, so a
         // buffer closed while its editor had focus stayed reachable, with its whole window — and closes the
@@ -5381,7 +4728,7 @@ public class EditorBuffer implements TabContent {
             }
         });
         installFormatBarListeners(area2);
-        installContextMenu(area2);
+        editorMenu.installContextMenu(area2);
         scrollPane2 = new VirtualizedScrollPane<>(area2);
         // Give the secondary view its own minimap (tracks this pane's viewport), docked like the primary.
         minimap2 = minimap.follower(area2);
@@ -5884,15 +5231,12 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Sets the "Run File" context-menu handler (controller runs the compact source file); null disables it. */
     public void setRunHandler(Runnable handler) {
-        this.runHandler = handler;
+        runGutter.setRunHandler(handler);
     }
 
-    /** Sets the "Debug File" context-menu entry: shown beside "Run File" while {@code shown} holds. */
     public void setDebugFileHandler(Runnable handler, java.util.function.BooleanSupplier shown) {
-        this.debugFileHandler = handler;
-        this.debugFileShown = shown == null ? () -> false : shown;
+        runGutter.setDebugFileHandler(handler, shown);
     }
 
     /** Callback fired after any note change (for persistence + the Notes panel). */
@@ -6384,7 +5728,7 @@ public class EditorBuffer implements TabContent {
         // ordinary extension lookups.
         String lookup = path == null ? null : path.toString();
         applyLanguageFor(lookup == null ? LanguageRegistry.plaintext() : LanguageRegistry.forFileName(lookup), lookup);
-        recomputeRun(); // a Save-As to a runnable file type can show the gutter Run glyph
+        runGutter.recomputeRun(); // a Save-As to a runnable file type can show the gutter Run glyph
     }
 
     /** Applies language {@code name} with the grammar {@code lookup} (a file name or path, or null) maps to. */
@@ -6456,7 +5800,7 @@ public class EditorBuffer implements TabContent {
         String resolved = name == null ? LanguageRegistry.plaintext() : name;
         languageUserOverride = true; // the user's pick wins; don't re-detect a shebang over it
         applyLanguage(resolved, GrammarRegistry.shared().forLanguageName(resolved));
-        recomputeRun(); // a script picked as Shell (or Python) gets its Run glyph now, not on the next edit
+        runGutter.recomputeRun(); // a script picked as Shell (or Python) gets its Run glyph now, not on the next edit
     }
 
     /** Runs {@code listener} on the FX thread each time the language changes after it is added (a picked
@@ -6470,7 +5814,7 @@ public class EditorBuffer implements TabContent {
      * or {@code java --source N} for a compact source), via a synthetic {@code "shebang.<ext>"} name so it
      * behaves exactly like a file of that type. Never overrides a real extension or the user's pick.
      */
-    private void maybeApplyShebang() {
+    void maybeApplyShebang() {
         int len = area.getLength(); // a shebang, else a vim/emacs modeline in the first or last lines
         String sniffed = languageUserOverride || path == null // a .mod/.sch/… is XML only if it reads so (C13)
                 ? null
@@ -7368,7 +6712,8 @@ public class EditorBuffer implements TabContent {
         refilter.run();
         dirty.set(false);
         gitLines.reset(); // freshly loaded: buffer lines are the disk's lines again
-        recomputeRun(true); // detect a runnable file on load (drives the Run glyph), scanning off the FX thread
+        runGutter.recomputeRun(
+                true); // detect a runnable file on load (drives the Run glyph), scanning off the FX thread
     }
 
     /**
@@ -7393,7 +6738,7 @@ public class EditorBuffer implements TabContent {
         captureUndoCheckpoint();
         refilter.run();
         gitLines.reset(); // the disk's lines again
-        recomputeRun(true);
+        runGutter.recomputeRun(true);
     }
 
     /**

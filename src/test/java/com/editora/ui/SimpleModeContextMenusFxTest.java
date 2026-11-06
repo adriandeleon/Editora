@@ -157,7 +157,7 @@ class SimpleModeContextMenusFxTest {
         CodeArea area = buffer.getArea();
         area.getOnContextMenuRequested()
                 .handle(new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 2, 2, 2, 2, false, null));
-        ContextMenu menu = FxTestSupport.field(buffer, "contextMenu");
+        ContextMenu menu = FxTestSupport.field(FxTestSupport.field(buffer, "editorMenu"), "contextMenu");
         menu.hide();
         return entries(menu.getItems());
     }

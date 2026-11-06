@@ -50,7 +50,8 @@ class LspContextMenuFxTest {
             buffer.setLspRenameAvailable(true);
             buffer.setLspFormatAvailable(true);
         }
-        return (Menu) FxTestSupport.call(buffer, "lspMenu", new Class[] {int.class}, 0);
+        return (Menu)
+                FxTestSupport.call(FxTestSupport.field(buffer, "editorMenu"), "lspMenu", new Class[] {int.class}, 0);
     }
 
     private static List<String> labels(Menu menu) {

@@ -52,7 +52,7 @@ class LazyOverlayFxTest {
             "diagnosticStripe",
             "mdLintStripe",
             "todoStripe",
-            "contextMenu");
+            "editorMenu.contextMenu");
 
     @BeforeAll
     void setUp() throws Exception {
@@ -334,7 +334,8 @@ class LazyOverlayFxTest {
                     .handle(new javafx.scene.input.ContextMenuEvent(
                             javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 5, 5, false, null));
         });
-        javafx.scene.control.ContextMenu menu = FxTestSupport.field(b, "contextMenu");
+        javafx.scene.control.ContextMenu menu =
+                FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "contextMenu");
         assertNotNull(menu, "the first request builds the menu");
         assertTrue(menu.getStyleClass().contains("editor-context-menu"));
         assertFalse(menu.getItems().isEmpty(), "and fills it");
@@ -345,7 +346,10 @@ class LazyOverlayFxTest {
                     .handle(new javafx.scene.input.ContextMenuEvent(
                             javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 5, 5, false, null));
         });
-        assertSame(menu, FxTestSupport.field(b, "contextMenu"), "one menu per buffer, as before");
+        assertSame(
+                menu,
+                FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "contextMenu"),
+                "one menu per buffer, as before");
         FxTestSupport.runOnFx(() -> {
             menu.hide();
             stage.hide();
