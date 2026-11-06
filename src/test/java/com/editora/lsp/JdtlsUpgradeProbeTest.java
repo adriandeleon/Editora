@@ -140,10 +140,11 @@ class JdtlsUpgradeProbeTest {
         record("jdtls", jdtls());
         Path root = Files.createTempDirectory("editora-jdtls-upgrade-").toRealPath();
 
-        Map<String, Object> withoutExtended = new HashMap<>(LspManager.javaInitOptions(List.of()));
+        Map<String, Object> withoutExtended = new HashMap<>(ServerInitOptions.javaInitOptions(List.of()));
         withoutExtended.remove("extendedClientCapabilities");
         TreeSet<String> bare = codeActionTitles(root.resolve("bare"), withoutExtended, null);
-        TreeSet<String> full = codeActionTitles(root.resolve("full"), LspManager.javaInitOptions(List.of()), root);
+        TreeSet<String> full =
+                codeActionTitles(root.resolve("full"), ServerInitOptions.javaInitOptions(List.of()), root);
 
         record("codeActions.withoutExtended", bare.size() + " " + bare);
         record("codeActions.withExtended", full.size() + " " + full);

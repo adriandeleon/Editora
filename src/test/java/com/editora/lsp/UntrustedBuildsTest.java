@@ -123,7 +123,7 @@ class UntrustedBuildsTest {
 
     @Test
     void theRealJavaInitOptionsComeOutWithImportsOff() {
-        Object options = LspManager.initOptionsFor("java", List.of(), null, false, List.of(), false);
+        Object options = ServerInitOptions.initOptionsFor("java", List.of(), null, false, List.of(), false);
         @SuppressWarnings("unchecked")
         Map<String, Object> java = (Map<String, Object>) ((Map<String, Object>)
                         ((Map<String, Object>) UntrustedBuilds.initOptionsWithImportsOff(options)).get("settings"))

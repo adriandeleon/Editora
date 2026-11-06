@@ -388,6 +388,6 @@ class PythonLspFxTest {
         manager.setOpenDocumentDiagnosticsOnly(true);
         analysis = (Map<String, Object>) nextPush(fake, before).get("analysis");
         assertEquals("openFilesOnly", analysis.get("diagnosticMode"));
-        assertEquals(Map.of("disablePullDiagnostics", true), LspManager.initOptionsFor("python", List.of()));
+        assertEquals(Map.of("disablePullDiagnostics", true), ServerInitOptions.initOptionsFor("python", List.of()));
     }
 }

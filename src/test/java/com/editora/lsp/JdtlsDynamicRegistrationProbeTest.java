@@ -76,7 +76,7 @@ class JdtlsDynamicRegistrationProbeTest {
                         ready.countDown();
                     }
                 },
-                LspManager.javaInitOptions(List.of(), true));
+                ServerInitOptions.javaInitOptions(List.of(), true));
         session.setJavaOnTypeFormatting(true);
         session.setOnRefresh(kind -> {
             synchronized (registrations) {

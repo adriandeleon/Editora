@@ -230,7 +230,7 @@ class JdtlsClientSettingsProbeTest {
                         imported.countDown();
                     }
                 },
-                LspManager.javaInitOptions(List.of()));
+                ServerInitOptions.javaInitOptions(List.of()));
         // The document's indentation, as LspManager.setDocumentIndent records it: four spaces.
         s.setIndentForUri(uri -> new FormattingIndent(4, true));
         try {

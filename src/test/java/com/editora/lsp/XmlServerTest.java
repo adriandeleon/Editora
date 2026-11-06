@@ -79,7 +79,7 @@ class XmlServerTest {
         assertEquals(Boolean.TRUE, caps.get("actionableNotificationSupport"));
         assertEquals(Boolean.FALSE, caps.get("openSettingsCommandSupport"));
         assertEquals(Map.of("codeLensKind", Map.of("valueSet", List.of("references"))), caps.get("codeLens"));
-        Object init = LspManager.initOptionsFor("xml", List.of());
+        Object init = ServerInitOptions.initOptionsFor("xml", List.of());
         assertEquals(Map.of("extendedClientCapabilities", caps), init);
     }
 

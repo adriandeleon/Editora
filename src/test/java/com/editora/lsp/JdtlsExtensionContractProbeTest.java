@@ -74,7 +74,7 @@ class JdtlsExtensionContractProbeTest {
                 project,
                 diagnostics::add,
                 (type, message) -> record("status", type + " " + message),
-                LspManager.javaInitOptions(List.of()));
+                ServerInitOptions.javaInitOptions(List.of()));
         long start = System.nanoTime();
         try {
             assertTrue(s.start());
@@ -264,7 +264,7 @@ class JdtlsExtensionContractProbeTest {
                 root,
                 diagnostics -> {},
                 (type, message) -> record("gradleStatus", type + " " + message),
-                LspManager.javaInitOptions(List.of()));
+                ServerInitOptions.javaInitOptions(List.of()));
         try {
             assertTrue(session.start());
             session.didOpen(api.toUri().toString(), "java", apiText);

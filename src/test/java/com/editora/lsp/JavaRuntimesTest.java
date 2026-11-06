@@ -629,7 +629,7 @@ class JavaRuntimesTest {
     @Test
     void theRuntimesSettingsCarryTheGradleJdkAndAShortDaemonIdleTime() {
         List<Map<String, Object>> runtimes = List.of(Map.of("name", "JavaSE-25", "path", "/j25", "default", true));
-        Map<String, Object> java = LspManager.withRuntimes(
+        Map<String, Object> java = ServerInitOptions.withRuntimes(
                 Map.of("configuration", Map.of("updateBuildConfiguration", "automatic")), runtimes);
         assertEquals(
                 Map.of("updateBuildConfiguration", "automatic", "runtimes", runtimes),
@@ -638,9 +638,10 @@ class JavaRuntimesTest {
         assertEquals(
                 Map.of(
                         "gradle",
-                        Map.of("java", Map.of("home", "/j25"), "arguments", LspManager.GRADLE_DAEMON_ARGUMENTS)),
+                        Map.of("java", Map.of("home", "/j25"), "arguments", ServerInitOptions.GRADLE_DAEMON_ARGUMENTS)),
                 java.get("import"));
-        assertEquals(Map.of("a", 1), LspManager.withRuntimes(Map.of("a", 1), List.of()), "no JDKs known: unchanged");
+        assertEquals(
+                Map.of("a", 1), ServerInitOptions.withRuntimes(Map.of("a", 1), List.of()), "no JDKs known: unchanged");
     }
 
     // --- Java debug review 3, A204 / C201: only a real JDK counts, and one discover() missed is still given ----

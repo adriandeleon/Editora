@@ -169,9 +169,9 @@ class LspDynamicRegistrationTest {
     void javaInitializationOptionsCarryTheOnTypePreference() {
         assertEquals(
                 Boolean.TRUE,
-                onTypeEnabled(LspManager.javaInitOptions(List.of(), true).get("settings")));
+                onTypeEnabled(ServerInitOptions.javaInitOptions(List.of(), true).get("settings")));
         assertEquals(
                 Boolean.FALSE,
-                onTypeEnabled(LspManager.javaInitOptions(List.of()).get("settings")));
+                onTypeEnabled(ServerInitOptions.javaInitOptions(List.of()).get("settings")));
     }
 }

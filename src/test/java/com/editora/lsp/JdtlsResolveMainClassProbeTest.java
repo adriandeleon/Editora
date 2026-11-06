@@ -83,7 +83,7 @@ class JdtlsResolveMainClassProbeTest {
             ip.setRootUri(project.toUri().toString());
             ip.setWorkspaceFolders(List.of(new WorkspaceFolder(
                     project.toUri().toString(), project.getFileName().toString())));
-            // Exactly what LspManager.initOptionsFor sends for jdtls with debugging on.
+            // Exactly what ServerInitOptions.initOptionsFor sends for jdtls with debugging on.
             ip.setInitializationOptions(Map.of("bundles", List.of(bundle)));
             InitializeResult init = server.initialize(ip).get(180, TimeUnit.SECONDS);
             server.initialized(new InitializedParams());

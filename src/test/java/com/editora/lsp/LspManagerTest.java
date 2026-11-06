@@ -118,9 +118,9 @@ class LspManagerTest {
     void thePomServersMavenObjectCarriesTheLocalRepository() {
         assertEquals(
                 Map.of("central", Map.of("skip", true), "repo", Map.of("local", "/data/m2/repository")),
-                LspManager.mavenSection(false, "/data/m2/repository"));
-        assertEquals(Map.of("central", Map.of("skip", false)), LspManager.mavenSection(true, null));
-        assertEquals(Map.of("central", Map.of("skip", true)), LspManager.mavenSection(false, " "));
+                ServerInitOptions.mavenSection(false, "/data/m2/repository"));
+        assertEquals(Map.of("central", Map.of("skip", false)), ServerInitOptions.mavenSection(true, null));
+        assertEquals(Map.of("central", Map.of("skip", true)), ServerInitOptions.mavenSection(false, " "));
     }
 
     @SuppressWarnings("unchecked")
@@ -128,12 +128,12 @@ class LspManagerTest {
     void initOptionsFor() {
         // json/css/html: provideFormatter flips the servers' advertised documentFormattingProvider to true,
         // so Format Document becomes available (#468; verified against the real servers).
-        assertEquals(Map.of("provideFormatter", true), LspManager.initOptionsFor("json", List.of()));
-        assertEquals(Map.of("provideFormatter", true), LspManager.initOptionsFor("css", List.of()));
-        assertEquals(Map.of("provideFormatter", true), LspManager.initOptionsFor("html", List.of()));
+        assertEquals(Map.of("provideFormatter", true), ServerInitOptions.initOptionsFor("json", List.of()));
+        assertEquals(Map.of("provideFormatter", true), ServerInitOptions.initOptionsFor("css", List.of()));
+        assertEquals(Map.of("provideFormatter", true), ServerInitOptions.initOptionsFor("html", List.of()));
         // go keeps its semanticTokens flag; java delegates to javaInitOptions; others need none.
-        assertEquals(Map.of("semanticTokens", true), LspManager.initOptionsFor("go", List.of()));
-        assertEquals(LspManager.javaInitOptions(List.of()), LspManager.initOptionsFor("java", List.of()));
+        assertEquals(Map.of("semanticTokens", true), ServerInitOptions.initOptionsFor("go", List.of()));
+        assertEquals(ServerInitOptions.javaInitOptions(List.of()), ServerInitOptions.initOptionsFor("java", List.of()));
         // maven-pom (lemminx-maven): turn the extension on with the heavy Central index disabled (local ~/.m2).
         // It is lemminx too: the same protocol extensions as the XML server (review 2, D15).
         assertEquals(
@@ -142,11 +142,11 @@ class LspManagerTest {
                         XmlServer.extendedClientCapabilities(),
                         "settings",
                         Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", true))))),
-                LspManager.initOptionsFor("maven-pom", List.of()));
+                ServerInitOptions.initOptionsFor("maven-pom", List.of()));
         // Pyright publishes: pulled diagnostics covered the open files only (Python review 2, B105)
-        assertEquals(Map.of("disablePullDiagnostics", true), LspManager.initOptionsFor("python", List.of()));
-        assertNull(LspManager.initOptionsFor("typescript", List.of()));
-        assertNull(LspManager.initOptionsFor(null, List.of()));
+        assertEquals(Map.of("disablePullDiagnostics", true), ServerInitOptions.initOptionsFor("python", List.of()));
+        assertNull(ServerInitOptions.initOptionsFor("typescript", List.of()));
+        assertNull(ServerInitOptions.initOptionsFor(null, List.of()));
     }
 
     private java.nio.file.Path typeScriptSdkIn(java.nio.file.Path dir, String marker) throws Exception {
@@ -161,11 +161,12 @@ class LspManagerTest {
     void astroInitOptionsCarryTheChosenTypeScriptSdk() throws Exception {
         var sdk = typeScriptSdkIn(tempDir, "typescript.js");
 
-        var options = (Map<String, Object>) LspManager.initOptionsFor("astro", List.of(), sdk, false);
+        var options = (Map<String, Object>) ServerInitOptions.initOptionsFor("astro", List.of(), sdk, false);
         var typescript = (Map<String, Object>) options.get("typescript");
 
         assertEquals(sdk.toString(), typescript.get("tsdk"));
-        assertNull(LspManager.initOptionsFor("astro", List.of()), "no SDK, no options: the server is not started");
+        assertNull(
+                ServerInitOptions.initOptionsFor("astro", List.of()), "no SDK, no options: the server is not started");
     }
 
     /** Editora's own TypeScript (never a global one npm -g replaced) serves astro-ls in an untrusted folder (B104). */
@@ -173,10 +174,10 @@ class LspManagerTest {
     void editorasOwnTypescriptSdkServesAstroWhereTheFolderIsNotTrusted() throws Exception {
         java.nio.file.Path folder = java.nio.file.Files.createDirectories(tempDir.resolve("site"));
         java.nio.file.Path own = java.nio.file.Files.createDirectories(tempDir.resolve("own/lib"));
-        assertEquals(own, LspManager.astroTypeScriptSdk(folder, null, List.of(), own));
+        assertEquals(own, NodeServerPaths.astroTypeScriptSdk(folder, null, List.of(), own));
         // a trusted folder's own SDK still comes first
         java.nio.file.Path project = typeScriptSdkIn(folder, "typescript.js");
-        assertEquals(project, LspManager.astroTypeScriptSdk(folder, folder, List.of(), own));
+        assertEquals(project, NodeServerPaths.astroTypeScriptSdk(folder, folder, List.of(), own));
     }
 
     /** astro-ls runs the JavaScript in the SDK directory, so an untrusted folder must not supply it. */
@@ -184,22 +185,22 @@ class LspManagerTest {
     void anUntrustedFolderDoesNotSupplyTheAstroTypeScriptSdk() throws Exception {
         typeScriptSdkIn(tempDir, "typescript.js");
 
-        assertNull(LspManager.astroTypeScriptSdk(tempDir, null, List.of()));
-        assertNull(LspManager.astroTypeScriptSdk(tempDir.resolve("packages/site"), null, List.of()));
+        assertNull(NodeServerPaths.astroTypeScriptSdk(tempDir, null, List.of()));
+        assertNull(NodeServerPaths.astroTypeScriptSdk(tempDir.resolve("packages/site"), null, List.of()));
     }
 
     @Test
     void aTrustedFolderSuppliesItsOwnAstroTypeScriptSdk() throws Exception {
         var sdk = typeScriptSdkIn(tempDir, "typescript.js");
 
-        assertEquals(sdk, LspManager.astroTypeScriptSdk(tempDir, tempDir, List.of()));
+        assertEquals(sdk, NodeServerPaths.astroTypeScriptSdk(tempDir, tempDir, List.of()));
     }
 
     @Test
     void astroSdkDiscoveryWalksUpForHoistedTypeScriptInsideTheTrustedFolder() throws Exception {
         var sdk = typeScriptSdkIn(tempDir, "tsserverlibrary.js");
 
-        assertEquals(sdk, LspManager.astroTypeScriptSdk(tempDir.resolve("packages/site"), tempDir, List.of()));
+        assertEquals(sdk, NodeServerPaths.astroTypeScriptSdk(tempDir.resolve("packages/site"), tempDir, List.of()));
     }
 
     /** Only {@code packages} is trusted: the walk must not pick up the SDK of the untrusted folder above it. */
@@ -210,7 +211,7 @@ class LspManagerTest {
 
         assertEquals(
                 site.resolve("node_modules/typescript/lib"),
-                LspManager.astroTypeScriptSdk(site, tempDir.resolve("packages"), List.of()));
+                NodeServerPaths.astroTypeScriptSdk(site, tempDir.resolve("packages"), List.of()));
         assertNull(LspManager.findTypeScriptSdk(site, tempDir.resolve("packages")));
     }
 
@@ -219,9 +220,9 @@ class LspManagerTest {
         var trusted = tempDir.resolve("work");
         var root = trusted.resolve("packages/site");
 
-        assertEquals(trusted, LspManager.trustedCeiling(root, p -> p.startsWith(trusted)));
-        assertNull(LspManager.trustedCeiling(root, p -> false));
-        assertNull(LspManager.trustedCeiling(null, p -> true));
+        assertEquals(trusted, NodeServerPaths.trustedCeiling(root, p -> p.startsWith(trusted)));
+        assertNull(NodeServerPaths.trustedCeiling(root, p -> false));
+        assertNull(NodeServerPaths.trustedCeiling(null, p -> true));
     }
 
     /** The SDK beside the installed server is the user's own, so it serves trusted and untrusted folders. */
@@ -234,12 +235,12 @@ class LspManagerTest {
         var project = tempDir.resolve("project");
         typeScriptSdkIn(project, "typescript.js");
 
-        assertEquals(sdk.toRealPath(), LspManager.astroTypeScriptSdk(project, null, List.of(server.toString())));
+        assertEquals(sdk.toRealPath(), NodeServerPaths.astroTypeScriptSdk(project, null, List.of(server.toString())));
     }
 
     @Test
     void javaInitOptionsAlwaysDisablesAutobuildNoDebugBundles() {
-        Map<String, Object> opts = LspManager.javaInitOptions(List.of());
+        Map<String, Object> opts = ServerInitOptions.javaInitOptions(List.of());
         assertFalse(opts.containsKey("bundles"));
         Map<String, Object> settings = (Map<String, Object>) opts.get("settings");
         Map<String, Object> java = (Map<String, Object>) settings.get("java");
@@ -251,7 +252,7 @@ class LspManagerTest {
     @Test
     void javaInitOptionsIncludesBundlesWhenDebugging() {
         List<String> jars = List.of("/path/to/java-debug.jar");
-        Map<String, Object> opts = LspManager.javaInitOptions(jars);
+        Map<String, Object> opts = ServerInitOptions.javaInitOptions(jars);
         assertEquals(jars, opts.get("bundles"));
         Map<String, Object> settings = (Map<String, Object>) opts.get("settings");
         Map<String, Object> java = (Map<String, Object>) settings.get("java");
@@ -512,9 +513,9 @@ class LspManagerTest {
 
     @Test
     void workspaceCandidateSuffixesFromTheSecondAttempt() {
-        assertEquals("abc123", LspManager.workspaceCandidate("abc123", 1));
-        assertEquals("abc123-2", LspManager.workspaceCandidate("abc123", 2));
-        assertEquals("abc123-3", LspManager.workspaceCandidate("abc123", 3));
+        assertEquals("abc123", JdtlsWorkspaces.workspaceCandidate("abc123", 1));
+        assertEquals("abc123-2", JdtlsWorkspaces.workspaceCandidate("abc123", 2));
+        assertEquals("abc123-3", JdtlsWorkspaces.workspaceCandidate("abc123", 3));
     }
 
     /** Two live claims of the same root (two windows) must get DIFFERENT dirs — sharing one Eclipse
@@ -522,21 +523,21 @@ class LspManagerTest {
     @Test
     void aSecondClaimOfTheSameRootGetsASuffixedDirAndReleaseRecycles() {
         String base = "test-claim-" + System.nanoTime(); // unique so a parallel test can't collide
-        String first = LspManager.claimJdtlsWorkspaceName(base);
-        String second = LspManager.claimJdtlsWorkspaceName(base);
+        String first = JdtlsWorkspaces.claimJdtlsWorkspaceName(base);
+        String second = JdtlsWorkspaces.claimJdtlsWorkspaceName(base);
         try {
             assertEquals(base, first, "first claimant keeps the canonical dir (persisted index reuse)");
             assertEquals(base + "-2", second, "second claimant is suffixed, never shared");
         } finally {
-            LspManager.releaseJdtlsWorkspaceName(first);
-            LspManager.releaseJdtlsWorkspaceName(second);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(first);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(second);
         }
         // Released → the canonical dir is claimable again (a later window reuses the index).
-        String again = LspManager.claimJdtlsWorkspaceName(base);
+        String again = JdtlsWorkspaces.claimJdtlsWorkspaceName(base);
         try {
             assertEquals(base, again);
         } finally {
-            LspManager.releaseJdtlsWorkspaceName(again);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(again);
         }
     }
 
@@ -621,7 +622,7 @@ class LspManagerTest {
      */
     @Test
     void everyDeclaredPromptFlagHasAPickerBehindIt() {
-        var caps = LspManager.javaExtendedClientCapabilities();
+        var caps = ServerInitOptions.javaExtendedClientCapabilities();
 
         for (String key : caps.keySet()) {
             if (!key.endsWith("PromptSupport")) {
@@ -637,7 +638,7 @@ class LspManagerTest {
     /** The three flags that need no client UI — each backed by something Editora already implements. */
     @Test
     void theNoUiCapabilitiesAreDeclared() {
-        var caps = LspManager.javaExtendedClientCapabilities();
+        var caps = ServerInitOptions.javaExtendedClientCapabilities();
 
         assertEquals(Boolean.TRUE, caps.get("classFileContentsSupport"), "we open jdt:// source (#665)");
         assertEquals(Boolean.TRUE, caps.get("resolveAdditionalTextEditsSupport"), "we resolve on accept (#410)");
@@ -651,7 +652,7 @@ class LspManagerTest {
      */
     @Test
     void theClientDrivenRefactoringsAreDeclaredWithTheirDrivers() {
-        var caps = LspManager.javaExtendedClientCapabilities();
+        var caps = ServerInitOptions.javaExtendedClientCapabilities();
 
         assertEquals(Boolean.TRUE, caps.get("advancedGenerateAccessorsSupport"));
         assertNotNull(JdtlsGenerate.forCommand("java.action.generateAccessorsPrompt"));
@@ -670,7 +671,7 @@ class LspManagerTest {
      */
     @Test
     void theInferredSelectionAndMoveConfirmationFlowsAreDeclared() {
-        var caps = LspManager.javaExtendedClientCapabilities();
+        var caps = ServerInitOptions.javaExtendedClientCapabilities();
 
         assertEquals(List.of("extractMethod", "extractVariable", "extractField"), caps.get("inferSelectionSupport"));
         assertEquals(Boolean.TRUE, caps.get("advancedIntroduceParameterRefactoringSupport"));
@@ -684,7 +685,7 @@ class LspManagerTest {
      */
     @Test
     void theImportChooserFlowIsDeclared() {
-        var caps = LspManager.javaExtendedClientCapabilities();
+        var caps = ServerInitOptions.javaExtendedClientCapabilities();
 
         assertEquals(Boolean.TRUE, caps.get("advancedOrganizeImportsSupport"), "Add all missing imports asks (D6)");
         assertEquals(Boolean.TRUE, caps.get("executeClientCommandSupport"), "the import chooser answers it (A3)");
@@ -698,8 +699,9 @@ class LspManagerTest {
     @SuppressWarnings("unchecked")
     @Test
     void theJavaPreferencesReachJdtlsUnderTheirReadKeys() {
-        Map<String, Object> init = (Map<String, Object>)
-                ((Map<String, Object>) LspManager.javaInitOptions(List.of()).get("settings")).get("java");
+        Map<String, Object> init = (Map<String, Object>) ((Map<String, Object>)
+                        ServerInitOptions.javaInitOptions(List.of()).get("settings"))
+                .get("java");
         Map<String, Object> pushed =
                 (Map<String, Object>) LspServerSettings.push("java", false).get("java");
         for (Map<String, Object> java : List.of(init, pushed)) {
@@ -733,7 +735,7 @@ class LspManagerTest {
     void gradleRunsOnTheDefaultRuntime() {
         var jdks = List.of(new JavaRuntimes.Jdk(27, "/jdk27"), new JavaRuntimes.Jdk(25, "/jdk25"));
         Map<String, Object> java = (Map<String, Object>)
-                ((Map<String, Object>) LspManager.javaInitOptions(List.of(), false, jdks, "/jdk25")
+                ((Map<String, Object>) ServerInitOptions.javaInitOptions(List.of(), false, jdks, "/jdk25")
                                 .get("settings"))
                         .get("java");
         Map<String, Object> keys = flatten("java", java);
@@ -759,12 +761,13 @@ class LspManagerTest {
     /** The options object must still carry what it did before — the flags are additive to it. */
     @Test
     void initOptionsKeepAutobuildOffAndTheDebugBundles() {
-        var withBundle = LspManager.javaInitOptions(List.of("/tmp/java-debug.jar"));
+        var withBundle = ServerInitOptions.javaInitOptions(List.of("/tmp/java-debug.jar"));
 
         assertNotNull(withBundle.get("settings"));
         assertNotNull(withBundle.get("extendedClientCapabilities"));
         assertEquals(List.of("/tmp/java-debug.jar"), withBundle.get("bundles"));
-        assertFalse(LspManager.javaInitOptions(List.of()).containsKey("bundles"), "no bundles when not debugging");
+        assertFalse(
+                ServerInitOptions.javaInitOptions(List.of()).containsKey("bundles"), "no bundles when not debugging");
     }
 
     // --- code lenses ---------------------------------------------------------------------------------
@@ -991,12 +994,12 @@ class LspManagerTest {
         String saved = System.getProperty("user.home");
         System.setProperty("user.home", home.toString());
         try {
-            assertEquals(oldBin, LspManager.nodeBinDir(root, "", true), "tsserver keeps the project's Node.js");
-            assertNotEquals(oldBin, LspManager.nodeBinDir(root, "", false), "an npm server ignores the .nvmrc");
+            assertEquals(oldBin, NodeServerPaths.nodeBinDir(root, "", true), "tsserver keeps the project's Node.js");
+            assertNotEquals(oldBin, NodeServerPaths.nodeBinDir(root, "", false), "an npm server ignores the .nvmrc");
             Path chosen = tmp.resolve("node24/bin");
             assertEquals(
                     chosen,
-                    LspManager.nodeBinDir(root, chosen.resolve("node").toString(), false),
+                    NodeServerPaths.nodeBinDir(root, chosen.resolve("node").toString(), false),
                     "the Settings Node.js runs Editora's npm servers");
         } finally {
             System.setProperty("user.home", saved);

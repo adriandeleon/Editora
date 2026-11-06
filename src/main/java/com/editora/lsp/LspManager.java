@@ -668,37 +668,14 @@ public final class LspManager {
         Map<String, Object> xml =
                 new java.util.LinkedHashMap<>(xmlServerSettings.section(base, folderTrust.test(root), local));
         if (LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
-            xml.put("maven", mavenSection(mavenCentralIndex, local ? mavenRepoLocal() : null));
+            xml.put(
+                    "maven",
+                    ServerInitOptions.mavenSection(
+                            mavenCentralIndex, local ? ServerInitOptions.mavenRepoLocal() : null));
             // lemminx-maven says only in its log that a coordinate completion failed on its workspace (E21)
             xml.put("logs", Map.of("client", true));
         }
         return Map.copyOf(xml);
-    }
-
-    /**
-     * lemminx-maven's {@code xml.maven} object: whether it may search Maven Central, and the local repository Editora
-     * reads ({@code repo.local}, null = none sent), so the server keeps its {@code .lemminx-maven} store beside the
-     * repository Doctor shows rather than one it worked out differently (XML/pom review 4, A34). Pure.
-     */
-    static Map<String, Object> mavenSection(boolean centralIndex, @Nullable String repoLocal) {
-        Map<String, Object> maven = new java.util.LinkedHashMap<>();
-        maven.put("central", Map.of("skip", !centralIndex));
-        if (repoLocal != null && !repoLocal.isBlank()) {
-            maven.put("repo", Map.of("local", repoLocal));
-        }
-        return Map.copyOf(maven);
-    }
-
-    /** The local Maven repository as an absolute path, read from {@code settings.xml} under Editora's user.home. */
-    private static @Nullable String mavenRepoLocal() {
-        try {
-            return com.editora.maven.MavenPluginGoals.localRepository(Path.of(System.getProperty("user.home", "")))
-                    .toAbsolutePath()
-                    .normalize()
-                    .toString();
-        } catch (RuntimeException e) {
-            return null;
-        }
     }
 
     /** Root → the HTML server's settings there (Settings → LSP → HTML, a project's {@code html} object). */
@@ -1928,9 +1905,9 @@ public final class LspManager {
         if (session.wasShared()) {
             session.reportEndedForAll(); // the other windows reopen their documents on a new server
         }
-        String workspace = jdtlsWorkspaceBySession.remove(session);
+        String workspace = JdtlsWorkspaces.jdtlsWorkspaceBySession.remove(session);
         CompletableFuture<Void> gone =
-                session.exited().whenComplete((done, error) -> releaseJdtlsWorkspaceName(workspace));
+                session.exited().whenComplete((done, error) -> JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspace));
         if (!gone.isDone()) {
             exiting.put(key, gone);
             gone.whenComplete((done, error) -> exiting.remove(key, gone));
@@ -2403,7 +2380,8 @@ public final class LspManager {
         boolean needsJdtlsWorkspace = LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && claimBase != null;
         String claimedWorkspace = null;
         if (needsJdtlsWorkspace && sessionStarterForTest != null && claimBase != null) {
-            claimedWorkspace = claimUsableJdtlsWorkspaceName(claimBase, LspServerRegistry.workspaceDirName(root));
+            claimedWorkspace =
+                    JdtlsWorkspaces.claimUsableJdtlsWorkspaceName(claimBase, LspServerRegistry.workspaceDirName(root));
         }
         LanguageServerSession[] diagnosticSource = new LanguageServerSession[1];
         LanguageServerSession session = new LanguageServerSession(
@@ -2427,7 +2405,7 @@ public final class LspManager {
             session.setXmlSettings(xmlSectionFor(serverId, root)); // trust read here, where the trust list is edited
         }
         if (claimedWorkspace != null) {
-            jdtlsWorkspaceBySession.put(session, claimedWorkspace);
+            JdtlsWorkspaces.jdtlsWorkspaceBySession.put(session, claimedWorkspace);
         }
         if (shareable) {
             LanguageServerSession rival = sharedServers.putIfAbsent(key, session);
@@ -2490,9 +2468,10 @@ public final class LspManager {
         boolean centralIndex = mavenCentralIndex;
         boolean downloadSources = javaDownloadSources;
         // Trust is read here, on the caller's thread, where the trust list is also edited.
-        Path sdkCeiling = ASTRO_SERVER_ID.equals(serverId) || TypeScriptServer.SERVER_ID.equals(serverId)
-                ? trustedCeiling(root, folderTrust)
-                : null;
+        Path sdkCeiling =
+                ServerInitOptions.ASTRO_SERVER_ID.equals(serverId) || TypeScriptServer.SERVER_ID.equals(serverId)
+                        ? NodeServerPaths.trustedCeiling(root, folderTrust)
+                        : null;
         // lemminx-maven resolves and loads what a pom names (parents, plugins, extensions, its repositories): never
         // on a folder that is not trusted. The coordinator routes such a pom to plain lemminx; this is the backstop.
         boolean pomUntrusted = LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId) && !folderTrust.test(root);
@@ -2512,7 +2491,7 @@ public final class LspManager {
             LspServerRegistry.ServerSpec resolvedSpec = unresolvedSpec;
             String workspaceName = null;
             if (workspaceBaseName != null && workspaceBase != null) {
-                workspaceName = claimUsableJdtlsWorkspaceName(workspaceBase, workspaceBaseName);
+                workspaceName = JdtlsWorkspaces.claimUsableJdtlsWorkspaceName(workspaceBase, workspaceBaseName);
                 if (!workspaceName.equals(workspaceBaseName)) {
                     // Another window (or an earlier server still exiting) holds this project's workspace: this
                     // one imports it again on a server of its own. Said, not hidden (Java review C12).
@@ -2522,12 +2501,12 @@ public final class LspManager {
                         }
                     });
                 }
-                jdtlsWorkspaceBySession.put(session, workspaceName);
+                JdtlsWorkspaces.jdtlsWorkspaceBySession.put(session, workspaceName);
                 // shutdown may race the off-thread claim after the session was put in sessionsByRoot.
                 // Do not leave a claim behind or start a process that its window no longer owns.
                 if (session.isDisposed()) {
-                    jdtlsWorkspaceBySession.remove(session, workspaceName);
-                    releaseJdtlsWorkspaceName(workspaceName);
+                    JdtlsWorkspaces.jdtlsWorkspaceBySession.remove(session, workspaceName);
+                    JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspaceName);
                     return;
                 }
             }
@@ -2538,14 +2517,14 @@ public final class LspManager {
                     resolvedSpec = LspServerRegistry.withDataDir(resolvedSpec, ws.toString());
                 } catch (java.io.IOException e) {
                     // Couldn't create the workspace dir — fall back to the default (better than not starting).
-                    jdtlsWorkspaceBySession.remove(session);
-                    releaseJdtlsWorkspaceName(workspaceName);
+                    JdtlsWorkspaces.jdtlsWorkspaceBySession.remove(session);
+                    JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspaceName);
                 }
             }
             List<JavaRuntimes.Jdk> hostJdks = null;
             java.util.Map<String, String> remoteEnvironment = new java.util.HashMap<>();
             if (remote && LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
-                resolvedSpec = withRemoteJdtlsWorkspace(resolvedSpec, root);
+                resolvedSpec = JdtlsWorkspaces.withRemoteJdtlsWorkspace(resolvedSpec, root);
                 hostJdks = RemoteJavaRuntimes.discover(root);
             }
             List<String> startCommand = remote
@@ -2623,11 +2602,11 @@ public final class LspManager {
                 });
             }
             Path ownTs = ownTypeScriptConfigDir;
-            Path astroTsdk = ASTRO_SERVER_ID.equals(serverId) && !remote
-                    ? astroTypeScriptSdk(
+            Path astroTsdk = ServerInitOptions.ASTRO_SERVER_ID.equals(serverId) && !remote
+                    ? NodeServerPaths.astroTypeScriptSdk(
                             root, sdkCeiling, startCommand, com.editora.install.TypeScriptServerInstall.ownSdk(ownTs))
                     : null;
-            if (ASTRO_SERVER_ID.equals(serverId) && astroTsdk == null) {
+            if (ServerInitOptions.ASTRO_SERVER_ID.equals(serverId) && astroTsdk == null) {
                 // astro-ls cannot initialize without a TypeScript SDK, and the only one on offer belongs
                 // to a folder that is not trusted to choose code that runs. Disposed first, so the drop
                 // reads as deliberate (no crash notice, no auto-restart).
@@ -2638,7 +2617,7 @@ public final class LspManager {
             }
             Path tsserver = null;
             if (TypeScriptServer.SERVER_ID.equals(serverId) && !remote) {
-                TypeScriptServer.Choice choice = typeScriptChoice(
+                TypeScriptServer.Choice choice = NodeServerPaths.typeScriptChoice(
                         root,
                         sdkCeiling,
                         startCommand,
@@ -2666,10 +2645,12 @@ public final class LspManager {
                     Platform.runLater(() -> onFolderTypeScriptIgnored.folderTypeScriptIgnored(root, ignored, running));
                 }
             }
-            if (!remote && (TypeScriptServer.SERVER_ID.equals(serverId) || nodeScriptServer(serverId))) {
+            if (!remote
+                    && (TypeScriptServer.SERVER_ID.equals(serverId) || NodeServerPaths.nodeScriptServer(serverId))) {
                 // the Node.js chosen in Settings runs every npm server's "#!/usr/bin/env node", not only tsserver (A8);
                 // a project's .nvmrc picks only tsserver's, since the others are Editora's tools (HTML review 2 A103)
-                session.setPathPrepend(nodeBinDir(root, nodeSetting, TypeScriptServer.SERVER_ID.equals(serverId)));
+                session.setPathPrepend(
+                        NodeServerPaths.nodeBinDir(root, nodeSetting, TypeScriptServer.SERVER_ID.equals(serverId)));
             }
             Path tsserverPath = tsserver;
             List<JavaRuntimes.Jdk> jdks = hostJdks;
@@ -2694,7 +2675,7 @@ public final class LspManager {
                 ensureRemoteScanner(root); // no watcher here can follow it: listed when the window returns (2, B108)
             }
             session.configureStart(startCommand, remoteEnvironment, () -> {
-                Object options = startOptions(
+                Object options = ServerInitOptions.startOptions(
                         serverId,
                         remote,
                         root,
@@ -2759,25 +2740,6 @@ public final class LspManager {
     }
 
     /**
-     * A remote jdtls's {@code -data}: {@code jdtls-workspaces/<root hash>} in the host's cache folder, so its
-     * index outlives the session as a local one's does. Not claimed across windows like a local workspace (a
-     * remote project has one window); a folder that cannot be made leaves jdtls its own default.
-     */
-    private static LspServerRegistry.ServerSpec withRemoteJdtlsWorkspace(LspServerRegistry.ServerSpec spec, Path root) {
-        try {
-            com.editora.process.TargetCache cache =
-                    com.editora.process.ExecTargets.forPath(root).cache();
-            if (cache == null) {
-                return spec;
-            }
-            return LspServerRegistry.withDataDir(
-                    spec, cache.makeDirectories("jdtls-workspaces/" + LspServerRegistry.workspaceDirName(root)));
-        } catch (java.io.IOException | RuntimeException e) {
-            return spec;
-        }
-    }
-
-    /**
      * TEST SEAM — when set, a newly created session is handed here <b>instead of being forked</b>, so the
      * routing/lifecycle layer (open→managed→close, idle eviction, crash-vs-dispose, per-server shutdown,
      * diagnostics retention) is reachable without a subprocess. Mirrors
@@ -2833,91 +2795,9 @@ public final class LspManager {
         this.onSessionCrashed = callback == null ? (id, root) -> {} : callback;
     }
 
-    /**
-     * jdtls {@code -data} dirs currently claimed by a live session in <b>any</b> window. {@code LspManager} is
-     * per-window, so two windows opening files under the same Java root would otherwise fork two jdtls against
-     * <b>one</b> Eclipse workspace — whose {@code .metadata/.lock} admits a single process, wedging the second
-     * at {@code initialize} until its 60 s timeout, and every retry the same way (#668). Static so the claim
-     * spans windows; released when the owning session drops. In-process only — a second Editora <i>process</i>
-     * can still collide (rare, pre-existing).
-     */
-    private static final java.util.Set<String> claimedJdtlsWorkspaces = ConcurrentHashMap.newKeySet();
-
-    /**
-     * Session → the jdtls workspace dir name claimed for it, released when it is dropped or shut down. Kept per
-     * process, not per window: a server two windows share (C12) holds its claim until the window that stops it
-     * releases it, whichever window started it.
-     */
-    private static final Map<LanguageServerSession, String> jdtlsWorkspaceBySession = new ConcurrentHashMap<>();
-
-    /** Claims the first free workspace dir name for {@code baseName}: the canonical hash dir when free (so
-     *  the persisted index is reused), else {@code <base>-2}, {@code -3}, … A suffixed dir costs a second
-     *  jdtls index but unwedges the second window. Package-visible for tests. */
-    static String claimJdtlsWorkspaceName(String baseName) {
-        for (int i = 1; i <= 20; i++) {
-            String candidate = workspaceCandidate(baseName, i);
-            if (claimedJdtlsWorkspaces.add(candidate)) {
-                return candidate;
-            }
-        }
-        // 20 live same-root claims cannot happen in practice; hand out a unique last resort anyway.
-        String unique = baseName + "-x" + Long.toHexString(System.nanoTime());
-        claimedJdtlsWorkspaces.add(unique);
-        return unique;
-    }
-
-    /**
-     * Off-thread production claim. Sidecar markers identify caches whose previous session never completed
-     * initialize and could not be safely removed (usually another process still held the Eclipse lock).
-     *
-     * <p>A marker is re-tested here rather than obeyed forever: once the lock is free the rebuildable cache
-     * and its marker are removed and the name is reused. Nothing else ever deleted a marker, so one timed-out
-     * handshake orphaned the canonical index for good and every later start burned another suffix.
-     */
-    static String claimUsableJdtlsWorkspaceName(Path base, String baseName) {
-        for (int i = 1; i <= 20; i++) {
-            String candidate = workspaceCandidate(baseName, i);
-            if (!claimedJdtlsWorkspaces.add(candidate)) {
-                continue;
-            }
-            Path marker = failedWorkspaceMarker(base, candidate);
-            if (!Files.exists(marker)) {
-                return candidate;
-            }
-            if (deleteUnlockedJdtlsWorkspace(base.resolve(candidate))) {
-                try {
-                    Files.deleteIfExists(marker);
-                    return candidate;
-                } catch (java.io.IOException e) {
-                    LOG.log(java.util.logging.Level.FINE, "Could not clear " + marker, e);
-                }
-            }
-            claimedJdtlsWorkspaces.remove(candidate); // still locked by someone else: leave it alone
-        }
-        String unique = baseName + "-x" + Long.toHexString(System.nanoTime());
-        claimedJdtlsWorkspaces.add(unique);
-        return unique;
-    }
-
-    private static Path failedWorkspaceMarker(Path base, @Nullable String name) {
-        return base.resolve("." + name + ".initialize-failed");
-    }
-
-    /** The {@code attempt}-th candidate dir name for {@code baseName} (1 = the canonical name). Pure. */
-    static String workspaceCandidate(String baseName, int attempt) {
-        return attempt <= 1 ? baseName : baseName + "-" + attempt;
-    }
-
-    /** Releases a claim taken by {@link #claimJdtlsWorkspaceName}. Package-visible for tests. */
-    static void releaseJdtlsWorkspaceName(@Nullable String name) {
-        if (name != null) {
-            claimedJdtlsWorkspaces.remove(name);
-        }
-    }
-
     /** Releases the workspace claim held by {@code session}, if any. */
     private void releaseJdtlsWorkspace(LanguageServerSession session) {
-        releaseJdtlsWorkspaceName(jdtlsWorkspaceBySession.remove(session));
+        JdtlsWorkspaces.releaseJdtlsWorkspaceName(JdtlsWorkspaces.jdtlsWorkspaceBySession.remove(session));
     }
 
     /** Removes a session that can no longer serve requests, so the next open starts a fresh one. */
@@ -2929,7 +2809,7 @@ public final class LspManager {
         boolean endedByThisWindow = endedHere.remove(session);
         sessionByDocUri.values().removeIf(s -> s == session);
         pendingApplyExpected.remove(session);
-        String workspaceName = jdtlsWorkspaceBySession.remove(session);
+        String workspaceName = JdtlsWorkspaces.jdtlsWorkspaceBySession.remove(session);
         // Distinguish a crash from a deliberate teardown: dispose() sets its flag BEFORE killing the
         // process, so a session that is dead but never disposed died on its own (process crash, failed/
         // timed-out handshake). Only that case notifies the coordinator to auto-restart — a shutdownServer/
@@ -2941,7 +2821,7 @@ public final class LspManager {
             // again, so say why instead of restarting it into the crash-loop cap (Node review B3).
             endHere(session);
             endedHere.remove(session);
-            releaseJdtlsWorkspaceName(workspaceName);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspaceName);
             StartRefusal refusal = new StartRefusal(StartRefusal.Kind.SERVER_REFUSED, refused);
             Platform.runLater(() -> {
                 if (!closed) {
@@ -2959,7 +2839,7 @@ public final class LspManager {
             if (failedJdtlsInitialization) {
                 repairAfterExit(key, session.exited(), workspaceName);
             } else {
-                releaseJdtlsWorkspaceName(workspaceName);
+                JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspaceName);
             }
             String said = session.initializedOnce() ? null : session.firstStderrLine();
             if (said == null) {
@@ -2969,7 +2849,7 @@ public final class LspManager {
             }
             Platform.runLater(() -> onSessionCrashed.accept(session.serverId(), session.root()));
         } else {
-            releaseJdtlsWorkspaceName(workspaceName);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspaceName);
             if (wasMine && session.wasShared() && !endedByThisWindow) {
                 // Another window restarted the server this one shared, or saw it crash first: reopen quietly.
                 Platform.runLater(() -> {
@@ -2992,8 +2872,8 @@ public final class LspManager {
      */
     void repairAfterExit(String key, CompletableFuture<Void> exited, @Nullable String workspaceName) {
         Runnable repair = () -> {
-            repairFailedJdtlsWorkspace(workspaceName);
-            releaseJdtlsWorkspaceName(workspaceName);
+            JdtlsWorkspaces.repairFailedJdtlsWorkspace(jdtlsWorkspaceBase, workspaceName);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspaceName);
         };
         if (exited.isDone()) {
             repair.run();
@@ -3009,147 +2889,13 @@ public final class LspManager {
         repaired.whenComplete((done, error) -> exiting.remove(key, repaired));
     }
 
-    /** A jdtls data directory contains only rebuildable Eclipse indexes. After a failed handshake, remove it
-     *  if its OS lock is free; otherwise mark it so this and future Editora processes choose a fresh suffix. */
-    private void repairFailedJdtlsWorkspace(@Nullable String workspaceName) {
-        Path base = jdtlsWorkspaceBase;
-        if (base == null) {
-            return;
-        }
-        Path workspace = base.resolve(workspaceName);
-        Path marker = failedWorkspaceMarker(base, workspaceName);
-        if (deleteUnlockedJdtlsWorkspace(workspace)) {
-            try {
-                Files.deleteIfExists(marker);
-            } catch (java.io.IOException ignored) {
-                // A stale marker only costs a fresh suffix on the next launch.
-            }
-            return;
-        }
-        try {
-            Files.createDirectories(base);
-            Files.writeString(marker, "initialize failed " + java.time.Instant.now());
-        } catch (java.io.IOException e) {
-            LOG.log(java.util.logging.Level.FINE, "Could not mark failed jdtls workspace " + workspace, e);
-        }
-    }
-
-    private static boolean deleteUnlockedJdtlsWorkspace(Path workspace) {
-        if (!Files.exists(workspace)) {
-            return true;
-        }
-        Path lockFile = workspace.resolve(".metadata/.lock");
-        if (Files.exists(lockFile)) {
-            try (var channel = java.nio.channels.FileChannel.open(lockFile, java.nio.file.StandardOpenOption.WRITE);
-                    var lock = channel.tryLock()) {
-                if (lock == null) {
-                    return false;
-                }
-            } catch (java.nio.channels.OverlappingFileLockException | java.io.IOException e) {
-                return false;
-            }
-        }
-        try (var paths = Files.walk(workspace)) {
-            paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
-                try {
-                    Files.deleteIfExists(path);
-                } catch (java.io.IOException e) {
-                    throw new java.io.UncheckedIOException(e);
-                }
-            });
-            return !Files.exists(workspace);
-        } catch (java.io.IOException | java.io.UncheckedIOException e) {
-            return false;
-        }
-    }
-
     /** What {@link #clearJdtlsWorkspaces} did: the caches it deleted, the bytes they held, and the ones it kept
      *  because a server still uses them (or a file in them could not be deleted). */
     public record JdtlsCacheClearResult(int deleted, long bytesFreed, int kept) {}
 
-    /**
-     * Deletes every jdtls workspace under {@code base} that no server is using ({@code lsp.clearJavaIndexCaches}).
-     * Nothing else ever removes one: there is a workspace per Java folder ever opened, each ~40 MB before the
-     * project's own classes (jdtls indexes the JDK into every one), so the folder only grows. jdtls rebuilds a
-     * deleted one on its next start for that project.
-     *
-     * <p>A workspace is kept when a session in this process has claimed it, or another process (a second
-     * Editora) holds its Eclipse lock. The claim is taken here for the duration of the delete, so no session can
-     * start on a half-deleted cache. Failure markers go with their workspace. Blocking I/O: call it off the FX
-     * thread.
-     */
+    /** See {@link JdtlsWorkspaces#clearJdtlsWorkspaces}. */
     public static JdtlsCacheClearResult clearJdtlsWorkspaces(Path base) {
-        if (base == null || !Files.isDirectory(base)) {
-            return new JdtlsCacheClearResult(0, 0, 0);
-        }
-        List<Path> entries;
-        try (var list = Files.list(base)) {
-            entries = list.sorted().toList();
-        } catch (java.io.IOException e) {
-            LOG.log(java.util.logging.Level.FINE, "Could not list " + base, e);
-            return new JdtlsCacheClearResult(0, 0, 0);
-        }
-        int deleted = 0;
-        int kept = 0;
-        long freed = 0;
-        for (Path dir : entries) {
-            if (!Files.isDirectory(dir, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                continue;
-            }
-            String name = dir.getFileName().toString();
-            if (!claimedJdtlsWorkspaces.add(name)) {
-                kept++; // a live session in some window of this process
-                continue;
-            }
-            try {
-                long size = treeSize(dir);
-                if (deleteUnlockedJdtlsWorkspace(dir)) {
-                    deleted++;
-                    freed += size;
-                } else {
-                    kept++;
-                }
-            } finally {
-                claimedJdtlsWorkspaces.remove(name);
-            }
-        }
-        deleteOrphanedFailureMarkers(base);
-        return new JdtlsCacheClearResult(deleted, freed, kept);
-    }
-
-    /** Deletes the {@code .<name>.initialize-failed} markers whose workspace no longer exists. */
-    private static void deleteOrphanedFailureMarkers(Path base) {
-        String suffix = ".initialize-failed";
-        try (var list = Files.list(base)) {
-            for (Path marker : list.toList()) {
-                String file = marker.getFileName().toString();
-                if (file.startsWith(".") && file.endsWith(suffix) && file.length() > suffix.length() + 1) {
-                    String name = file.substring(1, file.length() - suffix.length());
-                    if (!Files.exists(base.resolve(name), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                        Files.deleteIfExists(marker);
-                    }
-                }
-            }
-        } catch (java.io.IOException e) {
-            LOG.log(java.util.logging.Level.FINE, "Could not clear failure markers in " + base, e);
-        }
-    }
-
-    /** Total size of the regular files under {@code dir}, without following links; 0 when unreadable. */
-    private static long treeSize(Path dir) {
-        try (var paths = Files.walk(dir)) {
-            return paths.filter(p -> Files.isRegularFile(p, java.nio.file.LinkOption.NOFOLLOW_LINKS))
-                    .mapToLong(p -> {
-                        try {
-                            return Files.size(p);
-                        } catch (java.io.IOException e) {
-                            return 0;
-                        }
-                    })
-                    .sum();
-        } catch (java.io.IOException | java.io.UncheckedIOException e) {
-            return 0;
-        }
+        return JdtlsWorkspaces.clearJdtlsWorkspaces(base);
     }
 
     private @Nullable LanguageServerSession sessionFor(@Nullable Path file) {
@@ -6147,369 +5893,6 @@ public final class LspManager {
     }
 
     /**
-     * jdtls's {@code initializationOptions}: {@code settings.java.autobuild.enabled=false} always, plus
-     * the java-debug plugin {@code bundles} when {@code debugBundles} is non-empty. Editora only needs
-     * jdtls for per-file diagnostics/completion/hover/nav — never its on-disk build output — but by
-     * default jdtls runs a full incremental Eclipse workspace <em>build</em> on save/change, which m2e
-     * points at the project's own configured Maven/Gradle output directory (e.g. {@code target/classes}
-     * for a Maven project — the exact same directory {@code mvn}/{@code gradle} CLI builds write to).
-     * Racing jdtls's ECJ builder against a CLI build there can leave that directory missing classes (most
-     * visibly javac's synthetic enum-switch-map inner classes, since ECJ doesn't regenerate them in
-     * lockstep) even right after a clean CLI build. Disabling autobuild stops jdtls from ever touching
-     * that directory; live per-file diagnostics still work via reconcile-on-type, which isn't gated by it.
-     * Pure + package-private so it's directly unit-tested.
-     */
-    static Map<String, Object> javaInitOptions(List<String> debugBundles) {
-        return javaInitOptions(debugBundles, false);
-    }
-
-    static Map<String, Object> javaInitOptions(List<String> debugBundles, boolean onTypeFormatting) {
-        return javaInitOptions(debugBundles, onTypeFormatting, null);
-    }
-
-    static Map<String, Object> javaInitOptions(
-            List<String> debugBundles, boolean onTypeFormatting, @Nullable List<JavaRuntimes.Jdk> jdks) {
-        return javaInitOptions(debugBundles, onTypeFormatting, jdks, null);
-    }
-
-    static Map<String, Object> javaInitOptions(
-            List<String> debugBundles,
-            boolean onTypeFormatting,
-            @Nullable List<JavaRuntimes.Jdk> jdks,
-            @Nullable String preferredHome) {
-        Map<String, Object> options = new java.util.HashMap<>();
-        options.put("settings", Map.of("java", javaSettings(onTypeFormatting, jdks, preferredHome)));
-        return finishJavaInitOptions(options, debugBundles);
-    }
-
-    /**
-     * jdtls's {@code settings.java}: autobuild off, plus the JDKs its machine actually has ({@code jdks}, or
-     * this machine's when null).
-     *
-     * <p>{@code configuration.runtimes} is not optional polish. m2e writes a project's execution environment
-     * into its Eclipse {@code .classpath} from the pom, so {@code maven.compiler.release=17} demands
-     * {@code JavaSE-17}; jdtls can only bind that to a JDK it has been told about, and telling it nothing
-     * leaves it knowing only the JVM it runs on. A project targeting any other release then has an
-     * unresolved container, and an unresolved container makes {@code vscode.java.resolveClasspath} return an
-     * <b>empty classpath with no error</b> — which Run could only report as "the project hasn't finished
-     * importing" for a project that had imported perfectly. Declaring the real runtimes also gives jdtls a
-     * sane default to fall back to when a project's exact release isn't installed at all.
-     */
-    private static Map<String, Object> javaSettings(
-            boolean onTypeFormatting, @Nullable List<JavaRuntimes.Jdk> jdks, @Nullable String preferredHome) {
-        // The keys pushed after initialized, sent here too so the first import already runs with them.
-        Map<String, Object> java = new java.util.HashMap<>(LspServerSettings.javaSettings(onTypeFormatting));
-        java.put("autobuild", Map.of("enabled", false));
-        List<Map<String, Object>> runtimes =
-                // jdks given: a remote host's, whose sources are not on this machine's disk to look for
-                JavaRuntimes.runtimes(jdks == null ? JavaRuntimes.discover() : jdks, preferredHome, jdks == null);
-        return Map.copyOf(withRuntimes(java, runtimes));
-    }
-
-    /**
-     * {@code java} (jdtls's {@code settings.java}) with {@code runtimes} as {@code configuration.runtimes}, Gradle
-     * run on their default, and the Gradle daemons jdtls starts told to stop when idle ({@link
-     * #GRADLE_DAEMON_ARGUMENTS}). Sent at start and in every later settings push, so a changed Default JDK reaches
-     * a running jdtls (Java debug review 2, B102). Pure.
-     */
-    static Map<String, Object> withRuntimes(Map<String, Object> java, List<Map<String, Object>> runtimes) {
-        Map<String, Object> out = new java.util.HashMap<>(java);
-        if (runtimes.isEmpty()) {
-            return out;
-        }
-        Map<String, Object> configuration = new java.util.HashMap<>();
-        if (out.get("configuration") instanceof Map<?, ?> existing) {
-            existing.forEach((k, v) -> configuration.put(String.valueOf(k), v));
-        }
-        configuration.put("runtimes", runtimes);
-        out.put("configuration", Map.copyOf(configuration));
-        Map<String, Object> gradle = new java.util.HashMap<>();
-        gradle.put("arguments", GRADLE_DAEMON_ARGUMENTS);
-        String gradleJdk = JavaRuntimes.defaultPath(runtimes);
-        if (gradleJdk != null) {
-            // Gradle runs on the same JDK as the projects' default, not whatever jdtls itself runs on.
-            gradle.put("java", Map.of("home", gradleJdk));
-        }
-        out.put("import", Map.of("gradle", Map.copyOf(gradle)));
-        return out;
-    }
-
-    /**
-     * The Gradle arguments of jdtls's imports: a daemon it starts stops after ten idle minutes, not Gradle's three
-     * hours. jdtls leaves its daemons running when it exits, so each Gradle project opened left a JVM behind long
-     * after Editora closed (Java debug review 2, lead note). Only the daemons these imports start are affected:
-     * Gradle reuses a daemon only when its settings match.
-     */
-    static final String GRADLE_DAEMON_ARGUMENTS = "-Dorg.gradle.daemon.idletimeout=600000";
-
-    private static Map<String, Object> finishJavaInitOptions(Map<String, Object> options, List<String> debugBundles) {
-        options.put("extendedClientCapabilities", javaExtendedClientCapabilities());
-        if (!debugBundles.isEmpty()) {
-            options.put("bundles", debugBundles);
-        }
-        return Map.copyOf(options);
-    }
-
-    /**
-     * jdtls's {@code initializationOptions.extendedClientCapabilities} (#741) — a vendor extension, distinct
-     * from the LSP {@code ClientCapabilities}, that gates a large part of what jdtls will even offer.
-     *
-     * <p><b>Measured, not assumed</b> (driving jdtls 1.60 against the same file and position): declaring these
-     * takes the code actions at a field from <b>9 to 16</b>. Without them, Generate toString / hashCode+equals
-     * / Constructors / Delegate Methods, Override-Implement Methods and Extract Interface are not returned at
-     * all — the server simply doesn't offer what it thinks the client cannot drive. Re-measured on 1.62 by
-     * {@code JdtlsUpgradeProbeTest}: 11 to 17 at its fixture's field, with the same nine titles depending on them.
-     *
-     * <p><b>Each prompt flag is a contract, not a hint.</b> Turning one on changes that action's reply from a
-     * directly-appliable edit into a {@code java.action.*Prompt} command the client must handle. Enabling one
-     * without implementing its prompt doesn't leave the feature as it was — it <em>breaks</em> it: the action
-     * still appears and then does nothing. That is why the accessors actions (which work today without any
-     * flag) are only listed here alongside a real picker; see {@link JdtlsGenerate}.
-     *
-     * <p>{@code resolveAdditionalTextEditsSupport} is the odd one out and needs no UI: it tells jdtls to defer
-     * an auto-import's edits to {@code completionItem/resolve}, which is exactly what
-     * {@code LspCoordinator.autoImportAccept} already does. Without it jdtls computes those edits eagerly for
-     * every item in a completion list — pure waste on a per-keystroke path.
-     */
-    static Map<String, Object> javaExtendedClientCapabilities() {
-        Map<String, Object> caps = new java.util.LinkedHashMap<>();
-        // Needs no client UI.
-        caps.put("classFileContentsSupport", true); // we open jdt:// library source (#665)
-        caps.put("resolveAdditionalTextEditsSupport", true); // we resolve on accept (#410/#445)
-        caps.put("progressReportProvider", true); // legacy language/progressReport, coalesced on the status bar
-        // Each of these is backed by a prompt in JdtlsGenerate — DO NOT enable one without its picker.
-        caps.put("generateToStringPromptSupport", true);
-        caps.put("hashCodeEqualsPromptSupport", true);
-        caps.put("generateConstructorsPromptSupport", true);
-        caps.put("overrideMethodsPromptSupport", true);
-        // Backed by JdtlsGenerate's accessor and delegate-method prompts.
-        caps.put("advancedGenerateAccessorsSupport", true);
-        caps.put("generateDelegateMethodsPromptSupport", true);
-        // Backed by JdtlsRefactor: java.action.applyRefactoringCommand is carried out by the client.
-        // jdtls offers Extract Interface only with both flags. The second one also turns the extract
-        // refactorings (variable, constant, method, field) into that same command; each is one
-        // java/getRefactorEdit away.
-        caps.put("extractInterfaceSupport", true);
-        // Resolving "Add all missing imports" then asks about each ambiguous name (chooseImports), as Organize
-        // Imports does; without it Date was skipped silently (Java review D6).
-        caps.put("advancedOrganizeImportsSupport", true);
-        caps.put("advancedExtractRefactoringSupport", true);
-        caps.put("moveRefactoringSupport", true);
-        // jdtls 1.61+: a move with problems answers a confirmationToken instead of applying anyway; the
-        // coordinator shows the problems and resends with the token (review D11). Older servers ignore it.
-        caps.put("moveRefactoringConfirmationSupport", true);
-        // Extract Method / Variable / Field at a bare caret: the action is offered and the client asks
-        // java/inferSelection which expression to extract (review D7). Introduce Parameter becomes the same
-        // client-driven command, whose edit is one java/getRefactorEdit away.
-        caps.put("inferSelectionSupport", List.of("extractMethod", "extractVariable", "extractField"));
-        caps.put("advancedIntroduceParameterRefactoringSupport", true);
-        // jdtls asks through workspace/executeClientCommand which class an ambiguous name means (Organize
-        // Imports) and waits for the answer; LanguageServerSession.executeClientCommand gives it (review A3).
-        caps.put("executeClientCommandSupport", true);
-        return Map.copyOf(caps);
-    }
-
-    /**
-     * The {@code initializationOptions} a server starts with: the TypeScript server's own, else the server's defaults
-     * with the project's settings and the XML settings laid over them (jdtls's with its library-sources switch).
-     */
-    private static @Nullable Object startOptions(
-            String serverId,
-            boolean remote,
-            Path root,
-            LanguageServerSession session,
-            @Nullable Path tsserverPath,
-            boolean typeAcquisition,
-            boolean loose,
-            List<String> startBundles,
-            @Nullable Path astroTsdk,
-            boolean onTypeFormatting,
-            @Nullable List<JavaRuntimes.Jdk> jdks,
-            boolean centralIndex,
-            @Nullable String javaPreferredHome,
-            boolean downloadSources) {
-        return TypeScriptServer.SERVER_ID.equals(serverId) && !remote
-                ? TypeScriptServer.initializationOptions(tsserverPath, typeAcquisition, loose)
-                : TypeScriptServer.SERVER_ID.equals(serverId)
-                        ? TypeScriptServer.initializationOptions(null, typeAcquisition, false)
-                        : withXmlSettings(
-                                serverId,
-                                withProjectSettings(
-                                        serverId,
-                                        LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
-                                                ? JavaLibrarySources.withDownloadSources(
-                                                        initOptionsFor(
-                                                                serverId,
-                                                                startBundles,
-                                                                astroTsdk,
-                                                                onTypeFormatting,
-                                                                jdks,
-                                                                centralIndex,
-                                                                javaPreferredHome),
-                                                        downloadSources)
-                                                : initOptionsFor(
-                                                        serverId,
-                                                        startBundles,
-                                                        astroTsdk,
-                                                        onTypeFormatting,
-                                                        jdks,
-                                                        centralIndex,
-                                                        javaPreferredHome),
-                                        remote ? null : root),
-                                session.xmlSettings());
-    }
-
-    /**
-     * {@code options} with lemminx's {@code settings.xml} object ({@code xml}, null = none) for an XML or pom server,
-     * so its very first validation already runs with them — no schema download before the first push; anything
-     * else unchanged.
-     */
-    static @Nullable Object withXmlSettings(
-            String serverId, @Nullable Object options, @Nullable Map<String, Object> xml) {
-        return xml == null || !XmlServerSettings.isLemminx(serverId)
-                ? options
-                : XmlServerSettings.withSection(options, xml);
-    }
-
-    /**
-     * {@code options} (jdtls's) with the preferences {@code root}'s own files state ({@link JavaProjectSettings})
-     * merged into {@code settings.java}; anything else unchanged.
-     */
-    @SuppressWarnings("unchecked")
-    static @Nullable Object withProjectSettings(String serverId, @Nullable Object options, @Nullable Path root) {
-        if (!LspServerRegistry.JAVA_SERVER_ID.equals(serverId) || !(options instanceof Map<?, ?> map) || root == null) {
-            return options;
-        }
-        com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(root);
-        Map<String, Object> project = JavaProjectSettings.forRoot(
-                root, target.isLocal() ? null : WireUris.mapped(target)::toWire); // a container or WSL (DF2)
-        Object settings = map.get("settings");
-        if (project.isEmpty() || !(settings instanceof Map<?, ?> s) || !(s.get("java") instanceof Map<?, ?> java)) {
-            return options;
-        }
-        Map<String, Object> out = new java.util.HashMap<>((Map<String, Object>) map);
-        out.put("settings", Map.of("java", JavaProjectSettings.merge((Map<String, Object>) java, project)));
-        return Map.copyOf(out);
-    }
-
-    /**
-     * The {@code initialize.initializationOptions} for a server, or {@code null} for one that needs none. Pure
-     * + package-private so it's unit-tested:
-     * <ul>
-     *   <li><b>java</b> (jdtls): {@code settings.java.autobuild.enabled=false} always + the java-debug plugin
-     *       {@code bundles} when debugging is on (see {@link #javaInitOptions}).</li>
-     *   <li><b>go</b> (gopls): {@code semanticTokens=true} — gopls ships semantic tokens disabled and only
-     *       advertises {@code semanticTokensProvider} when this flat key is set (confirmed; {@code ui.} doesn't).</li>
-     *   <li><b>json/css/html</b> (vscode-*-language-server): {@code provideFormatter=true} — these servers
-     *       implement formatting but only advertise {@code documentFormattingProvider} when VS Code's own
-     *       {@code provideFormatter} flag is passed; without it, Format Document was silently unavailable on a
-     *       {@code .json}/{@code .css}/{@code .html} even though the server would format (#468; verified by
-     *       driving the real servers: the flag flips the advertised capability from false to true).</li>
-     *   <li><b>astro</b> (astro-ls): {@code typescript.tsdk} points at a <i>trusted</i> folder's own TypeScript
-     *       SDK, or the SDK installed beside the language server ({@link #astroTypeScriptSdk}). Astro refuses
-     *       initialization without it, so with neither the server is not started.</li>
-     *   <li><b>maven-pom</b> (JVM lemminx + lemminx-maven): {@code settings.xml.maven.central.skip=true} —
-     *       the lemminx-maven settings live under an {@code xml.maven} object (schema verified against the
-     *       extension's {@code XMLMavenSettings}). {@code central.skip=true} keeps lemminx-maven from asking
-     *       search.maven.org (its {@code RemoteCentralRepositorySearcher}; there is no index download since 0.5)
-     *       as completion is typed, so coordinates come from the local {@code ~/.m2} repository only —
-     *       network-conservative, matching how Git/LSP/update-check are gated — unless Settings → LSP "Search Maven
-     *       Central when completing pom.xml coordinates" is on ({@link #setMavenCentralIndex}, review C10, D13).
-     *       Sending any {@code xml.maven} object is also what activates the extension's POM awareness in the
-     *       first place.</li>
-     * </ul>
-     */
-    static @Nullable Object initOptionsFor(String serverId, List<String> debugBundles) {
-        return initOptionsFor(serverId, debugBundles, null, false);
-    }
-
-    /** {@code astroTsdk} is the SDK {@link #astroTypeScriptSdk} chose; it is only read for the Astro server. */
-    static @Nullable Object initOptionsFor(
-            String serverId, List<String> debugBundles, @Nullable Path astroTsdk, boolean javaOnTypeFormatting) {
-        return initOptionsFor(serverId, debugBundles, astroTsdk, javaOnTypeFormatting, null);
-    }
-
-    /** As above; {@code jdks} are the JDKs jdtls is told about (null: this machine's, discovered now). */
-    static @Nullable Object initOptionsFor(
-            String serverId,
-            List<String> debugBundles,
-            @Nullable Path astroTsdk,
-            boolean javaOnTypeFormatting,
-            @Nullable List<JavaRuntimes.Jdk> jdks) {
-        return initOptionsFor(serverId, debugBundles, astroTsdk, javaOnTypeFormatting, jdks, false);
-    }
-
-    /** As above; {@code mavenCentralIndex} lets lemminx-maven search Maven Central as coordinates are completed. */
-    static @Nullable Object initOptionsFor(
-            String serverId,
-            List<String> debugBundles,
-            @Nullable Path astroTsdk,
-            boolean javaOnTypeFormatting,
-            @Nullable List<JavaRuntimes.Jdk> jdks,
-            boolean mavenCentralIndex) {
-        return initOptionsFor(serverId, debugBundles, astroTsdk, javaOnTypeFormatting, jdks, mavenCentralIndex, null);
-    }
-
-    /** As above; {@code javaPreferredHome} is the JDK jdtls makes its default ({@link JavaRuntimes#preferredHome}). */
-    static @Nullable Object initOptionsFor(
-            String serverId,
-            List<String> debugBundles,
-            @Nullable Path astroTsdk,
-            boolean javaOnTypeFormatting,
-            @Nullable List<JavaRuntimes.Jdk> jdks,
-            boolean mavenCentralIndex,
-            @Nullable String javaPreferredHome) {
-        return switch (serverId == null ? "" : serverId) {
-            case "java" -> javaInitOptions(debugBundles, javaOnTypeFormatting, jdks, javaPreferredHome);
-            case "go" -> Map.of("semanticTokens", true);
-            case "json", "css", "html" -> Map.of("provideFormatter", true);
-            // gvy reads a flat map of its VS Code settings. CodeNarc's style rules flag nearly every line of
-            // ordinary Groovy at Information level; compiler errors are what an editor needs by default.
-            case "groovy" -> Map.of("groovy.codenarc.enabled", false);
-            // Pyright publishes its diagnostics: pulled ones it computes only for the open files unless the client
-            // keeps a workspace/diagnostic request waiting, so Problems → Whole project listed nothing more
-            // (Python review 2, B105). Publishing is how it reports a whole project.
-            case "python" -> Map.of("disablePullDiagnostics", true);
-            case "scala" -> metalsInitOptions();
-            case ASTRO_SERVER_ID ->
-                astroTsdk == null ? null : Map.of("typescript", Map.of("tsdk", astroTsdk.toString()));
-            // lemminx's protocol extensions Editora carries out (XML review D6). The xml settings object is
-            // the Settings → LSP → XML section's (merge it in beside this key).
-            case XmlServer.SERVER_ID -> Map.of("extendedClientCapabilities", XmlServer.extendedClientCapabilities());
-            // The pom server is lemminx with the Maven extension: the same protocol extensions (review 2, D15).
-            case LspServerRegistry.MAVEN_POM_SERVER_ID ->
-                Map.of(
-                        "extendedClientCapabilities",
-                        XmlServer.extendedClientCapabilities(),
-                        "settings",
-                        Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", !mavenCentralIndex)))));
-            default -> null;
-        };
-    }
-
-    private static final String ASTRO_SERVER_ID = "astro";
-
-    /**
-     * Metals' {@code initializationOptions}: what this client implements of its extensions, and nothing more
-     * (an option left out means Metals falls back to plain LSP). Its status items arrive as
-     * {@code metals/status}; prompts as {@code metals/inputBox} / {@code metals/quickPick}; editor actions as
-     * {@code metals/executeClientCommand}; {@code debuggingProvider} lets Debug start Metals' debug adapter
-     * ({@code debug-adapter-start}). {@code isHttpEnabled} off: no local web server for its doctor page.
-     */
-    static Map<String, Object> metalsInitOptions() {
-        Map<String, Object> options = new java.util.LinkedHashMap<>();
-        options.put("statusBarProvider", "on");
-        options.put("icons", "vscode"); // the syntax MetalsStatusView reads (and strips)
-        options.put("isHttpEnabled", false);
-        options.put("debuggingProvider", true);
-        options.put("executeClientCommandProvider", true);
-        options.put("inputBoxProvider", true);
-        options.put("quickPickProvider", true);
-        options.put("isExitOnShutdown", true);
-        return options;
-    }
-
-    /**
      * Whether a folder is trusted to supply code a language server loads — today the project-local
      * TypeScript SDK handed to astro-ls. The same per-folder record that gates project LSP commands; nothing
      * is trusted until the coordinator installs the real check.
@@ -6608,167 +5991,14 @@ public final class LspManager {
         this.onStartRefused = callback == null ? (id, root, why) -> {} : callback;
     }
 
-    /**
-     * The tsserver for a local TypeScript-server root: the folder's own only within its trusted part, else the
-     * one beside the installed server; never a folder's own for the shared loose-files root. Off the FX thread
-     * (PATH and disk).
-     */
-    static TypeScriptServer.Choice typeScriptChoice(
-            Path root, @Nullable Path trustedCeiling, List<String> command, boolean loose) {
-        return typeScriptChoice(root, trustedCeiling, command, loose, null);
-    }
-
-    /**
-     * {@link #typeScriptChoice(Path, Path, List, boolean)} where Editora's own TypeScript ({@code ownTsserver}, null:
-     * not installed) comes before the one beside the server: that one is often a TypeScript 6 or 7 a user installed
-     * globally, where Node.js types go missing or there is no tsserver at all (JS review B101).
-     */
-    static TypeScriptServer.Choice typeScriptChoice(
-            Path root, @Nullable Path trustedCeiling, List<String> command, boolean loose, @Nullable Path ownTsserver) {
-        Path trusted = trustedCeiling == null || loose ? null : TypeScriptServer.findTsserver(root, trustedCeiling);
-        Path any = loose ? null : TypeScriptServer.findTsserver(root, null);
-        Path executable = typeScriptServerExecutable(command);
-        return TypeScriptServer.choose(
-                trusted,
-                any,
-                ownTsserver != null ? ownTsserver : TypeScriptServer.installedTsserver(executable),
-                TypeScriptServer.installedPackageVersion(executable),
-                loose);
-    }
-
-    /**
-     * Where typescript-language-server itself is, links followed: the command's word naming it (a custom command
-     * may run it through {@code node} or a wrapper), else the command's program. Null when it cannot be found.
-     */
+    /** See {@link NodeServerPaths#typeScriptServerExecutable}. */
     public static @Nullable Path typeScriptServerExecutable(List<String> command) {
-        if (command == null || command.isEmpty()) {
-            return null;
-        }
-        String word = command.get(0);
-        for (String w : command) {
-            if (w.contains("typescript-language-server")) {
-                word = w;
-                break;
-            }
-        }
-        List<String> resolved = ProcessRunner.resolveExecutable(List.of(word));
-        if (resolved.isEmpty()) {
-            return null;
-        }
-        try {
-            Path exe = Path.of(resolved.get(0)).toAbsolutePath().normalize();
-            return Files.exists(exe) ? exe.toRealPath() : null;
-        } catch (java.io.IOException | java.nio.file.InvalidPathException e) {
-            return null;
-        }
+        return NodeServerPaths.typeScriptServerExecutable(command);
     }
 
-    /** Whether {@code serverId}'s install is an npm package — a Node.js script (HTML, CSS, JSON, YAML, Bash…). Pure. */
-    static boolean nodeScriptServer(String serverId) {
-        return com.editora.install.InstallCatalog.npmPackage(serverId) != null;
-    }
-
-    /**
-     * The bin folder of the Node.js a server under {@code root} runs with, or null: the Settings Node.js, then —
-     * only when {@code projectVersionFile} (tsserver, which runs the project's own TypeScript) — the project's
-     * {@code .nvmrc}/{@code .node-version}, then PATH. Editora's own npm servers never follow a project's pin: an
-     * old pinned Node.js cannot run them (HTML review 2 A103).
-     */
-    static @Nullable Path nodeBinDir(Path root, String nodeSetting, boolean projectVersionFile) {
-        try {
-            Path file = projectVersionFile ? root.resolve("package.json") : null;
-            return com.editora.run.NodeRuntimes.resolveLocal(file, null, "", nodeSetting)
-                    .binDir()
-                    .orElse(null);
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
-    /**
-     * The topmost ancestor of {@code root} (or {@code root} itself) that is still trusted — how far up a
-     * search for project-supplied code may go — or {@code null} when {@code root} is not trusted at all.
-     */
-    static @Nullable Path trustedCeiling(Path root, java.util.function.Predicate<Path> trusted) {
-        if (root == null || trusted == null) {
-            return null;
-        }
-        Path dir = root.toAbsolutePath().normalize();
-        if (!trusted.test(dir)) {
-            return null;
-        }
-        for (Path parent = dir.getParent(); parent != null && trusted.test(parent); parent = parent.getParent()) {
-            dir = parent;
-        }
-        return dir;
-    }
-
-    /**
-     * Finds the TypeScript SDK required by astro-ls, which loads and <b>runs</b> the JavaScript in that
-     * directory during {@code initialize}. The folder's own TypeScript is therefore taken only from a
-     * trusted folder: {@code trustedCeiling} ({@link #trustedCeiling}) is null for an untrusted root, and
-     * otherwise bounds the upward walk (npm/pnpm workspace hoisting) so it never leaves the trusted folder.
-     * Next comes the SDK beside the resolved astro-ls installation, which is the user's own. A trusted
-     * folder with neither gets its deterministic project-local path, which produces Astro's own clear
-     * "can't find TypeScript" error; an untrusted one gets {@code null} — the server is not started.
-     */
-    static @Nullable Path astroTypeScriptSdk(Path root, @Nullable Path trustedCeiling, List<String> command) {
-        return astroTypeScriptSdk(root, trustedCeiling, command, null);
-    }
-
-    /** As above, with Editora's own TypeScript SDK ({@code ownSdk}, null: none) before the one beside astro-ls (B104). */
-    static @Nullable Path astroTypeScriptSdk(
-            Path root, @Nullable Path trustedCeiling, List<String> command, @Nullable Path ownSdk) {
-        if (trustedCeiling != null) {
-            Path projectSdk = findTypeScriptSdk(root, trustedCeiling);
-            if (projectSdk != null) {
-                return projectSdk;
-            }
-        }
-        if (ownSdk != null) {
-            return ownSdk;
-        }
-        if (command != null && !command.isEmpty()) {
-            List<String> resolved = ProcessRunner.resolveExecutable(command);
-            if (!resolved.isEmpty()) {
-                try {
-                    Path executable = Path.of(resolved.get(0)).toAbsolutePath().normalize();
-                    if (Files.exists(executable)) {
-                        executable = executable.toRealPath();
-                    }
-                    Path installedSdk = findTypeScriptSdk(executable.getParent(), null);
-                    if (installedSdk != null) {
-                        return installedSdk;
-                    }
-                } catch (java.io.IOException | java.nio.file.InvalidPathException ignored) {
-                    // Fall through to the trusted project-local path, or to not starting.
-                }
-            }
-        }
-        if (trustedCeiling == null) {
-            return null;
-        }
-        Path base = root == null ? Path.of("") : root;
-        return base.toAbsolutePath().normalize().resolve("node_modules/typescript/lib");
-    }
-
-    /**
-     * The first {@code node_modules/typescript/lib} walking up from {@code start}; {@code ceiling}, when
-     * given, is the last directory looked at. Public for the trust prompt, which lists what trusting adds.
-     */
+    /** See {@link NodeServerPaths#findTypeScriptSdk}. */
     public static @Nullable Path findTypeScriptSdk(@Nullable Path start, @Nullable Path ceiling) {
-        Path stop = ceiling == null ? null : ceiling.toAbsolutePath().normalize();
-        for (Path dir = start == null ? null : start.toAbsolutePath().normalize(); dir != null; dir = dir.getParent()) {
-            if (stop != null && !dir.startsWith(stop)) {
-                break;
-            }
-            Path candidate = dir.resolve("node_modules/typescript/lib");
-            if (Files.isRegularFile(candidate.resolve("typescript.js"))
-                    || Files.isRegularFile(candidate.resolve("tsserverlibrary.js"))) {
-                return candidate;
-            }
-        }
-        return null;
+        return NodeServerPaths.findTypeScriptSdk(start, ceiling);
     }
 
     /** Told (FX thread) that a document's diagnostics are confirmed unchanged by its server. */
@@ -7848,7 +7078,7 @@ public final class LspManager {
     public void cleanJavaWorkspace(Path file, Consumer<Boolean> done) {
         LanguageServerSession s = javaSessionFor(file);
         Path base = jdtlsWorkspaceBase;
-        String name = s == null ? null : jdtlsWorkspaceBySession.get(s);
+        String name = s == null ? null : JdtlsWorkspaces.jdtlsWorkspaceBySession.get(s);
         String key = null;
         for (var e : sessionsByRoot.entrySet()) {
             if (e.getValue() == s) {
@@ -7881,11 +7111,11 @@ public final class LspManager {
             }
             boolean deleted = false;
             for (int attempt = 0; attempt < 50 && !deleted; attempt++) {
-                if (claimedJdtlsWorkspaces.add(name)) {
+                if (JdtlsWorkspaces.claimedJdtlsWorkspaces.add(name)) {
                     try {
-                        deleted = deleteUnlockedJdtlsWorkspace(workspace);
+                        deleted = JdtlsWorkspaces.deleteUnlockedJdtlsWorkspace(workspace);
                     } finally {
-                        claimedJdtlsWorkspaces.remove(name);
+                        JdtlsWorkspaces.claimedJdtlsWorkspaces.remove(name);
                     }
                 }
                 if (!deleted) {
