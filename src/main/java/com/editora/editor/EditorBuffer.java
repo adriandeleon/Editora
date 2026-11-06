@@ -901,8 +901,8 @@ public class EditorBuffer implements TabContent {
         snippetKeys.addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
         snippetSession.setOnChanged(snippetKeys::snippetSessionChanged);
         focusedView.addListener((o, was, now) -> snippetSession.focusMovedTo(now)); // the other split view
-        typingAids.addAutoClose(
-                area); // auto-close ()[]{} and quotes (before auto-indent so it sees the keystroke first)
+        // Auto-close ()[]{} and quotes: before auto-indent, so it sees the keystroke first.
+        typingAids.addAutoClose(area);
         typingAids.addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
         completionActions.installCompletionTrigger(area);
         lspAssists.installOccurrenceTrigger(area); // LSP document highlight (#675)

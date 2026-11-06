@@ -198,7 +198,7 @@ class LazyOverlayFxTest {
             b.setMinimapVisible(true);
         });
         for (String f : LAZY) {
-            assertNull(FxTestSupport.field(b, f), f + " must stay unbuilt when its feature is switched off");
+            assertNull(lazyField(b, f), f + " must stay unbuilt when its feature is switched off");
         }
     }
 
