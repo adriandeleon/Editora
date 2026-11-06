@@ -652,8 +652,17 @@ final class MapCardLinks {
     }
 
     /**
+     * Whether {@code key}'s card is a result card still to be placed beside the card it was asked from. Unlike {@link
+     * #besideSource} it takes nothing: a check before the placement does not move the card from beside its source.
+     */
+    boolean placesBeside(Path key) {
+        return placeBeside.containsKey(key);
+    }
+
+    /**
      * Where a result card opened for a question goes: beside the card it was asked from, as a card goes beside its
-     * row's column. Null for any other card, and once the card has been placed.
+     * row's column. Null for any other card, and once the card has been placed: this takes it, so only the placement
+     * itself asks ({@link #placesBeside} only checks).
      */
     MapCards.@Nullable Site besideSource(Path key) {
         ProjectMapPreview from = placeBeside.remove(key);

@@ -2318,7 +2318,7 @@ final class MapCards {
             double parentHeight) {
         if (parentWidth <= 0
                 || parentHeight <= 0
-                || links.besideSource(path) != null
+                || links.placesBeside(path) // a result card goes beside its source: checked, not taken
                 || cardColumnCards.contains(preview)) {
             return null;
         }
@@ -2622,6 +2622,25 @@ final class MapCards {
                     double rightWidth = Math.min(fullWidth, parentWidth - margin - rightX);
                     cardSpot(spots, rightX, along, rightWidth, fullHeight, minimumWidth, 1);
                 }
+            }
+        }
+        // A result card around the card it was found from: beside it at any level that keeps it level with that card,
+        // and above or below it anywhere along it, past what already stands there — the result cards opened before it —
+        // so several opened together each find a place of their own beside it rather than over it.
+        if (linked != null) {
+            double afterX = column[0] + column[2] + gap;
+            double afterWidth = Math.min(fullWidth, parentWidth - margin - afterX);
+            double beforeWidth = Math.min(fullWidth, column[0] - gap - margin);
+            for (double along : cardSideLevels(row, fullHeight, 1, obstacles)) {
+                cardSpot(spots, afterX, along, afterWidth, fullHeight, minimumWidth, 1);
+                cardSpot(spots, column[0] - gap - beforeWidth, along, beforeWidth, fullHeight, minimumWidth, 1);
+            }
+            double belowY = column[1] + column[3] + gap;
+            double belowHeight = Math.min(fullHeight, parentHeight - margin - belowY);
+            double aboveHeight = Math.min(fullHeight, column[1] - gap - margin);
+            for (double along : cardSideLevels(row, fullWidth, 0, obstacles)) {
+                cardSpot(spots, along, belowY, fullWidth, belowHeight, minimumHeight, 0);
+                cardSpot(spots, along, column[1] - gap - aboveHeight, fullWidth, aboveHeight, minimumHeight, 0);
             }
         }
         // Any free part of the panel: the card against each obstacle's edges, and against the panel's.

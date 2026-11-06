@@ -44,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Map caller and reference cards no longer pile up.** With Focus new column on, Show Callers or References as
+  Cards opened every result card on one spot, at full width, instead of beside the card asked from. Each now opens
+  beside that card at the narrower result width, in a place of its own, stacking above or below the ones there.
 - **An open Problems window follows Next / Previous Problem.** The editor's problem-counter arrows (and F2 /
   Shift+F2) select the problem they step to in the Problems tool window, opening its folded header and scrolling
   it into view, while the focus stays in the editor — even when the last click was in the Problems window.

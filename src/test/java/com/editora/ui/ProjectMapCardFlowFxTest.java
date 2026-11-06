@@ -226,6 +226,86 @@ class ProjectMapCardFlowFxTest {
         }
     }
 
+    /**
+     * With "Focus new column" on, Show Callers as Cards still opens each caller's card beside the card it was asked
+     * from, narrower, each in a place of its own: the column rule only checks for a result card, it does not take the
+     * card's place beside its source away (the callers' rows are not on the map, so without it they all went to the
+     * same spot at the panel's top right); and when the room level with the card's middle is taken, the next one
+     * stacks beside it, above or below the ones there, rather than over the card.
+     */
+    @Test
+    void severalCallerCardsOpenTogetherEachInAPlaceOfItsOwnBesideTheCardAskedFrom() throws Exception {
+        Path root = Files.createDirectories(temp.resolve("project"));
+        Path app = Files.writeString(root.resolve("App.java"), APP);
+        Path use = Files.createDirectories(root.resolve("use")); // a folder the map does not open
+        List<MapCardLinks.Hit> hits = new java.util.ArrayList<>();
+        for (int index = 0; index < 4; index++) {
+            Path file = Files.writeString(
+                    use.resolve("Use" + index + ".java"),
+                    "class Use" + index + " {\n    int run" + index + "(App app) {\n        return app.add(" + index
+                            + ", 1);\n    }\n}\n");
+            hits.add(new MapCardLinks.Hit(file, 1, 8, 1, "run" + index));
+        }
+        Fixture map = openMap(root, ProjectMapView.FlowDirection.LEFT_TO_RIGHT, true);
+        try {
+            waitFor(() -> nodeBox(map, app) != null, "App.java's row");
+            FxTestSupport.runOnFx(() -> map.view()
+                    .setLinkSource((at, request, answer) -> javafx.application.Platform.runLater(() -> answer.accept(
+                            new MapCardLinks.Answer(hits, MapCardLinks.Via.SERVER, false, null, "add")))));
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    map.view(), "togglePreview", new Class<?>[] {ProjectMapModel.Entry.class}, entry(map, app)));
+            ProjectMapPreview source = waitForCard(map, app);
+            MapCards cards = FxTestSupport.field(map.view(), "cards");
+            FxTestSupport.runOnFx(() -> cards.showLinks(source, MapCardLinks.Kind.CALLERS, 5, 8));
+            waitFor(
+                    () -> {
+                        try {
+                            return FxTestSupport.callOnFx(() -> cards.previews.entrySet().stream()
+                                            .filter(entry -> entry.getKey().startsWith(use))
+                                            .filter(entry -> entry.getValue().getWidth() > 0)
+                                            .count()
+                                    == hits.size());
+                        } catch (Exception e) {
+                            throw new IllegalStateException(e);
+                        }
+                    },
+                    "a card for each caller");
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                List<double[]> callers = cards.previews.entrySet().stream()
+                        .filter(entry -> entry.getKey().startsWith(use))
+                        .map(entry -> MapCards.drawnBounds(entry.getValue()))
+                        .toList();
+                double[] from = MapCards.drawnBounds(source);
+                double narrow = MapCardLinks.CARD_WIDTH * from[2] / source.getWidth() + 1; // at the map's zoom
+                for (int i = 0; i < callers.size(); i++) {
+                    double[] a = callers.get(i);
+                    String where = "caller " + box(a) + " (card asked from " + box(from) + ", callers "
+                            + callers.stream()
+                                    .map(ProjectMapCardFlowFxTest::box)
+                                    .toList() + ")";
+                    assertTrue(!overlaps(a, from), where + " clear of the card asked from");
+                    assertTrue(a[2] <= narrow, where + " is a result card's width");
+                    for (int j = i + 1; j < callers.size(); j++) {
+                        double[] b = callers.get(j);
+                        assertTrue(!overlaps(a, b), where + " clear of caller " + box(b));
+                    }
+                }
+            });
+        } finally {
+            FxTestSupport.runOnFx(map.view()::dispose);
+        }
+    }
+
+    private static List<Double> box(double[] bounds) {
+        return List.of(bounds[0], bounds[1], bounds[2], bounds[3]);
+    }
+
+    /** Whether two {@code {x, y, w, h}} boxes share more than a pixel's edge. */
+    private static boolean overlaps(double[] a, double[] b) {
+        return a[0] < b[0] + b[2] - 1 && b[0] < a[0] + a[2] - 1 && a[1] < b[1] + b[3] - 1 && b[1] < a[1] + a[3] - 1;
+    }
+
     @ParameterizedTest
     @EnumSource(ProjectMapView.FlowDirection.class)
     void withNoRoomPastTheColumnTheCardTakesItsSideAndTheMapStays(ProjectMapView.FlowDirection flow) throws Exception {
