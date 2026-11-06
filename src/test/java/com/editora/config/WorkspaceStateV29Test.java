@@ -39,8 +39,9 @@ class WorkspaceStateV29Test {
         assertTrue(state.getProjectMapState().getCards().getFirst().isStructure());
         assertFalse(state.getProjectMapState().getCards().getFirst().isPinned(), "a v28 card is not pinned");
         assertFalse(state.isProjectMapShowRecentChanges(), "no recent-changes tint");
-        assertEquals(29, state.getSchemaVersion());
-        assertEquals(29, ConfigSchema.WORKSPACE.currentVersion());
+        assertTrue(state.getDebugAttachTargets().isEmpty(), "v30: no attach address remembered yet");
+        assertEquals(WorkspaceState.SCHEMA_VERSION, state.getSchemaVersion(), "upgraded to the current version");
+        assertEquals(WorkspaceState.SCHEMA_VERSION, ConfigSchema.WORKSPACE.currentVersion());
     }
 
     @Test

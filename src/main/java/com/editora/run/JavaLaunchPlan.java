@@ -32,8 +32,15 @@ public record JavaLaunchPlan(
         List<String> vmArgs,
         List<String> args) {
 
-    /** Which field of the configuration cannot be read, and the quote it leaves open. */
-    public record Problem(Field field, char quote) {}
+    /**
+     * Which field of the configuration cannot be read: the quote it leaves open, or ({@code envFile} not blank) the
+     * {@code @file} of its environment that cannot be read.
+     */
+    public record Problem(Field field, char quote, String envFile) {
+        public Problem(Field field, char quote) {
+            this(field, quote, "");
+        }
+    }
 
     /** The configuration fields a plan reads that can be mistyped. */
     public enum Field {
@@ -135,9 +142,11 @@ public record JavaLaunchPlan(
             return new Result(null, new Problem(Field.ARGS, e.quote()));
         }
         try {
-            configuredEnv = EnvVars.resolve(cfg.env(), in.inherited());
+            configuredEnv = EnvVars.resolve(cfg.env(), in.inherited(), cwd);
         } catch (ProgramArgs.UnclosedQuoteException e) {
             return new Result(null, new Problem(Field.ENV, e.quote()));
+        } catch (EnvVars.EnvFileException e) {
+            return new Result(null, new Problem(Field.ENV, ' ', e.file().toString()));
         }
         Map<String, String> env = new LinkedHashMap<>(jdkEnv);
         env.putAll(configuredEnv);

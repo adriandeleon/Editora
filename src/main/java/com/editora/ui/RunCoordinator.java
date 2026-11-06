@@ -493,9 +493,14 @@ final class RunCoordinator {
         }
         java.util.Map<String, String> env;
         try {
-            env = com.editora.run.EnvVars.resolve(cfg.env(), inheritedVariables(elsewhere));
+            env = com.editora.run.EnvVars.resolve(cfg.env(), inheritedVariables(elsewhere), cwd);
         } catch (ProgramArgs.UnclosedQuoteException e) {
             host.setStatus(tr("status.run.envUnclosedQuote", cfg.name(), String.valueOf(e.quote())));
+            ops.editConfiguration(cfg.name());
+            return;
+        } catch (com.editora.run.EnvVars.EnvFileException e) {
+            host.setStatus(
+                    tr("status.run.envFileUnreadable", cfg.name(), e.file().toString()));
             ops.editConfiguration(cfg.name());
             return;
         }
@@ -1738,9 +1743,11 @@ final class RunCoordinator {
         if (problem != null) { // a plan that failed always names its problem
             String quote = String.valueOf(problem.quote());
             host.setStatus(
-                    problem.field() == com.editora.run.JavaLaunchPlan.Field.ENV
-                            ? tr("status.run.envUnclosedQuote", cfg.name(), quote)
-                            : tr("status.run.argsUnclosedQuote", quote));
+                    !problem.envFile().isEmpty()
+                            ? tr("status.run.envFileUnreadable", cfg.name(), problem.envFile())
+                            : problem.field() == com.editora.run.JavaLaunchPlan.Field.ENV
+                                    ? tr("status.run.envUnclosedQuote", cfg.name(), quote)
+                                    : tr("status.run.argsUnclosedQuote", quote));
         }
         ops.editConfiguration(cfg.name());
     }

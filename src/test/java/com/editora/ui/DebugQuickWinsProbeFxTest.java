@@ -25,8 +25,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Opt-in probe against the installed JDT LS and java-debug adapter, in a real window: a temporary breakpoint is
- * removed when the program stops on it, the Variables tree marks the values a loop changed, and Pause suspends the
- * whole program — a worker thread's output stops until Continue. Run it with {@code ./mvnw test
+ * removed when the program stops on it, the Variables tree marks the values a loop changed, numbers come back in
+ * hexadecimal and back, Force Run to Cursor runs past a breakpoint, and Pause suspends the whole program — a worker thread's output stops until Continue. Run it with {@code ./mvnw test
  * -Dtest=DebugQuickWinsProbeFxTest -Dgroups=probe -Dlsp.probe=true}.
  */
 @Tag("probe")
@@ -57,6 +57,7 @@ class DebugQuickWinsProbeFxTest {
 
     private static final int TEMPORARY_LINE = 12; // total += i;
     private static final int SLEEP_LINE = 13; // Thread.sleep(100);
+    private static final int LONG_SLEEP_LINE = 15; // Thread.sleep(20000);
 
     @BeforeAll
     static void boot() throws Exception {
@@ -117,6 +118,34 @@ class DebugQuickWinsProbeFxTest {
             assertTrue(call(() -> changed(panel, "i")), "i went from 0 to 1");
             assertTrue(call(() -> changed(panel, "total")), "total went from 0 to 1");
             assertFalse(call(() -> changed(panel, "args")), "args did not change");
+
+            // Hexadecimal: java-debug answers the same values in the other format, and back.
+            FxTestSupport.runOnFx(() -> {
+                forgetTree(debug);
+                panel.toggleHexValues();
+            });
+            await(
+                    "total in hexadecimal",
+                    20,
+                    () -> call(() -> {
+                        TreeItem<DebugPanel.VarRow> row = row(debug.panel(), "total");
+                        return row != null && row.getValue().value().startsWith("0x");
+                    }));
+            FxTestSupport.runOnFx(() -> {
+                forgetTree(debug);
+                panel.toggleHexValues();
+            });
+            awaitRow(debug, "total", "1");
+
+            // Force Run to Cursor: past the breakpoint on the sleep line (three more passes) to the long sleep.
+            FxTestSupport.runOnFx(() -> {
+                forgetTree(debug);
+                b.getFocusedArea().moveTo(LONG_SLEEP_LINE, 0);
+                debug.debugForceRunToCursor();
+            });
+            awaitStop(dap, LONG_SLEEP_LINE, debug);
+            awaitRow(debug, "total", "10"); // 0 + 1 + 2 + 3 + 4: the loop ran to the end without stopping
+            assertTrue(call(() -> b.getBreakpointManager().isBreakpoint(SLEEP_LINE)), "the breakpoint is still there");
 
             // Pause while main sleeps: the worker's ticks must stop too.
             FxTestSupport.runOnFx(() -> b.toggleBreakpoint(SLEEP_LINE));
@@ -183,6 +212,12 @@ class DebugQuickWinsProbeFxTest {
     }
 
     private static TreeItem<DebugPanel.VarRow> staleRoot;
+
+    /** A row is looked for only in the tree shown after this (FX thread). */
+    private static void forgetTree(DebugCoordinator debug) {
+        TreeView<DebugPanel.VarRow> tree = FxTestSupport.field(debug.panel(), "variables");
+        staleRoot = tree.getRoot();
+    }
 
     private static TreeItem<DebugPanel.VarRow> row(DebugPanel panel, String name) {
         TreeView<DebugPanel.VarRow> tree = FxTestSupport.field(panel, "variables");

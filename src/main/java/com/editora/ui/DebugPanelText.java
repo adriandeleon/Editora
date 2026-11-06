@@ -174,6 +174,26 @@ final class DebugPanelText {
         return out.toString();
     }
 
+    /**
+     * Pure: the index typed into Go to Index, when it is one of a container's {@code size} elements: digits, maybe
+     * in brackets ({@code [1500]}) or with {@code _} / {@code ,} separators. Null otherwise.
+     */
+    static @Nullable Integer parseIndex(@Nullable String text, int size) {
+        if (text == null) {
+            return null;
+        }
+        String digits = text.strip()
+                .replaceAll("^\\[|\\]$", "")
+                .replace("_", "")
+                .replace(",", "")
+                .strip();
+        if (digits.isEmpty() || !digits.chars().allMatch(Character::isDigit) || digits.length() > 10) {
+            return null;
+        }
+        long index = Long.parseLong(digits);
+        return index < size ? (int) index : null;
+    }
+
     /** JVM housekeeping threads: every Java program has them, none is the user's (review C15). */
     private static final Set<String> JVM_THREADS = Set.of(
             "Reference Handler",

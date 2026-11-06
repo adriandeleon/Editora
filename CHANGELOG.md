@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Show numbers as hexadecimal while debugging.** *Debug: Show Numbers as Hexadecimal* (also in the Variables
+  context menu) shows integer values in hexadecimal in Variables, watches, hover and inline values, through the debug
+  protocol's `format.hex` (Java and Python honour it).
+- **Filter the Variables tree.** A filter field beside the Variables heading narrows each scope to the variables whose
+  name contains what you type; Esc clears it, Down moves into the tree. Watches are left alone.
+- **Go to Index in a long collection.** A list or array with more than 100 elements, once opened, has **Go to
+  Index…** in its context menu: its elements are shown from that index, 100 at a time as before.
+- **Force Run to Cursor.** Runs to the caret line with every breakpoint on the way ignored (IntelliJ keymap
+  Ctrl+Alt+F9, Emacs `C-c C-d S-u`, the Run ▸ Debugger menu and the editor menu while paused). Exception
+  breakpoints still stop the program, and the breakpoints are back at the next stop.
+- **Attach remembers where it attached.** Debug ▸ Attach to Running Program offers this project's last eight
+  addresses, most recent first, with "Another address…" last; *Debug: Reattach* attaches again to the last one
+  without asking (Emacs `C-c C-d S-a`).
+- **`.env` files in run configurations.** In a configuration's Environment field, an entry `@.env` (or any path,
+  quoted when it has spaces) loads that file — relative to the working directory — where it stands: later
+  `NAME=value` entries override it and can use its variables. A file that cannot be read stops the launch and says
+  which. Works for Run and Debug.
 - **Changed values are highlighted after a step.** In the Debug window's Variables tree, a value that differs from
   what the same frame showed at the previous stop is tinted and bold, as in VS Code, Visual Studio, Eclipse, NetBeans
   and IntelliJ. A new variable is not marked, and a new session starts with nothing to compare.

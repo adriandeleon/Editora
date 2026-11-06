@@ -151,6 +151,17 @@ final class DebugOpsHost implements DebugCoordinator.Ops {
     }
 
     @Override
+    public List<String> debugAttachTargets() {
+        return mc.config.getWorkspaceState().getDebugAttachTargets();
+    }
+
+    @Override
+    public void persistDebugAttachTargets(List<String> targets) {
+        mc.config.getWorkspaceState().setDebugAttachTargets(targets);
+        mc.config.save();
+    }
+
+    @Override
     public boolean debugBreakpointsMuted() {
         return mc.config.getWorkspaceState().isDebugBreakpointsMuted();
     }

@@ -192,6 +192,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
         /** Turn exception breakpoints on caught ({@code caught}) or uncaught exceptions on or off. */
         default void toggleExceptions(boolean caught) {}
+
+        /** Whether numbers are shown in hexadecimal. */
+        default boolean hexValues() {
+            return false;
+        }
+
+        /** Show numbers in hexadecimal ({@code on}) or decimal, and fetch the values shown again. */
+        default void setHexValues(boolean on) {}
     }
 
     private final Actions actions;
@@ -670,7 +678,26 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         VBox stackBox = new VBox(2, stackHeader, stack);
         VBox.setVgrow(stack, Priority.ALWAYS);
         Label varsHeader = sectionLabel("debugpanel.variables");
-        VBox varsBox = new VBox(2, varsHeader, variables);
+        varsFilter.setPromptText(tr("debugpanel.filterPrompt"));
+        varsFilter.setPrefColumnCount(12);
+        varsFilter.getStyleClass().addAll("debug-eval", "debug-vars-filter");
+        varsFilter.textProperty().addListener((o, was, now) -> applyFilter());
+        varsFilter.setOnKeyPressed(e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE
+                    && !varsFilter.getText().isEmpty()) {
+                varsFilter.clear();
+                e.consume();
+            } else if (e.getCode() == javafx.scene.input.KeyCode.DOWN) {
+                variables.requestFocus();
+                if (variables.getSelectionModel().isEmpty()) {
+                    variables.getSelectionModel().selectFirst();
+                }
+                e.consume();
+            }
+        });
+        HBox varsHeaderRow = new HBox(6, varsHeader, spacer(), varsFilter);
+        varsHeaderRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        VBox varsBox = new VBox(2, varsHeaderRow, variables);
         VBox.setVgrow(variables, Priority.ALWAYS);
 
         VirtualizedScrollPane<CodeArea> consoleScroll = new VirtualizedScrollPane<>(console);
@@ -918,8 +945,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      * global chords (e.g. C-x o to leave the panel) still work.
      */
     private void handleDebugKey(KeyEvent e) {
-        if (evalInput.isFocused() || e.getTarget() == evalInput) {
-            return; // typing an expression in the REPL
+        if (evalInput.isFocused() || e.getTarget() == evalInput || e.getTarget() instanceof TextField) {
+            return; // typing an expression in the REPL, or a filter for Variables
         }
         // Modified chords (incl. C-x o focus cycling) go to the global dispatcher; Stop and Restart need Shift.
         DebugPanelText.Control control = DebugPanelText.controlFor(
@@ -1351,6 +1378,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     /** Replaces the variables tree with the Watches node + the selected frame's scopes (each lazily
      *  expandable); watches re-evaluate against the newly selected frame. */
     public void setScopes(List<DapModels.ScopeInfo> scopes) {
+        scopeRows.clear();
         rememberTreeState();
         TreeItem<VarRow> old = variables.getRoot();
         TreeItem<VarRow> root = new TreeItem<>();
@@ -1585,10 +1613,29 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             }
             menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
         }
+        TreeItem<VarRow> selectedItem = variables.getSelectionModel().getSelectedItem();
+        if (offersGoToIndex(selectedItem)) {
+            javafx.scene.control.MenuItem goTo = new javafx.scene.control.MenuItem(tr("debugpanel.goToIndex"));
+            goTo.setOnAction(e -> goToIndexPrompt(selectedItem));
+            menu.getItems().addAll(goTo, new javafx.scene.control.SeparatorMenuItem());
+        }
         javafx.scene.control.MenuItem add = new javafx.scene.control.MenuItem(tr("debugpanel.addWatch"));
         add.setGraphic(Icons.newFile());
         add.setOnAction(e -> addWatchPrompt());
         menu.getItems().add(add);
+        javafx.scene.control.CheckMenuItem hex = new javafx.scene.control.CheckMenuItem(tr("debugpanel.hexValues"));
+        hex.setSelected(actions.hexValues());
+        hex.setOnAction(e -> toggleHexValues());
+        menu.getItems().addAll(new javafx.scene.control.SeparatorMenuItem(), hex);
+    }
+
+    /**
+     * Debug: Show Numbers as Hexadecimal — on or off. The values are fetched again; what this stop compares with is
+     * forgotten, or every number would read as changed.
+     */
+    public void toggleHexValues() {
+        valueChanges.reset();
+        actions.setHexValues(!actions.hexValues());
     }
 
     private void addWatchPrompt() {
@@ -1902,6 +1949,118 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 && valueChanges.changed(pathOf(item), row.value());
     }
 
+    // --- filter + go to index ------------------------------------------------------------------------
+
+    /** Typed text that narrows each scope to the variables whose name contains it (any case). */
+    private final TextField varsFilter = new TextField();
+
+    /** Every row loaded under each scope of the tree shown, filtered out or not (in load order). */
+    private final java.util.IdentityHashMap<TreeItem<VarRow>, List<TreeItem<VarRow>>> scopeRows =
+            new java.util.IdentityHashMap<>();
+
+    /** The Variables filter field (tests, and Find in the Debug window). */
+    TextField variablesFilter() {
+        return varsFilter;
+    }
+
+    private boolean filtering() {
+        return !varsFilter.getText().isBlank();
+    }
+
+    /** A scope of the tree shown whose rows the filter narrows: not Watches, whose rows the user chose. */
+    private boolean filterable(TreeItem<VarRow> item) {
+        VarRow row = item.getValue();
+        return row != null
+                && row.kind() == Kind.SCOPE
+                && item.getParent() == variables.getRoot()
+                && !item.getChildren().stream()
+                        .anyMatch(c -> c.getValue() != null && c.getValue().kind() == Kind.ADD_WATCH);
+    }
+
+    private boolean matchesFilter(TreeItem<VarRow> item) {
+        VarRow row = item.getValue();
+        String text = varsFilter.getText().strip().toLowerCase(java.util.Locale.ROOT);
+        return text.isEmpty()
+                || row != null && row.name().toLowerCase(java.util.Locale.ROOT).contains(text);
+    }
+
+    /** Shows, under each scope, the rows the filter lets through (all of them when it is empty). */
+    private void applyFilter() {
+        TreeItem<VarRow> root = variables.getRoot();
+        if (root == null) {
+            return;
+        }
+        for (TreeItem<VarRow> scope : root.getChildren()) {
+            List<TreeItem<VarRow>> all = scopeRows.get(scope);
+            if (all == null) {
+                continue; // not loaded yet: its rows are filtered as they arrive
+            }
+            var children = scope.getChildren();
+            TreeItem<VarRow> more =
+                    !children.isEmpty() && children.get(children.size() - 1) instanceof MoreItem m ? m : null;
+            List<TreeItem<VarRow>> shown = new java.util.ArrayList<>();
+            for (TreeItem<VarRow> row : all) {
+                if (matchesFilter(row)) {
+                    shown.add(row);
+                }
+            }
+            if (more != null) {
+                shown.add(more);
+            }
+            children.setAll(shown);
+        }
+    }
+
+    /** Whether {@code item} is a loaded, expanded container long enough for Go to Index. */
+    static boolean offersGoToIndex(@Nullable TreeItem<VarRow> item) {
+        if (item == null) {
+            return false;
+        }
+        VarRow row = item.getValue();
+        return row != null
+                && (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH)
+                && row.ref() > 0
+                && row.indexed() > DebugValues.PAGE_SIZE
+                && item.isExpanded()
+                && !item.getChildren().isEmpty();
+    }
+
+    /** Asks for an index of the selected container and shows its elements from there. */
+    private void goToIndexPrompt(TreeItem<VarRow> item) {
+        VarRow row = item.getValue();
+        OverlayInput.Prompt ask = prompt != null ? prompt : watchPrompt(); // a number, not an expression to complete
+        if (ask == null || row == null) {
+            return;
+        }
+        ask.show(
+                tr("debugpanel.goToIndexTitle", row.name()),
+                tr("debugpanel.goToIndexLabel", row.indexed() - 1),
+                "",
+                text -> {
+                    Integer index = DebugPanelText.parseIndex(text, row.indexed());
+                    if (index != null) {
+                        goToIndex(item, index);
+                    }
+                });
+    }
+
+    /**
+     * Shows {@code item}'s elements from {@code index} on, one page at a time as before; Go to Index 0 goes back to
+     * the start. Its named children (a list's fields) are left out of that view.
+     */
+    void goToIndex(TreeItem<VarRow> item, int index) {
+        VarRow row = item.getValue();
+        if (row == null || lastState != DapManager.State.SUSPENDED || index < 0 || index >= row.indexed()) {
+            return;
+        }
+        item.getChildren().clear();
+        if (DebugValues.fetchedByPage(row.indexed())) {
+            requestPage(item, row, index);
+        } else {
+            actions.loadChildren(row.ref(), all -> showPage(item, row, all, Math.min(index, all.size())));
+        }
+    }
+
     /** A tree item whose children are loaded on first expand (when {@code ref > 0}). */
     private TreeItem<VarRow> lazyItem(VarRow row) {
         TreeItem<VarRow> item = new TreeItem<>(row) {
@@ -1985,6 +2144,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private void append(TreeItem<VarRow> item, List<TreeItem<VarRow>> children, boolean select) {
         item.getChildren().addAll(children); // one change event, however many rows
         children.forEach(this::noteValue);
+        if (filterable(item)) {
+            scopeRows.computeIfAbsent(item, k -> new java.util.ArrayList<>()).addAll(children);
+            if (filtering()) {
+                item.getChildren().removeIf(c -> !(c instanceof MoreItem) && !matchesFilter(c));
+                children = children.stream().filter(this::matchesFilter).toList();
+            }
+        }
         children.forEach(this::restoreState);
         if (select && !children.isEmpty()) {
             variables.getSelectionModel().select(children.get(0));
@@ -2050,6 +2216,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             boolean selected = variables.getSelectionModel().getSelectedItem() == item;
             TreeItem<VarRow> loaded = lazyItem(variableRow(v, row.parentRef()));
             parent.getChildren().set(idx, loaded);
+            List<TreeItem<VarRow>> all = scopeRows.get(parent);
+            if (all != null && all.indexOf(item) >= 0) {
+                all.set(all.indexOf(item), loaded);
+            }
             noteValue(loaded);
             if (selected) {
                 variables.getSelectionModel().select(loaded);
