@@ -309,8 +309,11 @@ final class LspCoordinator {
     final JsFormatCoordinator jsFormat; // its Prettier/Biome for Format Document, and JS/TS actions on save (F)
     private final LibrarySources librarySourcesBar;
 
-    private final WorkspaceFileOperations workspaceFiles;
     private final Executor workspaceExecutor;
+    /** A server's workspace edits: the all-or-nothing apply pipeline, its outcome reports, interrupted edits. */
+    final LspWorkspaceEdits workspaceEdits;
+    /** Undo Last Refactoring and the Project tree's rename participant. */
+    final LspRefactoringUndo refactoringUndo;
 
     /** Diagnostics by file, <b>scoped to open files only</b> (a server publishes project-wide). */
     private final Map<Path, List<LspDiagnostic>> problems = new LinkedHashMap<>();
@@ -446,8 +449,51 @@ final class LspCoordinator {
         };
         this.pythonFormat = new PythonFormatCoordinator(formatHost, host::settings, ops::saveBuffer);
         this.xmlFormat = new XmlFormatCoordinator(formatHost); // XML without a formatting server (C8)
-        this.workspaceFiles = java.util.Objects.requireNonNull(workspaceFiles, "workspaceFiles");
+        WorkspaceFileOperations files = java.util.Objects.requireNonNull(workspaceFiles, "workspaceFiles");
         this.workspaceExecutor = java.util.Objects.requireNonNull(workspaceExecutor, "workspaceExecutor");
+        this.workspaceEdits = new LspWorkspaceEdits(
+                host,
+                lspManager,
+                ops,
+                new LspWorkspaceEdits.Host() {
+                    @Override
+                    public @Nullable Path lspPath(EditorBuffer buffer) {
+                        return LspCoordinator.this.lspPath(buffer);
+                    }
+
+                    @Override
+                    public @Nullable EditorBuffer bufferForLspPath(@Nullable Path path) {
+                        return LspCoordinator.this.bufferForLspPath(path);
+                    }
+
+                    @Override
+                    public void clearDiagnostics(@Nullable Path file) {
+                        LspCoordinator.this.clearDiagnostics(file);
+                    }
+
+                    @Override
+                    public void syncBufferWhenShown(EditorBuffer buffer) {
+                        LspCoordinator.this.syncBufferWhenShown(buffer);
+                    }
+
+                    @Override
+                    public void syncBufferNow(EditorBuffer buffer) {
+                        deferredLsp.remove(buffer);
+                        syncBuffer(buffer);
+                    }
+
+                    @Override
+                    public void recordEdit(
+                            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
+                            java.util.Set<EditorBuffer> touched,
+                            Map<EditorBuffer, String> before,
+                            java.util.Set<Path> created) {
+                        LspCoordinator.this.refactoringUndo.recordEdit(mapped, touched, before, created);
+                    }
+                },
+                files,
+                this.workspaceExecutor);
+        this.refactoringUndo = new LspRefactoringUndo(host, lspManager, ops, workspaceEdits);
         this.problemsActions = new ProblemsPanel.Actions() {
             @Override
             public void open(java.nio.file.Path file, int line, int col) {
@@ -532,8 +578,9 @@ final class LspCoordinator {
                 host::forEachBuffer,
                 this::lspPath,
                 this::syncBuffer); // keeps pom completion alive (E3, E21-E24)
-        lspManager.setApplyEditHandler(this::applyWorkspaceEditsConfirmed); // server quick-fix edits land here (#670)
-        lspManager.setOnEditBlocked(this::editBlocked);
+        lspManager.setApplyEditHandler(
+                workspaceEdits::applyWorkspaceEditsConfirmed); // server quick-fix edits land here (#670)
+        lspManager.setOnEditBlocked(workspaceEdits::editBlocked);
         lspManager.setOnRefreshRequested(this::refreshRequested);
         lspManager.setOpenDocumentDiagnosticsOnly(!projectWideProblems); // the Problems window's default scope
         lspManager.setOnDiagnosticsUnchanged(this::diagnosticsUnchanged);
@@ -1738,7 +1785,7 @@ final class LspCoordinator {
         applyXmlSettings();
         appliedProjectRoot = ops.lspProjectRoot();
         appliedProjectOverrides = projectOverrideSignature();
-        offerInterruptedEdits();
+        workspaceEdits.offerInterruptedEdits();
         if (on) {
             noticeWithheldOverrides();
         }
@@ -2349,7 +2396,7 @@ final class LspCoordinator {
      * previous project's (or the global) command, and the HTML servers get the project's {@code html} object.
      */
     private boolean overridesReapplied() {
-        offerInterruptedEdits(); // a window learns its project late; asks once per root
+        workspaceEdits.offerInterruptedEdits(); // a window learns its project late; asks once per root
         Path root = ops.lspProjectRoot();
         if (java.util.Objects.equals(root, appliedProjectRoot)) {
             return false;
@@ -2404,7 +2451,7 @@ final class LspCoordinator {
         eslint.settingsChanged(); // ESLint switched, or a folder trusted: checked again
         xmlTrust.trustChanged(); // a pom moves to or off lemminx-maven with its folder's trust (E1)
         appliedProjectRoot = ops.lspProjectRoot();
-        offerInterruptedEdits();
+        workspaceEdits.offerInterruptedEdits();
         if (ops.lspFeatureEnabled() && !projectOverrideSignature().equals(appliedProjectOverrides)) {
             applySupport();
         }
@@ -4404,7 +4451,7 @@ final class LspCoordinator {
             // exception subclass — still has constructors to generate.
             java.util.function.Consumer<List<JdtlsGenerate.Candidate>> withConstructors = superChosen -> {
                 java.util.function.Consumer<List<JdtlsGenerate.Candidate>> apply = chosen -> {
-                    beginReportedEdit();
+                    workspaceEdits.beginReportedEdit();
                     com.google.gson.JsonElement status = plan.status(); // none: JsonNull, read as no constructors
                     lspManager.jdtlsGenerateApply(
                             path,
@@ -4414,7 +4461,7 @@ final class LspCoordinator {
                             item.expectedDocuments(),
                             chosen,
                             superChosen,
-                            ok -> reportEdit(
+                            ok -> workspaceEdits.reportEdit(
                                     ok,
                                     tr("status.lsp.codeActionApplied", bareTitle(item.title())),
                                     tr("status.lsp.codeActionFailed", item.title())));
@@ -4479,13 +4526,13 @@ final class LspCoordinator {
             String method,
             Object params,
             java.util.function.@Nullable Consumer<JdtlsRefactor.RenameAt> onRename) {
-        beginReportedEdit();
+        workspaceEdits.beginReportedEdit();
         lspManager.jdtlsApplyEdit(path, method, params, item.expectedDocuments(), null, onRename, (ok, refused) -> {
             if (!ok && refused != null) {
                 host.setError(refused); // the server's own reason beats "could not apply"
                 return;
             }
-            reportEdit(
+            workspaceEdits.reportEdit(
                     ok,
                     tr("status.lsp.codeActionApplied", bareTitle(item.title())),
                     tr("status.lsp.codeActionFailed", item.title()));
@@ -4652,7 +4699,7 @@ final class LspCoordinator {
     /** As above; {@code onApplied} runs once the move is applied. */
     private void applyJdtlsMove(
             Path path, LspManager.CodeActionItem item, com.google.gson.JsonObject params, Runnable onApplied) {
-        beginReportedEdit();
+        workspaceEdits.beginReportedEdit();
         lspManager.jdtlsApplyEdit(
                 path,
                 "java/move",
@@ -4675,7 +4722,7 @@ final class LspCoordinator {
                     if (ok) {
                         onApplied.run();
                     }
-                    reportEdit(
+                    workspaceEdits.reportEdit(
                             ok,
                             tr("status.lsp.codeActionApplied", bareTitle(item.title())),
                             tr("status.lsp.codeActionFailed", item.title()));
@@ -4780,12 +4827,8 @@ final class LspCoordinator {
             lspManager.notifyWatchedFiles(List.of(new LspManager.WatchedFile(folder, LspManager.WatchedKind.CREATED)));
             com.google.gson.JsonObject params = JdtlsRefactor.moveParams("moveResource", source, null, null);
             params.addProperty("destination", folder.toUri().toString());
-            AppliedEdit before = lastApplied;
-            applyJdtlsMove(path, item, params, () -> {
-                if (lastApplied != null && lastApplied != before) {
-                    newPackageFolders.put(lastApplied, new Path[] {folder, root}); // undo takes the folder back too
-                }
-            });
+            LspRefactoringUndo.AppliedEdit before = refactoringUndo.lastAppliedEdit();
+            applyJdtlsMove(path, item, params, () -> refactoringUndo.newPackageFolder(before, folder, root));
         });
     }
 
@@ -4924,7 +4967,7 @@ final class LspCoordinator {
                     host.setError(tr("status.lsp.refactorBadSignature"));
                     return;
                 }
-                beginReportedEdit();
+                workspaceEdits.beginReportedEdit();
                 lspManager.jdtlsApplyEdit(
                         path,
                         "java/getRefactorEdit",
@@ -4938,7 +4981,7 @@ final class LspCoordinator {
                                 host.setError(why);
                                 return;
                             }
-                            reportEdit(
+                            workspaceEdits.reportEdit(
                                     ok,
                                     tr("status.lsp.codeActionApplied", bareTitle(item.title())),
                                     tr("status.lsp.codeActionFailed", item.title()));
@@ -4956,7 +4999,7 @@ final class LspCoordinator {
                     com.editora.lsp.WorkspaceEditMapper.Mapped,
                     java.util.function.Consumer<com.editora.lsp.WorkspaceEditMapper.Mapped>>
             refactorPreview(String title) {
-        return (mapped, apply) -> withDiskView(WorkspaceEditFiles.resourcePaths(mapped), files -> {
+        return (mapped, apply) -> workspaceEdits.withDiskView(WorkspaceEditFiles.resourcePaths(mapped), files -> {
             if (!com.editora.lsp.RenamePreview.worthPreviewing(mapped, WorkspaceEditFiles.workspaceDisk(files))) {
                 apply.accept(mapped);
                 return;
@@ -4984,7 +5027,11 @@ final class LspCoordinator {
                                 "filter is null only for a null edit");
                         List<Path> covered = com.editora.lsp.RenamePreview.excludedButDeleted(filtered, kept, listed);
                         if (!covered.isEmpty()) {
-                            editRefused(covered, tr("status.lsp.renameDeleteCoversKept", blockedFileNames(covered)));
+                            workspaceEdits.editRefused(
+                                    covered,
+                                    tr(
+                                            "status.lsp.renameDeleteCoversKept",
+                                            LspWorkspaceEdits.blockedFileNames(covered)));
                             return;
                         }
                         apply.accept(filtered);
@@ -7101,11 +7148,11 @@ final class LspCoordinator {
 
     /** Applies a code action and says how it went (the popup's pick, or XML: Generate Grammar…'s). */
     void applyCodeActionItem(Path path, LspManager.CodeActionItem applied) {
-        beginReportedEdit();
+        workspaceEdits.beginReportedEdit();
         lspManager.applyCodeAction(
                 path,
                 applied,
-                ok -> reportEdit(
+                ok -> workspaceEdits.reportEdit(
                         ok,
                         tr("status.lsp.codeActionApplied", bareTitle(applied.title())),
                         lspManager.lastCodeActionFailure() != null // the server's reason when it gave one (BN9)
@@ -7189,10 +7236,10 @@ final class LspCoordinator {
                 return;
             }
             host.setStatus(tr("status.lsp.renaming"));
-            beginReportedEdit();
+            workspaceEdits.beginReportedEdit();
             lspManager.previewRename(path, line, col, name, (mapped, why) -> {
                 if (mapped == null) { // with the server's reason when it gave one (re-review BN9)
-                    reportEdit(
+                    workspaceEdits.reportEdit(
                             false,
                             "",
                             why == null || why.isBlank()
@@ -7200,7 +7247,7 @@ final class LspCoordinator {
                                     : tr("status.lsp.renameFailedWhy", name, why));
                     return;
                 }
-                withDiskView(WorkspaceEditFiles.resourcePaths(mapped), files -> {
+                workspaceEdits.withDiskView(WorkspaceEditFiles.resourcePaths(mapped), files -> {
                     if (!com.editora.lsp.RenamePreview.worthPreviewing(
                             mapped, WorkspaceEditFiles.workspaceDisk(files))) {
                         // Confined to this file: visible on screen and one undo away, so a confirmation step
@@ -7286,43 +7333,21 @@ final class LspCoordinator {
                 com.editora.lsp.RenamePreview.filter(mapped, keep, listed), "filter is null only for a null edit");
         List<Path> covered = com.editora.lsp.RenamePreview.excludedButDeleted(filtered, keep, listed);
         if (!covered.isEmpty()) {
-            beginReportedEdit();
-            editRefused(covered, tr("status.lsp.renameDeleteCoversKept", blockedFileNames(covered)));
-            reportEdit(false, "", tr("status.lsp.renameFailed", name));
+            workspaceEdits.beginReportedEdit();
+            workspaceEdits.editRefused(
+                    covered, tr("status.lsp.renameDeleteCoversKept", LspWorkspaceEdits.blockedFileNames(covered)));
+            workspaceEdits.reportEdit(false, "", tr("status.lsp.renameFailed", name));
             return;
         }
         applyRename(filtered, name);
     }
 
-    /** The filesystem as the workspace-edit transaction sees it, for classifying destructive operations. */
-    private com.editora.lsp.WorkspaceEditHazards.Disk workspaceDisk() {
-        return WorkspaceEditFiles.workspaceDisk(workspaceFiles);
-    }
-
-    /**
-     * Runs {@code next} on the FX thread with a view of the disk for {@code paths}: the live disk when they are
-     * all local (a stat there is cheap, and the check stays in this FX turn), else a {@link WorkspaceFileSnapshot}
-     * taken on the workspace worker first — on a remote host every stat is a round trip, and a rename touching
-     * a few dozen files froze the window for the length of them.
-     */
-    private void withDiskView(
-            java.util.Collection<Path> paths, java.util.function.Consumer<WorkspaceFileOperations> next) {
-        if (!WorkspaceFileSnapshot.anyRemote(paths)) {
-            next.accept(workspaceFiles);
-            return;
-        }
-        workspaceExecutor.execute(() -> {
-            WorkspaceFileSnapshot snapshot = WorkspaceFileSnapshot.of(workspaceFiles, paths);
-            Platform.runLater(() -> next.accept(snapshot));
-        });
-    }
-
     /** Applies a (possibly filtered) rename edit and reports the outcome. */
     private void applyRename(com.editora.lsp.WorkspaceEditMapper.Mapped mapped, String name) {
-        beginReportedEdit();
+        workspaceEdits.beginReportedEdit();
         java.util.Set<String> errorsBefore = errorsIn(mapped);
-        applyWorkspaceEditsAsync(mapped, ok -> {
-            reportEdit(ok, tr("status.lsp.renamed", name), tr("status.lsp.renameFailed", name));
+        workspaceEdits.applyWorkspaceEditsAsync(mapped, ok -> {
+            workspaceEdits.reportEdit(ok, tr("status.lsp.renamed", name), tr("status.lsp.renameFailed", name));
             if (ok) {
                 checkRenameConflicts(mapped, errorsBefore);
             }
@@ -7378,255 +7403,6 @@ final class LspCoordinator {
         return out;
     }
 
-    /** The files that made the workspace edit in progress unsafe to apply; consumed by {@link #reportEdit}. */
-    private List<Path> blockedTargets = List.of();
-
-    /**
-     * Starts an operation whose outcome {@link #reportEdit} will announce. The blocked-files note belongs to
-     * one operation: a server-initiated edit that was blocked earlier has no {@code reportEdit} of its own
-     * to consume it, and left standing it silenced the failure message of the next, unrelated operation.
-     */
-    void beginReportedEdit() {
-        blockedTargets = List.of();
-    }
-
-    /**
-     * A workspace edit was refused because of specific files — changed since the request, unsaved, or not
-     * loaded — rather than for a reason nobody can act on. Names them, so "Rename failed" is not all the
-     * user gets when the fix is to save or reload one file.
-     */
-    void editBlocked(List<Path> files) {
-        if (files == null || files.isEmpty()) {
-            return;
-        }
-        blockedTargets = List.copyOf(files);
-        host.setError(tr("status.lsp.editBlocked", blockedFileNames(files)));
-    }
-
-    /** As {@link #editBlocked}, for a refusal with a reason of its own to give. */
-    private void editRefused(List<Path> files, String message) {
-        blockedTargets = files == null || files.isEmpty() ? List.of(Path.of("")) : List.copyOf(files);
-        host.setError(message);
-    }
-
-    /** Pure: up to three file names, then a count of the rest. */
-    static String blockedFileNames(List<Path> files) {
-        StringBuilder names = new StringBuilder();
-        int shown = Math.min(3, files.size());
-        for (int i = 0; i < shown; i++) {
-            Path name = files.get(i).getFileName();
-            names.append(i == 0 ? "" : ", ").append(name == null ? files.get(i) : name);
-        }
-        if (files.size() > shown) {
-            names.append(" +").append(files.size() - shown);
-        }
-        return names.toString();
-    }
-
-    /** Reports an edit's outcome. A failure whose blocking files were already named keeps that message. */
-    void reportEdit(boolean ok, String success, String failure) {
-        boolean named = !blockedTargets.isEmpty();
-        blockedTargets = List.of();
-        if (ok) {
-            host.setStatus(success);
-        } else if (!named) {
-            host.setStatus(failure);
-        }
-    }
-
-    /**
-     * Whether an edit to a file the server did not have open may be applied to {@code buffer}. The server
-     * computed it from the file on disk, so three things must hold: no window has unsaved changes to the
-     * file, the buffer mirrors the file as it is on disk now (its snapshot was taken by a load or a save and
-     * still matches), and the file has not been modified since the request was sent. Anything that cannot
-     * be shown refuses the edit.
-     */
-    private boolean diskPreimageHolds(
-            com.editora.lsp.WorkspaceEditMapper.FileEdit edit,
-            EditorBuffer buffer,
-            Path onDiskAt,
-            WorkspaceFileOperations files) {
-        Long since = edit.diskPreimageAt();
-        if (since == null) {
-            return true;
-        }
-        if (buffer.isDirty() || ops.buffersAtOrUnder(edit.file()).stream().anyMatch(EditorBuffer::isDirty)) {
-            return false;
-        }
-        try {
-            WorkspaceFileIdentity onDisk =
-                    files.identity(onDiskAt.toAbsolutePath().normalize());
-            EditorBuffer.DiskSnapshot loaded = buffer.diskSnapshot();
-            // The content fingerprint is recorded only by a load or a save — the two moments the buffer's
-            // text is known to be the file's. Answering "changed on disk" with Keep re-baselines the time
-            // and size without either, leaving a clean buffer that holds different text from the file; the
-            // snapshot then matched the disk and the server's edit landed at the wrong offsets.
-            return loaded.modifiedMillis() >= 0
-                    && loaded.fingerprint() != null
-                    && onDisk != null
-                    && !loaded.differsFrom(onDisk.lastModifiedMillis(), onDisk.size())
-                    && com.editora.lsp.WorkspaceEditMapper.unchangedSince(onDiskAt, onDisk.lastModifiedMillis(), since);
-        } catch (java.io.IOException | RuntimeException failure) {
-            return false;
-        }
-    }
-
-    /**
-     * The disk-preimage targets of {@code mapped} that no longer hold, for {@link #editBlocked}.
-     *
-     * <p>{@code movedTo} is where the staged renames have <b>already put</b> each rename source (normalized
-     * source → destination; empty before staging). A target the same edit also moves is no longer at its
-     * old path, so it is examined where it now is: a move keeps size and modification time, which is all
-     * the comparison reads. Looking at the old path instead refused every class rename requested from a
-     * usage site, because the declaring file had just been moved by this very edit.
-     *
-     * <p>{@code skipUnloaded} leaves out targets with no buffer yet — the files this edit creates, which are
-     * loaded only after staging and are checked by the pass that follows it.
-     */
-    private List<Path> staleDiskTargets(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
-            java.util.List<EditorBuffer> buffers,
-            Map<Path, Path> movedTo,
-            boolean skipUnloaded,
-            WorkspaceFileOperations files) {
-        List<Path> stale = new java.util.ArrayList<>();
-        for (int i = 0; i < mapped.edits().size() && i < buffers.size(); i++) {
-            var edit = mapped.edits().get(i);
-            EditorBuffer buffer = buffers.get(i);
-            if (edit.diskPreimageAt() == null || (buffer == null && skipUnloaded)) {
-                continue;
-            }
-            Path onDiskAt = movedTo.getOrDefault(edit.file().toAbsolutePath().normalize(), edit.file());
-            if (buffer == null || !diskPreimageHolds(edit, buffer, onDiskAt, files)) {
-                stale.add(edit.file());
-            }
-        }
-        return stale;
-    }
-
-    /** Normalized rename source → destination for the renames that are staged on disk. */
-    private static Map<Path, Path> movedTo(java.util.List<StagedRename> renames) {
-        Map<Path, Path> moved = new java.util.HashMap<>();
-        for (StagedRename item : renames) {
-            moved.put(
-                    item.rename().from().toAbsolutePath().normalize(),
-                    item.rename().to().toAbsolutePath().normalize());
-        }
-        return moved;
-    }
-
-    /**
-     * The open buffer for a path a workspace edit is about to move or delete, with the buffer's <b>own</b>
-     * path — resolved while the file still exists. Afterwards the server's spelling of the old path can no
-     * longer be canonicalised, so under a symlinked project (jdtls answers with the resolved path) looking the
-     * tab up again by that spelling finds nothing and the tab is left behind on a file that is gone.
-     */
-    private record OpenTarget(EditorBuffer buffer, Path path) {}
-
-    private Map<Path, OpenTarget> openTargets(java.util.stream.Stream<Path> files) {
-        Map<Path, OpenTarget> open = new java.util.HashMap<>();
-        files.forEach(file -> {
-            EditorBuffer buffer = bufferForLspPath(file);
-            Path path = buffer == null ? null : lspPath(buffer);
-            if (buffer != null && path != null) {
-                open.put(file.toAbsolutePath().normalize(), new OpenTarget(buffer, path));
-            }
-        });
-        return open;
-    }
-
-    private Map<Path, OpenTarget> openResourceTargets(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
-        return openTargets(java.util.stream.Stream.concat(
-                mapped.renames().stream().map(com.editora.lsp.WorkspaceEditMapper.FileRename::from),
-                mapped.deletes().stream().map(deletion -> deletion.file())));
-    }
-
-    /**
-     * Pure: {@code serverTo} written the way the tab spells its path. {@code tabFrom} and {@code serverFrom}
-     * name the same file; the trailing names they share are stripped to find where the two spellings part
-     * ({@code ~/dev/app} against {@code /mnt/data/dev/app}), and a destination under the server's side is
-     * re-rooted on the tab's, so the renamed tab stays under the project and LSP root it was opened in.
-     */
-    static Path inSpellingOf(Path tabFrom, Path serverFrom, Path serverTo) {
-        Path tab = tabFrom.toAbsolutePath().normalize();
-        Path server = serverFrom.toAbsolutePath().normalize();
-        Path to = serverTo.toAbsolutePath().normalize();
-        if (tab.equals(server)) {
-            return serverTo;
-        }
-        while (tab.getParent() != null
-                && server.getParent() != null
-                && java.util.Objects.equals(tab.getFileName(), server.getFileName())) {
-            tab = tab.getParent();
-            server = server.getParent();
-        }
-        return to.startsWith(server) ? tab.resolve(server.relativize(to).toString()) : serverTo;
-    }
-
-    /** Whether every moved-or-deleted file that had a tab still has that same tab, at the same path. */
-    private boolean openTargetsCurrent(Map<Path, OpenTarget> targets) {
-        for (OpenTarget target : targets.values()) {
-            EditorBuffer buffer = target.buffer();
-            if (buffer.isDisposed()
-                    || !target.path().equals(lspPath(buffer))
-                    || bufferForLspPath(target.path()) != buffer) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * Moves each renamed file's open tab to the new path, by buffer identity, and retires the old LSP
-     * document under the path it was opened with. Returns the tabs that did <b>not</b> follow their file —
-     * the caller must not report success for those.
-     */
-    private List<Path> remapRenamedBuffers(java.util.List<StagedRename> renames, Map<Path, OpenTarget> targets) {
-        List<Path> orphaned = new java.util.ArrayList<>();
-        for (StagedRename item : renames) {
-            var rename = item.rename();
-            OpenTarget target = targets.get(rename.from().toAbsolutePath().normalize());
-            EditorBuffer open = target == null ? null : target.buffer();
-            Path from = target == null ? rename.from() : target.path();
-            Path to = target == null ? rename.to() : inSpellingOf(from, rename.from(), rename.to());
-            if (lspManager.isManaged(from)) {
-                lspManager.closeDocument(from); // didClose the OLD uri before the buffer re-opens as new
-            }
-            clearDiagnostics(from);
-            clearDiagnostics(rename.from());
-            ops.fileRenamed(from, to); // remaps the open buffer's path + tab + session state
-            if (open != null) {
-                if (from.equals(lspPath(open))) {
-                    orphaned.add(from);
-                } else {
-                    syncBufferWhenShown(open); // re-open the document under its NEW uri
-                }
-            }
-        }
-        return orphaned;
-    }
-
-    /** Closes the LSP document and the tab of each deleted file, under the path the tab was opened with. */
-    private void retireDeleted(java.util.List<StagedDelete> deletes, Map<Path, OpenTarget> targets) {
-        for (StagedDelete item : deletes) {
-            Path file = item.operation().file();
-            OpenTarget target = targets.get(file.toAbsolutePath().normalize());
-            Path opened = target == null ? file : target.path();
-            if (lspManager.isManaged(opened)) {
-                lspManager.closeDocument(opened);
-            }
-            clearDiagnostics(opened);
-            clearDiagnostics(file);
-            ops.fileDeleted(opened);
-        }
-    }
-
-    /** A file was moved but its open tab could not follow: say which, instead of reporting success. */
-    private void tabsNotRemapped(List<Path> files) {
-        blockedTargets = List.copyOf(files);
-        host.setError(tr("status.lsp.editTabNotRemapped", blockedFileNames(files)));
-    }
-
     /** The document text inside a 0-based LSP range (single-line expected), or "" when out of bounds. */
     private static String textInRange(EditorBuffer b, int sl, int sc, int el, int ec) {
         try {
@@ -7660,6 +7436,83 @@ final class LspCoordinator {
         return wordAt(area.getParagraph(area.getCurrentParagraph()).getText(), area.getCaretColumn());
     }
 
+    // --- workspace edits and Undo Last Refactoring: LspWorkspaceEdits, LspRefactoringUndo --------------------
+
+    /** As {@link LspWorkspaceEdits#applyWorkspaceEditsConfirmed}: the applier for edits nobody previewed. */
+    void applyWorkspaceEditsConfirmed(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> done) {
+        workspaceEdits.applyWorkspaceEditsConfirmed(mapped, done);
+    }
+
+    /** As {@link LspWorkspaceEdits#applyWorkspaceEditsAsync}: the production workspace-edit path. */
+    void applyWorkspaceEditsAsync(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> whenDone) {
+        workspaceEdits.applyWorkspaceEditsAsync(mapped, whenDone);
+    }
+
+    /** As {@link LspWorkspaceEdits#applyWorkspaceEdits}: the synchronous path the tests drive. */
+    boolean applyWorkspaceEdits(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
+        return workspaceEdits.applyWorkspaceEdits(mapped);
+    }
+
+    void beginReportedEdit() {
+        workspaceEdits.beginReportedEdit();
+    }
+
+    void editBlocked(List<Path> files) {
+        workspaceEdits.editBlocked(files);
+    }
+
+    void reportEdit(boolean ok, String success, String failure) {
+        workspaceEdits.reportEdit(ok, success, failure);
+    }
+
+    static String blockedFileNames(List<Path> files) {
+        return LspWorkspaceEdits.blockedFileNames(files);
+    }
+
+    static Path inSpellingOf(Path tabFrom, Path serverFrom, Path serverTo) {
+        return LspWorkspaceEdits.inSpellingOf(tabFrom, serverFrom, serverTo);
+    }
+
+    /** Once per opened project, offers to put back a workspace edit a crash interrupted. */
+    void offerInterruptedEdits() {
+        workspaceEdits.offerInterruptedEdits();
+    }
+
+    /** The edit Undo Refactoring would revert (tests). */
+    LspRefactoringUndo.@Nullable AppliedEdit lastAppliedEdit() {
+        return refactoringUndo.lastAppliedEdit();
+    }
+
+    static LspRefactoringUndo.AppliedEdit merged(java.util.List<LspRefactoringUndo.AppliedEdit> edits) {
+        return LspRefactoringUndo.merged(edits);
+    }
+
+    static org.eclipse.lsp4j.Position endOf(String text) {
+        return LspRefactoringUndo.endOf(text);
+    }
+
+    void willRenameFile(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
+        refactoringUndo.willRenameFile(from, to, proceed);
+    }
+
+    ProjectPanel.RenameParticipant treeParticipant() {
+        return refactoringUndo.treeParticipant();
+    }
+
+    void setOnTreeMoveUndone(Runnable action) {
+        refactoringUndo.setOnTreeMoveUndone(action);
+    }
+
+    boolean offerRefactoringUndo(@Nullable EditorBuffer buffer) {
+        return refactoringUndo.offerRefactoringUndo(buffer);
+    }
+
+    void undoRefactoring() {
+        refactoringUndo.undoRefactoring();
+    }
+
     /** Atomically retires an old URI and registers the buffer under its current path. */
     void documentPathChanged(EditorBuffer buffer, @Nullable Path oldPath, boolean oldAlreadyClosed) {
         if (oldPath != null) {
@@ -7670,1782 +7523,6 @@ final class LspCoordinator {
         }
         if (buffer != null && !buffer.isDisposed() && lspPath(buffer) != null) {
             syncBufferWhenShown(buffer);
-        }
-    }
-
-    /** Asks before an unpreviewed edit destroys something on disk; a field so a test can answer. */
-    java.util.function.Predicate<List<com.editora.lsp.WorkspaceEditHazards.Hazard>> destructiveEditConfirmer =
-            this::confirmDestructiveEdit;
-
-    private boolean confirmDestructiveEdit(List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards) {
-        StringBuilder lines = new StringBuilder();
-        for (var hazard : hazards) {
-            lines.append(lines.isEmpty() ? "" : "\n")
-                    .append(tr(
-                            hazard.kind() == com.editora.lsp.WorkspaceEditHazards.Kind.DELETE_DIRECTORY
-                                    ? "dialog.lsp.destructiveEdit.deleteFolder"
-                                    : "dialog.lsp.destructiveEdit.overwrite",
-                            ops.homeCollapsed(hazard.path().toString())));
-        }
-        javafx.scene.control.ButtonType apply = new javafx.scene.control.ButtonType(
-                tr("dialog.lsp.destructiveEdit.apply"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.WARNING,
-                lines.toString(),
-                javafx.scene.control.ButtonType.CANCEL,
-                apply);
-        confirm.initOwner(host.window());
-        confirm.setTitle(tr("dialog.lsp.destructiveEdit.title"));
-        confirm.setHeaderText(tr("dialog.lsp.destructiveEdit.header"));
-        confirm.getDialogPane().setMinWidth(520);
-        // Enter must not confirm a deletion: Cancel is the default button.
-        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(apply)).setDefaultButton(false);
-        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(javafx.scene.control.ButtonType.CANCEL))
-                .setDefaultButton(true);
-        return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == apply;
-    }
-
-    /**
-     * The applier for edits nobody previewed — a code action, a refactoring command, a server's
-     * {@code workspace/applyEdit}. One that deletes a folder with its contents or replaces an existing
-     * file is applied only after the user has seen the paths and agreed (a rename shows them as preview
-     * rows instead).
-     */
-    void applyWorkspaceEditsConfirmed(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> done) {
-        withDiskView(WorkspaceEditFiles.resourcePaths(mapped), files -> {
-            List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards =
-                    com.editora.lsp.WorkspaceEditHazards.needingConfirmation(
-                            mapped, WorkspaceEditFiles.workspaceDisk(files));
-            if (!hazards.isEmpty() && !destructiveEditConfirmer.test(hazards)) {
-                editRefused(
-                        hazards.stream()
-                                .map(com.editora.lsp.WorkspaceEditHazards.Hazard::path)
-                                .toList(),
-                        tr("status.lsp.destructiveEditDeclined"));
-                done.accept(false);
-                return;
-            }
-            applyWorkspaceEditsAsync(mapped, done);
-        });
-    }
-
-    /** Most files of one deleted folder that are copied to Local History; a larger folder is not walked further. */
-    static final int MAX_CAPTURED_PER_EDIT = 200;
-
-    /**
-     * Copies what the edit is about to delete or replace into Local History, then continues on the FX
-     * thread with whether every copy was made. Runs before staging, while each file is still at the path
-     * its history belongs to. A folder is listed off the FX thread; an edit with nothing to lose continues
-     * at once.
-     */
-    private void captureBeforeDestruction(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> done) {
-        withDiskView(WorkspaceEditFiles.resourcePaths(mapped), disk -> captureBeforeDestruction(mapped, disk, done));
-    }
-
-    private void captureBeforeDestruction(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
-            WorkspaceFileOperations disk,
-            java.util.function.Consumer<Boolean> done) {
-        List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards =
-                com.editora.lsp.WorkspaceEditHazards.of(mapped, WorkspaceEditFiles.workspaceDisk(disk));
-        if (hazards.isEmpty()) {
-            done.accept(true);
-            return;
-        }
-        boolean folders =
-                hazards.stream().anyMatch(h -> h.kind() == com.editora.lsp.WorkspaceEditHazards.Kind.DELETE_DIRECTORY);
-        if (!folders) {
-            captureEach(
-                    hazards.stream()
-                            .map(com.editora.lsp.WorkspaceEditHazards.Hazard::path)
-                            .toList(),
-                    0,
-                    done);
-            return;
-        }
-        workspaceExecutor.execute(() -> {
-            List<Path> files = new java.util.ArrayList<>();
-            for (var hazard : hazards) {
-                if (hazard.kind() != com.editora.lsp.WorkspaceEditHazards.Kind.DELETE_DIRECTORY) {
-                    files.add(hazard.path());
-                    continue;
-                }
-                try {
-                    for (Path path : workspaceFiles.walk(hazard.path())) {
-                        if (files.size() >= MAX_CAPTURED_PER_EDIT) {
-                            break;
-                        }
-                        if (workspaceFiles.isRegularFile(path)) {
-                            files.add(path);
-                        }
-                    }
-                } catch (java.io.IOException | RuntimeException unreadable) {
-                    // Staging will fail on the same folder and refuse the edit; nothing to copy from here.
-                }
-            }
-            Platform.runLater(() -> captureEach(files, 0, done));
-        });
-    }
-
-    private void captureEach(List<Path> files, int index, java.util.function.Consumer<Boolean> done) {
-        if (index >= files.size()) {
-            done.accept(true);
-            return;
-        }
-        Path file = files.get(index);
-        ops.captureBeforeDestruction(file, kept -> {
-            if (!kept) {
-                editRefused(List.of(file), tr("status.lsp.editHistoryFailed", blockedFileNames(List.of(file))));
-                done.accept(false);
-                return;
-            }
-            captureEach(files, index + 1, done);
-        });
-    }
-
-    /**
-     * Production workspace-edit path. Unopened files are decoded through the host's background loader and
-     * create/move/delete operations run on a virtual thread; only buffer validation, RichTextFX edits and UI
-     * bookkeeping return to the FX thread.
-     */
-    void applyWorkspaceEditsAsync(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> whenDone) {
-        java.util.Set<EditorBuffer> before = openBuffers();
-        openBeforeEdit.put(mapped, before);
-        java.util.function.Consumer<Boolean> done = ok -> {
-            openBeforeEdit.remove(mapped);
-            if (!committedEdits.remove(mapped) && !ok) {
-                WorkspaceEditTabs.discardOpened(mapped, before, this::bufferForLspPath, ops::closeBackgroundBuffer);
-            }
-            whenDone.accept(ok);
-        };
-        if (!resourceTargetsSafe(mapped)) {
-            resourceTargetsBlocked(mapped);
-            done.accept(false);
-            return;
-        }
-        invalidateResourceWrites(mapped);
-        java.util.List<EditorBuffer> buffers =
-                new java.util.ArrayList<>(mapped.edits().size());
-        java.util.Set<Path> createdPaths = mapped.creates().stream()
-                .map(c -> c.file().toAbsolutePath().normalize())
-                .collect(java.util.stream.Collectors.toSet());
-        collectWorkspaceBuffers(
-                mapped,
-                createdPaths,
-                0,
-                buffers,
-                () -> withDiskView(WorkspaceEditFiles.preimagePaths(mapped, Map.of()), files -> {
-                    // Before anything is staged: a target the server did not have open must still be the file
-                    // it read. Afterwards the same question is asked again where a staged rename moved it.
-                    List<Path> stale = staleDiskTargets(mapped, buffers, Map.of(), true, files);
-                    if (!stale.isEmpty()) {
-                        editBlocked(stale);
-                        done.accept(false);
-                        return;
-                    }
-                    Map<Path, OpenTarget> targets = openResourceTargets(mapped); // while the files still exist
-                    captureBeforeDestruction(mapped, captured -> {
-                        if (captured) {
-                            stageWorkspaceEdit(mapped, buffers, targets, done);
-                        } else {
-                            done.accept(false);
-                        }
-                    });
-                }));
-    }
-
-    /** Every path {@link #finishWorkspaceEdit}'s checks read. */
-    private List<Path> finishPaths(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
-            java.util.List<StagedCreate> creates,
-            java.util.List<StagedRename> renames,
-            java.util.List<StagedDelete> deletes) {
-        List<Path> out = new java.util.ArrayList<>();
-        creates.forEach(item -> out.add(item.operation().file()));
-        renames.forEach(item -> {
-            out.add(item.rename().from());
-            out.add(item.rename().to());
-        });
-        deletes.forEach(item -> {
-            out.add(item.operation().file());
-            out.add(item.stage());
-        });
-        out.addAll(WorkspaceEditFiles.preimagePaths(mapped, movedTo(renames)));
-        return out;
-    }
-
-    /** Stages the edit's filesystem operations off the FX thread, then finishes (or rolls back) on it. */
-    private void stageWorkspaceEdit(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
-            java.util.List<EditorBuffer> buffers,
-            Map<Path, OpenTarget> targets,
-            java.util.function.Consumer<Boolean> done) {
-        workspaceExecutor.execute(() -> {
-            WorkspaceTransactionStatus transaction = beginTransaction(mapped);
-            java.util.List<StagedCreate> creates = stageCreates(mapped.creates(), transaction);
-            java.util.List<StagedRename> renames = creates == null ? null : stageRenames(mapped.renames(), transaction);
-            java.util.List<StagedDelete> deletes =
-                    creates == null || renames == null ? null : stageDeletes(mapped.deletes(), transaction);
-            if (creates == null || renames == null || deletes == null) {
-                if (renames != null) {
-                    rollbackRenames(renames, transaction);
-                }
-                if (creates != null) {
-                    rollbackCreates(creates, transaction);
-                }
-                endTransaction(transaction);
-                Platform.runLater(() -> {
-                    reportIncompleteRollback(transaction);
-                    done.accept(false);
-                });
-                return;
-            }
-            // The finish step checks the staged files and the preimages where the renames put them, on the FX
-            // thread: for remote files those stats are taken here, on the worker (see withDiskView).
-            List<Path> checked = finishPaths(mapped, creates, renames, deletes);
-            WorkspaceFileOperations files = WorkspaceFileSnapshot.anyRemote(checked)
-                    ? WorkspaceFileSnapshot.of(workspaceFiles, checked)
-                    : workspaceFiles;
-            Platform.runLater(() -> collectCreatedWorkspaceBuffers(
-                    mapped,
-                    buffers,
-                    0,
-                    () -> finishWorkspaceEdit(
-                            mapped, buffers, creates, renames, deletes, targets, transaction, files, done)));
-        });
-    }
-
-    private void invalidateResourceWrites(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
-        java.util.Set<Path> paths = new java.util.LinkedHashSet<>();
-        mapped.creates().forEach(operation -> paths.add(operation.file()));
-        mapped.renames().forEach(operation -> {
-            paths.add(operation.from());
-            paths.add(operation.to());
-        });
-        mapped.deletes().forEach(operation -> paths.add(operation.file()));
-        paths.forEach(ops::invalidatePendingWrite);
-    }
-
-    private void collectWorkspaceBuffers(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
-            java.util.Set<Path> createdPaths,
-            int index,
-            java.util.List<EditorBuffer> buffers,
-            Runnable done) {
-        if (index >= mapped.edits().size()) {
-            done.run();
-            return;
-        }
-        var edit = mapped.edits().get(index);
-        EditorBuffer open = bufferForLspPath(edit.file());
-        if (open != null || createdPaths.contains(edit.file().toAbsolutePath().normalize())) {
-            buffers.add(open);
-            collectWorkspaceBuffers(mapped, createdPaths, index + 1, buffers, done);
-            return;
-        }
-        ops.openBackgroundBufferAsync(edit.file(), buffer -> {
-            buffers.add(buffer);
-            collectWorkspaceBuffers(mapped, createdPaths, index + 1, buffers, done);
-        });
-    }
-
-    private void collectCreatedWorkspaceBuffers(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
-            java.util.List<EditorBuffer> buffers,
-            int index,
-            Runnable done) {
-        if (index >= buffers.size()) {
-            done.run();
-            return;
-        }
-        if (buffers.get(index) != null) {
-            collectCreatedWorkspaceBuffers(mapped, buffers, index + 1, done);
-            return;
-        }
-        int slot = index;
-        ops.openBackgroundBufferAsync(mapped.edits().get(index).file(), buffer -> {
-            buffers.set(slot, buffer);
-            collectCreatedWorkspaceBuffers(mapped, buffers, slot + 1, done);
-        });
-    }
-
-    /**
-     * Applies a workspace edit's per-file batches through undoable buffers (FX thread; the manager's apply-edit
-     * handler, {@link #applyWorkspaceEditsConfirmed}, ends here — both a picked action's inline edit and a
-     * server-initiated {@code workspace/applyEdit} land here). All-or-nothing: if any touched file can't be opened editable,
-     * nothing is applied — half a refactoring corrupts the workspace. A file with no open tab opens in a
-     * background tab so its change is visible and undoable.
-     *
-     * <p>Package-private so {@code LspWorkspaceEditFxTest} can drive it: this is the only LSP path that
-     * writes and MOVES files on disk, so its all-or-nothing refusals need direct tests.
-     */
-    boolean applyWorkspaceEdits(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
-        if (!resourceTargetsSafe(mapped)) {
-            resourceTargetsBlocked(mapped);
-            return false;
-        }
-        invalidateResourceWrites(mapped);
-        java.util.Set<EditorBuffer> before = openBuffers();
-        WorkspaceTransactionStatus transaction = beginTransaction(mapped);
-        boolean applied = applyWorkspaceEdits(mapped, transaction);
-        endTransaction(transaction);
-        if (!committedEdits.remove(mapped) && !applied) {
-            WorkspaceEditTabs.discardOpened(mapped, before, this::bufferForLspPath, ops::closeBackgroundBuffer);
-        }
-        return applied;
-    }
-
-    private boolean applyWorkspaceEdits(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, WorkspaceTransactionStatus transaction) {
-        java.util.Set<EditorBuffer> openBefore = openBuffers();
-        var files = mapped.edits();
-        java.util.List<StagedCreate> creates = stageCreates(mapped.creates(), transaction);
-        if (creates == null) {
-            reportIncompleteRollback(transaction);
-            return false;
-        }
-        java.util.List<EditorBuffer> buffers = new java.util.ArrayList<>(files.size());
-        for (var fe : files) {
-            EditorBuffer buf = bufferForLspPath(fe.file());
-            if (buf == null) {
-                buf = ops.openBackgroundBuffer(fe.file());
-            }
-            if (buf == null || !buf.isEditable() || buf.isNarrowed()) {
-                rollbackCreates(creates, transaction);
-                reportIncompleteRollback(transaction);
-                return false;
-            }
-            // A versioned edit is valid only for the exact server document it names. JDT LS commonly sends
-            // a null version, so request-time text is retained as the equivalent guard for those edits.
-            if (fe.version() != null
-                    && !java.util.Objects.equals(fe.version(), lspManager.documentVersion(fe.file()))) {
-                rollbackCreates(creates, transaction);
-                reportIncompleteRollback(transaction);
-                return false;
-            }
-            if (fe.expectedText() != null && !fe.expectedText().equals(buf.getContent())) {
-                rollbackCreates(creates, transaction);
-                reportIncompleteRollback(transaction);
-                return false;
-            }
-            buffers.add(buf);
-        }
-        List<Path> stale = staleDiskTargets(mapped, buffers, Map.of(), false, workspaceFiles);
-        if (!stale.isEmpty()) {
-            editBlocked(stale);
-            rollbackCreates(creates, transaction);
-            reportIncompleteRollback(transaction);
-            return false;
-        }
-        Map<Path, OpenTarget> targets = openResourceTargets(mapped); // while the files still exist
-        java.util.List<StagedRename> staged = stageRenames(mapped.renames(), transaction);
-        if (staged == null) {
-            rollbackCreates(creates, transaction);
-            reportIncompleteRollback(transaction);
-            return false;
-        }
-        java.util.List<StagedDelete> deletes = stageDeletes(mapped.deletes(), transaction);
-        if (deletes == null) {
-            rollbackRenames(staged, transaction);
-            rollbackCreates(creates, transaction);
-            reportIncompleteRollback(transaction);
-            return false;
-        }
-        boolean safe = resourceTargetsSafe(mapped);
-        List<Path> unplaceable = safe ? unplaceableTargets(mapped, buffers) : List.of();
-        if (!resourceStateCurrent(workspaceFiles, creates, staged, deletes) || !safe || !unplaceable.isEmpty()) {
-            if (!safe) {
-                resourceTargetsBlocked(mapped);
-            }
-            editUnplaceable(unplaceable);
-            rollbackDeletes(deletes, transaction);
-            rollbackRenames(staged, transaction);
-            rollbackCreates(creates, transaction);
-            reportIncompleteRollback(transaction);
-            return false;
-        }
-        Map<EditorBuffer, String> before = WorkspaceEditFiles.textsOf(buffers);
-        if (!applyWorkspaceTextEdits(mapped, buffers, transaction)) {
-            rollbackDeletes(deletes, transaction);
-            rollbackRenames(staged, transaction);
-            rollbackCreates(creates, transaction);
-            reportIncompleteRollback(transaction);
-            return false;
-        }
-        // The filesystem transaction completed before any text changed. Now remap open buffers/session state
-        // in protocol order; this part is in-memory and cannot leave a failed disk move behind.
-        transaction.journal.committed();
-        committedEdits.add(mapped);
-        List<Path> orphaned = remapRenamedBuffers(staged, targets);
-        for (StagedCreate created : creates) {
-            ops.fileCreated(created.operation().file());
-        }
-        retireDeleted(deletes, targets);
-        commitRenames(staged);
-        commitCreates(creates);
-        commitDeletes(deletes);
-        lspManager.notifyWatchedFiles(resourceEvents(staged, creates, deletes));
-        if (!orphaned.isEmpty()) {
-            tabsNotRemapped(orphaned);
-        }
-        afterWorkspaceEdit(mapped, buffers, before, openBefore);
-        return orphaned.isEmpty();
-    }
-
-    private void finishWorkspaceEdit(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
-            java.util.List<EditorBuffer> buffers,
-            java.util.List<StagedCreate> creates,
-            java.util.List<StagedRename> renames,
-            java.util.List<StagedDelete> deletes,
-            Map<Path, OpenTarget> targets,
-            WorkspaceTransactionStatus transaction,
-            WorkspaceFileOperations files,
-            java.util.function.Consumer<Boolean> done) {
-        // Supersede saves started while the resource transaction was staging, before UI identity changes.
-        invalidateResourceWrites(mapped);
-        if (!resourceStateCurrent(files, creates, renames, deletes) || !openTargetsCurrent(targets)) {
-            rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
-            return;
-        }
-        // The preflight ran before files were loaded and staged, several FX turns ago: a keystroke since
-        // then — in any window — may have dirtied a buffer this edit is about to close with its file.
-        // Asked again here, in the same FX turn that retires the tabs, nothing can slip in between.
-        if (!resourceTargetsSafe(mapped)) {
-            resourceTargetsBlocked(mapped);
-            rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
-            return;
-        }
-        Map<Path, Path> movedTo = movedTo(renames);
-        List<Path> stale = staleDiskTargets(mapped, buffers, movedTo, false, files);
-        if (!stale.isEmpty()) {
-            editBlocked(stale);
-            rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
-            return;
-        }
-        for (int i = 0; i < mapped.edits().size(); i++) {
-            var edit = mapped.edits().get(i);
-            EditorBuffer buffer = buffers.get(i);
-            // A file this edit has just moved is gone from its old path, where the server's spelling can
-            // no longer be resolved to the tab's: ask by the tab's own path, pinned before the move.
-            OpenTarget moved = targets.get(edit.file().toAbsolutePath().normalize());
-            boolean relocated = movedTo.containsKey(edit.file().toAbsolutePath().normalize());
-            if (buffer == null
-                    || buffer.isDisposed()
-                    || (relocated ? moved == null || moved.buffer() != buffer : bufferForLspPath(edit.file()) != buffer)
-                    || !buffer.isEditable()
-                    || buffer.isNarrowed()
-                    || (edit.version() != null
-                            && !java.util.Objects.equals(edit.version(), lspManager.documentVersion(edit.file())))
-                    || (edit.expectedText() != null && !edit.expectedText().equals(buffer.getContent()))) {
-                rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
-                return;
-            }
-        }
-        List<Path> unplaceable = unplaceableTargets(mapped, buffers);
-        if (!unplaceable.isEmpty()) {
-            editUnplaceable(unplaceable); // before any buffer changes: all of the edit lands, or none of it
-            rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
-            return;
-        }
-        // Buffers without undo (large-file mode) keep a Local History copy first; one refusal stops the edit.
-        for (EditorBuffer buffer : new java.util.LinkedHashSet<>(buffers)) {
-            if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lsp"))) {
-                rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
-                return;
-            }
-        }
-        Map<EditorBuffer, String> before = WorkspaceEditFiles.textsOf(buffers);
-        if (!applyWorkspaceTextEdits(mapped, buffers, transaction)) {
-            rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
-            return;
-        }
-        transaction.journal.committed();
-        committedEdits.add(mapped);
-        List<Path> orphaned = remapRenamedBuffers(renames, targets);
-        creates.forEach(created -> ops.fileCreated(created.operation().file()));
-        retireDeleted(deletes, targets);
-        workspaceExecutor.execute(() -> {
-            commitRenames(renames);
-            commitCreates(creates);
-            commitDeletes(deletes);
-            transaction.journal.close();
-            lspManager.notifyWatchedFiles(resourceEvents(renames, creates, deletes));
-        });
-        if (!orphaned.isEmpty()) {
-            tabsNotRemapped(orphaned); // the text is edited and the file moved; never call that "applied"
-        }
-        afterWorkspaceEdit(mapped, buffers, before, openBeforeEdit.get(mapped));
-        done.accept(orphaned.isEmpty());
-    }
-
-    /**
-     * What the server hears of the files an edit created, moved or deleted on disk. A server reads a file it has
-     * not got open from disk only when told it changed, and a folder nobody watches tells it nothing (BN1).
-     */
-    private static java.util.List<com.editora.lsp.LspManager.WatchedFile> resourceEvents(
-            java.util.List<StagedRename> renames,
-            java.util.List<StagedCreate> creates,
-            java.util.List<StagedDelete> deletes) {
-        java.util.List<com.editora.lsp.LspManager.WatchedFile> out = new java.util.ArrayList<>();
-        for (StagedRename r : renames) {
-            out.add(new com.editora.lsp.LspManager.WatchedFile(
-                    r.rename().from(), com.editora.lsp.LspManager.WatchedKind.DELETED));
-            out.add(new com.editora.lsp.LspManager.WatchedFile(
-                    r.rename().to(), com.editora.lsp.LspManager.WatchedKind.CREATED));
-        }
-        for (StagedCreate c : creates) {
-            out.add(new com.editora.lsp.LspManager.WatchedFile(
-                    c.operation().file(), com.editora.lsp.LspManager.WatchedKind.CREATED));
-        }
-        for (StagedDelete d : deletes) {
-            out.add(new com.editora.lsp.LspManager.WatchedFile(
-                    d.operation().file(), com.editora.lsp.LspManager.WatchedKind.DELETED));
-        }
-        return out;
-    }
-
-    // --- after an edit: save, close what it opened, remember it for Undo (Java review B1, B2, B18) -------------
-
-    /** The buffers open when each asynchronous workspace edit began; the others it opened itself. */
-    private final Map<com.editora.lsp.WorkspaceEditMapper.Mapped, java.util.Set<EditorBuffer>> openBeforeEdit =
-            new java.util.IdentityHashMap<>();
-
-    /** Edits whose text went in: a later failure (a tab not remapped) must not close the tabs they opened. */
-    private final java.util.Set<com.editora.lsp.WorkspaceEditMapper.Mapped> committedEdits =
-            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-
-    private java.util.Set<EditorBuffer> openBuffers() {
-        java.util.Set<EditorBuffer> out = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-        host.forEachBuffer(out::add);
-        return out;
-    }
-
-    /** One file of an applied edit: where it is now, and its text before and after. */
-    record EditedFile(Path path, String before, String after) {}
-
-    /** The last applied workspace edit (without deletions), as Undo Last Refactoring reverts it. */
-    record AppliedEdit(
-            java.util.List<EditedFile> files,
-            java.util.List<com.editora.lsp.WorkspaceEditMapper.FileRename> renames,
-            java.util.List<Path> created) {}
-
-    private @Nullable AppliedEdit lastApplied;
-    /** Set while Undo Refactoring applies its inverse, which is not itself recorded. */
-    private boolean undoingEdit;
-
-    /** The edit Undo Refactoring would revert (tests). */
-    @Nullable
-    AppliedEdit lastAppliedEdit() {
-        return lastApplied;
-    }
-
-    /**
-     * What happens once a workspace edit is in. One that moved, created or deleted files is saved whole — its
-     * files were already changed on disk, and their new text left unsaved made a project that did not compile
-     * until every tab was saved (B2). A file the edit had to open (it had no tab) is saved and its tab closed,
-     * as IntelliJ edits closed files, instead of a dirty tab per file (B18). An edit that spanned files or
-     * moved them can be undone as one (B1); every edit is remembered for Undo Last Refactoring.
-     */
-    private void afterWorkspaceEdit(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
-            java.util.List<EditorBuffer> buffers,
-            Map<EditorBuffer, String> before,
-            java.util.@Nullable Set<EditorBuffer> openBefore) {
-        java.util.Set<EditorBuffer> touched =
-                java.util.Collections.newSetFromMap(new java.util.LinkedHashMap<EditorBuffer, Boolean>());
-        for (EditorBuffer b : buffers) {
-            if (b != null && !b.isDisposed()) {
-                touched.add(b);
-                // An applied edit is not typing: the auto-popup read a rename or inline at the caret as an
-                // identifier typed, and its list took the next Enter (fourth review BF2).
-                b.cancelCompletion();
-            }
-        }
-        boolean resources = !mapped.renames().isEmpty()
-                || !mapped.creates().isEmpty()
-                || !mapped.deletes().isEmpty();
-        java.util.Set<Path> created = new java.util.HashSet<>();
-        mapped.creates().forEach(c -> created.add(c.file().toAbsolutePath().normalize()));
-        if (undoingEdit) {
-            lastApplied = null;
-        } else if (!touched.isEmpty() && mapped.deletes().isEmpty()) {
-            java.util.List<EditedFile> files = new java.util.ArrayList<>();
-            for (EditorBuffer b : touched) {
-                Path path = b.getPath();
-                if (path != null && !created.contains(path.toAbsolutePath().normalize())) {
-                    files.add(new EditedFile(path, before.getOrDefault(b, ""), b.getContent()));
-                }
-            }
-            lastApplied = new AppliedEdit(
-                    java.util.List.copyOf(files),
-                    java.util.List.copyOf(mapped.renames()),
-                    java.util.List.copyOf(created));
-        }
-        java.util.List<com.editora.lsp.LspManager.WatchedFile> written = new java.util.ArrayList<>();
-        for (EditorBuffer b : touched) {
-            boolean opened = openBefore != null && !openBefore.contains(b);
-            Path path = b.getPath();
-            boolean unmanaged = path != null && !lspManager.isManaged(path); // a background tab is never opened on it
-            if (!resources && !opened) {
-                if (unmanaged) {
-                    // An open file the user can see stays as it is: they save it. But the server must hear its new
-                    // text now: one never opened there kept its old text, so a second refactoring before a save
-                    // skipped it and left the project broken (fourth review, BT2's remainder).
-                    deferredLsp.remove(b);
-                    syncBuffer(b);
-                }
-                continue;
-            }
-            boolean saved = b.isDirty() && ops.saveBuffer(b);
-            if (saved && unmanaged && path != null) {
-                written.add(new com.editora.lsp.LspManager.WatchedFile(
-                        path, com.editora.lsp.LspManager.WatchedKind.CHANGED));
-            }
-            if ((saved || !b.isDirty())
-                    && opened
-                    && (path == null || !created.contains(path.toAbsolutePath().normalize()))) {
-                ops.closeBackgroundBuffer(b); // a created file (an extracted interface) stays open to be seen
-            }
-        }
-        // A file the server does not have open keeps its old text there until it hears the file changed: the next
-        // rename skipped it and Find References missed it (re-review BN1).
-        lspManager.notifyWatchedFiles(written);
-    }
-
-    /**
-     * The Project tree's rename participant (B15): the edits jdtls wants for a rename go in first — the class
-     * renamed with its {@code .java} file, the package lines and imports of a moved folder — then the tree moves
-     * the file. Once it has, those edits are finished like any refactoring's: saved, so the project on disk
-     * compiles, recorded with the move so Undo takes both back, and told to the server (re-review BN3).
-     */
-    void willRenameFile(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
-        AppliedEdit previous = lastApplied;
-        lastRenameRefused = false;
-        renamesInFlight++;
-        willRenameFile(from, to, previous, proceed, true);
-    }
-
-    private void willRenameFile(
-            Path from,
-            Path to,
-            @Nullable AppliedEdit previous,
-            java.util.function.Consumer<Boolean> proceed,
-            boolean retry) {
-        lspManager.willRenameFile(
-                from,
-                to,
-                ok -> {
-                    if (!ok && retry && !lastRenameRefused && java.nio.file.Files.exists(from)) {
-                        // jdtls's edit no longer applied: a file it edits was opened a moment before, and the edit
-                        // named a document it had not read yet. Asked once more, it answers for the open one
-                        // (twelfth review BL4).
-                        var later = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(1));
-                        later.setOnFinished(e -> willRenameFile(from, to, previous, proceed, false));
-                        later.play();
-                        return;
-                    }
-                    try {
-                        proceed.accept(ok); // the tree moves the file now, and points its tabs at the new path
-                        AppliedEdit edit = lastApplied;
-                        boolean moved = ok && !java.nio.file.Files.exists(from) && java.nio.file.Files.exists(to);
-                        if (moved && edit != null && edit != previous) {
-                            treeRenamed(edit, from, to);
-                        } else if (moved && moveGroup != null) {
-                            // moved with no edit (not Java, or nothing to change): still part of the drag, so
-                            // undoing the drag as one refactoring takes it back too (fifth review BV1)
-                            moveGroup.add(new AppliedEdit(
-                                    java.util.List.of(),
-                                    java.util.List.of(
-                                            new com.editora.lsp.WorkspaceEditMapper.FileRename(from, to, false)),
-                                    java.util.List.of()));
-                            moveGroupWhole &= !java.nio.file.Files.isDirectory(to);
-                        }
-                    } finally {
-                        renameDone();
-                    }
-                },
-                this::renameWithoutEdits);
-    }
-
-    /**
-     * Tree renames whose edit is not recorded yet. Saving a tab the move edited runs a nested event loop, which ran
-     * the drag's next move and its end before this move was recorded: the drag ends only once none is in flight
-     * (sixth review BS1).
-     */
-    private int renamesInFlight;
-
-    /** The end of the drag, waiting for a rename still in flight: true for an Undo Move's, null when none waits. */
-    private @Nullable Boolean moveEndWaiting;
-
-    /** What the tree said when the drag ended, said again once it is recorded: a save's status landed over it (BF3). */
-    private @Nullable String moveEndStatus;
-
-    /** Whether the last refused tree rename was the user's No; false for a failed edit (seventh review BR4). */
-    private boolean lastRenameRefused;
-
-    private void renameDone() {
-        renamesInFlight = Math.max(0, renamesInFlight - 1);
-        Boolean undo = moveEndWaiting;
-        if (renamesInFlight == 0 && undo != null) {
-            moveEndWaiting = null;
-            String said = moveEndStatus;
-            // the tree's "Moved 1 to geo", not the save's "Saved /the/whole/path"; but never over the warning that
-            // a package line was left as it was (eighth review BQ4)
-            if (!endTreeMove(undo) && said != null) {
-                host.setStatus(said);
-            }
-        }
-    }
-
-    /**
-     * The Project tree's participant: a rename or a drag-move goes through jdtls (B15, BT1), and the moves of one
-     * drag, or of its Undo Move, are one change (fourth review BF1).
-     */
-    ProjectPanel.RenameParticipant treeParticipant() {
-        return new ProjectPanel.RenameParticipant() {
-            @Override
-            public void willRename(Path from, Path to, java.util.function.Consumer<Boolean> proceed) {
-                willRenameFile(from, to, proceed);
-            }
-
-            @Override
-            public void beginMove(int count) {
-                moveGroup = new java.util.ArrayList<>();
-                moveGroupWhole = true;
-                moveCount = count;
-                moveWithoutEdits.clear();
-                moveWithoutEditsAnswer = null;
-            }
-
-            @Override
-            public void endMove(boolean undo) {
-                endMove(undo, null);
-            }
-
-            @Override
-            public void endMove(boolean undo, @Nullable String status) {
-                moveEndStatus = status;
-                if (renamesInFlight > 0) {
-                    moveEndWaiting = undo; // a move's edit is still being recorded (sixth review BS1)
-                } else {
-                    endTreeMove(undo);
-                }
-            }
-
-            @Override
-            public boolean refusedByUser() {
-                return lastRenameRefused;
-            }
-        };
-    }
-
-    /** The edits of the drag-move under way, one per moved file; null when none is. */
-    private java.util.@Nullable List<AppliedEdit> moveGroup;
-
-    /** False once a folder moved in it: a folder cannot be moved back as one, so Undo Move is the way back. */
-    private boolean moveGroupWhole;
-
-    /** How many items the drag under way moves, for the one question asked about them all. */
-    private int moveCount;
-
-    /** The {@code .java} files of the drag that moved without their package line edited. */
-    private final java.util.List<String> moveWithoutEdits = new java.util.ArrayList<>();
-
-    /** The edit Undo Last Refactoring would revert when it came from a drag-move, so reverting it ends Undo Move. */
-    private @Nullable AppliedEdit treeMoveEdit;
-
-    /** Told when Undo Last Refactoring took back a drag-move, which the tree must no longer offer to undo. */
-    private Runnable onTreeMoveUndone = () -> {};
-
-    void setOnTreeMoveUndone(Runnable action) {
-        onTreeMoveUndone = action == null ? () -> {} : action;
-    }
-
-    /** Ends the drag's group; true when it warned that jdtls left a package line as it was. */
-    private boolean endTreeMove(boolean undo) {
-        java.util.List<AppliedEdit> group = moveGroup;
-        moveGroup = null;
-        if (group == null) {
-            return false;
-        }
-        // Only a drag in which jdtls edited something is a refactoring: a .txt dragged after a rename took the
-        // rename's undo away, and became "Refactoring undone in 0 files" (sixth review BS2).
-        boolean edited = group.stream().anyMatch(e -> !e.files().isEmpty());
-        if (undo) {
-            // Undo Move took the drag back: it is not a refactoring to undo, and the drag's own edit is gone
-            if (edited || (lastApplied != null && lastApplied == treeMoveEdit)) {
-                lastApplied = null;
-            }
-            treeMoveEdit = null;
-        } else if (edited) {
-            lastApplied = moveGroupWhole ? merged(group) : null;
-            treeMoveEdit = lastApplied;
-        } else {
-            // a drag with no edit is the tree's newest move: an older drag's refactoring no longer ends it, nor does
-            // its Undo Move take that refactoring's undo away (seventh review BS2)
-            treeMoveEdit = null;
-        }
-        moveEndStatus = null;
-        boolean warned = !moveWithoutEdits.isEmpty();
-        if (warned) {
-            host.setError(tr(
-                    "status.lsp.moveWithoutPackageEdit", String.join(", ", moveWithoutEdits), moveWithoutEdits.size()));
-            moveWithoutEdits.clear();
-        }
-        moveWithoutEditsAnswer = null;
-        return warned;
-    }
-
-    /** One edit made of several, in order: a file edited twice keeps its first text, a later move renames it. */
-    static AppliedEdit merged(java.util.List<AppliedEdit> edits) {
-        Map<Path, EditedFile> files = new java.util.LinkedHashMap<>();
-        java.util.List<com.editora.lsp.WorkspaceEditMapper.FileRename> renames = new java.util.ArrayList<>();
-        java.util.List<Path> created = new java.util.ArrayList<>();
-        for (AppliedEdit e : edits) {
-            for (var r : e.renames()) {
-                Path f = r.from().toAbsolutePath().normalize();
-                Path t = r.to().toAbsolutePath().normalize();
-                Map<Path, EditedFile> moved = new java.util.LinkedHashMap<>();
-                files.forEach((p, ef) -> {
-                    Path n = p.toAbsolutePath().normalize();
-                    Path now = n.startsWith(f) ? t.resolve(f.relativize(n)) : p;
-                    moved.put(now, new EditedFile(now, ef.before(), ef.after()));
-                });
-                files = moved;
-            }
-            for (EditedFile f : e.files()) {
-                files.merge(f.path(), f, (old, now) -> new EditedFile(old.path(), old.before(), now.after()));
-            }
-            renames.addAll(e.renames());
-            created.addAll(e.created());
-        }
-        return new AppliedEdit(
-                java.util.List.copyOf(files.values()), java.util.List.copyOf(renames), java.util.List.copyOf(created));
-    }
-
-    /**
-     * jdtls had no edit for a rename. When it could not say (still importing, or no answer), the file would move
-     * with its package line and its users' imports as they were, with no word (fourth review BF5): ask first. When
-     * it answered with nothing for a {@code .java} file moved to another folder, move it and say so (DF3).
-     */
-    private boolean renameWithoutEdits(Path from, Path to, boolean answered) {
-        String name = PathDisplay.fileName(from);
-        if (answered) {
-            if (moveGroup != null) {
-                moveWithoutEdits.add(name);
-            } else {
-                host.setError(tr("status.lsp.moveWithoutPackageEdit", name, 1));
-            }
-            return true;
-        }
-        Boolean asked = moveWithoutEditsAnswer;
-        if (moveGroup != null && asked != null) {
-            lastRenameRefused = !asked;
-            return asked; // asked once for the whole drag (fifth review BV3)
-        }
-        boolean rename = java.util.Objects.equals(from.getParent(), to.getParent());
-        // A drag of several asks once, so it names them all, not only the first (sixth review BV3)
-        boolean many = moveGroup != null && moveCount > 1;
-        boolean answer = confirmRenameWithoutEdits.test(
-                many
-                        ? tr("dialog.lsp.renameWithoutEdits.manyBody", name, moveCount - 1)
-                        : tr(
-                                rename
-                                        ? "dialog.lsp.renameWithoutEdits.renameBody"
-                                        : "dialog.lsp.renameWithoutEdits.body",
-                                name));
-        if (moveGroup != null) {
-            moveWithoutEditsAnswer = answer;
-        }
-        lastRenameRefused = !answer;
-        return answer;
-    }
-
-    /** The answer the user gave about moving without edits during the drag under way, or null when not asked. */
-    private @Nullable Boolean moveWithoutEditsAnswer;
-
-    /** Asks whether to rename a file jdtls could not edit for; a field so a test can answer. */
-    java.util.function.Predicate<String> confirmRenameWithoutEdits = this::askRenameWithoutEdits;
-
-    private boolean askRenameWithoutEdits(String body) {
-        javafx.scene.control.Alert confirm = Dialogs.styled(new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.CONFIRMATION,
-                body,
-                javafx.scene.control.ButtonType.OK,
-                javafx.scene.control.ButtonType.CANCEL));
-        confirm.initOwner(host.window());
-        confirm.setTitle(tr("dialog.lsp.renameWithoutEdits.title"));
-        confirm.setHeaderText(null);
-        return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
-                == javafx.scene.control.ButtonType.OK;
-    }
-
-    private void treeRenamed(AppliedEdit edit, Path from, Path to) {
-        Path f = from.toAbsolutePath().normalize();
-        Path t = to.toAbsolutePath().normalize();
-        java.util.List<EditedFile> files = new java.util.ArrayList<>();
-        for (EditedFile e : edit.files()) {
-            Path p = e.path().toAbsolutePath().normalize();
-            Path now = p.startsWith(f) ? t.resolve(f.relativize(p)) : e.path();
-            files.add(new EditedFile(now, e.before(), e.after()));
-        }
-        java.util.List<AppliedEdit> group = moveGroup;
-        if (java.nio.file.Files.isDirectory(t)) {
-            lastApplied = null; // a folder cannot be moved back as one: rename it back, and jdtls edits again
-            moveGroupWhole = false;
-        } else {
-            java.util.List<com.editora.lsp.WorkspaceEditMapper.FileRename> renames =
-                    new java.util.ArrayList<>(edit.renames());
-            renames.add(new com.editora.lsp.WorkspaceEditMapper.FileRename(from, to, false));
-            lastApplied = new AppliedEdit(java.util.List.copyOf(files), java.util.List.copyOf(renames), edit.created());
-        }
-        lspManager.notifyWatchedFiles(java.util.List.of(
-                new com.editora.lsp.LspManager.WatchedFile(from, com.editora.lsp.LspManager.WatchedKind.DELETED),
-                new com.editora.lsp.LspManager.WatchedFile(to, com.editora.lsp.LspManager.WatchedKind.CREATED)));
-        if (group != null && lastApplied != null) {
-            group.add(lastApplied);
-        }
-        // Saved only now that the move is recorded: a save can run a nested event loop, which ran the drag's next
-        // move and its end first (sixth review BS1).
-        for (EditedFile e : files) {
-            EditorBuffer b = ops.bufferForPath(e.path());
-            if (b != null && b.isDirty() && b.getContent().equals(e.after())) {
-                ops.saveBuffer(b);
-            }
-        }
-        if (group != null) {
-            return; // a drag-move: the tree says what moved, not "Renamed to" (fourth review BF3)
-        }
-        // the saves above said "Saved /the/whole/path"; the rename is what happened (BT7)
-        host.setStatus(tr("status.renamedTo", PathDisplay.fileName(to)));
-    }
-
-    /** What the user chose when Undo met a buffer the last refactoring edited. */
-    enum RefactoringUndoChoice {
-        ALL_FILES,
-        THIS_FILE,
-        CANCEL
-    }
-
-    /** Asks whether Undo should revert the whole refactoring; a field so a test can answer. */
-    java.util.function.IntFunction<RefactoringUndoChoice> refactoringUndoChooser = this::askRefactoringUndo;
-
-    private RefactoringUndoChoice askRefactoringUndo(int files) {
-        javafx.scene.control.ButtonType all = new javafx.scene.control.ButtonType(
-                tr("dialog.lsp.undoRefactoring.all", files), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        javafx.scene.control.ButtonType one = new javafx.scene.control.ButtonType(
-                tr("dialog.lsp.undoRefactoring.thisFile"), javafx.scene.control.ButtonBar.ButtonData.OTHER);
-        javafx.scene.control.Alert confirm = Dialogs.styled(new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.CONFIRMATION,
-                tr("dialog.lsp.undoRefactoring.body", files),
-                all,
-                one,
-                javafx.scene.control.ButtonType.CANCEL));
-        confirm.initOwner(host.window());
-        confirm.setTitle(tr("dialog.lsp.undoRefactoring.title"));
-        confirm.setHeaderText(null);
-        var chosen = confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL);
-        return chosen == all
-                ? RefactoringUndoChoice.ALL_FILES
-                : chosen == one ? RefactoringUndoChoice.THIS_FILE : RefactoringUndoChoice.CANCEL;
-    }
-
-    /**
-     * Undo in {@code buffer}: when it still holds what the last refactoring left there (and so do the edit's
-     * other files), asks whether to undo the refactoring everywhere. True when this took over the Undo — done
-     * for all files, or cancelled; false leaves the ordinary per-file Undo to run.
-     */
-    boolean offerRefactoringUndo(@Nullable EditorBuffer buffer) {
-        AppliedEdit edit = lastApplied;
-        if (edit == null || buffer == null) {
-            return false;
-        }
-        Path path = buffer.getPath();
-        if (path == null || !holdsAfter(edit, path, buffer.getContent())) {
-            return false; // edited since (or never part of it): an ordinary Undo
-        }
-        if (edit.files().stream().noneMatch(f -> f.path().equals(path)) || !refactoringIntact(edit)) {
-            return false;
-        }
-        int files = edit.files().size() + edit.created().size();
-        if (files < 2 && edit.renames().isEmpty()) {
-            return false; // one file, nothing moved: the ordinary Undo is the whole of it
-        }
-        return switch (refactoringUndoChooser.apply(files)) {
-            case ALL_FILES -> {
-                undoRefactoring();
-                yield true;
-            }
-            case CANCEL -> true;
-            case THIS_FILE -> false;
-        };
-    }
-
-    private static boolean holdsAfter(AppliedEdit edit, Path path, String text) {
-        return edit.files().stream()
-                .anyMatch(f -> f.path().equals(path) && f.after().equals(text));
-    }
-
-    /** Whether every file of {@code edit} still holds what it left — in its tab, or on disk. */
-    private boolean refactoringIntact(AppliedEdit edit) {
-        for (EditedFile f : edit.files()) {
-            EditorBuffer open = ops.bufferForPath(f.path());
-            String now;
-            if (open != null) {
-                now = open.getContent();
-            } else {
-                try {
-                    now = java.nio.file.Files.readString(f.path());
-                } catch (java.io.IOException | RuntimeException e) {
-                    return false;
-                }
-            }
-            if (!now.equals(f.after())) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * Reverts the last refactoring in every file it changed, moves its renamed files back and deletes the files it
-     * created ({@code lsp.undoRefactoring}). The inverse is itself a workspace edit, so it goes through the same
-     * checks, journal and tab remapping, and is saved the same way. Refused when any of the files changed since.
-     */
-    void undoRefactoring() {
-        AppliedEdit edit = lastApplied;
-        if (edit == null) {
-            host.setStatus(tr("status.lsp.noRefactoringToUndo"));
-            return;
-        }
-        if (!refactoringIntact(edit)) {
-            host.setError(tr("status.lsp.refactoringChangedSince"));
-            return;
-        }
-        java.util.List<
-                        org.eclipse.lsp4j.jsonrpc.messages.Either<
-                                org.eclipse.lsp4j.TextDocumentEdit, org.eclipse.lsp4j.ResourceOperation>>
-                changes = new java.util.ArrayList<>();
-        for (EditedFile f : edit.files()) {
-            org.eclipse.lsp4j.Position end = endOf(f.after());
-            changes.add(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(new org.eclipse.lsp4j.TextDocumentEdit(
-                    new org.eclipse.lsp4j.VersionedTextDocumentIdentifier(
-                            f.path().toUri().toString(), null),
-                    java.util.List.of(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(new org.eclipse.lsp4j.TextEdit(
-                            new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(0, 0), end), f.before()))))));
-        }
-        for (int i = edit.renames().size() - 1; i >= 0; i--) {
-            var r = edit.renames().get(i);
-            changes.add(org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(new org.eclipse.lsp4j.RenameFile(
-                    r.to().toUri().toString(), r.from().toUri().toString())));
-        }
-        for (Path c : edit.created()) {
-            changes.add(org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(
-                    new org.eclipse.lsp4j.DeleteFile(c.toUri().toString())));
-        }
-        var inverse = new org.eclipse.lsp4j.WorkspaceEdit(changes);
-        com.editora.lsp.WorkspaceEditMapper.Mapped mapped = com.editora.lsp.WorkspaceEditMapper.map(inverse);
-        if (mapped == null) {
-            host.setError(tr("status.lsp.refactoringUndoFailed"));
-            return;
-        }
-        int files = edit.files().size() + edit.created().size();
-        undoingEdit = true;
-        beginReportedEdit();
-        applyWorkspaceEditsConfirmed(mapped, ok -> {
-            undoingEdit = false;
-            if (ok) {
-                lastApplied = null;
-                if (edit == treeMoveEdit) {
-                    treeMoveEdit = null;
-                    onTreeMoveUndone.run(); // the drag is taken back: Undo Move has nothing left (BF1)
-                }
-                Path[] made = newPackageFolders.remove(edit);
-                if (made != null) {
-                    // Move ▸ New package's folder goes with it (BT4), and jdtls hears it is gone: the next Move
-                    // still offered the package (fourth review BF4)
-                    lspManager.notifyWatchedFiles(WorkspaceEditFiles.removeEmptyFolders(made[0], made[1]).stream()
-                            .map(f -> new com.editora.lsp.LspManager.WatchedFile(
-                                    f, com.editora.lsp.LspManager.WatchedKind.DELETED))
-                            .toList());
-                }
-            }
-            reportEdit(ok, tr("status.lsp.refactoringUndone", files), tr("status.lsp.refactoringUndoFailed"));
-        });
-    }
-
-    /** Folders Move ▸ New package created, by the refactoring that filled them, with their source root. */
-    private final Map<AppliedEdit, Path[]> newPackageFolders = new java.util.IdentityHashMap<>();
-
-    /** The position just past the end of {@code text}, in LSP's UTF-16 units. */
-    static org.eclipse.lsp4j.Position endOf(String text) {
-        int line = 0;
-        int lineStart = 0;
-        for (int i = 0; i < text.length(); i++) {
-            if (text.charAt(i) == '\n') {
-                line++;
-                lineStart = i + 1;
-            }
-        }
-        return new org.eclipse.lsp4j.Position(line, text.length() - lineStart);
-    }
-
-    /** Protects dirty delete victims and every live owner of an overwritten destination. */
-    private boolean resourceTargetsSafe(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
-        for (var deletion : mapped.deletes()) {
-            if (ops.buffersAtOrUnder(deletion.file()).stream().anyMatch(EditorBuffer::isDirty)) {
-                return false;
-            }
-        }
-        for (var creation : mapped.creates()) {
-            if (creation.overwrite() && !ops.buffersAtOrUnder(creation.file()).isEmpty()) {
-                return false;
-            }
-        }
-        java.util.Set<String> sources = mapped.renames().stream()
-                .map(rename -> com.editora.config.PathKeys.key(rename.from()))
-                .collect(java.util.stream.Collectors.toSet());
-        for (var rename : mapped.renames()) {
-            if (com.editora.config.PathKeys.sameNormalized(rename.from(), rename.to())) {
-                continue;
-            }
-            if (!sources.contains(com.editora.config.PathKeys.key(rename.to()))
-                    && !ops.buffersAtOrUnder(rename.to()).isEmpty()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /** Names the unsaved buffers that made {@link #resourceTargetsSafe} refuse, in whichever window they are. */
-    private void resourceTargetsBlocked(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
-        java.util.Set<Path> unsaved = new java.util.LinkedHashSet<>();
-        java.util.List<Path> targets = new java.util.ArrayList<>();
-        mapped.deletes().forEach(deletion -> targets.add(deletion.file()));
-        mapped.creates().stream().filter(c -> c.overwrite()).forEach(creation -> targets.add(creation.file()));
-        mapped.renames().forEach(rename -> targets.add(rename.to()));
-        for (Path target : targets) {
-            for (EditorBuffer buffer : ops.buffersAtOrUnder(target)) {
-                if (buffer.isDirty() && lspPath(buffer) != null) {
-                    unsaved.add(lspPath(buffer));
-                }
-            }
-        }
-        if (!unsaved.isEmpty()) {
-            List<Path> files = List.copyOf(unsaved);
-            editRefused(files, tr("status.lsp.editTargetsUnsaved", blockedFileNames(files)));
-        }
-    }
-
-    /** The files whose buffer cannot take every one of its edits — see {@code applyLspEditsAtomically}. */
-    private static List<Path> unplaceableTargets(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.List<EditorBuffer> buffers) {
-        List<Path> files = new java.util.ArrayList<>();
-        for (int i = 0; i < mapped.edits().size(); i++) {
-            EditorBuffer buffer = buffers.get(i);
-            if (buffer != null && !buffer.canPlaceLspEdits(mapped.edits().get(i).edits())) {
-                files.add(mapped.edits().get(i).file());
-            }
-        }
-        return files;
-    }
-
-    /** An edit the server sent does not fit the file it names: nothing was applied; say which file. */
-    private void editUnplaceable(List<Path> files) {
-        if (!files.isEmpty()) {
-            editRefused(files, tr("status.lsp.editUnplaceable", blockedFileNames(files)));
-        }
-    }
-
-    private boolean resourceStateCurrent(
-            WorkspaceFileOperations files,
-            java.util.List<StagedCreate> creates,
-            java.util.List<StagedRename> renames,
-            java.util.List<StagedDelete> deletes) {
-        try {
-            for (StagedCreate item : creates) {
-                Path file = item.operation().file().toAbsolutePath().normalize();
-                if (item.created()
-                        && (!files.exists(file) || !java.util.Objects.equals(item.identity(), files.identity(file)))) {
-                    return false;
-                }
-            }
-            for (StagedRename item : renames) {
-                Path from = item.rename().from().toAbsolutePath().normalize();
-                Path to = item.rename().to().toAbsolutePath().normalize();
-                // After a case-only rename on a case-insensitive volume the old spelling still "exists".
-                if ((files.exists(from) && !WorkspaceEditFiles.sameFileInAnotherCase(files, from, to))
-                        || !files.exists(to)
-                        || !java.util.Objects.equals(item.identity(), files.identity(to))) {
-                    return false;
-                }
-            }
-            for (StagedDelete item : deletes) {
-                Path file = item.operation().file().toAbsolutePath().normalize();
-                if (files.exists(file)
-                        || !files.exists(item.stage())
-                        || !java.util.Objects.equals(item.identity(), files.identity(item.stage()))) {
-                    return false;
-                }
-            }
-            return true;
-        } catch (java.io.IOException | RuntimeException failure) {
-            return false;
-        }
-    }
-
-    private void rollbackWorkspaceAsync(
-            java.util.List<StagedCreate> creates,
-            java.util.List<StagedRename> renames,
-            java.util.List<StagedDelete> deletes,
-            WorkspaceTransactionStatus transaction,
-            java.util.function.Consumer<Boolean> done) {
-        workspaceExecutor.execute(() -> {
-            rollbackDeletes(deletes, transaction);
-            rollbackRenames(renames, transaction);
-            rollbackCreates(creates, transaction);
-            endTransaction(transaction);
-            Platform.runLater(() -> {
-                reportIncompleteRollback(transaction);
-                done.accept(false);
-            });
-        });
-    }
-
-    private boolean applyWorkspaceTextEdits(
-            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
-            java.util.List<EditorBuffer> buffers,
-            WorkspaceTransactionStatus transaction) {
-        java.util.List<AppliedWorkspaceText> applied = new java.util.ArrayList<>();
-        try {
-            for (int i = 0; i < mapped.edits().size(); i++) {
-                var edit = mapped.edits().get(i);
-                EditorBuffer buffer = buffers.get(i);
-                String original = buffer.getContent();
-                if (!buffer.applyLspEditsAtomically(edit.edits())) {
-                    // Checked for every buffer before the first was touched; reaching this means the
-                    // document changed underneath. The catch below restores the buffers already edited.
-                    editUnplaceable(List.of(edit.file()));
-                    throw new IllegalStateException("workspace edit does not fit " + edit.file());
-                }
-                if (!original.equals(buffer.getContent())) {
-                    applied.add(new AppliedWorkspaceText(buffer, edit.file(), original));
-                }
-                if (lspManager.isManaged(edit.file())) {
-                    // Keep the server document synchronized before a trailing CodeAction command runs.
-                    lspManager.changeDocument(edit.file(), buffer.getContent());
-                }
-            }
-            return true;
-        } catch (RuntimeException failure) {
-            for (int i = applied.size() - 1; i >= 0; i--) {
-                try {
-                    var snapshot = applied.get(i);
-                    snapshot.buffer().replaceWholeDocument(snapshot.original());
-                    if (lspManager.isManaged(snapshot.file())) {
-                        lspManager.changeDocument(snapshot.file(), snapshot.original());
-                    }
-                } catch (RuntimeException rollbackFailure) {
-                    transaction.rollbackFailed = true;
-                }
-            }
-            return false;
-        }
-    }
-
-    private void reportIncompleteRollback(WorkspaceTransactionStatus transaction) {
-        if (transaction.rollbackFailed) {
-            host.setError(tr("status.lsp.workspaceEditRollbackFailed"));
-        }
-    }
-
-    private static final class WorkspaceTransactionStatus {
-        private boolean rollbackFailed;
-        private com.editora.lsp.WorkspaceEditJournal journal = com.editora.lsp.WorkspaceEditJournal.begin(null);
-    }
-
-    /** What the user chose to do about an interrupted transaction. */
-    enum InterruptedEditChoice {
-        /** Put the staged files back (an undecided edit). */
-        RESTORE,
-        /** Remove the old copies (a decided edit that did not get to clean up). */
-        REMOVE,
-        /** Leave every file where it is and stop asking. */
-        KEEP,
-        /** Ask again at the next project open. */
-        LATER
-    }
-
-    /** Asks what to do about an interrupted transaction; a field so a test can answer without a dialog. */
-    java.util.function.Function<com.editora.lsp.WorkspaceEditJournal.Interrupted, InterruptedEditChoice>
-            interruptedEditPrompt = this::promptInterruptedEdit;
-
-    private @Nullable Path interruptedEditsCheckedFor;
-
-    /**
-     * Once per opened project: looks for workspace-edit transactions that were interrupted between staging
-     * and commit — the process died with files moved aside under hidden {@code .editora-lsp-*} names — and
-     * offers to put them back. Nothing is moved or removed without the user's answer.
-     */
-    void offerInterruptedEdits() {
-        Path root = ops.lspProjectRoot();
-        Path directory = journalDir();
-        if (root == null || directory == null || root.equals(interruptedEditsCheckedFor)) {
-            return;
-        }
-        interruptedEditsCheckedFor = root;
-        workspaceExecutor.execute(() -> {
-            List<com.editora.lsp.WorkspaceEditJournal.Interrupted> found = new java.util.ArrayList<>();
-            for (var interrupted : com.editora.lsp.WorkspaceEditJournal.pending(directory)) {
-                if (interrupted.touches(root)) {
-                    found.add(interrupted);
-                } else {
-                    com.editora.lsp.WorkspaceEditJournal.release(interrupted); // another project's
-                }
-            }
-            if (!found.isEmpty()) {
-                Platform.runLater(() -> found.forEach(this::resolveInterruptedEdit));
-            }
-        });
-    }
-
-    private void resolveInterruptedEdit(com.editora.lsp.WorkspaceEditJournal.Interrupted interrupted) {
-        InterruptedEditChoice choice = interruptedEditPrompt.apply(interrupted);
-        switch (choice == null ? InterruptedEditChoice.LATER : choice) {
-            case RESTORE ->
-                workspaceExecutor.execute(() -> {
-                    var outcome = interrupted.restore();
-                    Platform.runLater(() -> interruptedEditResolved(
-                            outcome.restored(),
-                            outcome.leftInPlace(),
-                            tr(
-                                    "status.lsp.interruptedEdit.restored",
-                                    outcome.restored().size())));
-                });
-            case REMOVE ->
-                workspaceExecutor.execute(() -> {
-                    List<Path> left = interrupted.discardLeftovers();
-                    Platform.runLater(
-                            () -> interruptedEditResolved(List.of(), left, tr("status.lsp.interruptedEdit.removed")));
-                });
-            case KEEP -> {
-                List<Path> left = interrupted.leftovers();
-                interrupted.dismiss();
-                host.setStatus(tr("status.lsp.interruptedEdit.kept", blockedFileNames(left)));
-            }
-            case LATER -> {
-                // The journal stays; this run does not ask again.
-            }
-        }
-    }
-
-    private void interruptedEditResolved(List<Path> restored, List<Path> left, String success) {
-        if (!restored.isEmpty()) {
-            ops.fileCreated(restored.get(0)); // refreshes the Project tree
-        }
-        if (left.isEmpty()) {
-            host.setStatus(success);
-        } else {
-            host.setError(tr("status.lsp.interruptedEdit.left", blockedFileNames(left)));
-        }
-    }
-
-    private InterruptedEditChoice promptInterruptedEdit(com.editora.lsp.WorkspaceEditJournal.Interrupted interrupted) {
-        List<Path> originals = interrupted.originals();
-        StringBuilder lines = new StringBuilder();
-        int shown = Math.min(10, originals.size());
-        for (int i = 0; i < shown; i++) {
-            lines.append(i == 0 ? "" : "\n")
-                    .append(ops.homeCollapsed(originals.get(i).toString()));
-        }
-        if (originals.size() > shown) {
-            lines.append("\n+").append(originals.size() - shown);
-        }
-        javafx.scene.control.ButtonType act = new javafx.scene.control.ButtonType(
-                tr(
-                        interrupted.committed()
-                                ? "dialog.lsp.interruptedEdit.remove"
-                                : "dialog.lsp.interruptedEdit.restore"),
-                javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
-        javafx.scene.control.ButtonType keep = new javafx.scene.control.ButtonType(
-                tr("dialog.lsp.interruptedEdit.keep"), javafx.scene.control.ButtonBar.ButtonData.OTHER);
-        javafx.scene.control.ButtonType later = new javafx.scene.control.ButtonType(
-                tr("dialog.lsp.interruptedEdit.later"), javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
-        javafx.scene.control.Alert ask = new javafx.scene.control.Alert(
-                javafx.scene.control.Alert.AlertType.WARNING, lines.toString(), later, keep, act);
-        ask.initOwner(host.window());
-        ask.setTitle(tr("dialog.lsp.interruptedEdit.title"));
-        ask.setHeaderText(tr(
-                interrupted.committed()
-                        ? "dialog.lsp.interruptedEdit.headerCommitted"
-                        : "dialog.lsp.interruptedEdit.header"));
-        ask.getDialogPane().setMinWidth(560);
-        javafx.scene.control.ButtonType answer = ask.showAndWait().orElse(later);
-        if (answer == act) {
-            return interrupted.committed() ? InterruptedEditChoice.REMOVE : InterruptedEditChoice.RESTORE;
-        }
-        return answer == keep ? InterruptedEditChoice.KEEP : InterruptedEditChoice.LATER;
-    }
-
-    /** Where interrupted-transaction journals are kept; a field so a test can point it at a temp directory. */
-    @Nullable
-    Path workspaceEditJournalDir;
-
-    private @Nullable Path journalDir() {
-        if (workspaceEditJournalDir != null) {
-            return workspaceEditJournalDir;
-        }
-        com.editora.config.ConfigManager config = ops.config();
-        return config == null ? null : config.getConfigDir().resolve("lsp-edit-journal");
-    }
-
-    /**
-     * Starts a transaction. One that moves files keeps a journal on disk until it has committed or rolled
-     * back, so a crash in between leaves a record of what is staged where (see
-     * {@link com.editora.lsp.WorkspaceEditJournal}).
-     */
-    private WorkspaceTransactionStatus beginTransaction(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
-        WorkspaceTransactionStatus transaction = new WorkspaceTransactionStatus();
-        if (!mapped.creates().isEmpty()
-                || !mapped.renames().isEmpty()
-                || !mapped.deletes().isEmpty()) {
-            transaction.journal = com.editora.lsp.WorkspaceEditJournal.begin(journalDir());
-        }
-        return transaction;
-    }
-
-    /**
-     * Ends a transaction whose staged files have all been committed or put back. After an incomplete
-     * rollback the journal stays, so the files it could not restore are offered at the next project open.
-     */
-    private void endTransaction(WorkspaceTransactionStatus transaction) {
-        if (transaction.rollbackFailed) {
-            transaction.journal.abandon();
-        } else {
-            transaction.journal.close();
-        }
-    }
-
-    private record AppliedWorkspaceText(EditorBuffer buffer, Path file, String original) {}
-
-    private record StagedCreate(
-            com.editora.lsp.WorkspaceEditMapper.FileCreate operation,
-            @Nullable Path overwrittenBackup,
-            boolean created,
-            @Nullable WorkspaceFileIdentity identity) {}
-
-    private record StagedDelete(
-            com.editora.lsp.WorkspaceEditMapper.FileDelete operation,
-            Path stage,
-            @Nullable WorkspaceFileIdentity identity) {}
-
-    private java.util.@Nullable List<StagedCreate> stageCreates(
-            java.util.List<com.editora.lsp.WorkspaceEditMapper.FileCreate> operations,
-            WorkspaceTransactionStatus transaction) {
-        java.util.List<StagedCreate> staged = new java.util.ArrayList<>();
-        try {
-            for (var operation : operations) {
-                Path file = operation.file().toAbsolutePath().normalize();
-                if (workspaceFiles.exists(file)) {
-                    if (operation.ignoreIfExists()) {
-                        staged.add(new StagedCreate(operation, null, false, null));
-                        continue;
-                    }
-                    if (!operation.overwrite() || workspaceFiles.isDirectory(file)) {
-                        rollbackCreates(staged, transaction);
-                        return null;
-                    }
-                    Path backup = temporarySibling(file, ".created-overwrite");
-                    transaction.journal.creating(file, backup);
-                    workspaceFiles.move(file, backup);
-                    staged.add(new StagedCreate(operation, backup, false, null));
-                    workspaceFiles.createFile(file);
-                    staged.set(staged.size() - 1, new StagedCreate(operation, backup, true, null));
-                    staged.set(
-                            staged.size() - 1,
-                            new StagedCreate(operation, backup, true, workspaceFiles.identity(file)));
-                } else {
-                    Path parent = file.getParent();
-                    if (parent != null) {
-                        workspaceFiles.createDirectories(parent);
-                    }
-                    transaction.journal.creating(file, null);
-                    workspaceFiles.createFile(file);
-                    staged.add(new StagedCreate(operation, null, true, null));
-                    staged.set(
-                            staged.size() - 1, new StagedCreate(operation, null, true, workspaceFiles.identity(file)));
-                }
-            }
-            return staged;
-        } catch (java.io.IOException | RuntimeException failure) {
-            rollbackCreates(staged, transaction);
-            return null;
-        }
-    }
-
-    private void rollbackCreates(java.util.List<StagedCreate> staged, WorkspaceTransactionStatus transaction) {
-        for (int i = staged.size() - 1; i >= 0; i--) {
-            StagedCreate item = staged.get(i);
-            Path file = item.operation().file().toAbsolutePath().normalize();
-            try {
-                if (item.created() && workspaceFiles.exists(file)) {
-                    if (workspaceFiles.size(file) == 0) {
-                        workspaceFiles.deleteIfExists(file);
-                    } else {
-                        transaction.rollbackFailed = true;
-                    }
-                }
-                if (item.overwrittenBackup() != null && workspaceFiles.exists(item.overwrittenBackup())) {
-                    if (workspaceFiles.exists(file)) {
-                        transaction.rollbackFailed = true;
-                    } else {
-                        workspaceFiles.move(item.overwrittenBackup(), file);
-                    }
-                }
-            } catch (java.io.IOException ignored) {
-                transaction.rollbackFailed = true;
-                // Continue restoring independent paths.
-            }
-        }
-    }
-
-    private void commitCreates(java.util.List<StagedCreate> staged) {
-        for (StagedCreate item : staged) {
-            deleteRecursively(item.overwrittenBackup());
-        }
-    }
-
-    private java.util.@Nullable List<StagedDelete> stageDeletes(
-            java.util.List<com.editora.lsp.WorkspaceEditMapper.FileDelete> operations,
-            WorkspaceTransactionStatus transaction) {
-        java.util.List<StagedDelete> staged = new java.util.ArrayList<>();
-        try {
-            for (var operation : operations) {
-                Path file = operation.file().toAbsolutePath().normalize();
-                if (!workspaceFiles.exists(file)) {
-                    if (operation.ignoreIfNotExists()) {
-                        continue;
-                    }
-                    rollbackDeletes(staged, transaction);
-                    return null;
-                }
-                if (workspaceFiles.isDirectory(file)
-                        && !operation.recursive()
-                        && !workspaceFiles.list(file).isEmpty()) {
-                    rollbackDeletes(staged, transaction);
-                    return null;
-                }
-                Path stage = temporarySibling(file, ".deleted");
-                transaction.journal.deleting(file, stage);
-                workspaceFiles.move(file, stage);
-                staged.add(new StagedDelete(operation, stage, null));
-                staged.set(staged.size() - 1, new StagedDelete(operation, stage, workspaceFiles.identity(stage)));
-            }
-            return staged;
-        } catch (java.io.IOException | RuntimeException failure) {
-            rollbackDeletes(staged, transaction);
-            return null;
-        }
-    }
-
-    private void rollbackDeletes(java.util.List<StagedDelete> staged, WorkspaceTransactionStatus transaction) {
-        for (int i = staged.size() - 1; i >= 0; i--) {
-            StagedDelete item = staged.get(i);
-            try {
-                Path original = item.operation().file().toAbsolutePath().normalize();
-                if (workspaceFiles.exists(original)) {
-                    transaction.rollbackFailed = true;
-                } else {
-                    workspaceFiles.move(item.stage(), original);
-                }
-            } catch (java.io.IOException ignored) {
-                transaction.rollbackFailed = true;
-                // Continue restoring independent paths.
-            }
-        }
-    }
-
-    private void commitDeletes(java.util.List<StagedDelete> staged) {
-        for (StagedDelete item : staged) {
-            deleteRecursively(item.stage());
-        }
-    }
-
-    private void deleteRecursively(@Nullable Path path) {
-        if (path == null || !workspaceFiles.exists(path)) {
-            return;
-        }
-        try {
-            workspaceFiles.walk(path).stream()
-                    .sorted(java.util.Comparator.reverseOrder())
-                    .forEach(p -> {
-                        try {
-                            workspaceFiles.deleteIfExists(p);
-                        } catch (java.io.IOException ignored) {
-                            // A committed edit should not be rolled back because cleanup of a hidden stage failed.
-                        }
-                    });
-        } catch (java.io.IOException ignored) {
-            // Best effort cleanup.
-        }
-    }
-
-    /** One completed filesystem rename plus the temporary paths used to make the batch transactional. */
-    private record StagedRename(
-            com.editora.lsp.WorkspaceEditMapper.FileRename rename,
-            Path stage,
-            @Nullable Path overwrittenBackup,
-            @Nullable WorkspaceFileIdentity identity) {}
-
-    /**
-     * Executes every file move as one recoverable batch before editor text is touched. Sources and overwritten
-     * destinations are first moved aside; if any later move fails, every path is restored from those stages.
-     */
-    private java.util.@Nullable List<StagedRename> stageRenames(
-            java.util.List<com.editora.lsp.WorkspaceEditMapper.FileRename> renames,
-            WorkspaceTransactionStatus transaction) {
-        java.util.List<StagedRename> staged = new java.util.ArrayList<>();
-        java.util.Set<Path> sources = new java.util.HashSet<>();
-        java.util.Set<Path> destinations = new java.util.HashSet<>();
-        try {
-            for (var r : renames) {
-                Path from = r.from().toAbsolutePath().normalize();
-                Path to = r.to().toAbsolutePath().normalize();
-                if (samePathSpelling(from, to)) {
-                    continue;
-                }
-                if (!sources.add(from) || !destinations.add(to) || !workspaceFiles.isRegularFile(from)) {
-                    return null;
-                }
-            }
-            // Validate collisions only after every source is known. A destination may legitimately be
-            // another source in the same batch (A→B, B→C), because all sources are staged first.
-            for (var r : renames) {
-                Path from = r.from().toAbsolutePath().normalize();
-                Path to = r.to().toAbsolutePath().normalize();
-                if (!samePathSpelling(from, to)
-                        && !r.overwrite()
-                        && workspaceFiles.exists(to)
-                        && !sources.contains(to)
-                        && !sameFileInAnotherCase(from, to)) {
-                    return null;
-                }
-            }
-            for (var r : renames) {
-                Path from = r.from().toAbsolutePath().normalize();
-                Path to = r.to().toAbsolutePath().normalize();
-                if (samePathSpelling(from, to)) {
-                    continue;
-                }
-                Path stage = temporarySibling(from, ".source");
-                transaction.journal.renaming(
-                        from, stage, r.to().toAbsolutePath().normalize());
-                workspaceFiles.move(from, stage);
-                staged.add(new StagedRename(r, stage, null, null));
-                staged.set(staged.size() - 1, new StagedRename(r, stage, null, workspaceFiles.identity(stage)));
-            }
-            for (int i = 0; i < staged.size(); i++) {
-                StagedRename item = staged.get(i);
-                Path to = item.rename().to().toAbsolutePath().normalize();
-                Path parent = to.getParent();
-                if (parent != null) {
-                    workspaceFiles.createDirectories(parent);
-                }
-                Path backup = null;
-                if (workspaceFiles.exists(to)) {
-                    backup = temporarySibling(to, ".destination");
-                    transaction.journal.replacing(to, backup);
-                    workspaceFiles.move(to, backup);
-                    item = new StagedRename(item.rename(), item.stage(), backup, item.identity());
-                    staged.set(i, item);
-                }
-                workspaceFiles.move(item.stage(), to);
-            }
-            return List.copyOf(staged);
-        } catch (java.io.IOException | RuntimeException failure) {
-            rollbackRenames(staged, transaction);
-            return null;
-        }
-    }
-
-    /**
-     * Whether a rename is a no-op. Compared as text, not with {@code Path.equals}: on Windows that ignores
-     * case, so a case-only rename ({@code Httpclient.java} → {@code HttpClient.java}) was dropped from the
-     * batch while its text edits were applied.
-     */
-    private static boolean samePathSpelling(Path from, Path to) {
-        return from.toString().equals(to.toString());
-    }
-
-    /**
-     * Whether {@code to} "exists" only because it is {@code from} itself on a case-insensitive volume — a
-     * case-only rename, not a collision with someone else's file. Staging then performs the two-step move
-     * such a rename needs.
-     */
-    private boolean sameFileInAnotherCase(Path from, Path to) {
-        return WorkspaceEditFiles.sameFileInAnotherCase(workspaceFiles, from, to);
-    }
-
-    private void commitRenames(java.util.List<StagedRename> staged) {
-        for (StagedRename item : staged) {
-            deleteRecursively(item.overwrittenBackup());
-        }
-    }
-
-    private Path temporarySibling(Path file, String suffix) throws java.io.IOException {
-        Path parent = file.getParent();
-        if (parent == null) {
-            throw new java.io.IOException("file has no parent: " + file);
-        }
-        Path temp = workspaceFiles.createTempFile(parent, ".editora-lsp-", suffix);
-        workspaceFiles.deleteIfExists(temp);
-        return temp;
-    }
-
-    private void rollbackRenames(java.util.List<StagedRename> staged, WorkspaceTransactionStatus transaction) {
-        // Put completed destinations back into their per-source stages first. This also handles chains such
-        // as A→B and B→C without one restored source overwriting another staged source.
-        for (int i = staged.size() - 1; i >= 0; i--) {
-            StagedRename item = staged.get(i);
-            Path to = item.rename().to().toAbsolutePath().normalize();
-            try {
-                if (!workspaceFiles.exists(item.stage()) && workspaceFiles.exists(to)) {
-                    workspaceFiles.move(to, item.stage());
-                }
-            } catch (java.io.IOException ignored) {
-                transaction.rollbackFailed = true;
-                // Continue restoring the other independently staged paths.
-            }
-        }
-        for (int i = staged.size() - 1; i >= 0; i--) {
-            StagedRename item = staged.get(i);
-            Path from = item.rename().from().toAbsolutePath().normalize();
-            Path to = item.rename().to().toAbsolutePath().normalize();
-            try {
-                if (workspaceFiles.exists(item.stage())) {
-                    if (workspaceFiles.exists(from)) {
-                        transaction.rollbackFailed = true;
-                    } else {
-                        workspaceFiles.move(item.stage(), from);
-                    }
-                }
-                if (item.overwrittenBackup() != null
-                        && workspaceFiles.exists(item.overwrittenBackup())
-                        && !workspaceFiles.exists(to)) {
-                    workspaceFiles.move(item.overwrittenBackup(), to);
-                } else if (item.overwrittenBackup() != null && workspaceFiles.exists(item.overwrittenBackup())) {
-                    // The completed destination could not be moved back to its source stage. Replacing it
-                    // here would destroy that source's only surviving copy, so retain both paths for recovery.
-                    transaction.rollbackFailed = true;
-                }
-            } catch (java.io.IOException ignored) {
-                transaction.rollbackFailed = true;
-                // Best effort after the original failure; all recoverable stages are attempted.
-            }
         }
     }
 
