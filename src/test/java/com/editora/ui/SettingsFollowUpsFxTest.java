@@ -179,7 +179,7 @@ class SettingsFollowUpsFxTest {
                 stored.put("ai completion model", () -> s.getAiCompletionModelFor(ai));
                 fields.put("author", SettingsRig.control(w, "templateAuthorField"));
                 stored.put("author", s::getAuthorNameRaw);
-                fields.put("git", FxTestSupport.field(w, "gitPathField"));
+                fields.put("git", SettingsRig.control(w, "gitPathField"));
                 stored.put("git", s::getGitPath);
 
                 fields.forEach((name, field) -> {

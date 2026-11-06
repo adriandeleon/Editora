@@ -210,7 +210,7 @@ class SettingsRealWindowFxTest {
         open(null);
         FxTestSupport.runOnFx(() -> {
             page("GIT");
-            TextField gitPath = FxTestSupport.field(window, "gitPathField");
+            TextField gitPath = SettingsRig.control(window, "gitPathField");
             TextField search = FxTestSupport.field(window, "searchField");
             Stage stage = FxTestSupport.field(window, "stage");
             gitPath.requestFocus();

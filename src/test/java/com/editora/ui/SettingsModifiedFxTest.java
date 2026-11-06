@@ -210,7 +210,7 @@ class SettingsModifiedFxTest {
         try (var fx = FxWindowFixture.create()) {
             SettingsWindow window = open(fx);
             CheckBox minimap = FxTestSupport.field(window, "minimapCheck");
-            CheckBox git = FxTestSupport.field(window, "gitCheck");
+            CheckBox git = SettingsRig.control(window, "gitCheck");
             ToggleButton only = FxTestSupport.field(window, "modifiedOnly");
             TextField search = FxTestSupport.field(window, "searchField");
             FxTestSupport.runOnFx(() -> {

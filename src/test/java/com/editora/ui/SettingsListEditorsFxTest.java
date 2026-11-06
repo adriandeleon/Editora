@@ -650,8 +650,8 @@ class SettingsListEditorsFxTest {
                 fx.shared.getSettings().setGitSupport(false);
                 fx.shared.getSettings().setGitPath("/nonexistent/bin/git");
                 SettingsWindow w = shown(fx);
-                TextField path = FxTestSupport.field(w, "gitPathField");
-                CheckBox git = FxTestSupport.field(w, "gitCheck");
+                TextField path = SettingsRig.control(w, "gitPathField");
+                CheckBox git = SettingsRig.control(w, "gitCheck");
                 assertFalse(git.isSelected());
                 assertFalse(path.isDisable(), "the path is how a failed detection gets fixed");
                 FxTestSupport.<Stage>field(w, "stage").hide();

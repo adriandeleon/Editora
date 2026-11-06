@@ -37,8 +37,8 @@ class SettingsGitPageFxTest {
         try (var fx = FxWindowFixture.create()) {
             SettingsWindow w = fx.controller.settingsWindow;
             FxTestSupport.runOnFx(() -> w.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
-            TextField path = FxTestSupport.field(w, "gitPathField");
-            Label status = FxTestSupport.field(w, "gitStatusLabel");
+            TextField path = SettingsRig.control(w, "gitPathField");
+            Label status = SettingsRig.control(w, "gitStatusLabel");
             FxTestSupport.runOnFx(() -> {
                 path.setText("/nonexistent/editora-test/git");
                 path.fireEvent(new ActionEvent());
@@ -49,7 +49,7 @@ class SettingsGitPageFxTest {
                 Thread.sleep(20);
             }
             assertEquals(expected, FxTestSupport.callOnFx(status::getText));
-            CheckBox git = FxTestSupport.field(w, "gitCheck");
+            CheckBox git = SettingsRig.control(w, "gitCheck");
             assertFalse(git.isDisabled(), "the switch can still be turned off");
             FxTestSupport.runOnFx(() -> path.setText("")); // leave the fixture's real git alone
         }
@@ -62,8 +62,8 @@ class SettingsGitPageFxTest {
             SettingsWindow w = fx.controller.settingsWindow;
             FxTestSupport.runOnFx(() -> {
                 w.show(FxTestSupport.<Stage>field(fx.controller, "stage"));
-                CheckBox git = FxTestSupport.field(w, "gitCheck");
-                ComboBox<?> pull = FxTestSupport.field(w, "gitPullModeCombo");
+                CheckBox git = SettingsRig.control(w, "gitCheck");
+                ComboBox<?> pull = SettingsRig.control(w, "gitPullModeCombo");
                 java.util.Map<?, javafx.scene.layout.Region> pages = FxTestSupport.field(w, "pages");
                 javafx.scene.layout.Region page = pages.entrySet().stream()
                         .filter(e -> e.getKey().toString().equals("GIT"))
@@ -73,7 +73,7 @@ class SettingsGitPageFxTest {
                 // The page's switches, in order: Enable Git, blame, fetch automatically.
                 var switches = SettingsRemoteSitesFxTest.all(page, SettingSwitch.class, new java.util.ArrayList<>());
                 assertEquals(3, switches.size());
-                Spinner<?> minutes = FxTestSupport.field(w, "gitAutoFetchSpinner");
+                Spinner<?> minutes = SettingsRig.control(w, "gitAutoFetchSpinner");
                 git.setSelected(true);
                 assertFalse(pull.isDisabled(), "pull mode on");
                 assertFalse(switches.get(1).isDisabled() || switches.get(2).isDisabled(), "blame, fetch on");
@@ -83,7 +83,7 @@ class SettingsGitPageFxTest {
                 assertTrue(switches.get(2).isDisabled(), "fetch automatically");
                 assertTrue(minutes.isDisabled(), "minutes");
                 assertFalse(switches.get(0).isDisabled(), "Enable Git itself");
-                assertFalse(FxTestSupport.<TextField>field(w, "gitPathField").isDisabled(), "the path stays editable");
+                assertFalse(SettingsRig.<TextField>control(w, "gitPathField").isDisabled(), "the path stays editable");
                 git.setSelected(true);
             });
         }

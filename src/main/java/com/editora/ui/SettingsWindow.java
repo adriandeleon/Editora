@@ -352,22 +352,12 @@ public class SettingsWindow {
     private CheckBox copyLineNoSelectionCheck;
     private CheckBox copyWithHighlightingCheck;
     private CheckBox projectsCheck;
-    private CheckBox gitCheck;
-    private CheckBox blameCheck;
-    private CheckBox githubCheck;
-    private TextField ghPathField;
-    private @Nullable Label githubStatusLabel;
     private CheckBox updateCheckCheck;
     private CheckBox localHistoryCheck;
     private CheckBox crashRecoveryCheck;
     private Spinner<Integer> historyMaxPerFileSpinner;
     private Spinner<Integer> historyMaxAgeSpinner;
     private Spinner<Integer> historyMaxTotalSpinner;
-    private @Nullable Label gitStatusLabel;
-    private TextField gitPathField;
-    private ComboBox<com.editora.git.GitPullMode> gitPullModeCombo;
-    private CheckBox gitAutoFetchCheck;
-    private Spinner<Integer> gitAutoFetchSpinner;
     private CheckBox mermaidCheck;
     private CheckBox httpCheck;
     private CheckBox httpScriptsCheck;
@@ -508,6 +498,7 @@ public class SettingsWindow {
         this.keymapsPage = new SettingsKeymapsPage(this, config);
         this.snippetPages = new SettingsSnippetPages(this, config);
         this.markdownPage = new SettingsMarkdownPage(this, config);
+        this.gitPages = new SettingsGitPages(this, config, gitService, githubService);
         if (com.editora.AppInfo.isSnapshot()) {
             // Start the (background, bounded) branch lookup now, so About has it without ever waiting on git.
             com.editora.AppInfo.gitBranchAsync();
@@ -724,7 +715,7 @@ public class SettingsWindow {
         lspPage.refreshLspStatus();
         debugPage.refreshDebugStatus();
         refreshMermaidStatus();
-        refreshGithubStatus();
+        gitPages.refreshGithubStatus();
         refreshBuildToolStatus();
         aiPages.refreshAgentClientStatus();
     }
@@ -1343,88 +1334,7 @@ public class SettingsWindow {
             refreshToolWindowRows();
         });
 
-        gitCheck = new CheckBox(tr("settings.enableGit"));
-        gitCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setGitSupport(now);
-            apply();
-            refreshToolWindowRows(); // reflect on the Tool Windows page's Commit row
-            refreshGithubStatus(); // the GitHub page says when it is waiting for Git support
-        });
-
-        blameCheck = new CheckBox(tr("settings.git.blameInline"));
-        blameCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setGitBlameInline(now);
-            apply();
-        });
-
-        gitPathField = new TextField();
-        gitPathField.setPromptText("git");
-        commitOnEnterOrBlur(gitPathField, () -> config.getSettings().getGitPath(), now -> {
-            config.getSettings().setGitPath(now);
-            apply(); // applySupport pushes the command into GitService
-            probeGit();
-        });
-
-        gitPullModeCombo = new ComboBox<>();
-        gitPullModeCombo.getItems().setAll(com.editora.git.GitPullMode.values());
-        gitPullModeCombo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(com.editora.git.GitPullMode mode) {
-                return mode == null ? "" : GitCoordinator.pullModeLabel(mode);
-            }
-
-            @Override
-            public com.editora.git.@Nullable GitPullMode fromString(String label) {
-                return null; // not editable
-            }
-        });
-        gitPullModeCombo.setMinWidth(170); // no fixed width: the translated items differ a lot in length
-        gitPullModeCombo.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
-                return;
-            }
-            config.getSettings().setGitPullMode(now.id());
-            apply();
-        });
-
-        gitAutoFetchCheck = new CheckBox(tr("settings.git.autoFetch"));
-        gitAutoFetchCheck.selectedProperty().addListener((obs, was, now) -> {
-            gitAutoFetchSpinner.setDisable(!now);
-            if (loading) {
-                return;
-            }
-            config.getSettings().setGitAutoFetch(now);
-            apply(); // applySupport starts or stops the timer
-        });
-        gitAutoFetchSpinner = IntSpinners.editable(
-                1,
-                com.editora.config.Settings.MAX_GIT_AUTO_FETCH_MINUTES,
-                config.getSettings().getGitAutoFetchMinutes(),
-                1);
-        gitAutoFetchSpinner.setPrefWidth(90);
-        gitAutoFetchSpinner.setAccessibleText(tr("settings.git.autoFetchMinutes"));
-        gitAutoFetchSpinner.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
-                return;
-            }
-            config.getSettings().setGitAutoFetchMinutes(now);
-            apply();
-        });
-
-        githubCheck = new CheckBox(tr("settings.enableGithub"));
-        githubCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setGithubSupport(now);
-            apply();
-            ghPathField.setDisable(!now);
-            refreshGithubStatus();
-        });
-        ghPathField = new TextField();
-        ghPathField.setPromptText("gh");
-        commitOnEnterOrBlur(ghPathField, () -> config.getSettings().getGhPath(), now -> {
-            config.getSettings().setGhPath(now);
-            apply();
-            refreshGithubStatus();
-        });
+        gitPages.buildControls();
 
         updateCheckCheck = viewCheck(tr("settings.checkForUpdates"), Settings::setUpdateCheck);
 
@@ -1809,8 +1719,8 @@ public class SettingsWindow {
         pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
         pages.put(Category.ABBREVIATIONS, abbreviationsPage());
         // Version control
-        pages.put(Category.GIT, gitPage());
-        pages.put(Category.GITHUB, githubPage());
+        pages.put(Category.GIT, gitPages.gitPage());
+        pages.put(Category.GITHUB, gitPages.githubPage());
         // System
         pages.put(Category.KEYMAPS, keymapsPage.keymapsPage());
         pages.put(Category.MACROS, keymapsPage.macrosPage());
@@ -3214,7 +3124,16 @@ public class SettingsWindow {
      */
     List<Object> controlOwners() {
         return List.of(
-                this, syncPage, pluginsPage, aiPages, debugPage, lspPage, keymapsPage, snippetPages, markdownPage);
+                this,
+                syncPage,
+                pluginsPage,
+                aiPages,
+                debugPage,
+                lspPage,
+                keymapsPage,
+                snippetPages,
+                markdownPage,
+                gitPages);
     }
 
     /** Settings → AI, AI Agent, AI Actions and MCP Server; see {@link SettingsAiPages}. */
@@ -3240,6 +3159,9 @@ public class SettingsWindow {
             java.util.function.BiConsumer<Boolean, java.util.function.BiConsumer<Boolean, String>> probe) {
         aiPages.setAiConnectionProbe(probe);
     }
+
+    /** Settings → Git and GitHub; see {@link SettingsGitPages}. */
+    private final SettingsGitPages gitPages;
 
     /** Settings → Markdown; see {@link SettingsMarkdownPage}. */
     private final SettingsMarkdownPage markdownPage;
@@ -3317,97 +3239,6 @@ public class SettingsWindow {
     /** The user changed synced data on a page of this window. */
     void markSyncDirty() {
         syncPage.markSyncDirty();
-    }
-
-    /** Reference implementation of the UI Kit card page — see {@link #card}/{@link #settingRow}. The
-     *  cards are untitled (the kit's are too): the page heading already says "Git", and each row names
-     *  itself. */
-    private VBox gitPage() {
-        VBox p = page(tr("settings.cat.git"), tr("settings.git.subtitle"));
-
-        Card c = card(p, null);
-        gitStatusLabel = new Label(tr("settings.git.checking"));
-        gitStatusLabel.getStyleClass().add("settings-git-status");
-        gitStatusLabel.setWrapText(true);
-        gitStatusLabel.setMaxWidth(340);
-        cardRow(
-                c,
-                Category.GIT,
-                settingRow(tr("settings.enableGit"), tr("settings.git.hint"), switchFor(gitCheck)),
-                "git version control vcs enable");
-        Button gitBrowse = browseButton(tr("settings.git.command"), gitPathField);
-        gitPathField.setPrefWidth(PATH_FIELD_WIDTH);
-        cardRow(
-                c,
-                Category.GIT,
-                settingRow(
-                        tr("settings.git.command"),
-                        tr("settings.git.command.desc"),
-                        new HBox(6, gitPathField, gitBrowse)),
-                "git command path executable browse");
-        cardRow(
-                c,
-                Category.GIT,
-                settingRow(tr("settings.git.detected"), null, gitStatusLabel),
-                "git command found version installed not found");
-
-        // Blame, pull and fetch only matter while Git is on; the command path stays editable to fix detection.
-        p.getChildren().add(SettingsDependents.note(gitCheck.selectedProperty(), tr("settings.enableGit")));
-        Card c2 = card(p, null);
-        SettingsDependents.bind(gitCheck.selectedProperty(), c2.body());
-        cardRow(
-                c2,
-                Category.GIT,
-                settingRow(
-                        tr("settings.git.blameInline"),
-                        tr("settings.git.blameInline.desc"),
-                        new HBox(8, keymapsPage.chordChip("git.toggleBlame"), switchFor(blameCheck))),
-                "git blame annotate inline author history line");
-        cardRow(
-                c2,
-                Category.GIT,
-                settingRow(tr("settings.git.pullMode"), tr("settings.git.pullMode.desc"), gitPullModeCombo),
-                "git pull mode fast-forward ff-only rebase merge diverged");
-        Label autoFetchUnit = new Label(tr("settings.git.autoFetchMinutes"));
-        autoFetchUnit.setLabelFor(gitAutoFetchSpinner);
-        cardRow(
-                c2,
-                Category.GIT,
-                settingRow(
-                        tr("settings.git.autoFetch"),
-                        tr("settings.git.autoFetch.desc"),
-                        new HBox(8, gitAutoFetchSpinner, autoFetchUnit, switchFor(gitAutoFetchCheck))),
-                "git fetch automatically auto background interval minutes remote prune");
-
-        return p;
-    }
-
-    private VBox githubPage() {
-        VBox p = page(tr("settings.cat.github"), tr("settings.github.subtitle"));
-        Card c = card(p, null);
-        githubStatusLabel = new Label(tr("settings.github.checking"));
-        githubStatusLabel.getStyleClass().add("settings-git-status");
-        githubStatusLabel.setWrapText(true);
-        githubStatusLabel.setMaxWidth(340);
-        checkRow(c, Category.GITHUB, githubCheck, tr("settings.github.hint"), "github gh pull request pr enable");
-        Button ghBrowse = browseButton(tr("settings.github.ghPath"), ghPathField);
-        ghPathField.setPrefWidth(PATH_FIELD_WIDTH);
-        controlRow(
-                c,
-                Category.GITHUB,
-                tr("settings.github.ghPath"),
-                null,
-                new HBox(6, ghPathField, ghBrowse),
-                "github gh path executable command");
-        controlRow(
-                c,
-                Category.GITHUB,
-                tr("settings.git.detected"),
-                null,
-                githubStatusLabel,
-                "github gh cli found installed authenticated not found");
-        refreshGithubStatus();
-        return p;
     }
 
     private VBox encryptionPage() {
@@ -4116,68 +3947,6 @@ public class SettingsWindow {
         });
     }
 
-    private void refreshGithubStatus() {
-        if (githubStatusLabel == null || githubService == null) {
-            return;
-        }
-        if (config.getSettings().isGithubSupport() && !config.getSettings().isGitSupport()) {
-            // GitHub rides on the Git integration: say so here rather than report a healthy gh that does nothing.
-            githubStatusLabel.getStyleClass().setAll("settings-git-status", "settings-git-missing");
-            githubStatusLabel.setText(tr("settings.github.needsGit"));
-            return;
-        }
-        // Re-applying an unchanged command keeps the service's cached answer, so it is shown at once and
-        // only replaced when the fresh probe lands — no "Checking…" flash on every Settings sync.
-        githubService.setCommand(config.getSettings().getGhPath());
-        com.editora.github.GitHubService.Availability cached = githubService.availability();
-        if (cached == null) {
-            githubStatusLabel.getStyleClass().setAll("settings-git-status");
-            githubStatusLabel.setText(tr("settings.github.checking"));
-        } else {
-            showGithubStatus(cached);
-        }
-        githubService.detect(this::showGithubStatus);
-    }
-
-    private void showGithubStatus(com.editora.github.GitHubService.Availability a) {
-        if (githubStatusLabel == null) {
-            return; // the GitHub page makes it before anything probes
-        }
-        String[] verdict = githubStatus(a, config.getSettings().getGhPath());
-        githubStatusLabel.getStyleClass().setAll("settings-git-status", verdict[0]);
-        githubStatusLabel.setText(verdict[1]);
-    }
-
-    /** The GitHub page's status row for a probe result: {@code [style class, text]}. Pure — unit-tested. */
-    static String[] githubStatus(com.editora.github.GitHubService.Availability a, String ghPath) {
-        String missing = "settings-git-missing";
-        if (!a.found()) {
-            // A typo in the path is not a missing install: name the path rather than say "install gh".
-            return new String[] {
-                missing,
-                ghPath == null || ghPath.isBlank()
-                        ? tr("settings.github.notFound")
-                        : tr("settings.github.notFoundAt", ghPath.strip())
-            };
-        }
-        return switch (a.auth()) {
-            case SIGNED_OUT -> new String[] {missing, tr("settings.github.foundNoAuth")};
-            case REJECTED -> new String[] {missing, tr("settings.github.foundRejected")};
-            // Offline is not a fault of the setup: gh is there and has an account.
-            case UNVERIFIED -> new String[] {"settings-git-found", tr("settings.github.foundUnverified", a.version())};
-            case SIGNED_IN ->
-                a.supportsChecks()
-                        ? new String[] {"settings-git-found", tr("settings.github.found", a.version())}
-                        : new String[] {
-                            missing,
-                            tr(
-                                    "settings.github.foundOld",
-                                    com.editora.github.GhVersion.number(a.version()),
-                                    com.editora.github.GhVersion.MINIMUM)
-                        };
-        };
-    }
-
     /** Reads each build coordinator's currently-cached detection (no subprocess probe needed — "found" just
      *  means the marker file parsed for the active context) and colors that tool's status row green/red.
      *
@@ -4253,31 +4022,6 @@ public class SettingsWindow {
                 .getStyleClass()
                 .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
         ripgrepStatusLabel.setText(found ? tr("settings.search.found") : tr("settings.search.notFound"));
-    }
-
-    /**
-     * Probes for the {@code git} command off-thread and updates the Git page: shows the version when
-     * found (and enables the checkbox), or "not found" + disables the checkbox when git isn't on PATH.
-     */
-    private void probeGit() {
-        Label status = gitStatusLabel;
-        if (status == null || gitService == null) {
-            return;
-        }
-        gitService.setCommand(config.getSettings().getGitPath()); // probe what the setting names
-        status.getStyleClass().setAll("settings-git-status");
-        status.setText(tr("settings.git.checking"));
-        gitService.version(version -> {
-            boolean found = version != null && !version.isBlank();
-            status.getStyleClass().setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
-            String path = config.getSettings().getGitPath();
-            status.setText(
-                    found
-                            ? tr("settings.git.found", version)
-                            : path == null || path.isBlank()
-                                    ? tr("settings.git.notFound")
-                                    : tr("settings.git.notFoundAt", path));
-        });
     }
 
     /** A stripe side in the UI language (it used to be the enum constant's name, English in every locale). */
@@ -5155,18 +4899,9 @@ public class SettingsWindow {
             if (toolWindowSettings != null) {
                 toolWindowSettings.load();
             }
-            gitCheck.setSelected(settings.isGitSupport());
-            blameCheck.setSelected(settings.isGitBlameInline());
-            gitPathField.setText(settings.getGitPath());
-            gitPullModeCombo.setValue(com.editora.git.GitPullMode.of(settings.getGitPullMode()));
-            gitAutoFetchCheck.setSelected(settings.isGitAutoFetch());
-            gitAutoFetchSpinner.getValueFactory().setValue(settings.getGitAutoFetchMinutes());
-            gitAutoFetchSpinner.setDisable(!settings.isGitAutoFetch());
+            gitPages.loadGit(settings);
             syncPage.load(settings);
-            githubCheck.setSelected(settings.isGithubSupport());
-            ghPathField.setText(settings.getGhPath());
-            ghPathField.setDisable(!settings.isGithubSupport());
-            refreshGithubStatus();
+            gitPages.loadGithub(settings);
             updateCheckCheck.setSelected(settings.isUpdateCheck());
             localHistoryCheck.setSelected(settings.isLocalHistory());
             crashRecoveryCheck.setSelected(settings.isCrashRecovery());
@@ -5244,7 +4979,7 @@ public class SettingsWindow {
         String gitCommand = config.getSettings().getGitPath();
         if (!java.util.Objects.equals(gitCommand, gitProbedFor)) {
             gitProbedFor = gitCommand;
-            probeGit();
+            gitPages.probeGit();
         }
     }
 
@@ -5373,18 +5108,7 @@ public class SettingsWindow {
         if (!built) {
             return;
         }
-        boolean prev = loading;
-        loading = true;
-        try {
-            blameCheck.setSelected(config.getSettings().isGitBlameInline());
-            gitPullModeCombo.setValue(
-                    com.editora.git.GitPullMode.of(config.getSettings().getGitPullMode()));
-            gitAutoFetchCheck.setSelected(config.getSettings().isGitAutoFetch());
-            gitAutoFetchSpinner.getValueFactory().setValue(config.getSettings().getGitAutoFetchMinutes());
-            gitAutoFetchSpinner.setDisable(!config.getSettings().isGitAutoFetch());
-        } finally {
-            loading = prev;
-        }
+        gitPages.syncGitBlameCheck();
     }
 
     /** Re-reads the "enable plugins" checkbox from settings (used after the palette toggle command). */
