@@ -120,7 +120,7 @@ class SettingsSyncPageFxTest {
     }
 
     private <T> T control(String name) {
-        return FxTestSupport.field(window, name);
+        return SettingsRig.control(window, name);
     }
 
     private String status() throws Exception {
@@ -186,7 +186,8 @@ class SettingsSyncPageFxTest {
 
         // A refresh from elsewhere — the GitHub sign-in check finishing, the service reporting its state —
         // used to put "Not connected." back before the message could be read.
-        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(window, "refreshSyncControls"));
+        FxTestSupport.runOnFx(
+                () -> FxTestSupport.invoke(FxTestSupport.field(window, "syncPage"), "refreshSyncControls"));
         assertEquals(tr("status.sync.invalidRepository"), status());
 
         FxTestSupport.runOnFx(() -> SettingsRig.typeAndEnter(control("syncUrlField"), remote.toString()));
@@ -489,15 +490,15 @@ class SettingsSyncPageFxTest {
     void aRepositoryUrlWithATokenIsRefusedWithTheReason() throws Exception {
         open(null);
         FxTestSupport.runOnFx(() -> {
-            TextField url = FxTestSupport.field(window, "syncUrlField");
-            Label state = FxTestSupport.field(window, "syncStateLabel");
+            TextField url = SettingsRig.control(window, "syncUrlField");
+            Label state = SettingsRig.control(window, "syncStateLabel");
             url.setText("https://me:ghp_FAKEFAKEFAKE@github.com/me/editora-sync.git");
             url.fireEvent(new javafx.event.ActionEvent());
             assertEquals("", settings.getSyncRepoUrl(), "nothing is saved");
             assertTrue(url.getPseudoClassStates().contains(atlantafx.base.theme.Styles.STATE_DANGER));
             assertEquals(tr("settings.sync.repo.credentials"), url.getTooltip().getText());
             assertEquals(tr("settings.sync.repo.credentials"), state.getText());
-            FxTestSupport.<Button>field(window, "syncConnectButton").fire();
+            SettingsRig.<Button>control(window, "syncConnectButton").fire();
             assertFalse(settings.isSyncEnabled(), "Connect does not reach for the stored URL instead");
 
             url.setText("git@github.com:me/editora-sync.git");

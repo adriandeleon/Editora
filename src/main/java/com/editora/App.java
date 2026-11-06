@@ -133,6 +133,9 @@ public class App extends Application {
         // so a user theme saved as the active one resolves on launch (see ui/UserThemes).
         Themes.loadUserThemes(shared.getConfigDir());
         Application.setUserAgentStylesheet(Themes.stylesheetFor(settings.getTheme()));
+        // Each window is told whether that theme is light or dark as it opens, so the frame and the window
+        // buttons JavaFX draws follow the app theme rather than the desktop's. See WindowColorScheme.
+        com.editora.ui.WindowColorScheme.install(Themes.isDark(settings.getTheme()));
 
         KeymapManager keymap = new KeymapManager();
         keymap.loadNamed(settings.getKeymap());

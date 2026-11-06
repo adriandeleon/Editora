@@ -40,26 +40,26 @@ class GitHubStatusRowsFxTest {
     void theSettingsRowTellsTheCasesApart() {
         assertArrayEquals(
                 new String[] {"settings-git-missing", tr("settings.github.notFound")},
-                SettingsWindow.githubStatus(Availability.UNKNOWN, ""));
+                SettingsGitPages.githubStatus(Availability.UNKNOWN, ""));
         assertArrayEquals(
                 new String[] {"settings-git-found", tr("settings.github.found", NEW)},
-                SettingsWindow.githubStatus(found(NEW, "SIGNED_IN"), ""));
+                SettingsGitPages.githubStatus(found(NEW, "SIGNED_IN"), ""));
         assertArrayEquals(
                 new String[] {"settings-git-found", tr("settings.github.foundUnverified", NEW)},
-                SettingsWindow.githubStatus(found(NEW, "UNVERIFIED"), ""));
+                SettingsGitPages.githubStatus(found(NEW, "UNVERIFIED"), ""));
         assertArrayEquals(
                 new String[] {"settings-git-missing", tr("settings.github.foundNoAuth")},
-                SettingsWindow.githubStatus(found(NEW, "SIGNED_OUT"), ""));
+                SettingsGitPages.githubStatus(found(NEW, "SIGNED_OUT"), ""));
         assertArrayEquals(
                 new String[] {"settings-git-missing", tr("settings.github.foundRejected")},
-                SettingsWindow.githubStatus(found(NEW, "REJECTED"), ""));
+                SettingsGitPages.githubStatus(found(NEW, "REJECTED"), ""));
         assertArrayEquals(
                 new String[] {"settings-git-missing", tr("settings.github.foundOld", "2.40.1", "2.50")},
-                SettingsWindow.githubStatus(found(OLD, "SIGNED_IN"), ""));
+                SettingsGitPages.githubStatus(found(OLD, "SIGNED_IN"), ""));
         // E5: a mistyped path is named, not answered with "install the GitHub CLI".
         assertArrayEquals(
                 new String[] {"settings-git-missing", tr("settings.github.notFoundAt", "/opt/nope/gh")},
-                SettingsWindow.githubStatus(Availability.UNKNOWN, " /opt/nope/gh "));
+                SettingsGitPages.githubStatus(Availability.UNKNOWN, " /opt/nope/gh "));
     }
 
     @Test

@@ -224,7 +224,7 @@ class SettingsLayoutFxTest {
                 }
             }
             open(stage, sidebar, scroll, "DEBUG");
-            Map<String, TextField> debugFields = FxTestSupport.field(window, "debugCommandFields");
+            Map<String, TextField> debugFields = SettingsRig.control(window, "debugCommandFields");
             for (var e : debugFields.entrySet()) {
                 if (!e.getKey().equals("python")) { // on the LSP page's Python card (Python review 2, C101)
                     assertTrue(

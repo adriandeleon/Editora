@@ -284,7 +284,8 @@ class DocumentOnDiskFxTest {
             assertTrue(FxTestSupport.callOnFx(buffer::isViewMode), "a long-line file opens in View mode");
             assertEquals(
                     tr("viewmode.reason.longLine", length),
-                    FxTestSupport.callOnFx(() -> FxTestSupport.field(buffer, "viewModeReason")));
+                    FxTestSupport.callOnFx(
+                            () -> FxTestSupport.field(FxTestSupport.field(buffer, "banners"), "viewModeReason")));
             FxTestSupport.runOnFx(() -> buffer.setViewMode(false)); // Enable Editing
             assertTrue(FxTestSupport.callOnFx(buffer::isEditable));
             StatusBar statusBar = FxTestSupport.field(fx.controller, "statusBar");

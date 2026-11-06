@@ -321,8 +321,8 @@ class HttpClientUiFlowFxTest {
             assertEquals(1, runs[1]);
             assertEquals(
                     "Run this request (C-M-r)",
-                    FxTestSupport.callOnFx(
-                            () -> FxTestSupport.call(b, "runGlyphTooltip", new Class<?>[] {int.class}, 1)));
+                    FxTestSupport.callOnFx(() -> FxTestSupport.call(
+                            FxTestSupport.field(b, "runGutter"), "runGlyphTooltip", new Class<?>[] {int.class}, 1)));
         } finally {
             FxTestSupport.runOnFx(stage::close);
         }

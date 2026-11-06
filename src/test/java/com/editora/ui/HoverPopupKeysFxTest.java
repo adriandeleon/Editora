@@ -60,7 +60,7 @@ class HoverPopupKeysFxTest {
 
         fx.run(() -> fx.coordinator.showHover());
         fx.layout();
-        Popup popup = FxTestSupport.field(fx.coordinator, "hoverPopup");
+        Popup popup = FxTestSupport.field(fx.coordinator.popups, "hoverPopup");
         assertNotNull(popup, "the hover is shown");
         FxTestSupport.runOnFx(() -> {
             popup.getScene().getRoot().applyCss();

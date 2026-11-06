@@ -342,16 +342,18 @@ class LspSharedServerFxTest {
 
         a.close(); // the window that started it, and holds the claim, leaves first
         assertEquals(
-                canonical + "-2", LspManager.claimJdtlsWorkspaceName(canonical), "still held for the other window");
-        LspManager.releaseJdtlsWorkspaceName(canonical + "-2");
+                canonical + "-2",
+                JdtlsWorkspaces.claimJdtlsWorkspaceName(canonical),
+                "still held for the other window");
+        JdtlsWorkspaces.releaseJdtlsWorkspaceName(canonical + "-2");
 
         b.shutdownAll();
         awaitFx(() -> canonical.equals(claimAndRelease(canonical)), "the claim released once the server is gone");
     }
 
     private static String claimAndRelease(String baseName) {
-        String name = LspManager.claimJdtlsWorkspaceName(baseName);
-        LspManager.releaseJdtlsWorkspaceName(name);
+        String name = JdtlsWorkspaces.claimJdtlsWorkspaceName(baseName);
+        JdtlsWorkspaces.releaseJdtlsWorkspaceName(name);
         return name;
     }
 

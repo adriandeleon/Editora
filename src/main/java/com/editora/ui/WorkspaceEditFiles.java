@@ -9,7 +9,7 @@ import com.editora.ui.LspCoordinator.WorkspaceFileIdentity;
 import com.editora.ui.LspCoordinator.WorkspaceFileOperations;
 import org.jspecify.annotations.Nullable;
 
-/** Stateless helpers of {@link LspCoordinator}'s workspace-edit transaction: the paths an edit names, disk views. */
+/** Stateless helpers of {@link LspWorkspaceEdits}'s workspace-edit transaction: the paths an edit names, disk views. */
 final class WorkspaceEditFiles {
     private WorkspaceEditFiles() {}
 

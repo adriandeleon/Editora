@@ -285,7 +285,8 @@ class LspCoordinatorCommandsFxTest {
     @Test
     void theRightClickMenusOwnCommandsRunTheirActions() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);
-        java.util.function.Consumer<String> run = FxTestSupport.field(b, "lspCommand");
+        java.util.function.Consumer<String> run =
+                FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "lspCommand");
         fx.run(() -> run.accept("lsp.peekDefinition")); // what it shows is peekDefinition's own tests' business
         fx.run(() -> run.accept("lsp.refactorThis"));
         fx.run(() -> run.accept("lsp.generate"));
@@ -466,7 +467,7 @@ class LspCoordinatorCommandsFxTest {
     // --- peek definition -------------------------------------------------------------------------------
 
     private static void awaitPeekRead() throws Exception {
-        java.lang.reflect.Field f = LspCoordinator.class.getDeclaredField("PEEK_READ");
+        java.lang.reflect.Field f = LspNavigation.class.getDeclaredField("PEEK_READ");
         f.setAccessible(true);
         ((ExecutorService) f.get(null)).submit(() -> {}).get(60, TimeUnit.SECONDS);
     }
@@ -677,7 +678,7 @@ class LspCoordinatorCommandsFxTest {
     // --- hover -----------------------------------------------------------------------------------------
 
     private Popup hoverPopup() {
-        return FxTestSupport.field(fx.coordinator, "hoverPopup");
+        return FxTestSupport.field(fx.coordinator.popups, "hoverPopup");
     }
 
     @Test

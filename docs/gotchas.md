@@ -220,7 +220,7 @@ that **nothing ever stops**. Each call therefore registers a running `Timeline` 
 **permanently**. Measuring a *one-character* range takes a different path and allocates nothing.
 
 Measure a **one-character** range instead: `(abs, abs + 1)`, and at end-of-paragraph measure the last
-character and take its right edge — the same x the caret sits at. See `EditorBuffer.caretBounds` (root-local,
+character and take its right edge — the same x the caret sits at. See `BufferRuler.caretBounds` (root-local,
 for overlays) and `EditorBuffer.caretAnchorBounds` (screen, for caret-following popups).
 
 **Anchoring a popup needs a fallback chain, and this is the part that bites.** The leaking form measured
@@ -266,6 +266,19 @@ gesture on the next press anywhere in the app, without consuming the press. Don'
 `MOUSE_PRESSED` filters for this; earlier ones in the editor, preview, Project Map card and toolbar blamed
 RichTextFX, the ScrollPane or the platform grab and were removed. A menu opened from a plain click
 (a drop-down) is left to the stock behaviour.
+
+## Window frames and buttons follow the desktop's colour scheme, not the app theme
+
+**Symptom:** with a dark theme on Linux, the minimise/maximise/close buttons of the extended window are dark
+grey on the dark header, nearly invisible, and decorated windows can get a light frame around a dark app.
+
+**Why/fix:** JavaFX draws that chrome from `Scene.Preferences.colorScheme`, which falls back to
+`Platform.getPreferences().getColorScheme()`: the desktop's setting, which knows nothing of Editora's theme.
+The extended window's button overlay takes its `dark` style from `HeaderBar.systemColorScheme(stage)`, which
+falls back to the scene's scheme, and a decorated window's frame comes from the same preference
+(`TKStage.setDarkFrame`). `ui.WindowColorScheme`, installed by `App.start`, sets every non-popup window's scene
+scheme from the app theme as the window opens and again on each theme change (`Themes.applyAppTheme`). Change
+the app theme through `Themes.applyAppTheme`, not `Application.setUserAgentStylesheet` alone.
 
 ## A selection change re-runs a cell's `updateItem` after the CSS pass
 

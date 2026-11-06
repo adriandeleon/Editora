@@ -141,7 +141,7 @@ class HtmlPreviewCoordinatorFxTest {
             html.setMinimapVisible(false);
             c.ensureControl(html);
         });
-        Node control = FxTestSupport.field(html, "htmlPreviewControl");
+        Node control = FxTestSupport.field(FxTestSupport.field(html, "viewLayout"), "htmlPreviewControl");
         // The control sits in the code pane's shared corner row; the row is what gets anchored.
         double withoutMinimap = FxTestSupport.callOnFx(() -> AnchorPane.getRightAnchor(control.getParent()));
 
@@ -233,9 +233,9 @@ class HtmlPreviewCoordinatorFxTest {
                 HtmlPreviewCoordinator.label(new Browser(Browsers.SYSTEM_DEFAULT, "System Default")));
         assertEquals("Firefox", HtmlPreviewCoordinator.label(new Browser("firefox", "Firefox")));
         java.util.Map<String, String> names = java.util.Map.of("firefox", "Firefox");
-        assertEquals("Firefox", SettingsWindow.browserComboLabel("firefox", names, true));
-        assertEquals("brave", SettingsWindow.browserComboLabel("brave", names, false), "not looked up yet");
-        assertEquals("Brave (not found)", SettingsWindow.browserComboLabel("brave", names, true));
+        assertEquals("Firefox", SettingsWebPage.browserComboLabel("firefox", names, true));
+        assertEquals("brave", SettingsWebPage.browserComboLabel("brave", names, false), "not looked up yet");
+        assertEquals("Brave (not found)", SettingsWebPage.browserComboLabel("brave", names, true));
     }
 
     @Test

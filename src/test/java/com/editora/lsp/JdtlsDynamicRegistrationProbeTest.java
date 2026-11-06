@@ -76,7 +76,7 @@ class JdtlsDynamicRegistrationProbeTest {
                         ready.countDown();
                     }
                 },
-                LspManager.javaInitOptions(List.of(), true));
+                ServerInitOptions.javaInitOptions(List.of(), true));
         session.setJavaOnTypeFormatting(true);
         session.setOnRefresh(kind -> {
             synchronized (registrations) {
@@ -94,12 +94,12 @@ class JdtlsDynamicRegistrationProbeTest {
                     eventually(() -> session.capabilities().getDocumentOnTypeFormattingProvider() != null, 60),
                     "jdtls must register on-type formatting once java.format.onType.enabled is set");
             assertTrue(
-                    eventually(() -> LspManager.renameProvider(session.capabilities()), 60),
+                    eventually(() -> LspRename.renameProvider(session.capabilities()), 60),
                     "jdtls must register rename");
             var rename = session.capabilities().getRenameProvider();
             assertTrue(rename.isRight(), "the rename registration must keep its options: " + rename);
             assertTrue(Boolean.TRUE.equals(rename.getRight().getPrepareProvider()), "prepareProvider was dropped");
-            assertNotNull(LspManager.semanticTokensProvider(session.capabilities()), "semantic tokens");
+            assertNotNull(SemanticTokenRequests.semanticTokensProvider(session.capabilities()), "semantic tokens");
 
             session.setJavaOnTypeFormatting(false);
             assertTrue(

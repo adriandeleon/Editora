@@ -17,7 +17,7 @@ import org.jspecify.annotations.Nullable;
  * opened unchecked (thirteenth review BK1, BL1, DK1, BK4). A simple name is asked where it is written, then where the
  * variable's declared type names it, then through the file's import; a qualified one ({@code Outer.Mid.Sink}) from its
  * first segment's type, the rest found in that type's outline (flat in a class file without sources) or a supertype's
- * (an inherited member type). Go to Super Method's, apart for {@link LspCoordinator}'s size.
+ * (an inherited member type). Go to Super Method's, apart for {@link LspSuperMethods}' size.
  */
 final class InstantiatedType {
     private static final int MAX_DEPTH = 4;
@@ -67,7 +67,7 @@ final class InstantiatedType {
      */
     static void resolve(
             LspManager lspManager,
-            LspCoordinator.SuperAsk ask,
+            LspSuperMethods.SuperAsk ask,
             String text,
             int name,
             int fromLine,
@@ -451,7 +451,7 @@ final class InstantiatedType {
      */
     static void typeTarget(
             LspManager lspManager,
-            LspCoordinator.SuperAsk ask,
+            LspSuperMethods.SuperAsk ask,
             LspManager.@Nullable HierarchyNode root,
             Consumer<LspManager.@Nullable Target> done) {
         if (root == null || (simple(root.name()).equals("Object") && "java.lang".equals(root.detail()))) {
@@ -469,6 +469,6 @@ final class InstantiatedType {
     }
 
     private int[] lineColumn(int offset) {
-        return LspCoordinator.lineColumn(text, offset);
+        return LspSuperMethods.lineColumn(text, offset);
     }
 }

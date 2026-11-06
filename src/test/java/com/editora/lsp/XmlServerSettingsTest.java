@@ -244,9 +244,9 @@ class XmlServerSettingsTest {
     @Test
     void initOptionsCarryTheSectionAndKeepLemminxMavensOwn() {
         Map<String, Object> xml = Map.of("validation", Map.of("noGrammar", "ignore"));
-        Object maven = LspManager.initOptionsFor(LspServerRegistry.MAVEN_POM_SERVER_ID, List.of());
+        Object maven = ServerInitOptions.initOptionsFor(LspServerRegistry.MAVEN_POM_SERVER_ID, List.of());
         Map<String, Object> merged =
-                map(map(LspManager.withXmlSettings(LspServerRegistry.MAVEN_POM_SERVER_ID, maven, xml))
+                map(map(ServerInitOptions.withXmlSettings(LspServerRegistry.MAVEN_POM_SERVER_ID, maven, xml))
                         .get("settings"));
         Map<String, Object> mergedXml = map(merged.get("xml"));
         assertEquals(Map.of("noGrammar", "ignore"), mergedXml.get("validation"));
@@ -257,12 +257,12 @@ class XmlServerSettingsTest {
                         XmlServer.extendedClientCapabilities(),
                         "settings",
                         Map.of("xml", xml)),
-                LspManager.withXmlSettings("xml", LspManager.initOptionsFor("xml", List.of()), xml),
+                ServerInitOptions.withXmlSettings("xml", ServerInitOptions.initOptionsFor("xml", List.of()), xml),
                 "the settings sit beside lemminx's extended client capabilities");
         assertEquals(
                 Map.of("provideFormatter", true),
-                LspManager.withXmlSettings("json", Map.of("provideFormatter", true), xml));
-        assertNull(LspManager.withXmlSettings("xml", null, null), "no section: as before");
+                ServerInitOptions.withXmlSettings("json", Map.of("provideFormatter", true), xml));
+        assertNull(ServerInitOptions.withXmlSettings("xml", null, null), "no section: as before");
     }
 
     @Test

@@ -210,10 +210,11 @@ class HttpClientScratchFxTest {
         assertEquals(slowLine, FxTestSupport.callOnFx(b::httpRunningLine), "the slow request's ▶ is now a ■");
         assertEquals(
                 tr("editmenu.cancelHttpRequest.tip"),
-                FxTestSupport.callOnFx(
-                        () -> FxTestSupport.call(b, "runGlyphTooltip", new Class<?>[] {int.class}, slowLine)));
+                FxTestSupport.callOnFx(() -> FxTestSupport.call(
+                        FxTestSupport.field(b, "runGutter"), "runGlyphTooltip", new Class<?>[] {int.class}, slowLine)));
 
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(b, "onRunGlyph", new Class<?>[] {int.class}, slowLine));
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(b, "runGutter"), "onRunGlyph", new Class<?>[] {int.class}, slowLine));
         assertEquals(tr("status.http.cancelled"), host.last, "a click on the ■ cancels the run");
         assertEquals(-1, FxTestSupport.callOnFx(b::httpRunningLine), "…and it is a ▶ again");
     }

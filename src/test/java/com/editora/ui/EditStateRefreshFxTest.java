@@ -65,7 +65,7 @@ class EditStateRefreshFxTest {
             area.replaceText(0, 8, "two\none\n"); // move line down: same length, a real change
             area.replaceText(0, 8, "one\ntwo\n");
             area.replaceText(0, 8, "two\none\n");
-            return FxTestSupport.<Boolean>field(controller, "editStateRefreshPending");
+            return FxTestSupport.<Boolean>field(controller.toolbar, "editStateRefreshPending");
         });
         assertTrue(pending, "three edits in one turn queue one refresh");
         FxTestSupport.drainFx();

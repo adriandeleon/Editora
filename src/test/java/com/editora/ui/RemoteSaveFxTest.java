@@ -94,17 +94,18 @@ class RemoteSaveFxTest {
 
             assertTrue(FxTestSupport.callOnFx(buffer::isViewMode), "read-only on the server: opened to look at");
             // The banner says why, as it does for a local file; "Enable Editing" would promise a plain save.
-            javafx.scene.control.Button enable =
-                    FxTestSupport.field(FxTestSupport.field(buffer, "viewModeBar"), "enableEditing");
-            Label readOnlyNote = FxTestSupport.field(FxTestSupport.field(buffer, "viewModeBar"), "note");
+            javafx.scene.control.Button enable = FxTestSupport.field(
+                    FxTestSupport.field(FxTestSupport.field(buffer, "banners"), "viewModeBar"), "enableEditing");
+            Label readOnlyNote = FxTestSupport.field(
+                    FxTestSupport.field(FxTestSupport.field(buffer, "banners"), "viewModeBar"), "note");
             assertFalse(FxTestSupport.callOnFx(enable::isVisible), "no Enable Editing for a file with no write bit");
             assertTrue(FxTestSupport.callOnFx(readOnlyNote::isVisible));
             assertEquals(tr("viewmode.note"), FxTestSupport.callOnFx(readOnlyNote::getText));
             Files.writeString(sftp.serverPath("rw.txt"), "open\n");
             EditorBuffer writable = openRemote(async, fx, sftp.remotePath("rw.txt"));
             FxTestSupport.runOnFx(() -> writable.setViewMode(true));
-            javafx.scene.control.Button enableWritable =
-                    FxTestSupport.field(FxTestSupport.field(writable, "viewModeBar"), "enableEditing");
+            javafx.scene.control.Button enableWritable = FxTestSupport.field(
+                    FxTestSupport.field(FxTestSupport.field(writable, "banners"), "viewModeBar"), "enableEditing");
             assertTrue(FxTestSupport.callOnFx(enableWritable::isVisible), "a writable remote file still offers it");
             FxTestSupport.runOnFx(() -> editorArea(fx)
                     .select(editorArea(fx).tabs().stream()
@@ -610,8 +611,7 @@ class RemoteSaveFxTest {
 
     private static RemoteCoordinator remoteCoordinator(FxWindowFixture fx, EmbeddedSftpFixture sftp) {
         CoordinatorHost host = FxTestSupport.field(fx.controller, "coordinatorHost");
-        RemoteCoordinator.Ops ops =
-                (RemoteCoordinator.Ops) FxTestSupport.call(fx.controller, "remoteOps", new Class<?>[] {});
+        RemoteCoordinator.Ops ops = new RemoteOpsHost(fx.controller);
         return new RemoteCoordinator(host, ops, sftp.fileSystems());
     }
 

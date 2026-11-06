@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumMap;
 import java.util.EnumSet;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -46,7 +45,6 @@ import com.editora.config.ConfigManager;
 import com.editora.config.Settings;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.TextMateHighlighter;
-import com.editora.editor.spell.SpellDictionaries;
 import com.editora.terminal.TerminalThemes;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.CodeArea;
@@ -79,9 +77,9 @@ public class SettingsWindow {
     private static final double MAX_SCREEN_FRACTION = 0.92;
 
     /** Wide enough to read a path or a command in; SettingRowPane puts the field under its title when the row is narrow. */
-    private static final double PATH_FIELD_WIDTH = 320;
+    static final double PATH_FIELD_WIDTH = 320;
     /** Wide enough to show a whole {@code https://github.com/<owner>/<repository>.git}. */
-    private static final double REPO_URL_FIELD_WIDTH = 480;
+    static final double REPO_URL_FIELD_WIDTH = 480;
 
     /**
      * The narrowest the window may be made. The pages that put a list beside a form (Snippets, Templates,
@@ -174,8 +172,6 @@ public class SettingsWindow {
     /** Finds and filters the rows below (built with the pages); see {@link SettingsSearch}. */
     private SettingsSearch search;
 
-    private String pushedShortcutQuery = ""; // the search last carried into the Keymaps shortcut filter
-
     private final SettingsFileNotes fileNotes = new SettingsFileNotes(); // Advanced: hand edits of settings.json
 
     private Label searchEmpty; // "no settings match …", shown in place of the page
@@ -187,19 +183,15 @@ public class SettingsWindow {
     private final Consumer<Path> onOpenFile;
     private final Runnable onExportConfig;
     /** Runs a command by id (Import Configuration…, Python: Select Interpreter); null until wired. */
-    private @Nullable Consumer<String> runCommand;
+    @Nullable
+    Consumer<String> runCommand;
 
     void setRunCommand(Consumer<String> runCommand) {
         this.runCommand = runCommand;
     }
 
     private final Runnable onShowDebugLog;
-    /** Spell Check page: open the bundled technical dictionary (read-only) / the personal dictionary file. */
-    private @Nullable Runnable onOpenTechnicalDictionary;
 
-    private @Nullable Runnable onOpenPersonalDictionary;
-    /** Security-notice confirm shown before the MCP checkbox enables the server; null = no gate. */
-    private java.util.function.@Nullable BooleanSupplier mcpConfirm;
     /** The Workspace page's trusted-folder list + its backing store accessor (null until wired). */
     private final ListView<String> trustedFoldersList = new ListView<>();
 
@@ -207,31 +199,19 @@ public class SettingsWindow {
 
     private final ToolWindowManager toolWindows;
     private final com.editora.git.GitService gitService;
-    private final com.editora.github.GitHubService githubService;
-    private final com.editora.mermaid.MermaidService mermaidService;
-    private final com.editora.diagram.DiagramService diagramService;
-    private final com.editora.typst.TypstService typstService;
+    final com.editora.github.GitHubService githubService;
     private final java.util.List<BuildCoordinator> buildCoordinators;
     private final com.editora.lsp.LspManager lspManager;
     private final com.editora.dap.DapManager dapManager;
-    private final Stage stage = new Stage();
+    final Stage stage = new Stage();
 
     // --- controls (same set as before, regrouped into pages) ---
     private ComboBox<String> languageCombo;
     private VBox languageControl; // the combo + its "restart to apply" note
 
-    private ComboBox<String> keymapCombo;
-    private @Nullable ShortcutActions shortcutActions; // keybinding-editor backend (→ MainController)
-    /** Command id -> its row's chord chip, filled in once shortcutActions arrives. */
-    private final Map<String, Label> chordChips = new java.util.LinkedHashMap<>();
+    @Nullable
+    ShortcutActions shortcutActions; // keybinding-editor backend (→ MainController)
 
-    private TextField shortcutFilter; // filters the shortcut list
-    private @Nullable VBox shortcutListBox; // rebuilt from shortcutActions.rows() on each change/filter
-    private @Nullable String recordingCommandId; // command id whose row is currently capturing a chord, or null
-    private @Nullable String selectedShortcutId; // command id of the selected row (shows its Record/Reset), or null
-    private @Nullable ScrollPane shortcutScroll;
-    private final Map<String, HBox> shortcutRowsById = new HashMap<>(); // the rows currently in the list
-    private @Nullable HBox shortcutTabStop; // the one row Tab lands on; the arrow keys move between rows
     private ComboBox<String> fontFamily;
     private Spinner<Integer> fontSize;
     private ComboBox<String> themeCombo;
@@ -249,10 +229,6 @@ public class SettingsWindow {
     private CheckBox minimapCheck;
     private CheckBox wordWrapCheck;
     private CheckBox wordWrapProseCheck;
-    private @Nullable TextField markdownAssetsField;
-    private @Nullable Spinner<Integer> markdownTocMinSpinner;
-    private @Nullable Spinner<Integer> markdownTocMaxSpinner;
-    private @Nullable ComboBox<String> markdownPreviewThemeCombo;
     private CheckBox adminSaveCheck;
     private CheckBox whitespaceCheck;
     private CheckBox notesCheck;
@@ -277,18 +253,6 @@ public class SettingsWindow {
 
     private CheckBox pasteImportsCheck;
     private CheckBox smartSemicolonCheck;
-    private CheckBox spellCheckBox;
-    private ComboBox<String> spellLanguageCombo;
-    /** The Personal Dictionary list on the Spell Check page; refreshed from {@code dictionary.txt} on show. */
-    private @Nullable ListView<String> dictionaryList;
-    /** The add field of the Personal Dictionary editor; what is typed in it also narrows the list. */
-    private @Nullable TextField dictionaryInput;
-    /** The Spell Check page's per-file-type tick list ({@code Settings.spellDisabledLanguages}). */
-    private @Nullable SpellFileTypesEditor spellFileTypes;
-    /** "Enable personal dictionary" checkbox (Settings.personalDictionary). */
-    private CheckBox dictEnableCheck;
-    /** "Enable technical dictionary" checkbox (Settings.technicalDictionary). */
-    private CheckBox techDictEnableCheck;
 
     private CheckBox menuBarCheck;
     private CheckBox toolbarCheck;
@@ -301,18 +265,18 @@ public class SettingsWindow {
     private CheckBox extendedWindowCheck;
     private CheckBox paletteSearchEverywhereCheck;
     private CheckBox projectHiddenCheck;
-    private CheckBox markdownFormatBarCheck;
-    private CheckBox lspInstallPromptsCheck;
-    private CheckBox markdownLintCheck;
-    private CheckBox mathSupportCheck;
+    CheckBox markdownFormatBarCheck;
+    CheckBox lspInstallPromptsCheck;
+    CheckBox markdownLintCheck;
+    CheckBox mathSupportCheck;
     private CheckBox editorConfigCheck;
     private CheckBox logViewerCheck;
     private CheckBox testRunnerCheck;
     private CheckBox buildBeforeRunCheck;
     /** Settings → LSP: lemminx-maven may search Maven Central when completing coordinates (Maven C10, D13). */
-    private CheckBox mavenCentralIndexCheck;
+    CheckBox mavenCentralIndexCheck;
 
-    private CheckBox javaDownloadSourcesCheck;
+    CheckBox javaDownloadSourcesCheck;
 
     private CheckBox csvGridCheck;
     private CheckBox structuredPreviewCheck;
@@ -334,7 +298,6 @@ public class SettingsWindow {
     private CheckBox htmlMarkupChecksCheck;
     private CheckBox todoHighlightCheck;
     private @Nullable TodoSettingsPane todoSettings;
-    private @Nullable VBox markdownLintRulesBox;
     /** The External Tools page's editor (see {@link ExternalToolsEditor}); null until that page is built. */
     private @Nullable ExternalToolsEditor externalToolsEditor;
 
@@ -354,17 +317,6 @@ public class SettingsWindow {
         this.onConnectRemote = connect;
     }
 
-    /** Re-read the Snippets / Templates lists from disk, keeping the selected row (set when the page is built). */
-    private @Nullable Runnable reloadSnippets;
-
-    private @Nullable Runnable reloadTemplates;
-
-    /** The Macros page's editor (see {@link MacroSettingsPane}); null until that page is built. */
-    private @Nullable MacroSettingsPane macroPane;
-    /** The Macros page's note, which names the chords of the live keymap. */
-    private @Nullable Label macroNote;
-    /** Re-registers the {@code macro.run.*} commands across windows after a Macros-page edit. */
-    private Runnable onMacrosChanged = () -> {};
     /** Hooks used by the separate Run Configurations window; kept here as the window-service owner. */
     private Runnable onRunConfigsChanged = () -> {};
 
@@ -373,111 +325,21 @@ public class SettingsWindow {
     private java.util.function.@Nullable Supplier<java.nio.file.Path> runConfigProjectRoot;
     private @Nullable RunConfigurationsWindow runConfigurationsWindow;
 
-    /** Shared snippet manager (injected after construction); backs the Snippets management page. */
-    private com.editora.snippet.@Nullable SnippetManager snippetManager;
-    /** The Snippets page's list-and-form editor (built with the page). */
-    private @Nullable SnippetsEditor snippetsEditor;
-
-    private CheckBox snippetTabExpansionCheck;
+    CheckBox snippetTabExpansionCheck;
     private @Nullable CheckBox remoteExecutionCheck;
     private @Nullable TextField containerEngineField;
-    /** Shared template registry (injected after construction); backs the Templates management page. */
-    private com.editora.template.@Nullable TemplateRegistry templateRegistry;
-    /** Working copy of the templates (bundled + user) shown on the Templates page. */
-    private final javafx.collections.ObservableList<com.editora.template.Template> templateItems =
-            javafx.collections.FXCollections.observableArrayList();
-    /** Ids of the shown templates that are user-owned (writable / removable); the rest are read-only bundled. */
-    private final java.util.Set<String> templateUserIds = new java.util.HashSet<>();
 
-    private boolean loadingTemplate = false;
     private CheckBox multiCaretCheck;
     private CheckBox copyLineNoSelectionCheck;
     private CheckBox copyWithHighlightingCheck;
     private CheckBox projectsCheck;
-    private CheckBox gitCheck;
-    private CheckBox blameCheck;
-    private CheckBox githubCheck;
-    private TextField ghPathField;
-    private @Nullable Label githubStatusLabel;
     private CheckBox updateCheckCheck;
     private CheckBox localHistoryCheck;
     private CheckBox crashRecoveryCheck;
     private Spinner<Integer> historyMaxPerFileSpinner;
     private Spinner<Integer> historyMaxAgeSpinner;
     private Spinner<Integer> historyMaxTotalSpinner;
-    private @Nullable Label gitStatusLabel;
-    private TextField gitPathField;
-    private ComboBox<com.editora.git.GitPullMode> gitPullModeCombo;
-    private CheckBox gitAutoFetchCheck;
-    private Spinner<Integer> gitAutoFetchSpinner;
-    private CheckBox mermaidCheck;
-    private CheckBox httpCheck;
-    private CheckBox httpScriptsCheck;
-    private CheckBox httpInlineResultsCheck;
-    private TextField httpNodeField;
-    private Spinner<Integer> httpScriptTimeoutSpinner;
-    private CheckBox htmlPreviewCheck;
-    /** The browser HTML Live Preview opens (ids from {@link com.editora.web.Browsers}); filled off the FX thread. */
-    private final ComboBox<String> htmlBrowserCombo = new ComboBox<>();
 
-    private final Map<String, String> htmlBrowserNames = new java.util.HashMap<>();
-    private boolean htmlBrowsersDetected; // until then a stored id is not "missing", just not looked up yet
-    private final ToolStatusRow httpNodeStatus = new ToolStatusRow("node");
-    private CheckBox mcpCheck;
-    private CheckBox aiMasterCheck;
-    private CheckBox agentCheck;
-    private @Nullable AgentCoordinator agentCoordinator; // injected; backs the AI Agent page's detection status rows
-    private ComboBox<String> agentClientCombo;
-    private final java.util.Map<String, TextField> agentCommandFields = new java.util.LinkedHashMap<>();
-    private final java.util.Map<String, ToolStatusRow> agentStatusLabels = new java.util.LinkedHashMap<>();
-    private CheckBox agentIncludeContextCheck;
-    private CheckBox aiCheck;
-    private TextField aiModelField;
-    private TextField aiApiKeyField;
-    private CheckBox aiInlineCheck;
-    private TextField aiCompletionModelField;
-    private ComboBox<String> aiProviderCombo;
-    private TextField aiEndpointField;
-    private @Nullable Label aiStatusLabel;
-    /** Injected by MainController: runs a live connection check, delivering (ok, message) on the FX thread.
-     *  (fresh, onResult): a fresh check, or the last one when it is recent (see AiCoordinator.checkConnection). */
-    private java.util.function.@Nullable BiConsumer<Boolean, java.util.function.BiConsumer<Boolean, String>>
-            aiConnectionProbe;
-    /** Coalesces rapid field edits into a single connection check (~600 ms after the last keystroke). */
-    private final javafx.animation.PauseTransition aiStatusDebounce =
-            new javafx.animation.PauseTransition(javafx.util.Duration.millis(600));
-
-    private TextField mmdcPathField;
-    private CheckBox debugCheck;
-    private CheckBox debugProgramConsoleCheck;
-    private CheckBox debugProgramInTerminalCheck;
-    /** Java hot code replace: auto / manual / off ({@code Settings.debugHotCodeReplace}). */
-    private ComboBox<String> debugHotCodeReplaceCombo;
-
-    private CheckBox debugStepFiltersCheck;
-    private CheckBox debugShowStaticsCheck;
-    private CheckBox debugShowToStringCheck;
-    private CheckBox debugSuspendAllThreadsCheck;
-    private TextField debugExceptionTypesField;
-    /** The Node.js for Run, Debug, npm scripts and code intelligence (Settings.nodePath; blank = automatic). */
-    private TextField nodePathField;
-    /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
-    private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
-
-    private final java.util.Map<String, TextField> debugCommandFields = new java.util.LinkedHashMap<>();
-    private final java.util.Map<String, ToolStatusRow> debugStatusLabels = new java.util.LinkedHashMap<>();
-    private TextField maidPathField;
-    private TextField templateAuthorField;
-    private final ToolStatusRow mmdcStatus = new ToolStatusRow("mmdc");
-    private final ToolStatusRow maidStatus = new ToolStatusRow("maid");
-    private CheckBox diagramCheck;
-    private TextField dotPathField;
-    private TextField plantumlPathField;
-    private CheckBox typstCheck;
-    private TextField typstPathField;
-    private final ToolStatusRow typstStatus = new ToolStatusRow("typst");
-    private final ToolStatusRow dotStatus = new ToolStatusRow("dot");
-    private final ToolStatusRow plantumlStatus = new ToolStatusRow("plantuml");
     private final java.util.Map<BuildTool, CheckBox> buildToolChecks = new java.util.EnumMap<>(BuildTool.class);
     private final java.util.Map<BuildTool, TextField> buildToolCommandFields = new java.util.EnumMap<>(BuildTool.class);
     private final ComboBox<JdkChoice> mavenJdkCombo = new ComboBox<>();
@@ -498,37 +360,13 @@ public class SettingsWindow {
     /** Injected probe (MainController): runs {@code rg --version} off-thread, delivers found/not-found on FX. */
     private java.util.function.@Nullable Consumer<java.util.function.Consumer<Boolean>> ripgrepProbe;
 
-    private com.editora.plugin.@Nullable PluginManager pluginManager; // shared, injected after construction
-    private CheckBox pluginCheck;
-    private CheckBox pluginRequireSigCheck;
-    private @Nullable VBox pluginListBox; // rebuilt on each load() from the shared PluginManager's descriptors
-    private @Nullable TextField pluginRegistryField;
-    private @Nullable Label pluginRegistryWarn; // shown when the registry URL isn't the trusted default
-    private @Nullable Runnable onKeymapChanged; // → MainController: reload the shared keymap live
-    private @Nullable Runnable onBrowsePlugins; // → MainController.browsePlugins
-    private @Nullable Runnable onInstallPluginFromFile; // → MainController.installPluginFromDisk
-    private @Nullable Consumer<com.editora.plugin.PluginDescriptor> onUninstallPlugin; // the clicked row's plugin
-    /** Ticking a row: asks the consent (what it can do) and stores it; false = not enabled. */
-    private java.util.function.Predicate<com.editora.plugin.PluginDescriptor> onEnablePlugin = d -> false;
-    /** Unticking a row: switches it off. */
-    private Consumer<com.editora.plugin.PluginDescriptor> onDisablePlugin = d -> {};
+    @Nullable
+    Runnable onKeymapChanged; // → MainController: reload the shared keymap live
 
-    private @Nullable Label pluginStatusLabel; // what Browse / Install from file did, said where the user clicked
-    /** What the installed list was last built from; an unchanged list is not rebuilt on every Settings open. */
-    private @Nullable Object pluginListKey;
-
-    private CheckBox lspCheck;
-    /** Per-server LSP controls, keyed by server id (data-driven so adding a server is one descriptor). */
-    private final java.util.Map<String, CheckBox> lspEnableChecks = new java.util.LinkedHashMap<>();
-
-    private final java.util.Map<String, TextField> lspCommandFields = new java.util.LinkedHashMap<>();
-    private final java.util.Map<String, ToolStatusRow> lspStatusLabels = new java.util.LinkedHashMap<>();
     /** Install buttons keyed by install-language ({@code java}/{@code python}/{@code javascript}/{@code mermaid}). */
-    private final java.util.Map<String, Button> installButtons = new java.util.HashMap<>();
+    final java.util.Map<String, Button> installButtons = new java.util.HashMap<>();
     /** Injected by MainController: runs {@code InstallCoordinator.installSupport} for the given language key. */
     private java.util.function.@Nullable Consumer<String> onInstallSupport;
-    /** Injected by MainController: runs {@code InstallCoordinator.installServer} for the given LSP server id. */
-    private java.util.function.@Nullable Consumer<String> onInstallServer;
 
     private CheckBox zenCheck;
     private CheckBox expertCheck;
@@ -547,11 +385,11 @@ public class SettingsWindow {
     private Spinner<Integer> autoSaveDelaySpinner;
 
     // --- shell ---
-    private ListView<Object> sidebar; // mixed rows: Group headers + Category items
+    ListView<Object> sidebar; // mixed rows: Group headers + Category items
     private ScrollPane contentScroll;
     private TextField searchField;
     private final Map<Category, Region> pages = new EnumMap<>(Category.class);
-    private final List<SettingsSearch.Row> rows = new ArrayList<>();
+    final List<SettingsSearch.Row> rows = new ArrayList<>();
     private final List<Label> sectionLabels = new ArrayList<>();
     /** Card containers (UI Kit v1), hidden by the search filter once all of their rows are. */
     private final List<VBox> cards = new ArrayList<>();
@@ -572,7 +410,7 @@ public class SettingsWindow {
             }""";
 
     private boolean built;
-    private boolean loading;
+    boolean loading;
 
     public SettingsWindow(
             ConfigManager config,
@@ -595,9 +433,6 @@ public class SettingsWindow {
         this.toolWindows = toolWindows;
         this.gitService = gitService;
         this.githubService = githubService;
-        this.mermaidService = mermaidService;
-        this.diagramService = diagramService;
-        this.typstService = typstService;
         this.buildCoordinators = buildCoordinators;
         this.lspManager = lspManager;
         this.dapManager = dapManager;
@@ -607,11 +442,26 @@ public class SettingsWindow {
         this.onOpenFile = onOpenFile;
         this.onExportConfig = onExportConfig;
         this.onShowDebugLog = onShowDebugLog;
+        this.syncPage = new SettingsSyncPage(this, config);
+        this.pluginsPage = new SettingsPluginsPage(this, config);
+        this.aiPages = new SettingsAiPages(this, config);
+        this.debugPage = new SettingsDebugPage(this, config, dapManager);
+        this.lspPage = new SettingsLspPage(this, config, lspManager);
+        this.keymapsPage = new SettingsKeymapsPage(this, config);
+        this.snippetPages = new SettingsSnippetPages(this, config);
+        this.markdownPage = new SettingsMarkdownPage(this, config);
+        this.gitPages = new SettingsGitPages(this, config, gitService, githubService);
+        this.renderPages = new SettingsRenderToolPages(this, config, mermaidService, diagramService, typstService);
+        this.spellPage = new SettingsSpellPage(this, config);
+        this.webPage = new SettingsWebPage(this, config);
         if (com.editora.AppInfo.isSnapshot()) {
             // Start the (background, bounded) branch lookup now, so About has it without ever waiting on git.
             com.editora.AppInfo.gitBranchAsync();
         }
     }
+
+    /** Settings → Plugins; see {@link SettingsPluginsPage}. */
+    private final SettingsPluginsPage pluginsPage;
 
     /**
      * Injects the shared {@link com.editora.plugin.PluginManager} (set after construction by
@@ -619,32 +469,7 @@ public class SettingsWindow {
      * {@link #build} (the page is built lazily on first {@link #show}).
      */
     public void setPluginManager(com.editora.plugin.@Nullable PluginManager pluginManager) {
-        this.pluginManager = pluginManager;
-    }
-
-    /** Injects the shared {@link com.editora.snippet.SnippetManager} backing the Snippets management page. */
-    public void setSnippetManager(com.editora.snippet.SnippetManager snippetManager) {
-        this.snippetManager = snippetManager;
-    }
-
-    /**
-     * What the active file's project markdownlint config does to the rule list below, as one localized line
-     * ("" when none applies). Not observable: read again whenever the Markdown page is shown or synced.
-     */
-    public void setMarkdownLintConfigNote(java.util.function.Supplier<String> note) {
-        this.markdownLintConfigNote = note == null ? () -> "" : note;
-        refreshMarkdownLintConfigNote();
-    }
-
-    private java.util.function.Supplier<String> markdownLintConfigNote = () -> "";
-    private final Label markdownLintConfigNoteLabel = new Label();
-
-    private void refreshMarkdownLintConfigNote() {
-        String note = markdownLintConfigNote.get();
-        boolean show = note != null && !note.isBlank();
-        markdownLintConfigNoteLabel.setText(show ? note : "");
-        markdownLintConfigNoteLabel.setVisible(show);
-        markdownLintConfigNoteLabel.setManaged(show);
+        pluginsPage.setPluginManager(pluginManager);
     }
 
     /** Where a message about something this window did goes: the owning window's status bar. */
@@ -669,12 +494,6 @@ public class SettingsWindow {
     }
 
     private @Nullable HistoryLimits historyLimits;
-
-    /** Injects the Spell Check page's "open dictionary file" actions (bundled technical / personal). */
-    public void setDictionaryActions(Runnable openTechnical, Runnable openPersonal) {
-        this.onOpenTechnicalDictionary = openTechnical;
-        this.onOpenPersonalDictionary = openPersonal;
-    }
 
     /** Opens Settings focused on the Snippets page (the {@code snippets.manage} command). */
     public void showSnippets(Window owner) {
@@ -712,11 +531,6 @@ public class SettingsWindow {
         this.toolbarActions = actions;
     }
 
-    /** Injects the shared {@link com.editora.template.TemplateRegistry} backing the Templates page. */
-    public void setTemplateRegistry(com.editora.template.TemplateRegistry registry) {
-        this.templateRegistry = registry;
-    }
-
     /** Opens Settings focused on the Templates page (the {@code template.manage} command). */
     public void showTemplates(Window owner) {
         showAt(Category.TEMPLATES, owner);
@@ -729,16 +543,7 @@ public class SettingsWindow {
             Consumer<com.editora.plugin.PluginDescriptor> onUninstall,
             java.util.function.Predicate<com.editora.plugin.PluginDescriptor> onEnable,
             Consumer<com.editora.plugin.PluginDescriptor> onDisable) {
-        this.onBrowsePlugins = onBrowse;
-        this.onInstallPluginFromFile = onInstallFromFile;
-        this.onUninstallPlugin = onUninstall;
-        this.onEnablePlugin = onEnable == null ? d -> false : onEnable;
-        this.onDisablePlugin = onDisable == null ? d -> {} : onDisable;
-    }
-
-    /** Wires the security-notice confirm shown before the MCP checkbox enables the server. */
-    public void setMcpConfirm(java.util.function.BooleanSupplier confirm) {
-        this.mcpConfirm = confirm;
+        pluginsPage.setPluginActions(onBrowse, onInstallFromFile, onUninstall, onEnable, onDisable);
     }
 
     /** Opens Settings focused on the Workspace page (the {@code workspace.manageTrust} command). */
@@ -846,56 +651,23 @@ public class SettingsWindow {
         this.onInstallSupport = onInstallSupport;
     }
 
-    /** Installs a pinned command-line tool (shellcheck/shfmt) from the Bash card's Install buttons. */
-    private java.util.function.@Nullable Consumer<String> onInstallTool;
-
-    public void setInstallToolActions(java.util.function.Consumer<String> onInstallTool) {
-        this.onInstallTool = onInstallTool;
-    }
-
     /** Opens a web page (the Diagrams page's "How to install"); injected by MainController. */
-    private @Nullable Consumer<String> openUrl;
+    @Nullable
+    Consumer<String> openUrl;
 
     public void setOpenUrl(Consumer<String> openUrl) {
         this.openUrl = openUrl;
     }
 
-    /** Wires the per-LSP-server Install buttons (json/bash/yaml/…) to {@code InstallCoordinator.installServer}. */
-    public void setInstallServerActions(java.util.function.Consumer<String> onInstallServer) {
-        this.onInstallServer = onInstallServer;
-    }
-
     /** Re-probes tool detection on the LSP/Debugger/Mermaid pages (labels + Install buttons) — called by
      *  MainController after an in-app install completes so the now-installed tools flip to "Installed". */
     public void refreshDetectionStatus() {
-        refreshLspStatus();
-        refreshDebugStatus();
-        refreshMermaidStatus();
-        refreshGithubStatus();
+        lspPage.refreshLspStatus();
+        debugPage.refreshDebugStatus();
+        renderPages.refreshMermaidStatus();
+        gitPages.refreshGithubStatus();
         refreshBuildToolStatus();
-        refreshAgentClientStatus();
-    }
-
-    /** The install-language key for an installable LSP server row, or {@code null} (no installer). */
-    private static @Nullable String installLangForServer(String serverId) {
-        return switch (serverId) {
-            case "java" -> "java";
-            case "python" -> "python";
-            case "typescript" -> "javascript";
-            default -> null;
-        };
-    }
-
-    /** The Debugging page's line saying Java debugging needs LSP; empty while it is on. */
-    private @Nullable Label javaDebugLspNote;
-
-    /**
-     * The key a language server's Install button is tracked under. Not the bare server id: the Typst page's
-     * button for the {@code typst} CLI is tracked as {@code typst} too, and sharing the key left one of the two
-     * buttons out of the map — it never showed "Installed", and the other showed whichever probe came last.
-     */
-    private static String serverInstallKey(String serverId) {
-        return "server:" + serverId;
+        aiPages.refreshAgentClientStatus();
     }
 
     public void show(Window owner) {
@@ -910,7 +682,7 @@ public class SettingsWindow {
         reloadFileBackedEditors();
         // The keymap may have changed while the window was closed (or, the first time, the chips were
         // created after the backend was injected and are still empty).
-        refreshShortcuts();
+        keymapsPage.refreshShortcuts();
         if (stage.isShowing()) {
             stage.toFront();
         } else {
@@ -967,11 +739,11 @@ public class SettingsWindow {
         buildPages();
         search =
                 new SettingsSearch(rows, sectionLabels, cards, List.of(Category.values()), c -> ((Category) c).display);
-        if (shortcutFilter != null) {
-            search.setListSource(
-                    new SettingsSearch.ListSource(Category.KEYMAPS, shortcutFilter, this::shortcutMatches));
+        if (keymapsPage.shortcutFilter != null) {
+            search.setListSource(new SettingsSearch.ListSource(
+                    Category.KEYMAPS, keymapsPage.shortcutFilter, keymapsPage::shortcutMatches));
         }
-        modified = new SettingsModified(this);
+        modified = new SettingsModified(controlOwners());
 
         searchField = new TextField();
         searchField.setPromptText(tr("settings.search.prompt"));
@@ -989,7 +761,7 @@ public class SettingsWindow {
             if (b instanceof Category) { // group headers aren't pages
                 showContent();
                 if (b == Category.MARKDOWN) {
-                    refreshMarkdownLintConfigNote(); // the active file may have changed since last shown
+                    markdownPage.refreshMarkdownLintConfigNote(); // the active file may have changed since last shown
                 }
                 // Every page starts at its top. A ScrollPane keeps its vvalue across a content swap, so
                 // opening a short page after scrolling down a long one landed mid-page — and on a page
@@ -1174,31 +946,7 @@ public class SettingsWindow {
         languageControl = new VBox(4, languageCombo, restartNote);
         languageControl.setAlignment(Pos.CENTER_RIGHT);
 
-        keymapCombo = new ComboBox<>();
-        keymapCombo.getItems().addAll(com.editora.command.KeymapManager.AVAILABLE.keySet());
-        keymapCombo.setPrefWidth(220);
-        keymapCombo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(String id) {
-                return id == null ? "" : com.editora.command.KeymapManager.displayName(id);
-            }
-
-            @Override
-            public String fromString(String s) {
-                return s;
-            }
-        });
-        keymapCombo.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
-                return;
-            }
-            KeymapLayers.switchKeymap(config.getSettings(), now);
-            config.save();
-            if (onKeymapChanged != null) {
-                onKeymapChanged.run(); // reload the shared keymap live across all windows
-            }
-            refreshShortcuts(); // the list below and the chord chips show the keymap that is now live
-        });
+        keymapsPage.buildControls();
 
         fontFamily = new ComboBox<>();
         fontFamily.getItems().setAll(fontFamilyChoices());
@@ -1232,7 +980,7 @@ public class SettingsWindow {
                 return;
             }
             config.getSettings().setTheme(now);
-            javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(now));
+            Themes.applyAppTheme(now);
             if (!config.getSettings().isEditorThemeUserSet()) {
                 config.getSettings().setEditorTheme(EditorThemes.defaultFor(now));
                 applyPreviewTheme(config.getSettings().getEditorTheme());
@@ -1317,7 +1065,7 @@ public class SettingsWindow {
                 st.setWordWrapProse(on);
             }
         });
-        buildMarkdownControls();
+        markdownPage.buildMarkdownControls();
         adminSaveCheck = viewCheck(tr("settings.adminSave"), Settings::setAdminSave);
         whitespaceCheck = viewCheck(tr("settings.showWhitespace"), Settings::setShowWhitespace);
         notesCheck = viewCheck(tr("settings.enableNotes"), Settings::setNotesSupport);
@@ -1443,42 +1191,7 @@ public class SettingsWindow {
             apply();
         });
 
-        spellCheckBox = new CheckBox(tr("settings.enableSpell"));
-        spellCheckBox.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setSpellCheck(now);
-            apply();
-        });
-        dictEnableCheck = new CheckBox(tr("settings.dict.enable"));
-        dictEnableCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setPersonalDictionary(now);
-            apply();
-        });
-        techDictEnableCheck = new CheckBox(tr("settings.dict.technical"));
-        techDictEnableCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setTechnicalDictionary(now);
-            apply();
-        });
-        spellLanguageCombo = new ComboBox<>();
-        spellLanguageCombo.getItems().setAll(SpellDictionaries.available());
-        spellLanguageCombo.setPrefWidth(220);
-        spellLanguageCombo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(String id) {
-                return id == null ? "" : spellLanguageName(id);
-            }
-
-            @Override
-            public String fromString(String s) {
-                return s;
-            }
-        });
-        spellLanguageCombo.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null || scopeUi.write("editor.spellLanguage", now)) {
-                return;
-            }
-            config.getSettings().setSpellLanguage(now);
-            apply();
-        });
+        spellPage.buildControls();
 
         menuBarCheck = viewCheck(tr("settings.showMenuBar"), Settings::setShowMenuBar);
         toolbarCheck = viewCheck(tr("settings.showToolbar"), Settings::setShowToolbar);
@@ -1536,88 +1249,7 @@ public class SettingsWindow {
             refreshToolWindowRows();
         });
 
-        gitCheck = new CheckBox(tr("settings.enableGit"));
-        gitCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setGitSupport(now);
-            apply();
-            refreshToolWindowRows(); // reflect on the Tool Windows page's Commit row
-            refreshGithubStatus(); // the GitHub page says when it is waiting for Git support
-        });
-
-        blameCheck = new CheckBox(tr("settings.git.blameInline"));
-        blameCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setGitBlameInline(now);
-            apply();
-        });
-
-        gitPathField = new TextField();
-        gitPathField.setPromptText("git");
-        commitOnEnterOrBlur(gitPathField, () -> config.getSettings().getGitPath(), now -> {
-            config.getSettings().setGitPath(now);
-            apply(); // applySupport pushes the command into GitService
-            probeGit();
-        });
-
-        gitPullModeCombo = new ComboBox<>();
-        gitPullModeCombo.getItems().setAll(com.editora.git.GitPullMode.values());
-        gitPullModeCombo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(com.editora.git.GitPullMode mode) {
-                return mode == null ? "" : GitCoordinator.pullModeLabel(mode);
-            }
-
-            @Override
-            public com.editora.git.@Nullable GitPullMode fromString(String label) {
-                return null; // not editable
-            }
-        });
-        gitPullModeCombo.setMinWidth(170); // no fixed width: the translated items differ a lot in length
-        gitPullModeCombo.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
-                return;
-            }
-            config.getSettings().setGitPullMode(now.id());
-            apply();
-        });
-
-        gitAutoFetchCheck = new CheckBox(tr("settings.git.autoFetch"));
-        gitAutoFetchCheck.selectedProperty().addListener((obs, was, now) -> {
-            gitAutoFetchSpinner.setDisable(!now);
-            if (loading) {
-                return;
-            }
-            config.getSettings().setGitAutoFetch(now);
-            apply(); // applySupport starts or stops the timer
-        });
-        gitAutoFetchSpinner = IntSpinners.editable(
-                1,
-                com.editora.config.Settings.MAX_GIT_AUTO_FETCH_MINUTES,
-                config.getSettings().getGitAutoFetchMinutes(),
-                1);
-        gitAutoFetchSpinner.setPrefWidth(90);
-        gitAutoFetchSpinner.setAccessibleText(tr("settings.git.autoFetchMinutes"));
-        gitAutoFetchSpinner.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
-                return;
-            }
-            config.getSettings().setGitAutoFetchMinutes(now);
-            apply();
-        });
-
-        githubCheck = new CheckBox(tr("settings.enableGithub"));
-        githubCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setGithubSupport(now);
-            apply();
-            ghPathField.setDisable(!now);
-            refreshGithubStatus();
-        });
-        ghPathField = new TextField();
-        ghPathField.setPromptText("gh");
-        commitOnEnterOrBlur(ghPathField, () -> config.getSettings().getGhPath(), now -> {
-            config.getSettings().setGhPath(now);
-            apply();
-            refreshGithubStatus();
-        });
+        gitPages.buildControls();
 
         updateCheckCheck = viewCheck(tr("settings.checkForUpdates"), Settings::setUpdateCheck);
 
@@ -1632,61 +1264,7 @@ public class SettingsWindow {
             apply();
         });
 
-        mermaidCheck = new CheckBox(tr("settings.enableMermaid"));
-        mermaidCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setMermaidSupport(now);
-            apply();
-            refreshMermaidStatus();
-        });
-        mmdcPathField = new TextField();
-        mmdcPathField.setPromptText("mmdc");
-        commitOnEnterOrBlur(mmdcPathField, () -> config.getSettings().getMmdcPath(), now -> {
-            config.getSettings().setMmdcPath(now);
-            apply();
-            refreshMermaidStatus();
-        });
-        maidPathField = new TextField();
-        maidPathField.setPromptText(com.editora.mermaid.MermaidService.DEFAULT_MAID);
-        commitOnEnterOrBlur(maidPathField, () -> config.getSettings().getMaidPath(), now -> {
-            config.getSettings().setMaidPath(now);
-            apply();
-            refreshMermaidStatus();
-        });
-
-        diagramCheck = new CheckBox(tr("settings.enableDiagram"));
-        diagramCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDiagramSupport(now);
-            apply();
-            refreshDiagramStatus();
-        });
-        dotPathField = new TextField();
-        dotPathField.setPromptText("dot");
-        commitOnEnterOrBlur(dotPathField, () -> config.getSettings().getDotPath(), now -> {
-            config.getSettings().setDotPath(now);
-            apply();
-            refreshDiagramStatus();
-        });
-        plantumlPathField = new TextField();
-        plantumlPathField.setPromptText("plantuml");
-        commitOnEnterOrBlur(plantumlPathField, () -> config.getSettings().getPlantumlPath(), now -> {
-            config.getSettings().setPlantumlPath(now);
-            apply();
-            refreshDiagramStatus();
-        });
-
-        typstCheck = new CheckBox(tr("settings.enableTypst"));
-        typstCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setTypstSupport(now);
-            apply();
-            refreshTypstStatus();
-        });
-        typstPathField = new TextField();
-        typstPathField.setPromptText("typst");
-        commitOnEnterOrBlur(typstPathField, () -> config.getSettings().getTypstPath(), now -> {
-            config.getSettings().setTypstPath(now);
-            apply();
-            refreshTypstStatus();
-        });
+        renderPages.buildControls();
 
         for (BuildTool bt : BuildTool.enabled()) {
             CheckBox check = new CheckBox(tr("settings.enableBuildTool", bt.displayName()));
@@ -1797,341 +1375,17 @@ public class SettingsWindow {
             refreshRipgrepStatus();
         });
 
-        httpCheck = new CheckBox(tr("settings.httpClient.enable"));
-        httpCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setHttpClientSupport(now);
-            apply();
-            refreshHttpNodeStatus();
-        });
-        httpScriptsCheck = new CheckBox(tr("settings.httpClient.scripts"));
-        httpScriptsCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setHttpScriptsEnabled(now);
-            apply();
-            refreshHttpNodeStatus();
-        });
-        httpInlineResultsCheck = new CheckBox(tr("settings.httpClient.inlineResults"));
-        httpInlineResultsCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setHttpInlineResults(now);
-            apply();
-        });
-        httpNodeField = new TextField();
-        httpNodeField.setPromptText("node");
-        commitOnEnterOrBlur(httpNodeField, () -> config.getSettings().getHttpNodePath(), now -> {
-            config.getSettings().setHttpNodePath(now);
-            apply();
-            refreshHttpNodeStatus();
-        });
-        httpScriptTimeoutSpinner = IntSpinners.editable(1, 600, 10, 1);
-        httpScriptTimeoutSpinner.setPrefWidth(90);
-        httpScriptTimeoutSpinner.setAccessibleText(tr("settings.httpClient.scriptTimeout"));
-        httpScriptTimeoutSpinner.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
-                return;
-            }
-            config.getSettings().setHttpScriptTimeoutSeconds(now);
-            apply();
-        });
+        webPage.buildControls();
 
-        htmlPreviewCheck = new CheckBox(tr("settings.htmlPreview.enable"));
-        htmlPreviewCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setHtmlPreviewSupport(now);
-            apply();
-        });
+        aiPages.buildControls();
 
-        mcpCheck = new CheckBox(tr("settings.mcp.enable"));
-        mcpCheck.selectedProperty().addListener((obs, was, now) -> {
-            // A user-initiated enable shows a security notice first; declining reverts the checkbox.
-            if (!loading && now && mcpConfirm != null && !mcpConfirm.getAsBoolean()) {
-                boolean prev = loading;
-                loading = true;
-                try {
-                    mcpCheck.setSelected(false);
-                } finally {
-                    loading = prev;
-                }
-                return;
-            }
-            config.getSettings().setMcpSupport(now);
-            apply(); // starts or stops the server
-            refreshMcpStatus();
-        });
+        pluginsPage.buildControls();
 
-        aiMasterCheck = new CheckBox(tr("settings.ai.masterEnable"));
-        aiMasterCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setAiEnabled(now);
-            apply();
-            scheduleAiStatus(); // the AI Actions status said "Connected" after AI was turned off
-            refreshAgentClientStatus();
-        });
+        snippetPages.buildControls();
 
-        agentCheck = new CheckBox(tr("settings.agent.enable"));
-        agentCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setAgentSupport(now);
-            apply();
-            refreshAgentClientStatus(); // the pills turn red/neutral with the switch
-        });
-        agentClientCombo = new ComboBox<>();
-        com.editora.agent.AcpAgentRegistry.all()
-                .forEach(d -> agentClientCombo.getItems().add(d.id()));
-        agentClientCombo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(String id) {
-                return id == null ? "" : tr("settings.agent.client." + id);
-            }
+        debugPage.buildControls();
 
-            @Override
-            public String fromString(String str) {
-                return str;
-            }
-        });
-        agentClientCombo.valueProperty().addListener((obs, was, now) -> {
-            if (!loading && now != null && agentCoordinator != null) {
-                agentCoordinator.switchAgentClient(com.editora.agent.AcpAgentRegistry.from(now));
-                apply(); // run the standard settings-applied hook for consistency with the other rows
-            }
-        });
-        for (AgentClientUi a : agentClientUis()) {
-            TextField field = new TextField();
-            field.setPromptText(a.defaultCommand());
-            commitOnEnterOrBlur(field, a.getCommand(), now -> {
-                a.setCommand().accept(now);
-                apply();
-                if (agentCoordinator != null) {
-                    agentCoordinator.invalidateDetection(); // command changed -> re-probe
-                }
-                refreshAgentClientStatus();
-            });
-            agentCommandFields.put(a.id(), field);
-        }
-        agentIncludeContextCheck = new CheckBox(tr("settings.agent.includeContext"));
-        agentIncludeContextCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setAgentIncludeContext(now);
-            apply();
-        });
-
-        aiCheck = new CheckBox(tr("settings.ai.enable"));
-        aiCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setAiSupport(now);
-            apply();
-            scheduleAiStatus();
-        });
-        aiProviderCombo = new ComboBox<>();
-        aiProviderCombo.getItems().addAll(com.editora.ai.AiProvider.ids());
-        aiProviderCombo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(String id) {
-                return id == null ? "" : tr("settings.ai.provider." + id);
-            }
-
-            @Override
-            public String fromString(String s) {
-                return s;
-            }
-        });
-        aiProviderCombo.valueProperty().addListener((obs, was, now) -> {
-            if (!loading && now != null) {
-                if (was != null) {
-                    // Text typed but not yet committed belongs to the provider it was typed for; the fields
-                    // are about to be refilled with the new provider's values.
-                    commitAiFieldsFor(com.editora.ai.AiProvider.from(was));
-                }
-                config.getSettings().setAiProvider(now);
-                // Keys are per-provider: show the newly-selected provider's key (never carry one provider's
-                // credential over to the other, which would send it to that provider's endpoint).
-                syncAiProviderFields();
-                apply();
-                scheduleAiStatus();
-            }
-        });
-        aiStatusDebounce.setOnFinished(e -> refreshAiStatus(false));
-        aiEndpointField = new TextField();
-        aiEndpointField.setPromptText(tr("settings.ai.endpointPrompt"));
-        commitOnEnterOrBlur(aiEndpointField, () -> config.getSettings().getAiEndpointFor(selectedAiProvider()), now -> {
-            config.getSettings().setAiEndpointFor(selectedAiProvider(), now);
-            apply();
-            scheduleAiStatus();
-        });
-        aiModelField = new TextField();
-        aiModelField.setPromptText("claude-opus-4-8");
-        commitOnEnterOrBlur(aiModelField, () -> config.getSettings().getAiModelFor(selectedAiProvider()), now -> {
-            config.getSettings().setAiModelFor(selectedAiProvider(), now);
-            apply();
-            scheduleAiStatus();
-        });
-        aiApiKeyField = new javafx.scene.control.PasswordField();
-        aiApiKeyField.setPromptText(tr("settings.ai.apiKeyPrompt"));
-        commitOnEnterOrBlur(aiApiKeyField, () -> config.getSettings().getApiKeyFor(selectedAiProvider()), now -> {
-            // Store under the currently-selected provider so each provider keeps its own key.
-            config.getSettings().setApiKeyFor(selectedAiProvider(), now);
-            apply();
-            scheduleAiStatus();
-        });
-        aiInlineCheck = new CheckBox(tr("settings.ai.inline"));
-        aiInlineCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setAiInlineCompletion(now);
-            apply();
-        });
-        aiCompletionModelField = new TextField();
-        aiCompletionModelField.setPromptText("claude-haiku-4-5");
-        commitOnEnterOrBlur(
-                aiCompletionModelField,
-                () -> config.getSettings().getAiCompletionModelFor(selectedAiProvider()),
-                now -> {
-                    config.getSettings().setAiCompletionModelFor(selectedAiProvider(), now);
-                    apply();
-                });
-
-        pluginCheck = new CheckBox(tr("settings.enablePlugins"));
-        pluginCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setPluginSupport(now);
-            apply();
-        });
-        pluginRequireSigCheck = new CheckBox(tr("settings.plugins.requireSignature"));
-        pluginRequireSigCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setPluginRequireSignature(now);
-            apply();
-        });
-
-        templateAuthorField = new TextField();
-        templateAuthorField.setPromptText(System.getProperty("user.name", ""));
-        commitOnEnterOrBlur(templateAuthorField, () -> config.getSettings().getAuthorNameRaw(), now -> {
-            config.getSettings().setAuthorName(now);
-            apply();
-        });
-
-        debugCheck = new CheckBox(tr("settings.enableDebug"));
-        debugCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDebugSupport(now);
-            apply();
-            refreshToolWindowRows(); // reflect on the Tool Windows page's Debug row
-            refreshDebugStatus();
-        });
-        debugProgramConsoleCheck = new CheckBox(tr("settings.debug.programConsole"));
-        debugProgramConsoleCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDebugProgramConsole(now);
-            apply();
-        });
-        debugProgramInTerminalCheck = new CheckBox(tr("settings.debug.programInTerminal"));
-        debugProgramInTerminalCheck
-                .disableProperty()
-                .bind(debugProgramConsoleCheck.selectedProperty().not());
-        debugProgramInTerminalCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDebugProgramInTerminal(now);
-            apply();
-        });
-        debugHotCodeReplaceCombo = new ComboBox<>();
-        debugHotCodeReplaceCombo.getItems().setAll("auto", "manual", "off");
-        debugHotCodeReplaceCombo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(String key) {
-                return key == null ? "" : tr("settings.debug.hotCodeReplace." + key);
-            }
-
-            @Override
-            public String fromString(String label) {
-                return label;
-            }
-        });
-        debugHotCodeReplaceCombo.setMinWidth(170);
-        debugHotCodeReplaceCombo.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
-                return;
-            }
-            config.getSettings().setDebugHotCodeReplace(now);
-            apply();
-        });
-        debugStepFiltersCheck = new CheckBox(tr("settings.debug.stepFilters"));
-        debugStepFiltersCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDebugStepFilters(now);
-            apply();
-        });
-        debugShowStaticsCheck = new CheckBox(tr("settings.debug.showStatics"));
-        debugShowStaticsCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDebugShowStatics(now);
-            apply();
-        });
-        debugShowToStringCheck = new CheckBox(tr("settings.debug.showToString"));
-        debugShowToStringCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDebugShowToString(now);
-            apply();
-        });
-        debugSuspendAllThreadsCheck = new CheckBox(tr("settings.debug.suspendAllThreads"));
-        debugSuspendAllThreadsCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDebugSuspendAllThreads(now);
-            apply();
-        });
-        debugExceptionTypesField = new TextField();
-        debugExceptionTypesField.setPromptText(tr("settings.debug.exceptionTypes.prompt"));
-        commitOnEnterOrBlur(debugExceptionTypesField, () -> config.getSettings().getDebugExceptionTypes(), now -> {
-            config.getSettings().setDebugExceptionTypes(now);
-            apply();
-        });
-        nodePathField = new TextField();
-        nodePathField.setPromptText(tr("settings.debug.nodePath.prompt"));
-        commitOnEnterOrBlur(nodePathField, () -> config.getSettings().getNodePath(), now -> {
-            config.getSettings().setNodePath(now.strip());
-            apply();
-            refreshDebugStatus();
-            refreshHttpNodeStatus(); // the Web page's Node.js row follows this field
-        });
-        for (DebugAdapterUi dbg : debugAdapterUis()) {
-            if (dbg.setEnabled() instanceof java.util.function.Consumer<Boolean> setEnabled
-                    && dbg.enableLabelKey() instanceof String labelKey) { // the two are set together
-                CheckBox enable = new CheckBox(tr(labelKey));
-                enable.selectedProperty().addListener((obs, was, now) -> {
-                    setEnabled.accept(now);
-                    apply();
-                    refreshDebugStatus();
-                });
-                debugEnableChecks.put(dbg.id(), enable);
-            }
-            TextField field = new TextField();
-            field.setPromptText(dbg.commandPrompt());
-            String debugKey = "debug." + dbg.id();
-            commitOnEnterOrBlur(
-                    field, () -> scopeUi.shown(debugKey, dbg.getCommand().get()), now -> {
-                        if (!scopeUi.write(debugKey, now)) {
-                            dbg.setCommand().accept(now);
-                        }
-                        apply();
-                        refreshDebugStatus();
-                    });
-            debugCommandFields.put(dbg.id(), field);
-        }
-
-        lspCheck = new CheckBox(tr("settings.enableLsp"));
-        lspCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setLspSupport(now);
-            apply();
-            refreshToolWindowRows(); // reflect on the Tool Windows page's Problems row
-            refreshLspStatus();
-        });
-        for (LspServerUi srv : lspServerUis()) {
-            CheckBox enable = new CheckBox(tr(srv.enableLabelKey()));
-            enable.selectedProperty().addListener((obs, was, now) -> {
-                if (!scopeUi.write("lspEnabled." + srv.id(), now)) {
-                    srv.setEnabled().accept(now);
-                    apply();
-                }
-            });
-            TextField field = new TextField();
-            // A server with no default command (Maven's pom.xml server) has only what Install… puts here.
-            field.setPromptText(
-                    srv.defaultCommand().isBlank() ? tr("settings.lsp.installedPrompt") : srv.defaultCommand());
-            commitOnEnterOrBlur(
-                    field,
-                    () -> scopeUi.shown(
-                            "lspCommands." + srv.id(), srv.getCommand().get()),
-                    now -> {
-                        if (!scopeUi.write("lspCommands." + srv.id(), now)) {
-                            srv.setCommand().accept(now);
-                        }
-                        apply();
-                        refreshLspStatus();
-                    });
-            lspEnableChecks.put(srv.id(), enable);
-            lspCommandFields.put(srv.id(), field);
-        }
+        lspPage.buildControls();
 
         zenCheck = new CheckBox(tr("settings.zen"));
         zenCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -2269,37 +1523,37 @@ public class SettingsWindow {
         // Editor
         pages.put(Category.EDITOR, editorPage());
         pages.put(Category.COMPLETION, completionPage());
-        pages.put(Category.SNIPPETS, snippetsPage());
-        pages.put(Category.TEMPLATES, templatesPage());
+        pages.put(Category.SNIPPETS, snippetPages.snippetsPage());
+        pages.put(Category.TEMPLATES, snippetPages.templatesPage());
         pages.put(Category.TODO, todoPage());
         pages.put(Category.TERMINAL, terminalPage());
-        pages.put(Category.SPELL_CHECK, spellPage());
+        pages.put(Category.SPELL_CHECK, spellPage.build());
         pages.put(Category.SEARCH, searchPage());
         // Languages & Tools
-        pages.put(Category.LSP, lspPage());
-        pages.put(Category.DEBUG, debugPage());
-        pages.put(Category.MARKDOWN, markdownPage());
-        pages.put(Category.MERMAID, mermaidPage());
-        pages.put(Category.DIAGRAMS, diagramsPage());
-        pages.put(Category.TYPST, typstPage());
+        pages.put(Category.LSP, lspPage.build());
+        pages.put(Category.DEBUG, debugPage.build());
+        pages.put(Category.MARKDOWN, markdownPage.build());
+        pages.put(Category.MERMAID, renderPages.mermaidPage());
+        pages.put(Category.DIAGRAMS, renderPages.diagramsPage());
+        pages.put(Category.TYPST, renderPages.typstPage());
         pages.put(Category.BUILD_TOOLS, buildToolsPage());
-        pages.put(Category.WEB, webPage());
+        pages.put(Category.WEB, webPage.build());
         pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
         pages.put(Category.ABBREVIATIONS, abbreviationsPage());
         // Version control
-        pages.put(Category.GIT, gitPage());
-        pages.put(Category.GITHUB, githubPage());
+        pages.put(Category.GIT, gitPages.gitPage());
+        pages.put(Category.GITHUB, gitPages.githubPage());
         // System
-        pages.put(Category.KEYMAPS, keymapsPage());
-        pages.put(Category.MACROS, macrosPage());
+        pages.put(Category.KEYMAPS, keymapsPage.keymapsPage());
+        pages.put(Category.MACROS, keymapsPage.macrosPage());
         pages.put(Category.REMOTE, remotePage());
         pages.put(Category.ENCRYPTION, encryptionPage());
-        pages.put(Category.PLUGINS, pluginsPage());
-        pages.put(Category.SYNC, syncPage());
-        pages.put(Category.MCP, mcpPage());
-        pages.put(Category.AI_GENERAL, aiGeneralPage());
-        pages.put(Category.AGENT, agentPage());
-        pages.put(Category.AI, aiPage());
+        pages.put(Category.PLUGINS, pluginsPage.build());
+        pages.put(Category.SYNC, syncPage.build());
+        pages.put(Category.MCP, aiPages.mcpPage());
+        pages.put(Category.AI_GENERAL, aiPages.aiGeneralPage());
+        pages.put(Category.AGENT, aiPages.agentPage());
+        pages.put(Category.AI, aiPages.aiPage());
         pages.put(Category.ADVANCED, advancedPage());
         // Each title gets its "?" link to the page's docs; a beta page also the sidebar's Beta pill.
         for (Category c : Category.values()) {
@@ -2402,312 +1656,8 @@ public class SettingsWindow {
         return p;
     }
 
-    private VBox keymapsPage() {
-        VBox p = page(tr("settings.cat.keymaps"), tr("settings.keymaps.subtitle"));
-        Card mainCard = card(p, null);
-        controlRow(
-                mainCard,
-                Category.KEYMAPS,
-                tr("settings.keymap"),
-                tr("settings.keymap.note"),
-                keymapCombo,
-                "keymap keybindings shortcuts emacs cua sublime vscode intellij");
-
-        // --- Customize shortcuts: searchable list of every command + its current chord ---
-        Card sec = card(p, tr("settings.shortcuts.title"));
-        shortcutFilter = new TextField();
-        shortcutFilter.setPromptText(tr("settings.shortcuts.filter"));
-        shortcutFilter.textProperty().addListener((o, was, now) -> refreshShortcuts());
-        shortcutListBox = new VBox(2);
-        shortcutListBox.getStyleClass().add("shortcut-list");
-        ScrollPane scroll = new ScrollPane(shortcutListBox);
-        shortcutScroll = scroll;
-        scroll.setFitToWidth(true);
-        // The list takes the height the window has (a fixed 320 px showed ~13 of ~900 rows above empty space).
-        scroll.prefHeightProperty()
-                .bind(javafx.beans.binding.Bindings.max(
-                        320, stage.heightProperty().subtract(415)));
-        scroll.getStyleClass().add("shortcut-scroll");
-        Label note = note(tr("settings.shortcuts.note"));
-        note.setWrapText(true);
-        Button resetAll = new Button(tr("settings.shortcuts.resetAll"));
-        resetAll.setOnAction(e -> {
-            if (shortcutActions != null && confirmResetAllShortcuts()) {
-                shortcutActions.resetAll();
-                refreshShortcuts();
-            }
-        });
-        VBox box = new VBox(6, note, shortcutFilter, scroll, resetAll);
-        cardRow(
-                sec,
-                Category.KEYMAPS,
-                box,
-                "shortcut keybinding customize rebind record reset clear key chord accelerator");
-        refreshShortcuts();
-        return p;
-    }
-
-    /** Asks before Templates → Remove deletes a user template file. Replaceable so a test can answer. */
-    private java.util.function.Predicate<com.editora.template.Template> confirmTemplateRemoval =
-            this::confirmTemplateRemovalDialog;
-
-    private boolean confirmTemplateRemovalDialog(com.editora.template.Template t) {
-        String name = t.name() == null || t.name().isBlank() ? t.id() : t.name();
-        return confirmLoss.test(
-                tr("settings.template.remove"), tr("settings.template.removeConfirm", name, t.id() + ".json"));
-    }
-
-    /**
-     * Asks before every custom binding is dropped. One click used to wipe them all — including the chords
-     * given to macros and external tools on other pages — while Reset to Defaults, which keeps them, asked.
-     */
-    private boolean confirmResetAllShortcuts() {
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr(
-                        "dialog.shortcut.resetAll.body",
-                        com.editora.command.KeymapManager.displayName(com.editora.command.KeymapManager.resolveName(
-                                config.getSettings().getKeymap()))),
-                ButtonType.OK,
-                ButtonType.CANCEL));
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("dialog.shortcut.resetAll.title"));
-        confirm.setHeaderText(null);
-        confirm.getDialogPane().setMinWidth(460);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
-    }
-
-    /**
-     * Rebuilds the shortcut list from the backend, honoring the filter, and refills the chord chips on the
-     * other pages (both show the live keymap, so they go stale together). The list part is a no-op until the
-     * backend is set and the page is built.
-     */
-    private void refreshShortcuts() {
-        refreshShortcuts(null);
-    }
-
-    /** {@link #refreshShortcuts()}, then moves keyboard focus to {@code focusId}'s row (rebuilding drops it). */
-    private void refreshShortcuts(@Nullable String focusId) {
-        refreshChordChips();
-        if (macroPane != null && macroNote != null) { // built together on the Macros page
-            macroPane.refreshKeybinding();
-            macroNote.setText(macroNoteText());
-        }
-        if (shortcutListBox == null || shortcutActions == null) {
-            return;
-        }
-        shortcutListBox.getChildren().clear();
-        shortcutRowsById.clear();
-        shortcutTabStop = null;
-        String q = shortcutFilter == null ? "" : shortcutFilter.getText();
-        String typedChord = com.editora.command.ChordQuery.parse(q);
-        String chordShown = typedChord == null ? null : shortcutActions.display(typedChord);
-        for (Shortcut s : shortcutActions.rows()) {
-            if (shortcutMatches(s, q, chordShown)) {
-                HBox row = shortcutRow(s, shortcutActions, shortcutListBox);
-                shortcutRowsById.put(s.id(), row);
-                shortcutListBox.getChildren().add(row);
-            }
-        }
-        // One Tab stop for the whole list (the selected row, else the first); the arrow keys move within it.
-        // ~450 separate Tab stops would put "Reset all shortcuts" and the footer out of reach instead.
-        HBox stop = shortcutRowsById.get(selectedShortcutId);
-        if (stop == null && !shortcutListBox.getChildren().isEmpty()) {
-            stop = (HBox) shortcutListBox.getChildren().get(0);
-        }
-        if (stop != null && !stop.getStyleClass().contains("shortcut-row-recording")) {
-            stop.setFocusTraversable(true);
-            shortcutTabStop = stop;
-        }
-        HBox focus = focusId == null ? null : shortcutRowsById.get(focusId);
-        if (focus != null) {
-            javafx.application.Platform.runLater(focus::requestFocus);
-        }
-    }
-
-    /**
-     * Whether a shortcut row matches the filter: every word of {@code query} in its title or id ("file save"
-     * finds "File: Save"), or in its chord as text; or — when the query reads as a chord in any notation — that
-     * chord, shown as {@code chordShown}, is the row's chord or the start of it. Pure.
-     */
-    static boolean shortcutMatches(Shortcut s, String query, @Nullable String chordShown) {
-        // A query that reads as a chord is matched as one: as text "Ctrl+S" also hit "Ctrl+Shift+S".
-        String chordText = chordShown != null || s.chord() == null ? "" : s.chord();
-        String text = (s.title() + ' ' + s.id() + ' ' + chordText).toLowerCase(Locale.ROOT);
-        boolean words = true;
-        for (String w :
-                (query == null ? "" : query).toLowerCase(Locale.ROOT).strip().split("\\s+")) {
-            words &= text.contains(w);
-        }
-        return words
-                || (chordShown != null
-                        && s.chord() != null
-                        && (s.chord().equals(chordShown) || s.chord().startsWith(chordShown + ' ')));
-    }
-
-    /** A single command row — either the static chord + Record/Reset buttons, or a live capture field. */
-    private HBox shortcutRow(Shortcut s, ShortcutActions actions, VBox list) {
-        HBox row = new HBox(8);
-        row.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
-        row.getStyleClass().add("shortcut-row");
-        Label title = new Label(s.title());
-        title.setMaxWidth(Double.MAX_VALUE);
-        title.setWrapText(true);
-        HBox.setHgrow(title, Priority.ALWAYS);
-
-        if (s.id().equals(recordingCommandId)) {
-            row.getStyleClass().add("shortcut-row-recording");
-            // Enter saves and Escape cancels from inside the field: it records Tab like any other key, so
-            // the Save button beside it cannot be reached from the keyboard.
-            TextField capture = ShortcutCapture.field(actions::display, seq -> commitRecording(s.id(), seq), () -> {
-                recordingCommandId = null;
-                refreshShortcuts(s.id());
-            });
-            Button save = new Button(tr("settings.shortcuts.save"));
-            save.getStyleClass().add("success");
-            save.setDefaultButton(false);
-            save.setOnAction(e -> commitRecording(s.id(), ShortcutCapture.recorded(capture)));
-            Button cancel = new Button(tr("settings.shortcuts.cancel"));
-            cancel.setOnAction(e -> {
-                recordingCommandId = null;
-                refreshShortcuts(s.id());
-            });
-            row.getChildren().addAll(title, capture, save, cancel);
-            javafx.application.Platform.runLater(capture::requestFocus);
-        } else {
-            String chordText = s.chord() == null ? tr("settings.shortcuts.unbound") : s.chord();
-            Label chord = new Label(chordText);
-            chord.getStyleClass().add(s.chord() == null ? "shortcut-unbound" : "shortcut-chord");
-            chord.setMinWidth(150);
-            row.getChildren().addAll(title, chord);
-            // Record/Reset are shown only for the selected row, keeping the list uncluttered. A click
-            // selects a row; from the keyboard the arrow keys walk the rows and Enter/Space selects.
-            row.getStyleClass().add("shortcut-row-clickable");
-            row.setAccessibleRole(javafx.scene.AccessibleRole.LIST_ITEM);
-            row.setAccessibleText(s.title() + ", " + chordText);
-            Button record = new Button(tr("settings.shortcuts.record"));
-            Runnable select = () -> {
-                if (s.id().equals(selectedShortcutId)) {
-                    record.fire(); // a second Enter on the selected row starts recording
-                } else {
-                    selectedShortcutId = s.id();
-                    refreshShortcuts(s.id());
-                }
-            };
-            row.setOnMouseClicked(e -> {
-                if (!s.id().equals(selectedShortcutId)) {
-                    select.run();
-                }
-            });
-            row.focusedProperty().addListener((o, was, now) -> {
-                if (now) {
-                    if (shortcutTabStop != null && shortcutTabStop != row) {
-                        shortcutTabStop.setFocusTraversable(false);
-                    }
-                    row.setFocusTraversable(true);
-                    shortcutTabStop = row;
-                    scrollShortcutIntoView(row);
-                }
-            });
-            row.addEventHandler(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-                if (e.getTarget() != row || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
-                    return; // a key pressed on the row's own Record/Reset button is the button's
-                }
-                List<Node> all = list.getChildren();
-                int target = switch (e.getCode()) {
-                    // On the first row Up stays put, as Down does on the last one: left to the
-                    // toolkit it moved the focus out of the list, to the filter field above it.
-                    case UP -> Math.max(0, all.indexOf(row) - 1);
-                    case DOWN -> all.indexOf(row) + 1;
-                    case HOME -> 0;
-                    case END -> all.size() - 1;
-                    default -> -1;
-                };
-                if (e.getCode() == javafx.scene.input.KeyCode.ENTER
-                        || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
-                    select.run();
-                    e.consume();
-                } else if (e.getCode() == javafx.scene.input.KeyCode.DELETE
-                        || e.getCode() == javafx.scene.input.KeyCode.BACK_SPACE) {
-                    if (s.chord() != null) {
-                        removeShortcut(actions, s.id());
-                    }
-                    e.consume();
-                } else if (target >= 0) {
-                    if (target < all.size()) {
-                        all.get(target).requestFocus();
-                    }
-                    e.consume(); // also at either end: Down on the last row must not jump out of the list
-                }
-            });
-            if (s.id().equals(selectedShortcutId)) {
-                row.getStyleClass().add("shortcut-row-selected");
-                record.setOnAction(e -> {
-                    recordingCommandId = s.id();
-                    refreshShortcuts();
-                });
-                Button reset = new Button(tr("settings.shortcuts.reset"));
-                reset.setOnAction(e -> resetShortcut(actions, s.id()));
-                Button remove = new Button(tr("settings.shortcuts.remove"));
-                remove.setDisable(s.chord() == null);
-                remove.setOnAction(e -> removeShortcut(actions, s.id()));
-                row.getChildren().addAll(record, reset, remove);
-            }
-        }
-        return row;
-    }
-
-    /** Scrolls the shortcut list just far enough to show {@code row} (focus moved to it from the keyboard). */
-    private void scrollShortcutIntoView(Node row) {
-        if (shortcutScroll == null || shortcutListBox == null) { // built together
-            return;
-        }
-        shortcutListBox.applyCss();
-        shortcutListBox.layout();
-        double contentHeight = shortcutListBox.getHeight();
-        double viewHeight = shortcutScroll.getViewportBounds().getHeight();
-        if (contentHeight <= viewHeight) {
-            return;
-        }
-        double range = contentHeight - viewHeight;
-        double top = shortcutScroll.getVvalue() * range;
-        javafx.geometry.Bounds b = row.getBoundsInParent();
-        if (b.getMinY() < top) {
-            shortcutScroll.setVvalue(b.getMinY() / range);
-        } else if (b.getMaxY() > top + viewHeight) {
-            shortcutScroll.setVvalue((b.getMaxY() - viewHeight) / range);
-        }
-    }
-
-    /** Unbinds a command from the list (its Remove button, or Delete on its row). */
-    private void removeShortcut(ShortcutActions actions, String commandId) {
-        actions.clear(commandId);
-        refreshShortcuts(commandId);
-    }
-
-    /** Resets a command to its keymap default, asking first when that takes a chord back from another command. */
-    private void resetShortcut(ShortcutActions actions, String commandId) {
-        List<com.editora.command.KeybindingEdits.Conflict> taken = actions.takenDefaults(commandId);
-        if (!taken.isEmpty()) {
-            StringBuilder lines = new StringBuilder();
-            for (var c : taken) {
-                lines.append("\n   ")
-                        .append(actions.display(c.chord()))
-                        .append("  —  ")
-                        .append(titleOf(actions, c.commandId()));
-            }
-            if (!confirmLoss.test(
-                    tr("dialog.shortcut.conflict.title"),
-                    tr("dialog.shortcut.reclaim.body", titleOf(actions, commandId), lines.toString()))) {
-                return;
-            }
-        }
-        actions.reset(commandId);
-        refreshShortcuts(commandId);
-    }
-
     /** Asks before a step that loses something; Cancel is the default answer. Replaceable so a test can answer. */
-    private java.util.function.BiPredicate<String, String> confirmLoss = this::confirmCancelDefault;
+    java.util.function.BiPredicate<String, String> confirmLoss = this::confirmCancelDefault;
 
     private boolean confirmCancelDefault(String title, String body) {
         Alert confirm = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL));
@@ -2720,161 +1670,9 @@ public class SettingsWindow {
         return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
     }
 
-    /** Commits a recorded chord sequence to a command, warning first if it steals another command's chord. */
-    private void commitRecording(String commandId, String sequence) {
-        recordingCommandId = null;
-        rebindWithConflictCheck(commandId, sequence);
-        refreshShortcuts(commandId);
-    }
-
-    /** Rebinds {@code commandId} to {@code sequence}, warning on a conflict; returns whether it bound. Shared
-     *  by the Keymaps shortcut editor and the inline Macros keybinding row. */
-    private boolean rebindWithConflictCheck(String commandId, String sequence) {
-        if (shortcutActions == null) {
-            return false;
-        }
-        String seq = sequence.trim();
-        if (seq.isEmpty()) {
-            return false;
-        }
-        if (com.editora.command.KeybindingEdits.typesText(seq)) {
-            // Bound, the key would run the command instead of typing its character, everywhere.
-            macroWarn(tr("settings.shortcuts.typesText", shortcutActions.display(seq.split(" ")[0])));
-            return false;
-        }
-        List<com.editora.command.KeybindingEdits.Conflict> conflicts = shortcutActions.conflicts(seq, commandId);
-        if (!conflicts.isEmpty()) {
-            StringBuilder affected = new StringBuilder();
-            for (var c : conflicts) {
-                affected.append("\n   ")
-                        .append(shortcutActions.display(c.chord()))
-                        .append("  —  ")
-                        .append(titleOf(shortcutActions, c.commandId()));
-            }
-            Alert confirm = Dialogs.styled(new Alert(
-                    Alert.AlertType.CONFIRMATION,
-                    tr("dialog.shortcut.conflict.body", shortcutActions.display(seq), affected.toString()),
-                    ButtonType.OK,
-                    ButtonType.CANCEL));
-            confirm.initOwner(stage);
-            confirm.setTitle(tr("dialog.shortcut.conflict.title"));
-            confirm.setHeaderText(null);
-            confirm.getDialogPane().setMinWidth(460);
-            if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
-                return false;
-            }
-        }
-        shortcutActions.rebind(commandId, seq);
-        return true;
-    }
-
-    /** The display title of a command id (from the shortcut rows), falling back to the id itself. */
-    private String titleOf(ShortcutActions actions, String commandId) {
-        return actions.rows().stream()
-                .filter(r -> r.id().equals(commandId))
-                .map(Shortcut::title)
-                .findFirst()
-                .orElse(commandId);
-    }
-
-    /** Injects the cross-window macro re-register hook (→ {@code MainController}); used by the Macros page. */
-    public void setMacrosChangedHandler(Runnable handler) {
-        this.onMacrosChanged = handler == null ? () -> {} : handler;
-    }
-
     /** Refreshes this window's toolbar selector after the separate editor persists a change. */
     public void setRunConfigsChangedHandler(Runnable handler) {
         this.onRunConfigsChanged = handler == null ? () -> {} : handler;
-    }
-
-    /** Re-reads the Macros page's list from the store — called after a macro changes from outside this
-     *  window (e.g. a recording that was just stopped), so an already-open Settings window reflects it live
-     *  instead of only on the next time the page is built. Harmless if the page was never opened. */
-    public void refreshMacrosList() {
-        if (macroPane != null) {
-            macroPane.refresh();
-        }
-    }
-
-    private VBox macrosPage() {
-        VBox p = page(tr("settings.cat.macros"), tr("settings.macros.subtitle"));
-        Card mainCard = card(p, null);
-        macroPane = new MacroSettingsPane(new MacroSettingsPane.Host() {
-            @Override
-            public ConfigManager config() {
-                return config;
-            }
-
-            @Override
-            public @Nullable ShortcutActions shortcuts() {
-                return shortcutActions;
-            }
-
-            @Override
-            public void macrosChanged() {
-                onMacrosChanged.run();
-            }
-
-            @Override
-            public boolean rebind(String commandId, String chord) {
-                return rebindWithConflictCheck(commandId, chord);
-            }
-
-            @Override
-            public void shortcutsChanged() {
-                refreshShortcuts();
-            }
-        });
-        cardRow(
-                mainCard,
-                Category.MACROS,
-                macroPane,
-                "macros keyboard record replay steps rename delete keybinding command text key");
-        macroNote = note(macroNoteText());
-        macroNote.setWrapText(true);
-        macroNote.setMaxWidth(460);
-        cardRow(mainCard, Category.MACROS, macroNote, "macros record start stop replay keybinding save cancel");
-        return p;
-    }
-
-    /**
-     * How to record, in the chords of the keymap in use. The note used to say "F3 (start) and F4 (stop)",
-     * which only the Emacs keymap binds — in CUA and Sublime F3 is Find Next.
-     */
-    private String macroNoteText() {
-        return tr(
-                "settings.macro.note",
-                macroCommandHint("macro.startRecording"),
-                macroCommandHint("macro.stopRecording"),
-                macroCommandHint("macro.replayLast"));
-    }
-
-    /** A command by title with its chord, or with the fact that it has none. */
-    private String macroCommandHint(String commandId) {
-        String title = tr("command." + commandId);
-        String chord = currentChordFor(commandId);
-        return chord == null || chord.isBlank()
-                ? tr("settings.macro.note.unbound", title)
-                : tr("settings.macro.note.bound", title, chord);
-    }
-
-    private @Nullable String currentChordFor(String commandId) {
-        if (shortcutActions == null) {
-            return null;
-        }
-        for (Shortcut s : shortcutActions.rows()) {
-            if (s.id().equals(commandId)) {
-                return s.chord();
-            }
-        }
-        return null;
-    }
-
-    private void macroWarn(String message) {
-        Alert a = Dialogs.styled(new Alert(Alert.AlertType.WARNING, message, ButtonType.OK));
-        a.initOwner(stage);
-        a.setHeaderText(null);
-        a.showAndWait();
     }
 
     private VBox editorPage() {
@@ -3232,310 +2030,25 @@ public class SettingsWindow {
         return combo;
     }
 
-    /** The Markdown settings page: editing (format bar), preview/PDF (math), and linting (enable + per-rule). */
-    private Region markdownPage() {
-        VBox p = page(tr("settings.cat.markdown"), tr("settings.markdown.subtitle"));
-        Card editing = card(p, tr("settings.section.markdownEditing"));
-        checkRow(
-                editing,
-                Category.MARKDOWN,
-                markdownFormatBarCheck,
-                null,
-                "markdown format bar selection bold italic toolbar floating");
-        controlRow(
-                editing,
-                Category.MARKDOWN,
-                tr("settings.markdownAssetsFolder"),
-                tr("settings.markdownAssetsFolder.desc"),
-                markdownAssetsField,
-                "markdown image paste drop assets folder directory screenshots pictures");
-        textRow(
-                editing,
-                Category.MARKDOWN,
-                "markdownImageName",
-                Settings.DEFAULT_MARKDOWN_IMAGE_NAME,
-                Settings::getMarkdownImageNamePattern,
-                Settings::setMarkdownImageNamePattern,
-                "markdown image paste drop file name pattern screenshot");
-        switchRow(
-                editing,
-                Category.MARKDOWN,
-                "markdownImageAltPrompt",
-                false,
-                Settings::isMarkdownImageAltPrompt,
-                Settings::setMarkdownImageAltPrompt,
-                "markdown image paste alt text description accessibility ask prompt");
-        switchRow(
-                editing,
-                Category.MARKDOWN,
-                "markdownTrashUnusedPastedImages",
-                true,
-                Settings::isMarkdownTrashUnusedPastedImages,
-                Settings::setMarkdownTrashUnusedPastedImages,
-                "markdown pasted dropped image unused orphan trash delete clean up save");
-        HBox tocLevels = new HBox(6, markdownTocMinSpinner, new Label("–"), markdownTocMaxSpinner);
-        tocLevels.setAlignment(Pos.CENTER_LEFT);
-        controlRow(
-                editing,
-                Category.MARKDOWN,
-                tr("settings.markdownTocLevels"),
-                tr("settings.markdownTocLevels.desc"),
-                tocLevels,
-                "markdown table of contents toc heading levels depth minimum maximum");
-        switchRow(
-                editing,
-                Category.MARKDOWN,
-                "markdownTocSkipTitle",
-                false,
-                Settings::isMarkdownTocSkipTitle,
-                Settings::setMarkdownTocSkipTitle,
-                "markdown table of contents toc title first heading h1 skip omit");
-        switchRow(
-                editing,
-                Category.MARKDOWN,
-                "markdownTocOrdered",
-                false,
-                Settings::isMarkdownTocOrdered,
-                Settings::setMarkdownTocOrdered,
-                "markdown table of contents toc numbered ordered list");
-        switchRow(
-                editing,
-                Category.MARKDOWN,
-                "markdownTocUpdateOnSave",
-                false,
-                Settings::isMarkdownTocUpdateOnSave,
-                Settings::setMarkdownTocUpdateOnSave,
-                "markdown table of contents toc update regenerate on save automatic");
-        switchRow(
-                editing,
-                Category.MARKDOWN,
-                "markdownSmartTypography",
-                true,
-                Settings::isMarkdownSmartTypography,
-                Settings::setMarkdownSmartTypography,
-                "markdown smart typography curly quotes dashes ellipsis typographic");
-        switchRow(
-                editing,
-                Category.MARKDOWN,
-                "markdownWikiLinks",
-                true,
-                Settings::isMarkdownWikiLinks,
-                Settings::setMarkdownWikiLinks,
-                "markdown wiki links double brackets note backlinks obsidian zettelkasten");
-        choiceRow(
-                editing,
-                Category.MARKDOWN,
-                "markdownUpdateLinks",
-                true,
-                Settings.LINK_UPDATE_MODES,
-                Settings::getMarkdownUpdateLinksOnRename,
-                Settings::setMarkdownUpdateLinksOnRename,
-                "markdown links update rename move file refactor ask always never");
-        Card preview = card(p, tr("settings.section.markdownPreview"));
-        choiceRow(
-                preview,
-                Category.MARKDOWN,
-                "markdownDefaultView",
-                true,
-                Settings.MARKDOWN_VIEW_MODES,
-                Settings::getMarkdownDefaultViewMode,
-                Settings::setMarkdownDefaultViewMode,
-                "markdown default view mode open editor split preview side by side");
-        intRow(
-                preview,
-                Category.MARKDOWN,
-                "markdownPreviewFontSize",
-                Settings.MAX_PREVIEW_FONT_SIZE,
-                1,
-                Settings::getMarkdownPreviewFontSize,
-                Settings::setMarkdownPreviewFontSize,
-                "markdown preview font size text bigger smaller");
-        intRow(
-                preview,
-                Category.MARKDOWN,
-                "markdownPreviewWidth",
-                Settings.MAX_PREVIEW_WIDTH,
-                20,
-                Settings::getMarkdownPreviewWidth,
-                Settings::setMarkdownPreviewWidth,
-                "markdown preview width line length column measure");
-        switchRow(
-                preview,
-                Category.MARKDOWN,
-                "markdownScrollSync",
-                false,
-                Settings::isMarkdownScrollSync,
-                Settings::setMarkdownScrollSync,
-                "markdown preview scroll sync synchronize split together follow");
-        switchRow(
-                preview,
-                Category.MARKDOWN,
-                "markdownHideFrontMatter",
-                false,
-                Settings::isMarkdownHideFrontMatter,
-                Settings::setMarkdownHideFrontMatter,
-                "markdown preview front matter yaml metadata hide");
-        controlRow(
-                preview,
-                Category.MARKDOWN,
-                tr("settings.markdownPreviewTheme"),
-                null,
-                markdownPreviewThemeCombo,
-                "markdown preview theme light dark follow app color colour");
-        choiceRow(
-                preview,
-                Category.MARKDOWN,
-                "markdownRemoteImagePolicy",
-                true,
-                Settings.REMOTE_IMAGE_POLICIES,
-                Settings::getMarkdownRemoteImagePolicy,
-                Settings::setMarkdownRemoteImagePolicy,
-                "markdown preview remote images web http network privacy tracking badge load ask always never");
-        checkRow(
-                preview,
-                Category.MARKDOWN,
-                mathSupportCheck,
-                null,
-                "markdown math latex katex formula equation dollar");
-        Card export = card(p, tr("settings.section.markdownExport"));
-        switchRow(
-                export,
-                Category.MARKDOWN,
-                "htmlExportEmbedImages",
-                true,
-                Settings::isHtmlExportEmbedImages,
-                Settings::setHtmlExportEmbedImages,
-                "markdown html export embed images data uri self-contained standalone");
-        switchRow(
-                export,
-                Category.MARKDOWN,
-                "htmlExportHighlightCode",
-                false,
-                Settings::isHtmlExportHighlightCode,
-                Settings::setHtmlExportHighlightCode,
-                "markdown html export syntax highlight code blocks colors");
-        Card lint = card(p, tr("settings.section.markdownLint"));
-        checkRow(lint, Category.MARKDOWN, markdownLintCheck, null, "markdown lint linting warnings squiggles rules");
-        switchRow(
-                lint,
-                Category.MARKDOWN,
-                "markdownLintFixOnSave",
-                false,
-                Settings::isMarkdownLintFixOnSave,
-                Settings::setMarkdownLintFixOnSave,
-                "markdown lint fix issues on save automatic format");
-        // A project's .markdownlint file changes which of the rules below apply to the active file; say so
-        // here too, or a rule ticked in this list that the project switches off looks broken.
-        markdownLintConfigNoteLabel.getStyleClass().add("settings-hint");
-        markdownLintConfigNoteLabel.setWrapText(true);
-        refreshMarkdownLintConfigNote();
-        // Straight into the card, no row around it: hidden, it takes no room (a wrapping row left a blank gap).
-        markdownLintConfigNoteLabel.getStyleClass().add("settings-row");
-        lint.body().getChildren().add(markdownLintConfigNoteLabel);
-        cardRow(
-                lint,
-                Category.MARKDOWN,
-                markdownLintRulesEditor(),
-                "markdown lint rules MD009 MD040 MD034 MD013 MD033 disable enable per-rule checklist severity error "
-                        + "warning hint");
-        return p;
-    }
-
-    /** The Markdown page's controls beyond its on/off switches; each writes its own setting and applies. */
-    private void buildMarkdownControls() {
-        TextField assetsField = new TextField();
-        markdownAssetsField = assetsField;
-        markdownAssetsField.setPromptText(Settings.DEFAULT_MARKDOWN_ASSETS_FOLDER);
-        markdownAssetsField.setPrefWidth(220);
-        markdownAssetsField.setAccessibleText(tr("settings.markdownAssetsFolder"));
-        commitOnEnterOrBlur(markdownAssetsField, () -> config.getSettings().getMarkdownAssetsFolder(), now -> {
-            config.getSettings().setMarkdownAssetsFolder(now);
-            // What was typed may not be what is kept (a path out of the document's folder is not): show it.
-            assetsField.setText(config.getSettings().getMarkdownAssetsFolder());
-            apply();
-        });
-        markdownTocMinSpinner = IntSpinners.editable(1, 6, 1, 1);
-        markdownTocMaxSpinner = IntSpinners.editable(1, 6, 6, 1);
-        markdownTocMinSpinner.setPrefWidth(80);
-        markdownTocMaxSpinner.setPrefWidth(80);
-        markdownTocMinSpinner.setAccessibleText(tr("settings.markdownTocLevels.min"));
-        markdownTocMaxSpinner.setAccessibleText(tr("settings.markdownTocLevels.max"));
-        markdownTocMinSpinner.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
-                return;
-            }
-            Settings st = config.getSettings();
-            st.setMarkdownTocMinLevel(now);
-            if (now > st.getMarkdownTocMaxLevel()) {
-                st.setMarkdownTocMaxLevel(now); // the range stays a range: the other end follows
-            }
-            syncMarkdownControls(st);
-            apply();
-        });
-        markdownTocMaxSpinner.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
-                return;
-            }
-            Settings st = config.getSettings();
-            if (now < st.getMarkdownTocMinLevel()) {
-                st.setMarkdownTocMinLevel(now);
-            }
-            st.setMarkdownTocMaxLevel(now);
-            syncMarkdownControls(st);
-            apply();
-        });
-        markdownPreviewThemeCombo = new ComboBox<>();
-        markdownPreviewThemeCombo.getItems().setAll(Settings.MARKDOWN_PREVIEW_THEMES);
-        markdownPreviewThemeCombo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(String key) {
-                return key == null || key.isEmpty()
-                        ? tr("markdown.previewTheme.follow")
-                        : tr("markdown.previewTheme." + key);
-            }
-
-            @Override
-            public String fromString(String label) {
-                return label;
-            }
-        });
-        markdownPreviewThemeCombo.setMinWidth(170);
-        markdownPreviewThemeCombo.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
-                return;
-            }
-            config.getSettings().setMarkdownPreviewTheme(now);
-            apply();
-        });
-    }
-
     /** Shows the stored Markdown values in their controls without writing anything back. */
-    private void syncMarkdownControls(Settings s) {
+    void syncMarkdownControls(Settings s) {
         boolean prev = loading;
         loading = true;
         try {
             wordWrapProseCheck.setSelected(s.isWordWrapProse());
-            if (markdownAssetsField != null
-                    && markdownTocMinSpinner != null // build() makes all four
-                    && markdownTocMaxSpinner != null
-                    && markdownPreviewThemeCombo != null) {
-                markdownAssetsField.setText(s.getMarkdownAssetsFolder());
-                markdownTocMinSpinner.getValueFactory().setValue(s.getMarkdownTocMinLevel());
-                markdownTocMaxSpinner.getValueFactory().setValue(s.getMarkdownTocMaxLevel());
-                markdownPreviewThemeCombo.setValue(s.getMarkdownPreviewTheme());
-            }
+            markdownPage.showValues(s);
             settingSyncs.forEach(sync -> sync.accept(s));
-            refreshMarkdownLintConfigNote();
+            markdownPage.refreshMarkdownLintConfigNote();
         } finally {
             loading = prev;
         }
     }
 
     /** Shows a stored value in its control; run by {@link #syncMarkdownControls} for every row built below. */
-    private final java.util.List<Consumer<Settings>> settingSyncs = new java.util.ArrayList<>();
+    final java.util.List<Consumer<Settings>> settingSyncs = new java.util.ArrayList<>();
 
     /** The control of each row built below, by its setting key (a switch row's is its bound checkbox). */
-    private final Map<String, javafx.scene.control.Control> settingControls = new java.util.HashMap<>();
+    final Map<String, javafx.scene.control.Control> settingControls = new java.util.HashMap<>();
 
     /**
      * An on/off row for one boolean setting: titled {@code settings.<key>} (described by
@@ -3722,7 +2235,7 @@ public class SettingsWindow {
      * Names {@code field} for a screen reader, unless it has a name, and makes its whole value its tooltip while it
      * is too long to read in the field and holds no problem (XML/pom review 3, C28; review 4, C36).
      */
-    private static void fullValueTip(TextField field, String name) {
+    static void fullValueTip(TextField field, String name) {
         if (field.getAccessibleText() == null) {
             field.setAccessibleText(name);
         }
@@ -3772,249 +2285,39 @@ public class SettingsWindow {
         field.setAccessibleHelp(why);
     }
 
-    /**
-     * The Markdown-lint per-rule list: a checkbox per rule (checked = on in the user's settings — a rule that
-     * is off by default is on only once ticked) and its severity. Each change writes
-     * {@code Settings} ({@link MarkdownLintRules#setEnabled}, {@link Settings#setMarkdownLintSeverity}) and
-     * applies live.
-     */
-    private javafx.scene.Node markdownLintRulesEditor() {
-        markdownLintRulesBox = new VBox(4);
-        rebuildMarkdownLintRules();
-        // The last card on the page, so the rules list in full: a scroller of its own inside the page's
-        // scroller caught the wheel and showed two scrollbars.
-        return markdownLintRulesBox;
-    }
+    /** Settings → Web; see {@link SettingsWebPage}. */
+    final SettingsWebPage webPage;
 
-    private void rebuildMarkdownLintRules() {
-        if (markdownLintRulesBox == null) {
-            return;
-        }
-        markdownLintRulesBox.getChildren().clear();
-        // One row per rule: a checkbox whose label is the rule code (fixed-width so codes align) followed by
-        // a muted one-line description — a readable vertical list instead of a wrapping grid of bare codes.
-        for (com.editora.markdown.MarkdownLint.Rule rule : com.editora.markdown.MarkdownLint.RULES) {
-            String code = rule.code();
-            Label codeLabel = new Label(code);
-            codeLabel.getStyleClass().add("md-lint-code");
-            codeLabel.setMinWidth(58);
-            Label desc = new Label(tr("mdlint.rule." + code));
-            desc.getStyleClass().add("settings-hint");
-            HBox label = new HBox(8, codeLabel, desc);
-            label.setAlignment(Pos.CENTER_LEFT);
+    /** Settings → Spell Check; see {@link SettingsSpellPage}. */
+    private final SettingsSpellPage spellPage;
 
-            CheckBox cb = new CheckBox();
-            cb.setGraphic(label);
-            cb.setAccessibleText(code + " " + desc.getText()); // its visible name is a graphic, not text
-            // Rules that are off by default are opt-in: MarkdownLintRules knows which list holds which.
-            cb.setSelected(MarkdownLintRules.enabled(config.getSettings(), code));
-            cb.selectedProperty().addListener((o, was, on) -> {
-                MarkdownLintRules.setEnabled(config.getSettings(), code, on);
-                apply();
-            });
-            ComboBox<String> severity = new ComboBox<>();
-            severity.getItems().setAll(Settings.LINT_SEVERITIES);
-            severity.setConverter(new StringConverter<>() {
-                @Override
-                public String toString(String value) {
-                    return value == null ? "" : tr("settings.markdownLintSeverity." + value);
-                }
-
-                @Override
-                public String fromString(String shown) {
-                    return shown;
-                }
-            });
-            severity.setValue(config.getSettings().markdownLintSeverity(code));
-            severity.setAccessibleText(tr("settings.markdownLintSeverity") + " " + code);
-            severity.getProperties().put("editora.lintSeverity", code);
-            severity.valueProperty().addListener((o, was, now) -> {
-                if (now != null) {
-                    config.getSettings().setMarkdownLintSeverity(code, now);
-                    apply();
-                }
-            });
-            Region gap = new Region();
-            HBox.setHgrow(gap, Priority.ALWAYS);
-            HBox row = new HBox(8, cb, gap, severity);
-            row.setAlignment(Pos.CENTER_LEFT);
-            markdownLintRulesBox.getChildren().add(row);
-        }
-    }
-
-    private VBox spellPage() {
-        VBox p = page(tr("settings.cat.spellCheck"), tr("settings.spellCheck.subtitle"));
-        Card main = card(p, null);
-        checkRow(main, Category.SPELL_CHECK, spellCheckBox, null, "spell check spelling enable");
-        main.body()
-                .getChildren()
-                .add(SettingsDependents.note(spellCheckBox.selectedProperty(), tr("settings.enableSpell")));
-        int firstSpellRow = rows.size();
-        controlRow(
-                main,
-                Category.SPELL_CHECK,
-                tr("settings.language"),
-                tr("settings.spell.languageNote"),
-                spellLanguageCombo,
-                "spell language dictionary english spanish french default per file override");
-        Card types = card(p, tr("settings.spell.fileTypes.title"));
-        spellFileTypes = new SpellFileTypesEditor(config::getSettings, this::apply);
-        Label typesNote = new Label(tr("settings.spell.fileTypes.note"));
-        typesNote.getStyleClass().add("settings-hint");
-        typesNote.setWrapText(true);
-        cardRow(
-                types,
-                Category.SPELL_CHECK,
-                new VBox(6, typesNote, spellFileTypes),
-                "spell file types languages per language json yaml toml xml csv markdown html typst code comments");
-        // The dictionaries get a card of their own: both switches, both file links, then the word list.
-        Card dict = card(p, tr("settings.dict.title"));
-        Hyperlink techLink = new Hyperlink(tr("settings.dict.openTechnical"));
-        techLink.setTooltip(new Tooltip(tr("settings.dict.openTechnicalTip")));
-        techLink.setOnAction(e -> {
-            if (onOpenTechnicalDictionary != null) {
-                onOpenTechnicalDictionary.run();
-            }
-        });
-        Hyperlink personalLink = new Hyperlink(tr("settings.dict.openPersonal"));
-        personalLink.setTooltip(new Tooltip(tr("settings.dict.openPersonalTip")));
-        personalLink.setOnAction(e -> {
-            if (onOpenPersonalDictionary != null) {
-                onOpenPersonalDictionary.run();
-            }
-        });
-        HBox dictLinks = new HBox(16, techLink, personalLink);
-        dictLinks.setAlignment(Pos.CENTER_LEFT);
-        checkRow(
-                dict,
-                Category.SPELL_CHECK,
-                techDictEnableCheck,
-                tr("settings.dict.technicalNote"),
-                "technical dictionary terms programming code config async kubernetes enable on off");
-        checkRow(
-                dict,
-                Category.SPELL_CHECK,
-                dictEnableCheck,
-                tr("settings.dict.note"),
-                "personal dictionary enable on off honor words dictionary.txt file location global");
-        cardRow(
-                dict,
-                Category.SPELL_CHECK,
-                dictLinks,
-                "dictionary open technical personal file dictionary.txt bundled terms");
-        cardRow(dict, Category.SPELL_CHECK, dictionaryEditor(), "personal dictionary words add remove custom ignore");
-        SettingsDependents.bind(spellCheckBox.selectedProperty(), rowsSince(firstSpellRow));
-        return p;
-    }
-
-    /** A simple editor for the global personal dictionary ({@code dictionary.txt}): list + add/remove. */
-    private javafx.scene.Node dictionaryEditor() {
-        ListView<String> words = new ListView<>();
-        dictionaryList = words;
-        dictionaryList.setPrefSize(300, 380);
-        dictionaryList.setPlaceholder(new Label(tr("settings.dict.empty")));
-        refreshDictionaryList();
-
-        TextField input = new TextField();
-        dictionaryInput = input;
-        input.setPromptText(tr("settings.dict.prompt"));
-        input.setAccessibleText(tr("settings.dict.prompt"));
-        HBox.setHgrow(input, Priority.ALWAYS);
-        // The list has no search of its own: what is being typed narrows it, which also shows at once
-        // whether the word is already there. Filtering only — nothing is stored until Add.
-        input.textProperty().addListener((o, was, now) -> refreshDictionaryList());
-        Button add = new Button(tr("settings.dict.add"));
-        Runnable doAdd = () -> {
-            // One entry per word, in the form the checker looks words up by. A phrase used to be stored
-            // whole ("foo bar"), which no single word can ever match.
-            String last = null;
-            for (String part : input.getText().strip().split("\\s+")) {
-                String w = com.editora.editor.spell.SpellChecker.canonical(part);
-                if (!w.isEmpty()) {
-                    config.addUserWord(w);
-                    last = w;
-                }
-            }
-            if (last != null) {
-                markSyncDirty();
-                input.clear();
-                refreshDictionaryList();
-                words.getSelectionModel().select(last);
-                apply(); // live-apply like every other control here: re-runs the spell overlays' caches
-            }
-            input.requestFocus();
-        };
-        add.setOnAction(e -> doAdd.run());
-        input.setOnAction(e -> doAdd.run());
-
-        Button remove = new Button(tr("settings.dict.remove"));
-        remove.disableProperty()
-                .bind(dictionaryList.getSelectionModel().selectedItemProperty().isNull());
-        remove.setOnAction(e -> {
-            String sel = words.getSelectionModel().getSelectedItem();
-            if (sel != null) {
-                config.removeUserWord(sel);
-                markSyncDirty();
-                refreshDictionaryList();
-                apply(); // live-apply: the removed word must start being flagged again right away
-            }
-        });
-
-        HBox addRow = new HBox(6, input, add);
-        addRow.setAlignment(Pos.CENTER_LEFT);
-        VBox box = new VBox(6, dictionaryList, addRow, new HBox(6, remove));
-        box.setMaxWidth(440);
-        return box;
-    }
-
-    /** Reloads the Personal Dictionary list from the shared user-word set (sorted), preserving selection. */
-    private void refreshDictionaryList() {
-        if (dictionaryList == null) {
-            return;
-        }
-        java.util.List<String> words = new java.util.ArrayList<>(config.getUserDictionary());
-        String typed = dictionaryInput == null || dictionaryInput.getText() == null
-                ? ""
-                : dictionaryInput.getText().strip().toLowerCase(java.util.Locale.ROOT);
-        if (!typed.isEmpty() && typed.indexOf(' ') < 0) {
-            words.removeIf(w -> !w.contains(typed));
-        }
-        java.util.Collections.sort(words);
-        String sel = dictionaryList.getSelectionModel().getSelectedItem();
-        dictionaryList.getItems().setAll(words);
-        if (sel != null && words.contains(sel)) {
-            dictionaryList.getSelectionModel().select(sel);
-        }
+    /** Injects the Spell Check page's "open dictionary file" actions (bundled technical / personal). */
+    public void setDictionaryActions(Runnable openTechnical, Runnable openPersonal) {
+        spellPage.setDictionaryActions(openTechnical, openPersonal);
     }
 
     /** Re-reads the Personal Dictionary list: a word was added, ignored or reloaded while the page is open. */
     public void syncDictionaryList() {
-        refreshDictionaryList();
+        spellPage.syncDictionaryList();
     }
 
     /** Re-syncs the file-type ticks after {@code spell.toggleForLanguage} (or another window) changed them. */
     public void syncSpellFileTypes() {
-        if (spellFileTypes != null) {
-            spellFileTypes.sync();
-        }
+        spellPage.syncSpellFileTypes();
     }
 
     /** Re-syncs the "Enable personal dictionary" checkbox after a palette toggle. */
     public void syncPersonalDictionaryCheck() {
-        if (dictEnableCheck != null) {
-            quietly(() -> dictEnableCheck.setSelected(config.getSettings().isPersonalDictionary()));
-        }
+        spellPage.syncPersonalDictionaryCheck();
     }
 
     /** Re-syncs the "Enable technical dictionary" checkbox after a palette toggle. */
     public void syncTechnicalDictionaryCheck() {
-        if (techDictEnableCheck != null) {
-            quietly(() -> techDictEnableCheck.setSelected(config.getSettings().isTechnicalDictionary()));
-        }
+        spellPage.syncTechnicalDictionaryCheck();
     }
 
     /** Runs a control re-sync without its listeners treating it as a user edit (no write, no save, no apply). */
-    private void quietly(Runnable sync) {
+    void quietly(Runnable sync) {
         boolean prev = loading;
         loading = true;
         try {
@@ -4027,7 +2330,7 @@ public class SettingsWindow {
     /** Opens Settings focused on the Spell Check page (the {@code spell.manageDictionary} command). */
     public void showSpellCheck(Window owner) {
         showAt(Category.SPELL_CHECK, owner);
-        refreshDictionaryList();
+        spellPage.refreshDictionaryList();
     }
 
     /** GENERAL ▸ Interface: window-chrome visibility + the Simple/Zen minimal-UI modes. */
@@ -4147,7 +2450,9 @@ public class SettingsWindow {
                 "completion documentation quick doc popup javadoc ctrl q");
         Card lsp = card(p, tr("settings.section.lspFeatures"));
         // Every row here needs a language server: greyed out, with the reason, while LSP is off.
-        lsp.body().getChildren().add(SettingsDependents.note(lspCheck.selectedProperty(), tr("settings.enableLsp")));
+        lsp.body()
+                .getChildren()
+                .add(SettingsDependents.note(lspPage.lspCheck.selectedProperty(), tr("settings.enableLsp")));
         int firstLspRow = rows.size();
         checkRow(
                 lsp,
@@ -4236,7 +2541,7 @@ public class SettingsWindow {
                         .filter(t -> !t.isBlank())
                         .toList()),
                 "exclude excluded types auto import completion filter awt java jdtls");
-        SettingsDependents.bind(lspCheck.selectedProperty(), rowsSince(firstLspRow));
+        SettingsDependents.bind(lspPage.lspCheck.selectedProperty(), rowsSince(firstLspRow));
         return p;
     }
 
@@ -4404,714 +2709,133 @@ public class SettingsWindow {
         }
     }
 
-    /** LANGUAGES & TOOLS ▸ Web: HTML live preview + the built-in HTTP client (merged). */
-    private VBox webPage() {
-        VBox p = page(tr("settings.cat.web"), tr("settings.web.subtitle"));
-        Card preview = card(p, tr("settings.section.htmlPreview"));
-        checkRow(
-                preview,
-                Category.WEB,
-                htmlPreviewCheck,
-                tr("settings.htmlPreview.hint"),
-                "html live preview browser serve enable safari chrome firefox edge server localhost");
-        htmlBrowserCombo.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(String id) {
-                return id == null ? "" : browserComboLabel(id, htmlBrowserNames, htmlBrowsersDetected);
-            }
-
-            @Override
-            public String fromString(String label) {
-                return label;
-            }
-        });
-        htmlBrowserCombo.valueProperty().addListener((o, was, now) -> {
-            if (!loading && now != null) {
-                config.getSettings().setHtmlPreviewBrowser(now);
-                apply();
-            }
-        });
-        controlRow(
-                preview,
-                Category.WEB,
-                tr("settings.htmlPreview.browser"),
-                null,
-                dependent(htmlPreviewCheck, htmlBrowserCombo),
-                "html live preview browser default chrome firefox safari edge open");
-        Thread.ofVirtual().name("settings-browsers").start(() -> {
-            List<com.editora.web.Browsers.Browser> found = com.editora.web.Browsers.detect(); // file probes
-            javafx.application.Platform.runLater(() -> {
-                found.forEach(b -> htmlBrowserNames.put(b.id(), HtmlPreviewCoordinator.label(b)));
-                htmlBrowsersDetected = true;
-                boolean prev = loading;
-                loading = true;
-                try {
-                    htmlBrowserCombo
-                            .getItems()
-                            .setAll(found.stream().map(b -> b.id()).toList());
-                    htmlBrowserCombo.setValue(null); // re-label a stored id that detection did not find
-                    syncHtmlBrowser();
-                } finally {
-                    loading = prev;
-                }
-            });
-        });
-        Card http = card(p, tr("settings.section.httpClient"));
-        checkRow(
-                http,
-                Category.WEB,
-                httpCheck,
-                tr("settings.httpClient.hint"),
-                "http client rest request enable run send response built-in");
-        checkRow(
-                http,
-                Category.WEB,
-                httpInlineResultsCheck,
-                tr("settings.httpClient.inlineResultsHint"),
-                "http client result status inline request line gutter run outcome editor ghost");
-        checkRow(
-                http,
-                Category.WEB,
-                httpScriptsCheck,
-                tr("settings.httpClient.scriptsHint"),
-                "http client response handler javascript script node test assert client.global trust");
-        toolRows(
-                http,
-                Category.WEB,
-                tr("settings.httpClient.nodePath"),
-                tr("settings.httpClient.nodePathHint"),
-                httpNodeField,
-                httpScriptsCheck,
-                httpNodeStatus,
-                "http client response handler node nodejs javascript");
-        controlRow(
-                http,
-                Category.WEB,
-                tr("settings.httpClient.scriptTimeout"),
-                tr("settings.httpClient.scriptTimeoutHint"),
-                dependent(httpScriptsCheck, new HBox(httpScriptTimeoutSpinner)),
-                "http client response handler script timeout seconds node javascript");
-        SettingsDependents.bind(httpCheck.selectedProperty(), httpScriptsCheck);
-        return p;
+    /**
+     * The objects that hold this window's controls: the window and the page classes it builds. {@link
+     * SettingsModified} finds the controls there by field name.
+     */
+    List<Object> controlOwners() {
+        return List.of(
+                this,
+                syncPage,
+                pluginsPage,
+                aiPages,
+                debugPage,
+                lspPage,
+                keymapsPage,
+                snippetPages,
+                markdownPage,
+                gitPages,
+                renderPages,
+                spellPage,
+                webPage);
     }
 
-    // --- Sync page -----------------------------------------------------------------------------------------
+    /** Settings → AI, AI Agent, AI Actions and MCP Server; see {@link SettingsAiPages}. */
+    private final SettingsAiPages aiPages;
 
-    private @Nullable SettingsSync settingsSync;
-    private @Nullable VBox syncCredentialsWarning;
-    private final Runnable syncStateListener = this::refreshSyncControls;
-    private @Nullable TextField syncUrlField;
-    private @Nullable TextField syncBranchField;
-    private @Nullable Button syncConnectButton;
-    private @Nullable Button syncDisconnectButton;
-    private @Nullable Button syncCreateGithubButton;
-    private @Nullable Button syncNowButton;
-    private @Nullable Button syncAnywayButton;
-    private @Nullable Label syncStateLabel;
-    /** The Status row's pill: Connected (green), Not connected (amber), Sync failing (red); see {@link SyncStatus}. */
-    private @Nullable Label syncPill;
+    /** Wires the security-notice confirm shown before the MCP checkbox enables the server. */
+    public void setMcpConfirm(java.util.function.BooleanSupplier confirm) {
+        aiPages.setMcpConfirm(confirm);
+    }
 
-    private @Nullable Label syncAccountLabel;
-    private @Nullable CheckBox syncSnippetsCheck;
-    private @Nullable CheckBox syncAbbreviationsCheck;
-    private @Nullable CheckBox syncTemplatesCheck;
-    private @Nullable CheckBox syncDictionaryCheck;
-    private @Nullable CheckBox syncKeybindingsCheck;
-    private @Nullable CheckBox syncAutoCheck;
-    private @Nullable Spinner<Integer> syncIntervalSpinner;
-    /** A message about the connect attempt in progress; shown instead of the service's state until it ends. */
-    private @Nullable String syncConnectMessage;
-    /** Connect's look at the repository is under way; {@link #syncConnectRun} tells a cancelled one apart. */
-    private boolean syncChecking;
+    void setMcpActions(McpActions actions) {
+        aiPages.setMcpActions(actions);
+    }
 
-    private int syncConnectRun;
-    private @Nullable Button syncCancelButton;
+    /** Injected by MainController: backs the AI Agent page's per-client PATH-detection rows + the active-
+     *  client combo (which routes through the coordinator's single switch path). */
+    void setAgentCoordinator(AgentCoordinator coordinator) {
+        aiPages.setAgentCoordinator(coordinator);
+    }
+
+    /** Injected by MainController: runs a live AI connection check (green/red status on the AI page). */
+    public void setAiConnectionProbe(
+            java.util.function.BiConsumer<Boolean, java.util.function.BiConsumer<Boolean, String>> probe) {
+        aiPages.setAiConnectionProbe(probe);
+    }
+
+    /** Settings → Mermaid, Diagrams and Typst; see {@link SettingsRenderToolPages}. */
+    private final SettingsRenderToolPages renderPages;
+
+    /** Settings → Git and GitHub; see {@link SettingsGitPages}. */
+    private final SettingsGitPages gitPages;
+
+    /** Settings → Markdown; see {@link SettingsMarkdownPage}. */
+    private final SettingsMarkdownPage markdownPage;
+
     /**
-     * Why the last Connect or Create did not go through (an unusable URL, an unreachable repository, a gh
-     * error). Kept, rather than written to the label once, so that a refresh arriving afterwards — the
-     * GitHub sign-in check finishing, the service reporting its state — does not replace it with "Not
-     * connected." before it was read. It goes when the user edits the repository, tries again or
-     * disconnects.
+     * What the active file's project markdownlint config does to the rule list below, as one localized line
+     * ("" when none applies). Not observable: read again whenever the Markdown page is shown or synced.
      */
-    private @Nullable String syncNotice;
+    public void setMarkdownLintConfigNote(java.util.function.Supplier<String> note) {
+        markdownPage.setMarkdownLintConfigNote(note);
+    }
+
+    /** Settings → Snippets and Templates; see {@link SettingsSnippetPages}. */
+    private final SettingsSnippetPages snippetPages;
+
+    /** Injects the shared {@link com.editora.snippet.SnippetManager} backing the Snippets management page. */
+    public void setSnippetManager(com.editora.snippet.SnippetManager snippetManager) {
+        snippetPages.setSnippetManager(snippetManager);
+    }
+
+    /** Injects the shared {@link com.editora.template.TemplateRegistry} backing the Templates page. */
+    public void setTemplateRegistry(com.editora.template.TemplateRegistry registry) {
+        snippetPages.setTemplateRegistry(registry);
+    }
+
+    /** Another window (or a save in the editor) changed a user snippet file: the open Snippets page re-reads it. */
+    public void reloadSnippetsPage() {
+        snippetPages.reloadSnippetsPage();
+    }
+
+    /** Settings → Keymaps and Macros; see {@link SettingsKeymapsPage}. */
+    final SettingsKeymapsPage keymapsPage;
+
+    /** Injects the cross-window macro re-register hook (→ {@code MainController}); used by the Macros page. */
+    public void setMacrosChangedHandler(Runnable handler) {
+        keymapsPage.setMacrosChangedHandler(handler);
+    }
+
+    /** Re-reads the Macros page's list from the store — called after a macro changes from outside this
+     *  window (e.g. a recording that was just stopped), so an already-open Settings window reflects it live
+     *  instead of only on the next time the page is built. Harmless if the page was never opened. */
+    public void refreshMacrosList() {
+        keymapsPage.refreshMacrosList();
+    }
+
+    /** Settings → Language Servers; see {@link SettingsLspPage}. */
+    private final SettingsLspPage lspPage;
+
+    /** Installs a pinned command-line tool (shellcheck/shfmt) from the Bash card's Install buttons. */
+    public void setInstallToolActions(java.util.function.Consumer<String> onInstallTool) {
+        lspPage.setInstallToolActions(onInstallTool);
+    }
+
+    /** Wires the per-LSP-server Install buttons (json/bash/yaml/…) to {@code InstallCoordinator.installServer}. */
+    public void setInstallServerActions(java.util.function.Consumer<String> onInstallServer) {
+        lspPage.setInstallServerActions(onInstallServer);
+    }
+
+    /** Settings → Debugging; see {@link SettingsDebugPage}. */
+    final SettingsDebugPage debugPage;
+
+    /** Settings → Sync; see {@link SettingsSyncPage}. */
+    private final SettingsSyncPage syncPage;
 
     /** Injects the application's settings sync (null in a window that has none, e.g. a test double). */
     void setSettingsSync(@Nullable SettingsSync sync) {
-        if (settingsSync != null) {
-            settingsSync.removeListener(syncStateListener);
-        }
-        settingsSync = sync;
-        if (sync != null) {
-            sync.addListener(syncStateListener);
-        }
-        refreshSyncControls();
+        syncPage.setSettingsSync(sync);
     }
 
     @Nullable
     SettingsSync settingsSync() {
-        return settingsSync;
+        return syncPage.settingsSync();
     }
 
     /** The user changed synced data on a page of this window. */
-    private void markSyncDirty() {
-        if (settingsSync != null) {
-            settingsSync.markDirty();
-        }
-    }
-
-    /** SYSTEM ▸ Sync: the repository, what is synced, when, and how the last run went. */
-    private VBox syncPage() {
-        VBox p = page(tr("settings.cat.sync"), tr("settings.sync.subtitle"));
-        Settings settings = config.getSettings();
-
-        // A URL stored with a password or token before the field refused them: offered, once, to take it out.
-        TextField urlField = new TextField();
-        Button removeSecret = new Button(tr("settings.sync.credentials.remove"));
-        removeSecret.setOnAction(e -> {
-            String clean = com.editora.sync.SyncEngine.withoutCredentials(
-                    config.getSettings().getSyncRepoUrl());
-            config.getSettings().setSyncRepoUrl(clean);
-            urlField.setText(clean);
-            syncSettingsChanged(); // saves; the clone's remote is rewritten at the next sync
-            showSyncNotice(tr("settings.sync.credentials.removed"));
-        });
-        Button keepSecret = new Button(tr("settings.sync.credentials.keep"));
-        keepSecret.setOnAction(e -> {
-            if (settingsSync != null) { // the warning only shows with one
-                settingsSync.storedCredentialsKept = true;
-            }
-            refreshSyncControls();
-        });
-        syncCredentialsWarning =
-                new VBox(6, noteBox(tr("settings.sync.credentials.stored")), new HBox(8, removeSecret, keepSecret));
-        p.getChildren().add(syncCredentialsWarning);
-        Card repo = card(p, null);
-        syncUrlField = urlField;
-        syncUrlField.setPromptText(tr("settings.sync.repo.prompt"));
-        syncUrlField.setPrefWidth(REPO_URL_FIELD_WIDTH);
-        // A password or token in the URL would be stored in plain text: refused, with the reason, until removed.
-        syncUrlField.textProperty().addListener((o, was, now) -> {
-            boolean secret = com.editora.sync.SyncEngine.hasCredentials(now);
-            urlField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, secret);
-            urlField.setTooltip(secret ? new Tooltip(tr("settings.sync.repo.credentials")) : null);
-        });
-        commitOnEnterOrBlur(syncUrlField, settings::getSyncRepoUrl, text -> {
-            if (com.editora.sync.SyncEngine.hasCredentials(text)) {
-                showSyncNotice(tr("settings.sync.repo.credentials"));
-                return;
-            }
-            config.getSettings().setSyncRepoUrl(text);
-            config.save();
-            syncNotice = null;
-            refreshSyncControls();
-        });
-        cardRow(
-                repo,
-                Category.SYNC,
-                settingRow(tr("settings.sync.repo"), tr("settings.sync.repo.desc"), syncUrlField),
-                "sync repository url git remote github gitlab clone ssh https");
-        TextField branchField = new TextField();
-        syncBranchField = branchField;
-        syncBranchField.setPrefWidth(140);
-        syncBranchField.textProperty().addListener((o, was, now) -> {
-            boolean bad = !now.isBlank() && !com.editora.sync.SyncEngine.isUsableBranch(now.strip());
-            branchField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, bad);
-            branchField.setTooltip(bad ? new Tooltip(tr("settings.sync.branch.invalid")) : null);
-        });
-        commitOnEnterOrBlur(syncBranchField, settings::getSyncBranch, text -> {
-            if (!text.isBlank() && !com.editora.sync.SyncEngine.isUsableBranch(text.strip())) {
-                return; // red, with the reason; the branch in use stays
-            }
-            config.getSettings().setSyncBranch(text);
-            config.save();
-            syncNotice = null;
-            refreshSyncControls();
-        });
-        syncConnectButton = new Button(tr("settings.sync.connect"));
-        syncConnectButton.setOnAction(e -> connectSync());
-        syncDisconnectButton = new Button(tr("settings.sync.disconnect"));
-        syncDisconnectButton.setOnAction(e -> {
-            config.getSettings().setSyncEnabled(false);
-            config.save();
-            if (settingsSync != null) {
-                settingsSync.disconnected();
-            }
-            syncNotice = null;
-            refreshSyncControls();
-        });
-        syncCreateGithubButton = new Button(tr("settings.sync.createGithub"));
-        syncCreateGithubButton.setOnAction(e -> createSyncRepoOnGithub());
-        cardRow(
-                repo,
-                Category.SYNC,
-                settingRow(
-                        tr("settings.sync.branch"),
-                        tr("settings.sync.branch.desc"),
-                        new HBox(8, syncBranchField, syncConnectButton, syncDisconnectButton, syncCreateGithubButton)),
-                "sync branch connect disconnect enable turn on off create private repository github gh");
-        syncStateLabel = new Label();
-        syncStateLabel.setWrapText(true);
-        syncStateLabel.setMaxWidth(420);
-        syncPill = new Label();
-        syncPill.setWrapText(true);
-        syncPill.setMaxWidth(420);
-        // "synced 5 min ago" moves on while the window is open.
-        javafx.animation.Timeline syncPillTick = new javafx.animation.Timeline(
-                new javafx.animation.KeyFrame(javafx.util.Duration.seconds(30), e -> refreshSyncControls()));
-        syncPillTick.setCycleCount(javafx.animation.Animation.INDEFINITE);
-        stage.showingProperty().addListener((o, was, now) -> {
-            if (now) {
-                syncPillTick.play();
-            } else {
-                syncPillTick.stop();
-            }
-        });
-        syncAccountLabel = new Label();
-        syncAccountLabel.getStyleClass().add("settings-row-desc");
-        syncAccountLabel.setWrapText(true);
-        syncAccountLabel.setMaxWidth(420);
-        syncNowButton = new Button(tr("settings.sync.now"));
-        syncNowButton.setOnAction(e -> {
-            if (settingsSync != null) {
-                settingsSync.syncNow();
-            }
-        });
-        syncAnywayButton = new Button(tr("settings.sync.anyway"));
-        syncAnywayButton.setOnAction(e -> {
-            if (settingsSync != null) {
-                settingsSync.syncAllowingLargeRemoval();
-            }
-        });
-        syncCancelButton = new Button(tr("settings.sync.cancel"));
-        syncCancelButton.setOnAction(e -> {
-            if (!syncChecking) { // a sync under way: stopped before it writes anything here, or let finish
-                if (settingsSync != null && !settingsSync.cancelSync()) {
-                    showSyncNotice(tr("settings.sync.cancelTooLate"));
-                }
-                return;
-            }
-            // Connect's look: stops waiting; git finishes (or times out) on its own, unused
-            syncConnectRun++;
-            syncChecking = false;
-            syncConnectMessage = null;
-            showSyncNotice(tr("settings.sync.cancelled"));
-        });
-        Button openFolder = new Button(tr("settings.sync.openFolder"));
-        openFolder.setOnAction(e -> openSyncFolder());
-        cardRow(
-                repo,
-                Category.SYNC,
-                settingRow(
-                        tr("settings.sync.status"),
-                        null,
-                        new VBox(
-                                6,
-                                new HBox(syncPill), // a pill as wide as its words
-                                syncStateLabel,
-                                syncAccountLabel,
-                                new HBox(8, syncNowButton, syncAnywayButton, syncCancelButton, openFolder))),
-                "sync now status last synced received sent conflict backups folder github account signed in");
-
-        Card what = card(p, tr("settings.sync.what"));
-        syncSnippetsCheck = syncCategoryCheck("settings.sync.snippets", Settings::setSyncSnippets);
-        syncAbbreviationsCheck = syncCategoryCheck("settings.sync.abbreviations", Settings::setSyncAbbreviations);
-        syncTemplatesCheck = syncCategoryCheck("settings.sync.templates", Settings::setSyncTemplates);
-        syncDictionaryCheck = syncCategoryCheck("settings.sync.dictionary", Settings::setSyncDictionary);
-        syncKeybindingsCheck = syncCategoryCheck("settings.sync.keybindings", Settings::setSyncKeybindings);
-        checkRow(what, Category.SYNC, syncSnippetsCheck, null, "sync snippets");
-        checkRow(what, Category.SYNC, syncAbbreviationsCheck, null, "sync abbreviations abbrev");
-        checkRow(what, Category.SYNC, syncTemplatesCheck, null, "sync templates file project");
-        checkRow(what, Category.SYNC, syncDictionaryCheck, null, "sync spell check personal dictionary words");
-        checkRow(
-                what,
-                Category.SYNC,
-                syncKeybindingsCheck,
-                tr("settings.sync.keybindings.desc"),
-                "sync keybindings key bindings shortcuts keymap rebind");
-        cardRow(what, Category.SYNC, note(tr("settings.sync.notSynced")), "sync not synced preferences macros");
-
-        Card when = card(p, null);
-        syncAutoCheck = new CheckBox(tr("settings.sync.auto"));
-        syncAutoCheck.selectedProperty().addListener((obs, was, now) -> {
-            if (syncIntervalSpinner != null) { // made just below
-                syncIntervalSpinner.setDisable(!now);
-            }
-            if (loading) {
-                return;
-            }
-            config.getSettings().setSyncAuto(now);
-            syncSettingsChanged();
-        });
-        syncIntervalSpinner =
-                IntSpinners.editable(1, Settings.MAX_GIT_AUTO_FETCH_MINUTES, settings.getSyncIntervalMinutes(), 1);
-        syncIntervalSpinner.setPrefWidth(90);
-        syncIntervalSpinner.setAccessibleText(tr("settings.git.autoFetchMinutes"));
-        syncIntervalSpinner.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
-                return;
-            }
-            config.getSettings().setSyncIntervalMinutes(now);
-            syncSettingsChanged();
-        });
-        Label unit = new Label(tr("settings.git.autoFetchMinutes"));
-        unit.setLabelFor(syncIntervalSpinner);
-        cardRow(
-                when,
-                Category.SYNC,
-                settingRow(
-                        tr("settings.sync.auto"),
-                        tr("settings.sync.auto.desc"),
-                        new HBox(8, syncIntervalSpinner, unit, switchFor(syncAutoCheck))),
-                "sync automatically auto background interval minutes startup");
-
-        row(p, Category.SYNC, null, noteBox(tr("settings.sync.privacy")), "private repository privacy secret");
-        return p;
-    }
-
-    private CheckBox syncCategoryCheck(String key, java.util.function.BiConsumer<Settings, Boolean> set) {
-        CheckBox check = new CheckBox(tr(key));
-        check.selectedProperty().addListener((obs, was, now) -> {
-            if (loading) {
-                return;
-            }
-            set.accept(config.getSettings(), now);
-            syncSettingsChanged();
-        });
-        return check;
-    }
-
-    /** Saves a changed {@code sync*} setting and lets the service re-read it. */
-    private void syncSettingsChanged() {
-        config.save();
-        if (settingsSync != null) {
-            settingsSync.settingsChanged();
-        }
-    }
-
-    private void loadSyncControls(Settings settings) {
-        if (syncUrlField == null
-                || syncBranchField == null
-                || syncSnippetsCheck == null
-                || syncAbbreviationsCheck == null
-                || syncTemplatesCheck == null
-                || syncDictionaryCheck == null
-                || syncKeybindingsCheck == null
-                || syncAutoCheck == null
-                || syncIntervalSpinner == null) {
-            return; // all made by syncPage(), which build() runs before any load()
-        }
-        syncUrlField.setText(settings.getSyncRepoUrl());
-        syncBranchField.setText(settings.getSyncBranch());
-        syncSnippetsCheck.setSelected(settings.isSyncSnippets());
-        syncAbbreviationsCheck.setSelected(settings.isSyncAbbreviations());
-        syncTemplatesCheck.setSelected(settings.isSyncTemplates());
-        syncDictionaryCheck.setSelected(settings.isSyncDictionary());
-        syncKeybindingsCheck.setSelected(settings.isSyncKeybindings());
-        syncAutoCheck.setSelected(settings.isSyncAuto());
-        syncIntervalSpinner.getValueFactory().setValue(settings.getSyncIntervalMinutes());
-        syncIntervalSpinner.setDisable(!settings.isSyncAuto());
-        refreshSyncControls();
-        if (githubService != null) {
-            githubService.detect(availability -> refreshSyncControls()); // "Create on GitHub" needs a signed-in gh
-        }
-    }
-
-    /** Shows the service's state: which buttons apply, and the status line. */
-    private void refreshSyncControls() {
-        if (syncStateLabel == null
-                || syncUrlField == null
-                || syncBranchField == null
-                || syncConnectButton == null
-                || syncDisconnectButton == null
-                || syncCreateGithubButton == null
-                || syncNowButton == null
-                || syncAnywayButton == null
-                || syncCancelButton == null
-                || syncCredentialsWarning == null
-                || syncAccountLabel == null
-                || syncPill == null) {
-            return; // not built yet
-        }
-        Settings settings = config.getSettings();
-        boolean available = settingsSync != null && settingsSync.primaryInstance();
-        boolean connected = settings.isSyncEnabled();
-        SettingsSync.State state = settingsSync == null ? null : settingsSync.state();
-        boolean syncing = state != null && state.phase() == SettingsSync.Phase.SYNCING;
-        syncUrlField.setDisable(connected);
-        syncBranchField.setDisable(connected);
-        syncConnectButton.setVisible(!connected);
-        syncConnectButton.setManaged(!connected);
-        syncConnectButton.setDisable(!available || syncConnectMessage != null);
-        syncDisconnectButton.setVisible(connected);
-        syncDisconnectButton.setManaged(connected);
-        com.editora.github.GitHubService.Availability gh = githubService == null ? null : githubService.availability();
-        boolean canCreate = available && !connected && gh != null && gh.found() && gh.authenticated();
-        syncCreateGithubButton.setVisible(canCreate);
-        syncCreateGithubButton.setManaged(canCreate);
-        syncCreateGithubButton.setDisable(syncConnectMessage != null);
-        syncNowButton.setDisable(!available || !connected || syncing);
-        boolean needsConfirmation = state != null
-                && state.phase() == SettingsSync.Phase.PROBLEM
-                && state.report() != null
-                && state.report().status() == com.editora.sync.SyncReport.Status.NEEDS_CONFIRMATION;
-        syncAnywayButton.setVisible(needsConfirmation);
-        syncAnywayButton.setManaged(needsConfirmation);
-        syncCancelButton.setVisible(syncChecking || syncing);
-        syncCancelButton.setManaged(syncChecking || syncing);
-        boolean secret = com.editora.sync.SyncEngine.hasCredentials(settings.getSyncRepoUrl())
-                && settingsSync != null
-                && !settingsSync.storedCredentialsKept;
-        syncCredentialsWarning.setVisible(secret);
-        syncCredentialsWarning.setManaged(secret);
-        String account = connected && settingsSync != null ? settingsSync.account() : "";
-        syncAccountLabel.setText(account.isEmpty() ? "" : tr("sync.state.account", account));
-        syncAccountLabel.setVisible(!account.isEmpty());
-        syncAccountLabel.setManaged(!account.isEmpty());
-        syncStateLabel.setText(
-                syncConnectMessage != null
-                        ? syncConnectMessage
-                        : syncNotice != null
-                                ? syncNotice
-                                : settingsSync == null ? tr("sync.state.off") : settingsSync.stateText());
-        SyncStatus.Pill pill = SyncStatus.of(
-                connected && com.editora.sync.SyncEngine.isUsableUrl(settings.getSyncRepoUrl()),
-                available,
-                state,
-                java.time.LocalTime.now());
-        syncPill.setText(pill.text());
-        syncPill.setAccessibleText(pill.accessibleText());
-        syncPill.getStyleClass().setAll("settings-git-status", pill.level().pillClass());
-        syncPill.setTooltip(new Tooltip(syncStateLabel.getText()));
-        // The line under the pill: a notice, the reason a run failed, or what the last run did. The pill alone
-        // says "Not connected" and "syncing…".
-        SettingsSync.Phase phase = state == null ? SettingsSync.Phase.OFF : state.phase();
-        boolean detail = syncConnectMessage != null
-                || syncNotice != null
-                || !available && settingsSync != null
-                || phase == SettingsSync.Phase.PROBLEM
-                || phase == SettingsSync.Phase.IDLE
-                        && state != null // phase is OFF without one
-                        && state.report() != null
-                        && state.report().ok();
-        syncStateLabel.setVisible(detail);
-        syncStateLabel.setManaged(detail);
-    }
-
-    /** Shows {@code text} in the status line until the user next acts on the repository (see {@link #syncNotice}). */
-    private void showSyncNotice(String text) {
-        syncNotice = text;
-        refreshSyncControls();
-    }
-
-    /**
-     * "Connect": looks at the repository first. When it already holds data that this computer would receive,
-     * says how much and asks; then switches sync on and runs the first sync.
-     */
-    private void connectSync() {
-        SettingsSync sync = settingsSync;
-        if (sync == null) {
-            return;
-        }
-        commitPendingFields();
-        syncNotice = null;
-        Settings settings = config.getSettings();
-        String url = settings.getSyncRepoUrl();
-        if (syncUrlField == null || syncBranchField == null) {
-            return; // Connect is a button on the page that makes both
-        }
-        if (com.editora.sync.SyncEngine.hasCredentials(syncUrlField.getText())) {
-            showSyncNotice(tr("settings.sync.repo.credentials")); // the stored URL is not the one shown
-            return;
-        }
-        String typedBranch = syncBranchField.getText().strip();
-        if (!typedBranch.isEmpty() && !com.editora.sync.SyncEngine.isUsableBranch(typedBranch)) {
-            showSyncNotice(tr("settings.sync.branch.invalid")); // nor is the stored branch
-            return;
-        }
-        String branch = settings.getSyncBranch();
-        if (!com.editora.sync.SyncEngine.isUsableUrl(url) || !com.editora.sync.SyncEngine.isUsableBranch(branch)) {
-            showSyncNotice(tr("status.sync.invalidRepository"));
-            return;
-        }
-        syncConnectMessage = tr("sync.state.checking");
-        int run = ++syncConnectRun;
-        syncChecking = true;
-        refreshSyncControls();
-        sync.preview(url, branch, report -> {
-            if (run != syncConnectRun) {
-                return; // cancelled: the user stopped waiting for this look
-            }
-            syncChecking = false;
-            syncConnectMessage = null;
-            if (!report.ok()) {
-                showSyncNotice(SettingsSync.problemText(report));
-                return;
-            }
-            if (!report.received().isEmpty()) {
-                Alert confirm = Dialogs.styled(new Alert(
-                        Alert.AlertType.CONFIRMATION,
-                        tr(
-                                "dialog.sync.connect.content",
-                                report.received().size(),
-                                report.sent().size(),
-                                report.conflicts().size()),
-                        ButtonType.OK,
-                        ButtonType.CANCEL));
-                confirm.initOwner(stage);
-                confirm.setTitle(tr("settings.cat.sync"));
-                confirm.setHeaderText(tr("dialog.sync.connect.header"));
-                if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
-                    refreshSyncControls();
-                    return;
-                }
-            }
-            config.getSettings().setSyncEnabled(true);
-            config.save();
-            sync.connected();
-            refreshSyncControls();
-        });
-    }
-
-    /** "Create Private Repository on GitHub…": asks for a name, creates it with gh, then connects to it. */
-    private void createSyncRepoOnGithub() {
-        if (settingsSync == null || githubService == null) {
-            return;
-        }
-        javafx.scene.control.TextInputDialog ask =
-                Dialogs.styled(new javafx.scene.control.TextInputDialog("editora-sync"));
-        ask.initOwner(stage);
-        ask.setTitle(tr("settings.cat.sync"));
-        ask.setHeaderText(tr("dialog.sync.createGithub.header"));
-        ask.setContentText(tr("dialog.sync.createGithub.name"));
-        String name = ask.showAndWait().map(String::strip).orElse("");
-        if (name.isEmpty()) {
-            return;
-        }
-        syncNotice = null;
-        if (!name.matches("[A-Za-z0-9._-]+")) {
-            showSyncNotice(tr("status.sync.invalidRepositoryName"));
-            return;
-        }
-        syncConnectMessage = tr("sync.state.creating");
-        refreshSyncControls();
-        githubService.createPrivateRepo(name, tr("settings.sync.githubDescription"), created -> {
-            syncConnectMessage = null;
-            if (!created.ok()) {
-                showSyncNotice(tr("status.sync.failed", created.error()));
-                return;
-            }
-            config.getSettings().setSyncRepoUrl(created.url());
-            config.save();
-            if (syncUrlField != null) {
-                syncUrlField.setText(created.url());
-            }
-            connectSync();
-        });
-    }
-
-    private void openSyncFolder() {
-        if (settingsSync == null) {
-            return;
-        }
-        Path dir = settingsSync.syncDir();
-        try {
-            java.nio.file.Files.createDirectories(dir);
-        } catch (java.io.IOException e) {
-            showSyncNotice(String.valueOf(e.getMessage()));
-            return;
-        }
-        com.editora.process.DesktopActions.reveal(dir, true, this::showSyncNotice);
-    }
-
-    /** Reference implementation of the UI Kit card page — see {@link #card}/{@link #settingRow}. The
-     *  cards are untitled (the kit's are too): the page heading already says "Git", and each row names
-     *  itself. */
-    private VBox gitPage() {
-        VBox p = page(tr("settings.cat.git"), tr("settings.git.subtitle"));
-
-        Card c = card(p, null);
-        gitStatusLabel = new Label(tr("settings.git.checking"));
-        gitStatusLabel.getStyleClass().add("settings-git-status");
-        gitStatusLabel.setWrapText(true);
-        gitStatusLabel.setMaxWidth(340);
-        cardRow(
-                c,
-                Category.GIT,
-                settingRow(tr("settings.enableGit"), tr("settings.git.hint"), switchFor(gitCheck)),
-                "git version control vcs enable");
-        Button gitBrowse = browseButton(tr("settings.git.command"), gitPathField);
-        gitPathField.setPrefWidth(PATH_FIELD_WIDTH);
-        cardRow(
-                c,
-                Category.GIT,
-                settingRow(
-                        tr("settings.git.command"),
-                        tr("settings.git.command.desc"),
-                        new HBox(6, gitPathField, gitBrowse)),
-                "git command path executable browse");
-        cardRow(
-                c,
-                Category.GIT,
-                settingRow(tr("settings.git.detected"), null, gitStatusLabel),
-                "git command found version installed not found");
-
-        // Blame, pull and fetch only matter while Git is on; the command path stays editable to fix detection.
-        p.getChildren().add(SettingsDependents.note(gitCheck.selectedProperty(), tr("settings.enableGit")));
-        Card c2 = card(p, null);
-        SettingsDependents.bind(gitCheck.selectedProperty(), c2.body());
-        cardRow(
-                c2,
-                Category.GIT,
-                settingRow(
-                        tr("settings.git.blameInline"),
-                        tr("settings.git.blameInline.desc"),
-                        new HBox(8, chordChip("git.toggleBlame"), switchFor(blameCheck))),
-                "git blame annotate inline author history line");
-        cardRow(
-                c2,
-                Category.GIT,
-                settingRow(tr("settings.git.pullMode"), tr("settings.git.pullMode.desc"), gitPullModeCombo),
-                "git pull mode fast-forward ff-only rebase merge diverged");
-        Label autoFetchUnit = new Label(tr("settings.git.autoFetchMinutes"));
-        autoFetchUnit.setLabelFor(gitAutoFetchSpinner);
-        cardRow(
-                c2,
-                Category.GIT,
-                settingRow(
-                        tr("settings.git.autoFetch"),
-                        tr("settings.git.autoFetch.desc"),
-                        new HBox(8, gitAutoFetchSpinner, autoFetchUnit, switchFor(gitAutoFetchCheck))),
-                "git fetch automatically auto background interval minutes remote prune");
-
-        return p;
-    }
-
-    private VBox githubPage() {
-        VBox p = page(tr("settings.cat.github"), tr("settings.github.subtitle"));
-        Card c = card(p, null);
-        githubStatusLabel = new Label(tr("settings.github.checking"));
-        githubStatusLabel.getStyleClass().add("settings-git-status");
-        githubStatusLabel.setWrapText(true);
-        githubStatusLabel.setMaxWidth(340);
-        checkRow(c, Category.GITHUB, githubCheck, tr("settings.github.hint"), "github gh pull request pr enable");
-        Button ghBrowse = browseButton(tr("settings.github.ghPath"), ghPathField);
-        ghPathField.setPrefWidth(PATH_FIELD_WIDTH);
-        controlRow(
-                c,
-                Category.GITHUB,
-                tr("settings.github.ghPath"),
-                null,
-                new HBox(6, ghPathField, ghBrowse),
-                "github gh path executable command");
-        controlRow(
-                c,
-                Category.GITHUB,
-                tr("settings.git.detected"),
-                null,
-                githubStatusLabel,
-                "github gh cli found installed authenticated not found");
-        refreshGithubStatus();
-        return p;
+    void markSyncDirty() {
+        syncPage.markSyncDirty();
     }
 
     private VBox encryptionPage() {
@@ -5221,33 +2945,6 @@ public class SettingsWindow {
     }
 
     /**
-     * The "Open the preview in" label for a browser id: its detected name, else (once detection has run) the known
-     * name marked as not found — a remembered browser that was uninstalled, never a raw id like {@code brave}.
-     */
-    static String browserComboLabel(String id, Map<String, String> detectedNames, boolean detected) {
-        String name = detectedNames.get(id);
-        if (name != null) {
-            return name;
-        }
-        return detected ? tr("htmlPreview.browserMissing", com.editora.web.Browsers.knownName(id)) : id;
-    }
-
-    /** Shows the stored preview browser, or System Default when none was chosen yet. */
-    private void syncHtmlBrowser() {
-        String id = config.getSettings().getHtmlPreviewBrowser();
-        htmlBrowserCombo.setValue(id.isBlank() ? com.editora.web.Browsers.SYSTEM_DEFAULT : id);
-    }
-
-    /** Whether the node the HTTP scripts run is there (a lookup, no process), like the Bash tool rows. */
-    private void refreshHttpNodeStatus() {
-        // Blank: the shared Node.js setting, as the run uses it (review E6).
-        String shown = com.editora.http.HttpNodeChoice.displayed(
-                config.getSettings().getHttpNodePath(), config.getSettings().getNodePath());
-        String found = ToolStatusRow.pathOf(com.editora.run.ProgramArgs.commandLine(shown));
-        httpNodeStatus.show(!found.isEmpty(), found, httpCheck.isSelected() && httpScriptsCheck.isSelected());
-    }
-
-    /**
      * The program a build tool's runs use when the project has no wrapper — the override, else the tool's
      * command — and whether it is there (a typo in the override used to give no sign: the project row is about
      * the project, not the command). Only a status: the override is saved either way.
@@ -5280,36 +2977,8 @@ public class SettingsWindow {
         return "npm";
     }
 
-    private VBox mermaidPage() {
-        VBox p = page(tr("settings.cat.mermaid"), tr("settings.mermaid.subtitle"));
-        dependsOn(p, mermaidCheck);
-        Card c = card(p, null);
-        checkRow(
-                c,
-                Category.MERMAID,
-                mermaidCheck,
-                tr("settings.mermaid.hint"),
-                "mermaid diagram enable mmdc render mmd");
-        installButtons.put(
-                "mermaid", mmdcStatus.install(() -> installSupport("mermaid")).installButton());
-        // Mermaid's detection is kept until a path changes (probing mmdc, or a maid command of the user's own,
-        // takes seconds on the thread that lints .mmd files), so a tool installed meanwhile is found on request.
-        mmdcStatus.link(tr("settings.mermaid.recheck"), () -> {
-            if (mermaidService != null) {
-                mermaidService.invalidate();
-                refreshMermaidStatus();
-            }
-        });
-        String m = tr("settings.mermaid.mmdcPath");
-        toolRows(c, Category.MERMAID, m, null, mmdcPathField, mermaidCheck, mmdcStatus, "mermaid mmdc render");
-        String maid = tr("settings.mermaid.maidPath");
-        toolRows(
-                c, Category.MERMAID, maid, null, maidPathField, mermaidCheck, maidStatus, "mermaid maid lint validate");
-        return p;
-    }
-
     /** The kit's tool rows (D13): "<title> [command][Browse…]" (greyed with {@code master}), then "Detected". */
-    private void toolRows(
+    void toolRows(
             Card c,
             Category cat,
             String title,
@@ -5329,94 +2998,10 @@ public class SettingsWindow {
     }
 
     /** The Install… action of the LSP, Debugging, Mermaid and Typst rows (the injected installer, if any). */
-    private void installSupport(String key) {
+    void installSupport(String key) {
         if (onInstallSupport != null) {
             onInstallSupport.accept(key);
         }
-    }
-
-    /** LANGUAGES & TOOLS ▸ Diagrams: Graphviz DOT + PlantUML preview (external CLIs). */
-    private VBox diagramsPage() {
-        VBox p = page(tr("settings.cat.diagrams"), tr("settings.diagrams.subtitle"));
-        dependsOn(p, diagramCheck);
-        Card c = card(p, null);
-        checkRow(
-                c,
-                Category.DIAGRAMS,
-                diagramCheck,
-                tr("settings.diagram.hint"),
-                "diagram dot graphviz plantuml enable render preview puml gv");
-        // No installer for Graphviz or PlantUML: the docs say how (a package manager), instead of a button.
-        Runnable docs = () -> {
-            if (openUrl != null) {
-                openUrl.accept(com.editora.AppInfo.HOMEPAGE + "/features/diagrams/");
-            }
-        };
-        dotStatus.linkWhenMissing(tr("settings.diagram.howToInstall"), docs);
-        plantumlStatus.linkWhenMissing(tr("settings.diagram.howToInstall"), docs);
-        String dot = tr("settings.diagram.dotPath");
-        toolRows(c, Category.DIAGRAMS, dot, null, dotPathField, diagramCheck, dotStatus, "diagram dot graphviz render");
-        String puml = tr("settings.diagram.plantumlPath");
-        toolRows(
-                c,
-                Category.DIAGRAMS,
-                puml,
-                null,
-                plantumlPathField,
-                diagramCheck,
-                plantumlStatus,
-                "diagram plantuml puml");
-        return p;
-    }
-
-    private void refreshDiagramStatus() {
-        if (diagramService == null) {
-            return;
-        }
-        dotStatus.checking();
-        plantumlStatus.checking();
-        diagramService.detect(a -> {
-            for (var kind : List.of(com.editora.diagram.DiagramKind.DOT, com.editora.diagram.DiagramKind.PLANTUML)) {
-                boolean found = a.has(kind);
-                List<String> argv = diagramService.command(kind);
-                (kind == com.editora.diagram.DiagramKind.DOT ? dotStatus : plantumlStatus)
-                        .show(found, found ? ToolStatusRow.pathOf(argv) : "", diagramCheck.isSelected());
-            }
-        });
-    }
-
-    /** LANGUAGES & TOOLS ▸ Typst: multi-page rendered document preview (the external typst CLI). */
-    private VBox typstPage() {
-        VBox p = page(tr("settings.cat.typst"), tr("settings.typst.subtitle"));
-        dependsOn(p, typstCheck);
-        Card c = card(p, null);
-        checkRow(
-                c,
-                Category.TYPST,
-                typstCheck,
-                tr("settings.typst.hint"),
-                "typst document enable render preview typ pdf");
-        installButtons.put(
-                "typst", typstStatus.install(() -> installSupport("typst")).installButton());
-        toolRows(
-                c,
-                Category.TYPST,
-                tr("settings.typst.path"),
-                null,
-                typstPathField,
-                typstCheck,
-                typstStatus,
-                "typst cli");
-        return p;
-    }
-
-    private void refreshTypstStatus() {
-        if (typstService == null) {
-            return;
-        }
-        typstStatus.checking();
-        typstService.detect(present -> typstStatus.show(
-                present, present ? ToolStatusRow.pathOf(typstService.command()) : "", typstCheck.isSelected()));
     }
 
     private VBox buildToolsPage() {
@@ -5445,14 +3030,14 @@ public class SettingsWindow {
                 // One Node.js for Run, npm scripts, Debug, the language servers and HTTP scripts (review E102):
                 // beside npm, never greyed out by another feature's switch.
                 Card nodeCard = card(p, "Node.js");
-                nodePathField.setPrefWidth(PATH_FIELD_WIDTH);
+                debugPage.nodePathField.setPrefWidth(PATH_FIELD_WIDTH);
                 String node = tr("settings.debug.nodePath");
                 controlRow(
                         nodeCard,
                         Category.BUILD_TOOLS,
                         node,
                         tr("settings.debug.nodePath.hint"),
-                        new HBox(6, nodePathField, browseButton(node, nodePathField)),
+                        new HBox(6, debugPage.nodePathField, browseButton(node, debugPage.nodePathField)),
                         "node nodejs node.js runtime nvm nvmrc version run debug npm typescript executable path");
             }
             Card c = card(p, bt.displayName());
@@ -5498,445 +3083,6 @@ public class SettingsWindow {
             }
         }
         return p;
-    }
-
-    private VBox snippetsPage() {
-        VBox p = page(tr("settings.cat.snippets"), tr("settings.snippets.subtitle"));
-        Card expansion = card(p, null);
-        checkRow(
-                expansion,
-                Category.SNIPPETS,
-                snippetTabExpansionCheck,
-                tr("settings.snippet.tabExpansion.desc"),
-                "snippets tab expansion expand trigger prefix key");
-        Card mainCard = card(p, null);
-        snippetsEditor = new SnippetsEditor(
-                snippetManager,
-                new SnippetsEditor.Hooks(
-                        this::macroWarn,
-                        this::confirmSnippetSave,
-                        SettingsWindow::highlightSnippetBody,
-                        SettingsWindow::installEmacsKeys,
-                        name -> confirmLoss.test(
-                                tr("settings.lists.deleteTitle"), tr("settings.lists.deleteConfirm", name))));
-        reloadSnippets = snippetsEditor::reload;
-        cardRow(
-                mainCard,
-                Category.SNIPPETS,
-                snippetsEditor.node(),
-                "snippets user prefix trigger expansion tab stops body disable bundled filter");
-        Label help = note(tr("settings.snippet.help"));
-        help.setWrapText(true);
-        help.setMaxWidth(460);
-        cardRow(mainCard, Category.SNIPPETS, help, "snippets help tab stop placeholder variable");
-        return p;
-    }
-
-    private boolean confirmSnippetSave(String message) {
-        Alert a = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, message, ButtonType.OK, ButtonType.CANCEL));
-        a.initOwner(stage);
-        a.setHeaderText(null);
-        return a.showAndWait().filter(b -> b == ButtonType.OK).isPresent();
-    }
-
-    /** Another window (or a save in the editor) changed a user snippet file: the open Snippets page re-reads it. */
-    public void reloadSnippetsPage() {
-        if (reloadSnippets != null) {
-            reloadSnippets.run();
-        }
-    }
-
-    private VBox templatesPage() {
-        VBox p = page(tr("settings.cat.templates"), tr("settings.templates.subtitle"));
-        Card author = card(p, tr("settings.section.templates"));
-        controlRow(
-                author,
-                Category.TEMPLATES,
-                tr("settings.authorName"),
-                null,
-                templateAuthorField,
-                "author name file templates new from template variable");
-        Card list = card(p, tr("settings.section.templatesList"));
-        cardRow(list, Category.TEMPLATES, templatesEditor(), "templates file new from template scaffold bundled");
-        Label help = note(tr("settings.template.help"));
-        help.setWrapText(true);
-        help.setMaxWidth(460);
-        cardRow(list, Category.TEMPLATES, help, "templates help variable cursor placeholder");
-        return p;
-    }
-
-    /** Master-detail editor: the templates (bundled + user) on the left, a form for the selected one. */
-    private javafx.scene.Node templatesEditor() {
-        ListView<com.editora.template.Template> list = new ListView<>(templateItems);
-        list.setPrefSize(250, 420); // "Java Compact Source" + the bundled tag
-        VBox.setVgrow(list, Priority.ALWAYS); // grow the list to fill the page height
-        list.setCellFactory(lv -> new ListCell<>() {
-            {
-                // A ListCell reports its graphic's intrinsic width as its preferred width, so a name
-                // plus the "bundled" tag made the list demand more than its viewport and grow a
-                // horizontal scrollbar — which then stole the height the last row needed, producing a
-                // vertical one too. Asking for nothing lets the row fit the viewport and the name
-                // ellipsize instead.
-                setPrefWidth(0);
-            }
-
-            @Override
-            protected void updateItem(com.editora.template.Template t, boolean empty) {
-                super.updateItem(t, empty);
-                if (empty || t == null) {
-                    setText(null);
-                    setGraphic(null);
-                    return;
-                }
-                Label nm = new Label(t.name() == null || t.name().isBlank() ? t.id() : t.name());
-                HBox.setHgrow(nm, Priority.ALWAYS);
-                nm.setMaxWidth(Double.MAX_VALUE);
-                HBox cell = new HBox(6, nm);
-                cell.setAlignment(Pos.CENTER_LEFT);
-                if (!templateUserIds.contains(t.id())) {
-                    // Not the user's own file: say whose it is (editing it saves a user copy that overrides it).
-                    Label tag = new Label(tr(
-                            t.origin() == com.editora.template.Template.Origin.PLUGIN
-                                    ? "settings.template.pluginTag"
-                                    : "settings.template.bundledTag"));
-                    tag.getStyleClass().add("snippet-bundled-tag");
-                    tag.setMinWidth(Region.USE_PREF_SIZE); // the name gives way, not the tag ("bund…")
-                    cell.getChildren().add(tag);
-                }
-                setText(null);
-                setGraphic(cell);
-            }
-        });
-
-        TextField id = new TextField();
-        TextField name = new TextField();
-        TextField description = new TextField();
-        TextField language = new TextField();
-        language.setPromptText(tr("settings.template.languagePrompt"));
-        TextField fileName = new TextField();
-        fileName.setPromptText(tr("settings.template.fileNamePrompt"));
-        CodeArea body = AreaUndo.bounded(new CodeArea());
-        body.getStyleClass().addAll("editor-area", "snippet-body");
-        // A template body is a file: its lines are shown as they will be written (scrolling sideways), not
-        // re-wrapped into something that no longer looks like the code it creates.
-        body.setWrapText(false);
-        body.setPrefWidth(480);
-        // Modest preferred height so the page fits the window; GridPane Vgrow lets it expand when there's room.
-        body.setPrefHeight(180);
-        installEmacsKeys(body); // basic Emacs caret movement in the settings scene
-        body.plainTextChanges().subscribe(c -> highlightSnippetBody(body, language.getText()));
-        // Re-highlight when the template's language changes (even without a body edit).
-        language.textProperty().addListener((o, a, b) -> highlightSnippetBody(body, language.getText()));
-
-        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
-        formRow(form, 0, tr("settings.template.id"), id);
-        formRow(form, 1, tr("settings.template.name"), name);
-        formRow(form, 2, tr("settings.template.description"), description);
-        formRow(form, 3, tr("settings.template.language"), language);
-        formRow(form, 4, tr("settings.template.fileName"), fileName);
-        // The body gets the form's full width (its label on the line above) rather than the field column:
-        // beside the list, that column is too narrow to read a line of code in.
-        Label bodyLabel = new Label(tr("settings.template.body"));
-        bodyLabel.setLabelFor(body);
-        form.add(bodyLabel, 0, 5, 2, 1);
-        form.add(body, 0, 6, 2, 1);
-        body.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
-        javafx.scene.layout.GridPane.setHgrow(body, Priority.ALWAYS);
-        javafx.scene.layout.GridPane.setVgrow(body, Priority.ALWAYS);
-        form.setDisable(true);
-
-        Label multiFileNote = note(tr("settings.template.multiFileNote"));
-        multiFileNote.setWrapText(true);
-        multiFileNote.setMaxWidth(440);
-        multiFileNote.setVisible(false);
-        multiFileNote.setManaged(false);
-        VBox right = new VBox(6, form, multiFileNote);
-        HBox.setHgrow(right, Priority.ALWAYS);
-
-        // The form's texts now, and as they were when the selected row was loaded (or last committed).
-        java.util.function.Supplier<java.util.List<String>> templateFormText = () -> java.util.Arrays.asList(
-                id.getText(),
-                name.getText(),
-                description.getText(),
-                language.getText(),
-                fileName.getText(),
-                body.getText());
-        java.util.concurrent.atomic.AtomicReference<java.util.List<String>> templateFormLoaded =
-                new java.util.concurrent.atomic.AtomicReference<>(templateFormText.get());
-        Runnable commit = () -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            if (i < 0 || loadingTemplate) {
-                return;
-            }
-            com.editora.template.Template cur = templateItems.get(i);
-            if (cur.isMultiFile()) {
-                return; // multi-file templates are read-only here
-            }
-            if (id.getText().trim().isEmpty()) {
-                id.setText(cur.id()); // the id names the file: a blank one keeps the old, and the rest still saves
-            }
-            if (templateFormText.get().equals(templateFormLoaded.get())) {
-                return; // a field merely lost focus — a bundled template must not become a user override for that
-            }
-            String newId = id.getText().trim();
-            if (!newId.equals(cur.id())) {
-                // The id is the file stem: one that is not a plain file name would write outside the
-                // templates folder, and one another row uses would overwrite that template's file.
-                String problem = null;
-                if (com.editora.template.TemplateRegistry.isReservedId(newId)) {
-                    problem = tr("settings.template.idReserved", newId); // index.json is the bundled list
-                } else if (!com.editora.template.TemplateRegistry.isValidId(newId)) {
-                    problem = tr("settings.template.idInvalid", newId);
-                } else {
-                    for (com.editora.template.Template other : templateItems) {
-                        if (other != cur && newId.equals(other.id())) {
-                            problem = tr("settings.template.idExists", newId);
-                            break;
-                        }
-                    }
-                }
-                if (problem != null) {
-                    id.setText(cur.id()); // put the field back
-                    macroWarn(problem);
-                    return;
-                }
-            }
-            // A field the user did not touch keeps the template's own value: the single-line description field
-            // shows a multi-line bundled description flattened, and saving that back would flatten the file.
-            java.util.List<String> loaded = templateFormLoaded.get();
-            java.util.List<String> typed = templateFormText.get();
-            java.util.function.BiFunction<Integer, String, String> value =
-                    (k, original) -> typed.get(k).equals(loaded.get(k)) && original != null
-                            ? original
-                            : typed.get(k).trim();
-            templateFormLoaded.set(typed);
-            com.editora.template.Template updated = new com.editora.template.Template(
-                    newId,
-                    value.apply(1, cur.name()),
-                    value.apply(2, cur.description()),
-                    value.apply(3, cur.language()),
-                    value.apply(4, cur.fileName()),
-                    body.getText(),
-                    null);
-            if (updated.equals(new com.editora.template.Template(
-                    cur.id(), cur.name(), cur.description(), cur.language(), cur.fileName(), cur.body(), null))) {
-                return; // only whitespace the commit trims away: not an edit, so not a user override either
-            }
-            String oldId = cur.id();
-            // Save under the new id first: a rename that deleted the old file and then failed to write the
-            // new one lost the template. The wizard labels are not in this form, so they are carried over.
-            com.editora.template.Template toSave = updated.withLabels(cur.labels());
-            if (!saveTemplate(toSave)) {
-                id.setText(oldId);
-                return;
-            }
-            // templateUserIds come from templateRegistry
-            if (!oldId.equals(newId) && templateUserIds.contains(oldId) && templateRegistry != null) {
-                try {
-                    templateRegistry.deleteUserTemplate(oldId); // renamed: drop the old override file
-                    markSyncDirty();
-                } catch (java.io.IOException ignored) {
-                    // best-effort: the template is safe under its new id either way
-                }
-                templateUserIds.remove(oldId);
-            }
-            templateUserIds.add(newId); // editing a bundled or plugin template makes it a user override
-            loadingTemplate = true;
-            try {
-                templateItems.set(i, toSave);
-            } finally {
-                loadingTemplate = false;
-            }
-            list.refresh();
-        };
-        java.util.function.Consumer<TextField> wire = tf -> {
-            tf.setOnAction(e -> commit.run());
-            tf.focusedProperty().addListener((o, was, now) -> {
-                if (!now) {
-                    commit.run();
-                }
-            });
-        };
-        wire.accept(id);
-        wire.accept(name);
-        wire.accept(description);
-        wire.accept(language);
-        wire.accept(fileName);
-        body.focusedProperty().addListener((o, was, now) -> {
-            if (!now) {
-                commit.run();
-            }
-        });
-        PauseCommit.watch( // live, but never a half-typed id (it is the file name)
-                () -> {
-                    if (!id.isFocused()) {
-                        commit.run();
-                    }
-                },
-                name.textProperty(),
-                description.textProperty(),
-                language.textProperty(),
-                fileName.textProperty(),
-                body.textProperty());
-
-        list.getSelectionModel().selectedIndexProperty().addListener((o, was, now) -> {
-            int i = now == null ? -1 : now.intValue();
-            com.editora.template.Template t = i >= 0 && i < templateItems.size() ? templateItems.get(i) : null;
-            boolean multi = t != null && t.isMultiFile();
-            loadingTemplate = true;
-            try {
-                form.setDisable(t == null || multi); // multi-file templates are display-only in this form
-                id.setText(t == null ? "" : t.id());
-                name.setText(t == null ? "" : t.name());
-                description.setText(t == null ? "" : t.description());
-                language.setText(t == null ? "" : t.language());
-                fileName.setText(t == null || multi ? "" : t.fileName());
-                body.replaceText(t == null || multi ? "" : t.body()); // CodeArea has no setText
-                multiFileNote.setVisible(multi);
-                multiFileNote.setManaged(multi);
-                templateFormLoaded.set(templateFormText.get());
-            } finally {
-                loadingTemplate = false;
-            }
-        });
-
-        Runnable loadTemplates = () -> {
-            loadingTemplate = true;
-            try {
-                templateItems.setAll(mergedTemplates());
-            } finally {
-                loadingTemplate = false;
-            }
-            list.getSelectionModel().clearSelection();
-            if (!templateItems.isEmpty()) {
-                list.getSelectionModel().select(0);
-            } else {
-                form.setDisable(true);
-            }
-        };
-
-        reloadTemplates = () -> { // another window's Settings may have added or removed a template
-            com.editora.template.Template sel = list.getSelectionModel().getSelectedItem();
-            loadTemplates.run();
-            for (int k = 0; sel != null && k < templateItems.size(); k++) {
-                if (java.util.Objects.equals(sel.id(), templateItems.get(k).id())) {
-                    list.getSelectionModel().select(k);
-                    break;
-                }
-            }
-        };
-
-        Button add = new Button(tr("settings.template.add"));
-        add.setOnAction(e -> {
-            java.util.Set<String> existing = new java.util.HashSet<>();
-            for (com.editora.template.Template t : templateItems) {
-                existing.add(t.id());
-            }
-            String base = "new-template";
-            String nid = base;
-            for (int n = 2; existing.contains(nid); n++) {
-                nid = base + "-" + n;
-            }
-            com.editora.template.Template t = new com.editora.template.Template(
-                    nid, tr("settings.template.newName"), "", "", "${name}.txt", "${cursor}", null);
-            templateUserIds.add(nid);
-            templateItems.add(t);
-            saveTemplate(t);
-            list.getSelectionModel().select(templateItems.size() - 1);
-            id.requestFocus();
-            id.selectAll();
-        });
-        Button remove = new Button(tr("settings.template.remove"));
-        // Only user templates/overrides can be removed; a pristine bundled template can't be deleted.
-        remove.disableProperty()
-                .bind(javafx.beans.binding.Bindings.createBooleanBinding(
-                        () -> {
-                            com.editora.template.Template t =
-                                    list.getSelectionModel().getSelectedItem();
-                            return t == null || !templateUserIds.contains(t.id());
-                        },
-                        list.getSelectionModel().selectedItemProperty()));
-        remove.setOnAction(e -> {
-            com.editora.template.Template t = list.getSelectionModel().getSelectedItem();
-            if (t == null || !templateUserIds.contains(t.id()) || templateRegistry == null) {
-                return;
-            }
-            // The file is deleted outright, and a multi-file template cannot be rebuilt from this form.
-            if (!confirmTemplateRemoval.test(t)) {
-                return;
-            }
-            try {
-                templateRegistry.deleteUserTemplate(t.id());
-                markSyncDirty();
-            } catch (java.io.IOException ex) {
-                Dialogs.styled(new Alert(
-                                Alert.AlertType.ERROR,
-                                tr("settings.template.saveFailed", ex.getMessage()),
-                                ButtonType.OK))
-                        .showAndWait();
-                return;
-            }
-            templateUserIds.remove(t.id());
-            templateItems.remove(t);
-            loadTemplates.run(); // re-derive: a removed override reverts to its bundled template
-        });
-        HBox buttons = new HBox(6, add, remove);
-        VBox left = new VBox(6, list, buttons);
-        keepWidth(add, remove, left);
-        VBox.setVgrow(left, Priority.ALWAYS);
-
-        VBox.setVgrow(form, Priority.ALWAYS);
-
-        loadTemplates.run();
-        HBox box = new HBox(12, left, right);
-        box.setAlignment(Pos.TOP_LEFT);
-        return box;
-    }
-
-    /**
-     * The templates shown, in the order they override one another: bundled (shipped) ones, then plugins'
-     * (replacing a bundled one of the same id, else appended), then the user's own files, which win over
-     * both. Rebuilds {@link #templateUserIds} (the ids that are user-owned: writable and removable); every
-     * other row is tagged with where it comes from.
-     */
-    private java.util.List<com.editora.template.Template> mergedTemplates() {
-        templateUserIds.clear();
-        if (templateRegistry == null) {
-            return java.util.List.of();
-        }
-        java.util.LinkedHashMap<String, com.editora.template.Template> userById = new java.util.LinkedHashMap<>();
-        for (com.editora.template.Template u : templateRegistry.userTemplates()) {
-            userById.put(u.id(), u);
-            templateUserIds.add(u.id());
-        }
-        java.util.LinkedHashMap<String, com.editora.template.Template> merged = new java.util.LinkedHashMap<>();
-        for (com.editora.template.Template b : templateRegistry.bundledTemplates()) {
-            merged.put(b.id(), b);
-        }
-        for (com.editora.template.Template plugin : templateRegistry.pluginTemplates()) {
-            merged.put(plugin.id(), plugin);
-        }
-        merged.putAll(userById); // the user's own file always wins
-        return new java.util.ArrayList<>(merged.values());
-    }
-
-    /** Writes {@code t} to the user's templates folder; false (after saying why) when that failed. */
-    private boolean saveTemplate(com.editora.template.Template t) {
-        if (templateRegistry == null) {
-            return false;
-        }
-        try {
-            templateRegistry.saveUserTemplate(t);
-            markSyncDirty();
-            return true;
-        } catch (java.io.IOException e) {
-            Dialogs.styled(new Alert(
-                            Alert.AlertType.ERROR, tr("settings.template.saveFailed", e.getMessage()), ButtonType.OK))
-                    .showAndWait();
-            return false;
-        }
     }
 
     private VBox remotePage() {
@@ -6011,9 +3157,9 @@ public class SettingsWindow {
                     config.getSettings().setExternalTools(tools);
                     apply(); // re-registers externalTool.run.*
                 },
-                this::macroWarn,
+                keymapsPage::macroWarn,
                 this::confirmDelete,
-                this::currentChordFor,
+                keymapsPage::currentChordFor,
                 (id, chord) -> {
                     if (shortcutActions != null) {
                         shortcutActions.rebind(id, chord);
@@ -6064,7 +3210,7 @@ public class SettingsWindow {
                 (abbreviationsEditor = new AbbreviationsEditor(
                                 config,
                                 this::apply,
-                                this::macroWarn,
+                                keymapsPage::macroWarn,
                                 name -> confirmLoss.test(
                                         tr("settings.lists.deleteTitle"), tr("settings.lists.deleteConfirm", name))))
                         .node(),
@@ -6086,756 +3232,8 @@ public class SettingsWindow {
         };
     }
 
-    private void formRow(javafx.scene.layout.GridPane form, int rowIndex, String labelText, javafx.scene.Node field) {
-        Label l = new Label(labelText);
-        // A Label's computed min width is just an ellipsis, so a tight GridPane collapses it to "…".
-        // Pin its min to its preferred (text) width so the field-row labels stay readable.
-        l.setMinWidth(Region.USE_PREF_SIZE);
-        form.add(l, 0, rowIndex);
-        form.add(field, 1, rowIndex);
-        if (field instanceof javafx.scene.layout.Region r) {
-            r.setMinWidth(SettingRowPane.FIELD_MIN_WIDTH);
-        }
-        // A tall multi-line body would otherwise centre its label; align it to the top of the field instead.
-        if (field instanceof CodeArea) {
-            javafx.scene.layout.GridPane.setValignment(l, javafx.geometry.VPos.TOP);
-        }
-    }
-
-    /** Re-highlights a snippet/template body {@link CodeArea} for {@code languageName} (plain for global/unknown). */
-    static void highlightSnippetBody(CodeArea area, String languageName) {
-        String text = area.getText();
-        IGrammar g = null;
-        if (languageName != null && !languageName.isBlank() && !"global".equals(languageName)) {
-            try {
-                g = GrammarRegistry.shared().forLanguageName(languageName);
-            } catch (RuntimeException ignored) {
-                // No grammar for this language: leave the body unstyled.
-            }
-        }
-        if (g == null) {
-            if (!text.isEmpty()) {
-                area.clearStyle(0, text.length());
-            }
-            return;
-        }
-        try {
-            area.setStyleSpans(0, TextMateHighlighter.compute(text, g));
-        } catch (RuntimeException ignored) {
-            // Tokenizer hiccup: keep the last styling rather than crash the editor.
-        }
-    }
-
-    /** Installs basic Emacs caret movement on a settings-scene {@link CodeArea} (no global KeyDispatcher there).
-     *  Uses absolute-offset {@code moveTo}/{@code deleteText} (robust across RichTextFX versions); each action is
-     *  guarded so the key is always consumed (no fall-through to the default behaviour) even at a boundary. */
-    static void installEmacsKeys(CodeArea area) {
-        installFocusEscape(area);
-        area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-            com.editora.command.KeymapManager keymap = com.editora.command.TextInputKeymap.sharedKeymap();
-            if (keymap != null && !com.editora.command.KeymapManager.DEFAULT.equals(keymap.activeName())) {
-                return; // Emacs keys under the Emacs keymap only: under CUA, Ctrl+A selects all, Ctrl+D is not delete
-            }
-            boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isMetaDown() && !e.isShiftDown();
-            boolean alt = e.isAltDown() && !e.isControlDown() && !e.isMetaDown() && !e.isShiftDown();
-            if (!ctrl && !alt) {
-                return;
-            }
-            int caret = area.getCaretPosition();
-            int len = area.getLength();
-            String text = area.getText();
-            if (ctrl) {
-                switch (e.getCode()) {
-                    case A -> consume(e, () -> area.moveTo(area.getCurrentParagraph(), 0));
-                    case E ->
-                        consume(e, () -> {
-                            int par = area.getCurrentParagraph();
-                            area.moveTo(par, area.getParagraphLength(par));
-                        });
-                    case F ->
-                        consume(e, () -> {
-                            if (caret < len) {
-                                area.moveTo(caret + 1);
-                            }
-                        });
-                    case B ->
-                        consume(e, () -> {
-                            if (caret > 0) {
-                                area.moveTo(caret - 1);
-                            }
-                        });
-                    case N -> consume(e, () -> emacsMoveLine(area, 1));
-                    case P -> consume(e, () -> emacsMoveLine(area, -1));
-                    case D ->
-                        consume(e, () -> {
-                            if (caret < len) {
-                                area.deleteText(caret, caret + 1);
-                            }
-                        });
-                    case K -> consume(e, () -> emacsKillLine(area));
-                    default -> {}
-                }
-            } else {
-                switch (e.getCode()) {
-                    case F -> consume(e, () -> area.moveTo(nextWordBoundary(text, caret)));
-                    case B -> consume(e, () -> area.moveTo(prevWordBoundary(text, caret)));
-                    default -> {}
-                }
-            }
-        });
-    }
-
-    /**
-     * Lets the keyboard leave a body editor. Tab types a tab there (a snippet body needs it), which made
-     * the editor a trap: nothing moved focus on, so the Save button after it was out of reach. As in a
-     * JavaFX {@code TextArea}: Shift+Tab goes back, Ctrl+Tab goes on (Ctrl+Shift+Tab back).
-     */
-    private static void installFocusEscape(CodeArea area) {
-        area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-            javafx.scene.TraversalDirection direction =
-                    focusEscape(e.getCode(), e.isShiftDown(), e.isControlDown(), e.isAltDown() || e.isMetaDown());
-            if (direction != null) {
-                e.consume();
-                area.requestFocusTraversal(direction);
-            }
-        });
-    }
-
-    /** Where a key takes the focus out of a body editor, or {@code null} when the editor keeps the key. Pure. */
-    static javafx.scene.@Nullable TraversalDirection focusEscape(
-            javafx.scene.input.KeyCode code, boolean shift, boolean ctrl, boolean otherModifier) {
-        if (code != javafx.scene.input.KeyCode.TAB || otherModifier || (!shift && !ctrl)) {
-            return null;
-        }
-        return shift ? javafx.scene.TraversalDirection.PREVIOUS : javafx.scene.TraversalDirection.NEXT;
-    }
-
-    private static void consume(javafx.scene.input.KeyEvent e, Runnable action) {
-        try {
-            action.run();
-        } catch (RuntimeException ignored) {
-            // A move/delete at a boundary must not crash key handling.
-        }
-        e.consume();
-    }
-
-    private static void emacsMoveLine(CodeArea area, int delta) {
-        int target = area.getCurrentParagraph() + delta;
-        if (target < 0 || target >= area.getParagraphs().size()) {
-            return;
-        }
-        area.moveTo(target, Math.min(area.getCaretColumn(), area.getParagraphLength(target)));
-    }
-
-    private static void emacsKillLine(CodeArea area) {
-        int caret = area.getCaretPosition();
-        int rest = area.getParagraphLength(area.getCurrentParagraph()) - area.getCaretColumn();
-        if (rest > 0) {
-            area.deleteText(caret, caret + rest); // kill to end of line
-        } else if (caret < area.getLength()) {
-            area.deleteText(caret, caret + 1); // at end-of-line: join the next line up
-        }
-    }
-
-    /** Offset of the end of the next word at/after {@code i} (Emacs M-f). Pure. */
-    private static int nextWordBoundary(String s, int i) {
-        int n = s.length();
-        while (i < n && !Character.isLetterOrDigit(s.charAt(i))) {
-            i++;
-        }
-        while (i < n && Character.isLetterOrDigit(s.charAt(i))) {
-            i++;
-        }
-        return i;
-    }
-
-    /** Offset of the start of the previous word at/before {@code i} (Emacs M-b). Pure. */
-    private static int prevWordBoundary(String s, int i) {
-        while (i > 0 && !Character.isLetterOrDigit(s.charAt(i - 1))) {
-            i--;
-        }
-        while (i > 0 && Character.isLetterOrDigit(s.charAt(i - 1))) {
-            i--;
-        }
-        return i;
-    }
-
-    private VBox mcpPage() {
-        VBox p = page(tr("settings.cat.mcp"), tr("settings.mcp.subtitle"));
-        Card c = card(p, null);
-        checkRow(
-                c,
-                Category.MCP,
-                mcpCheck,
-                tr("settings.mcp.hint"),
-                "mcp model context protocol agent server enable ai claude llm loopback token endpoint");
-        mcpStatusLabel = new Label();
-        mcpStatusLabel.setWrapText(true);
-        mcpCopyButton = new Button(tr("settings.mcp.copy"));
-        mcpCopyButton.setOnAction(e -> {
-            if (mcpActions != null) { // the buttons are enabled only while the server runs
-                mcpActions.copyCommand().run();
-            }
-        });
-        mcpNewTokenButton = new Button(tr("settings.mcp.newToken"));
-        mcpNewTokenButton.setOnAction(e -> {
-            if (mcpActions != null) {
-                mcpActions.newToken().run();
-            }
-            refreshMcpStatus();
-        });
-        cardRow(
-                c,
-                Category.MCP,
-                settingRow(
-                        tr("settings.mcp.status"),
-                        tr("settings.mcp.status.desc"),
-                        new VBox(6, mcpStatusLabel, new HBox(8, mcpCopyButton, mcpNewTokenButton))),
-                "mcp status running port endpoint url copy command token new rotate claude mcp add");
-        refreshMcpStatus();
-        return p;
-    }
-
     /** The MCP page's link to the app-wide server: its endpoint ({@code ""} when not running), and two actions. */
     record McpActions(java.util.function.Supplier<String> endpoint, Runnable copyCommand, Runnable newToken) {}
-
-    private @Nullable McpActions mcpActions;
-    private @Nullable Label mcpStatusLabel;
-    private @Nullable Button mcpCopyButton;
-    private @Nullable Button mcpNewTokenButton;
-
-    void setMcpActions(McpActions actions) {
-        this.mcpActions = actions;
-        refreshMcpStatus();
-    }
-
-    /** Running at which endpoint, or off; the buttons only while it runs. */
-    private void refreshMcpStatus() {
-        if (mcpStatusLabel == null || mcpCopyButton == null || mcpNewTokenButton == null) { // built together
-            return;
-        }
-        String endpoint = mcpActions == null ? "" : mcpActions.endpoint().get();
-        boolean running = !endpoint.isEmpty();
-        mcpStatusLabel.setText(
-                running
-                        ? tr("settings.mcp.running", endpoint)
-                        : tr(config.getSettings().isMcpSupport() ? "status.mcp.notRunning" : "settings.mcp.off"));
-        mcpCopyButton.setDisable(!running);
-        mcpNewTokenButton.setDisable(!running);
-    }
-
-    /**
-     * The AI group's landing page: the master AI kill switch. Off by default; when off, the AI Agent and
-     * AI Actions pages' own enable checkboxes are disabled (their settings still exist but have no effect
-     * — see {@link AgentCoordinator#isEnabled()} / {@link AiCoordinator#isEnabled()}), mirroring the
-     * autocomplete master/sub-toggle pattern. Deliberately doesn't touch the separate MCP Server page —
-     * that lets an *external* agent drive Editora, not Editora calling out to AI.
-     */
-    private VBox aiGeneralPage() {
-        VBox p = page(tr("settings.cat.aiGeneral"), tr("settings.aiGeneral.subtitle"));
-        Card mainCard = card(p, null);
-        checkRow(
-                mainCard,
-                Category.AI_GENERAL,
-                aiMasterCheck,
-                null,
-                "ai enable disable master switch agent actions all");
-        Label hint = note(tr("settings.ai.masterHint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        cardRow(mainCard, Category.AI_GENERAL, hint, "ai enable disable master switch agent actions all off default");
-        return p;
-    }
-
-    private VBox agentPage() {
-        VBox p = page(tr("settings.cat.agent"), tr("settings.agent.subtitle"));
-        dependsOn(p, aiMasterCheck);
-        Card mainCard = card(p, null);
-        SettingsDependents.bind(aiMasterCheck.selectedProperty(), mainCard.box());
-        checkRow(mainCard, Category.AGENT, agentCheck, null, "ai agent acp claude code chat enable assistant");
-        // What the agent is comes first, under its switch; each client's own setup note sits on its card.
-        cardRow(
-                mainCard,
-                Category.AGENT,
-                wrappedNote("settings.agent.hint"),
-                "ai agent acp install npm chat tool window");
-        cardRow(
-                mainCard,
-                Category.AGENT,
-                labeledRow(tr("settings.agent.client"), agentClientCombo),
-                "ai agent acp active client switch gemini copilot codex qwen opencode claude");
-        checkRow(
-                mainCard,
-                Category.AGENT,
-                agentIncludeContextCheck,
-                null,
-                "ai agent acp context cursor line selection file attach prompt");
-        // One (untitled) card per agent client, mirroring the Language Servers page: the command row
-        // names the client, so a title would just repeat it in every locale.
-        for (AgentClientUi a : agentClientUis()) {
-            Card c = card(p, null);
-            SettingsDependents.bind(aiMasterCheck.selectedProperty(), c.box());
-            // The card of the client the combo picked says so.
-            Label active = new Label(tr("settings.agent.active"));
-            active.getStyleClass().addAll("settings-git-status", "settings-git-found");
-            active.visibleProperty().bind(agentClientCombo.valueProperty().isEqualTo(a.id()));
-            active.managedProperty().bind(active.visibleProperty());
-            ToolStatusRow status = new ToolStatusRow(agentToolName(a)).lead(active);
-            agentStatusLabels.put(a.id(), status);
-            String title = tr(a.commandLabelKey());
-            toolRows(c, Category.AGENT, title, null, agentCommandFields.get(a.id()), null, status, a.keywords());
-            String setup = switch (a.id()) {
-                case "codex" -> "settings.agent.codexHint";
-                case "lmstudio" -> "settings.agent.lmstudioHint";
-                default -> null;
-            };
-            if (setup != null) {
-                cardRow(c, Category.AGENT, wrappedNote(setup), a.keywords() + " install login setup local model");
-            }
-        }
-        return p;
-    }
-
-    /** A grey note row of {@code key}'s text, wrapped to the kit's description width. */
-    private static Label wrappedNote(String key) {
-        Label l = note(tr(key));
-        l.setWrapText(true);
-        l.setMaxWidth(440);
-        return l;
-    }
-
-    /** Injected by MainController: backs the AI Agent page's per-client PATH-detection rows + the active-
-     *  client combo (which routes through the coordinator's single switch path). */
-    void setAgentCoordinator(AgentCoordinator coordinator) {
-        this.agentCoordinator = coordinator;
-    }
-
-    /** A per-agent-client Settings row (data-driven; mirrors LspServerUi but with no enable flag — exactly
-     *  one ACP agent is active at a time, chosen by the combo, not per-client toggles). */
-    private record AgentClientUi(
-            String id,
-            String displayName,
-            String defaultCommand,
-            String commandLabelKey,
-            String keywords,
-            java.util.function.Consumer<String> setCommand,
-            java.util.function.Supplier<String> getCommand) {}
-
-    private java.util.List<AgentClientUi> agentClientUis() {
-        Settings s = config.getSettings();
-        return java.util.List.of(
-                new AgentClientUi(
-                        "claude",
-                        "Claude Code",
-                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("claude"),
-                        "settings.agent.command.claude",
-                        "agent claude code acp command executable path",
-                        s::setAgentCommand,
-                        s::getAgentCommand),
-                new AgentClientUi(
-                        "gemini",
-                        "Gemini CLI",
-                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("gemini"),
-                        "settings.agent.command.gemini",
-                        "agent gemini cli google acp command executable path",
-                        s::setGeminiAgentCommand,
-                        s::getGeminiAgentCommand),
-                new AgentClientUi(
-                        "copilot",
-                        "GitHub Copilot CLI",
-                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("copilot"),
-                        "settings.agent.command.copilot",
-                        "agent copilot github cli acp command executable path",
-                        s::setCopilotAgentCommand,
-                        s::getCopilotAgentCommand),
-                new AgentClientUi(
-                        "codex",
-                        "Codex CLI",
-                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("codex"),
-                        "settings.agent.command.codex",
-                        "agent codex openai cli acp command executable path",
-                        s::setCodexAgentCommand,
-                        s::getCodexAgentCommand),
-                new AgentClientUi(
-                        "qwen",
-                        "Qwen Code",
-                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("qwen"),
-                        "settings.agent.command.qwen",
-                        "agent qwen code alibaba cli acp command executable path",
-                        s::setQwenAgentCommand,
-                        s::getQwenAgentCommand),
-                new AgentClientUi(
-                        "opencode",
-                        "OpenCode",
-                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("opencode"),
-                        "settings.agent.command.opencode",
-                        "agent opencode sst cli acp command executable path",
-                        s::setOpencodeAgentCommand,
-                        s::getOpencodeAgentCommand),
-                new AgentClientUi(
-                        "lmstudio",
-                        "LM Studio / Bionic (OpenCode)",
-                        com.editora.agent.AcpAgentRegistry.defaultCommandFor("lmstudio"),
-                        "settings.agent.command.lmstudio",
-                        "agent lm studio bionic local opencode acp command executable path",
-                        s::setLmstudioAgentCommand,
-                        s::getLmstudioAgentCommand));
-    }
-
-    /** Re-probes each ACP agent client's PATH availability (mirrors {@link #refreshLspStatus()}). */
-    private void refreshAgentClientStatus() {
-        if (agentCoordinator == null || agentStatusLabels.isEmpty()) {
-            return;
-        }
-        for (AgentClientUi a : agentClientUis()) {
-            ToolStatusRow status = agentStatusLabels.get(a.id());
-            if (status == null) {
-                continue;
-            }
-            List<String> argv = agentArgv(a);
-            status.tool(agentToolName(a));
-            status.checking();
-            agentCoordinator.detect(
-                    a.id(),
-                    found -> status.show(
-                            found,
-                            found ? ToolStatusRow.pathOf(argv) : "",
-                            aiMasterCheck.isSelected() && agentCheck.isSelected()));
-        }
-    }
-
-    private static List<String> agentArgv(AgentClientUi a) {
-        return com.editora.agent.AcpAgentRegistry.commandFor(
-                a.id(), Map.of(a.id(), a.getCommand().get()));
-    }
-
-    /** The program an agent client runs (claude-code-acp, gemini, codex-acp, …), as its pill names it. */
-    private static String agentToolName(AgentClientUi a) {
-        return ToolStatusRow.toolName(agentArgv(a), a.id());
-    }
-
-    /** Injected by MainController: runs a live AI connection check (green/red status on the AI page). */
-    public void setAiConnectionProbe(
-            java.util.function.BiConsumer<Boolean, java.util.function.BiConsumer<Boolean, String>> probe) {
-        this.aiConnectionProbe = probe;
-    }
-
-    /** Debounced connection re-check after a field edit (avoids a network call per keystroke). */
-    private void scheduleAiStatus() {
-        if (!loading) {
-            aiStatusDebounce.playFromStart();
-        }
-    }
-
-    /**
-     * Checks the connection for the AI Actions page — only while that page is on screen, so opening Settings
-     * sends no request. Unless {@code fresh} (Test connection) a recent result for the same configuration is
-     * shown without a request. "Checking…" shows until the result lands.
-     */
-    private void refreshAiStatus(boolean fresh) {
-        if (aiStatusLabel == null || aiConnectionProbe == null || aiStatusLabel.getScene() == null) {
-            return;
-        }
-        aiStatusLabel.getStyleClass().setAll("settings-git-status");
-        aiStatusLabel.setText(tr("settings.ai.checking"));
-        aiConnectionProbe.accept(fresh, this::syncAiStatus);
-    }
-
-    /** Colors the AI status label green/red (the Git/Mermaid/LSP idiom): connected vs the error message. */
-    private void syncAiStatus(boolean ok, String message) {
-        if (aiStatusLabel == null) {
-            return;
-        }
-        aiStatusLabel
-                .getStyleClass()
-                .setAll("settings-git-status", pillClass(ok, aiMasterCheck.isSelected() && aiCheck.isSelected()));
-        aiStatusLabel.setText(ok ? tr("settings.ai.connected") : tr("settings.ai.connectFailed", message));
-    }
-
-    private com.editora.ai.AiProvider selectedAiProvider() {
-        return com.editora.ai.AiProvider.from(config.getSettings().getAiProvider());
-    }
-
-    /** Stores what the four per-provider fields show under {@code provider} (the caller saves and applies). */
-    private void commitAiFieldsFor(com.editora.ai.AiProvider provider) {
-        Settings settings = config.getSettings();
-        if (provider != com.editora.ai.AiProvider.CODEX) { // disabled for Codex, which owns its own login
-            settings.setAiEndpointFor(provider, aiEndpointField.getText());
-            settings.setApiKeyFor(provider, aiApiKeyField.getText());
-            settings.setAiCompletionModelFor(provider, aiCompletionModelField.getText());
-        }
-        settings.setAiModelFor(provider, aiModelField.getText());
-    }
-
-    /** Reload together: switching providers must not write the previous provider's fields back. */
-    private void syncAiProviderFields() {
-        boolean previous = loading;
-        loading = true;
-        try {
-            var provider = selectedAiProvider();
-            var settings = config.getSettings();
-            aiModelField.setText(settings.getAiModelFor(provider));
-            aiCompletionModelField.setText(settings.getAiCompletionModelFor(provider));
-            aiEndpointField.setText(settings.getAiEndpointFor(provider));
-            aiApiKeyField.setText(settings.getApiKeyFor(provider));
-            if (aiKeyNote != null) {
-                aiKeyNote.setText(apiKeyNote(settings));
-            }
-        } finally {
-            loading = previous;
-        }
-        updateAiProviderControls();
-    }
-
-    /** Says where the API keys are stored: the system keychain, or settings.json and why. */
-    private @Nullable Label aiKeyNote;
-
-    static String apiKeyNote(Settings settings) {
-        return switch (settings.apiKeyStorage()) {
-            case KEYCHAIN -> tr("settings.ai.apiKeyInKeychain", settings.apiKeyStoreName());
-            case KEYCHAIN_UNREACHABLE -> tr("settings.ai.apiKeyKeychainUnreachable");
-            case SETTINGS_FILE -> tr("settings.ai.apiKeyNote");
-        };
-    }
-
-    /** Codex owns its login/transport; inline completion remains available for HTTP providers. */
-    private void updateAiProviderControls() {
-        var provider = com.editora.ai.AiProvider.from(aiProviderCombo.getValue());
-        boolean codex = provider == com.editora.ai.AiProvider.CODEX;
-        boolean anthropic = provider == com.editora.ai.AiProvider.ANTHROPIC;
-        aiEndpointField.setDisable(codex);
-        aiApiKeyField.setDisable(codex);
-        aiInlineCheck.setDisable(codex);
-        aiCompletionModelField.setDisable(codex);
-        aiModelField.setPromptText(
-                anthropic
-                        ? AiCoordinator.DEFAULT_MODEL
-                        : tr(codex ? "settings.ai.modelDefault" : "settings.ai.localModelPrompt"));
-        aiCompletionModelField.setPromptText(
-                anthropic
-                        ? AiCoordinator.DEFAULT_COMPLETION_MODEL
-                        : tr(
-                                provider == com.editora.ai.AiProvider.LMSTUDIO
-                                        ? "settings.ai.lmstudioCompletionPrompt"
-                                        : codex ? "settings.ai.modelDefault" : "settings.ai.localModelPrompt"));
-        aiApiKeyField.setPromptText(tr(anthropic ? "settings.ai.apiKeyPrompt" : "settings.ai.localApiKeyPrompt"));
-        aiEndpointField.setPromptText(provider.defaultEndpoint());
-    }
-
-    private VBox aiPage() {
-        VBox p = page(tr("settings.cat.ai"), tr("settings.ai.subtitle"));
-        dependsOn(p, aiMasterCheck);
-        Card mainCard = card(p, null);
-        SettingsDependents.bind(aiMasterCheck.selectedProperty(), mainCard.box());
-        // A switch row like every other page's enable toggle; what it turns on stays in the (i) tooltip.
-        HBox aiEnable = new HBox(8, infoIcon(tr("settings.ai.actionsTooltip")), switchFor(aiCheck));
-        aiEnable.setAlignment(Pos.CENTER_RIGHT);
-        cardRow(
-                mainCard,
-                Category.AI,
-                settingRow(aiCheck.getText(), null, aiEnable),
-                "ai actions anthropic claude commit message explain rewrite enable");
-        aiStatusLabel = new Label(tr("settings.ai.statusUnknown"));
-        aiStatusLabel.getStyleClass().add("settings-git-status");
-        aiStatusLabel.setWrapText(true);
-        aiStatusLabel.setMaxWidth(440);
-        Button test = new Button(tr("settings.ai.testConnection"));
-        test.setOnAction(e -> refreshAiStatus(true));
-        keepWidth(test);
-        HBox status = new HBox(8, aiStatusLabel, test);
-        status.setAlignment(Pos.CENTER_LEFT);
-        cardRow(mainCard, Category.AI, status, "ai connection status test green red working reachable");
-        p.parentProperty()
-                .addListener((o, was, now) -> javafx.application.Platform.runLater(() -> refreshAiStatus(false)));
-        cardRow(
-                mainCard,
-                Category.AI,
-                labeledRow(tr("settings.ai.provider"), aiProviderCombo),
-                "ai provider anthropic openai local lm studio bionic ollama vllm");
-        cardRow(
-                mainCard,
-                Category.AI,
-                labeledRow(tr("settings.ai.endpoint"), aiEndpointField),
-                "ai endpoint url local server lm studio ollama port");
-        Label providerNote = note(tr("settings.ai.providerNote"));
-        providerNote.setWrapText(true);
-        providerNote.setMaxWidth(440);
-        cardRow(mainCard, Category.AI, providerNote, "ai provider local lm studio no api key endpoint");
-        cardRow(
-                mainCard,
-                Category.AI,
-                labeledRow(tr("settings.ai.model"), aiModelField),
-                "ai model anthropic claude opus id");
-        cardRow(
-                mainCard,
-                Category.AI,
-                labeledRow(tr("settings.ai.apiKey"), aiApiKeyField),
-                "ai api key anthropic token credential");
-        aiKeyNote = note(apiKeyNote(config.getSettings()));
-        aiKeyNote.setWrapText(true);
-        aiKeyNote.setMaxWidth(440);
-        cardRow(
-                mainCard,
-                Category.AI,
-                aiKeyNote,
-                "ai api key keychain credential manager environment variable plain text");
-        checkRow(
-                mainCard,
-                Category.AI,
-                aiInlineCheck,
-                null,
-                "ai inline ghost completion suggestion copilot autocomplete");
-        cardRow(
-                mainCard,
-                Category.AI,
-                labeledRow(tr("settings.ai.completionModel"), aiCompletionModelField),
-                "ai inline completion model haiku fast latency");
-        Label inlineNote = note(tr("settings.ai.inlineHint"));
-        inlineNote.setWrapText(true);
-        inlineNote.setMaxWidth(440);
-        cardRow(mainCard, Category.AI, inlineNote, "ai inline ghost completion tab accept cost");
-        Label codexHint = note(tr("settings.ai.codexHint"));
-        codexHint.setWrapText(true);
-        codexHint.setMaxWidth(440);
-        cardRow(mainCard, Category.AI, codexHint, "ai codex login acp agent subscription setup");
-        Label hint = note(tr("settings.ai.hint"));
-        hint.setWrapText(true);
-        hint.setMaxWidth(440);
-        cardRow(mainCard, Category.AI, hint, "ai commit message explain rewrite selection anthropic streaming");
-        return p;
-    }
-
-    private VBox pluginsPage() {
-        VBox p = page(tr("settings.cat.plugins"), tr("settings.plugins.subtitle"));
-        Card mainCard = card(p, null);
-        Label warn = note(tr("settings.plugins.note"));
-        warn.getStyleClass().add("settings-experimental");
-        warn.setWrapText(true);
-        warn.setMaxWidth(440);
-        cardRow(mainCard, Category.PLUGINS, warn, "plugins extensions untrusted security warning");
-        checkRow(mainCard, Category.PLUGINS, pluginCheck, null, "plugins extensions enable support");
-        if (com.editora.plugin.PluginManager.disabledForSession()) {
-            Label off = note(tr("settings.plugins.disabledForSession"));
-            off.getStyleClass().add("settings-git-missing");
-            off.setWrapText(true);
-            off.setMaxWidth(440);
-            cardRow(mainCard, Category.PLUGINS, off, "plugins disable session safe mode command line");
-        }
-        Label restart = note(tr("settings.plugins.restart"));
-        restart.setWrapText(true);
-        restart.setMaxWidth(440);
-        cardRow(mainCard, Category.PLUGINS, restart, "plugins restart apply");
-
-        // Installed Plugins first: they are what people come to this page for.
-        Card installed = card(p, tr("settings.plugins.installed"));
-        Button reload = new Button(tr("settings.plugins.reload"));
-        reload.setOnAction(e -> {
-            if (pluginManager != null) {
-                pluginManager.discover(); // the list only: what runs is the launch's set until a restart
-                pluginListKey = null;
-                refreshPluginList();
-            }
-        });
-        Label folderLabel = new Label(tr("settings.plugins.folder"));
-        Label folderPath =
-                new Label(pluginManager == null ? "" : config.getPluginsDir().toString());
-        folderPath.getStyleClass().add("settings-hint");
-        folderPath.setWrapText(true);
-        folderPath.setMaxWidth(380);
-        HBox folderRow = new HBox(6, folderLabel, folderPath);
-        folderRow.setAlignment(Pos.CENTER_LEFT);
-        HBox listHeader = new HBox(8, reload, folderRow);
-        listHeader.setAlignment(Pos.CENTER_LEFT);
-        pluginListBox = new VBox(8);
-        cardRow(
-                installed,
-                Category.PLUGINS,
-                new VBox(
-                        6,
-                        SettingsDependents.note(pluginCheck.selectedProperty(), tr("settings.enablePlugins")),
-                        listHeader,
-                        pluginListBox),
-                "plugins installed list enable disable reload rescan folder directory");
-
-        // --- Marketplace: a curated GitHub-hosted registry + install-from-disk.
-        Card market = card(p, tr("settings.plugins.marketplace"));
-        Button browse = new Button(tr("settings.plugins.browse"));
-        browse.setOnAction(e -> {
-            if (onBrowsePlugins != null) {
-                onBrowsePlugins.run(); // the picker hides this window only once it opens (hideForMainWindowPicker)
-            }
-        });
-        Button installFile = new Button(tr("settings.plugins.installFromFile"));
-        installFile.setOnAction(e -> {
-            if (onInstallPluginFromFile != null) {
-                onInstallPluginFromFile.run();
-            }
-        });
-        HBox marketButtons = new HBox(8, browse, installFile);
-        marketButtons.setAlignment(Pos.CENTER_LEFT);
-        // Greyed with the master switch, like the rows: they did nothing visible while plugins were off.
-        SettingsDependents.bind(pluginCheck.selectedProperty(), marketButtons);
-        pluginStatusLabel = new Label();
-        pluginStatusLabel.setWrapText(true);
-        pluginStatusLabel.setMaxWidth(440);
-        pluginStatusLabel.getStyleClass().add("settings-hint");
-        pluginStatusLabel.setVisible(false);
-        pluginStatusLabel.managedProperty().bind(pluginStatusLabel.visibleProperty());
-        cardRow(
-                market,
-                Category.PLUGINS,
-                new VBox(4, marketButtons, pluginStatusLabel),
-                "plugins browse install file zip marketplace registry");
-        TextField registryField = new TextField();
-        pluginRegistryField = registryField;
-        pluginRegistryField.setPromptText(com.editora.config.Settings.DEFAULT_PLUGIN_REGISTRY);
-        // Wide enough to show a full registry URL (the default is ~75 chars); also grows with the page.
-        pluginRegistryField.setPrefColumnCount(64);
-        pluginRegistryField.setPrefWidth(560);
-        pluginRegistryField.setMaxWidth(Double.MAX_VALUE);
-        pluginRegistryWarn = new Label();
-        pluginRegistryWarn.getStyleClass().add("settings-git-missing"); // amber/red "caution" styling
-        pluginRegistryWarn.setWrapText(true);
-        pluginRegistryWarn.setMaxWidth(440);
-        commitOnEnterOrBlur(
-                pluginRegistryField,
-                () -> shownOrBlank(
-                        registryField,
-                        config.getSettings().getPluginRegistryUrl(),
-                        config.getSettings().getPluginRegistryUrlRaw()),
-                now -> {
-                    if (!com.editora.config.Settings.isAcceptableRegistryUrl(now)) {
-                        return; // not https: the field is red and says why; the registry in use stays
-                    }
-                    config.getSettings().setPluginRegistryUrl(now);
-                    apply();
-                    updateRegistryWarn();
-                });
-        pluginRegistryField.textProperty().addListener((o, was, now) -> {
-            boolean bad = !now.isBlank() && !com.editora.plugin.PluginRegistry.isHttps(now);
-            registryField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, bad);
-            registryField.setTooltip(bad ? new Tooltip(tr("settings.plugins.registryNotHttps")) : null);
-        });
-        Label regNote = note(tr("settings.plugins.registryNote"));
-        regNote.setWrapText(true);
-        regNote.setMaxWidth(440);
-        VBox regBox = new VBox(4, pluginRegistryField, pluginRegistryWarn, regNote);
-        controlRow(
-                market,
-                Category.PLUGINS,
-                tr("settings.plugins.registryUrl"),
-                null,
-                regBox,
-                "plugins registry url index marketplace github browse");
-        checkRow(
-                market,
-                Category.PLUGINS,
-                pluginRequireSigCheck,
-                tr("settings.plugins.requireSignatureNote"),
-                "plugins signature signed verify registry security trust");
-        refreshPluginList();
-        return p;
-    }
 
     /**
      * The plugin picker is an overlay in the main window, which this window would cover: hidden when the picker
@@ -6856,11 +3254,16 @@ public class SettingsWindow {
         if (!built || stage.isShowing()) {
             return;
         }
-        pluginListKey = null;
+        pluginsPage.forgetListKey();
         load();
         stage.show();
         sidebar.getSelectionModel().select(Category.PLUGINS);
         stage.toFront();
+    }
+
+    /** Says what a plugin action started here did, under the Browse buttons (error: in the warning colour). */
+    void showPluginStatus(String message, boolean error) {
+        pluginsPage.showPluginStatus(message, error);
     }
 
     /** This window's stage while it is open (the owner for plugin dialogs started here), else null. */
@@ -6869,857 +3272,19 @@ public class SettingsWindow {
         return built && stage.isShowing() ? stage : null;
     }
 
-    /** Says what a plugin action started here did, under the Browse buttons (error: in the warning colour). */
-    void showPluginStatus(String message, boolean error) {
-        if (pluginStatusLabel == null) {
-            return;
-        }
-        boolean shown = message != null && !message.isBlank();
-        pluginStatusLabel.setText(shown ? message : "");
-        pluginStatusLabel.setVisible(shown);
-        pluginStatusLabel.getStyleClass().removeAll("settings-hint", "settings-git-missing");
-        pluginStatusLabel.getStyleClass().add(error ? "settings-git-missing" : "settings-hint");
-    }
-
-    /**
-     * Rebuilds the per-plugin list from the shared {@link com.editora.plugin.PluginManager}: each row says what
-     * it is (name, version, id, a load or start error) and how it differs from what this session runs — the
-     * launch set — with a Restart now. A row that failed to load cannot be ticked: what it would do cannot be
-     * shown, so it cannot be consented to. Skipped when neither the list nor the store changed since.
-     */
-    private void refreshPluginList() {
-        if (pluginListBox == null) {
-            return;
-        }
-        java.util.List<com.editora.plugin.PluginDescriptor> ds =
-                pluginManager == null ? java.util.List.of() : pluginManager.descriptors();
-        com.editora.config.PluginStore store = config.getPluginStore();
-        Object key =
-                java.util.List.of(ds, Map.copyOf(store.enabled), Map.copyOf(store.consent), pluginCheck.isSelected());
-        if (key.equals(pluginListKey)) {
-            return; // D6: re-opening Settings no longer rebuilds an unchanged list
-        }
-        pluginListKey = key;
-        pluginListBox.getChildren().clear();
-        if (ds.isEmpty() || pluginManager == null) { // no manager, no descriptors
-            Label empty = note(tr("settings.plugins.none"));
-            empty.setWrapText(true);
-            pluginListBox.getChildren().add(empty);
-            return;
-        }
-        for (com.editora.plugin.PluginDescriptor d : ds) {
-            pluginListBox.getChildren().add(pluginRow(pluginManager, d, store));
-        }
-    }
-
-    private Node pluginRow(
-            com.editora.plugin.PluginManager pluginManager,
-            com.editora.plugin.PluginDescriptor d,
-            com.editora.config.PluginStore store) {
-        String name = d.displayName();
-        String ver = d.manifest().version == null ? "" : d.manifest().version.strip();
-        com.editora.plugin.PluginDescriptor runningNow = pluginManager.running(d.id());
-        boolean wanted = store.allows(d.id(), d.digest());
-        PluginRowState.Pill pill = PluginRowState.pill(
-                wanted,
-                store.isEnabled(d.id()),
-                runningNow != null,
-                runningNow == null ? null : runningNow.manifest().version,
-                ver,
-                pluginManager.pendingUpdate(d.id()),
-                pluginManager.pendingRemoval(d.id()));
-        CheckBox cb = new CheckBox(PluginDisclosure.clean(ver.isBlank() ? name : name + "  " + ver, 120));
-        cb.setSelected(wanted || pill == PluginRowState.Pill.UPDATE_PENDING);
-        cb.setMinWidth(0);
-        cb.setTooltip(new Tooltip(name + (ver.isBlank() ? "" : " " + ver) + " (" + d.id() + ")"));
-        SettingsDependents.bind(pluginCheck.selectedProperty(), cb); // follows the switch as it is flipped
-        if (d.loadError() != null || pill == PluginRowState.Pill.REMOVAL_PENDING) {
-            SettingsDependents.lockOf(cb).set(true); // a broken (or departing) plugin cannot be ticked at all
-        }
-        cb.selectedProperty().addListener((obs, was, now) -> {
-            if (loading) {
-                return;
-            }
-            // Enabling arms code on the next launch — disclose capabilities + confirm. Disabling is free.
-            if (now) {
-                if (!onEnablePlugin.test(d)) {
-                    cb.setSelected(false); // declined: revert (fires again with now=false, was=true → off)
-                    return;
-                }
-            } else if (was && store.isEnabled(d.id())) {
-                onDisablePlugin.accept(d);
-            }
-            pluginListKey = null;
-            javafx.application.Platform.runLater(this::refreshPluginList); // the row's pill follows
-        });
-        Label id = new Label(d.id());
-        id.getStyleClass().add("settings-hint");
-        id.setMinWidth(Region.USE_PREF_SIZE);
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        Button remove = new Button(tr("settings.plugins.remove"));
-        remove.getStyleClass().add("settings-link-button");
-        remove.setMinWidth(Region.USE_PREF_SIZE); // a long name elides the label, never the button
-        remove.setAccessibleText(tr("settings.plugins.removeNamed", name));
-        remove.setDisable(pill == PluginRowState.Pill.REMOVAL_PENDING);
-        remove.setOnAction(ev -> {
-            if (onUninstallPlugin != null) {
-                onUninstallPlugin.accept(d);
-            }
-        });
-        HBox header = new HBox(8, cb, id, spacer, remove);
-        header.setAlignment(Pos.CENTER_LEFT);
-        HBox.setHgrow(cb, Priority.SOMETIMES);
-        VBox entry = new VBox(2, header);
-        String pillText = PluginRowState.text(pill, pluginManager.pendingUpdate(d.id()));
-        if (pillText != null) {
-            Label restartPill = new Label(pillText);
-            restartPill.getStyleClass().add("settings-git-status");
-            HBox pillRow = new HBox(8, restartPill);
-            pillRow.setAlignment(Pos.CENTER_LEFT);
-            Runnable restart = onRestart;
-            if (pill != PluginRowState.Pill.CHANGED && restart != null) {
-                Button restartNow = new Button(tr("settings.restart.now"));
-                restartNow.getStyleClass().add("settings-link-button");
-                restartNow.setOnAction(e -> restart.run());
-                pillRow.getChildren().add(restartNow);
-            }
-            pillRow.setPadding(new Insets(0, 0, 0, 20));
-            entry.getChildren().add(pillRow);
-        }
-        com.editora.plugin.PluginDescriptor.LoadProblem runtime = pluginManager.runtimeProblem(d.id());
-        String problemText = d.loadError() != null
-                ? PluginLoadProblems.text(d)
-                : runtime != null ? PluginLoadProblems.text(runtime) : null;
-        if (problemText != null) {
-            Label err = new Label(problemText);
-            String detail = d.loadError() != null ? PluginLoadProblems.detail(d) : PluginLoadProblems.detail(runtime);
-            err.setTooltip(detail == null ? null : new Tooltip(detail));
-            err.getStyleClass().add("settings-git-missing");
-            err.setWrapText(true);
-            err.setMaxWidth(420);
-            err.setPadding(new Insets(0, 0, 0, 20));
-            entry.getChildren().add(err);
-        }
-        return entry;
-    }
-
-    /** Warns (with the host) when the registry URL isn't the bundled default — a phishing-vector guard. */
-    private void updateRegistryWarn() {
-        if (pluginRegistryWarn == null) {
-            return;
-        }
-        String url = config.getSettings().getPluginRegistryUrl();
-        boolean custom = url != null
-                && !url.isBlank()
-                && !url.strip().equals(com.editora.config.Settings.DEFAULT_PLUGIN_REGISTRY);
-        String host = "";
-        if (custom) {
-            try {
-                host = java.net.URI.create(url.strip()).getHost();
-            } catch (RuntimeException ignored) {
-                host = url.strip();
-            }
-        }
-        pluginRegistryWarn.setText(custom ? tr("settings.plugins.customRegistry", host == null ? "?" : host) : "");
-        pluginRegistryWarn.setVisible(custom);
-        pluginRegistryWarn.setManaged(custom);
-    }
-
     /** The page's "Turn on “X” to change these settings." note, shown while {@code master} is off. */
-    private void dependsOn(VBox page, CheckBox master) {
+    void dependsOn(VBox page, CheckBox master) {
         page.getChildren().add(SettingsDependents.note(master.selectedProperty(), master.getText()));
     }
 
     /** {@code row} greyed while {@code master} is off (the {@link SettingsDependents} rule). */
-    private static <T extends Node> T dependent(CheckBox master, T row) {
+    static <T extends Node> T dependent(CheckBox master, T row) {
         SettingsDependents.bind(master.selectedProperty(), row);
         return row;
     }
 
-    private VBox debugPage() {
-        VBox p = page(tr("settings.cat.debug"), tr("settings.debug.subtitle"));
-        Card master = card(p, null);
-        checkRow(
-                master,
-                Category.DEBUG,
-                debugCheck,
-                tr("settings.debug.note"),
-                "debug dap breakpoint step variables enable install plugin vscode mason jdtls debugpy js-debug");
-        // The Python interpreter is on the LSP page, editable with debugging off (Python review 2, C101).
-        Hyperlink pythonLink = new Hyperlink(tr("settings.debug.pythonInterpreterLink"));
-        pythonLink.setWrapText(true);
-        pythonLink.setOnAction(e -> sidebar.getSelectionModel().select(Category.LSP));
-        row(p, Category.DEBUG, null, pythonLink, "debug python interpreter venv path lsp language servers");
-        // One card per adapter, titled with the language (Java has no per-adapter enable — it rides
-        // the Java LSP server; see DebugCoordinator.debugEffectiveFor).
-        dependsOn(p, debugCheck);
-        // Where the debugged program runs: Java, Python and JavaScript alike, so not on the Java card (E108).
-        Card programs = card(p, tr("settings.debug.programs"));
-        SettingsDependents.bind(debugCheck.selectedProperty(), programs.box());
-        for (CheckBox check : List.of(debugProgramConsoleCheck, debugProgramInTerminalCheck)) {
-            String key = check == debugProgramConsoleCheck ? "programConsole" : "programInTerminal";
-            String words = "debug python javascript program console input stdin terminal tab tty screen keys";
-            checkRow(programs, Category.DEBUG, check, tr("settings.debug." + key + ".hint"), words);
-        }
-        for (DebugAdapterUi dbg : debugAdapterUis()) {
-            Card c = card(p, tr(dbg.sectionKey()));
-            SettingsDependents.bind(debugCheck.selectedProperty(), c.box());
-            CheckBox enable = debugEnableChecks.get(dbg.id());
-            if (enable != null) {
-                checkRow(c, Category.DEBUG, enable, null, dbg.keywords());
-            }
-            if ("java".equals(dbg.id())) {
-                // Java debugging runs through the Java language server: the card says when that is off (review
-                // C6); its Install (below) fetches jdtls and java-debug together, as the LSP page's Java row does.
-                javaDebugLspNote = note("");
-                javaDebugLspNote.setWrapText(true);
-                javaDebugLspNote.setMaxWidth(440);
-                javaDebugLspNote.getStyleClass().add("settings-row"); // own row: a wrapper left a gap (C209)
-                cardRow(c, Category.DEBUG, javaDebugLspNote, "debug java lsp language server jdtls off");
-                controlRow(
-                        c,
-                        Category.DEBUG,
-                        tr("settings.debug.hotCodeReplace"),
-                        tr("settings.debug.hotCodeReplace.hint"),
-                        debugHotCodeReplaceCombo,
-                        "debug java hot code replace hotswap apply code changes reload save running");
-                checkRow(
-                        c,
-                        Category.DEBUG,
-                        debugStepFiltersCheck,
-                        tr("settings.debug.stepFilters.hint"),
-                        "debug java step into filter skip jdk library synthetic");
-                checkRow(c, Category.DEBUG, debugShowStaticsCheck, null, "debug java static fields variables statics");
-                checkRow(
-                        c,
-                        Category.DEBUG,
-                        debugShowToStringCheck,
-                        tr("settings.debug.showToString.hint"),
-                        "debug java tostring object view values variables slow");
-                checkRow(
-                        c,
-                        Category.DEBUG,
-                        debugSuspendAllThreadsCheck,
-                        tr("settings.debug.suspendAllThreads.hint"),
-                        "debug java suspend all threads policy breakpoint stop every thread");
-                debugExceptionTypesField.setPrefWidth(PATH_FIELD_WIDTH);
-                controlRow(
-                        c,
-                        Category.DEBUG,
-                        tr("settings.debug.exceptionTypes"),
-                        tr("settings.debug.exceptionTypes.hint"),
-                        debugExceptionTypesField,
-                        "debug java exception breakpoint class type filter caught uncaught");
-            }
-            if ("javascript".equals(dbg.id())) {
-                // The one Node.js setting lives on Build Tools, editable with debugging off (review E102).
-                Hyperlink nodeLink = new Hyperlink(tr("settings.debug.nodePathLink"));
-                nodeLink.setWrapText(true);
-                nodeLink.setOnAction(e -> sidebar.getSelectionModel().select(Category.BUILD_TOOLS));
-                cardRow(c, Category.DEBUG, nodeLink, "node nodejs node.js runtime path debug build tools");
-            }
-            // Install fetches what this language's support lacks — the adapter included — keyed on the adapter.
-            ToolStatusRow status = new ToolStatusRow(
-                            switch (dbg.id()) {
-                                case "java" -> "java-debug";
-                                case "python" -> "debugpy";
-                                default -> "js-debug";
-                            })
-                    .install(() -> installSupport("javascript".equals(dbg.id()) ? "js-debug" : dbg.id())); // D111
-            debugStatusLabels.put(dbg.id(), status);
-            installButtons.put("debug:" + dbg.id(), status.installButton());
-            if ("python".equals(dbg.id())) { // its field is on the LSP page's Python card
-                controlRow(c, Category.DEBUG, tr("settings.git.detected"), null, status.node(), dbg.keywords());
-                continue;
-            }
-            String title = tr(dbg.commandLabelKey());
-            toolRows(c, Category.DEBUG, title, null, debugCommandFields.get(dbg.id()), null, status, dbg.keywords());
-        }
-        return p;
-    }
-
-    /** A per-language debug-adapter Settings row group (data-driven, mirroring {@link LspServerUi}).
-     *  {@code setEnabled}/{@code getEnabled} are null for java (it has no separate enable flag — it is
-     *  gated by the java LSP server). {@code detect} runs the availability probe and reports found. */
-    private record DebugAdapterUi(
-            String id,
-            String sectionKey,
-            @Nullable String enableLabelKey,
-            String commandLabelKey,
-            String commandPrompt,
-            String keywords,
-            java.util.function.@Nullable Consumer<Boolean> setEnabled,
-            java.util.function.@Nullable BooleanSupplier getEnabled,
-            java.util.function.Consumer<String> setCommand,
-            java.util.function.Supplier<String> getCommand,
-            java.util.function.Consumer<java.util.function.BiConsumer<Boolean, String>> detect) {}
-
-    /** The three debug adapters (java/python/javascript), in display order. */
-    private java.util.List<DebugAdapterUi> debugAdapterUis() {
-        return java.util.List.of(
-                new DebugAdapterUi(
-                        "java",
-                        "settings.debug.java",
-                        null,
-                        "settings.debug.pluginPath",
-                        "com.microsoft.java.debug.plugin-*.jar",
-                        "debug java jdtls java-debug plugin jar path found",
-                        null,
-                        null,
-                        v -> config.getSettings().setJavaDebugPluginPath(v),
-                        () -> config.getSettings().getJavaDebugPluginPath(),
-                        cb -> { // lists the VS Code / mason folders: off the FX thread, like the other probes
-                            String configured = config.getSettings().getJavaDebugPluginPath();
-                            Thread.ofVirtual().name("settings-java-debug-probe").start(() -> {
-                                String jar = com.editora.dap.DebugAdapterLocator.locate(
-                                                configured, java.nio.file.Path.of(System.getProperty("user.home", "")))
-                                        .map(Object::toString)
-                                        .orElse(null);
-                                // A jdtls that ships java-debug has no jar to find (review A7).
-                                boolean served = jar == null && dapManager != null && dapManager.isJavaDebugInstalled();
-                                javafx.application.Platform.runLater(() -> cb.accept(jar != null || served, jar));
-                            });
-                        }),
-                new DebugAdapterUi(
-                        "python",
-                        "settings.debug.python",
-                        "settings.debug.enablePython",
-                        "settings.debug.pythonCommand",
-                        com.editora.dap.DapServerRegistry.DEFAULT_PYTHON_INTERPRETER,
-                        "debug python debugpy interpreter command path found",
-                        v -> config.getSettings().setPythonDebugEnabled(v),
-                        () -> config.getSettings().isPythonDebugEnabled(),
-                        v -> config.getSettings().setPythonDebugCommand(v),
-                        () -> config.getSettings().getPythonDebugCommand(),
-                        cb -> {
-                            if (dapManager != null) {
-                                // installed, whether or not switched on; the detail is the interpreter that has it
-                                dapManager.detectPythonInstalled(found -> cb.accept(
-                                        found,
-                                        ToolStatusRow.pathOf(com.editora.dap.DapServerRegistry.interpreterArgv(
-                                                "python", config.getSettings().getPythonDebugCommand()))));
-                            } else {
-                                cb.accept(false, "");
-                            }
-                        }),
-                new DebugAdapterUi(
-                        "javascript",
-                        "settings.debug.javascript",
-                        "settings.debug.enableJs",
-                        "settings.debug.jsPath",
-                        "dapDebugServer.js",
-                        "debug javascript node js-debug vscode dapDebugServer path found",
-                        v -> config.getSettings().setJsDebugEnabled(v),
-                        () -> config.getSettings().isJsDebugEnabled(),
-                        v -> config.getSettings().setJsDebugPath(v),
-                        () -> config.getSettings().getJsDebugPath(),
-                        cb -> {
-                            if (dapManager != null) {
-                                // installed, whether or not switched on (review D13): its version and the Node.js
-                                dapManager.detectJsInstalled(js -> cb.accept(
-                                        js.server() != null && js.nodeVersion() != null,
-                                        ToolStatusRow.jsDebugDetail(js)));
-                            } else {
-                                cb.accept(false, "");
-                            }
-                        }));
-    }
-
-    private VBox lspPage() {
-        VBox p = page(tr("settings.cat.lsp"), tr("settings.lsp.subtitle"));
-        Card master = card(p, null);
-        checkRow(
-                master,
-                Category.LSP,
-                lspCheck,
-                tr("settings.lsp.hint"),
-                "lsp language server protocol enable java typescript python xml json bash diagnostics"
-                        + " install jdtls pyright lemminx");
-        checkRow(
-                master, Category.LSP, lspInstallPromptsCheck, null, "lsp install banner prompt offer language support");
-        // One card per server (UI Kit v1). Twenty-one servers × four controls was a ~84-row flat wall in
-        // which it took real effort to see which status line belonged to which enable box. The card is
-        // deliberately untitled: the server's own enable checkbox already names it in every locale, and a
-        // derived title ("Enable Java (jdtls)" minus "Enable ") would not survive translation.
-        // The per-feature LSP switches (inlay hints, code lens, …) live with completion; say where.
-        Hyperlink features = new Hyperlink(tr("settings.lsp.featuresLink", Category.COMPLETION.display));
-        features.setWrapText(true);
-        features.setOnAction(e -> sidebar.getSelectionModel().select(Category.COMPLETION));
-        row(p, Category.LSP, null, features, "lsp inlay hints code lens semantic highlighting format on type imports");
-        pythonCard(p); // before dependsOn: editable with language servers off, as Run and Debug use it too
-        dependsOn(p, lspCheck);
-        for (LspServerUi srv : lspServerUis()) {
-            Card c = card(p, null);
-            SettingsDependents.bind(lspCheck.selectedProperty(), c.box());
-            CheckBox enable = lspEnableChecks.get(srv.id());
-            if (enable != null) { // build() makes one per server
-                cardRow(c, Category.LSP, settingRow(tr(srv.enableLabelKey()), null, switchFor(enable)), srv.keywords());
-            }
-            ToolStatusRow status = new ToolStatusRow(lspToolName(srv.id(), lspArgv(srv.id())));
-            String langKey = installLangForServer(srv.id());
-            if (langKey != null) {
-                installButtons.put(
-                        langKey, status.install(() -> installSupport(langKey)).installButton());
-            } else if (com.editora.install.InstallCatalog.installableServerIds().contains(srv.id())) {
-                installButtons.put(
-                        serverInstallKey(srv.id()),
-                        status.install(() -> {
-                                    if (onInstallServer != null) {
-                                        onInstallServer.accept(srv.id());
-                                    }
-                                })
-                                .installButton());
-            }
-            lspStatusLabels.put(srv.id(), status);
-            String title = tr(srv.commandLabelKey());
-            toolRows(c, Category.LSP, title, null, lspCommandFields.get(srv.id()), null, status, srv.keywords());
-            Label project = note("");
-            project.setVisible(false);
-            project.setWrapText(true);
-            project.managedProperty().bind(project.visibleProperty());
-            lspProjectLabels.put(srv.id(), project);
-            c.body().getChildren().add(project);
-            if (com.editora.lsp.LspServerRegistry.JAVA_SERVER_ID.equals(srv.id())) {
-                checkRow( // every dependency's sources at import; a library tab offers them one at a time anyway
-                        c,
-                        Category.LSP,
-                        javaDownloadSourcesCheck,
-                        tr("settings.lsp.javaDownloadSources.hint"),
-                        "lsp java jdtls library sources download maven gradle dependencies decompiled network");
-            }
-            if (MAVEN_POM.equals(srv.id())) {
-                // What the server adds, what a pom gets without it, and which java runs it (review C17); and the
-                // Central-index choice that decides whether completion sees more than ~/.m2 (review C10).
-                Label hint = note(tr("settings.lsp.mavenPom.hint"));
-                hint.setWrapText(true);
-                cardRow(c, Category.LSP, hint, srv.keywords() + " hint jdk fallback xml artifact");
-                checkRow(
-                        c,
-                        Category.LSP,
-                        mavenCentralIndexCheck,
-                        tr("settings.lsp.mavenCentralIndex.hint"),
-                        "lsp maven central search pom.xml completion coordinates artifacts remote network");
-            }
-            if ("bash".equals(srv.id())) {
-                SettingsBashRows.add(this, c);
-            } else if (com.editora.lsp.XmlServerSettings.SERVER_ID.equals(srv.id())) {
-                SettingsXmlRows.add(this, c);
-            } else if (com.editora.lsp.HtmlServerSettings.SERVER_ID.equals(srv.id())) {
-                SettingsHtmlRows.add(this, c); // the server's html.* settings (HTML review A4)
-            } else if (com.editora.lsp.TypeScriptServer.SERVER_ID.equals(srv.id())) {
-                typeScriptServerRows(c);
-            }
-        }
-        return p;
-    }
-
-    /**
-     * The Python card (Python review 2, C101): the fallback interpreter, a way to the project's own pick and format on
-     * save. It sat on the Debugging page's Python card, greyed out while debugging was off — the default — though Run
-     * and Pyright use it too.
-     */
-    private void pythonCard(VBox p) {
-        String words = "python interpreter venv virtual environment pyright run debug tests ";
-        Card c = card(p, tr("settings.lsp.python.title"));
-        TextField field = debugCommandFields.get("python");
-        if (field != null) { // build() makes one per adapter
-            String title = tr("settings.debug.pythonCommand");
-            field.setPrefWidth(PATH_FIELD_WIDTH);
-            fullValueTip(field, title);
-            HBox path = new HBox(6, field, browseButton(title, field));
-            controlRow(c, Category.LSP, title, tr("settings.lsp.pythonInterpreter.desc"), path, words + "path python3");
-        }
-        Button pick = new Button(tr("settings.lsp.pythonPick"));
-        pick.setOnAction(e -> {
-            if (runCommand != null) {
-                stage.hide(); // the picker opens in the editor window, behind this one
-                runCommand.accept("python.selectInterpreter");
-            }
-        });
-        String pickTitle = tr("command.python.selectInterpreter");
-        controlRow(c, Category.LSP, pickTitle, tr("settings.lsp.pythonPick.desc"), pick, words + "select pick project");
-        switchRow(
-                c,
-                Category.LSP,
-                "lsp.pythonFormatOnSave",
-                true,
-                Settings::isPythonFormatOnSave,
-                Settings::setPythonFormatOnSave,
-                words + "format formatter ruff black on save actions");
-    }
-
-    /** The TypeScript card's "TypeScript" line (the SDK its server runs). */
-    private @Nullable ToolStatusRow typeScriptSdkStatus;
-
-    /** The TypeScript card's own rows: the TypeScript its server runs, and automatic type acquisition. */
-    private void typeScriptServerRows(Card c) {
-        String words = "lsp typescript javascript node tsserver sdk ";
-        typeScriptSdkStatus = new ToolStatusRow("TypeScript").install(() -> installSupport("javascript"));
-        controlRow(
-                c,
-                Category.LSP,
-                tr("settings.lsp.typescriptSdk"),
-                tr("settings.lsp.typescriptSdk.desc"),
-                typeScriptSdkStatus.node(),
-                words + "version found not found install");
-        switchRow(
-                c,
-                Category.LSP,
-                "lsp.typescriptTypeAcquisition",
-                true,
-                Settings::isTypescriptTypeAcquisition,
-                Settings::setTypescriptTypeAcquisition,
-                words + "types npm automatic type acquisition download @types");
-        SettingsJsToolRows.add(this, c); // ESLint, Prettier/Biome and the actions on save (JS review F)
-    }
-
-    /** The ShellCheck / shfmt status lines on the Bash card, by tool id. */
-    private final Map<String, ToolStatusRow> bashToolStatusLabels = new java.util.LinkedHashMap<>();
-
-    private static String toolInstallKey(String toolId) {
-        return "tool:" + toolId;
-    }
-
-    /**
-     * Shows whether the ShellCheck and shfmt the Bash server will run are there (the configured path, else
-     * Editora's installed copy, else the name on PATH) — a lookup, no process — and enables their Install buttons.
-     */
-    private void refreshBashToolStatus() {
-        if (bashToolStatusLabels.isEmpty()) {
-            return;
-        }
-        // The window's own: a trusted project's tool paths are the ones that run (Bash review A10).
-        com.editora.lsp.BashIdeConfig tools = projectLsp != null
-                ? projectLsp.bashIdeConfig()
-                : LspCoordinator.userBashIde(config.getSettings(), config.getConfigDir());
-        bashToolStatusLabels.forEach((toolId, status) -> {
-            String found = com.editora.doctor.DoctorProbes.resolvedPath(List.of(tools.toolCommand(toolId)));
-            status.show(!found.isEmpty(), found, lspCheck.isSelected());
-        });
-    }
-
-    /** A path-with-Browse row for one of the Bash server's tools; blank = Editora's installed copy, else PATH. */
-    void bashPathRow(
-            Card c,
-            String key,
-            java.util.function.Function<Settings, String> get,
-            java.util.function.BiConsumer<Settings, String> set) {
-        TextField field = new TextField();
-        field.setPromptText(tr("settings.lsp.bash." + key + ".prompt"));
-        settingControls.put("lsp.bash." + key, field);
-        commitOnEnterOrBlur(field, () -> get.apply(config.getSettings()), now -> {
-            set.accept(config.getSettings(), now);
-            apply();
-            refreshLspStatus();
-        });
-        // Its status row (ShellCheck / shfmt: found, Install…) follows, like every other tool's.
-        String toolId = key.replace("Path", "");
-        ToolStatusRow status = new ToolStatusRow(InstallCoordinator.toolName(toolId)).install(() -> {
-            if (onInstallTool != null) {
-                onInstallTool.accept(toolId);
-            }
-        });
-        bashToolStatusLabels.put(toolId, status);
-        installButtons.put(toolInstallKey(toolId), status.installButton());
-        toolRows(c, Category.LSP, tr("settings.lsp.bash." + key), null, field, null, status, SettingsBashRows.WORDS);
-        settingSyncs.add(st -> field.setText(get.apply(st)));
-    }
-
-    /** A configurable LSP server's Settings row (data-driven so adding a server is one descriptor). */
-    private record LspServerUi(
-            String id,
-            String defaultCommand,
-            String enableLabelKey,
-            String commandLabelKey,
-            String keywords,
-            java.util.function.Consumer<Boolean> setEnabled,
-            java.util.function.BooleanSupplier getEnabled,
-            java.util.function.Consumer<String> setCommand,
-            java.util.function.Supplier<String> getCommand) {}
-
-    /** The six configurable LSP servers, in display order. Lambdas read/write the live {@code Settings}. */
-    private java.util.List<LspServerUi> lspServerUis() {
-        return java.util.List.of(
-                new LspServerUi(
-                        "java",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_JAVA_COMMAND,
-                        "settings.lsp.enableJava",
-                        "settings.lsp.javaCommand",
-                        "lsp java jdtls language server found installed not found command path executable",
-                        v -> config.getSettings().setJavaLspEnabled(v),
-                        () -> config.getSettings().isJavaLspEnabled(),
-                        v -> config.getSettings().setJavaLspCommand(v),
-                        () -> config.getSettings().getJavaLspCommand()),
-                new LspServerUi(
-                        "typescript",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_TYPESCRIPT_COMMAND,
-                        "settings.lsp.enableTypescript",
-                        "settings.lsp.typescriptCommand",
-                        "lsp typescript javascript language server found installed not found command path",
-                        v -> config.getSettings().setTypescriptLspEnabled(v),
-                        () -> config.getSettings().isTypescriptLspEnabled(),
-                        v -> config.getSettings().setTypescriptLspCommand(v),
-                        () -> config.getSettings().getTypescriptLspCommand()),
-                new LspServerUi(
-                        "python",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_PYTHON_COMMAND,
-                        "settings.lsp.enablePython",
-                        "settings.lsp.pythonCommand",
-                        "lsp python pyright language server found installed not found command path executable",
-                        v -> config.getSettings().setPythonLspEnabled(v),
-                        () -> config.getSettings().isPythonLspEnabled(),
-                        v -> config.getSettings().setPythonLspCommand(v),
-                        () -> config.getSettings().getPythonLspCommand()),
-                new LspServerUi(
-                        "xml",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_XML_COMMAND,
-                        "settings.lsp.enableXml",
-                        "settings.lsp.xmlCommand",
-                        "lsp xml lemminx language server found installed not found command path executable",
-                        v -> config.getSettings().setXmlLspEnabled(v),
-                        () -> config.getSettings().isXmlLspEnabled(),
-                        v -> config.getSettings().setXmlLspCommand(v),
-                        () -> config.getSettings().getXmlLspCommand()),
-                // Right after XML: the pom.xml server replaces it for poms (Maven review C17).
-                new LspServerUi(
-                        com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID,
-                        com.editora.lsp.LspServerRegistry.DEFAULT_MAVEN_POM_COMMAND,
-                        "settings.lsp.enableMavenPom",
-                        "settings.lsp.mavenPomCommand",
-                        "lsp maven pom.xml lemminx dependency completion language server found command path",
-                        v -> config.getSettings().setMavenPomLspEnabled(v),
-                        () -> config.getSettings().isMavenPomLspEnabled(),
-                        v -> config.getSettings().setMavenPomLspCommand(v),
-                        () -> config.getSettings().getMavenPomLspCommand()),
-                new LspServerUi(
-                        "json",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_JSON_COMMAND,
-                        "settings.lsp.enableJson",
-                        "settings.lsp.jsonCommand",
-                        "lsp json language server found installed not found command path executable",
-                        v -> config.getSettings().setJsonLspEnabled(v),
-                        () -> config.getSettings().isJsonLspEnabled(),
-                        v -> config.getSettings().setJsonLspCommand(v),
-                        () -> config.getSettings().getJsonLspCommand()),
-                new LspServerUi(
-                        "bash",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_BASH_COMMAND,
-                        "settings.lsp.enableBash",
-                        "settings.lsp.bashCommand",
-                        "lsp bash shell shellcheck language server found installed not found command path",
-                        v -> config.getSettings().setBashLspEnabled(v),
-                        () -> config.getSettings().isBashLspEnabled(),
-                        v -> config.getSettings().setBashLspCommand(v),
-                        () -> config.getSettings().getBashLspCommand()),
-                new LspServerUi(
-                        "yaml",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_YAML_COMMAND,
-                        "settings.lsp.enableYaml",
-                        "settings.lsp.yamlCommand",
-                        "lsp yaml yml language server found installed not found command path executable",
-                        v -> config.getSettings().setYamlLspEnabled(v),
-                        () -> config.getSettings().isYamlLspEnabled(),
-                        v -> config.getSettings().setYamlLspCommand(v),
-                        () -> config.getSettings().getYamlLspCommand()),
-                new LspServerUi(
-                        "go",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_GO_COMMAND,
-                        "settings.lsp.enableGo",
-                        "settings.lsp.goCommand",
-                        "lsp go golang gopls language server found installed not found command path",
-                        v -> config.getSettings().setGoLspEnabled(v),
-                        () -> config.getSettings().isGoLspEnabled(),
-                        v -> config.getSettings().setGoLspCommand(v),
-                        () -> config.getSettings().getGoLspCommand()),
-                new LspServerUi(
-                        "rust",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_RUST_COMMAND,
-                        "settings.lsp.enableRust",
-                        "settings.lsp.rustCommand",
-                        "lsp rust rust-analyzer cargo language server found installed not found command path",
-                        v -> config.getSettings().setRustLspEnabled(v),
-                        () -> config.getSettings().isRustLspEnabled(),
-                        v -> config.getSettings().setRustLspCommand(v),
-                        () -> config.getSettings().getRustLspCommand()),
-                new LspServerUi(
-                        "php",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_PHP_COMMAND,
-                        "settings.lsp.enablePhp",
-                        "settings.lsp.phpCommand",
-                        "lsp php phpactor intelephense language server found installed not found command path",
-                        v -> config.getSettings().setPhpLspEnabled(v),
-                        () -> config.getSettings().isPhpLspEnabled(),
-                        v -> config.getSettings().setPhpLspCommand(v),
-                        () -> config.getSettings().getPhpLspCommand()),
-                new LspServerUi(
-                        "ruby",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_RUBY_COMMAND,
-                        "settings.lsp.enableRuby",
-                        "settings.lsp.rubyCommand",
-                        "lsp ruby ruby-lsp solargraph language server found installed not found command path",
-                        v -> config.getSettings().setRubyLspEnabled(v),
-                        () -> config.getSettings().isRubyLspEnabled(),
-                        v -> config.getSettings().setRubyLspCommand(v),
-                        () -> config.getSettings().getRubyLspCommand()),
-                new LspServerUi(
-                        "clangd",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_CLANGD_COMMAND,
-                        "settings.lsp.enableClangd",
-                        "settings.lsp.clangdCommand",
-                        "lsp c cpp c++ clangd language server found installed not found command path",
-                        v -> config.getSettings().setClangdLspEnabled(v),
-                        () -> config.getSettings().isClangdLspEnabled(),
-                        v -> config.getSettings().setClangdLspCommand(v),
-                        () -> config.getSettings().getClangdLspCommand()),
-                new LspServerUi(
-                        "html",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_HTML_COMMAND,
-                        "settings.lsp.enableHtml",
-                        "settings.lsp.htmlCommand",
-                        "lsp html language server found installed not found command path executable",
-                        v -> config.getSettings().setHtmlLspEnabled(v),
-                        () -> config.getSettings().isHtmlLspEnabled(),
-                        v -> config.getSettings().setHtmlLspCommand(v),
-                        () -> config.getSettings().getHtmlLspCommand()),
-                new LspServerUi(
-                        "css",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_CSS_COMMAND,
-                        "settings.lsp.enableCss",
-                        "settings.lsp.cssCommand",
-                        "lsp css scss less language server found installed not found command path",
-                        v -> config.getSettings().setCssLspEnabled(v),
-                        () -> config.getSettings().isCssLspEnabled(),
-                        v -> config.getSettings().setCssLspCommand(v),
-                        () -> config.getSettings().getCssLspCommand()),
-                new LspServerUi(
-                        "kotlin",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_KOTLIN_COMMAND,
-                        "settings.lsp.enableKotlin",
-                        "settings.lsp.kotlinCommand",
-                        "lsp kotlin language server jetbrains kotlin-lsp intellij-server gradle found installed not found"
-                                + " command path executable",
-                        v -> config.getSettings().setKotlinLspEnabled(v),
-                        () -> config.getSettings().isKotlinLspEnabled(),
-                        v -> config.getSettings().setKotlinLspCommand(v),
-                        () -> config.getSettings().getKotlinLspCommand()),
-                new LspServerUi(
-                        "groovy",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_GROOVY_COMMAND,
-                        "settings.lsp.enableGroovy",
-                        "settings.lsp.groovyCommand",
-                        "lsp groovy gvy gls gradle jenkinsfile language server found installed not found command path"
-                                + " java jar",
-                        v -> config.getSettings().setGroovyLspEnabled(v),
-                        () -> config.getSettings().isGroovyLspEnabled(),
-                        v -> config.getSettings().setGroovyLspCommand(v),
-                        () -> config.getSettings().getGroovyLspCommand()),
-                new LspServerUi(
-                        "scala",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_SCALA_COMMAND,
-                        "settings.lsp.enableScala",
-                        "settings.lsp.scalaCommand",
-                        "lsp scala metals sbt mill scala-cli bloop bsp language server found installed not found"
-                                + " command path java coursier",
-                        v -> config.getSettings().setScalaLspEnabled(v),
-                        () -> config.getSettings().isScalaLspEnabled(),
-                        v -> config.getSettings().setScalaLspCommand(v),
-                        () -> config.getSettings().getScalaLspCommand()),
-                new LspServerUi(
-                        "clojure",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_CLOJURE_COMMAND,
-                        "settings.lsp.enableClojure",
-                        "settings.lsp.clojureCommand",
-                        "lsp clojure clojure-lsp clojurescript edn deps lein babashka language server found installed"
-                                + " not found command path executable",
-                        v -> config.getSettings().setClojureLspEnabled(v),
-                        () -> config.getSettings().isClojureLspEnabled(),
-                        v -> config.getSettings().setClojureLspCommand(v),
-                        () -> config.getSettings().getClojureLspCommand()),
-                new LspServerUi(
-                        "lua",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_LUA_COMMAND,
-                        "settings.lsp.enableLua",
-                        "settings.lsp.luaCommand",
-                        "lsp lua language server found installed not found command path executable",
-                        v -> config.getSettings().setLuaLspEnabled(v),
-                        () -> config.getSettings().isLuaLspEnabled(),
-                        v -> config.getSettings().setLuaLspCommand(v),
-                        () -> config.getSettings().getLuaLspCommand()),
-                new LspServerUi(
-                        "dockerfile",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_DOCKERFILE_COMMAND,
-                        "settings.lsp.enableDockerfile",
-                        "settings.lsp.dockerfileCommand",
-                        "lsp dockerfile docker language server found installed not found command path",
-                        v -> config.getSettings().setDockerfileLspEnabled(v),
-                        () -> config.getSettings().isDockerfileLspEnabled(),
-                        v -> config.getSettings().setDockerfileLspCommand(v),
-                        () -> config.getSettings().getDockerfileLspCommand()),
-                new LspServerUi(
-                        "sql",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_SQL_COMMAND,
-                        "settings.lsp.enableSql",
-                        "settings.lsp.sqlCommand",
-                        "lsp sql language server found installed not found command path executable",
-                        v -> config.getSettings().setSqlLspEnabled(v),
-                        () -> config.getSettings().isSqlLspEnabled(),
-                        v -> config.getSettings().setSqlLspCommand(v),
-                        () -> config.getSettings().getSqlLspCommand()),
-                new LspServerUi(
-                        "terraform",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_TERRAFORM_COMMAND,
-                        "settings.lsp.enableTerraform",
-                        "settings.lsp.terraformCommand",
-                        "lsp terraform hcl terraform-ls language server found installed not found command path",
-                        v -> config.getSettings().setTerraformLspEnabled(v),
-                        () -> config.getSettings().isTerraformLspEnabled(),
-                        v -> config.getSettings().setTerraformLspCommand(v),
-                        () -> config.getSettings().getTerraformLspCommand()),
-                new LspServerUi(
-                        "toml",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_TOML_COMMAND,
-                        "settings.lsp.enableToml",
-                        "settings.lsp.tomlCommand",
-                        "lsp toml taplo language server found installed not found command path executable",
-                        v -> config.getSettings().setTomlLspEnabled(v),
-                        () -> config.getSettings().isTomlLspEnabled(),
-                        v -> config.getSettings().setTomlLspCommand(v),
-                        () -> config.getSettings().getTomlLspCommand()),
-                new LspServerUi(
-                        "csharp",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_CSHARP_COMMAND,
-                        "settings.lsp.enableCsharp",
-                        "settings.lsp.csharpCommand",
-                        "lsp c# csharp csharp-ls dotnet language server found installed not found command path",
-                        v -> config.getSettings().setCsharpLspEnabled(v),
-                        () -> config.getSettings().isCsharpLspEnabled(),
-                        v -> config.getSettings().setCsharpLspCommand(v),
-                        () -> config.getSettings().getCsharpLspCommand()),
-                new LspServerUi(
-                        "typst",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_TYPST_COMMAND,
-                        "settings.lsp.enableTypst",
-                        "settings.lsp.typstCommand",
-                        "lsp typst tinymist language server found installed not found command path executable",
-                        v -> config.getSettings().setTypstLspEnabled(v),
-                        () -> config.getSettings().isTypstLspEnabled(),
-                        v -> config.getSettings().setTypstLspCommand(v),
-                        () -> config.getSettings().getTypstLspCommand()),
-                new LspServerUi(
-                        "astro",
-                        com.editora.lsp.LspServerRegistry.DEFAULT_ASTRO_COMMAND,
-                        "settings.lsp.enableAstro",
-                        "settings.lsp.astroCommand",
-                        "lsp astro astro-ls web components language server found installed command path",
-                        v -> config.getSettings().setAstroLspEnabled(v),
-                        () -> config.getSettings().isAstroLspEnabled(),
-                        v -> config.getSettings().setAstroLspCommand(v),
-                        () -> config.getSettings().getAstroLspCommand()));
-    }
-
     /** A simple "label: control" row (no Browse button), used for the AI provider combo + endpoint URL. */
-    private HBox labeledRow(String label, javafx.scene.control.Control control) {
+    HBox labeledRow(String label, javafx.scene.control.Control control) {
         HBox.setHgrow(control, Priority.ALWAYS);
         HBox box = new HBox(6, new Label(label), control);
         box.setAlignment(Pos.CENTER_LEFT);
@@ -7736,8 +3301,7 @@ public class SettingsWindow {
      * that happened to resolve was launched and killed by the next. For the other fields it saved the settings
      * file, re-applied every window and probed a half-typed executable or URL on each key.
      */
-    private void commitOnEnterOrBlur(
-            TextField field, java.util.function.Supplier<String> stored, Consumer<String> commit) {
+    void commitOnEnterOrBlur(TextField field, java.util.function.Supplier<String> stored, Consumer<String> commit) {
         Runnable run = () -> {
             String text = field.getText() == null ? "" : field.getText();
             String current = stored.get();
@@ -7776,7 +3340,7 @@ public class SettingsWindow {
      * Commits whatever is typed but not yet committed. A field commits when focus leaves it, and closing the
      * window (Esc, the title bar, the owner closing) is not a focus change the toolkit reliably reports first.
      */
-    private void commitPendingFields() {
+    void commitPendingFields() {
         List.copyOf(commitFields).forEach(SettingsWindow::commitNow);
     }
 
@@ -7785,7 +3349,7 @@ public class SettingsWindow {
      * field equals {@code resolved}; once the user empties it to go back to the built-in URL it must be
      * compared with what is stored ({@code raw}), or every later focus loss would save and apply again.
      */
-    private static String shownOrBlank(TextField field, String resolved, String raw) {
+    static String shownOrBlank(TextField field, String resolved, String raw) {
         String text = field.getText();
         return text == null || text.isBlank() ? raw : resolved;
     }
@@ -7797,7 +3361,7 @@ public class SettingsWindow {
         }
     }
 
-    private Button browseButton(String title, TextField field) {
+    Button browseButton(String title, TextField field) {
         Button browse = new Button(tr("settings.mermaid.browse"));
         browse.setOnAction(e -> {
             javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
@@ -7816,91 +3380,10 @@ public class SettingsWindow {
      * Pins each control's minimum width to its preferred one, so a narrow window cannot squeeze it: a
      * Labeled's own minimum is the width of an ellipsis, which is how buttons ended up reading "…".
      */
-    private static void keepWidth(Region... controls) {
+    static void keepWidth(Region... controls) {
         for (Region control : controls) {
             control.setMinWidth(Region.USE_PREF_SIZE);
         }
-    }
-
-    private void refreshMermaidStatus() {
-        if (mermaidService == null || mermaidCheck == null) {
-            return; // its page was never built: an install's refresh reached a Settings never shown (fourth review CF3)
-        }
-        mmdcStatus.checking();
-        maidStatus.checking();
-        mermaidService.detect(a -> {
-            boolean on = mermaidCheck.isSelected();
-            mmdcStatus.show(a.mmdc(), a.mmdc() ? ToolStatusRow.pathOf(mermaidService.mmdcCommand()) : "", on);
-            // The default `npx -y @probelabs/maid` is found by its files, never by running npx (which would
-            // fetch it from the npm registry): show where the installed package is.
-            com.editora.mermaid.MaidLocator.Found install = a.maidInstall();
-            maidStatus.show(
-                    a.maid(),
-                    install != null ? install.detail() : ToolStatusRow.pathOf(mermaidService.maidCommand()),
-                    on);
-        });
-    }
-
-    private void refreshGithubStatus() {
-        if (githubStatusLabel == null || githubService == null) {
-            return;
-        }
-        if (config.getSettings().isGithubSupport() && !config.getSettings().isGitSupport()) {
-            // GitHub rides on the Git integration: say so here rather than report a healthy gh that does nothing.
-            githubStatusLabel.getStyleClass().setAll("settings-git-status", "settings-git-missing");
-            githubStatusLabel.setText(tr("settings.github.needsGit"));
-            return;
-        }
-        // Re-applying an unchanged command keeps the service's cached answer, so it is shown at once and
-        // only replaced when the fresh probe lands — no "Checking…" flash on every Settings sync.
-        githubService.setCommand(config.getSettings().getGhPath());
-        com.editora.github.GitHubService.Availability cached = githubService.availability();
-        if (cached == null) {
-            githubStatusLabel.getStyleClass().setAll("settings-git-status");
-            githubStatusLabel.setText(tr("settings.github.checking"));
-        } else {
-            showGithubStatus(cached);
-        }
-        githubService.detect(this::showGithubStatus);
-    }
-
-    private void showGithubStatus(com.editora.github.GitHubService.Availability a) {
-        if (githubStatusLabel == null) {
-            return; // the GitHub page makes it before anything probes
-        }
-        String[] verdict = githubStatus(a, config.getSettings().getGhPath());
-        githubStatusLabel.getStyleClass().setAll("settings-git-status", verdict[0]);
-        githubStatusLabel.setText(verdict[1]);
-    }
-
-    /** The GitHub page's status row for a probe result: {@code [style class, text]}. Pure — unit-tested. */
-    static String[] githubStatus(com.editora.github.GitHubService.Availability a, String ghPath) {
-        String missing = "settings-git-missing";
-        if (!a.found()) {
-            // A typo in the path is not a missing install: name the path rather than say "install gh".
-            return new String[] {
-                missing,
-                ghPath == null || ghPath.isBlank()
-                        ? tr("settings.github.notFound")
-                        : tr("settings.github.notFoundAt", ghPath.strip())
-            };
-        }
-        return switch (a.auth()) {
-            case SIGNED_OUT -> new String[] {missing, tr("settings.github.foundNoAuth")};
-            case REJECTED -> new String[] {missing, tr("settings.github.foundRejected")};
-            // Offline is not a fault of the setup: gh is there and has an account.
-            case UNVERIFIED -> new String[] {"settings-git-found", tr("settings.github.foundUnverified", a.version())};
-            case SIGNED_IN ->
-                a.supportsChecks()
-                        ? new String[] {"settings-git-found", tr("settings.github.found", a.version())}
-                        : new String[] {
-                            missing,
-                            tr(
-                                    "settings.github.foundOld",
-                                    com.editora.github.GhVersion.number(a.version()),
-                                    com.editora.github.GhVersion.MINIMUM)
-                        };
-        };
     }
 
     /** Reads each build coordinator's currently-cached detection (no subprocess probe needed — "found" just
@@ -7978,215 +3461,6 @@ public class SettingsWindow {
                 .getStyleClass()
                 .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
         ripgrepStatusLabel.setText(found ? tr("settings.search.found") : tr("settings.search.notFound"));
-    }
-
-    /** Re-checks each debug adapter's availability (java plugin jar / debugpy / js-debug+node) and colors
-     *  its status label green/red, like the LSP/Mermaid status. java locate is cheap; python/js probe a
-     *  subprocess off-thread and call back on the FX thread. */
-    private void refreshDebugStatus() {
-        for (DebugAdapterUi dbg : debugAdapterUis()) {
-            ToolStatusRow status = debugStatusLabels.get(dbg.id());
-            if (status != null) {
-                status.checking();
-                dbg.detect().accept((found, detail) -> status.show(found, detail, debugCheck.isSelected()));
-            }
-        }
-        if (javaDebugLspNote != null) {
-            String why = !config.getSettings().isLspSupport()
-                    ? tr("status.debug.javaNeedsLsp")
-                    : !config.getSettings().isJavaLspEnabled() ? tr("status.debug.javaServerOff") : "";
-            javaDebugLspNote.setText(why);
-            javaDebugLspNote.setVisible(!why.isEmpty());
-            javaDebugLspNote.setManaged(!why.isEmpty());
-        }
-    }
-
-    /** Per LSP server card: what this window's project file overrides (hidden when it overrides nothing). */
-    private final Map<String, Label> lspProjectLabels = new java.util.HashMap<>();
-
-    private java.util.function.Function<String, @Nullable String> lspProjectNotes = id -> null;
-
-    /** Injected by MainController: the project-override line for a server id, or null. */
-    void setLspProjectNotes(java.util.function.Function<String, @Nullable String> notes) {
-        this.lspProjectNotes = notes;
-    }
-
-    private void refreshLspStatus() {
-        refreshBashToolStatus();
-        lspProjectLabels.forEach((id, label) -> {
-            String text = lspProjectNotes.apply(id);
-            label.setText(text == null ? "" : text);
-            label.setVisible(text != null);
-        });
-        if (lspManager == null || lspStatusLabels.isEmpty()) {
-            return;
-        }
-        TypeScriptSdkStatus.refresh(
-                typeScriptSdkStatus,
-                lspArgv(com.editora.lsp.TypeScriptServer.SERVER_ID),
-                config.getConfigDir(),
-                lspCheck.isSelected());
-        // Probe the commands this page shows, without configuring the manager. This window must not
-        // (re)configure it: doing so with the global commands replaced a trusted project's override and
-        // shut its running server down every time Settings was merely opened.
-        java.util.Map<String, String> shown =
-                LspServerCommands.launchCommandsForAllServers(config.getSettings(), config.getConfigDir());
-        for (LspServerUi srv : lspServerUis()) {
-            ToolStatusRow status = lspStatusLabels.get(srv.id());
-            if (status == null) {
-                continue;
-            }
-            List<String> argv = lspArgv(srv.id());
-            status.tool(lspToolName(srv.id(), argv));
-            status.checking();
-            lspManager.detectCommand(
-                    srv.id(),
-                    shown.getOrDefault(srv.id(), ""),
-                    found -> { // blank = default
-                        if (!found && MAVEN_POM.equals(srv.id()) && mavenInstallIncomplete(argv)) {
-                            // The folder is there but lacks jars (the upstream bundle without the ones it leaves out,
-                            // or
-                            // a wiped install): not "not found" — "incomplete", with Install… to repair (Maven review
-                            // C3).
-                            status.showProblem(
-                                    tr("settings.lsp.mavenIncomplete", lspToolName(srv.id(), argv)),
-                                    lspCheck.isSelected());
-                            return;
-                        }
-                        String outdated = found ? outdatedPin(srv.id(), argv, config.getConfigDir()) : null;
-                        if (outdated != null) { // "Installed" over what Doctor offers to update (re-review D8)
-                            status.showProblem(
-                                    tr("settings.lsp.pinOutdated", lspToolName(srv.id(), argv), outdated),
-                                    lspCheck.isSelected());
-                            return;
-                        }
-                        String unknown = found ? unknownPin(srv.id(), argv, config.getConfigDir()) : null;
-                        if (unknown != null) { // an install from before the pin: Doctor says Update too (A7)
-                            String name = lspToolName(srv.id(), argv); // a warning there too, so amber here (A26)
-                            status.showWarning(
-                                    tr("settings.lsp.pinUnknownShort", name, unknown),
-                                    tr("settings.lsp.pinUnknown", name, unknown));
-                            return;
-                        }
-                        if (found && xmlRefused(srv.id(), argv)) { // not started at all: not "found" (review 4, A32)
-                            status.showProblem(
-                                    tr("settings.lsp.xmlLoadsMaven", lspToolName(srv.id(), argv)),
-                                    lspCheck.isSelected());
-                            return;
-                        }
-                        String crash = found && projectLsp != null ? projectLsp.serverCrash(srv.id()) : null;
-                        if (crash != null) { // found, but it exits before it is ready: not "Installed" (XML A4)
-                            String name = lspToolName(srv.id(), argv);
-                            status.showProblem(tr("settings.lsp.crashing", name, crash), lspCheck.isSelected());
-                            return;
-                        }
-                        String where = found && !MAVEN_POM.equals(srv.id()) ? ToolStatusRow.pathOf(argv) : "";
-                        where = com.editora.install.PinnedVersions.withVersion(
-                                srv.id(), argv, config.getConfigDir(), where);
-                        String fallback = found && "xml".equals(srv.id())
-                                ? com.editora.install.XmlServerInstall.javaFallbackVersion(argv, config.getConfigDir())
-                                : null;
-                        if (fallback != null) { // the pom bundle's Java lemminx, not the pinned native build (A32)
-                            where = tr("lsp.xml.javaFallback", fallback) + " — " + where;
-                        }
-                        status.show(found, where, lspCheck.isSelected());
-                    });
-        }
-    }
-
-    /**
-     * The pinned release, as shown, when {@code argv} runs Editora's own copy of {@code serverId}'s server and that
-     * copy is older than it; else null. A copy from elsewhere is not one Install… replaces. File lookups only.
-     */
-    static @Nullable String outdatedPin(String serverId, List<String> argv, @Nullable Path configDir) {
-        return pinIs(serverId, argv, configDir, com.editora.install.PinnedVersions.Freshness.OUTDATED);
-    }
-
-    /**
-     * The pinned release, as shown, when {@code argv} runs Editora's own copy of {@code serverId}'s server and that
-     * copy was installed before Editora recorded versions, so which release it is cannot be told — what Doctor offers
-     * to Update (XML/pom review 2, A7); else null.
-     */
-    static @Nullable String unknownPin(String serverId, List<String> argv, @Nullable Path configDir) {
-        return pinIs(serverId, argv, configDir, com.editora.install.PinnedVersions.Freshness.UNKNOWN);
-    }
-
-    private static @Nullable String pinIs(
-            String serverId,
-            List<String> argv,
-            @Nullable Path configDir,
-            com.editora.install.PinnedVersions.Freshness freshness) {
-        var pin = com.editora.install.PinnedVersions.forServer(serverId).orElse(null);
-        if (pin == null || configDir == null || argv.isEmpty()) {
-            return null;
-        }
-        List<String> tokens = new java.util.ArrayList<>(argv); // a classpath token names the Maven server's folder
-        tokens.add(com.editora.doctor.DoctorProbes.resolvedPath(argv));
-        boolean editoras = com.editora.install.PinnedVersions.anyInside(tokens, configDir.resolve(pin.destSubpath()));
-        return editoras && com.editora.install.PinnedVersions.installedFreshness(pin, configDir) == freshness
-                ? pin.label()
-                : null;
-    }
-
-    /**
-     * Whether Editora will not start the XML command {@code argv} — it loads lemminx-maven — or this window's project
-     * command was refused for that (review 4, A32). File lookups only.
-     */
-    private boolean xmlRefused(String serverId, List<String> argv) {
-        if (!"xml".equals(serverId)) {
-            return false;
-        }
-        LspCoordinator.ServerTrouble trouble = projectLsp == null ? null : projectLsp.serverTrouble(serverId);
-        return (trouble != null && trouble.refused())
-                || com.editora.lsp.LemminxMavenGuard.loadsLemminxMaven(argv, true);
-    }
-
-    /** Whether the Maven server's {@code java -cp "<dir>/*"} folder exists but lacks required jars. Pure (file lookups). */
-    static boolean mavenInstallIncomplete(List<String> argv) {
-        return com.editora.install.MavenServerInstall.classpathDir(argv)
-                .filter(java.nio.file.Files::isDirectory)
-                .map(dir -> !com.editora.install.MavenServerInstall.complete(dir))
-                .orElse(false);
-    }
-
-    private static final String MAVEN_POM = com.editora.lsp.LspServerRegistry.MAVEN_POM_SERVER_ID;
-
-    /** The argv the LSP page shows for {@code serverId}: its global command, blank ⇒ the default. */
-    private List<String> lspArgv(String serverId) {
-        return com.editora.lsp.LspServerRegistry.commandFor(
-                serverId, LspServerCommands.launchCommandsForAllServers(config.getSettings(), config.getConfigDir()));
-    }
-
-    /** The program a server runs, as its pill names it: the display-name table first (the pom.xml server runs
-     *  through java; the native XML download is platform-suffixed — Maven review C14), else the command's name. */
-    private static String lspToolName(String serverId, List<String> argv) {
-        String named = com.editora.lsp.LspServerRegistry.displayNameFor(serverId, argv); // `node …` names HTML (A15)
-        return named != null ? named : ToolStatusRow.toolName(argv, serverId);
-    }
-
-    /**
-     * Probes for the {@code git} command off-thread and updates the Git page: shows the version when
-     * found (and enables the checkbox), or "not found" + disables the checkbox when git isn't on PATH.
-     */
-    private void probeGit() {
-        Label status = gitStatusLabel;
-        if (status == null || gitService == null) {
-            return;
-        }
-        gitService.setCommand(config.getSettings().getGitPath()); // probe what the setting names
-        status.getStyleClass().setAll("settings-git-status");
-        status.setText(tr("settings.git.checking"));
-        gitService.version(version -> {
-            boolean found = version != null && !version.isBlank();
-            status.getStyleClass().setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
-            String path = config.getSettings().getGitPath();
-            status.setText(
-                    found
-                            ? tr("settings.git.found", version)
-                            : path == null || path.isBlank()
-                                    ? tr("settings.git.notFound")
-                                    : tr("settings.git.notFoundAt", path));
-        });
     }
 
     /** A stripe side in the UI language (it used to be the enum constant's name, English in every locale). */
@@ -8425,7 +3699,7 @@ public class SettingsWindow {
 
     // --- page helpers ---
 
-    private VBox page(String title) {
+    VBox page(String title) {
         // A Text node (with VISUAL bounds) rather than a Label: a JavaFX Label clips its text to the
         // glyphs' logical (advance-based) bounds, which shaves the outer strokes of bold faces — the
         // bold heading on every Settings page looked like it was missing slivers of letters. A Text node
@@ -8441,7 +3715,7 @@ public class SettingsWindow {
     }
 
     /** A page with the kit's one-line subtitle under its heading, saying what the page is for. */
-    private VBox page(String title, String subtitle) {
+    VBox page(String title, String subtitle) {
         VBox box = page(title);
         if (subtitle != null && !subtitle.isBlank()) {
             Label sub = new Label(subtitle);
@@ -8461,7 +3735,7 @@ public class SettingsWindow {
         return h;
     }
 
-    private void row(VBox page, Category cat, @Nullable Label section, Node node, String keywords) {
+    void row(VBox page, Category cat, @Nullable Label section, Node node, String keywords) {
         page.getChildren().add(node);
         rows.add(new SettingsSearch.Row(cat, node, keywords, section, null));
     }
@@ -8476,7 +3750,7 @@ public class SettingsWindow {
     /** A card and the box its rows are appended to (the title, if any, sits above that box). */
     record Card(VBox box, VBox body) {}
 
-    private Card card(VBox page, @Nullable String title) {
+    Card card(VBox page, @Nullable String title) {
         VBox body = new VBox();
         body.getStyleClass().add("settings-card-body");
         VBox box = new VBox();
@@ -8497,7 +3771,7 @@ public class SettingsWindow {
      * search filter can hide the whole card once every row inside it is filtered out — otherwise a
      * non-matching page would keep showing an empty bordered box.
      */
-    private void cardRow(Card card, Category cat, Node node, String keywords) {
+    void cardRow(Card card, Category cat, Node node, String keywords) {
         // Any node can be a card row, not just a settingRow() — a page mid-migration still has plain
         // checkboxes, status labels and path fields. Wrap those (rather than adding the class to them)
         // so .settings-row's padding can't collide with the node's own.
@@ -8518,19 +3792,19 @@ public class SettingsWindow {
      * label, the (optional) description is an existing localized string, and the control is the bound
      * toggle switch. This is what makes migrating a page mechanical rather than a translation project.
      */
-    private void checkRow(Card card, Category cat, CheckBox check, @Nullable String description, String keywords) {
+    void checkRow(Card card, Category cat, CheckBox check, @Nullable String description, String keywords) {
         cardRow(card, cat, settingRow(check.getText(), description, switchFor(check)), keywords);
     }
 
     /** The nodes of the rows added since {@code from} (a {@code rows.size()} taken before adding them). */
-    private Node[] rowsSince(int from) {
+    Node[] rowsSince(int from) {
         return rows.subList(from, rows.size()).stream()
                 .map(SettingsSearch.Row::node)
                 .toArray(Node[]::new);
     }
 
     /** A labeled field/control as a card row: title left, the control right (kit "Git command" shape). */
-    private void controlRow(
+    void controlRow(
             Card card,
             Category cat,
             String title,
@@ -8588,7 +3862,7 @@ public class SettingsWindow {
      * stays out of the scene graph. Every existing writer keeps working untouched. {@link SettingSwitch}
      * is what makes it operable from the keyboard and visible to a screen reader.
      */
-    private static SettingSwitch switchFor(CheckBox check) {
+    static SettingSwitch switchFor(CheckBox check) {
         return SettingSwitch.boundTo(check);
     }
 
@@ -8605,14 +3879,14 @@ public class SettingsWindow {
         return h;
     }
 
-    private static Label note(String text) {
+    static Label note(String text) {
         Label l = new Label(text);
         l.getStyleClass().add("settings-hint");
         return l;
     }
 
     /** The kit's boxed page note (its {@code .set-note}) — a tinted, rounded paragraph, not a bare hint. */
-    private static Label noteBox(String text) {
+    static Label noteBox(String text) {
         Label l = new Label(text);
         l.getStyleClass().add("settings-note-box");
         l.setWrapText(true);
@@ -8622,7 +3896,7 @@ public class SettingsWindow {
 
     /** A small "i" info glyph carrying a hover {@link Tooltip} — for a compact detail that would otherwise
      *  need its own {@link #note} line (e.g. listing exactly which commands a toggle enables). */
-    private static Node infoIcon(String tooltipText) {
+    static Node infoIcon(String tooltipText) {
         Node icon = Icons.about();
         icon.getStyleClass().add("settings-info-icon");
         Tooltip tip = new Tooltip(tooltipText);
@@ -8673,7 +3947,7 @@ public class SettingsWindow {
                         : null);
         String query = SettingsSearch.withoutModifiedToken(typed);
         SettingsSearch.Result found = search.filter(query);
-        pushShortcutQuery(query);
+        keymapsPage.pushShortcutQuery(query);
         if (found != null) {
             for (Category c : Category.values()) {
                 if (!found.pages().contains(c)) {
@@ -8700,32 +3974,6 @@ public class SettingsWindow {
         if (found != null && found.best() != null && !found.ties(sel)) {
             sidebar.getSelectionModel().select(found.best());
         }
-    }
-
-    /**
-     * The Keymaps shortcut list is searched as a list of its own (its hundreds of command names are not the
-     * page's text): a search it matches carries over into its filter, and clearing the search clears it again.
-     */
-    private void pushShortcutQuery(String query) {
-        if (shortcutFilter == null) {
-            return;
-        }
-        String q = query == null ? "" : query.strip();
-        String shown = shortcutFilter.getText();
-        boolean ours = shown.isEmpty() || shown.equals(pushedShortcutQuery);
-        pushedShortcutQuery = q.isEmpty() || !shortcutMatches(q) ? "" : q;
-        if (ours) {
-            shortcutFilter.setText(pushedShortcutQuery);
-        }
-    }
-
-    /** Whether a command in the shortcut list matches {@code query} as its own filter would. */
-    private boolean shortcutMatches(String query) {
-        String q = query.toLowerCase(Locale.ROOT);
-        return shortcutActions != null
-                && shortcutActions.rows().stream()
-                        .anyMatch(s -> s.title().toLowerCase(Locale.ROOT).contains(q)
-                                || s.id().toLowerCase(Locale.ROOT).contains(q));
     }
 
     /** Renders a sidebar row: a {@link Group} as a non-selectable header, a {@link Category} as an item. */
@@ -8849,7 +4097,7 @@ public class SettingsWindow {
     private void commitReset() {
         Settings s = config.getSettings();
         config.save();
-        javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(s.getTheme()));
+        Themes.applyAppTheme(s.getTheme());
         onApply.accept(s);
         load();
         // load() sets the keymap combo under `loading`, so its listener never fires: without this the
@@ -8857,7 +4105,7 @@ public class SettingsWindow {
         if (onKeymapChanged != null) {
             onKeymapChanged.run();
         }
-        refreshShortcuts();
+        keymapsPage.refreshShortcuts();
     }
 
     // --- load + sync (unchanged behavior) --------------------------------------------------------
@@ -8890,24 +4138,21 @@ public class SettingsWindow {
 
     /** The Snippets and Templates pages read files; refreshed when Settings is opened, not on every load. */
     private void reloadFileBackedEditors() {
-        if (reloadSnippets != null) {
-            reloadSnippets.run();
-        }
-        if (reloadTemplates != null) {
-            reloadTemplates.run();
-        }
+        snippetPages.reload();
     }
 
     /**
      * Project scope (F4): the User / Project switch, the two save rules that exist only per project, and how
      * this window reaches its project (its {@link LspCoordinator}, which owns the window's project scope).
      */
-    private final ProjectScopeSettings scopeUi = new ProjectScopeSettings(
+    final ProjectScopeSettings scopeUi = new ProjectScopeSettings(
             this::projectScope, this::apply, this::isLoading, this::load, this::trustProject, () -> stage);
 
     private final ComboBox<String> trimOnSaveCombo = scopeUi.projectOnlyCombo("editor.trimTrailingWhitespace");
     private final ComboBox<String> finalNewlineCombo = scopeUi.projectOnlyCombo("editor.insertFinalNewline");
-    private @Nullable LspCoordinator projectLsp;
+
+    @Nullable
+    LspCoordinator projectLsp;
 
     /** How the User / Project bar names the window's project: the name the main window's title shows. */
     void setProjectName(java.util.function.Supplier<String> projectName) {
@@ -8917,7 +4162,7 @@ public class SettingsWindow {
     /** Injected by MainController: the window's language-server coordinator, which owns its project scope. */
     void setProjectLsp(LspCoordinator lsp) {
         this.projectLsp = lsp;
-        this.lspProjectNotes = id -> SettingsBashRows.projectNote(lsp, id);
+        lspPage.setLspProjectNotes(id -> SettingsBashRows.projectNote(lsp, id));
     }
 
     private ProjectScope projectScope() {
@@ -8946,14 +4191,17 @@ public class SettingsWindow {
         scopeUi.register("editor.languageRulers", settingControls.get("languageRulers"), v -> {});
         scopeUi.register("editor.wordWrap", wordWrapCheck, v -> wordWrapCheck.setSelected((Boolean) v));
         scopeUi.register("editor.wordWrapProse", wordWrapProseCheck, v -> wordWrapProseCheck.setSelected((Boolean) v));
-        scopeUi.register("editor.spellLanguage", spellLanguageCombo, v -> spellLanguageCombo.setValue((String) v));
+        scopeUi.register(
+                "editor.spellLanguage",
+                spellPage.spellLanguageCombo,
+                v -> spellPage.spellLanguageCombo.setValue((String) v));
         buildToolCommandFields.forEach((bt, field) ->
                 scopeUi.register("build." + ProjectScope.toolId(bt), field, v -> field.setText((String) v)));
-        debugCommandFields.forEach(
+        debugPage.debugCommandFields.forEach(
                 (id, field) -> scopeUi.register("debug." + id, field, v -> field.setText((String) v)));
-        lspCommandFields.forEach(
+        lspPage.lspCommandFields.forEach(
                 (id, field) -> scopeUi.register("lspCommands." + id, field, v -> field.setText((String) v)));
-        lspEnableChecks.forEach(
+        lspPage.lspEnableChecks.forEach(
                 (id, check) -> scopeUi.register("lspEnabled." + id, check, v -> check.setSelected((Boolean) v)));
     }
 
@@ -8965,7 +4213,8 @@ public class SettingsWindow {
         loading = true;
         try {
             reloadStoreBackedEditors(); // a command or another window may have changed a store since the build
-            refreshDictionaryList(); // pick up words added elsewhere (e.g. "Add to Dictionary") since last open
+            spellPage.refreshDictionaryList(); // pick up words added elsewhere (e.g. "Add to Dictionary") since last
+            // open
             if (refreshToolbarLists != null) {
                 refreshToolbarLists.run(); // reflect any on-bar drag customization since the page was built
             }
@@ -8974,7 +4223,7 @@ public class SettingsWindow {
                 fontFamily.getItems().add(0, settings.getFontFamily());
             }
             languageCombo.setValue(settings.getUiLanguage());
-            keymapCombo.setValue(settings.getKeymap());
+            keymapsPage.keymapCombo.setValue(settings.getKeymap());
             fontFamily.setValue(settings.getFontFamily());
             fontSize.getValueFactory().setValue(settings.getFontSize());
             String theme = Themes.normalize(settings.getTheme());
@@ -9034,18 +4283,14 @@ public class SettingsWindow {
             pdfOrientationCombo.setValue(settings.getPdfOrientation());
             pdfMarginsCombo.setValue(settings.getPdfMargins());
             pdfCodeFontSizeCombo.setValue(settings.getPdfCodeFontSize());
-            spellCheckBox.setSelected(settings.isSpellCheck());
-            dictEnableCheck.setSelected(settings.isPersonalDictionary());
-            techDictEnableCheck.setSelected(settings.isTechnicalDictionary());
-            spellLanguageCombo.setValue(settings.getSpellLanguage());
-            syncSpellFileTypes();
+            spellPage.load(settings);
             menuBarCheck.setSelected(settings.isShowMenuBar());
             toolbarCheck.setSelected(settings.isShowToolbar());
             statusBarCheck.setSelected(settings.isShowStatusBar());
             tabBarCheck.setSelected(settings.isShowTabBar());
             breadcrumbCheck.setSelected(settings.isShowBreadcrumb());
             simpleModeCheck.setSelected(settings.isSimpleMode());
-            templateAuthorField.setText(settings.getAuthorNameRaw());
+            snippetPages.templateAuthorField.setText(settings.getAuthorNameRaw());
             toolStripeCheck.setSelected(settings.isShowToolStripe());
             extendedWindowCheck.setSelected(settings.isExtendedWindow());
             paletteSearchEverywhereCheck.setSelected(settings.isPaletteUsesSearchEverywhere());
@@ -9085,7 +4330,7 @@ public class SettingsWindow {
             if (todoSettings != null) {
                 todoSettings.load();
             }
-            rebuildMarkdownLintRules();
+            markdownPage.rebuildMarkdownLintRules();
             multiCaretCheck.setSelected(settings.isMultiCaret());
             copyLineNoSelectionCheck.setSelected(settings.isCopyLineWhenNoSelection());
             copyWithHighlightingCheck.setSelected(settings.isCopyWithSyntaxHighlighting());
@@ -9093,18 +4338,9 @@ public class SettingsWindow {
             if (toolWindowSettings != null) {
                 toolWindowSettings.load();
             }
-            gitCheck.setSelected(settings.isGitSupport());
-            blameCheck.setSelected(settings.isGitBlameInline());
-            gitPathField.setText(settings.getGitPath());
-            gitPullModeCombo.setValue(com.editora.git.GitPullMode.of(settings.getGitPullMode()));
-            gitAutoFetchCheck.setSelected(settings.isGitAutoFetch());
-            gitAutoFetchSpinner.getValueFactory().setValue(settings.getGitAutoFetchMinutes());
-            gitAutoFetchSpinner.setDisable(!settings.isGitAutoFetch());
-            loadSyncControls(settings);
-            githubCheck.setSelected(settings.isGithubSupport());
-            ghPathField.setText(settings.getGhPath());
-            ghPathField.setDisable(!settings.isGithubSupport());
-            refreshGithubStatus();
+            gitPages.loadGit(settings);
+            syncPage.load(settings);
+            gitPages.loadGithub(settings);
             updateCheckCheck.setSelected(settings.isUpdateCheck());
             localHistoryCheck.setSelected(settings.isLocalHistory());
             crashRecoveryCheck.setSelected(settings.isCrashRecovery());
@@ -9112,17 +4348,7 @@ public class SettingsWindow {
             historyMaxAgeSpinner.getValueFactory().setValue(settings.getHistoryMaxAgeDays());
             historyMaxTotalSpinner.getValueFactory().setValue(settings.getHistoryMaxTotalMb());
             updateHistoryRowsEnabled();
-            mermaidCheck.setSelected(settings.isMermaidSupport());
-            mmdcPathField.setText(settings.getMmdcPath());
-            maidPathField.setText(settings.getMaidPath());
-            refreshMermaidStatus();
-            diagramCheck.setSelected(settings.isDiagramSupport());
-            dotPathField.setText(settings.getDotPath());
-            plantumlPathField.setText(settings.getPlantumlPath());
-            refreshDiagramStatus();
-            typstCheck.setSelected(settings.isTypstSupport());
-            typstPathField.setText(settings.getTypstPath());
-            refreshTypstStatus();
+            renderPages.load(settings);
             for (BuildTool bt : BuildTool.enabled()) {
                 CheckBox enable = buildToolChecks.get(bt);
                 TextField command = buildToolCommandFields.get(bt);
@@ -9146,79 +4372,11 @@ public class SettingsWindow {
             searchGitignoreCheck.setSelected(settings.isSearchRespectGitignore());
             ripgrepCommandField.setText(settings.getRipgrepCommand());
             refreshRipgrepStatus();
-            httpCheck.setSelected(settings.isHttpClientSupport());
-            httpScriptsCheck.setSelected(settings.isHttpScriptsEnabled());
-            httpInlineResultsCheck.setSelected(settings.isHttpInlineResults());
-            httpNodeField.setText(settings.getHttpNodePath());
-            refreshHttpNodeStatus();
-            syncHtmlBrowser();
-            httpScriptTimeoutSpinner.getValueFactory().setValue(settings.getHttpScriptTimeoutSeconds());
-            htmlPreviewCheck.setSelected(settings.isHtmlPreviewSupport());
-            mcpCheck.setSelected(settings.isMcpSupport());
-            refreshMcpStatus();
-            aiMasterCheck.setSelected(settings.isAiEnabled());
-            agentCheck.setSelected(settings.isAgentSupport());
-            agentClientCombo.setValue(com.editora.agent.AcpAgentRegistry.from(settings.getAgentClient())
-                    .id());
-            for (AgentClientUi a : agentClientUis()) {
-                TextField field = agentCommandFields.get(a.id());
-                if (field != null) {
-                    field.setText(a.getCommand().get());
-                }
-            }
-            if (agentCoordinator != null) {
-                agentCoordinator.invalidateDetection(); // an agent installed meanwhile is found
-            }
-            refreshAgentClientStatus();
-            agentIncludeContextCheck.setSelected(settings.isAgentIncludeContext());
-            aiCheck.setSelected(settings.isAiSupport());
-            aiInlineCheck.setSelected(settings.isAiInlineCompletion());
-            aiProviderCombo.setValue(
-                    com.editora.ai.AiProvider.from(settings.getAiProvider()).id());
-            syncAiProviderFields();
-            javafx.application.Platform.runLater(() -> refreshAiStatus(false)); // only if the AI page is shown
-            pluginCheck.setSelected(settings.isPluginSupport());
-            if (pluginRequireSigCheck != null) {
-                pluginRequireSigCheck.setSelected(settings.isPluginRequireSignature());
-            }
-            if (pluginRegistryField != null) {
-                pluginRegistryField.setText(settings.getPluginRegistryUrl());
-                updateRegistryWarn();
-            }
-            refreshPluginList(); // re-read enabled state + reflect the master gate
-            debugCheck.setSelected(settings.isDebugSupport());
-            debugProgramConsoleCheck.setSelected(settings.isDebugProgramConsole());
-            debugProgramInTerminalCheck.setSelected(settings.isDebugProgramInTerminal());
-            debugHotCodeReplaceCombo.setValue(settings.getDebugHotCodeReplace());
-            debugStepFiltersCheck.setSelected(settings.isDebugStepFilters());
-            debugShowStaticsCheck.setSelected(settings.isDebugShowStatics());
-            debugShowToStringCheck.setSelected(settings.isDebugShowToString());
-            debugSuspendAllThreadsCheck.setSelected(settings.isDebugSuspendAllThreads());
-            debugExceptionTypesField.setText(settings.getDebugExceptionTypes());
-            nodePathField.setText(settings.getNodePath());
-            for (DebugAdapterUi dbg : debugAdapterUis()) {
-                CheckBox enable = debugEnableChecks.get(dbg.id());
-                if (enable != null && dbg.getEnabled() != null) {
-                    enable.setSelected(dbg.getEnabled().getAsBoolean());
-                }
-                TextField field = debugCommandFields.get(dbg.id());
-                if (field != null) {
-                    field.setText(dbg.getCommand().get());
-                }
-            }
-            refreshDebugStatus();
-            lspCheck.setSelected(settings.isLspSupport());
-            for (LspServerUi srv : lspServerUis()) {
-                CheckBox enable = lspEnableChecks.get(srv.id());
-                if (enable != null) {
-                    enable.setSelected(srv.getEnabled().getAsBoolean());
-                }
-                TextField field = lspCommandFields.get(srv.id());
-                if (field != null) {
-                    field.setText(srv.getCommand().get());
-                }
-            }
-            refreshLspStatus();
+            webPage.load(settings);
+            aiPages.load(settings);
+            pluginsPage.load(settings);
+            debugPage.load(settings);
+            lspPage.load(settings);
             zenCheck.setSelected(config.getWorkspaceState().isZenMode());
             expertCheck.setSelected(config.getWorkspaceState().isExpertMode());
             String mode = MainController.autoSaveModeOf(settings.getAutoSave());
@@ -9243,14 +4401,14 @@ public class SettingsWindow {
         String gitCommand = config.getSettings().getGitPath();
         if (!java.util.Objects.equals(gitCommand, gitProbedFor)) {
             gitProbedFor = gitCommand;
-            probeGit();
+            gitPages.probeGit();
         }
     }
 
     private @Nullable String gitProbedFor; // the git command last probed while this window is open; null = probe again
 
     /** Re-applies the Tool Windows rows' feature gates (Projects, Git, Notes, LSP, Debugging changed). */
-    private void refreshToolWindowRows() {
+    void refreshToolWindowRows() {
         if (toolWindowSettings != null) {
             toolWindowSettings.refresh();
         }
@@ -9324,42 +4482,10 @@ public class SettingsWindow {
         }
     }
 
-    /**
-     * A periwinkle chord chip for {@code commandId} (UI Kit v1: a Settings row teaches the keyboard
-     * instead of hiding it). The binding is not known when pages are built — {@link ShortcutActions} is
-     * injected afterwards — so the chip starts empty and {@link #refreshChordChips()} fills it in. An
-     * unbound command shows nothing at all rather than an empty chip.
-     */
-    private Label chordChip(String commandId) {
-        Label chip = new Label();
-        chip.getStyleClass().add("chord-chip");
-        SettingsSearch.setShown(chip, false);
-        chordChips.put(commandId, chip);
-        return chip;
-    }
-
-    /** Fills every {@link #chordChip} from the live keymap; hides the chip for an unbound command. */
-    private void refreshChordChips() {
-        if (shortcutActions == null || chordChips.isEmpty()) {
-            return;
-        }
-        Map<String, String> byId = new HashMap<>();
-        for (Shortcut s : shortcutActions.rows()) {
-            if (s.chord() != null && !s.chord().isBlank()) {
-                byId.put(s.id(), s.chord());
-            }
-        }
-        chordChips.forEach((id, chip) -> {
-            String chord = byId.get(id);
-            chip.setText(chord == null ? "" : chord);
-            SettingsSearch.setShown(chip, chord != null);
-        });
-    }
-
     /** Injects the keybinding-editor backend (→ MainController); enables the shortcuts list. */
     public void setShortcutActions(ShortcutActions actions) {
         this.shortcutActions = actions;
-        refreshShortcuts();
+        keymapsPage.refreshShortcuts();
     }
 
     /**
@@ -9392,11 +4518,11 @@ public class SettingsWindow {
         boolean prev = loading;
         loading = true;
         try {
-            keymapCombo.setValue(config.getSettings().getKeymap());
+            keymapsPage.keymapCombo.setValue(config.getSettings().getKeymap());
         } finally {
             loading = prev;
         }
-        refreshShortcuts();
+        keymapsPage.refreshShortcuts();
     }
 
     /** Re-reads the inline-blame checkbox from settings (used after the {@code git.toggleBlame} command). */
@@ -9404,18 +4530,7 @@ public class SettingsWindow {
         if (!built) {
             return;
         }
-        boolean prev = loading;
-        loading = true;
-        try {
-            blameCheck.setSelected(config.getSettings().isGitBlameInline());
-            gitPullModeCombo.setValue(
-                    com.editora.git.GitPullMode.of(config.getSettings().getGitPullMode()));
-            gitAutoFetchCheck.setSelected(config.getSettings().isGitAutoFetch());
-            gitAutoFetchSpinner.getValueFactory().setValue(config.getSettings().getGitAutoFetchMinutes());
-            gitAutoFetchSpinner.setDisable(!config.getSettings().isGitAutoFetch());
-        } finally {
-            loading = prev;
-        }
+        gitPages.syncGitBlameCheck();
     }
 
     /** Re-reads the "enable plugins" checkbox from settings (used after the palette toggle command). */
@@ -9426,8 +4541,7 @@ public class SettingsWindow {
         boolean prev = loading;
         loading = true;
         try {
-            pluginCheck.setSelected(config.getSettings().isPluginSupport());
-            refreshPluginList();
+            pluginsPage.syncCheck();
         } finally {
             loading = prev;
         }
@@ -9509,15 +4623,7 @@ public class SettingsWindow {
         if (!built) {
             return;
         }
-        boolean prev = loading;
-        loading = true;
-        try {
-            lspCheck.setSelected(config.getSettings().isLspSupport());
-        } finally {
-            loading = prev;
-        }
-        refreshToolWindowRows(); // refresh the Problems and Debug row gates
-        refreshLspStatus();
+        lspPage.syncLspCheck();
     }
 
     /** Re-syncs the HTML Live Preview checkbox to the current setting (after a palette toggle). */
@@ -9525,61 +4631,28 @@ public class SettingsWindow {
         if (!built) {
             return;
         }
-        boolean prev = loading;
-        loading = true;
-        try {
-            htmlPreviewCheck.setSelected(config.getSettings().isHtmlPreviewSupport());
-        } finally {
-            loading = prev;
-        }
+        webPage.syncHtmlPreviewCheck();
     }
 
     public void syncMcpCheck() {
         if (!built) {
             return;
         }
-        boolean prev = loading;
-        loading = true;
-        try {
-            mcpCheck.setSelected(config.getSettings().isMcpSupport());
-        } finally {
-            loading = prev;
-        }
-        refreshMcpStatus();
+        aiPages.syncMcpCheck();
     }
 
     public void syncAgentCheck() {
         if (!built) {
             return;
         }
-        boolean prev = loading;
-        loading = true;
-        try {
-            agentCheck.setSelected(config.getSettings().isAgentSupport());
-            agentClientCombo.setValue(
-                    com.editora.agent.AcpAgentRegistry.from(config.getSettings().getAgentClient())
-                            .id());
-        } finally {
-            loading = prev;
-        }
+        aiPages.syncAgentCheck();
     }
 
     public void syncAiCheck() {
         if (!built) {
             return;
         }
-        boolean prev = loading;
-        loading = true;
-        try {
-            aiCheck.setSelected(config.getSettings().isAiSupport());
-            aiInlineCheck.setSelected(config.getSettings().isAiInlineCompletion());
-            aiProviderCombo.setValue(
-                    com.editora.ai.AiProvider.from(config.getSettings().getAiProvider())
-                            .id());
-            syncAiProviderFields();
-        } finally {
-            loading = prev;
-        }
+        aiPages.syncAiCheck();
     }
 
     public void syncLogViewerCheck() {
@@ -9725,8 +4798,8 @@ public class SettingsWindow {
             whitespaceCheck.setSelected(s.isShowWhitespace());
             notesCheck.setSelected(s.isNotesSupport());
             noteIndicatorsCheck.setSelected(s.isShowNoteIndicators());
-            spellCheckBox.setSelected(s.isSpellCheck());
-            spellLanguageCombo.setValue(s.getSpellLanguage());
+            spellPage.spellCheckBox.setSelected(s.isSpellCheck());
+            spellPage.spellLanguageCombo.setValue(s.getSpellLanguage());
             menuBarCheck.setSelected(s.isShowMenuBar());
             toolbarCheck.setSelected(s.isShowToolbar());
             statusBarCheck.setSelected(s.isShowStatusBar());
@@ -9770,7 +4843,7 @@ public class SettingsWindow {
             if (todoSettings != null) {
                 todoSettings.rebuildRows();
             }
-            rebuildMarkdownLintRules();
+            markdownPage.rebuildMarkdownLintRules();
             indentStyleCombo.setValue(s.getIndentStyle());
             multiCaretCheck.setSelected(s.isMultiCaret());
             copyLineNoSelectionCheck.setSelected(s.isCopyLineWhenNoSelection());
@@ -9794,7 +4867,7 @@ public class SettingsWindow {
                 config.getSettings().getJavaCleanups().size()));
     }
 
-    private void apply() {
+    void apply() {
         if (loading) {
             return;
         }
@@ -9836,15 +4909,13 @@ public class SettingsWindow {
             new javafx.scene.control.ToggleButton(tr("settings.search.modifiedOnly"));
     private final Label restartNote = new Label();
     private final HBox restartBox = new HBox(8);
-    private @Nullable Runnable onRestart;
+
+    @Nullable
+    Runnable onRestart;
 
     /** What "Restart now" runs (the {@code app.restart} command: quit after the usual questions, start again). */
     public void setOnRestart(Runnable onRestart) {
         this.onRestart = onRestart;
-    }
-
-    private static String spellLanguageName(String id) {
-        return SpellCoordinator.languageName(id);
     }
 
     /** Friendly label for an inlay-hint filter mode ({@code literals}/{@code all}); shared with the palette picker. */

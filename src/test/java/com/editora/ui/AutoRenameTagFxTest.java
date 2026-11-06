@@ -192,7 +192,7 @@ class AutoRenameTagFxTest {
             b.setMultiCaretEnabled(true);
             CodeArea area = FxTestSupport.field(b, "area");
             area.moveTo(2); // <a|>
-            Object multi = FxTestSupport.field(b, "multiCaret");
+            Object multi = FxTestSupport.field(FxTestSupport.field(b, "caretOps"), "multiCaret");
             org.fxmisc.richtext.multi.MultiCaretManager<?, ?, ?> manager =
                     (org.fxmisc.richtext.multi.MultiCaretManager<?, ?, ?>)
                             FxTestSupport.call(multi, "getManager", new Class<?>[] {});

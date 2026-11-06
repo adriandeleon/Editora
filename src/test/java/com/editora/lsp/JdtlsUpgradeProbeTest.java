@@ -33,10 +33,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <ol>
  *   <li><b>extendedClientCapabilities</b> — the code actions at a field with and without
- *       {@link LspManager#javaExtendedClientCapabilities}. Without them jdtls withholds the Generate / Override /
+ *       {@link ServerInitOptions#javaExtendedClientCapabilities}. Without them jdtls withholds the Generate / Override /
  *       Extract Interface actions; 1.60 went from 9 to 16.</li>
  *   <li><b>The inlay-hint off-by-one (#715)</b> — a range ending one line past the document returns an empty list,
- *       not an error; {@link LspManager#inclusiveLineRange} clamps it. Recorded either way, so a server that
+ *       not an error; {@link LspInlineHints#inclusiveLineRange} clamps it. Recorded either way, so a server that
  *       stops doing this shows up as {@code pastTheEnd > 0}.</li>
  *   <li><b>The blind {@code java/…} requests</b> — Editora sends them without any capability to gate on (they are
  *       never listed in {@code executeCommandProvider.commands}), so each must still exist: anything but
@@ -140,10 +140,11 @@ class JdtlsUpgradeProbeTest {
         record("jdtls", jdtls());
         Path root = Files.createTempDirectory("editora-jdtls-upgrade-").toRealPath();
 
-        Map<String, Object> withoutExtended = new HashMap<>(LspManager.javaInitOptions(List.of()));
+        Map<String, Object> withoutExtended = new HashMap<>(ServerInitOptions.javaInitOptions(List.of()));
         withoutExtended.remove("extendedClientCapabilities");
         TreeSet<String> bare = codeActionTitles(root.resolve("bare"), withoutExtended, null);
-        TreeSet<String> full = codeActionTitles(root.resolve("full"), LspManager.javaInitOptions(List.of()), root);
+        TreeSet<String> full =
+                codeActionTitles(root.resolve("full"), ServerInitOptions.javaInitOptions(List.of()), root);
 
         record("codeActions.withoutExtended", bare.size() + " " + bare);
         record("codeActions.withExtended", full.size() + " " + full);
@@ -210,7 +211,7 @@ class JdtlsUpgradeProbeTest {
         String[] lines = SOURCE.split("\n", -1);
         int lineCount = lines.length;
         int lastLine = lineCount - 1;
-        Range clamped = LspManager.inclusiveLineRange(0, lastLine, lineCount, lines[lastLine].length());
+        Range clamped = LspInlineHints.inclusiveLineRange(0, lastLine, lineCount, lines[lastLine].length());
         // Hints can lag the import; poll the range that is known to work before comparing.
         int inRange = 0;
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
@@ -221,7 +222,8 @@ class JdtlsUpgradeProbeTest {
         int pastTheEnd = get(s.inlayHint(uri, new Range(new Position(0, 0), new Position(lineCount, 0))))
                 .size();
         int padded = get(s.inlayHint(
-                        uri, LspManager.inclusiveLineRange(-200, lastLine + 200, lineCount, lines[lastLine].length())))
+                        uri,
+                        LspInlineHints.inclusiveLineRange(-200, lastLine + 200, lineCount, lines[lastLine].length())))
                 .size();
         record("inlay.lines", lineCount);
         record("inlay.pastTheEnd", pastTheEnd);

@@ -48,8 +48,10 @@ class MultiCaretNearEndFxTest {
         FxTestSupport.drainFx();
         FxTestSupport.runOnFx(() -> {
             buffer.getArea().moveTo(primary);
-            Object manager =
-                    FxTestSupport.call(FxTestSupport.field(buffer, "multiCaret"), "getManager", new Class<?>[] {});
+            Object manager = FxTestSupport.call(
+                    FxTestSupport.field(FxTestSupport.field(buffer, "caretOps"), "multiCaret"),
+                    "getManager",
+                    new Class<?>[] {});
             for (int offset : extras) {
                 FxTestSupport.call(manager, "addCaretAt", new Class<?>[] {int.class}, offset);
             }

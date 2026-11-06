@@ -142,7 +142,7 @@ class SettingsKeepsProjectLspCommandFxTest {
             javafx.stage.Stage stage = FxTestSupport.field(window, "stage");
             FxTestSupport.runOnFx(() -> settings.show(stage));
             FxTestSupport.drainFx();
-            java.util.Map<String, javafx.scene.control.Label> notes = FxTestSupport.field(settings, "lspProjectLabels");
+            java.util.Map<String, javafx.scene.control.Label> notes = SettingsRig.control(settings, "lspProjectLabels");
             FxTestSupport.runOnFx(() -> {
                 assertEquals(
                         tr("settings.lsp.project.command", override),

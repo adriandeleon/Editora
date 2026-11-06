@@ -97,7 +97,7 @@ class TypeScriptStartFxTest {
             assertEquals("7.0.2", why.detail());
             assertEquals(
                     TypeScriptServer.Outcome.NO_SDK,
-                    LspManager.typeScriptChoice(root, null, List.of(cli.toString()), false)
+                    NodeServerPaths.typeScriptChoice(root, null, List.of(cli.toString()), false)
                             .outcome());
         } finally {
             manager.shutdownAll();

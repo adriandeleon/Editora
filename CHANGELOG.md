@@ -28,6 +28,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Refactor:** Go to Implementation's picker-row text (`implementationLabel`, `implementationDetail`,
   `libraryPackage`) moved from `LspCoordinator` to a new `ImplementationTargets`, which brings `LspCoordinator` back
   under the 10,000-line `SourceFileSizeTest` limit it crossed in #1445.
+- **Refactor:** the five largest Java files are split into package-private classes that each own one area, with no
+  behaviour change; the old classes keep their API as forwarders.
+  - `MainController` (9,979 → 5,416 lines): each coordinator's Host/Ops adapter is a named `*Host` class, plus
+    `WindowToolbar`, `EditorTabListeners` and `SettingsWindowWiring`.
+  - `EditorBuffer` (9,975 → 5,779): `BufferPreview`, `BufferLayout`, `BufferTyping`, `BufferSnippets`,
+    `BufferContextMenu`, `BufferRunGutter`, `BufferInlays`, `BufferRuler`, `BufferHighlighter`, `SelectionBars`,
+    `BufferCarets`, `BufferTodos`, `BufferLspAssists`, `BufferNarrowing` and `BufferBanners`.
+  - `LspCoordinator` (9,971 → 5,513): `LspWorkspaceEdits`, `WorkspaceEditStaging`, `LspRefactoringUndo`,
+    `LspRefactorings`, `LspNavigation`, `LspSuperMethods` and `LspPopups`.
+  - `SettingsWindow` (9,857 → 4,941): one class per large settings area (`SettingsLspPage`, `SettingsAiPages`,
+    `SettingsSnippetPages`, `SettingsKeymapsPage`, `SettingsSyncPage` and others), each owning its controls, layout
+    and load.
+  - `LspManager` (8,414 → 4,210): the request families (`LspNavigationRequests`, `LspAssists`, `LspCodeActions`,
+    `LspFormatting`, `JdtlsCommands` and others), `ServerInitOptions`, `JdtlsWorkspaces` and the pure
+    `WorkspaceEditDrafts`; session lifecycle and locking stay in `LspManager`.
 - **Language servers and debugging are no longer marked Beta.** Their Settings pages lose the Beta pill and the
   "Experimental — may be unstable" note.
 - **The Map's preview eye closes an open card.** Clicking the eye on a file row whose preview card is open closes
@@ -60,6 +75,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The window buttons show with a dark theme.** On Linux, minimise, maximise and close were drawn dark grey on
+  the dark title bar, all but invisible, whenever the theme was dark and the desktop's was not: JavaFX styles the
+  window frame and its buttons from the desktop's light or dark setting. Every window, dialogs included, now takes
+  it from Editora's theme, as it opens and when the theme changes.
+- **The Emacs keymap no longer lists `M-g s` twice.** The key was bound to both Search Notes and Go to Symbol in
+  Workspace; only Go to Symbol ever ran, while the command catalogs showed `M-g s` for Search Notes too. Search Notes
+  is a palette command, and a test now rejects any keymap file that lists a chord twice.
+- **A trail stop's note no longer covers its card.** Since cards open centred, a wide card could leave too little
+  room for the note on either side, and the note was laid over the stop's lines (on macOS at the default size).
+  The map now pans just far enough for the note to stand beside the card.
 - **Map caller and reference cards no longer pile up.** With Focus new column on, Show Callers or References as
   Cards opened every result card on one spot, at full width, instead of beside the card asked from. Each now opens
   beside that card at the narrower result width, in a place of its own, stacking above or below the ones there.

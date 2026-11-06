@@ -10,6 +10,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.TreeSet;
 
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -28,7 +29,11 @@ import static org.junit.jupiter.api.Assertions.fail;
  */
 class KeymapsTest {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    /**
+     * Strict about duplicate keys: a chord listed twice in one file binds only its last command, so the
+     * earlier entry is dead and every catalog generated from the file shows a key that does nothing.
+     */
+    private static final ObjectMapper MAPPER = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
     /** Base + macOS-overlay file suffixes for the GUI keymaps (Emacs is single-file). */
     private static final List<String> GUI = List.of("cua", "sublime", "vscode", "intellij");
@@ -192,6 +197,13 @@ class KeymapsTest {
                         true,
                         false,
                         false)));
+    }
+
+    @Test
+    void noKeymapListsTheSameChordTwice() {
+        for (String resource : allKeymapResources()) {
+            load(resource); // MAPPER rejects a duplicate key with the chord and line in the message
+        }
     }
 
     @Test

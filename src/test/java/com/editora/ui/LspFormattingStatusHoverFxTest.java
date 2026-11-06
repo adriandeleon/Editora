@@ -114,7 +114,7 @@ class LspFormattingStatusHoverFxTest {
 
         fx.run(() -> fx.coordinator.showHover());
         fx.layout();
-        Popup popup = FxTestSupport.field(fx.coordinator, "hoverPopup");
+        Popup popup = FxTestSupport.field(fx.coordinator.popups, "hoverPopup");
         assertNotNull(popup, "the documentation is shown");
         double windowHeight = FxTestSupport.callOnFx(() -> fx.host.window().getHeight());
         double height = FxTestSupport.callOnFx(

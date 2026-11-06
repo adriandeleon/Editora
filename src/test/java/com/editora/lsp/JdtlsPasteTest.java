@@ -201,10 +201,10 @@ class JdtlsPasteTest {
     /** The files a server's own watcher reports beside the Project panel: grammars and Java build files (CL1). */
     @org.junit.jupiter.api.Test
     void buildFilesAreModelFiles() {
-        org.junit.jupiter.api.Assertions.assertTrue(LspManager.modelFile(java.nio.file.Path.of("app/pom.xml")));
+        org.junit.jupiter.api.Assertions.assertTrue(LspFileWatching.modelFile(java.nio.file.Path.of("app/pom.xml")));
         org.junit.jupiter.api.Assertions.assertTrue(
-                LspManager.modelFile(java.nio.file.Path.of("lib/build.gradle.kts")));
-        org.junit.jupiter.api.Assertions.assertTrue(LspManager.modelFile(java.nio.file.Path.of("x/note.xsd")));
-        org.junit.jupiter.api.Assertions.assertFalse(LspManager.modelFile(java.nio.file.Path.of("src/A.java")));
+                LspFileWatching.modelFile(java.nio.file.Path.of("lib/build.gradle.kts")));
+        org.junit.jupiter.api.Assertions.assertTrue(LspFileWatching.modelFile(java.nio.file.Path.of("x/note.xsd")));
+        org.junit.jupiter.api.Assertions.assertFalse(LspFileWatching.modelFile(java.nio.file.Path.of("src/A.java")));
     }
 }

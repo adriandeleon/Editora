@@ -5,11 +5,21 @@ in the per-window owners below. Each owner receives a package-private `Host` ada
 current window state when called; constructors must not read callbacks before window initialization.
 Do not pass the controller itself or add inheritance to share its fields.
 
-Most adapters are anonymous classes inside `MainController`. The largest, the command table's, is
-`WindowCommandHost`: a file of its own that keeps the controller in a field, moved out only for
-`MainController`'s size. The owner (`WindowCommandRegistrar`) still sees just its `Host` interface. Moving
-another adapter the same way means its members of `MainController` become package-private, and
-`WindowAdapterSweepFxTest` picks it up as long as its name ends in `Host` and it holds the controller.
+The larger adapters are files of their own beside `MainController`, moved out only for its size: a
+package-private `final class` named after what it adapts and ending in `Host` (`WindowCommandHost` for the
+command table, `LspOpsHost` for `LspCoordinator.Ops`, `TemplateHost` for `TemplateCoordinator.Host`,
+`WindowServicesHost` for the shared `CoordinatorHost`, …). Each keeps the controller in a field, holds no
+state of its own, resolves everything when called, and is constructed exactly where the anonymous class
+was (mostly a field initializer of `MainController`). The owner still sees just its `Host`/`Ops`
+interface. The members of `MainController` an adapter reaches are package-private for that reason, and
+`WindowAdapterSweepFxTest` picks the adapter up as long as its name ends in `Host` and it holds the
+controller. The small adapters (a few methods) remain anonymous classes inside `MainController`.
+
+Some window-composition pieces live beside the controller for the same reason: `WindowToolbar` (button
+setup, the fixed tail, edit/split/paste enablement; the `@FXML` widgets stay injected into the
+controller), `EditorTabListeners` (the tab-selection fan-out, closed-tab tear-down and the MRU order) and
+`SettingsWindowWiring` (the Settings pages' callbacks). Each runs at the point of `init` where its code
+used to be inline.
 
 | Owner | Responsibility |
 | --- | --- |
@@ -60,6 +70,19 @@ stay with the workflows that own them; extraction must not change their scheduli
 AI completion and asynchronous completion state. `EditorBuffer` retains the public API, document
 snapshots, mark ring and indentation decisions. Its host stays in the editor package and has no UI
 controller dependency.
+
+`EditorBuffer`'s other feature parts are package-private classes beside it. Unlike `BufferCompletion` they
+take the buffer itself rather than a host interface — each reads many of its views, flags and its document
+snapshot — and they are created in its field initializers, before anything can call them: `BufferPreview` (the preview pane, its hosts and the rendering
+of every preview format), `BufferLayout` (the view-host composition and the floating corner controls),
+`BufferTyping` (the typing key filters and macro replay), `BufferSnippets` (snippet keys and expansion,
+abbrevs), `BufferContextMenu`, `BufferRunGutter` (the Run glyphs and their scan), `BufferInlays`,
+`BufferRuler`, `BufferHighlighter`, `SelectionBars` (format bar, AI actions bar), `BufferCarets` (multiple
+cursors), `BufferTodos`, `BufferLspAssists`, `BufferNarrowing` and `BufferBanners`. `EditorBuffer` keeps the
+public API as forwarders, the document and its snapshots, dirty tracking, the overlays and their lazy
+attachment, and the constructor that installs every listener and key filter in its fixed order. The parts
+are created right after the buffer's primary view, so a part's constructor may read `area` but nothing the
+buffer initializes later.
 
 Existing JavaFX tests exercise these workflows through real windows and command dispatch. Tests
 that inspect private state must target the owning coordinator. `SourceFileSizeTest` enforces a

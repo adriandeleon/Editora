@@ -88,6 +88,34 @@ class SettingsModifiedFxTest {
         return false;
     }
 
+    /** A page class left out of {@link SettingsWindow#controlOwners} would lose its rows' modified marks unseen. */
+    @Test
+    void everyPageClassIsReadForItsControls() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            List<Object> owners = window.controlOwners();
+            for (Field f : SettingsWindow.class.getDeclaredFields()) {
+                if (!Modifier.isStatic(f.getModifiers()) && isPageClass(f.getType())) {
+                    f.setAccessible(true);
+                    Object page = f.get(window);
+                    assertTrue(
+                            owners.stream().anyMatch(o -> o == page),
+                            f.getName() + " is not in SettingsWindow.controlOwners()");
+                }
+            }
+        }
+    }
+
+    /** A class built by the window for some of its pages: it keeps the window in a field. */
+    private static boolean isPageClass(Class<?> type) {
+        for (Field f : type.getDeclaredFields()) {
+            if (f.getType() == SettingsWindow.class) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Test
     void everyControlHasTheKeyItWritesInTheTable() throws Exception {
         try (var fx = FxWindowFixture.create()) {
@@ -96,20 +124,25 @@ class SettingsModifiedFxTest {
             Map<String, String> table = SettingsModified.table();
             ObjectMapper json = new ObjectMapper();
             Map<String, Node> controls = new LinkedHashMap<>();
-            for (Field f : SettingsWindow.class.getDeclaredFields()) {
-                if (Modifier.isStatic(f.getModifiers()) || NOT_SETTINGS.contains(f.getName())) {
-                    continue;
-                }
-                f.setAccessible(true);
-                Object v = f.get(window);
-                if (v instanceof CheckBox || v instanceof Spinner || v instanceof ComboBox || v instanceof TextField) {
-                    controls.put(f.getName(), (Node) v);
-                } else if (v instanceof Map<?, ?> m) {
-                    m.forEach((k, c) -> {
-                        if (c instanceof CheckBox || c instanceof TextField || c instanceof ComboBox) {
-                            controls.put(f.getName() + "[" + k + "]", (Node) c);
-                        }
-                    });
+            for (Object owner : window.controlOwners()) { // the window and its page classes
+                for (Field f : owner.getClass().getDeclaredFields()) {
+                    if (Modifier.isStatic(f.getModifiers()) || NOT_SETTINGS.contains(f.getName())) {
+                        continue;
+                    }
+                    f.setAccessible(true);
+                    Object v = f.get(owner);
+                    if (v instanceof CheckBox
+                            || v instanceof Spinner
+                            || v instanceof ComboBox
+                            || v instanceof TextField) {
+                        controls.put(f.getName(), (Node) v);
+                    } else if (v instanceof Map<?, ?> m) {
+                        m.forEach((k, c) -> {
+                            if (c instanceof CheckBox || c instanceof TextField || c instanceof ComboBox) {
+                                controls.put(f.getName() + "[" + k + "]", (Node) c);
+                            }
+                        });
+                    }
                 }
             }
             List<String> problems = new ArrayList<>();
@@ -205,7 +238,7 @@ class SettingsModifiedFxTest {
         try (var fx = FxWindowFixture.create()) {
             SettingsWindow window = open(fx);
             CheckBox minimap = FxTestSupport.field(window, "minimapCheck");
-            CheckBox git = FxTestSupport.field(window, "gitCheck");
+            CheckBox git = SettingsRig.control(window, "gitCheck");
             ToggleButton only = FxTestSupport.field(window, "modifiedOnly");
             TextField search = FxTestSupport.field(window, "searchField");
             FxTestSupport.runOnFx(() -> {

@@ -38,7 +38,7 @@ class JavaProjectEditingProbeTest {
         String join = System.getProperty("lsp.java.probe.join");
         if (join != null) argv.add("--jvm-arg=-Djava.lsp.joinOnCompletion=" + join);
         argv.addAll(List.of("-data", temporary.resolve("workspace").toString()));
-        Map<String, Object> options = new HashMap<>(LspManager.javaInitOptions(List.of()));
+        Map<String, Object> options = new HashMap<>(ServerInitOptions.javaInitOptions(List.of()));
         if (kind.equals("gradle")) {
             String home = System.getProperty("lsp.java.probe.gradleHome");
             assumeTrue(home != null, "set -Dlsp.java.probe.gradleHome to an installed Gradle distribution");

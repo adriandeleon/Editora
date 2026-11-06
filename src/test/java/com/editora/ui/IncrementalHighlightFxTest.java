@@ -116,8 +116,11 @@ class IncrementalHighlightFxTest {
     /** Waits until a pass covering every edit so far has been applied (nothing is owed any more). */
     private static void awaitHighlighted(EditorBuffer b) throws Exception {
         for (int i = 0; i < 1200; i++) {
-            boolean done = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "highlightLines") != null
-                    && "clean".equals(String.valueOf(FxTestSupport.<Object>field(b, "highlightDirty"))));
+            boolean done = FxTestSupport.callOnFx(() ->
+                    FxTestSupport.field(FxTestSupport.field(b, "highlighter"), "highlightLines") != null
+                            && "clean"
+                                    .equals(String.valueOf(FxTestSupport.<Object>field(
+                                            FxTestSupport.field(b, "highlighter"), "highlightDirty"))));
             if (done) {
                 FxTestSupport.drainFx(); // the coalesced brace re-match the apply scheduled
                 return;
@@ -125,7 +128,8 @@ class IncrementalHighlightFxTest {
             Thread.sleep(25);
         }
         throw new AssertionError("no highlight pass applied within 30s: highlightDirty="
-                + FxTestSupport.callOnFx(() -> String.valueOf(FxTestSupport.<Object>field(b, "highlightDirty"))));
+                + FxTestSupport.callOnFx(() -> String.valueOf(
+                        FxTestSupport.<Object>field(FxTestSupport.field(b, "highlighter"), "highlightDirty"))));
     }
 
     private static int lineStart(EditorBuffer b, int line) throws Exception {
@@ -238,7 +242,8 @@ class IncrementalHighlightFxTest {
             EditorBuffer b = new EditorBuffer();
             b.getNode();
             b.setContent("(abc)\nplain text\n");
-            FxTestSupport.invoke(b, "applyHighlighting"); // the pause after the load
+            FxTestSupport.invoke(
+                    FxTestSupport.field(b, "highlighter"), "applyHighlighting"); // the pause after the load
             b.getArea().insertText(b.getArea().getLength(), "q"); // an edit, so a typing pause is due
             b.getArea().moveTo(1); // just inside the "(" — its pair is the ")" at offset 4
             return b;
@@ -250,7 +255,8 @@ class IncrementalHighlightFxTest {
         Restyles restyles = watch(buffer);
 
         // What the 150 ms typing-pause milestone runs.
-        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(buffer, "applyHighlighting"));
+        FxTestSupport.runOnFx(
+                () -> FxTestSupport.invoke(FxTestSupport.field(buffer, "highlighter"), "applyHighlighting"));
         FxTestSupport.drainFx();
         FxTestSupport.drainFx();
 
@@ -283,7 +289,8 @@ class IncrementalHighlightFxTest {
             EditorBuffer b = new EditorBuffer();
             b.getNode();
             b.setContent("(abc\nmore\n)\ntail\n");
-            FxTestSupport.invoke(b, "applyHighlighting"); // the pause after the load
+            FxTestSupport.invoke(
+                    FxTestSupport.field(b, "highlighter"), "applyHighlighting"); // the pause after the load
             b.getArea().moveTo(1);
             return b;
         });
@@ -295,7 +302,8 @@ class IncrementalHighlightFxTest {
         // to the right, and the caret is no longer next to a brace.
         FxTestSupport.runOnFx(() -> buffer.getArea().insertText(1, "x"));
         FxTestSupport.drainFx();
-        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(buffer, "applyHighlighting")); // the typing pause
+        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(
+                FxTestSupport.field(buffer, "highlighter"), "applyHighlighting")); // the typing pause
         FxTestSupport.drainFx();
         FxTestSupport.drainFx();
         assertEquals(List.of(), braceMatched(buffer), "no stale match style is left anywhere");
@@ -336,7 +344,8 @@ class IncrementalHighlightFxTest {
         assertEquals(0, styled, "the java styles are gone");
 
         Restyles restyles = watch(buffer);
-        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(buffer, "applyHighlighting"));
+        FxTestSupport.runOnFx(
+                () -> FxTestSupport.invoke(FxTestSupport.field(buffer, "highlighter"), "applyHighlighting"));
         FxTestSupport.drainFx();
         assertEquals(0, restyles.count(), "and are not cleared again at the next typing pause");
     }
@@ -404,13 +413,15 @@ class IncrementalHighlightFxTest {
         assertEquals(List.of("sem-method"), List.copyOf(styleAt(buffer, moved + 8)));
 
         // The server's reply for the new text: the same token, one line lower. Nothing to restyle.
-        long passes = FxTestSupport.callOnFx(() -> FxTestSupport.<Long>field(buffer, "highlightGen"));
+        long passes = FxTestSupport.callOnFx(
+                () -> FxTestSupport.<Long>field(FxTestSupport.field(buffer, "highlighter"), "highlightGen"));
         long gen2 = FxTestSupport.callOnFx(buffer::semanticGen);
         FxTestSupport.runOnFx(
                 () -> buffer.setSemanticTokens(List.of(new SemanticToken(101, 8, 9, "sem-method")), gen2));
         assertEquals(
                 passes,
-                FxTestSupport.callOnFx(() -> FxTestSupport.<Long>field(buffer, "highlightGen")),
+                FxTestSupport.callOnFx(
+                        () -> FxTestSupport.<Long>field(FxTestSupport.field(buffer, "highlighter"), "highlightGen")),
                 "no pass was dispatched");
         assertEquals(List.of("sem-method"), List.copyOf(styleAt(buffer, moved + 8)));
 

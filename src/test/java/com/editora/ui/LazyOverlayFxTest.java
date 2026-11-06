@@ -43,7 +43,7 @@ class LazyOverlayFxTest {
             "lintOverlay",
             "lspOverlay",
             "aceJump",
-            "snippetOverlay",
+            "snippetKeys.snippetOverlay",
             "whitespace",
             "indentGuides",
             "mdLintOverlay",
@@ -52,7 +52,7 @@ class LazyOverlayFxTest {
             "diagnosticStripe",
             "mdLintStripe",
             "todoStripe",
-            "contextMenu");
+            "editorMenu.contextMenu");
 
     @BeforeAll
     void setUp() throws Exception {
@@ -65,6 +65,16 @@ class LazyOverlayFxTest {
 
     private static int layer(Node node) {
         return (int) node.getProperties().get("editora.overlayLayer");
+    }
+
+    /** A field of the buffer, or of one of its parts ({@code "owner.field"}). */
+    private static Object lazyField(EditorBuffer b, String path) {
+        Object target = b;
+        String[] parts = path.split("\\.");
+        for (int i = 0; i < parts.length - 1; i++) {
+            target = FxTestSupport.field(target, parts[i]);
+        }
+        return FxTestSupport.field(target, parts[parts.length - 1]);
     }
 
     private static AnchorPane root(EditorBuffer b) {
@@ -92,7 +102,7 @@ class LazyOverlayFxTest {
     void offFeatureBufferBuildsNoLazyOverlays() throws Exception {
         EditorBuffer b = newBuffer();
         for (String f : LAZY) {
-            assertNull(FxTestSupport.field(b, f), f + " must not be built for an off-feature buffer");
+            assertNull(lazyField(b, f), f + " must not be built for an off-feature buffer");
         }
         assertNull(
                 FxTestSupport.field(b.getFoldManager(), "linePreview"),
@@ -112,7 +122,8 @@ class LazyOverlayFxTest {
         EditorBuffer b = newBuffer();
         FxTestSupport.runOnFx(() -> {
             b.setSearchMatches(SearchMatches.of(0, 0), -1);
-            FxTestSupport.invokeWith(b, "applyTodoMarks", List.class, List.of(mark(0, 4)));
+            FxTestSupport.invokeWith(
+                    FxTestSupport.field(b, "todoMarker"), "applyTodoMarks", List.class, List.of(mark(0, 4)));
         });
 
         Node search = FxTestSupport.field(b, "searchOverlay");
@@ -173,7 +184,11 @@ class LazyOverlayFxTest {
             b.setLspDiagnostics(List.of());
             b.setTodoHighlightEnabled(false);
             b.setTodoHighlightEnabled(true);
-            FxTestSupport.invokeWith(b, "applyTodoMarks", List.class, List.of()); // an empty scan result
+            FxTestSupport.invokeWith(
+                    FxTestSupport.field(b, "todoMarker"),
+                    "applyTodoMarks",
+                    List.class,
+                    List.of()); // an empty scan result
             b.setIndentGuidesVisible(false);
             b.setTabSize(2); // refreshes the indent guides, if any
             b.setLargeFile(true); // suppresses whitespace markers — on an overlay that does not exist
@@ -183,7 +198,7 @@ class LazyOverlayFxTest {
             b.setMinimapVisible(true);
         });
         for (String f : LAZY) {
-            assertNull(FxTestSupport.field(b, f), f + " must stay unbuilt when its feature is switched off");
+            assertNull(lazyField(b, f), f + " must stay unbuilt when its feature is switched off");
         }
     }
 
@@ -259,12 +274,13 @@ class LazyOverlayFxTest {
         FxTestSupport.runOnFx(() -> {
             b.setContent("plain\nTODO: later\n");
             b.setTodoHighlightEnabled(true);
-            FxTestSupport.invokeWith(b, "applyTodoMarks", List.class, List.of());
+            FxTestSupport.invokeWith(FxTestSupport.field(b, "todoMarker"), "applyTodoMarks", List.class, List.of());
         });
         assertNull(FxTestSupport.field(b, "todoOverlay"), "an empty scan builds nothing");
         assertNull(FxTestSupport.field(b, "todoStripe"));
 
-        FxTestSupport.runOnFx(() -> FxTestSupport.invokeWith(b, "applyTodoMarks", List.class, List.of(mark(6, 10))));
+        FxTestSupport.runOnFx(() -> FxTestSupport.invokeWith(
+                FxTestSupport.field(b, "todoMarker"), "applyTodoMarks", List.class, List.of(mark(6, 10))));
         Node overlay = FxTestSupport.field(b, "todoOverlay");
         Node stripe = FxTestSupport.field(b, "todoStripe");
         assertNotNull(overlay, "the first mark attaches the overlay");
@@ -289,7 +305,8 @@ class LazyOverlayFxTest {
             new javafx.scene.Scene(new StackPane(b.getNode()), 400, 300);
             b.setWhitespaceVisible(true);
             b.setSearchMatches(SearchMatches.of(0, 5), 0);
-            FxTestSupport.invokeWith(b, "applyTodoMarks", List.class, List.of(mark(0, 5)));
+            FxTestSupport.invokeWith(
+                    FxTestSupport.field(b, "todoMarker"), "applyTodoMarks", List.class, List.of(mark(0, 5)));
             b.setSplit(EditorBuffer.Split.SIDE_BY_SIDE);
             // ...and one attached after the split must reach the second pane too.
             b.setInlineValues(Map.of("alpha", "1"), 0);
@@ -324,7 +341,8 @@ class LazyOverlayFxTest {
                     .handle(new javafx.scene.input.ContextMenuEvent(
                             javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 5, 5, false, null));
         });
-        javafx.scene.control.ContextMenu menu = FxTestSupport.field(b, "contextMenu");
+        javafx.scene.control.ContextMenu menu =
+                FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "contextMenu");
         assertNotNull(menu, "the first request builds the menu");
         assertTrue(menu.getStyleClass().contains("editor-context-menu"));
         assertFalse(menu.getItems().isEmpty(), "and fills it");
@@ -335,7 +353,10 @@ class LazyOverlayFxTest {
                     .handle(new javafx.scene.input.ContextMenuEvent(
                             javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 5, 5, false, null));
         });
-        assertSame(menu, FxTestSupport.field(b, "contextMenu"), "one menu per buffer, as before");
+        assertSame(
+                menu,
+                FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "contextMenu"),
+                "one menu per buffer, as before");
         FxTestSupport.runOnFx(() -> {
             menu.hide();
             stage.hide();

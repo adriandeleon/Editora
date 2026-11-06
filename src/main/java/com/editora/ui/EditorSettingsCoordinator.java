@@ -620,7 +620,7 @@ final class EditorSettingsCoordinator {
     void applyAppTheme(String name) {
         Settings s = host.config().getSettings();
         s.setTheme(name);
-        javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(name));
+        Themes.applyAppTheme(name);
         s.setEditorTheme(EditorThemes.defaultFor(name)); // chrome theme drives the editor theme
         s.setEditorThemeUserSet(false);
         host.requestSave();
