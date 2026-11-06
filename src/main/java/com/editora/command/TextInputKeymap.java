@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.input.KeyEvent;
 
+import com.editora.editops.EmacsEdits;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -146,6 +147,7 @@ public final class TextInputKeymap {
             c.selectEndOfNextWord();
             c.replaceSelection("");
         });
+        m.put("edit.backwardKillWord", TextInputKeymap::backwardKillWord);
         m.put("edit.cut", TextInputControl::cut);
         m.put("edit.copy", TextInputControl::copy);
         m.put("edit.paste", TextInputControl::paste);
@@ -179,6 +181,18 @@ public final class TextInputKeymap {
             c.replaceSelection("");
         } else if (c.getCaretPosition() < c.getLength()) {
             c.deleteText(c.getCaretPosition(), c.getCaretPosition() + 1);
+        }
+    }
+
+    /**
+     * {@code M-DEL}: delete the word before the caret, with the editor's word rule ({@link
+     * EmacsEdits#backwardKillWord}) — so in a path field {@code /home/adl/src/} loses {@code src/}, not the
+     * whole path.
+     */
+    private static void backwardKillWord(TextInputControl c) {
+        EmacsEdits.Edit edit = EmacsEdits.backwardKillWord(c.getText(), c.getCaretPosition());
+        if (edit != null) {
+            c.deleteText(edit.from(), edit.to());
         }
     }
 

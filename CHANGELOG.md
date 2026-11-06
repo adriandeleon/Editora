@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Language servers and debugging are no longer marked Beta.** Their Settings pages lose the Beta pill and the
+  "Experimental — may be unstable" note.
+- **The Map's preview eye closes an open card.** Clicking the eye on a file row whose preview card is open closes
+  the card, as Shift+Enter does; its hint says so.
+- **A file card's Structure column is narrower.** It fits only the rows it shows (refitting as a row opens or
+  closes), between 200 and 360 px, instead of every member of closed rows up to 560 px.
+- **Map cards open the way columns do.** With Focus new column on (the default), a new code or note card opens
+  where its row's next column would — past the row's column the way the map flows, hanging from the row, past any
+  column or card already there — and the map pans to centre it, keeping its row in sight. With the option off, cards
+  keep taking free room in view without panning.
 - **Language servers are on by default.** Settings → LSP was off, so opening a Java, TypeScript, Go or Rust file
   in a new installation never said code intelligence existed. Each server still waits until it is installed (the
   install banner offers it).
@@ -28,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     fetches its `http`/`https` images the moment it is previewed; a bar offers to load them for that document.
     Settings → Markdown → Remote images → Always restores the old behaviour. A settings file from before 0.22
     that had remote images on keeps loading them.
+
+### Fixed
+
+- **Map Print and Export PDF include the open cards.** Preview, note and Overview cards, what is stuck on them
+  (sticky notes, Structure columns, link chips) and their connectors are drawn on the pages where they stand on the
+  map, as on screen; the pages grow to take in a card standing beyond the columns. Export ▸ SVG still leaves the
+  cards out.
 
 ## [0.27.0] - 2026-11-05
 

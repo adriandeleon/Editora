@@ -1151,9 +1151,27 @@ class ProjectMapViewFxTest {
                 assertEquals(Set.of(second), previews(mapView).keySet());
                 assertTrue(secondPreview.isVisible(), "closing one card must leave its sibling open");
 
+                double eyeX = previewIconX(surface, second);
+                FxTestSupport.call(
+                        surface,
+                        "updateAffordance",
+                        new Class<?>[] {double.class, double.class},
+                        eyeX,
+                        center(boxFor(surface, second), "y", "height"));
+                String hint = (String) FxTestSupport.call(
+                        surface,
+                        "tooltipText",
+                        new Class<?>[] {ProjectMapModel.Entry.class},
+                        new ProjectMapModel.Entry(second, root, 1, false));
+                assertTrue(
+                        hint.contains(tr("project.map.node.closePreview", "Second.java")),
+                        "the eye of a file whose card is open says it closes it: " + hint);
                 clickPreviewIcon(surface, second);
-                assertEquals(1, previews(mapView).size());
-                assertSame(secondPreview, previewFor(mapView, second), "reopening a file must reuse its card");
+                assertTrue(previews(mapView).isEmpty(), "the eye of a file whose card is open closes the card");
+                assertFalse(secondPreview.isVisible());
+
+                clickPreviewIcon(surface, second);
+                assertEquals(Set.of(second), previews(mapView).keySet(), "and opens it again on the next click");
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
@@ -2240,8 +2258,11 @@ class ProjectMapViewFxTest {
     }
 
     private static void clickPreviewIcon(Region surface, Path path) {
+        click(surface, previewIconX(surface, path), center(boxFor(surface, path), "y", "height"));
+    }
+
+    private static double previewIconX(Region surface, Path path) {
         Object box = boxFor(surface, path);
-        double x = origin(box, "x") + (double) FxTestSupport.call(box, "width", new Class<?>[0]) - 8;
-        click(surface, x, center(box, "y", "height"));
+        return origin(box, "x") + (double) FxTestSupport.call(box, "width", new Class<?>[0]) - 8;
     }
 }

@@ -122,10 +122,10 @@ right-to-left to left-to-right once (`ConfigMigrations.resetRightToLeftMapFlow`)
 | Row menu → **Close Other Branches** | Close every column, folder or Structure, that is not on the way to that row; a folder row keeps its own column. Offered while such a column is open |
 | Options (⋯) menu → **Collapse All** | Close every column but the first and the ones on the way to the selection (`ProjectMapView.canvasCloseOthers`, `MapLoader.canvasCloseOthers`); cards opened from the closed columns close with them. "Nothing to collapse" when only those are open |
 | Options (⋯) menu → **Open cards** | List the open cards, the most recently used first; one brings its card into the middle of the map area with the keyboard in it |
-| Options (⋯) menu → **Print…** | Open the standard print preview for the complete map layout |
-| Options (⋯) menu → **PDF…** | Export the complete map layout using the configured PDF page size; its names are searchable text |
+| Options (⋯) menu → **Print…** | Open the standard print preview for the complete map layout, the open cards where they stand |
+| Options (⋯) menu → **PDF…** | Export the complete map layout and the open cards using the configured PDF page size; the map's names are searchable text |
 | Options (⋯) menu → **Export ▸ PNG…** | Save the map as it is on screen at 2× (cards and connectors, not the zoom bar, overview or notices), at most 8,192 px a side |
-| Options (⋯) menu → **Export ▸ SVG…** | Save the whole map as Print/PDF lays it out, every row name and column title as SVG text |
+| Options (⋯) menu → **Export ▸ SVG…** | Save the whole map as Print/PDF lays it out (without the cards), every row name and column title as SVG text |
 | Editor tab menu / Project tree menu → **Reveal in Map** | Open the Map window (or bring it forward) and select that file or folder, beside Reveal in File Manager |
 | Click **?** | Show what the Map is for and its pointer, cards and notes, keyboard, search ("where am I" included: Reveal Active File, Always select opened file, Project overview) and filter models in a popover (key names in the user's language, modifiers as the platform writes them) |
 | Click or drag in the overview | Centre the view on that point of the map, clamped to the map's bounds; a press on a card's mark brings that card into view |
@@ -180,8 +180,15 @@ open there). A declaration card opened from a file card's Structure column opens
 Structure right): past the column, which always stands on the card's right, level with its row; with no room there the
 file card, with its column, first steps left until the card's minimum fits (`MapCards.cardStructureRoom`), as far as
 the panel's left edge allows, and of the spots left the best one right of the file card wins over any other. Linked result cards go around the card they were found from and
-weigh no flow. **Placement never pans the map**: with no room past the row's column the way the map flows, the
-card takes the side of the column — beside it across the flow (above or below it left to right or right to left, left
+weigh no flow. **With "Focus new column" on (the default) a new card opens as a new column does**
+(`MapCards.openingPlacement`, `cardColumnSpot`, `cardCentringPan`): a code or note card whose row is on the map goes
+past the row's column the way the map flows, `CARD_COLUMN_GAP` (40) from it, centred on the row across the flow or,
+when long, hanging from it (at most `CARD_COLUMN_LEAD`, 150, before it), and on past any column or card already
+standing there; the map then pans so the card stands in the middle of the map area (its top-left corner, when it is
+larger), shifted only as far as it takes to keep its row in sight when both fit. Result cards, declaration cards from
+a file card's Structure column, rows off the map, Move to Free Space and cards placed again keep the free-room
+placement above. **With the option off, placement never pans the map**: with no room past the row's column the way
+the map flows, the card takes the side of the column — beside it across the flow (above or below it left to right or right to left, left
 or right of it down or up the panel), cut to the room there down to its minimum, and slid along the row as far as it
 stays level with it to clear the zoom bar, the overview and other cards. A card left of its column widens leftwards
 when its text arrives, in every flow, rather than back over the column. A card is never smaller
@@ -492,7 +499,7 @@ A file card whose file can be outlined has a **Structure** button in its title b
 **Structure column** beside the card (`ProjectMapCardStructure`): the same outline as the Map's Structure column,
 as an indented list in the same violet tint, with a lone top-level type opened. Each label is coloured as the
 card colours its declaration line (`StructurePanel.labelRuns` over the card's own `CodeArea`, again whenever the
-card's text or colours change), and the column is as wide as its longest row needs, between 240 and 560 px
+card's text or colours change), and the column is as wide as its longest row needs, between 200 and 360 px, counting only the rows it shows (it refits as a row opens or closes)
 (`ProjectMapCardStructure.fit`, measured in the rows' font). It works wherever the file's row
 is — filtered, scrolled off or in a closed column — because it belongs to the card: it moves, resizes, zooms,
 hides, rises and closes with it, and does not count against the open-card limit. It always goes on the card's
@@ -932,6 +939,16 @@ invisible text (text render mode 3, as an OCR'd scan carries its text: `ImagePdf
 `TextBox`es, Inter embedded as a subset, the system fallback fonts for other scripts, each name stretched to the
 width the picture gives it). A viewer's Find, selection and copy reach the names; the page looks the same. Print
 does not need the text and leaves it out.
+
+The open cards are on paper as on screen: every visible preview, note and Overview card and every part of what is
+stuck on one (sticky notes, Structure columns, link chips, trail notes — `MapCards.outputNodes`, the map area's
+children back to front) widens `outputBounds` and is a page-cut obstacle, so a card beyond the columns grows the
+page and a cut avoids crossing one. Before the pages are painted each is snapshotted once in its parent's coordinates
+(its own map-zoom scale and shadow included, in the live theme, at most 4,096 px a side) at the output's image
+scale, and the rows are frozen in the output layout at the live zoom; each page tile then draws, through one affine
+transform from live map-area pixels to tile pixels, the connectors (`MapCards.drawOutputConnectors`, the live
+drawing code with the frozen rows) and the card pictures over the map. Card text is pixels only; the SVG export
+leaves the cards out.
 
 **Export ▸ PNG…** snapshots the map area (`canvasViewImage`) at 2× with the zoom bar, overview, loading and
 no-match notices hidden for the shot. A node's snapshot is taken in its parent's coordinates, so the viewport starts

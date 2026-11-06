@@ -80,6 +80,22 @@ final class MapCards {
             return null;
         }
 
+        /**
+         * Every column as drawn, on screen or off, {@code {x, y, w, h}}: what a new card opening the way a column does
+         * steps past ({@link #focusNewCards}).
+         */
+        default List<double[]> allColumns() {
+            return columns();
+        }
+
+        /**
+         * Whether a new card opens as a new column does ("Focus new column"): past its row's column the way the map
+         * flows, the map panned to centre it. Off, it takes the free room in view and the map stays put.
+         */
+        default boolean focusNewCards() {
+            return false;
+        }
+
         /** The map's zoom the cards are drawn at. */
         double zoom();
 
@@ -1127,7 +1143,7 @@ final class MapCards {
                 host.content(file),
                 placed != null
                         ? (width, height, parentWidth, parentHeight) -> placed
-                        : (width, height, parentWidth, parentHeight) -> previewPlacement(
+                        : (width, height, parentWidth, parentHeight) -> openingPlacement(
                                 preview,
                                 key,
                                 width,
@@ -1199,7 +1215,7 @@ final class MapCards {
                 host.content(shown),
                 placed != null
                         ? (width, height, parentWidth, parentHeight) -> placed
-                        : (width, height, parentWidth, parentHeight) -> previewPlacement(
+                        : (width, height, parentWidth, parentHeight) -> openingPlacement(
                                 selectedPreview,
                                 shown,
                                 width,
@@ -1254,7 +1270,7 @@ final class MapCards {
         notePreviews.put(selected, preview);
         cardTouches.put(preview, ++cardTouchSequence);
         canvasHost.getChildren().add(preview);
-        ProjectMapPreview.Placement placement = previewPlacement(
+        ProjectMapPreview.Placement placement = openingPlacement(
                 preview,
                 selected,
                 ProjectMapNotePreview.DEFAULT_WIDTH,
@@ -2253,6 +2269,166 @@ final class MapCards {
     }
 
     /**
+     * Where a new code or note card opens. With {@link Host#focusNewCards} on and the card's row on the map, it opens as
+     * a new column would ({@link #cardColumnSpot}): past the row's column the way the map flows, hanging from the row,
+     * past the columns and cards already standing there; the map is then panned so the card stands in the middle of the
+     * map area, with its row when both fit. Otherwise — the option off, the row off the map, a result card or one from a
+     * file card's Structure column — {@link #previewPlacement}, which never pans.
+     */
+    ProjectMapPreview.Placement openingPlacement(
+            Region preview,
+            Path path,
+            double width,
+            double height,
+            double minimumWidth,
+            double minimumHeight,
+            double parentWidth,
+            double parentHeight) {
+        double scale = cardScale(preview);
+        double[] spot = host.focusNewCards()
+                ? columnRulePlacement(
+                        preview,
+                        path,
+                        width * scale,
+                        height * scale,
+                        minimumWidth * scale,
+                        minimumHeight * scale,
+                        parentWidth,
+                        parentHeight)
+                : null;
+        if (spot == null) {
+            return previewPlacement(
+                    preview, path, width, height, minimumWidth, minimumHeight, parentWidth, parentHeight);
+        }
+        return new ProjectMapPreview.Placement(spot[0], spot[1], spot[2] / scale, spot[3] / scale, spot[4] > 0);
+    }
+
+    /**
+     * {@link #openingPlacement} by the column rule, in panel pixels: {@code {x, y, w, h, growLeft}} after the pan it
+     * made, or null when the rule does not apply.
+     */
+    private double @Nullable [] columnRulePlacement(
+            Region preview,
+            Path path,
+            double width,
+            double height,
+            double minimumWidth,
+            double minimumHeight,
+            double parentWidth,
+            double parentHeight) {
+        if (parentWidth <= 0
+                || parentHeight <= 0
+                || links.besideSource(path) != null
+                || cardColumnCards.contains(preview)) {
+            return null;
+        }
+        Site site = host.site(path);
+        double[] row = site.row();
+        if (row == null) {
+            return null;
+        }
+        double margin = ProjectMapPreview.EDGE_MARGIN;
+        double w = cardBounded(width, Math.min(minimumWidth, width), parentWidth - margin * 2);
+        double h = cardBounded(height, minimumHeight, parentHeight - margin * 2);
+        List<double[]> taken = new ArrayList<>(host.allColumns());
+        for (CardAttachment stuck : allAttachments()) {
+            double[] drawn = stuck.card() == preview ? null : stuck.bounds();
+            if (drawn != null) {
+                taken.add(drawn);
+            }
+        }
+        for (OpenCard open : openCards()) {
+            Region other = open.node();
+            if (other != preview && other.isVisible() && other.getWidth() > 0) {
+                taken.add(drawnBounds(other));
+            }
+        }
+        boolean horizontal = host.horizontalFlow();
+        boolean reverse = host.reverseFlow();
+        double[] spot = cardColumnSpot(row, site.column(), w, h, horizontal, reverse, host.zoom(), taken);
+        double[] pan = cardCentringPan(spot, row, parentWidth, parentHeight, margin);
+        if (Math.abs(pan[0]) > 0.5 || Math.abs(pan[1]) > 0.5) {
+            host.panBy(pan[0], pan[1]); // the cards already open move with the map
+        }
+        return new double[] {spot[0] + pan[0], spot[1] + pan[1], w, h, horizontal && reverse ? 1 : 0};
+    }
+
+    /** Between a row's column and a card opened from it, as between two columns (unzoomed). */
+    static final double CARD_COLUMN_GAP = 40;
+
+    /** How far a card may start before its row across the flow, as a long column hangs from its row (unzoomed). */
+    static final double CARD_COLUMN_LEAD = 150;
+
+    /**
+     * Where a card {@code width × height} opens from {@code row} in {@code column}, as a new column would, {@code {x,
+     * y}} in panel pixels: past the column the way the map flows ({@code reverse}: left of it or above it), centred on
+     * the row across the flow or, when long, hanging from it ({@link #CARD_COLUMN_LEAD}); then on past anything of
+     * {@code taken} ({@code {x, y, w, h}}) it would cover, as a column goes past the other columns of its level. Pure.
+     */
+    static double[] cardColumnSpot(
+            double[] row,
+            double[] column,
+            double width,
+            double height,
+            boolean horizontal,
+            boolean reverse,
+            double zoom,
+            List<double[]> taken) {
+        double gap = CARD_COLUMN_GAP * zoom;
+        double lead = CARD_COLUMN_LEAD * zoom;
+        double x;
+        double y;
+        if (horizontal) {
+            x = reverse ? column[0] - gap - width : column[0] + column[2] + gap;
+            y = row[1] + row[3] / 2 - Math.min(height / 2, lead);
+        } else {
+            x = row[0] + row[2] / 2 - Math.min(width / 2, lead);
+            y = reverse ? column[1] - gap - height : column[1] + column[3] + gap;
+        }
+        for (int pass = 0; pass <= taken.size(); pass++) {
+            double[] hit = null;
+            for (double[] t : taken) {
+                if (x < t[0] + t[2] && t[0] < x + width && y < t[1] + t[3] && t[1] < y + height) {
+                    hit = t;
+                    break;
+                }
+            }
+            if (hit == null) {
+                break;
+            }
+            if (horizontal) {
+                x = reverse ? Math.min(x, hit[0] - gap - width) : Math.max(x, hit[0] + hit[2] + gap);
+            } else {
+                y = reverse ? Math.min(y, hit[1] - gap - height) : Math.max(y, hit[1] + hit[3] + gap);
+            }
+        }
+        return new double[] {x, y, width, height};
+    }
+
+    /**
+     * The pan {@code {dx, dy}} that puts {@code card} ({@code {x, y, w, h}}) in the middle of a panel {@code
+     * parentWidth × parentHeight} — its top-left corner at the margin when it is larger — and then, when the card and
+     * {@code row} fit in the panel together, the least more that brings the row in too. Pure.
+     */
+    static double[] cardCentringPan(
+            double[] card, double[] row, double parentWidth, double parentHeight, double margin) {
+        double dx = card[2] + margin * 2 <= parentWidth ? parentWidth / 2 - (card[0] + card[2] / 2) : margin - card[0];
+        double dy =
+                card[3] + margin * 2 <= parentHeight ? parentHeight / 2 - (card[1] + card[3] / 2) : margin - card[1];
+        double left = Math.min(card[0], row[0]);
+        double right = Math.max(card[0] + card[2], row[0] + row[2]);
+        double top = Math.min(card[1], row[1]);
+        double bottom = Math.max(card[1] + card[3], row[1] + row[3]);
+        if (right - left + margin * 2 <= parentWidth) {
+            dx += Math.max(0, margin - (left + dx)) - Math.max(0, right + dx - (parentWidth - margin));
+        }
+        if (bottom - top + margin * 2 <= parentHeight) {
+            dy += Math.max(0, margin - (top + dy)) - Math.max(0, bottom + dy - (parentHeight - margin));
+        }
+        return new double[] {dx, dy};
+    }
+
+    /**
      * The one placement path for code and note cards: beside the row's column when there is room for the
      * card's minimum size, otherwise over the map inside the panel, then shifted or cascaded clear of the
      * cards already open — of those in view; one dragged or panned off the panel takes no room. The map
@@ -2779,6 +2955,45 @@ final class MapCards {
                 Platform.runLater(this::closeOrphanedCards); // not from inside a paint or a layout pass
             }
         }
+        paintConnectors(g, host::rowBox, previewConnectors);
+    }
+
+    /**
+     * Print and PDF: every connector as {@link #drawConnectors} draws it, onto {@code g} in the map area's pixels, with
+     * {@code rowBox} for where each row of the map is. Changes nothing.
+     */
+    void drawOutputConnectors(GraphicsContext g, Function<Path, double @Nullable []> rowBox) {
+        paintConnectors(g, rowBox, null);
+    }
+
+    /**
+     * Print and PDF: what of the cards is drawn now, back to front — each visible card and every part of what is stuck
+     * on one (sticky notes, Structure columns, link chips, trail notes) — as the map area's children.
+     */
+    List<Node> outputNodes() {
+        List<CardAttachment> stuck = allAttachments();
+        Set<Node> cards = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        cards.addAll(previews.values());
+        cards.addAll(notePreviews.values());
+        ProjectMapOverviewCard overview = overviewCard;
+        if (overview != null) {
+            cards.add(overview);
+        }
+        List<Node> nodes = new ArrayList<>();
+        for (Node child : canvasHost.getChildren()) {
+            if (child.isVisible()
+                    && (cards.contains(child) || stuck.stream().anyMatch(attachment -> attachment.contains(child)))) {
+                nodes.add(child);
+            }
+        }
+        return nodes;
+    }
+
+    /** Draws the connectors on {@code g}; {@code drawn}, when given, records each code card's (for tests). */
+    private void paintConnectors(
+            GraphicsContext g,
+            Function<Path, double @Nullable []> rowBox,
+            @Nullable Map<Path, PreviewConnector> drawn) {
         g.setStroke(host.accent());
         g.setGlobalAlpha(0.78);
         g.setLineWidth(1.5);
@@ -2790,20 +3005,21 @@ final class MapCards {
             // A declaration card is tied to the Structure column it was asked for from: its file card's, else the
             // Map's; the other one's row when that one's is not in sight.
             double[] row = cardStructureRow(entry.getKey());
-            double[] anchor = host.rowBox(entry.getKey());
+            double[] anchor = rowBox.apply(entry.getKey());
+            PreviewConnector connector = null;
             if (row != null && (anchor == null || cardColumnCards.contains(preview))) {
-                previewConnectors.put(
-                        entry.getKey(), drawPreviewConnector(g, row[0], row[1], row[2], row[3], true, preview));
-                continue;
+                connector = drawPreviewConnector(g, row[0], row[1], row[2], row[3], true, preview);
+            } else if (anchor != null) {
+                connector = drawPreviewConnector(g, anchor, preview);
             }
-            if (anchor != null) {
-                previewConnectors.put(entry.getKey(), drawPreviewConnector(g, anchor, preview));
+            if (connector != null && drawn != null) {
+                drawn.put(entry.getKey(), connector);
             }
         }
         g.setStroke(host.note());
         for (Map.Entry<Path, ProjectMapNotePreview> entry : notePreviews.entrySet()) {
             ProjectMapNotePreview preview = entry.getValue();
-            double[] anchor = host.rowBox(entry.getKey());
+            double[] anchor = rowBox.apply(entry.getKey());
             if (!preview.isVisible() || anchor == null || preview.getWidth() <= 0 || preview.getHeight() <= 0) {
                 continue;
             }

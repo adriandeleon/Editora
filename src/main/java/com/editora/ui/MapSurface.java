@@ -1368,8 +1368,11 @@ final class MapSurface extends Region {
         scheduleDraw();
     }
 
-    /** World-space bounds of every laid-out column plus the paper margin, or null for an empty map. */
-    private ProjectMapOutputPlan.@Nullable Box outputBounds() {
+    /**
+     * World-space bounds of every laid-out column, and of every open card (and what is stuck on one) when {@code
+     * withCards}, plus the paper margin, or null for an empty map.
+     */
+    private ProjectMapOutputPlan.@Nullable Box outputBounds(boolean withCards) {
         if (entries.isEmpty() || columnBoxes.isEmpty()) {
             return null;
         }
@@ -1383,11 +1386,110 @@ final class MapSurface extends Region {
             maxX = Math.max(maxX, (box.x() + box.width() - offsetX) / zoom);
             maxY = Math.max(maxY, (box.y() + box.height() - offsetY) / zoom);
         }
+        for (ProjectMapOutputPlan.Box card : withCards ? outputCardBoxes() : List.<ProjectMapOutputPlan.Box>of()) {
+            minX = Math.min(minX, card.x());
+            minY = Math.min(minY, card.y());
+            maxX = Math.max(maxX, card.maxX());
+            maxY = Math.max(maxY, card.maxY());
+        }
         return new ProjectMapOutputPlan.Box(
                 minX - OUTPUT_MARGIN,
                 minY - OUTPUT_MARGIN,
                 Math.max(1, maxX - minX) + OUTPUT_MARGIN * 2,
                 Math.max(1, maxY - minY) + OUTPUT_MARGIN * 2);
+    }
+
+    /** The open cards and what is stuck on them as drawn now, in world space: a printed map shows them too. */
+    private List<ProjectMapOutputPlan.Box> outputCardBoxes() {
+        List<ProjectMapOutputPlan.Box> cards = new ArrayList<>();
+        for (javafx.scene.Node node : view.cards.outputNodes()) {
+            javafx.geometry.Bounds drawn = node.getBoundsInParent();
+            if (drawn.getWidth() > 0 && drawn.getHeight() > 0) {
+                cards.add(worldBox(drawn.getMinX(), drawn.getMinY(), drawn.getWidth(), drawn.getHeight()));
+            }
+        }
+        return cards;
+    }
+
+    /**
+     * The cards of a Print or PDF job, taken once from the live map area: each card (and what is stuck on one) as a
+     * picture with where it is drawn, back to front, and the row each connector starts at, all in the live map area's
+     * pixels at {@code zoom} and {@code offsetX, offsetY}. The pages put them on top of the map.
+     */
+    private record OutputCards(
+            List<OutputCard> cards,
+            java.util.function.Function<Path, double @Nullable []> rowBox,
+            double zoom,
+            double offsetX,
+            double offsetY) {}
+
+    /** One card's picture and the rectangle it covers, in the live map area's pixels. */
+    private record OutputCard(Image image, double x, double y, double width, double height) {}
+
+    /** Most image pixels a card's picture is taken at across, however large the card is drawn on paper. */
+    private static final double MAX_CARD_IMAGE = 4_096;
+
+    /**
+     * Takes the pictures of the open cards for pages rendered at {@code renderScale} image pixels per world pixel, and
+     * keeps the rows (as the output lays them out) for their connectors. Null when no card is open.
+     */
+    private @Nullable OutputCards outputCards(double renderScale) {
+        List<javafx.scene.Node> nodes = view.cards.outputNodes();
+        if (nodes.isEmpty()) {
+            return null;
+        }
+        double liveZoom = zoom;
+        double liveOffsetX = offsetX;
+        double liveOffsetY = offsetY;
+        double scale = renderScale / liveZoom; // map-area pixels → page image pixels
+        List<OutputCard> cards = new ArrayList<>(nodes.size());
+        for (javafx.scene.Node node : nodes) {
+            javafx.geometry.Bounds drawn = node.getBoundsInParent();
+            if (drawn.getWidth() <= 0 || drawn.getHeight() <= 0) {
+                continue;
+            }
+            double imageScale = Math.min(scale, MAX_CARD_IMAGE / Math.max(drawn.getWidth(), drawn.getHeight()));
+            SnapshotParameters parameters = new SnapshotParameters();
+            parameters.setFill(Color.TRANSPARENT);
+            parameters.setTransform(javafx.scene.transform.Transform.scale(imageScale, imageScale));
+            // The snapshot is taken in the parent's coordinates and covers the card's bounds there: its picture
+            // stands at the card's top-left, whatever transforms and shadow the card has.
+            Image image = node.snapshot(parameters, null);
+            cards.add(new OutputCard(image, drawn.getMinX(), drawn.getMinY(), drawn.getWidth(), drawn.getHeight()));
+        }
+        // A snapshot may run a layout pass: the rows are kept after it, in the output's layout at the live zoom.
+        repaint();
+        List<NodeBox> rows = List.copyOf(boxes);
+        WorldLayout world = projected;
+        java.util.function.Function<Path, double @Nullable []> rowBox = path -> {
+            Integer index = world == null ? null : world.firstRows().get(path);
+            if (index == null || index >= rows.size()) {
+                return null;
+            }
+            NodeBox box = rows.get(index);
+            return new double[] {box.x(), box.y(), box.width(), box.height()};
+        };
+        return new OutputCards(List.copyOf(cards), rowBox, liveZoom, liveOffsetX, liveOffsetY);
+    }
+
+    /**
+     * Draws the cards and their connectors over the map just painted on the output canvas: the canvas shows the world
+     * at {@link #zoom}, shifted by {@link #offsetX}, {@link #offsetY}, and the cards were taken from the live map area.
+     */
+    private void paintOutputCards(OutputCards cards) {
+        GraphicsContext g = canvas.getGraphicsContext2D();
+        double scale = zoom / cards.zoom();
+        g.save();
+        try {
+            g.setTransform(scale, 0, 0, scale, offsetX - cards.offsetX() * scale, offsetY - cards.offsetY() * scale);
+            view.cards.drawOutputConnectors(g, cards.rowBox());
+            g.setGlobalAlpha(1);
+            for (OutputCard card : cards.cards()) {
+                g.drawImage(card.image(), card.x(), card.y(), card.width(), card.height());
+            }
+        } finally {
+            g.restore();
+        }
     }
 
     private ProjectMapOutputPlan.Box worldBox(double x, double y, double width, double height) {
@@ -1398,7 +1500,7 @@ final class MapSurface extends Region {
         outputPaint = true; // measure the layout that output paints: headers collapsed to their title
         try {
             repaint();
-            ProjectMapOutputPlan.Box bounds = outputBounds();
+            ProjectMapOutputPlan.Box bounds = outputBounds(true);
             return bounds != null && bounds.width() > bounds.height();
         } finally {
             outputPaint = false;
@@ -1408,8 +1510,9 @@ final class MapSurface extends Region {
 
     /**
      * Renders every laid-out column for pages of the given printable size, independent of the current
-     * pan and zoom and always in a light palette. Painting goes to an off-scene Canvas, so the live
-     * Canvas, viewport and hover state are untouched; interactive controls and the overview are left out.
+     * pan and zoom and always in a light palette, with the open cards (and what is stuck on them) and their
+     * connectors drawn over it where they stand on the map, as on screen. Painting goes to an off-scene Canvas, so
+     * the live Canvas, viewport and hover state are untouched; interactive controls and the overview are left out.
      */
     ProjectMapOutput.@Nullable Rendered renderOutput(double pageWidth, double pageHeight) {
         // Headers collapse when their controls do not fit, so the live layout depends on the zoom. With
@@ -1428,7 +1531,7 @@ final class MapSurface extends Region {
 
     private ProjectMapOutput.@Nullable Rendered renderOutputPages(double pageWidth, double pageHeight) {
         repaint();
-        ProjectMapOutputPlan.Box bounds = outputBounds();
+        ProjectMapOutputPlan.Box bounds = outputBounds(true);
         if (bounds == null) {
             return null;
         }
@@ -1439,11 +1542,13 @@ final class MapSurface extends Region {
         for (NodeBox box : boxes) {
             obstacles.add(worldBox(box.x(), box.y(), box.width(), box.height()));
         }
+        obstacles.addAll(outputCardBoxes());
         ProjectMapOutputPlan.Plan plan = ProjectMapOutputPlan.plan(bounds, obstacles, pageWidth, pageHeight);
         if (plan.pages().isEmpty() || !Double.isFinite(plan.renderScale()) || plan.renderScale() <= 0) {
             return null;
         }
 
+        OutputCards cards = outputCards(plan.renderScale()); // what is on screen over the map: on paper too
         List<List<ProjectMapOutput.Label>> labels = canvasOutputLabels(plan); // before the pages move the offsets
         List<List<ProjectMapOutput.Label>> outputLabels = List.of();
         double liveZoom = zoom;
@@ -1462,7 +1567,7 @@ final class MapSurface extends Region {
             zoom = plan.renderScale();
             hovered = null;
             for (ProjectMapOutputPlan.Cell cell : plan.pages()) {
-                pages.add(renderOutputPage(cell));
+                pages.add(renderOutputPage(cell, cards));
             }
             outputLabels = labels;
         } finally {
@@ -1554,7 +1659,8 @@ final class MapSurface extends Region {
 
     /**
      * ⋯ → Export ▸ SVG… (Map explore, position 16): the whole map, as Print/PDF lays it out (every laid-out
-     * column, headers collapsed, the light palette), with each row's name and each column's title as text.
+     * column, headers collapsed, the light palette) but without the open cards, with each row's name and each
+     * column's title as text.
      * Null for an empty map.
      */
     @Nullable
@@ -1564,7 +1670,7 @@ final class MapSurface extends Region {
         outputPalette = outputPalette();
         try {
             repaint();
-            ProjectMapOutputPlan.Box bounds = outputBounds();
+            ProjectMapOutputPlan.Box bounds = outputBounds(false); // the SVG has no cards
             WorldLayout world = projected;
             if (bounds == null || world == null) {
                 return null;
@@ -1675,7 +1781,7 @@ final class MapSurface extends Region {
     }
 
     /** Paints one page's world rectangle at the current (output) zoom, a bounded tile at a time. */
-    private Image renderOutputPage(ProjectMapOutputPlan.Cell cell) {
+    private Image renderOutputPage(ProjectMapOutputPlan.Cell cell, @Nullable OutputCards cards) {
         int pageWidth = Math.max(1, (int) Math.ceil(cell.width() * zoom));
         int pageHeight = Math.max(1, (int) Math.ceil(cell.height() * zoom));
         WritableImage page = new WritableImage(pageWidth, pageHeight);
@@ -1690,6 +1796,9 @@ final class MapSurface extends Region {
                 offsetX = -cell.x() * zoom - tileX;
                 offsetY = -cell.y() * zoom - tileY;
                 paint();
+                if (cards != null) {
+                    paintOutputCards(cards);
+                }
                 if (tileWidth == pageWidth && tileHeight == pageHeight) {
                     canvas.snapshot(parameters, page);
                 } else {
@@ -4003,7 +4112,7 @@ final class MapSurface extends Region {
         g.stroke();
     }
 
-    /** The eye at the trailing end of a file row: it opens the floating preview, and says so on hover. */
+    /** The eye at the trailing end of a file row: it opens the floating preview, or closes it, and says so on hover. */
     private void drawPreviewAffordance(GraphicsContext g, NodeBox box, boolean onAccentFill, boolean rowHovered) {
         boolean hot = rowHovered && hoveredAffordance == Affordance.PREVIEW;
         double cx = box.x() + box.width() - PREVIEW_ZONE * zoom / 2;
@@ -4307,7 +4416,14 @@ final class MapSurface extends Region {
     /** What a click does on the part of the row under the pointer, or null where it is the row itself. */
     private @Nullable String affordanceHint(ProjectMapModel.Entry entry) {
         return switch (hoveredAffordance) {
-            case PREVIEW -> entry.isFile() ? tr("project.map.node.preview", entry.name()) : null;
+            case PREVIEW ->
+                !entry.isFile()
+                        ? null
+                        : tr(
+                                view.hasFileCard(entry.path())
+                                        ? "project.map.node.closePreview"
+                                        : "project.map.node.preview",
+                                entry.name());
             case STRUCTURE ->
                 tr(
                         view.structure.isOpen(entry.path())
@@ -5792,6 +5908,15 @@ final class MapSurface extends Region {
     double @Nullable [] cardRootColumn() {
         ColumnBox root = columnOpenedBy(view.root);
         return root == null ? null : new double[] {root.x(), root.y(), root.width(), root.height()};
+    }
+
+    /** Every column as drawn, on screen or off, {@code {x, y, w, h}}: what a new card steps past (MapCards). */
+    List<double[]> cardAllColumns() {
+        List<double[]> columns = new ArrayList<>(columnBoxes.size());
+        for (ColumnBox column : columnBoxes) {
+            columns.add(new double[] {column.x(), column.y(), column.width(), column.height()});
+        }
+        return columns;
     }
 
     /** Every column on screen as {@code {x, y, w, h, 1}}, for a card's Structure column choosing its side. */

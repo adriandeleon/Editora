@@ -580,7 +580,7 @@ class SettingsFrameFxTest {
                 java.util.Map<Object, javafx.scene.layout.Region> pages = FxTestSupport.field(window, "pages");
                 ListView<Object> sidebar = FxTestSupport.field(window, "sidebar");
                 String beta = com.editora.i18n.Messages.tr("settings.beta");
-                for (String name : List.of("LSP", "SYNC", "MCP", "AI_GENERAL")) {
+                for (String name : List.of("REMOTE", "SYNC", "MCP", "AI_GENERAL")) {
                     javafx.scene.layout.VBox page = (javafx.scene.layout.VBox) pages.get(category(sidebar, name));
                     assertEquals(
                             1,
@@ -588,10 +588,14 @@ class SettingsFrameFxTest {
                                     .size(),
                             name);
                 }
-                javafx.scene.layout.VBox appearance =
-                        (javafx.scene.layout.VBox) pages.get(category(sidebar, "APPEARANCE"));
-                assertTrue(labels(appearance.getChildren().get(0), beta, new java.util.ArrayList<>())
-                        .isEmpty());
+                // Language servers and debugging are out of beta: no pill, like any settled page.
+                for (String name : List.of("APPEARANCE", "LSP", "DEBUG")) {
+                    javafx.scene.layout.VBox page = (javafx.scene.layout.VBox) pages.get(category(sidebar, name));
+                    assertTrue(
+                            labels(page.getChildren().get(0), beta, new java.util.ArrayList<>())
+                                    .isEmpty(),
+                            name);
+                }
 
                 // Sizes are relative: a larger root font (a user stylesheet, a zoom) reaches the rows' text too.
                 Stage stage = FxTestSupport.field(window, "stage");

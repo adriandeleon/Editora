@@ -46,10 +46,10 @@ import static com.editora.i18n.Messages.tr;
  */
 final class ProjectMapCardStructure implements CardAttachment {
 
-    /** The column fits its longest row between these widths; a longer one is cut at the far edge. */
-    static final double MIN_WIDTH = 240;
+    /** The column fits its longest shown row between these widths; a longer one is cut at the far edge. */
+    static final double MIN_WIDTH = 200;
 
-    static final double MAX_WIDTH = 560;
+    static final double MAX_WIDTH = 360;
     /** Between the card's edge and the column. */
     static final double GAP = 8;
 
@@ -90,6 +90,9 @@ final class ProjectMapCardStructure implements CardAttachment {
     private long styles;
 
     private double width = MIN_WIDTH;
+    /** {@link #update} is bringing the rows in line: their expansions refit once, after it. */
+    private boolean syncing;
+
     private ProjectMapStructure.View view = ProjectMapStructure.View.LOADING;
     private boolean movePending;
 
@@ -358,7 +361,7 @@ final class ProjectMapCardStructure implements CardAttachment {
         return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.ceil(needed)));
     }
 
-    /** The width the column's longest row needs, measured in the rows' font; members of closed rows count too. */
+    /** The width the column's longest shown row needs, measured in the rows' font; members of closed rows do not count. */
     private double fittedWidth() {
         if (column.getScene() == null) {
             return width;
@@ -380,7 +383,9 @@ final class ProjectMapCardStructure implements CardAttachment {
             measure.setText(tr("structure.line", symbol.line() + 1));
             double line = measure.getLayoutBounds().getWidth() * 10 / 12; // the line number is 10px, the label 12px
             widest[0] = Math.max(widest[0], fit(depth, label, line));
-            measureRows(node.children(), depth + 1, widest, budget);
+            if (expanded.contains(node.path())) {
+                measureRows(node.children(), depth + 1, widest, budget);
+            }
         }
     }
 
@@ -491,7 +496,7 @@ final class ProjectMapCardStructure implements CardAttachment {
         }
         ProjectMapStructure.Node was = selectedNode();
         Path selected = was == null ? null : was.path();
-        sync(tree.getRoot(), view, view.roots());
+        syncRows();
         Path waiting = pendingSelect;
         if (waiting != null && view.problem() != ProjectMapStructure.Problem.LOADING) {
             if (select(waiting)) {
@@ -510,6 +515,16 @@ final class ProjectMapCardStructure implements CardAttachment {
         }
         if (shown) {
             refit();
+        }
+    }
+
+    /** {@link #sync} from the top, with the expansions it sets left to one refit after it. */
+    private void syncRows() {
+        syncing = true;
+        try {
+            sync(tree.getRoot(), view, view.roots());
+        } finally {
+            syncing = false;
         }
     }
 
@@ -566,6 +581,9 @@ final class ProjectMapCardStructure implements CardAttachment {
                 expanded.add(node.path());
             } else {
                 expanded.remove(node.path());
+            }
+            if (shown && !syncing) {
+                refit(); // the rows shown changed: the column fits them again
             }
         });
         return item;
@@ -655,7 +673,10 @@ final class ProjectMapCardStructure implements CardAttachment {
                 expanded.add(holder);
             }
         }
-        sync(tree.getRoot(), view, view.roots());
+        syncRows();
+        if (shown) {
+            refit(); // the rows expanded to reach it count now
+        }
         TreeItem<Row> item = find(tree.getRoot(), path);
         if (item == null) {
             pendingSelect = path;

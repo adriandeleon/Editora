@@ -566,6 +566,47 @@ class ProjectMapCardsExploreFxTest {
         assertTrue(process.waitFor(30, TimeUnit.SECONDS) && process.exitValue() == 0, "git " + args[0] + ": " + out);
     }
 
+    // --- the column fits the rows it shows ------------------------------------------------------------------
+
+    @Test
+    void theCardsStructureColumnFitsOnlyTheRowsItShowsWithinANarrowCeiling() throws Exception {
+        root = Files.createDirectories(temp.resolve("project")).toRealPath();
+        Path file = Files.writeString(
+                root.resolve("Two.java"),
+                "class A {\n    void a() {}\n}\n\nclass B {\n"
+                        + "    void aVeryLongMethodNameThatWouldMakeTheColumnWideIfItCountedWhileClosed("
+                        + "int first, int second, int third) {}\n}\n");
+        map = openMap();
+        ProjectMapPreview card = openFileCard(file);
+        FxTestSupport.runOnFx(() -> card.setStructureShown(true));
+        await("the column lists both classes", () -> {
+            ProjectMapCardStructure column = cardStructures().get(card);
+            return column != null && columnLabels(column).containsAll(List.of("A", "B"));
+        });
+        ProjectMapCardStructure column =
+                FxTestSupport.callOnFx(() -> cardStructures().get(card));
+        FxTestSupport.runOnFx(() -> assertEquals(
+                ProjectMapCardStructure.MIN_WIDTH,
+                column.width(),
+                "two short closed classes: the floor, however long a closed member is"));
+        FxTestSupport.runOnFx(() -> {
+            for (var item : column.tree().getRoot().getChildren()) {
+                if ("B".equals(item.getValue().node().symbol().label())) {
+                    item.setExpanded(true);
+                }
+            }
+        });
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(
+                    ProjectMapCardStructure.MAX_WIDTH,
+                    column.width(),
+                    "the long member shown: as wide as the ceiling allows, and no wider");
+            assertTrue(ProjectMapCardStructure.MAX_WIDTH <= 360, "the ceiling keeps the column narrow");
+            column.tree().getRoot().getChildren().forEach(item -> item.setExpanded(false));
+            assertEquals(ProjectMapCardStructure.MIN_WIDTH, column.width(), "closed again: narrow again");
+        });
+    }
+
     private Path writeBig() throws Exception {
         root = Files.createDirectories(temp.resolve("project")).toRealPath();
         return Files.writeString(root.resolve("Big.java"), ProjectMapCardsReview3FxTest.source());
