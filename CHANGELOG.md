@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **An open Problems window follows Next / Previous Problem.** The editor's problem-counter arrows (and F2 /
+  Shift+F2) select the problem they step to in the Problems tool window, opening its folded header and scrolling
+  it into view, while the focus stays in the editor — even when the last click was in the Problems window.
 - **Map Print and Export PDF include the open cards.** Preview, note and Overview cards, what is stuck on them
   (sticky notes, Structure columns, link chips) and their connectors are drawn on the pages where they stand on the
   map, as on screen; the pages grow to take in a card standing beyond the columns. Export ▸ SVG still leaves the

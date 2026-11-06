@@ -7015,7 +7015,8 @@ final class LspCoordinator {
      * problems, the notes the counter counts too, as its arrows go (Bash review C5).
      */
     void gotoProblem(@Nullable EditorBuffer b, boolean forward, boolean every) {
-        if (b != null && b != host.activeBuffer()) {
+        if (b != null && (b != host.activeBuffer() || !b.getFocusedArea().isFocused())) {
+            // the editor keeps the focus, even when the last click was in the Problems window it now syncs
             b.getFocusedArea().requestFocus();
         }
         Path path = b == null ? null : lspPath(b);
@@ -7044,6 +7045,10 @@ final class LspCoordinator {
         area.moveTo(targetLine, targetCol);
         area.requestFollowCaret();
         sayProblem(target);
+        Path key = ops.canonicalize(path);
+        if (problemsPanel != null && key != null) {
+            problemsPanel.reveal(key, target); // an open Problems window follows, unfocused
+        }
     }
 
     /** Pure: the first problem after ({@code forward}) or before the caret, wrapping; {@code sorted} is non-empty. */

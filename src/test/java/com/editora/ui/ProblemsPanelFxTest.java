@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -70,6 +71,31 @@ class ProblemsPanelFxTest {
                 .mapToInt(file -> file.getChildren().size())
                 .sum());
         assertEquals(3, totalDiagnostics, "all diagnostics rendered as leaf rows");
+    }
+
+    /** Next / Previous Problem select their row, opening a folded header; a closed window is left alone. */
+    @Test
+    void revealSelectsTheDiagnosticsRowAndOpensItsFoldedHeader() throws Exception {
+        ProblemsPanel p = panel();
+        Path java = Path.of("/proj/Main.java");
+        LspDiagnostic boom = diag(2, Severity.ERROR, "boom");
+        LspDiagnostic meh = diag(1, Severity.WARNING, "meh");
+        FxTestSupport.runOnFx(() -> p.setProblems(Map.of(java, List.of(boom, meh))));
+        FxTestSupport.runOnFx(() -> tree(p).getRoot().getChildren().get(0).setExpanded(false)); // fold Java
+
+        assertTrue(FxTestSupport.callOnFx(() -> p.reveal(java, boom)));
+        assertTrue(FxTestSupport.callOnFx(() -> tree(p).getSelectionModel()
+                .getSelectedItem()
+                .getValue()
+                .toString()
+                .contains("boom")));
+        assertTrue(FxTestSupport.callOnFx(
+                () -> tree(p).getRoot().getChildren().get(0).isExpanded()));
+        assertFalse(FxTestSupport.callOnFx(() -> p.reveal(Path.of("/proj/Other.java"), boom)), "not its file");
+
+        ProblemsPanel closed = FxTestSupport.callOnFx(() -> new ProblemsPanel(NOOP));
+        FxTestSupport.runOnFx(() -> closed.setProblems(Map.of(java, List.of(boom))));
+        assertFalse(FxTestSupport.callOnFx(() -> closed.reveal(java, boom)), "a closed window is not touched");
     }
 
     @Test
