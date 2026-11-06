@@ -294,7 +294,17 @@ final class FxWindowFixture implements AutoCloseable {
 
     private static void deleteRecursively(Path root) throws IOException {
         IOException failure = null;
-        for (int attempt = 0; attempt < 4 && Files.exists(root); attempt++) {
+        // A language server asked to stop may still write its workspace under root for a moment (jdtls's .metadata):
+        // a failed pass waits a little before the next, for up to about five seconds, rather than racing it.
+        for (int attempt = 0; attempt < 50 && Files.exists(root); attempt++) {
+            if (failure != null) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
             try (Stream<Path> paths = Files.walk(root)) {
                 for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
                     Files.deleteIfExists(path);
