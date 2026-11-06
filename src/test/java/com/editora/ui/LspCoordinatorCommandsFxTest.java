@@ -677,7 +677,7 @@ class LspCoordinatorCommandsFxTest {
     // --- hover -----------------------------------------------------------------------------------------
 
     private Popup hoverPopup() {
-        return FxTestSupport.field(fx.coordinator, "hoverPopup");
+        return FxTestSupport.field(fx.coordinator.popups, "hoverPopup");
     }
 
     @Test
