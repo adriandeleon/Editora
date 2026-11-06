@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Language servers and debugging are no longer marked Beta.** Their Settings pages lose the Beta pill and the
+  "Experimental — may be unstable" note.
+
 ## [0.27.0] - 2026-11-05
 
 ### Added

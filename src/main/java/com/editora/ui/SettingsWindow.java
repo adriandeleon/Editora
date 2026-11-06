@@ -129,8 +129,8 @@ public class SettingsWindow {
         AGENT(tr("settings.cat.agent"), Group.AI, SettingsIcons::agent, true),
         AI(tr("settings.cat.ai"), Group.AI, SettingsIcons::aiActions, true),
         // Languages & Tools
-        LSP(tr("settings.cat.lsp"), Group.LANGUAGES_TOOLS, SettingsIcons::lsp, true),
-        DEBUG(tr("settings.cat.debug"), Group.LANGUAGES_TOOLS, SettingsIcons::debug, true),
+        LSP(tr("settings.cat.lsp"), Group.LANGUAGES_TOOLS, SettingsIcons::lsp),
+        DEBUG(tr("settings.cat.debug"), Group.LANGUAGES_TOOLS, SettingsIcons::debug),
         MARKDOWN(tr("settings.cat.markdown"), Group.LANGUAGES_TOOLS, SettingsIcons::markdown),
         MERMAID(tr("settings.cat.mermaid"), Group.LANGUAGES_TOOLS, SettingsIcons::mermaid),
         DIAGRAMS(tr("settings.cat.diagrams"), Group.LANGUAGES_TOOLS, SettingsIcons::diagrams),
@@ -7033,11 +7033,6 @@ public class SettingsWindow {
 
     private VBox debugPage() {
         VBox p = page(tr("settings.cat.debug"), tr("settings.debug.subtitle"));
-        Label experimental = note(tr("settings.debug.experimental"));
-        experimental.getStyleClass().add("settings-experimental");
-        experimental.setWrapText(true);
-        experimental.setMaxWidth(440);
-        row(p, Category.DEBUG, null, experimental, "debug experimental beta");
         Card master = card(p, null);
         checkRow(
                 master,
@@ -7221,11 +7216,6 @@ public class SettingsWindow {
 
     private VBox lspPage() {
         VBox p = page(tr("settings.cat.lsp"), tr("settings.lsp.subtitle"));
-        Label experimental = note(tr("settings.lsp.experimental"));
-        experimental.getStyleClass().add("settings-experimental");
-        experimental.setWrapText(true);
-        experimental.setMaxWidth(440);
-        row(p, Category.LSP, null, experimental, "lsp experimental beta");
         Card master = card(p, null);
         checkRow(
                 master,
