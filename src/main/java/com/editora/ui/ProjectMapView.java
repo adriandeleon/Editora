@@ -115,12 +115,12 @@ final class ProjectMapView extends VBox {
     /** Why rows are dimmed, and the project's facts for the Overview card and the folder rows (review 3 A11, B4). */
     final ProjectMapOrientation orientation = new ProjectMapOrientation(this::layoutOrientationChanged);
     /**
-     * Whether this workspace's Overview card was seen; null until the owner says (a view nobody configured never
-     * opens it by itself). False opens it on the project's first Map open.
+     * Whether the Overview card opens by itself the first time this session shows a folder; false until the owner
+     * says (a view nobody configured never opens it by itself).
      */
-    private @Nullable Boolean overviewSeen;
-
-    private Runnable onOverviewSeen = () -> {};
+    private boolean overviewOnFirstShow;
+    /** The folders whose Overview card opened by itself this session ({@code PathKeys.key}): once each. */
+    private final Set<String> overviewOpenedFor = new HashSet<>();
     /** Whether the Map search leaves ignored files out (the "respect .gitignore" setting): the banner says so. */
     private boolean layoutSearchSkipsIgnored;
     // Where the three options above are remembered (the workspace); see setRememberedOptions.
@@ -604,25 +604,16 @@ final class ProjectMapView extends VBox {
         card.setActivity(activity.summary());
     }
 
-    /** Whether this workspace's Overview card was seen (true while the owner has not said). */
-    boolean isOverviewSeen() {
-        return !Boolean.FALSE.equals(overviewSeen);
-    }
-
     /**
-     * What the workspace remembers: false opens the Overview card on the project's next Map open (once; it is then
-     * seen, and {@link #setOnOverviewSeen} is told).
+     * Whether the Overview card opens by itself the first time this session shows a folder — every session, so a
+     * Map opened afresh starts from the project's facts; once per folder, so neither a window closed and opened
+     * again nor a folder returned to brings it up again. ⋯ → Project overview opens it at any time.
      */
-    void setOverviewSeen(boolean seen) {
-        overviewSeen = seen;
-        if (!seen) {
+    void setOverviewOnFirstShow(boolean opens) {
+        overviewOnFirstShow = opens;
+        if (opens) {
             layoutMaybeOpenOverview();
         }
-    }
-
-    /** Told when the Overview card opened by itself, for the workspace to remember that it was seen. */
-    void setOnOverviewSeen(@Nullable Runnable callback) {
-        onOverviewSeen = callback == null ? () -> {} : callback;
     }
 
     /**
@@ -665,14 +656,15 @@ final class ProjectMapView extends VBox {
         activityOverviewShown(cards.openOverviewCard(forRoot, facts, this::revealPath, onOpenFile), facts);
     }
 
-    /** The Overview card opens by itself on a project's first Map open, when the workspace has not seen it. */
+    /** The Overview card opens by itself the first time this session shows a folder ({@link #setOverviewOnFirstShow}). */
     private void layoutMaybeOpenOverview() {
         Path current = root;
-        if (!Boolean.FALSE.equals(overviewSeen) || !active || current == null || disposed || surface.isEmpty()) {
+        if (!overviewOnFirstShow || !active || current == null || disposed || surface.isEmpty()) {
             return;
         }
-        overviewSeen = true;
-        onOverviewSeen.run();
+        if (!overviewOpenedFor.add(com.editora.config.PathKeys.key(current))) {
+            return; // this folder's card opened once this session already
+        }
         orientation.loadFacts(false, facts -> layoutShowOverview(current, facts));
     }
 

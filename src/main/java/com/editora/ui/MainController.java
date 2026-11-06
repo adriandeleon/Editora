@@ -1441,7 +1441,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::projectMapPreviewContent);
         panel.setEditorWindow(() -> stage); // the Map window opens even while the Project tool window is closed
         panel.setMapSceneSetup(toolWindows::setUpSecondaryScene);
-        panel.setRememberedMapState(config::getWorkspaceState, config::save);
+        panel.setRememberedMapState(config::getWorkspaceState, config::save, this::requestSave);
         panel.setOpenFiles(() -> editorArea.tabs().stream()
                 .map(MainController::tabPath)
                 .filter(java.util.Objects::nonNull)

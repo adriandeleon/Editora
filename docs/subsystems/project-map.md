@@ -185,7 +185,16 @@ weigh no flow. **With "Focus new column" on (the default) a new card opens as a 
 past the row's column the way the map flows, `CARD_COLUMN_GAP` (40) from it, centred on the row across the flow or,
 when long, hanging from it (at most `CARD_COLUMN_LEAD`, 150, before it), and on past any column or card already
 standing there; the map then pans so the card stands in the middle of the map area (its top-left corner, when it is
-larger), shifted only as far as it takes to keep its row in sight when both fit. Result cards, declaration cards from
+larger), shifted only as far as it takes to keep its row in sight when both fit. **Cards opened from one column stand
+level with each other** (`MapCards.cardLevelSpot`, `cardSiblings`; Map cards, same level): when a code card of a row
+of the same column is already open (not a result card nor a declaration card of a file card's column, and not one
+hidden with its row), the new card takes its place from those cards rather than from its row — flowing left to right
+or right to left, at the left edge of the lowest of them and `COLUMN_GAP` (18, at the map's zoom) below it, so a
+column's cards stand in a column of their own; flowing down or up, level with the top of the rightmost and right of
+it, in a row — then on past any column or card it would cover, the same way; with Focus new column on the map pans
+to the card as usual, and with it off the spot is taken only when it keeps the card inside the map area at no less
+than its minimum (the map is never panned for it), trying the other way (above the topmost, left of the leftmost)
+next and the free-room placement below last. Result cards, declaration cards from
 a file card's Structure column, rows off the map, Move to Free Space and cards placed again keep the free-room
 placement above. **With the option off, placement never pans the map**: with no room past the row's column the way
 the map flows, the card takes the side of the column — beside it across the flow (above or below it left to right or right to left, left
@@ -533,7 +542,7 @@ keeps the fallback rule. The outline
 is held for as long as the column is out (`cardOutlineFiles`, kept by `ProjectMapStructure.prune`), follows the
 buffer or the file on disk, and an edit keeps what was expanded and selected. An outline change rebuilds the map's
 rows only when its file has a Structure column of the Map's own open (`ProjectMapStructure.setOnFileChanged`);
-otherwise only that file's card column and declaration cards follow it. A restart brings the column back with its card (the card remembers that it was out), placed afresh.
+otherwise only that file's card column and declaration cards follow it. A restart brings the column back on its card's right (the card remembers that it was out), the card where it was.
 
 The Map's global search matches the names of files and folders (and, with `@`, declarations; see "Filters,
 ordering, and state"), and the query is also matched against the declaration rows of
@@ -1036,9 +1045,12 @@ files in all) and which build files make it a module.
 **The Overview card** (`ProjectMapOverviewCard`, a card kind of `MapCards`: placed, moved, resized, zoomed, marked in
 the overview and listed in Open cards like the others, never counted against the eight or evicted) shows those facts
 with every folder and file a press away (`revealPath`) and the README one press from the editor. It opens by itself
-on a project's first Map open when the workspace says it was not seen (`setOverviewSeen(false)`; a view nobody told
-never opens it by itself), which marks it seen and tells `setOnOverviewSeen`; ⋯ → **Project overview** opens it
-again with the facts worked out afresh. Its first line is the one-time orientation subtitle: what a column is, where
+the first time a session shows a folder on the Map (`setOverviewOnFirstShow(true)`, which the panel sets; a view
+nobody told never opens it by itself) — every session, so a Map opened afresh starts from the project's facts, and
+once per folder, so a window closed and opened again, or a folder returned to, does not bring it up again
+(`ProjectMapView.overviewOpenedFor`); ⋯ → **Project overview** opens it again with the facts worked out afresh.
+Up to 0.27 the workspace remembered that it was once shown (`projectMapOverviewSeen`, v28) and it opened only
+that once; the field is written no more and read no more. Its first line is the one-time orientation subtitle: what a column is, where
 to search, and that ? lists every key.
 
 It opens first on the map, before the project's own column the way the map flows (`MapCards.overviewPlacement`,
@@ -1315,15 +1327,20 @@ are not carried over. Across restarts the workspace keeps the exploration of one
 (`projectMapState`, schema v28, `config.ProjectMapState`): the folders opened by hand, the selection, the places of
 Back/Forward, the zoom and pan, and the open code cards (file or declaration, place, size, text zoom, Structure
 column out). It is written into the workspace state at most every 0.6 s while it changes, when the window
-hides and when the root changes, and saved with the window's session; the first show of that folder brings it
+hides and when the root changes, and each write asks for a coalesced save to disk (`setRememberedMapState`'s
+`saveLater`: `MainController.requestSave`, one write per pulse off the FX thread), so a card moved or opened is on
+disk moments later, not only when the session ends cleanly; the first show of that folder brings it
 back — places and cards that no longer exist are dropped, the zoom and pan replace the first view's fit, the cards
-open where they were once the map is laid out, and a declaration card when its file's outline is in. Workspace state persists whether the Map window is open (`projectViewMode`, schema
+open where they were once the map is laid out (a card whose Structure column was out gets its column back on its
+right without the nudge a fresh column gives, so it stands where it was: `MapCards.restoringCard`), and a declaration
+card when its file's outline is in. Workspace state persists whether the Map window is open (`projectViewMode`, schema
 v13 — "MAP" meant the Map was the panel's view before v24, and means its window is open since), the
 window's bounds (`projectMapWindowBounds`, v24) and maximized state (`projectMapWindowMaximized`, v27), the
 flow, and the two navigation options; v27 also adds `projectMapSingleClickOpens`,
 `projectMapCompactChains` and `projectMapFollowActiveFile` for three ⋯ options; v28 adds `projectMapState` (above)
 and `projectMapCompactRows`, `projectMapHideIgnored` and `projectMapOverviewSeen` for the review-3 ⋯ options, written
-through the view's change callbacks (`setOnCompactRowsChanged`, `setOnHideIgnoredChanged`, `setOnOverviewSeen`). v29 adds
+through the view's change callbacks (`setOnCompactRowsChanged`, `setOnHideIgnoredChanged`; `projectMapOverviewSeen`
+is no longer written or read, see *The Overview card*). v29 adds
 `projectMapWorkingSets`, the named views of ⋯ → Working sets (see *Working sets and trails*),
 `projectMapShowRecentChanges` for ⋯ "Show recent changes", and a kept card's `pinned`; trails are files of the
 project, not workspace state. The
@@ -1368,7 +1385,8 @@ The focused coverage lives in:
   stepping, results closing with their source, pins surviving every automatic close, F3 in a card's find field
   under Emacs, a failed call hierarchy matched by name, and overlapping loans; `ProjectMapCardFlowFxTest` for
   several caller cards opened together with Focus new column on, each beside the card asked from and clear of it and
-  of each other; `ProjectMapLinksFxTest` for callers and references from a fake language server with the file lent and
+  of each other, and for cards opened from one column standing level (the pure `cardLevelSpot`, and three cards in
+  each flow with Focus new column on, two with it off); `ProjectMapLinksFxTest` for callers and references from a fake language server with the file lent and
   given back and no editor opened, the by-name answer with dashed "by name" edges, the "+N more" chip, result cards
   outliving the orphan check, and an `@name` Map search through the real `IndexCoordinator`;
 - `ProjectMapStructureTest` for which files get a Structure icon, declaration path segments, a card's lines

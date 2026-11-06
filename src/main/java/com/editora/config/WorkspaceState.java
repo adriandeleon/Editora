@@ -672,6 +672,10 @@ public class WorkspaceState {
         this.projectMapHideIgnored = projectMapHideIgnored;
     }
 
+    /**
+     * Whether the Map's Overview card was once shown in this workspace. Written up to 0.27; since 0.28 the card opens
+     * on every session's first Map open, so nothing reads this. Kept so a file that has it round-trips.
+     */
     public boolean isProjectMapOverviewSeen() {
         return projectMapOverviewSeen;
     }

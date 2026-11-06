@@ -220,6 +220,8 @@ final class MapCards {
      * previews).
      */
     private final Set<Region> cardColumnCards = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    /** A card of the last session is being brought back: its Structure column opens without moving it (B6). */
+    private boolean restoringCard;
 
     /** Which Structure column a declaration card was asked for from. */
     private enum From {
@@ -426,7 +428,12 @@ final class MapCards {
             card.setContentZoom(textZoom);
             card.keepRestoredGeometry();
             if (structureShown) {
-                card.setStructureShown(true);
+                restoringCard = true;
+                try {
+                    card.setStructureShown(true); // the column, without the nudge: the card stays where it was
+                } finally {
+                    restoringCard = false;
+                }
             }
         }
         return card;
@@ -1505,7 +1512,9 @@ final class MapCards {
         // Always on the card's right, so the declarations read on from the card (Map Structure right).
         column.show(CardAttachment.Side.RIGHT, false);
         column.update(structure.view(file)); // shown first: its width is measured in the rows' font
-        nudgeForColumn(card, column);
+        if (!restoringCard) {
+            nudgeForColumn(card, column); // a card brought back keeps its place, column and all (B6)
+        }
         reserveBesideCard(card); // the sheets step past the column
         touchCard(card, true);
         scheduleCardRefresh(); // the outline follows the buffer from now on
@@ -2330,6 +2339,27 @@ final class MapCards {
         double margin = ProjectMapPreview.EDGE_MARGIN;
         double w = cardBounded(width, Math.min(minimumWidth, width), parentWidth - margin * 2);
         double h = cardBounded(height, minimumHeight, parentHeight - margin * 2);
+        List<double[]> taken = cardsTaken(preview);
+        boolean horizontal = host.horizontalFlow();
+        boolean reverse = host.reverseFlow();
+        // Level with the cards already opened from the row's column, when there are any (Map cards, same level).
+        double[] spot = cardLevelSpot(
+                cardSiblings(preview, site.column()), taken, w, h, horizontal, false, COLUMN_GAP * host.zoom());
+        if (spot == null) {
+            spot = cardColumnSpot(row, site.column(), w, h, horizontal, reverse, host.zoom(), taken);
+        }
+        double[] pan = cardCentringPan(spot, row, parentWidth, parentHeight, margin);
+        if (Math.abs(pan[0]) > 0.5 || Math.abs(pan[1]) > 0.5) {
+            host.panBy(pan[0], pan[1]); // the cards already open move with the map
+        }
+        return new double[] {spot[0] + pan[0], spot[1] + pan[1], w, h, horizontal && reverse ? 1 : 0};
+    }
+
+    /**
+     * What a card opened as a column would goes past: every column on the map, every open card but {@code preview},
+     * and what is stuck on them, as drawn {@code {x, y, w, h}}.
+     */
+    private List<double[]> cardsTaken(Region preview) {
         List<double[]> taken = new ArrayList<>(host.allColumns());
         for (CardAttachment stuck : allAttachments()) {
             double[] drawn = stuck.card() == preview ? null : stuck.bounds();
@@ -2343,14 +2373,83 @@ final class MapCards {
                 taken.add(drawnBounds(other));
             }
         }
-        boolean horizontal = host.horizontalFlow();
-        boolean reverse = host.reverseFlow();
-        double[] spot = cardColumnSpot(row, site.column(), w, h, horizontal, reverse, host.zoom(), taken);
-        double[] pan = cardCentringPan(spot, row, parentWidth, parentHeight, margin);
-        if (Math.abs(pan[0]) > 0.5 || Math.abs(pan[1]) > 0.5) {
-            host.panBy(pan[0], pan[1]); // the cards already open move with the map
+        return taken;
+    }
+
+    /**
+     * The open code cards opened from the rows of the column drawn at {@code column} ({@code {x, y, w, h}}), as
+     * drawn, but {@code preview}: not a declaration card of a file card's column nor a linked result card, which go
+     * beside their card, and not one hidden with its row. (Map cards, same level)
+     */
+    private List<double[]> cardSiblings(Region preview, double[] column) {
+        List<double[]> siblings = new ArrayList<>();
+        for (Map.Entry<Path, ProjectMapPreview> open : previews.entrySet()) {
+            ProjectMapPreview other = open.getValue();
+            if (other == preview
+                    || !other.isVisible()
+                    || other.getWidth() <= 0
+                    || cardColumnCards.contains(other)
+                    || links.besideSource(open.getKey()) != null) {
+                continue;
+            }
+            Site site = host.site(open.getKey());
+            if (site.row() != null && java.util.Arrays.equals(site.column(), column)) {
+                siblings.add(drawnBounds(other));
+            }
         }
-        return new double[] {spot[0] + pan[0], spot[1] + pan[1], w, h, horizontal && reverse ? 1 : 0};
+        return siblings;
+    }
+
+    /**
+     * Where a card {@code width × height} opens level with {@code siblings}, the cards already opened from its row's
+     * column as drawn ({@code {x, y, w, h}}; Map cards, same level): in a flow across the panel, at the left edge of
+     * the lowest of them and {@code gap} below it, so a column's cards stand in a column of their own; in a flow down
+     * or up it, level with the top of the rightmost and {@code gap} right of it, in a row. {@code back}: above the
+     * topmost, or left of the leftmost, instead (where there is no room on, and the map is not panned). Then on
+     * past anything of {@code taken} it would cover, the same way. Null without siblings. Pure.
+     */
+    static double @Nullable [] cardLevelSpot(
+            List<double[]> siblings,
+            List<double[]> taken,
+            double width,
+            double height,
+            boolean horizontal,
+            boolean back,
+            double gap) {
+        if (siblings.isEmpty()) {
+            return null;
+        }
+        int axis = horizontal ? 1 : 0; // the stacking axis: down the panel across the flow, along it otherwise
+        double[] last = siblings.getFirst();
+        for (double[] sibling : siblings) {
+            boolean further =
+                    back ? sibling[axis] < last[axis] : sibling[axis] + sibling[axis + 2] > last[axis] + last[axis + 2];
+            if (further) {
+                last = sibling;
+            }
+        }
+        double size = horizontal ? height : width;
+        double[] spot = {last[0], last[1], width, height};
+        spot[axis] = back ? last[axis] - gap - size : last[axis] + last[axis + 2] + gap;
+        for (int pass = 0; pass <= taken.size(); pass++) {
+            double[] hit = null;
+            for (double[] t : taken) {
+                if (spot[0] < t[0] + t[2]
+                        && t[0] < spot[0] + width
+                        && spot[1] < t[1] + t[3]
+                        && t[1] < spot[1] + height) {
+                    hit = t;
+                    break;
+                }
+            }
+            if (hit == null) {
+                break;
+            }
+            spot[axis] = back
+                    ? Math.min(spot[axis], hit[axis] - gap - size)
+                    : Math.max(spot[axis], hit[axis] + hit[axis + 2] + gap);
+        }
+        return spot;
     }
 
     /** Between a row's column and a card opened from it, as between two columns (unzoomed). */
@@ -2515,6 +2614,29 @@ final class MapCards {
                 }
             }
             return new ProjectMapPreview.Placement(x, margin, fullWidth, h);
+        }
+        // Level with the cards already opened from the row's column (Map cards, same level): under the lowest of them
+        // at its left edge in a flow across the panel, right of the rightmost at its top in a flow down or up it — or,
+        // with no room that way, above the topmost or left of the leftmost — when that keeps the card inside the
+        // panel at no less than its minimum (the map is not panned for it).
+        if (beside == null && linked == null) {
+            List<double[]> siblings = cardSiblings(preview, site.column());
+            List<double[]> taken = siblings.isEmpty() ? List.of() : cardsTaken(preview);
+            for (boolean back : new boolean[] {false, true}) {
+                double[] level = cardLevelSpot(
+                        siblings, taken, fullWidth, fullHeight, host.horizontalFlow(), back, COLUMN_GAP * host.zoom());
+                if (level == null) {
+                    break;
+                }
+                double w = Math.min(fullWidth, parentWidth - margin - level[0]);
+                double h = Math.min(fullHeight, parentHeight - margin - level[1]);
+                if (level[0] >= margin
+                        && level[1] >= margin
+                        && w >= Math.min(minimumWidth, fullWidth)
+                        && h >= Math.min(minimumHeight, fullHeight)) {
+                    return new ProjectMapPreview.Placement(level[0], level[1], w, h, level[0] + w <= site.row()[0]);
+                }
+            }
         }
         // The way the map flows from this row: a card opens past the row's column that way, as its next column would.
         double[] forward = cardFlowForward(beside, linked != null);
