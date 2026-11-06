@@ -172,4 +172,20 @@ class TextInputKeymapFxTest {
             assertEquals(1, field.getCaretPosition());
         });
     }
+
+    /** M-DEL had no text-field action, so Alt-Backspace did nothing in Find File and the other pickers. */
+    @Test
+    void altBackspaceDeletesTheWordBeforeTheCaret() throws Exception {
+        for (boolean mac : new boolean[] {false, true}) {
+            onFx(() -> {
+                TextField field = field("/home/adl/src/", mac, new ArrayList<>());
+                field.positionCaret(field.getLength());
+                field.fireEvent(press(KeyCode.BACK_SPACE, false, true)); // M-DEL
+                assertEquals("/home/adl/", field.getText(), "the last path segment and its separator go");
+                assertEquals(10, field.getCaretPosition());
+                field.fireEvent(press(KeyCode.BACK_SPACE, false, true));
+                assertEquals("/home/", field.getText());
+            });
+        }
+    }
 }
