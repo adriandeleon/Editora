@@ -391,7 +391,7 @@ class JdtlsClientSettingsProbeTest {
             assertTrue(repeat.getUri().startsWith("jdt:"), "B7: the definition is library source");
             Position inLibrary = repeat.getRange().getStart();
             Hover libraryHover = get(s.hover(repeat.getUri(), inLibrary));
-            String hoverText = LspManager.hoverText(libraryHover);
+            String hoverText = LspAssists.hoverText(libraryHover);
             record("B7 hover", hoverText.lines().findFirst().orElse(""));
             assertFalse(hoverText.isBlank(), "B7: hover answers inside library source");
             var libraryRefs = get(s.references(repeat.getUri(), inLibrary));

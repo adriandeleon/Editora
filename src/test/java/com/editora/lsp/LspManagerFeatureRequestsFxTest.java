@@ -305,18 +305,18 @@ class LspManagerFeatureRequestsFxTest {
     @Test
     void hierarchyGatesReadBothCapabilityShapes() {
         var caps = new ServerCapabilities();
-        assertFalse(LspManager.callHierarchyProvider(null));
-        assertFalse(LspManager.typeHierarchyProvider(null));
-        assertFalse(LspManager.callHierarchyProvider(caps));
-        assertFalse(LspManager.typeHierarchyProvider(caps));
+        assertFalse(LspNavigation.callHierarchyProvider(null));
+        assertFalse(LspNavigation.typeHierarchyProvider(null));
+        assertFalse(LspNavigation.callHierarchyProvider(caps));
+        assertFalse(LspNavigation.typeHierarchyProvider(caps));
         caps.setCallHierarchyProvider(Either.forLeft(false));
         caps.setTypeHierarchyProvider(Either.forLeft(false));
-        assertFalse(LspManager.callHierarchyProvider(caps), "advertised false");
-        assertFalse(LspManager.typeHierarchyProvider(caps), "advertised false");
+        assertFalse(LspNavigation.callHierarchyProvider(caps), "advertised false");
+        assertFalse(LspNavigation.typeHierarchyProvider(caps), "advertised false");
         caps.setCallHierarchyProvider(Either.forRight(new org.eclipse.lsp4j.CallHierarchyRegistrationOptions()));
         caps.setTypeHierarchyProvider(Either.forRight(new org.eclipse.lsp4j.TypeHierarchyRegistrationOptions()));
-        assertTrue(LspManager.callHierarchyProvider(caps), "the options form means supported");
-        assertTrue(LspManager.typeHierarchyProvider(caps), "the options form means supported");
+        assertTrue(LspNavigation.callHierarchyProvider(caps), "the options form means supported");
+        assertTrue(LspNavigation.typeHierarchyProvider(caps), "the options form means supported");
     }
 
     // --- rename ----------------------------------------------------------------------------------------

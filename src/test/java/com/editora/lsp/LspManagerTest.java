@@ -44,7 +44,7 @@ class LspManagerTest {
     void extractsTriggerCharactersFromCapabilities() {
         ServerCapabilities caps = new ServerCapabilities();
         caps.setCompletionProvider(new CompletionOptions(false, List.of(".", "<", "/")));
-        assertEquals(Set.of('.', '<', '/'), LspManager.triggerCharsOf(caps));
+        assertEquals(Set.of('.', '<', '/'), LspAssists.triggerCharsOf(caps));
     }
 
     @Test
@@ -66,16 +66,16 @@ class LspManagerTest {
     void usesOnlyTheFirstCharOfMultiCharTriggers() {
         ServerCapabilities caps = new ServerCapabilities();
         caps.setCompletionProvider(new CompletionOptions(false, List.of("::", "->")));
-        assertEquals(Set.of(':', '-'), LspManager.triggerCharsOf(caps));
+        assertEquals(Set.of(':', '-'), LspAssists.triggerCharsOf(caps));
     }
 
     @Test
     void emptyWhenNoCompletionProviderOrNoTriggers() {
-        assertTrue(LspManager.triggerCharsOf(null).isEmpty());
-        assertTrue(LspManager.triggerCharsOf(new ServerCapabilities()).isEmpty()); // no completionProvider
+        assertTrue(LspAssists.triggerCharsOf(null).isEmpty());
+        assertTrue(LspAssists.triggerCharsOf(new ServerCapabilities()).isEmpty()); // no completionProvider
         ServerCapabilities noTriggers = new ServerCapabilities();
         noTriggers.setCompletionProvider(new CompletionOptions()); // completionProvider, null triggerCharacters
-        assertTrue(LspManager.triggerCharsOf(noTriggers).isEmpty());
+        assertTrue(LspAssists.triggerCharsOf(noTriggers).isEmpty());
     }
 
     @Test
@@ -298,15 +298,15 @@ class LspManagerTest {
 
     @Test
     void signatureHelpProviderAndTriggerCharsExtracted() {
-        assertFalse(LspManager.signatureHelpProvider(null));
-        assertFalse(LspManager.signatureHelpProvider(new ServerCapabilities()));
+        assertFalse(LspAssists.signatureHelpProvider(null));
+        assertFalse(LspAssists.signatureHelpProvider(new ServerCapabilities()));
         ServerCapabilities caps = new ServerCapabilities();
         var opts = new org.eclipse.lsp4j.SignatureHelpOptions(List.of("(", ","));
         opts.setRetriggerCharacters(List.of(")"));
         caps.setSignatureHelpProvider(opts);
-        assertTrue(LspManager.signatureHelpProvider(caps));
-        assertEquals(Set.of('(', ',', ')'), LspManager.signatureTriggerCharsOf(caps));
-        assertEquals(Set.of(), LspManager.signatureTriggerCharsOf(null));
+        assertTrue(LspAssists.signatureHelpProvider(caps));
+        assertEquals(Set.of('(', ',', ')'), LspAssists.signatureTriggerCharsOf(caps));
+        assertEquals(Set.of(), LspAssists.signatureTriggerCharsOf(null));
     }
 
     // --- $/progress (#683) ---------------------------------------------------------------------
@@ -389,14 +389,14 @@ class LspManagerTest {
 
     @Test
     void hierarchyProvidersDetectedFromEitherForm() {
-        assertFalse(LspManager.callHierarchyProvider(null));
-        assertFalse(LspManager.typeHierarchyProvider(new ServerCapabilities()));
+        assertFalse(LspNavigation.callHierarchyProvider(null));
+        assertFalse(LspNavigation.typeHierarchyProvider(new ServerCapabilities()));
         ServerCapabilities calls = new ServerCapabilities();
         calls.setCallHierarchyProvider(true);
-        assertTrue(LspManager.callHierarchyProvider(calls));
+        assertTrue(LspNavigation.callHierarchyProvider(calls));
         ServerCapabilities types = new ServerCapabilities();
         types.setTypeHierarchyProvider(new org.eclipse.lsp4j.TypeHierarchyRegistrationOptions());
-        assertTrue(LspManager.typeHierarchyProvider(types));
+        assertTrue(LspNavigation.typeHierarchyProvider(types));
     }
 
     // --- Rename (#676) -------------------------------------------------------------------------
@@ -439,17 +439,17 @@ class LspManagerTest {
 
     @Test
     void documentHighlightProviderDetectedFromEitherForm() {
-        assertFalse(LspManager.documentHighlightProvider(null));
-        assertFalse(LspManager.documentHighlightProvider(new ServerCapabilities()));
+        assertFalse(LspAssists.documentHighlightProvider(null));
+        assertFalse(LspAssists.documentHighlightProvider(new ServerCapabilities()));
         ServerCapabilities bool = new ServerCapabilities();
         bool.setDocumentHighlightProvider(true);
-        assertTrue(LspManager.documentHighlightProvider(bool));
+        assertTrue(LspAssists.documentHighlightProvider(bool));
         ServerCapabilities off = new ServerCapabilities();
         off.setDocumentHighlightProvider(false);
-        assertFalse(LspManager.documentHighlightProvider(off));
+        assertFalse(LspAssists.documentHighlightProvider(off));
         ServerCapabilities opts = new ServerCapabilities();
         opts.setDocumentHighlightProvider(new org.eclipse.lsp4j.DocumentHighlightOptions());
-        assertTrue(LspManager.documentHighlightProvider(opts));
+        assertTrue(LspAssists.documentHighlightProvider(opts));
     }
 
     // --- Code actions (#670) -------------------------------------------------------------------
@@ -476,7 +476,7 @@ class LspManagerTest {
                 new org.eclipse.lsp4j.Diagnostic(range(0, 0, 2, 0), "multi-line, ends where the range starts");
         var before = new org.eclipse.lsp4j.Diagnostic(range(0, 0, 1, 5), "entirely above");
         var after = new org.eclipse.lsp4j.Diagnostic(range(5, 0, 6, 0), "entirely below");
-        var hits = LspManager.diagnosticsOverlapping(
+        var hits = LspCodeActions.diagnosticsOverlapping(
                 java.util.List.of(inRange, touchingEnd, before, after), range(2, 0, 3, 0));
         assertEquals(java.util.List.of(inRange, touchingEnd), hits);
     }
@@ -889,15 +889,15 @@ class LspManagerTest {
                 "Other");
         var caret =
                 new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(4, 0), new org.eclipse.lsp4j.Position(4, 0));
-        assertEquals(List.of(onLine), LspManager.contextDiagnostics(List.of(onLine, elsewhere), caret));
+        assertEquals(List.of(onLine), LspCodeActions.contextDiagnostics(List.of(onLine, elsewhere), caret));
         var onToken = new org.eclipse.lsp4j.Range(
                 new org.eclipse.lsp4j.Position(4, 10), new org.eclipse.lsp4j.Position(4, 10));
-        assertEquals(List.of(onLine), LspManager.contextDiagnostics(List.of(onLine, elsewhere), onToken));
+        assertEquals(List.of(onLine), LspCodeActions.contextDiagnostics(List.of(onLine, elsewhere), onToken));
         var selection =
                 new org.eclipse.lsp4j.Range(new org.eclipse.lsp4j.Position(4, 0), new org.eclipse.lsp4j.Position(4, 2));
         assertEquals(
                 List.of(),
-                LspManager.contextDiagnostics(List.of(onLine, elsewhere), selection),
+                LspCodeActions.contextDiagnostics(List.of(onLine, elsewhere), selection),
                 "a selection is exact");
     }
 
@@ -939,7 +939,7 @@ class LspManagerTest {
         var appendAgain =
                 new LspManager.HierarchyNode("append(String)", "StringBuilder", "method", null, 90, 4, "x2", 2);
         var report = new LspManager.HierarchyNode("report()", "demo.A", "method", a, 3, 8, "x3");
-        var merged = LspManager.mergeCalls(java.util.List.of(append, report, appendAgain));
+        var merged = LspNavigation.mergeCalls(java.util.List.of(append, report, appendAgain));
         org.junit.jupiter.api.Assertions.assertEquals(
                 java.util.List.of("append(String)x3", "report()x1"),
                 merged.stream().map(n -> n.name() + "x" + n.calls()).toList(),
@@ -966,18 +966,18 @@ class LspManagerTest {
     @Test
     void completionDocumentationKeepsMarkdownAndEscapesPlainText() {
         var item = new org.eclipse.lsp4j.CompletionItem("section");
-        assertNull(LspManager.documentationOf(item));
+        assertNull(LspAssists.documentationOf(item));
         item.setDocumentation(new org.eclipse.lsp4j.MarkupContent(
                 "markdown", "The `<section>` element.\n\n[MDN Reference](https://developer.mozilla.org/x)"));
         assertEquals(
                 "The `<section>` element.\n\n[MDN Reference](https://developer.mozilla.org/x)",
-                LspManager.documentationOf(item));
+                LspAssists.documentationOf(item));
         item.setDocumentation(new org.eclipse.lsp4j.MarkupContent("plaintext", "a *b* <c>"));
-        assertEquals("a \\*b\\* \\<c\\>", LspManager.documentationOf(item));
+        assertEquals("a \\*b\\* \\<c\\>", LspAssists.documentationOf(item));
         item.setDocumentation(new org.eclipse.lsp4j.MarkupContent("plaintext", "  "));
-        assertNull(LspManager.documentationOf(item));
+        assertNull(LspAssists.documentationOf(item));
         item.setDocumentation("**bare** string");
-        assertEquals("**bare** string", LspManager.documentationOf(item), "a bare string is left as it came");
+        assertEquals("**bare** string", LspAssists.documentationOf(item), "a bare string is left as it came");
     }
 
     @Test
@@ -1011,19 +1011,19 @@ class LspManagerTest {
     void theResolvedSignatureLeadsTheCompletionDocumentation() {
         assertEquals(
                 "```typescript\n(method) Array<number>.at(index: number): number | undefined\n```\n\nReturns the item.",
-                LspManager.withResolvedDetail(
+                LspAssists.withResolvedDetail(
                         null,
                         "(method) Array<number>.at(index: number): number | undefined",
                         "Returns the item.",
                         "typescript"));
         assertEquals(
                 "```typescript\nAuto import from './math.js'\nfunction multiply(a: number, b: number): number\n```",
-                LspManager.withResolvedDetail(
+                LspAssists.withResolvedDetail(
                         "./math.js",
                         "Auto import from './math.js'\nfunction multiply(a: number, b: number): number",
                         null,
                         "typescript"));
-        assertEquals("docs", LspManager.withResolvedDetail("String", "String", "docs", ""), "nothing new: as before");
-        assertNull(LspManager.withResolvedDetail(null, " ", null, ""));
+        assertEquals("docs", LspAssists.withResolvedDetail("String", "String", "docs", ""), "nothing new: as before");
+        assertNull(LspAssists.withResolvedDetail(null, " ", null, ""));
     }
 }

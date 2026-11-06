@@ -169,10 +169,10 @@ class MavenPomServerTest {
                 shown.stream().map(com.editora.completion.Completion::label).toList(),
                 "the names stay (review 4, D31)");
         String hidden = com.editora.i18n.Messages.tr("completion.maven.envValueHidden");
-        assertEquals(hidden, LspManager.documentationOf(env), "the doc popup asks the server for nothing more");
+        assertEquals(hidden, LspAssists.documentationOf(env), "the doc popup asks the server for nothing more");
         assertNull(shown.get(0).detail());
         assertFalse(String.valueOf(shown.get(0)).contains("ghp_secret"));
-        assertEquals("Default Value: 1.0", LspManager.documentationOf(prop), "a project property keeps its value");
+        assertEquals("Default Value: 1.0", LspAssists.documentationOf(prop), "a project property keeps its value");
         assertSame(items.get(1), shown.get(1));
         List<com.editora.completion.Completion> none = List.of(items.get(1));
         assertSame(none, MavenPomServer.hideEnvironmentValues(none), "no env item: the list as it came");
