@@ -57,7 +57,8 @@ class MultiCaretForeignEditFxTest {
     }
 
     private static Object manager(EditorBuffer b) {
-        return FxTestSupport.call(FxTestSupport.field(b, "multiCaret"), "getManager", new Class<?>[] {});
+        return FxTestSupport.call(
+                FxTestSupport.field(FxTestSupport.field(b, "caretOps"), "multiCaret"), "getManager", new Class<?>[] {});
     }
 
     /** A buffer in the window with the primary caret at {@code caret} and an extra one at each of {@code extras}. */

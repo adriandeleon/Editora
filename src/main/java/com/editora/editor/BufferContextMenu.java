@@ -182,7 +182,7 @@ final class BufferContextMenu {
             // are on and the provider's latest connectivity check succeeded. Keep the submenu available
             // even without a selection so the menu remains a stable map of enabled features; its
             // selection-scoped actions are disabled until there is text to act on.
-            if (b.aiActionsEnabled && !simpleMenu) {
+            if (b.selectionBars.aiActionsEnabled && !simpleMenu) {
                 items.add(aiActionsMenu());
                 items.add(new SeparatorMenuItem());
             }
@@ -423,7 +423,7 @@ final class BufferContextMenu {
         // multi-caret cut/copy would otherwise take their whole lines, whatever the "copy the line when
         // nothing is selected" setting says (this menu never did that for a single caret either).
         CodeArea view = menuView;
-        MultiCarets carets = view == b.area2 ? b.multiCaret2 : b.multiCaret;
+        MultiCarets carets = view == b.area2 ? b.caretOps.multiCaret2 : b.caretOps.multiCaret;
         boolean canCopy =
                 carets != null ? carets.anySelection() : view.getSelection().getLength() > 0;
         boolean editable = b.isEditable();

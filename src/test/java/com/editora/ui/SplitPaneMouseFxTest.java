@@ -334,7 +334,7 @@ class SplitPaneMouseFxTest {
 
     /** The multi-caret manager of the buffer's second view, for placing extra carets the way Ctrl+click and Alt+drag do. */
     private static org.fxmisc.richtext.multi.MultiCaretManager<?, ?, ?> carets2(EditorBuffer b) {
-        Object layer = FxTestSupport.field(b, "multiCaret2");
+        Object layer = FxTestSupport.field(FxTestSupport.field(b, "caretOps"), "multiCaret2");
         assertNotNull(layer, "multiple carets are enabled");
         return (org.fxmisc.richtext.multi.MultiCaretManager<?, ?, ?>)
                 FxTestSupport.call(layer, "getManager", new Class<?>[] {});

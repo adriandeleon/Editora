@@ -95,7 +95,7 @@ final class BufferSnippets {
             return;
         }
         CodeArea a = b.getFocusedArea();
-        if (b.multiCaretActiveOn(a)) {
+        if (b.caretOps.multiCaretActiveOn(a)) {
             return;
         }
         // The terminator sits at c.getPosition(), so the word ends there.
@@ -187,7 +187,7 @@ final class BufferSnippets {
         // one undo unit when there's nothing to mirror.
         a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
             if (e.isConsumed()) return;
-            if (!b.hasActiveSnippet() || b.multiCaretActiveOn(a) || !b.isEditable()) {
+            if (!b.hasActiveSnippet() || b.caretOps.multiCaretActiveOn(a) || !b.isEditable()) {
                 return;
             }
             String ch = e.getCharacter();
@@ -208,7 +208,7 @@ final class BufferSnippets {
         });
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (e.isConsumed()) return;
-            if (b.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
+            if (b.caretOps.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
             // ownsKeys applies the "caret has left the fields" rule first, so a session the caret walked

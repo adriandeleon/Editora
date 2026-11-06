@@ -34,11 +34,13 @@ class SemanticTokenStalenessFxTest {
 
     @SuppressWarnings("unchecked")
     private static int tokenCount(EditorBuffer b) {
-        return ((List<SemanticToken>) FxTestSupport.<List<?>>field(b, "semanticTokens")).size();
+        return ((List<SemanticToken>)
+                        FxTestSupport.<List<?>>field(FxTestSupport.field(b, "highlighter"), "semanticTokens"))
+                .size();
     }
 
     private static boolean stale(EditorBuffer b) {
-        return FxTestSupport.<Boolean>field(b, "semanticStale");
+        return FxTestSupport.<Boolean>field(FxTestSupport.field(b, "highlighter"), "semanticStale");
     }
 
     @Test
@@ -74,7 +76,7 @@ class SemanticTokenStalenessFxTest {
     }
 
     private static long highlightPasses(EditorBuffer b) {
-        return FxTestSupport.<Long>field(b, "highlightGen");
+        return FxTestSupport.<Long>field(FxTestSupport.field(b, "highlighter"), "highlightGen");
     }
 
     @Test

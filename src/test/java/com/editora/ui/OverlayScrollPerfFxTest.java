@@ -684,11 +684,18 @@ class OverlayScrollPerfFxTest {
             a.deselect();
             a.scrollYBy(60);
             a.moveTo(5);
-            assertFalse((boolean) FxTestSupport.field(b, "formatBarUpdatePending"), "no selection, no format bar");
-            assertFalse((boolean) FxTestSupport.field(b, "aiActionsBarUpdatePending"), "nor an AI actions bar");
+            assertFalse(
+                    (boolean) FxTestSupport.field(FxTestSupport.field(b, "selectionBars"), "formatBarUpdatePending"),
+                    "no selection, no format bar");
+            assertFalse(
+                    (boolean) FxTestSupport.field(FxTestSupport.field(b, "selectionBars"), "aiActionsBarUpdatePending"),
+                    "nor an AI actions bar");
             a.selectRange(2, 6);
-            assertTrue((boolean) FxTestSupport.field(b, "formatBarUpdatePending"), "a selection can show the bar");
-            assertTrue((boolean) FxTestSupport.field(b, "aiActionsBarUpdatePending"));
+            assertTrue(
+                    (boolean) FxTestSupport.field(FxTestSupport.field(b, "selectionBars"), "formatBarUpdatePending"),
+                    "a selection can show the bar");
+            assertTrue((boolean)
+                    FxTestSupport.field(FxTestSupport.field(b, "selectionBars"), "aiActionsBarUpdatePending"));
         });
         settle();
     }

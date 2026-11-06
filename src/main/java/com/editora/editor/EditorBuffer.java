@@ -3,7 +3,6 @@ package com.editora.editor;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -11,7 +10,6 @@ import java.util.concurrent.Executors;
 import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
-import javafx.geometry.Bounds;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
@@ -27,15 +25,12 @@ import javafx.scene.paint.Color;
 
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionProvider;
-import com.editora.config.RulerColumns;
 import com.editora.diagram.DiagramKind;
 import com.editora.editops.BraceMatcher;
 import com.editora.editops.Commenter;
 import com.editora.editops.HtmlLinks;
-import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineEndings;
-import com.editora.editops.MultiTab;
 import com.editora.editops.TextFingerprint;
 import com.editora.editops.WholeDocumentEdit;
 import com.editora.editor.completion.BufferCompletion;
@@ -55,10 +50,8 @@ import com.editora.editor.fold.StickyScroll;
 import com.editora.editor.fold.StickyScrollBar;
 import com.editora.editor.git.BlameInfo;
 import com.editora.editor.git.GitGutterLines;
-import com.editora.editor.highlight.CsvRainbow;
 import com.editora.editor.highlight.GrammarRegistry;
 import com.editora.editor.highlight.HighlightDirty;
-import com.editora.editor.highlight.HighlightPass;
 import com.editora.editor.highlight.JsxContext;
 import com.editora.editor.highlight.TextMateHighlighter;
 import com.editora.editor.http.HttpGutter;
@@ -77,7 +70,6 @@ import com.editora.editor.lsp.OccurrenceHighlightOverlay;
 import com.editora.editor.markdown.DiagramImages;
 import com.editora.editor.markdown.MarkdownCompletions;
 import com.editora.editor.markdown.MarkdownEditing;
-import com.editora.editor.markdown.MarkdownFormatBar;
 import com.editora.editor.markdown.MarkdownLintHover;
 import com.editora.editor.markdown.MarkdownLintOverlay;
 import com.editora.editor.markdown.MarkdownLintStripe;
@@ -123,7 +115,6 @@ import com.editora.text.LspDiagnostic;
 import com.editora.text.LspTextEdit;
 import com.editora.text.Modeline;
 import com.editora.text.OccurrenceSpan;
-import com.editora.text.SearchMatcher;
 import com.editora.text.SearchMatches;
 import com.editora.text.SemanticToken;
 import com.editora.text.Shebang;
@@ -132,7 +123,6 @@ import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
-import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.util.UndoUtils;
 import org.fxmisc.undo.UndoManager;
 import org.jspecify.annotations.Nullable;
@@ -226,7 +216,7 @@ public class EditorBuffer implements TabContent {
 
         @Override
         public boolean multiCaretActiveOn(CodeArea a) {
-            return EditorBuffer.this.multiCaretActiveOn(a);
+            return EditorBuffer.this.caretOps.multiCaretActiveOn(a);
         }
 
         @Override
@@ -291,7 +281,9 @@ public class EditorBuffer implements TabContent {
                     || snippetKeys.abbrevTable.isEmpty()) {
                 return null;
             }
-            if (hasActiveSnippet() || multiCaretActiveOn(a) || a.getSelection().getLength() > 0) {
+            if (hasActiveSnippet()
+                    || caretOps.multiCaretActiveOn(a)
+                    || a.getSelection().getLength() > 0) {
                 return null;
             }
             return snippetKeys.abbrevBefore(a, a.getCaretPosition());
@@ -327,6 +319,16 @@ public class EditorBuffer implements TabContent {
     final BufferContextMenu editorMenu = new BufferContextMenu(this);
     /** The gutter Run glyphs and their handlers ({@link BufferRunGutter}). */
     final BufferRunGutter runGutter = new BufferRunGutter(this);
+    /** Inlay hints, colour swatches, code lenses and {@code .http} results drawn inline ({@link BufferInlays}). */
+    final BufferInlays inlayDecor = new BufferInlays(this);
+    /** The column rulers' columns and their deferred placement ({@link BufferRuler}). */
+    final BufferRuler rulerPlacement = new BufferRuler(this);
+    /** Syntax, semantic-token, CSV and bracket highlighting ({@link BufferHighlighter}). */
+    final BufferHighlighter highlighter = new BufferHighlighter(this);
+    /** The format bar and the AI actions bar over a selection ({@link SelectionBars}). */
+    final SelectionBars selectionBars = new SelectionBars(this);
+    /** Multiple cursors and column selection ({@link BufferCarets}). */
+    final BufferCarets caretOps = new BufferCarets(this);
 
     final BooleanProperty dirty = new SimpleBooleanProperty(false);
     /**
@@ -399,20 +401,11 @@ public class EditorBuffer implements TabContent {
     @Nullable
     AnchorPane root2;
 
-    private @Nullable SecondaryPane pane2;
+    @Nullable
+    SecondaryPane pane2;
 
     private @Nullable Minimap minimap2;
     Split split = Split.NONE;
-
-    /** Multiple cursors + Alt+drag column/box selection (RichTextFX fork add-on). Installed on {@link #area}
-     *  (and {@link #area2} when split) while {@link #multiCaretEnabled}; transparent with one caret. */
-    private boolean multiCaretEnabled;
-
-    @Nullable
-    MultiCarets multiCaret;
-
-    @Nullable
-    MultiCarets multiCaret2;
 
     /** IntelliJ-style Markdown preview modes (only meaningful for Markdown files). */
     public enum MarkdownViewMode {
@@ -504,15 +497,7 @@ public class EditorBuffer implements TabContent {
     boolean minimapVisible = true;
     /** Whether this buffer is the visible tab (see {@link #setRenderingActive}); starts true because a
      *  freshly built buffer measures itself before the controller marks background tabs inactive. */
-    private boolean renderingActive = true;
-    /**
-     * While set, {@link #applyHighlighting()} records that a pass is owed instead of dispatching it (see
-     * {@link #setHighlightDeferred}). The owed range stays in {@code highlightDirty}, so the pass that runs
-     * when the deferral ends covers everything that changed meanwhile.
-     */
-    private boolean highlightDeferred;
-    /** A highlight pass was requested while {@link #highlightDeferred}; run it when the deferral ends. */
-    private boolean highlightOwed;
+    boolean renderingActive = true;
     /** Large-file mode: syntax highlighting and the minimap are disabled regardless of settings. */
     boolean largeFile;
     /** Intermediate "large source file" tier (below the 5 MB hard mode): the minimap and LSP are
@@ -533,20 +518,6 @@ public class EditorBuffer implements TabContent {
     /** {@link #focusedArea} as a value to observe, for what shows the caret of the view the user is in. */
     final javafx.beans.property.ReadOnlyObjectWrapper<CodeArea> focusedView =
             new javafx.beans.property.ReadOnlyObjectWrapper<>(area);
-    /** Floating Markdown format bar (lazily created), shown on a non-empty selection in a Markdown buffer. */
-    private @Nullable MarkdownFormatBar formatBar;
-
-    private boolean formatBarEnabled = true;
-    private boolean formatBarUpdatePending;
-    /** Floating AI selection-actions bar (Explain/Rewrite), lazily created; shown on any non-empty
-     *  selection while AI Actions is enabled + a cached connectivity probe says the endpoint is reachable
-     *  (see {@code AiCoordinator.applySupport} — never re-probed per selection). */
-    private @Nullable AiActionsBar aiActionsBar;
-
-    boolean aiActionsEnabled;
-    private boolean aiActionsBarUpdatePending;
-    private Runnable aiExplainHandler = () -> {};
-    private Runnable aiRewriteHandler = () -> {};
     /** Opens a URL externally (injected from the controller's HostServices); Ctrl/Cmd-click a link. */
     java.util.function.Consumer<String> openUrlHandler = u -> {};
     /** Injected by the controller: opens the table-size picker, then inserts a table. */
@@ -577,7 +548,7 @@ public class EditorBuffer implements TabContent {
     /** True only while {@link #moveLine} is updating the caret, so its own move doesn't reset the goal. */
     private boolean movingByLine;
 
-    private final ColumnRuler columnRuler = new ColumnRuler(area);
+    final ColumnRuler columnRuler = new ColumnRuler(area);
     private final Minimap minimap = new Minimap(area);
     private final JumpReveal jumps = new JumpReveal(
             () -> this.stickyScrollEnabled,
@@ -675,17 +646,6 @@ public class EditorBuffer implements TabContent {
     private @Nullable Runnable lspDiagnosticsRequester;
     /** Debounced semantic-tokens request (servers advertising range semantic tokens); null = none. */
     private @Nullable Runnable semanticTokensRequester;
-    /** LSP semantic highlighting active for this buffer (server supports it + the feature is on). */
-    private boolean semanticActive;
-    /** Latest server semantic tokens (absolute positions), overlaid onto the TextMate highlight. */
-    private java.util.List<SemanticToken> semanticTokens = java.util.List.of();
-    /** True once the document changed after {@link #semanticTokens} were captured — suppresses the overlay
-     *  (so we never mis-color shifted text) until a fresh response lands via {@link #setSemanticTokens}. */
-    private boolean semanticStale;
-    /** Bumped on every edit and read when a semantic-tokens request is issued, so a response computed against
-     *  an older document is dropped instead of re-anchoring stale tokens onto the current text (see
-     *  {@link #semanticGen()} / {@link #setSemanticTokens(java.util.List, long)}). */
-    private long semanticGen;
     /** Debounces a viewport semantic-tokens re-request after scrolling settles (so a new region gets
      *  tokens without firing a server request per scroll frame). */
     private final javafx.animation.PauseTransition semanticScrollDebounce =
@@ -701,7 +661,7 @@ public class EditorBuffer implements TabContent {
     /** Message currently shown by {@link #lspTooltip} — skips a re-{@code show()} (flicker) on each move. */
     private @Nullable String lspTooltipText;
 
-    private final FoldManager folds = new FoldManager(area, this::documentTextSnapshot);
+    final FoldManager folds = new FoldManager(area, this::documentTextSnapshot);
 
     /** The gutter numbers, {@code narrowed} style and banner of a narrowed buffer (see {@link NarrowPresentation}). */
     private final NarrowPresentation narrowView = new NarrowPresentation(this, area, logView, folds);
@@ -793,29 +753,15 @@ public class EditorBuffer implements TabContent {
     /** Spell checking (Lucene Hunspell, drawn by {@link #spellOverlay}); off until the controller enables it. */
     final BufferSpell spell = new BufferSpell(
             area, spellOverlay, this::getFocusedArea, () -> language, this::isEditable, () -> largeFile);
-    /** Bumped on every highlight request (FX thread only); lets background results discard if stale. Volatile:
-     *  read per line by the background tokenize's cancel check. */
-    private volatile long highlightGen;
     /** Bumped on every language/grammar change (FX thread only); drops a stale deferred grammar load. */
     private long languageGen;
-    /** Per-line grammar end-states and bracket depths of the last applied pass (see {@link HighlightPass});
-     *  null = none, so the next pass tokenizes the whole document. Replaced, never modified. */
-    HighlightPass.@Nullable Lines highlightLines;
-    /** The range the next highlight pass owes: every edit since a pass last applied. */
-    private final HighlightDirty highlightDirty = new HighlightDirty();
-    /** Where {@link #semanticTokens} are no longer painted (edits, lexical restyles) since they were anchored. */
-    private final HighlightDirty semanticDirty = new HighlightDirty();
-    /** Line count of the text {@link #semanticTokens} were anchored to. */
-    private int semanticLines;
-    /** A grammar or CSV pass may have styled the document, so losing the grammar leaves styles to clear. */
-    private boolean styled;
     /** Named definitions from the last tokenization (FX-thread confined); drives the Structure view. */
-    private List<TextMateHighlighter.Symbol> symbols = List.of();
+    List<TextMateHighlighter.Symbol> symbols = List.of();
     /** Notified (on the FX thread) after {@link #symbols} is refreshed. */
-    private Runnable onSymbolsChanged = () -> {};
+    Runnable onSymbolsChanged = () -> {};
 
-    private String fontFamily = "monospace";
-    private int fontSize = 14;
+    String fontFamily = "monospace";
+    int fontSize = 14;
     /** Whether {@link #setFont} has run at least once. The fields above are only *assumed* defaults — the
      *  area's inline style and the overlays' fonts are set by that call, so the first one must always
      *  apply even when it happens to match them. */
@@ -841,12 +787,6 @@ public class EditorBuffer implements TabContent {
     /** The file's own line ending: detected on load or chosen by a conversion. The document holds bare LF. */
     private String lineEnding = LineEndings.LF;
 
-    private @Nullable Integer
-            rulerColumnOverride; // .editorconfig max_line_length: null = none; EditorConfigProperties.OFF = hide
-    /** The ruler columns from Settings (see {@link RulerColumns#resolve}): the global list and per-language lists. */
-    private List<Integer> rulerColumns = List.of(80);
-
-    private java.util.Map<String, List<Integer>> languageRulers = java.util.Map.of();
     private String detectedCharset = com.editora.editorconfig.EditorConfigCharset.UTF_8;
     private @Nullable String charsetOverride; // EditorConfig charset to write; null = keep detected
     /** The declared charset could not decode the file, so {@link #detectedCharset} is a lossless stand-in. */
@@ -856,25 +796,10 @@ public class EditorBuffer implements TabContent {
 
     private com.editora.editorconfig.EditorConfigProperties editorConfigProps =
             com.editora.editorconfig.EditorConfigProperties.EMPTY;
-    /** Whether the user enabled the 80-column ruler. The line is only actually shown when a visible
-     *  line reaches column 80 (see {@link #measureAndPlaceRuler}). */
-    private boolean rulerVisible;
-
     private boolean lineNumbersVisible = true;
     /** When false (Simple UI mode), the entire gutter is removed (null paragraph-graphic factory) — no
      *  line numbers, fold chevrons, bookmark/note/run/breakpoint slots, or git change bars. */
     private boolean gutterVisible = true;
-    /** Coalesces ruler re-measurement onto a later pulse (see {@link #scheduleRulerMeasure}). */
-    private boolean rulerMeasurePending;
-    /** Viewport width at the last scheduled ruler measure, so a viewport-dirty event that did not
-     *  resize the area (a vertical scroll, an edit) doesn't pay for a re-measure. */
-    private double lastRulerViewportWidth = -1;
-    /** Set when something the ruler's x depends on changed other than the viewport width or the
-     *  horizontal scroll — the gutter, the font, wrap, the ruler column. Cleared by the measure. */
-    private boolean rulerInputsDirty = true;
-
-    private final ColumnAdvance columnAdvance = new ColumnAdvance();
-
     /** Max undo entries kept per view; caps undo memory (RichTextFX defaults to unlimited). */
     private static final int UNDO_HISTORY = 300;
 
@@ -1013,7 +938,7 @@ public class EditorBuffer implements TabContent {
         typingAids.addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
         completionActions.installCompletionTrigger(area);
         installOccurrenceTrigger(area); // LSP document highlight (#675)
-        installCodeLensClick(area);
+        inlayDecor.installCodeLensClick(area);
         // When an edit shifts bookmarks, repaint the affected lines' gutter markers after the edit's own
         // graphic rebuild settles (deferred to the next pulse), so the moved marker follows its line.
         bookmarks.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
@@ -1062,17 +987,17 @@ public class EditorBuffer implements TabContent {
         // order HighlightDirty maps its range through them.
         configureSettledEditDispatcher();
         settledEditSub = area.multiPlainChanges().subscribe(changes -> {
-            shiftCodeLenses(changes);
+            inlayDecor.shiftCodeLenses(changes);
             if (httpResults.shift(changes, area)) {
-                refreshInlayAreas(); // a request's result follows it when lines are added above
+                inlayDecor.refreshInlayAreas(); // a request's result follows it when lines are added above
             }
             gitLines.edited(changes, this::refreshGutterLine, area2); // bars + blame follow inserted/removed lines
             for (var change : changes) {
                 int removed = change.getRemoved().length();
                 int inserted = change.getInserted().length();
-                highlightDirty.edited(change.getPosition(), removed, inserted);
-                if (semanticActive) {
-                    semanticDirty.edited(change.getPosition(), removed, inserted);
+                highlighter.highlightDirty.edited(change.getPosition(), removed, inserted);
+                if (highlighter.semanticActive) {
+                    highlighter.semanticDirty.edited(change.getPosition(), removed, inserted);
                 }
                 // The matched pair moves with the text, so the next re-match clears it where it now is: a
                 // pass no longer restyles everything below an edit, which used to hide a stale position.
@@ -1085,9 +1010,9 @@ public class EditorBuffer implements TabContent {
             // The cached semantic tokens now point at shifted offsets; suppress the overlay until the
             // next response re-anchors them (one boolean write — off the per-char path's cost budget). The
             // generation bump invalidates any in-flight request so its (now-stale) response is dropped.
-            if (semanticActive) {
-                semanticGen++;
-                semanticStale = true;
+            if (highlighter.semanticActive) {
+                highlighter.semanticGen++;
+                highlighter.semanticStale = true;
             }
             // LSP diagnostics are anchored to absolute line/col and only replaced when the server re-pushes
             // (a debounced didChange + round-trip, ~300 ms+). Until then every keystroke would repaint the OLD
@@ -1102,7 +1027,7 @@ public class EditorBuffer implements TabContent {
         // After scrolling settles, re-request semantic tokens for the now-visible region (debounced so a
         // drag-scroll doesn't fire a request per frame). Inert unless semantic highlighting is active.
         semanticScrollDebounce.setOnFinished(e -> {
-            if ((semanticActive || inlayHintsActive) && semanticTokensRequester != null) {
+            if ((highlighter.semanticActive || inlayHintsActive) && semanticTokensRequester != null) {
                 semanticTokensRequester.run(); // drives semantic tokens AND inlay hints (#681)
             }
         });
@@ -1149,7 +1074,7 @@ public class EditorBuffer implements TabContent {
         settledEdits.at(Duration.ofMillis(150), () -> true, () -> {
             resolveDirty();
             sealBaselineIfDirty();
-            applyHighlighting();
+            highlighter.applyHighlighting();
             runGutter.recomputeRun(true); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
         });
         settledEdits.at(
@@ -1179,7 +1104,9 @@ public class EditorBuffer implements TabContent {
                         && focusedArea.isFocused(),
                 () -> completionActions.updateCompletion(focusedArea, false));
         settledEdits.at(
-                Duration.ofMillis(300), () -> todoEnabled || lspActive || semanticActive || inlayHintsActive, () -> {
+                Duration.ofMillis(300),
+                () -> todoEnabled || lspActive || highlighter.semanticActive || inlayHintsActive,
+                () -> {
                     if (todoEnabled) {
                         refreshTodoMarks();
                     }
@@ -1189,7 +1116,7 @@ public class EditorBuffer implements TabContent {
                     if (lspActive && lspDiagnosticsRequester != null) {
                         lspDiagnosticsRequester.run();
                     }
-                    if ((semanticActive || inlayHintsActive) && semanticTokensRequester != null) {
+                    if ((highlighter.semanticActive || inlayHintsActive) && semanticTokensRequester != null) {
                         semanticTokensRequester.run(); // drives semantic tokens AND inlay hints (#681)
                     }
                 });
@@ -1224,43 +1151,43 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Show/reposition the Markdown format bar + the AI selection-actions bar as the selection or scroll
-     *  changes (each coalesced per pulse; {@link #updateFormatBar()} always runs first so the AI bar can
+     *  changes (each coalesced per pulse; {@link SelectionBars#updateFormatBar()} always runs first so the AI bar can
      *  stack above it when both apply to the same selection). */
     private void installFormatBarListeners(CodeArea a) {
-        markdownEditing.attach(a, this::scheduleFormatBar);
+        markdownEditing.attach(a, selectionBars::scheduleFormatBar);
         a.selectionProperty().addListener((obs, old, now) -> {
-            scheduleFormatBar();
-            scheduleAiActionsBar();
+            selectionBars.scheduleFormatBar();
+            selectionBars.scheduleAiActionsBar();
             selectionChanged.run();
         });
         // One vertical-scroll listener for the four per-scroll features (each gated on its own flag and
         // coalesced per pulse), in the order the former separate listeners ran: RichTextFX notifies every
         // listener on every scroll step, so three of them cost three dispatches for one boolean each.
         a.estimatedScrollYProperty().addListener((obs, old, now) -> {
-            scheduleFormatBar();
-            scheduleAiActionsBar();
+            selectionBars.scheduleFormatBar();
+            selectionBars.scheduleAiActionsBar();
             scheduleStickyScroll();
-            if (semanticActive) {
+            if (highlighter.semanticActive) {
                 semanticScrollDebounce.playFromStart(); // re-request tokens for the scrolled-to region
             }
         });
         a.estimatedScrollXProperty().addListener((obs, old, now) -> {
-            scheduleFormatBar();
-            scheduleAiActionsBar();
+            selectionBars.scheduleFormatBar();
+            selectionBars.scheduleAiActionsBar();
         });
         a.focusedProperty().addListener((obs, was, now) -> {
             if (!now) {
-                hideFormatBar();
-                hideAiActionsBar();
+                selectionBars.hideFormatBar();
+                selectionBars.hideAiActionsBar();
             }
         });
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
+            if (caretOps.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
             if (e.getCode() == KeyCode.ESCAPE) {
-                hideFormatBar(); // don't consume — let other Escape behavior run
-                hideAiActionsBar();
+                selectionBars.hideFormatBar(); // don't consume — let other Escape behavior run
+                selectionBars.hideAiActionsBar();
             }
         });
         // Ctrl/Cmd-click: open a Markdown link in the browser, or (in a code buffer with a live language
@@ -1314,22 +1241,8 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
-    /** Enables/disables the floating Markdown format bar (driven from Settings). */
     public void setFormatBarEnabled(boolean enabled) {
-        this.formatBarEnabled = enabled;
-        if (!enabled) {
-            hideFormatBar();
-        } else {
-            scheduleFormatBar();
-        }
-    }
-
-    void scheduleFormatBar() {
-        if (formatBarUpdatePending || !MarkdownFormatBar.updateNeeded(formatBar, formatBarEnabled, focusedArea)) {
-            return;
-        }
-        formatBarUpdatePending = true;
-        Platform.runLater(this::updateFormatBar);
+        selectionBars.setFormatBarEnabled(enabled);
     }
 
     private void scheduleStickyScroll() {
@@ -1419,124 +1332,20 @@ public class EditorBuffer implements TabContent {
         stickyScroll.update(focusedArea, stickyLines, getTabSize(), this::jumpToLine);
     }
 
-    private void hideFormatBar() {
-        if (formatBar != null) {
-            formatBar.node().setVisible(false);
-        }
-    }
-
-    private void updateFormatBar() {
-        formatBarUpdatePending = false;
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        boolean show = formatBarEnabled
-                && (isMarkdown() || isTypst())
-                && isEditable()
-                && !hugeFile
-                && markdownViewMode != MarkdownViewMode.PREVIEW
-                && MarkdownFormatBar.wanted(a);
-        if (!show) {
-            hideFormatBar();
-            return;
-        }
-        if (formatBar == null) {
-            formatBar = new MarkdownFormatBar(this);
-        }
-        formatBar.showFor(a, (a == area2 && root2 != null) ? root2 : root);
-    }
-
-    /** Injects the Explain/Rewrite callbacks (wired once from the controller, like {@link #setOpenUrlHandler}) —
-     *  each is a no-arg action reading the current selection off {@link #getFocusedArea()} itself. */
     public void setAiActionHandlers(Runnable onExplainSelection, Runnable onRewriteSelection) {
-        this.aiExplainHandler = onExplainSelection == null ? () -> {} : onExplainSelection;
-        this.aiRewriteHandler = onRewriteSelection == null ? () -> {} : onRewriteSelection;
+        selectionBars.setAiActionHandlers(onExplainSelection, onRewriteSelection);
     }
 
-    /** {@link AiActionsBar}'s Explain button. */
     void requestExplainSelection() {
-        aiExplainHandler.run();
+        selectionBars.requestExplainSelection();
     }
 
-    /** {@link AiActionsBar}'s Rewrite button. */
     void requestRewriteSelection() {
-        aiRewriteHandler.run();
+        selectionBars.requestRewriteSelection();
     }
 
-    /** Enables/disables the floating AI selection-actions bar — the effective gate (setting + a cached
-     *  connectivity probe), pushed from the controller; never toggled per-selection/keystroke. */
     public void setAiActionsEnabled(boolean enabled) {
-        this.aiActionsEnabled = enabled;
-        if (!enabled) {
-            hideAiActionsBar();
-        } else {
-            scheduleAiActionsBar();
-        }
-    }
-
-    void scheduleAiActionsBar() {
-        if (aiActionsBarUpdatePending || !AiActionsBar.updateNeeded(aiActionsBar, aiActionsEnabled, focusedArea)) {
-            return;
-        }
-        aiActionsBarUpdatePending = true;
-        Platform.runLater(this::updateAiActionsBar);
-    }
-
-    private void hideAiActionsBar() {
-        if (aiActionsBar != null) {
-            aiActionsBar.node().setVisible(false);
-        }
-    }
-
-    private void updateAiActionsBar() {
-        aiActionsBarUpdatePending = false;
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        boolean show = aiActionsEnabled
-                && !hugeFile
-                && markdownViewMode != MarkdownViewMode.PREVIEW
-                && a.getSelection().getLength() > 0;
-        if (!show) {
-            hideAiActionsBar();
-            return;
-        }
-        int selStart = a.getSelection().getStart();
-        Bounds screen = a.getCharacterBoundsOnScreen(selStart, Math.min(a.getLength(), selStart + 1))
-                .orElse(null);
-        if (screen == null) {
-            hideAiActionsBar();
-            return;
-        }
-        javafx.scene.layout.AnchorPane targetPane = (a == area2 && root2 != null) ? root2 : root;
-        Bounds local = targetPane.screenToLocal(screen);
-        if (local == null) {
-            hideAiActionsBar();
-            return;
-        }
-        if (aiActionsBar == null) {
-            aiActionsBar = new AiActionsBar(this);
-        }
-        aiActionsBar.setEditable(isEditable());
-        javafx.scene.Node bar = aiActionsBar.node();
-        if (bar.getParent() != targetPane) {
-            if (bar.getParent() instanceof javafx.scene.layout.AnchorPane ap) {
-                ap.getChildren().remove(bar);
-            }
-            targetPane.getChildren().add(bar);
-        }
-        bar.setVisible(true);
-        bar.applyCss();
-        double w = bar.prefWidth(-1);
-        double h = bar.prefHeight(-1);
-        double x = Math.max(0, Math.min(local.getMinX(), Math.max(0, targetPane.getWidth() - w)));
-        // The Markdown format bar anchors at the same point — updateFormatBar() runs first (see
-        // installFormatBarListeners), so stack above it when both apply to the same selection.
-        double stackAbove = (formatBar != null && formatBar.node().isVisible())
-                ? formatBar.node().getLayoutBounds().getHeight() + 4
-                : 0;
-        double y = local.getMinY() - h - 4 - stackAbove;
-        if (y < 0) {
-            y = local.getMaxY() + 4 + stackAbove;
-        }
-        bar.resizeRelocate(x, y, w, h);
-        bar.toFront();
+        selectionBars.setAiActionsEnabled(enabled);
     }
 
     /** True when this buffer can show Markdown formatting actions (markdown + editable). */
@@ -1580,7 +1389,10 @@ public class EditorBuffer implements TabContent {
         int line = a.offsetToPosition(span[0], org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                 .getMajor();
         Commenter.Edit edit = JsxContext.lineInChildren(
-                        grammar, highlightLines, line, a.getParagraph(line).getText())
+                        grammar,
+                        highlighter.highlightLines,
+                        line,
+                        a.getParagraph(line).getText())
                 ? Commenter.toggle(a.getText(), span[0], span[1], JsxContext.COMMENT) // {/* */} in markup (A103)
                 : Commenter.toggle(a.getText(), span[0], span[1], language, getPath());
         if (edit == null) {
@@ -1755,7 +1567,7 @@ public class EditorBuffer implements TabContent {
         // change (first paint, resize, vertical scroll, gutter widening). Always deferred via
         // runLater so we never query character bounds synchronously inside the layout pass — doing
         // that re-enters layout and blanks the editor.
-        area.estimatedScrollXProperty().addListener((obs, old, now) -> scheduleRulerMeasure());
+        area.estimatedScrollXProperty().addListener((obs, old, now) -> rulerPlacement.scheduleRulerMeasure());
         // viewportDirtyEvents fires for a vertical scroll and for every edit, neither of which can move the
         // ruler: its x is (glyph advance, gutter width, horizontal scroll), and the visibility test needs the
         // viewport width. Each measure costs TWO forced VirtualFlow layouts plus character-bounds queries, so
@@ -1764,9 +1576,9 @@ public class EditorBuffer implements TabContent {
         // markRulerInputsDirty().
         area.viewportDirtyEvents().subscribe(ignore -> {
             double w = area.getWidth();
-            if (rulerInputsDirty || w != lastRulerViewportWidth) {
-                lastRulerViewportWidth = w;
-                scheduleRulerMeasure();
+            if (rulerPlacement.rulerInputsDirty || w != rulerPlacement.lastRulerViewportWidth) {
+                rulerPlacement.lastRulerViewportWidth = w;
+                rulerPlacement.scheduleRulerMeasure();
             }
         });
 
@@ -2120,209 +1932,31 @@ public class EditorBuffer implements TabContent {
     /** One LSP inlay hint, positioned: 0-based line + column, and the label to render there. */
     public record InlayHint(int line, int col, String label) {}
 
-    /** 0-based line → the hints on it. Read live by the areas' inlay factory. */
-    private java.util.Map<Integer, java.util.List<org.fxmisc.richtext.Inlay>> inlayHintsByLine = java.util.Map.of();
-
-    private boolean inlayFactoryInstalled;
-    private final ColorSwatchInlays swatchInlays = new ColorSwatchInlays(); // colour literals' swatches (D9)
-
-    /**
-     * Sets the LSP inlay hints, rendered <b>inline at their own column</b> — each hint displaces the glyphs
-     * after it instead of being parked at the end of the line (#824).
-     *
-     * <p>Hints are <em>decorations, not text</em>: they never enter the document, never shift an offset, and
-     * never appear in a selection or a copy. See {@code org.fxmisc.richtext.Inlay}.
-     */
     public void setInlayHints(java.util.@Nullable List<InlayHint> hints) {
-        if (largeFile || hints == null || hints.isEmpty()) {
-            if (!inlayHintsByLine.isEmpty()) {
-                inlayHintsByLine = java.util.Map.of();
-                refreshInlayAreas();
-            }
-            return;
-        }
-        java.util.Map<Integer, java.util.List<org.fxmisc.richtext.Inlay>> byLine = new java.util.HashMap<>();
-        for (InlayHint h : hints) {
-            byLine.computeIfAbsent(h.line(), k -> new java.util.ArrayList<>())
-                    .add(new org.fxmisc.richtext.Inlay(h.col(), h.label(), "inlay-hint"));
-        }
-        inlayHintsByLine = byLine;
-        ensureInlayFactory();
-        refreshInlayAreas();
+        inlayDecor.setInlayHints(hints);
     }
 
-    /**
-     * Installs the inlay factory on both views, once. The factory closes over the field rather than the
-     * value, so pushing new hints is a map swap plus a refresh — no rebinding, and the split view stays in
-     * step for free.
-     */
-    private void ensureInlayFactory() {
-        if (inlayFactoryInstalled) {
-            return;
-        }
-        inlayFactoryInstalled = true;
-        java.util.function.IntFunction<java.util.List<org.fxmisc.richtext.Inlay>> factory = this::inlaysOn;
-        area.setInlayFactory(factory);
-        if (area2 != null) {
-            area2.setInlayFactory(factory);
-        }
-    }
-
-    /** The inlays of one line: its hints, its code lens, then a {@code .http} request's last result. */
-    private java.util.@Nullable List<org.fxmisc.richtext.Inlay> inlaysOn(int line) {
-        java.util.List<org.fxmisc.richtext.Inlay> lsp = lspInlaysOn(line);
-        return httpResults.isEmpty() || line < 0 || line >= area.getParagraphs().size()
-                ? lsp
-                : httpResults.inlays(line, lsp, area.getParagraphLength(line));
-    }
-
-    /** The LSP inlays of one line: its colour swatches and hints, then — after the last character — its code lens. */
-    private java.util.@Nullable List<org.fxmisc.richtext.Inlay> lspInlaysOn(int line) {
-        java.util.List<org.fxmisc.richtext.Inlay> hints = swatchInlays.merged(line, inlayHintsByLine.get(line));
-        java.util.List<CodeLens> lenses = codeLensByLine.get(line);
-        return lenses == null || line < 0 || line >= area.getParagraphs().size()
-                ? hints
-                : CodeLensShift.withLens(
-                        hints, lenses, CodeLens::label, area.getParagraphLength(line), CODE_LENS_STYLE);
-    }
-
-    /** Draws the server's colour swatches (HTML review D9) before their literals; null or empty clears them. */
     public void setColorSwatches(java.util.@Nullable List<com.editora.text.ColorSwatch> swatches) {
-        if (swatchInlays.set(largeFile ? null : swatches, root)) {
-            ensureInlayFactory();
-            refreshInlayAreas();
-        }
+        inlayDecor.setColorSwatches(swatches);
     }
 
     /** One code lens: its 0-based line, its text ({@code 3 references}) and the click handler's own token. */
     public record CodeLens(int line, String label, Object token) {}
 
-    private static final String CODE_LENS_STYLE = "code-lens";
-
-    /** 0-based line → the lenses drawn after it, joined. Read live by the areas' inlay factory. */
-    private java.util.Map<Integer, java.util.List<CodeLens>> codeLensByLine = java.util.Map.of();
-
-    private java.util.function.BiConsumer<Integer, java.util.List<CodeLens>> codeLensHandler = (line, lenses) -> {};
-
-    /**
-     * Sets the code lenses, each drawn after the end of its line through the same inlay mechanism as the
-     * hints (so it is not part of the document either). Several lenses on one line are joined. Null or
-     * empty clears them.
-     */
     public void setCodeLenses(java.util.@Nullable List<CodeLens> lenses) {
-        java.util.Map<Integer, java.util.List<CodeLens>> byLine = CodeLensShift.byLine(lenses, CodeLens::line);
-        if (byLine.equals(codeLensByLine)) {
-            return;
-        }
-        codeLensByLine = byLine.isEmpty() ? java.util.Map.of() : byLine;
-        ensureInlayFactory();
-        refreshInlayAreas();
+        inlayDecor.setCodeLenses(lenses);
     }
 
-    /** What a click on a line's code lens does: gets the line as it is now, and the lenses on it. */
     public void setCodeLensHandler(java.util.function.BiConsumer<Integer, java.util.List<CodeLens>> handler) {
-        this.codeLensHandler = handler == null ? (line, lenses) -> {} : handler;
+        inlayDecor.setCodeLensHandler(handler);
     }
 
-    /** The lenses on {@code line} (0-based) — empty when it has none. */
     public java.util.List<CodeLens> codeLensesOn(int line) {
-        return codeLensByLine.getOrDefault(line, java.util.List.of());
+        return inlayDecor.codeLensesOn(line);
     }
 
-    /** Runs the click action of the lenses on {@code line}, as a click on them does. */
     public void activateCodeLens(int line) {
-        java.util.List<CodeLens> lenses = codeLensByLine.get(line);
-        if (lenses != null) {
-            codeLensHandler.accept(line, lenses);
-        }
-    }
-
-    /** Keeps the lenses on their declarations until the next answer arrives ({@link CodeLensShift}). */
-    private void shiftCodeLenses(java.util.List<org.fxmisc.richtext.model.PlainTextChange> changes) {
-        var moved = CodeLensShift.afterChanges(codeLensByLine, changes, area);
-        if (moved != null) {
-            codeLensByLine = moved;
-            refreshInlayAreas();
-        }
-    }
-
-    private static final javafx.css.PseudoClass LENS_HOVER = javafx.css.PseudoClass.getPseudoClass("lens-hover");
-
-    /** The lens label under the pointer, lit and given the hand cursor; null when there is none. */
-    private @Nullable Node hoveredLens;
-
-    private javafx.scene.@Nullable Cursor cursorBeforeLens;
-
-    /**
-     * A click on a code lens runs its action instead of placing the caret. The area's inlay labels are
-     * mouse-transparent, so the pointer never picks one: the lens is found by its bounds, and the hover
-     * look and hand cursor a pick would have given it are set here.
-     */
-    private void installCodeLensClick(CodeArea a) {
-        httpResults.install(a); // and on a .http request's result
-        a.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
-            if (e.getButton() != MouseButton.PRIMARY || !e.isStillSincePress() || lensAt(a, e) == null) {
-                return;
-            }
-            e.consume();
-            activateCodeLens(lensLineAt(a, e));
-        });
-        a.addEventFilter(MouseEvent.MOUSE_MOVED, e -> hoverLens(a, lensAt(a, e)));
-        a.addEventFilter(MouseEvent.MOUSE_EXITED, e -> hoverLens(a, null));
-    }
-
-    /**
-     * The line whose lens is under the pointer. The character under it, not the insertion point beside
-     * it: a lens follows the end of its line, and the insertion point nearest its right half is the start
-     * of the next line — that half of the label ran the lenses of the line below, or nothing.
-     */
-    private static int lensLineAt(CodeArea a, MouseEvent e) {
-        var hit = a.hit(e.getX(), e.getY());
-        int offset = hit.getCharacterIndex().orElse(hit.getInsertionIndex());
-        return a.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
-                .getMajor();
-    }
-
-    /** The lens label the pointer is over, or null. Looks for one only on a line that has lenses. */
-    private @Nullable Node lensAt(CodeArea a, MouseEvent e) {
-        if (codeLensByLine.isEmpty() || !codeLensByLine.containsKey(lensLineAt(a, e))) {
-            return null;
-        }
-        for (Node n : a.lookupAll("." + CODE_LENS_STYLE)) {
-            // Not the gap that sets the lens apart from the code: a click there places the caret.
-            javafx.geometry.Point2D at = n.sceneToLocal(e.getSceneX(), e.getSceneY());
-            double gap = n instanceof Region r ? r.snappedLeftInset() : 0;
-            if (at.getX() >= gap && n.contains(at)) {
-                return n;
-            }
-        }
-        return null;
-    }
-
-    private void hoverLens(CodeArea a, @Nullable Node lens) {
-        if (lens == hoveredLens) {
-            return;
-        }
-        if (hoveredLens != null) {
-            hoveredLens.pseudoClassStateChanged(LENS_HOVER, false);
-            a.setCursor(cursorBeforeLens);
-        }
-        if (lens != null) {
-            lens.pseudoClassStateChanged(LENS_HOVER, true);
-            cursorBeforeLens = a.getCursor();
-            a.setCursor(javafx.scene.Cursor.HAND);
-        }
-        hoveredLens = lens;
-    }
-
-    private void refreshInlayAreas() {
-        if (!inlayFactoryInstalled) {
-            return;
-        }
-        area.refreshInlays();
-        if (area2 != null) {
-            area2.refreshInlays();
-        }
+        inlayDecor.activateCodeLens(line);
     }
 
     /** Injects the document-highlight request (the coordinator asks the server and pushes spans back);
@@ -2374,13 +2008,13 @@ public class EditorBuffer implements TabContent {
         refreshTodoMarks();
     }
 
-    /** Discards an in-flight background TODO scan whose result would be stale (mirrors {@link #highlightGen}). */
+    /** Discards an in-flight background TODO scan whose result would be stale (mirrors {@link BufferHighlighter#highlightGen}). */
     private long todoGen;
 
     /** Re-scans the buffer text and updates the highlight overlay + the scrollbar/minimap overview stripes;
      *  inert when off / no matcher / huge file. The multi-pattern scan runs off the FX thread (a generation
      *  counter discards a superseded result), so a large-but-under-cap file doesn't spend tens of ms scanning
-     *  on the FX thread per debounced edit pulse — mirroring how {@link #applyHighlighting} tokenizes. */
+     *  on the FX thread per debounced edit pulse — mirroring how {@link BufferHighlighter#applyHighlighting} tokenizes. */
     private void refreshTodoMarks() {
         if (disposed) {
             return; // see the disposed field
@@ -3259,8 +2893,8 @@ public class EditorBuffer implements TabContent {
 
     void repaintHttpResults(java.util.@Nullable Set<Integer> lines) {
         if (lines != null) {
-            ensureInlayFactory();
-            refreshInlayAreas();
+            inlayDecor.ensureInlayFactory();
+            inlayDecor.refreshInlayAreas();
             lines.forEach(this::refreshGutterLine);
         }
     }
@@ -3415,82 +3049,24 @@ public class EditorBuffer implements TabContent {
 
     private boolean inlayHintsActive;
 
-    /** Turns LSP semantic highlighting on/off for this buffer (server supports it + feature enabled). Off in
-     *  large-file mode, like the diagnostics overlay. Re-applies the highlight so the overlay appears/clears. */
     public void setSemanticActive(boolean on) {
-        boolean next = on && !largeFile;
-        if (next == semanticActive) {
-            return;
-        }
-        semanticActive = next;
-        if (!semanticActive) {
-            semanticTokens = java.util.List.of();
-            semanticStale = false;
-        }
-        semanticDirty.applied();
-        invalidateHighlighting(); // force a full re-tokenize so the overlay is added/removed everywhere
-        applyHighlighting();
+        highlighter.setSemanticActive(on);
     }
 
     public boolean isSemanticActive() {
-        return semanticActive;
+        return highlighter.isSemanticActive();
     }
 
-    /** The generation to capture when issuing a semantic-tokens request; pass it back to
-     *  {@link #setSemanticTokens(java.util.List, long)} so a response for an older document is dropped. */
     public long semanticGen() {
-        return semanticGen;
+        return highlighter.semanticGen();
     }
 
-    /** Pushes fresh server semantic tokens (absolute positions) and re-applies so they overlay the
-     *  TextMate highlight immediately. No-op when semantic highlighting is off for this buffer. */
     public void setSemanticTokens(java.util.List<SemanticToken> tokens) {
-        setSemanticTokens(tokens, semanticGen);
+        highlighter.setSemanticTokens(tokens);
     }
 
-    /**
-     * Applies a semantic-tokens response only if the document hasn't changed since the request was issued
-     * ({@code requestGen == } the current {@link #semanticGen()}). A stale response — the server computed it
-     * against an older version, or an older request's reply arrives after a newer one — is <b>dropped</b>,
-     * leaving {@link #semanticStale} set so the overlay stays suppressed rather than re-anchoring the old
-     * tokens onto the shifted text (which mis-colored characters/lines until the next response). A response
-     * identical to the tokens already shown restyles nothing; a different one restyles the lines that differ.
-     */
     public void setSemanticTokens(java.util.List<SemanticToken> tokens, long requestGen) {
-        if (!semanticActive || requestGen != semanticGen) {
-            return;
-        }
-        java.util.List<SemanticToken> next = tokens == null ? java.util.List.of() : tokens;
-        int lines = area.getParagraphs().size();
-        int erasedFirst = semanticStale ? lineOfOffset(semanticDirty.start()) : -1;
-        int[] range = SemanticToken.changedLines(
-                semanticTokens, next, erasedFirst, lineOfOffset(semanticDirty.end()), lines - semanticLines);
-        if (range != null || semanticStale) {
-            semanticTokens = next;
-        }
-        semanticStale = false; // anchored to the current (unchanged since request) text → safe to overlay
-        semanticDirty.applied();
-        semanticLines = lines;
-        if (range != null) { // else the same tokens over the same text: nothing to restyle
-            // Style-only: the pass re-tokenizes just these lines, from the stored end-state above them.
-            int last = Math.min(range[1], lines - 1);
-            highlightDirty.include(
-                    area.getAbsolutePosition(Math.min(range[0], last), 0),
-                    area.getAbsolutePosition(last, area.getParagraphLength(last)));
-            applyHighlighting();
-        }
-    }
-
-    private int lineOfOffset(int offset) {
-        return area.offsetToPosition(
-                        Math.max(0, Math.min(offset, area.getLength())),
-                        org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
-                .getMajor();
-    }
-
-    /** The semantic tokens a pass dispatched now should overlay, or null (off, stale, or none). */
-    private java.util.@Nullable List<SemanticToken> semanticOverlay() {
-        return semanticActive && !semanticStale && !semanticTokens.isEmpty() ? semanticTokens : null;
+        highlighter.setSemanticTokens(tokens, requestGen);
     }
 
     /** The inclusive 0-based line range currently visible in the editor (for a viewport semantic-tokens
@@ -3981,17 +3557,8 @@ public class EditorBuffer implements TabContent {
         caretFixes.flush();
     }
 
-    /** Per-column "rainbow" coloring for CSV/TSV buffers (replaces the source.csv grammar highlighting). */
-    private boolean csvRainbow;
-
-    /** Enables/disables rainbow per-column CSV coloring; re-highlights the whole buffer on a change. */
     public void setCsvRainbowEnabled(boolean on) {
-        boolean want = on && isCsv();
-        if (want != csvRainbow) {
-            csvRainbow = want;
-            invalidateHighlighting();
-            applyHighlighting();
-        }
+        highlighter.setCsvRainbowEnabled(on);
     }
 
     /**
@@ -4024,19 +3591,8 @@ public class EditorBuffer implements TabContent {
         return folds.removeManualFolds();
     }
 
-    /** Tint each bracket by nesting depth (see {@code BracketColors}). */
-    private boolean bracketColors;
-
-    /**
-     * Enables/disables bracket-pair colorization. Re-highlights the whole buffer on a change: the colours
-     * ride the token spans, so an incremental pass would leave the untouched prefix coloured as it was.
-     */
     public void setBracketColorsEnabled(boolean on) {
-        if (on != bracketColors) {
-            bracketColors = on;
-            invalidateHighlighting();
-            applyHighlighting();
-        }
+        highlighter.setBracketColorsEnabled(on);
     }
 
     /** Whether a level/pattern filter is currently narrowing the visible lines. */
@@ -4181,7 +3737,7 @@ public class EditorBuffer implements TabContent {
      * Releases this buffer's resources. Must be called by the controller when the tab is
      * <em>actually closed</em> (not on a plain tab switch). The preview/highlight executors are now
      * shared, app-lifetime pools ({@link BufferPreview#PREVIEW_POOL}/{@link #HIGHLIGHT_POOL}), so disposal does not
-     * shut them down — it instead bumps {@link BufferPreview#previewGen}/{@link #highlightGen} so any in-flight task
+     * shut them down — it instead bumps {@link BufferPreview#previewGen}/{@link BufferHighlighter#highlightGen} so any in-flight task
      * submitted by this buffer discards its result (the gen guard) instead of touching the now-dead
      * buffer. The reactfx subscriptions are on the buffer's own {@code area}/{@code area2} and die with
      * it on GC; the shared settled-edit subscription is dropped eagerly too. Idempotent. Once disposed the
@@ -4211,9 +3767,9 @@ public class EditorBuffer implements TabContent {
             settledEditSub = null;
         }
         settledEdits.dispose();
-        disposeMultiCaret();
+        caretOps.disposeMultiCaret();
         previewPanes.previewGen++; // discard any in-flight preview result for this (now closed) buffer
-        highlightGen++; // discard any in-flight highlight result
+        highlighter.highlightGen++; // discard any in-flight highlight result
         todoGen++; // discard any in-flight TODO scan result
         runGutter.runScanGen++; // discard any in-flight run scan result
         languageGen++; // discard any in-flight deferred grammar load
@@ -4227,7 +3783,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Set on {@link #dispose()}; {@link #applyHighlighting()} and the TODO scan refuse to dispatch once
+     * Set on {@link #dispose()}; {@link BufferHighlighter#applyHighlighting()} and the TODO scan refuse to dispatch once
      * true. The gen bumps above only invalidate work already in flight — the still-subscribed debounced
      * edit pulse fires once more ~300 ms after the last change, and before this flag it would re-dispatch
      * a fresh full tokenize of the closed buffer whose generation was then CURRENT, so nothing cancelled
@@ -4240,182 +3796,47 @@ public class EditorBuffer implements TabContent {
 
     // --- Multiple cursors + column/box selection (RichTextFX fork) -------------------------------
 
-    /**
-     * Enables/disables the multi-caret add-on. When on, installs {@link MultiCarets} on the
-     * primary area (and the secondary split view if present); when off, removes it (collapsing to one
-     * caret). Skipped for huge files (editing is already inert there). Idempotent.
-     */
     public void setMultiCaretEnabled(boolean enabled) {
-        this.multiCaretEnabled = enabled;
-        if (enabled && !hugeFile) {
-            if (multiCaret == null) {
-                multiCaret = MultiCarets.install(area, typingAids::tabEdit);
-            }
-            if (area2 != null && multiCaret2 == null) {
-                multiCaret2 = MultiCarets.install(area2, typingAids::tabEdit);
-            }
-        } else {
-            disposeMultiCaret();
-        }
+        caretOps.setMultiCaretEnabled(enabled);
     }
 
-    private void disposeMultiCaret() {
-        if (multiCaret != null) {
-            multiCaret.dispose();
-            multiCaret = null;
-        }
-        if (multiCaret2 != null) {
-            multiCaret2.dispose();
-            multiCaret2 = null;
-        }
-    }
-
-    /** The multi-caret add-on of the area that has focus (secondary split view, else primary), or null. */
-    private @Nullable MultiCarets activeCarets() {
-        return multiCaret2 != null && area2 != null && area2.isFocused() ? multiCaret2 : multiCaret;
-    }
-
-    /** Runs {@code op} on {@link #activeCarets()} when it has extra carets; false → the single-caret path. */
-    private boolean withExtras(java.util.function.Consumer<MultiCarets> op) {
-        MultiCarets m = activeCarets();
-        if (m == null || !m.hasExtras()) {
-            return false;
-        }
-        op.accept(m);
-        return true;
-    }
-
-    /** True while any area of this buffer has more than the primary caret (extra carets / box selection). */
     public boolean hasMultipleCarets() {
-        return (multiCaret != null && multiCaret.hasExtras()) || (multiCaret2 != null && multiCaret2.hasExtras());
+        return caretOps.hasMultipleCarets();
     }
 
-    /** Whether any caret of the focused area, primary or extra, has text selected. */
     public boolean anyCaretSelection() {
-        MultiCarets m = activeCarets();
-        return m != null ? m.anySelection() : getFocusedArea().getSelection().getLength() > 0;
+        return caretOps.anyCaretSelection();
     }
 
-    /** Undo ({@code redo == false}) or Redo on {@code a}; extra carets keep their places and stay usable. */
     public void undoOrRedo(CodeArea a, boolean redo) {
-        MultiCarets m = a == area2 ? multiCaret2 : multiCaret;
-        Runnable op = redo ? a::redo : a::undo;
-        if (m == null) {
-            op.run();
-        } else {
-            m.keepingPrimary(op);
-        }
+        caretOps.undoOrRedo(a, redo);
     }
 
-    /** Selects the next occurrence of the current selection as an additional caret (VS Code Cmd/Ctrl+D). */
     public void addCaretNextOccurrence() {
-        MultiCarets m = activeCarets();
-        if (m != null) {
-            m.addNextOccurrence();
-        }
+        caretOps.addCaretNextOccurrence();
     }
 
     /** Cap on carets a single "select all" places, so a common word can't create hundreds of thousands. */
     public static final int MAX_OCCURRENCE_CARETS = 10_000;
 
-    /**
-     * Places a caret with selection at each of {@code ranges} (the one containing {@code anchorStart} stays
-     * primary), for "select all occurrences" / "select all matches". Capped at
-     * {@link #MAX_OCCURRENCE_CARETS}. Returns the number of carets placed; 0 when {@code ranges} is empty.
-     */
     public int placeOccurrenceCarets(List<int[]> ranges, int anchorStart) {
-        if (ranges == null || ranges.isEmpty()) {
-            return 0;
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int primaryIdx = com.editora.editops.SelectOccurrences.primaryIndex(ranges, anchorStart);
-        int[] primary = ranges.get(primaryIdx);
-        MultiCarets carets = activeCarets();
-        if (carets == null) { // multi-caret unavailable → just select the primary occurrence
-            a.selectRange(primary[0], primary[1]);
-            a.requestFollowCaret();
-            return 1;
-        }
-        carets.collapse();
-        a.selectRange(primary[0], primary[1]);
-        int placed = 1;
-        for (int i = 0; i < ranges.size() && placed < MAX_OCCURRENCE_CARETS; i++) {
-            if (i == primaryIdx) {
-                continue;
-            }
-            int[] r = ranges.get(i);
-            carets.getManager().addCaretWithSelection(r[0], r[1]);
-            placed++;
-        }
-        a.requestFollowCaret();
-        return placed;
+        return caretOps.placeOccurrenceCarets(ranges, anchorStart);
     }
 
-    /**
-     * Selects every occurrence of the current selection (or, with none, the word under the caret) as a
-     * multi-caret selection — VS Code's {@code selectHighlights} (Ctrl+Shift+L). Case-sensitive literal
-     * matching (whole-word when seeded from the caret's word). Returns the number of carets placed (0 when there's nothing to match).
-     */
     public int selectAllOccurrences() {
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        String text = a.getText();
-        String query;
-        int anchor;
-        String sel = a.getSelectedText();
-        if (!sel.isEmpty()) {
-            query = sel;
-            anchor = a.getSelection().getStart();
-        } else {
-            int[] w = com.editora.editops.SelectOccurrences.wordAt(text, a.getCaretPosition(), language);
-            if (w == null) {
-                return 0;
-            }
-            query = text.substring(w[0], w[1]);
-            anchor = w[0];
-        }
-        // A query seeded from the word under a bare caret matches whole words only (id, not valid / width).
-        List<int[]> matches = SearchMatcher.matches(text, query, true, false, sel.isEmpty());
-        return placeOccurrenceCarets(matches, anchor);
+        return caretOps.selectAllOccurrences();
     }
 
-    /**
-     * Sublime's Split into Lines ({@code atLineEnds} false: each line's selected part becomes a selection) or
-     * VS Code's Add Cursors to Line Ends (true: a bare caret at the end of each selected line), for every
-     * selection there is. Returns the number of carets placed; 0 when nothing is selected.
-     */
     public int splitSelectionIntoLines(boolean atLineEnds) {
-        MultiCarets carets = activeCarets();
-        CodeArea a = getFocusedArea();
-        if (carets == null) {
-            return 0;
-        }
-        String text = a.getText();
-        java.util.TreeMap<Long, int[]> ranges = new java.util.TreeMap<>(); // in document order, none twice
-        for (int[] sel : carets.selections()) {
-            List<int[]> parts = atLineEnds
-                    ? com.editora.editops.CaretPlans.caretsAtLineEnds(text, sel[0], sel[1])
-                    : com.editora.editops.CaretPlans.splitIntoLines(text, sel[0], sel[1]);
-            for (int[] r : parts) {
-                ranges.put(((long) r[0] << 32) | r[1], r);
-            }
-        }
-        return ranges.isEmpty()
-                ? 0
-                : placeOccurrenceCarets(
-                        new java.util.ArrayList<>(ranges.values()),
-                        a.getSelection().getStart());
+        return caretOps.splitSelectionIntoLines(atLineEnds);
     }
 
-    /** Moves the newest selection to the next occurrence (VS Code Ctrl+K Ctrl+D); false when it cannot. */
     public boolean skipOccurrence() {
-        MultiCarets carets = activeCarets();
-        return carets != null && carets.skipOccurrence();
+        return caretOps.skipOccurrence();
     }
 
-    /** Removes the extra caret added last (VS Code Ctrl+U); false when there is only one caret. */
     public boolean undoLastCaret() {
-        MultiCarets carets = activeCarets();
-        return carets != null && carets.undoLastCaret();
+        return caretOps.undoLastCaret();
     }
 
     /** The VS Code line commands ({@link com.editora.editops.LineCommands}). */
@@ -4428,57 +3849,12 @@ public class EditorBuffer implements TabContent {
         OUTDENT
     }
 
-    /**
-     * Runs a line command at every caret of the focused area — the primary and the extras — as one undoable
-     * edit. Collapsed folds on the lines it changes are opened first, so no hidden line is edited unseen.
-     * False when the area cannot take it (read-only, a huge file for the indent commands).
-     */
     public boolean lineCommand(LineCommand command) {
-        CodeArea a = getFocusedArea();
-        if (command != LineCommand.SELECT && !a.isEditable()) {
-            return false;
-        }
-        MultiCarets carets = activeCarets();
-        if (command != LineCommand.SELECT && a == area) {
-            for (int[] sel :
-                    carets != null ? carets.selections() : List.of(new int[] {a.getAnchor(), a.getCaretPosition()})) {
-                folds.expandHeaderAt(Math.min(sel[0], sel[1]));
-                folds.expandHeaderAt(Math.max(sel[0], sel[1]));
-            }
-        }
-        return atEachCaret((text, s, e) -> switch (command) {
-            case INSERT_BELOW ->
-                com.editora.editops.LineCommands.insertBelow(
-                        text, s, e, at -> IndentWindow.enterEdit(IndentKeys.doc(a), at, language, indentUnit()));
-            case INSERT_ABOVE -> com.editora.editops.LineCommands.insertAbove(text, s, e);
-            case DELETE -> com.editora.editops.LineCommands.deleteLines(text, s, e);
-            case SELECT -> com.editora.editops.LineCommands.selectLine(text, s, e);
-            case INDENT, OUTDENT ->
-                com.editora.editops.LineCommands.indentLines(
-                        text,
-                        s,
-                        e,
-                        command == LineCommand.OUTDENT,
-                        (from, to, back) -> typingAids.tabEdit(from, to, back));
-        });
+        return caretOps.lineCommand(command);
     }
 
-    /**
-     * Complete Current Statement ({@link com.editora.editops.CompleteStatement}) at every caret, as one undoable
-     * edit; in a language it does not know, Insert Line Below. False when the area is read-only.
-     */
     public boolean completeStatement() {
-        CodeArea a = getFocusedArea();
-        if (!a.isEditable()) {
-            return false;
-        }
-        com.editora.editops.CompleteStatement.Style style = com.editora.editops.CompleteStatement.styleFor(language);
-        if (style == null) {
-            return lineCommand(LineCommand.INSERT_BELOW);
-        }
-        String unit = indentUnit();
-        return atEachCaret((text, s, e) -> com.editora.editops.CompleteStatement.edit(
-                text, s, e, style, unit, at -> IndentWindow.enterEdit(IndentKeys.doc(a), at, language, unit)));
+        return caretOps.completeStatement();
     }
 
     /** One caret's edit: its change and its selection afterwards, given the text and the caret's selection. */
@@ -4487,127 +3863,52 @@ public class EditorBuffer implements TabContent {
         Indenter.@Nullable TabEdit edit(String text, int selStart, int selEnd);
     }
 
-    /**
-     * Runs {@code edit} at every caret of the focused area — the primary and the extras, or the one caret when
-     * multiple cursors are off — as one undoable edit. False when {@code edit} declines a caret (returns null);
-     * an exception it throws propagates before anything changes.
-     */
     public boolean atEachCaret(CaretEdit edit) {
-        CodeArea a = getFocusedArea();
-        MultiCarets carets = activeCarets();
-        String text = a.getText();
-        MultiTab.CaretEdits edits = (s, e, ignored) -> edit.edit(text, s, e);
-        boolean done;
-        if (carets != null) {
-            done = carets.applyAtEachCaret(edits, false);
-        } else { // multiple cursors off: the same plan for the one caret
-            MultiTab.Plan plan = MultiTab.plan(List.of(new int[] {a.getAnchor(), a.getCaretPosition()}), false, edits);
-            done = plan != null;
-            if (plan != null) {
-                for (MultiTab.Change c : plan.changes()) {
-                    a.replaceText(c.from(), c.to(), c.replacement()); // at most one: a single caret
-                }
-                a.selectRange(
-                        plan.ranges().get(0).anchor(), plan.ranges().get(0).caret());
-            }
-        }
-        if (done) {
-            a.requestFollowCaret();
-        }
-        return done;
+        return caretOps.atEachCaret(edit);
     }
 
-    /** Adds a caret on the line above the topmost caret. */
     public void addCaretAbove() {
-        addCaretOnNextLine(false);
+        caretOps.addCaretAbove();
     }
 
-    /** Adds a caret on the line below the bottommost caret. */
     public void addCaretBelow() {
-        addCaretOnNextLine(true);
+        caretOps.addCaretBelow();
     }
 
-    private void addCaretOnNextLine(boolean down) {
-        MultiCarets m = activeCarets();
-        if (m != null) {
-            m.addCaretOnNextLine(down);
-        }
-    }
-
-    // --- Multi-caret movement fan-out (#635) ------------------------------------------------------
-    // The fork's multi-caret movement lives in its node-level InputMap, which the scene-level
-    // KeyDispatcher preempts for the Emacs chords. These expose that movement so MainController's
-    // nav.* commands can fan out to every caret when extras exist; each returns whether it handled the
-    // move (false → no extra carets, so the caller runs the normal single-caret motion). {@code select}
-    // extends the selection (= Emacs mark active), mirroring {@code selPolicy()}.
-
-    /** Moves every caret horizontally by {@code amount} chars (or words); see {@link #addCaretBelow}. */
     public boolean multiMoveHorizontal(int amount, boolean byWord, boolean select) {
-        return withExtras(m -> m.moveHorizontal(amount, byWord, select));
+        return caretOps.multiMoveHorizontal(amount, byWord, select);
     }
 
-    /** Moves every caret one line up ({@code down=false}) or down. */
     public boolean multiMoveVertical(boolean down, boolean select) {
-        return withExtras(m -> m.moveVertical(down, select));
+        return caretOps.multiMoveVertical(down, select);
     }
 
-    /** Moves every caret to its line start ({@code toEnd=false}) or line end. */
     public boolean multiMoveLineBoundary(boolean toEnd, boolean select) {
-        return withExtras(m -> m.moveLineBoundary(toEnd, select));
+        return caretOps.multiMoveLineBoundary(toEnd, select);
     }
 
-    /** True when {@code a} currently has extra carets, so this buffer's single-caret KEY filters
-     *  (auto-indent/close, snippets, completion, view paging) should stand down and let the fork's
-     *  multi-caret input map handle the key for every caret. */
-    boolean multiCaretActiveOn(@Nullable CodeArea a) {
-        if (a == area) {
-            return multiCaret != null && multiCaret.hasExtras();
-        }
-        if (a == area2) {
-            return multiCaret2 != null && multiCaret2.hasExtras();
-        }
-        return false;
-    }
-
-    /** Copies every caret's selection to the clipboard (VS Code one-line-per-caret) when extra carets
-     *  exist; returns whether it handled it (so the caller can fall back to the single-caret copy). */
     public boolean multiCaretCopy() {
-        return withExtras(m -> m.copy());
+        return caretOps.multiCaretCopy();
     }
 
-    /** Cuts every caret's selection (multi-caret aware); returns whether it handled it. */
     public boolean multiCaretCut() {
-        return withExtras(m -> m.cut());
+        return caretOps.multiCaretCut();
     }
 
-    /** Pastes at every caret (distributing clipboard lines one per caret); returns whether it handled it. */
     public boolean multiCaretPaste() {
-        return withExtras(m -> m.paste());
+        return caretOps.multiCaretPaste();
     }
 
-    /** Puts the whole current line (including a trailing newline) on the clipboard — the empty-selection
-     *  Copy of VS Code's {@code editor.emptySelectionClipboard}. Leaves the document untouched. */
     public void copyCurrentLine() {
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int p = a.getCurrentParagraph();
-        LineClipboard.copy(a, p, folds.hiddenRunEnd(p)); // a collapsed fold's header takes its body along
+        caretOps.copyCurrentLine();
     }
 
-    /** Cuts the whole current line — copies it then deletes the line as one undoable edit. */
     public void cutCurrentLine() {
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int p = a.getCurrentParagraph();
-        LineClipboard.cut(a, p, folds.hiddenRunEnd(p));
+        caretOps.cutCurrentLine();
     }
 
-    /** Collapses any extra carets / box selection back to a single caret. */
     public void collapseCarets() {
-        if (multiCaret != null) {
-            multiCaret.collapse();
-        }
-        if (multiCaret2 != null) {
-            multiCaret2.collapse();
-        }
+        caretOps.collapseCarets();
     }
 
     public void refreshPreview() {
@@ -4704,13 +4005,14 @@ public class EditorBuffer implements TabContent {
         typingAids.addAutoIndent(area2);
         completionActions.installCompletionTrigger(area2);
         installOccurrenceTrigger(area2); // LSP document highlight (#675)
-        installCodeLensClick(area2);
-        if (inlayFactoryInstalled) {
-            area2.setInlayFactory(this::inlaysOn); // hints, lenses and results set before the split opened
+        inlayDecor.installCodeLensClick(area2);
+        if (inlayDecor.inlayFactoryInstalled) {
+            area2.setInlayFactory(inlayDecor::inlaysOn); // hints, lenses and results set before the split opened
         }
         imageDrop.install(area2);
-        if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
-            multiCaret2 = MultiCarets.install(area2, typingAids::tabEdit); // same multi-caret add-on in the split view
+        if (caretOps.multiCaretEnabled && !hugeFile && caretOps.multiCaret2 == null) {
+            caretOps.multiCaret2 =
+                    MultiCarets.install(area2, typingAids::tabEdit); // same multi-caret add-on in the split view
         }
         area2.setLineHighlighterFill(lineHighlightColor);
         refreshGutter();
@@ -4775,42 +4077,23 @@ public class EditorBuffer implements TabContent {
             blameColumnWidth = measureBlameColumnWidth(gitLines.blame());
             refreshGutter();
         }
-        markRulerInputsDirty(); // the glyph advance changed
+        rulerPlacement.markRulerInputsDirty(); // the glyph advance changed
     }
 
-    /** Show/hide the column-80 ruler overlay. */
     public void setColumnRulerVisible(boolean visible) {
-        if (visible == rulerVisible) {
-            return; // unchanged: measuring the ruler forces a VirtualFlow layout, so don't re-do it for nothing
-        }
-        this.rulerVisible = visible;
-        if (visible) {
-            markRulerInputsDirty();
-        } else {
-            columnRuler.hide();
-        }
+        rulerPlacement.setColumnRulerVisible(visible);
     }
 
-    /**
-     * The ruler columns Settings asks for: {@code global}, or the list {@code perLanguage} has for this buffer's
-     * language. An {@code .editorconfig} {@code max_line_length} still replaces the first (see
-     * {@link RulerColumns#resolve}). Re-measures only when they changed.
-     */
     public void setRulerColumns(List<Integer> global, java.util.Map<String, List<Integer>> perLanguage) {
-        List<Integer> g = global == null ? List.of() : List.copyOf(global);
-        java.util.Map<String, List<Integer>> l =
-                perLanguage == null ? java.util.Map.of() : java.util.Map.copyOf(perLanguage);
-        if (g.equals(rulerColumns) && l.equals(languageRulers)) {
-            return; // runs for every buffer on every settings apply
-        }
-        rulerColumns = g;
-        languageRulers = l;
-        markRulerInputsDirty();
+        rulerPlacement.setRulerColumns(global, perLanguage);
     }
 
-    /** The columns the rulers stand at now (see {@link RulerColumns#resolve}). */
     List<Integer> rulerColumnsInForce() {
-        return RulerColumns.resolve(rulerColumns, languageRulers, language, rulerColumnOverride);
+        return rulerPlacement.rulerColumnsInForce();
+    }
+
+    boolean rulerMeasurePending() {
+        return rulerPlacement.rulerMeasurePending();
     }
 
     /** The document's fixed-size undo history (bounded, so it can't grow without limit), shared by both views. */
@@ -4910,7 +4193,7 @@ public class EditorBuffer implements TabContent {
         renderingActive = active;
         if (!active) snippetSession.cancel(); // a background tab: Tab must not come back to its fields
         if (active && wasInactive) {
-            scheduleRulerMeasure(); // catch up on measures skipped while the tab was hidden
+            rulerPlacement.scheduleRulerMeasure(); // catch up on measures skipped while the tab was hidden
         }
         minimap.setRenderingActive(active);
         // A full-viewport overlay keeps a Canvas + RTTexture alive for a tab the user cannot see. The
@@ -4951,33 +4234,12 @@ public class EditorBuffer implements TabContent {
         spellOverlay.releaseHiddenCaches();
     }
 
-    /**
-     * Holds the syntax highlighter back while this buffer's editor is not in the scene.
-     *
-     * <p>A restored background tab is filled while its editor is detached ({@code DeferredTabContent}); the
-     * load marks the whole document dirty, and without this the tab would be tokenised on the highlight
-     * pool and restyled on the FX thread a pause later — for every restored tab, shortly after its fill,
-     * while the user is looking at a different file. Deferred, the first pass runs when the tab is first
-     * shown instead, which is when its styles are first visible. Every other document consumer (folds, the
-     * caret, LSP sync, the snapshot) is unaffected: only the style pass waits.
-     *
-     * <p>Ending the deferral runs the owed pass at once, if one was requested; a buffer that was never asked
-     * to highlight while deferred dispatches nothing.
-     */
     public void setHighlightDeferred(boolean deferred) {
-        if (highlightDeferred == deferred) {
-            return;
-        }
-        highlightDeferred = deferred;
-        if (!deferred && highlightOwed) {
-            highlightOwed = false;
-            applyHighlighting();
-        }
+        highlighter.setHighlightDeferred(deferred);
     }
 
-    /** True while {@link #setHighlightDeferred} is holding the highlighter back. */
     public boolean isHighlightDeferred() {
-        return highlightDeferred;
+        return highlighter.isHighlightDeferred();
     }
 
     /**
@@ -5026,7 +4288,7 @@ public class EditorBuffer implements TabContent {
     /** Rebuilds the gutter graphic factory (line numbers + fold chevrons + markers) from current state, or
      *  removes the gutter entirely (null factory) when {@link #gutterVisible} is off. */
     public void refreshGutter() {
-        markRulerInputsDirty(); // the gutter's width is where column 0 starts
+        rulerPlacement.markRulerInputsDirty(); // the gutter's width is where column 0 starts
         noteOverlay.refresh();
         if (indentGuides != null) {
             indentGuides.refresh(); // and where the guides start: the new gutter is laid out in the next pulse
@@ -5422,7 +4684,7 @@ public class EditorBuffer implements TabContent {
     public void setWordWrap(boolean wrap) {
         boolean changed = wrap != area.isWrapText();
         if (changed) {
-            markRulerInputsDirty(); // wrapping re-flows the text and removes the horizontal scroll
+            rulerPlacement.markRulerInputsDirty(); // wrapping re-flows the text and removes the horizontal scroll
         }
         area.setWrapText(wrap); // the split's second view is bound to this
         if (!changed) {
@@ -5514,169 +4776,6 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /**
-     * Records that an input to the ruler's position changed other than the viewport width or the horizontal
-     * scroll (the gutter, the font, wrap, the ruler column), and schedules the re-measure. The flag survives
-     * until a measure actually runs, so a change made before the area has been laid out is not lost.
-     */
-    private void markRulerInputsDirty() {
-        rulerInputsDirty = true;
-        scheduleRulerMeasure();
-    }
-
-    /**
-     * Coalesces a ruler re-measurement onto the next pulse. Measuring queries character bounds, which
-     * must not happen synchronously inside a layout/viewport event (it re-enters layout and blanks the
-     * editor), so we always defer it via {@link Platform#runLater}.
-     */
-    private void scheduleRulerMeasure() {
-        // Measuring queries the viewport (a forced VirtualFlow layout) + character bounds. A background tab
-        // is not on screen, so doing that for it is pure cost — and a settings apply dirties every open
-        // buffer's viewport at once, which is what made a Simple-mode toggle scale with the number of tabs.
-        // setRenderingActive re-schedules when the tab is shown again, so nothing is left stale.
-        if (!rulerVisible || rulerMeasurePending || !renderingActive) {
-            return;
-        }
-        rulerMeasurePending = true;
-        Platform.runLater(() -> {
-            rulerMeasurePending = false;
-            measureAndPlaceRuler();
-        });
-    }
-
-    /**
-     * How many times the ruler has been measured, app-wide. A test seam, not state the editor reads: how
-     * often this runs is a measured property (each measure is two forced {@code VirtualFlow} layouts plus
-     * character-bounds queries), and without a counter a regression to the old measure-on-every-viewport-event
-     * subscription would be invisible — the ruler would still land in the right place, just far more often.
-     * See {@code ColumnRulerFxTest}.
-     */
-    static final java.util.concurrent.atomic.AtomicInteger RULER_MEASURES_FOR_TEST =
-            new java.util.concurrent.atomic.AtomicInteger();
-
-    /**
-     * Positions the rulers at their columns (80 unless Settings or {@code .editorconfig} say otherwise), drawn
-     * whether or not any text reaches them. Each is column 0's on-screen x plus that many advances of the
-     * editor font (see {@link #columnZeroX}), so it is exact regardless of which glyphs are present; one
-     * measure serves them all. A ruler is hidden when its column falls outside the visible text width (the
-     * window is too narrow, or the text is scrolled past it).
-     */
-    private void measureAndPlaceRuler() {
-        RULER_MEASURES_FOR_TEST.incrementAndGet();
-        lastRulerViewportWidth = area.getWidth();
-        List<Integer> columns = rulerColumnsInForce();
-        if (!rulerVisible || columns.isEmpty()) {
-            columnRuler.hide();
-            rulerInputsDirty = false; // nothing to place; a later show() re-marks via setColumnRulerVisible
-            return;
-        }
-        boolean inputsChanged = rulerInputsDirty;
-        Double x = columnZeroX();
-        // Clear the pending flag only on a measure that actually produced a position. Before the area's
-        // first layout the geometry is unmeasurable and columnZeroX returns null; clearing the flag there
-        // would leave the gate waiting for a viewport WIDTH change that may never come, and the ruler would
-        // stay hidden for the life of the buffer.
-        if (x != null) {
-            rulerInputsDirty = false;
-            if (inputsChanged) {
-                confirmRulerAfterLayout();
-            }
-        }
-        columnRuler.place(x, columnAdvance.of(fontFamily, fontSize), columns, scrollPane.getWidth());
-    }
-
-    /**
-     * Measures once more two frames after a measure that followed a changed input (gutter, font, wrap). That
-     * first measure runs from {@code runLater}, which can land before the pulse that lays the new gutter out;
-     * it then reads column 0 at its old x and nothing else would ever correct it. One-shot, and the second
-     * measure does not re-arm it. A changed input while one is waiting starts the two frames again: the
-     * confirm that was about to fire would otherwise also run before the new layout, and be the last word.
-     */
-    private void confirmRulerAfterLayout() {
-        rulerConfirmFrames = 0;
-        if (rulerConfirm != null) {
-            return;
-        }
-        rulerConfirm = new javafx.animation.AnimationTimer() {
-            @Override
-            public void handle(long now) {
-                if (++rulerConfirmFrames < 2) {
-                    return;
-                }
-                stop();
-                rulerConfirm = null;
-                if (rulerVisible && renderingActive) {
-                    measureAndPlaceRuler();
-                }
-            }
-        };
-        rulerConfirm.start();
-    }
-
-    private javafx.animation.@Nullable AnimationTimer rulerConfirm;
-    private int rulerConfirmFrames;
-
-    /** Whether a ruler measure is still to come (the deferred one or its confirmation); for tests to wait on. */
-    boolean rulerMeasurePending() {
-        return rulerMeasurePending || rulerConfirm != null;
-    }
-
-    /**
-     * Root-local x of column 0: the left edge of the first character of any visible line — a property of the
-     * gutter and the horizontal scroll, not of the text. A ruler column is this plus that many advances of the
-     * editor font (see {@link ColumnAdvance}; never derived from the visible text, which a short line, a tab or
-     * a wide glyph skewed). Returns {@code null} when no visible line has a character.
-     */
-    private @Nullable Double columnZeroX() {
-        try {
-            int first = Math.max(0, area.firstVisibleParToAllParIndex());
-            int last = Math.min(area.getParagraphs().size() - 1, area.lastVisibleParToAllParIndex());
-            for (int p = first; p <= last; p++) {
-                if (area.isFolded(p) || area.getParagraphLength(p) == 0) {
-                    continue; // collapsed or empty: no character to take column 0 from
-                }
-                Bounds start = caretBounds(p, 0);
-                if (start != null) {
-                    return start.getMinX();
-                }
-            }
-        } catch (RuntimeException ignored) {
-            // Viewport mid-layout; a later event will re-measure.
-        }
-        return null;
-    }
-
-    /**
-     * Root-local bounds of the caret at {@code column} in paragraph {@code p}, or {@code null}.
-     *
-     * <p><b>Never query the zero-width {@code getCharacterBoundsOnScreen(abs, abs)} form here.</b> For an
-     * empty range {@code GenericStyledArea} allocates a throwaway {@link org.fxmisc.richtext.CaretNode} to
-     * measure with, and a {@code CaretNode} starts a 500 ms {@code restartableTicks} blink timer that
-     * nothing ever stops — so every call permanently registers a running JavaFX {@code Timeline} as a pulse
-     * receiver. This method runs 2–3 times per ruler measurement and the ruler re-measures on
-     * {@code viewportDirtyEvents}, i.e. on every edit: measured at <b>+2 leaked timers per keystroke</b>,
-     * with typing latency degrading 5.6 ms → 28 ms over 2000 keystrokes and never recovering (the leak
-     * outlives the window). Measuring a <em>one-character</em> range takes a different path in RichTextFX
-     * and allocates nothing; at end-of-paragraph there is no character to the right, so we measure the last
-     * character and take its right edge, which is the same x the caret would sit at.
-     */
-    private @Nullable Bounds caretBounds(int p, int column) {
-        int abs = area.getAbsolutePosition(p, column);
-        int len = area.getParagraphLength(p);
-        Bounds screen;
-        if (column < len) {
-            screen = area.getCharacterBoundsOnScreen(abs, abs + 1).orElse(null);
-        } else if (len > 0) {
-            Bounds last = area.getCharacterBoundsOnScreen(abs - 1, abs).orElse(null);
-            screen = last == null
-                    ? null
-                    : new javafx.geometry.BoundingBox(last.getMaxX(), last.getMinY(), 0, last.getHeight());
-        } else {
-            return null; // empty paragraph: nothing to measure an advance from
-        }
-        return screen == null ? null : root.screenToLocal(screen);
-    }
-
     public @Nullable Path getPath() {
         return path;
     }
@@ -5764,8 +4863,8 @@ public class EditorBuffer implements TabContent {
                     return; // a newer language change superseded this load
                 }
                 this.grammar = g;
-                invalidateHighlighting();
-                applyHighlighting();
+                highlighter.invalidateHighlighting();
+                highlighter.applyHighlighting();
             });
         });
     }
@@ -5857,8 +4956,8 @@ public class EditorBuffer implements TabContent {
         this.grammar = g;
         folds.setLanguage(language);
         wrap.languageChanged(language); // prose wraps by one preference, code by another
-        if (!languageRulers.isEmpty()) {
-            markRulerInputsDirty(); // the language may have rulers of its own
+        if (!rulerPlacement.languageRulers.isEmpty()) {
+            rulerPlacement.markRulerInputsDirty(); // the language may have rulers of its own
         }
         // Which words are checked, which lines are code, and whether this language is checked at all all
         // follow the language. Must be pushed here, not only at construction: the constructor runs before
@@ -5868,8 +4967,8 @@ public class EditorBuffer implements TabContent {
         // share follows the new language — the {{variable}} marks stop, Markdown lint starts, or the reverse.
         setMarkdownLintEnabled(markdownLintWanted);
         httpVariableMarks.update();
-        invalidateHighlighting(); // grammar changed with no text edit — re-tokenize the whole document
-        applyHighlighting();
+        highlighter.invalidateHighlighting(); // grammar changed with no text edit — re-tokenize the whole document
+        highlighter.applyHighlighting();
         if (changed) {
             languageListeners.forEach(Runnable::run);
         }
@@ -5931,14 +5030,8 @@ public class EditorBuffer implements TabContent {
         this.eolOverride = LineEndings.isLabel(eol) ? eol : null;
     }
 
-    /** The ruler column (EditorConfig {@code max_line_length}); null = default, OFF = hide; re-measures. */
     public void setRulerColumn(@Nullable Integer column) {
-        if (java.util.Objects.equals(column, rulerColumnOverride)) {
-            return; // unchanged: this runs for every buffer on every settings apply (applyEditorConfig)
-        }
-        this.rulerColumnOverride = column;
-        markRulerInputsDirty(); // deferred, not a synchronous measure: character bounds must never be
-        // queried inside a layout pass, and the caller may be mid-apply
+        rulerPlacement.setRulerColumn(column);
     }
 
     public void setDetectedCharset(String charset) {
@@ -6036,7 +5129,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         this.largeFile = large;
-        highlightGen++; // discard any in-flight highlight result
+        highlighter.highlightGen++; // discard any in-flight highlight result
         folds.setHeuristicEnabled(!large); // never schedule a whole-document fold scan for a large file
         setMinimapVisible(minimapVisible); // re-apply with the large-file guard
         spell.applyActive(); // spell checking is off in large-file mode (like highlighting)
@@ -6049,7 +5142,7 @@ public class EditorBuffer implements TabContent {
         setLineHighlightOn(LineHighlighter.wanted(area)); // and the current-line highlight
         applyUndoMode(); // nor undo history: a large file shouldn't pay its memory
         if (!large) {
-            applyHighlighting(); // re-enable highlighting if we ever leave large-file mode
+            highlighter.applyHighlighting(); // re-enable highlighting if we ever leave large-file mode
         }
     }
 
@@ -6401,7 +5494,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Coalesces a matching-bracket recompute to the next pulse (caret moves rapidly while typing). */
-    private void scheduleBraceMatch() {
+    void scheduleBraceMatch() {
         if (braceMatchPending) {
             return;
         }
@@ -7142,146 +6235,5 @@ public class EditorBuffer implements TabContent {
     /** Sets a callback invoked (on the FX thread) whenever {@link #symbols()} changes. */
     public void setOnSymbolsChanged(Runnable callback) {
         this.onSymbolsChanged = callback == null ? () -> {} : callback;
-    }
-
-    /** Forces the next {@link #applyHighlighting()} to re-tokenize the whole document (e.g. after a
-     *  language/grammar change, where no text change occurred). */
-    private void invalidateHighlighting() {
-        highlightDirty.invalidate();
-        highlightLines = null;
-    }
-
-    /** Forgets the per-line tokenizer state and the structure symbols: no grammar pass owns the document. */
-    private void dropHighlightState() {
-        highlightLines = null;
-        if (!symbols.isEmpty()) {
-            symbols = List.of();
-            onSymbolsChanged.run();
-        }
-    }
-
-    /** Applies per-column rainbow CSV coloring over the whole document. The scan and span construction run
-     *  off the FX thread; only the guarded style application returns to it. */
-    private void applyCsvRainbow() {
-        dropHighlightState();
-        String text = documentTextSnapshot();
-        int len = text.length();
-        if (len == 0) {
-            return;
-        }
-        styled = true;
-        long version = docVersion;
-        long gen = ++highlightGen;
-        HIGHLIGHT_POOL.execute(() -> {
-            char delim = com.editora.csv.CsvParser.detectDelimiter(text);
-            StyleSpans<Collection<String>> spans = CsvRainbow.buildSpans(text, delim, CsvRainbow.COLORS);
-            Platform.runLater(() -> {
-                if (gen != highlightGen || version != docVersion || spans.length() != area.getLength()) {
-                    return;
-                }
-                ScrollAnchor.setStyleSpans(area, 0, spans);
-                scheduleBraceMatch();
-            });
-        });
-    }
-
-    private void applyHighlighting() {
-        if (disposed) {
-            return; // a closed buffer must not dispatch new passes (see the disposed field)
-        }
-        if (largeFile) {
-            dropHighlightState(); // large-file mode: leave the document as plain text
-            return;
-        }
-        if (highlightDeferred) {
-            highlightOwed = true; // the dirty range is kept; setHighlightDeferred(false) dispatches the pass
-            return;
-        }
-        if (csvRainbow && isCsv() && !heavyFile) {
-            applyCsvRainbow();
-            return;
-        }
-        if (grammar == null) {
-            // No grammar for this file type, so nothing to compute — and nothing to clear either, except
-            // once when a grammar or CSV pass had styled the document, and otherwise in the text typed
-            // since the last pause where it took on the style of its neighbour (a matched brace). Clearing
-            // the whole document at every pause restyled it for nothing and wiped the brace match.
-            dropHighlightState();
-            int length = area.getLength();
-            int from = styled ? 0 : highlightDirty.isClean() ? length : Math.min(highlightDirty.start(), length);
-            int to = styled ? length : Math.min(highlightDirty.end(), length);
-            int[] matched = styled ? null : completionActions.braceMatch(); // the live pair is not a leftover
-            if (styled) {
-                styled = false;
-                highlightGen++; // a pass still in flight must not style the document after this
-            }
-            highlightDirty.applied();
-            if (from < to && HighlightPass.anyStyled(area.getStyleSpans(from, to), from, matched)) {
-                area.clearStyle(from, to);
-                scheduleBraceMatch();
-            }
-            return;
-        }
-        // Tokenizing is O(lines), so a pass covers only the range edited since the last one applied and
-        // stops where the grammar state re-converges (see HighlightPass). The work runs on a background
-        // thread — tokenizing, the semantic and bracket overlays, the spliced per-line state — and the
-        // result is applied only if no newer pass was dispatched and the text is still the snapshot's.
-        styled = true;
-        java.util.List<SemanticToken> overlay = semanticOverlay();
-        long version = docVersion;
-        long gen = ++highlightGen;
-        HighlightPass.Request request = new HighlightPass.Request(
-                        documentTextSnapshot(),
-                        grammar,
-                        highlightLines,
-                        symbols,
-                        highlightDirty.isClean() ? -1 : highlightDirty.start(),
-                        highlightDirty.end(),
-                        bracketColors,
-                        overlay)
-                .withPreview( // a long file's screen is coloured before the rest is tokenized (review 2 E105)
-                        Math.max(ScrollAnchor.firstVisibleLine(area), area.getCurrentParagraph()) + 150,
-                        spans -> Platform.runLater(() -> {
-                            if (gen == highlightGen && version == docVersion) {
-                                ScrollAnchor.setStyleSpans(area, 0, spans);
-                            }
-                        }));
-        HighlightPass.submit(HIGHLIGHT_POOL, grammar, () -> {
-            HighlightPass.Result r;
-            try {
-                // The cancel check lets a superseded pass stop at the next line instead of finishing a
-                // doomed multi-MB tokenize while holding the shared grammar monitor (see analyzeFrom).
-                r = HighlightPass.run(request, () -> gen != highlightGen);
-            } catch (Exception | LinkageError e) {
-                return; // never let a grammar/engine fault kill the highlighter thread
-            }
-            if (r == null) {
-                return;
-            }
-            Platform.runLater(() -> {
-                // Superseded, or the text changed since the snapshot: what this pass owed stays in
-                // highlightDirty, so the next one covers it.
-                if (gen != highlightGen || version != docVersion) {
-                    return;
-                }
-                highlightDirty.applied();
-                highlightLines = r.lines();
-                if (r.spans() != null) {
-                    ScrollAnchor.setStyleSpans(area, r.fromOffset(), r.spans());
-                    scheduleBraceMatch(); // re-apply the match highlight the spans just overwrote
-                }
-                if (r.symbolsChanged()) {
-                    symbols = r.symbols();
-                    onSymbolsChanged.run();
-                }
-                if (semanticActive && semanticStale) {
-                    semanticDirty.include(r.fromOffset(), r.fromOffset() + r.length()); // overlay gone here
-                } else if (overlay != semanticOverlay() && r.spans() != null) {
-                    // Tokens arrived while this pass ran without them: restyle its range with the overlay.
-                    highlightDirty.include(r.fromOffset(), r.fromOffset() + r.length());
-                    applyHighlighting();
-                }
-            });
-        });
     }
 }

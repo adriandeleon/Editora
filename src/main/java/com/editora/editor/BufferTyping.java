@@ -124,7 +124,7 @@ final class BufferTyping {
             return;
         }
         CodeArea a = b.getFocusedArea();
-        if (b.multiCaretActiveOn(a)) {
+        if (b.caretOps.multiCaretActiveOn(a)) {
             return;
         }
         int par = a.getCurrentParagraph();
@@ -165,7 +165,7 @@ final class BufferTyping {
      */
     void addViewModePaging(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (b.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
+            if (b.caretOps.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
             if (!b.viewMode || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
@@ -297,7 +297,7 @@ final class BufferTyping {
     void addAutoIndent(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (e.isConsumed()) return;
-            if (b.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
+            if (b.caretOps.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
             if (e.getCode() != KeyCode.ENTER
@@ -325,7 +325,7 @@ final class BufferTyping {
             if (e.isConsumed()) { // the empty-pair handler already consumed this Backspace
                 return;
             }
-            if (b.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
+            if (b.caretOps.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
             if (e.getCode() != KeyCode.BACK_SPACE
@@ -369,7 +369,7 @@ final class BufferTyping {
             if (e.isConsumed()) { // the auto-close KEY_TYPED handler (registered earlier) already acted
                 return;
             }
-            if (b.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
+            if (b.caretOps.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
             if (!b.isEditable()
@@ -575,7 +575,12 @@ final class BufferTyping {
         caret = a.getCaretPosition();
         int par = a.getCurrentParagraph(); // Enter between JSX tags goes a level in (A104), else the usual rules
         Indenter.EnterEdit jsx = JsxContext.enter(
-                b.grammar, b.highlightLines, par, a.getParagraph(par).getText(), a.getCaretColumn(), b.indentUnit());
+                b.grammar,
+                b.highlighter.highlightLines,
+                par,
+                a.getParagraph(par).getText(),
+                a.getCaretColumn(),
+                b.indentUnit());
         Indenter.EnterEdit edit =
                 jsx != null ? jsx : IndentWindow.enterEdit(IndentKeys.doc(a), caret, b.language, b.indentUnit());
         a.replaceText(caret, caret, edit.insert());
@@ -733,7 +738,7 @@ final class BufferTyping {
     void addAutoClose(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
             if (e.isConsumed()) return;
-            if (b.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
+            if (b.caretOps.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
             if (!b.isEditable() || e.getCharacter().length() != 1 || !TypedText.isText(e)) {
@@ -746,7 +751,7 @@ final class BufferTyping {
         });
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (e.isConsumed()) return;
-            if (b.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
+            if (b.caretOps.multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
             if (e.getCode() != KeyCode.BACK_SPACE

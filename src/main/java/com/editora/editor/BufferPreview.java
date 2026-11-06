@@ -205,8 +205,8 @@ final class BufferPreview {
             b.scrollSync.leaving(from); // the view that comes on screen takes over this one's place
         }
         b.markdownViewMode = target;
-        b.scheduleFormatBar(); // hide the format bar when entering pure PREVIEW, re-evaluate otherwise
-        b.scheduleAiActionsBar(); // same, for the AI selection-actions bar
+        b.selectionBars.scheduleFormatBar(); // hide the format bar when entering pure PREVIEW, re-evaluate otherwise
+        b.selectionBars.scheduleAiActionsBar(); // same, for the AI selection-actions bar
         if (target != EditorBuffer.MarkdownViewMode.EDITOR) {
             b.split = EditorBuffer.Split.NONE; // preview supersedes any code split
             scheduleRenderPreview();

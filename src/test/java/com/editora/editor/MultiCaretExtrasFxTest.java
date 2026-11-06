@@ -106,7 +106,7 @@ class MultiCaretExtrasFxTest {
     void removeLastAddedCaretGoesBackwardsThroughTheOrderTheyWereAdded() throws Exception {
         withBuffer("a\nb\nc\nd\n", buffer -> {
             buffer.getArea().moveTo(0);
-            MultiCarets carets = (MultiCarets) field(buffer, "multiCaret");
+            MultiCarets carets = (MultiCarets) field(buffer.caretOps, "multiCaret");
             carets.getManager().addCaretAt(6); // d, then b, then c: not document order
             carets.getManager().addCaretAt(2);
             carets.getManager().addCaretAt(4);
@@ -125,7 +125,7 @@ class MultiCaretExtrasFxTest {
 
     /** The carets as "anchor-caret" pairs, the primary first, then the extras in the order they were added. */
     private static String carets(EditorBuffer buffer) {
-        MultiCarets carets = (MultiCarets) field(buffer, "multiCaret");
+        MultiCarets carets = (MultiCarets) field(buffer.caretOps, "multiCaret");
         StringBuilder b = new StringBuilder();
         for (int[] s : carets.selections()) {
             b.append(s[0]).append('-').append(s[1]).append(' ');

@@ -470,7 +470,7 @@ class EditorMouseFxTest {
 
     /** The buffer's multi-caret manager, for placing extra carets the way Ctrl+click and Alt+drag do. */
     private static org.fxmisc.richtext.multi.MultiCaretManager<?, ?, ?> carets(EditorBuffer b) {
-        Object layer = FxTestSupport.field(b, "multiCaret");
+        Object layer = FxTestSupport.field(FxTestSupport.field(b, "caretOps"), "multiCaret");
         assertNotNull(layer, "multiple carets are enabled");
         return (org.fxmisc.richtext.multi.MultiCaretManager<?, ?, ?>)
                 FxTestSupport.call(layer, "getManager", new Class<?>[] {});
