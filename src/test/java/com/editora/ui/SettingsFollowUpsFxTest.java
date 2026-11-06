@@ -153,7 +153,7 @@ class SettingsFollowUpsFxTest {
                 SettingsWindow w = shown(fx.controller);
                 Settings s = fx.shared.getSettings();
                 Path file = fx.configDir.resolve("settings.json");
-                ComboBox<String> provider = FxTestSupport.field(w, "aiProviderCombo");
+                ComboBox<String> provider = SettingsRig.control(w, "aiProviderCombo");
                 var ai = com.editora.ai.AiProvider.from(provider.getValue());
                 Map<BuildTool, TextField> buildTools = FxTestSupport.field(w, "buildToolCommandFields");
 
@@ -169,13 +169,13 @@ class SettingsFollowUpsFxTest {
                 stored.put("maven catalog", s::getMavenArchetypeCatalogUrlRaw);
                 fields.put("plugin registry", SettingsRig.control(w, "pluginRegistryField"));
                 stored.put("plugin registry", s::getPluginRegistryUrlRaw);
-                fields.put("ai endpoint", FxTestSupport.field(w, "aiEndpointField"));
+                fields.put("ai endpoint", SettingsRig.control(w, "aiEndpointField"));
                 stored.put("ai endpoint", () -> s.getAiEndpointFor(ai));
-                fields.put("ai model", FxTestSupport.field(w, "aiModelField"));
+                fields.put("ai model", SettingsRig.control(w, "aiModelField"));
                 stored.put("ai model", () -> s.getAiModelFor(ai));
-                fields.put("ai key", FxTestSupport.field(w, "aiApiKeyField"));
+                fields.put("ai key", SettingsRig.control(w, "aiApiKeyField"));
                 stored.put("ai key", () -> s.getApiKeyFor(ai));
-                fields.put("ai completion model", FxTestSupport.field(w, "aiCompletionModelField"));
+                fields.put("ai completion model", SettingsRig.control(w, "aiCompletionModelField"));
                 stored.put("ai completion model", () -> s.getAiCompletionModelFor(ai));
                 fields.put("author", FxTestSupport.field(w, "templateAuthorField"));
                 stored.put("author", s::getAuthorNameRaw);
@@ -623,7 +623,7 @@ class SettingsFollowUpsFxTest {
                     SettingSwitch aiSwitch =
                             all(ai, SettingSwitch.class, new ArrayList<>()).get(0);
                     assertEquals(tr("settings.ai.enable"), aiSwitch.getAccessibleText());
-                    CheckBox master = FxTestSupport.field(w, "aiMasterCheck");
+                    CheckBox master = SettingsRig.control(w, "aiMasterCheck");
                     master.setSelected(true);
                     assertFalse(aiSwitch.isDisabled());
                     boolean aiWas = s.isAiSupport();

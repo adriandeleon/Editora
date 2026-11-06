@@ -154,7 +154,7 @@ class SettingsRealWindowFxTest {
     void pickingAnotherAgentOnTheAgentPageSwitchesTheAgentTheWindowUses() throws Exception {
         open(null);
         FxTestSupport.runOnFx(() -> {
-            ComboBox<String> client = FxTestSupport.field(window, "agentClientCombo");
+            ComboBox<String> client = SettingsRig.control(window, "agentClientCombo");
             String before = settings.getAgentClient();
             String other = client.getItems().stream()
                     .filter(id -> !id.equals(client.getValue()))
