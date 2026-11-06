@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Refactor:** Go to Implementation's picker-row text (`implementationLabel`, `implementationDetail`,
+  `libraryPackage`) moved from `LspCoordinator` to a new `ImplementationTargets`, which brings `LspCoordinator` back
+  under the 10,000-line `SourceFileSizeTest` limit it crossed in #1445.
 - **Language servers and debugging are no longer marked Beta.** Their Settings pages lose the Beta pill and the
   "Experimental — may be unstable" note.
 - **The Map's preview eye closes an open card.** Clicking the eye on a file row whose preview card is open closes
