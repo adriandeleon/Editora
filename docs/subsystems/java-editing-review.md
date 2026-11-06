@@ -28,7 +28,7 @@ probe. It is **not** a side-by-side IDEA usability study or a claim of feature p
    `CompletionEditTracker`/`LspEditShift` translate their ranges and `EditorBuffer.applyLspEdits`
    applies an undoable batch while preserving caret/selection. The item's command runs afterward,
    including JDT LS selection feedback, with the updated document synchronized first.
-9. Signature help travels through `LspCoordinator.signatureHelp`, `SignatureSelection`, `SignatureFormat`, and a popup.
+9. Signature help travels through `LspPopups.signatureHelp`, `SignatureSelection`, `SignatureFormat`, and a popup.
    Diagnostics pass through the session, manager, `DiagnosticMapper`, coordinator, overlays/Problems.
    Hover/navigation/formatting share the same buffer/session routing.
 10. `RootResolver`, `LspServerRegistry`, per-root JDT workspaces, JDK discovery, and initialization

@@ -721,7 +721,7 @@ class LspCoordinatorHooksFxTest {
                 new WorkspaceEditHazards.Hazard(replaced, WorkspaceEditHazards.Kind.OVERWRITE, null));
 
         CompletableFuture<Asked> first = answerNextDialog(ButtonBar.ButtonData.CANCEL_CLOSE);
-        assertFalse(FxTestSupport.callOnFx(() -> fx.coordinator.destructiveEditConfirmer.test(hazards)));
+        assertFalse(FxTestSupport.callOnFx(() -> fx.coordinator.workspaceEdits.destructiveEditConfirmer.test(hazards)));
         Asked asked = first.get(30, TimeUnit.SECONDS);
         assertEquals(tr("dialog.lsp.destructiveEdit.header"), asked.header());
         assertEquals(
@@ -730,7 +730,7 @@ class LspCoordinatorHooksFxTest {
                 asked.content());
 
         answerNextDialog(ButtonBar.ButtonData.OK_DONE);
-        assertTrue(FxTestSupport.callOnFx(() -> fx.coordinator.destructiveEditConfirmer.test(hazards)));
+        assertTrue(FxTestSupport.callOnFx(() -> fx.coordinator.workspaceEdits.destructiveEditConfirmer.test(hazards)));
     }
 
     /** The default button of the destructive-edit question must be Cancel: Enter may not delete a folder. */
@@ -763,7 +763,7 @@ class LspCoordinatorHooksFxTest {
         };
         FxTestSupport.runOnFx(timer::start);
 
-        assertFalse(FxTestSupport.callOnFx(() -> fx.coordinator.destructiveEditConfirmer.test(hazards)));
+        assertFalse(FxTestSupport.callOnFx(() -> fx.coordinator.workspaceEdits.destructiveEditConfirmer.test(hazards)));
         assertEquals(List.of("CANCEL_CLOSE"), defaults.get(30, TimeUnit.SECONDS));
     }
 
@@ -787,7 +787,7 @@ class LspCoordinatorHooksFxTest {
         Path project = Files.createDirectories(root.resolve("project"));
         Path stage = interruptedDelete(journals, project, "Lost.java", false);
         fx.ops.projectRoot = project;
-        FxTestSupport.runOnFx(() -> fx.coordinator.workspaceEditJournalDir = journals);
+        FxTestSupport.runOnFx(() -> fx.coordinator.workspaceEdits.workspaceEditJournalDir = journals);
 
         CompletableFuture<Asked> restore = answerNextDialog(ButtonBar.ButtonData.OK_DONE);
         FxTestSupport.runOnFx(() -> fx.coordinator.offerInterruptedEdits());
@@ -807,7 +807,7 @@ class LspCoordinatorHooksFxTest {
         Path project = Files.createDirectories(root.resolve("project"));
         Path stage = interruptedDelete(journals, project, "Lost.java", false);
         fx.ops.projectRoot = project;
-        FxTestSupport.runOnFx(() -> fx.coordinator.workspaceEditJournalDir = journals);
+        FxTestSupport.runOnFx(() -> fx.coordinator.workspaceEdits.workspaceEditJournalDir = journals);
 
         CompletableFuture<Asked> later = answerNextDialog(ButtonBar.ButtonData.CANCEL_CLOSE);
         FxTestSupport.runOnFx(() -> fx.coordinator.offerInterruptedEdits());
@@ -831,7 +831,7 @@ class LspCoordinatorHooksFxTest {
         Path project = Files.createDirectories(root.resolve("project"));
         Path stage = interruptedDelete(journals, project, "Lost.java", false);
         fx.ops.projectRoot = project;
-        FxTestSupport.runOnFx(() -> fx.coordinator.workspaceEditJournalDir = journals);
+        FxTestSupport.runOnFx(() -> fx.coordinator.workspaceEdits.workspaceEditJournalDir = journals);
 
         CompletableFuture<Asked> keep = answerNextDialog(ButtonBar.ButtonData.OTHER); // "Leave As Is"
         FxTestSupport.runOnFx(() -> fx.coordinator.offerInterruptedEdits());
@@ -850,7 +850,7 @@ class LspCoordinatorHooksFxTest {
         Path project = Files.createDirectories(root.resolve("project"));
         Path stage = interruptedDelete(journals, project, "Gone.java", true);
         fx.ops.projectRoot = project;
-        FxTestSupport.runOnFx(() -> fx.coordinator.workspaceEditJournalDir = journals);
+        FxTestSupport.runOnFx(() -> fx.coordinator.workspaceEdits.workspaceEditJournalDir = journals);
 
         CompletableFuture<Asked> asked = answerNextDialog(ButtonBar.ButtonData.OK_DONE);
         FxTestSupport.runOnFx(() -> fx.coordinator.offerInterruptedEdits());
@@ -869,7 +869,7 @@ class LspCoordinatorHooksFxTest {
         Path journals = Files.createDirectories(root.resolve("journals"));
         FxTestSupport.runOnFx(() -> {
             fx.coordinator.offerInterruptedEdits(); // no project, no journal directory
-            fx.coordinator.workspaceEditJournalDir = journals;
+            fx.coordinator.workspaceEdits.workspaceEditJournalDir = journals;
             fx.ops.projectRoot = root;
             fx.coordinator.offerInterruptedEdits();
         });

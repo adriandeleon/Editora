@@ -429,7 +429,7 @@ drives its command.
 
 ### Library source tabs
 
-A `jdt://` definition opens as a read-only, path-less buffer (`LspCoordinator.openLibraryDefinition`),
+A `jdt://` definition opens as a read-only, path-less buffer (`LspNavigation.openLibraryDefinition`),
 remembered in `librarySources` with the workspace file whose session produced it. Position requests from
 such a tab — definition, hover, references, implementation, type definition, declaration and both
 hierarchy prepares — go through `navOrigin()`: the anchor file's session, asked about the tab's `jdt://`
@@ -498,10 +498,10 @@ buffer with the server on, the `*` that makes a line `/**` therefore inserts `* 
 
 jdtls tracks a file only through `didOpen` or `workspace/didChangeWatchedFiles`. A workspace edit that
 writes a file with no tab (`WorkspaceFileOperations` saves it straight to disk), a file the edit creates,
-and a Project-tree rename are each announced with `didChangeWatchedFiles` (`LspCoordinator.resourceEvents`,
+and a Project-tree rename are each announced with `didChangeWatchedFiles` (`WorkspaceEditStaging.resourceEvents`,
 `afterWorkspaceEdit`); without it the next rename skipped the file and left it broken. A Project-tree rename of
 a `.java` file, and each file of a drag-move (`ProjectPanel.moveThrough`, also Undo Move), goes through
-`workspace/willRenameFiles` first (`LspCoordinator.willRenameFile`); jdtls rewrites a moved file's package only
+`workspace/willRenameFiles` first (`LspRefactoringUndo.willRenameFile`); jdtls rewrites a moved file's package only
 for a target package it knows: the edit the
 server answers is applied and saved, and the move is recorded with it, so Undo Last Refactoring moves the
 file back and reverts the edit together. A folder rename is applied but not undoable as one. Saving a Java file
@@ -519,7 +519,7 @@ launched on the Java its installed bundles require (`JavaRuntimes.serverMinMajor
 `Bundle-RequiredExecutionEnvironment`), not on its launcher's own floor. A shared session keeps jdtls's last
 `ProjectStatus` and its project-level diagnostics, and replays them to a window that joins; while jdtls has not
 said `ServiceReady` itself (it is still importing) a joining window is told "Starting", not the handshake's ready.
-Go to Super Method (`LspCoordinator.gotoSuperMethod`) finds the member at the caret in `MemberSpan`s (whole ranges,
+Go to Super Method (`LspSuperMethods.gotoSuperMethod`) finds the member at the caret in `MemberSpan`s (whole ranges,
 every child kept, unlike the Structure outline), reads lambdas and `super(...)` calls with `JavaMembers`, and walks
 the type hierarchy (`SuperMethodWalk`) for what `java/findLinks` misses: findLinks answers first and is exact for a class's
 method (empty means none: a static, private or overloading method, unless it is marked `@Override`: findLinks misses
@@ -678,7 +678,7 @@ A package node from `java/getMoveDestinations` carries two paths: `path` is the 
 (`/geo-demo/src/main/java/com/example`) and `uri` the folder on disk. Only `uri` names a real folder, so
 `JdtlsRefactor.folderOf` reads it, and Move ▸ New package… builds its folder under the source root it gives.
 
-`LspCoordinator.runGeneratePrompt` / `runRefactorCommand` intercept these before `applyCodeAction`;
+`LspRefactorings.runGeneratePrompt` / `runRefactorCommand` intercept these before `applyCodeAction`;
 `LspManager.jdtlsRequest` / `jdtlsApplyEdit` send the custom requests, which must be registered on
 `JdtLanguageServer` or LSP4J drops their results. The server's own `errorMessage` is shown when it
 refuses. The opt-in `JdtlsRefactorProbeTest` runs every flow against a real jdtls
@@ -708,6 +708,15 @@ settings apply) sets the jdtls workspace base, calls `lspManager.configure(...)`
 detection (the package-private `SERVER_IDS` array) and gating. `wireBuffer` installs the per-buffer
 hooks (didChange, pull diagnostics, semantic tokens, completion, nav actions). `LspManager` itself
 stays a `MainController` field (the DAP layer and the MCP bridge read it) and is passed in.
+
+Its larger workflows are package-private classes it constructs and forwards to, each reaching back through
+a small `Host` of its own: `LspWorkspaceEdits` (applying workspace edits, their outcome reports, interrupted
+edits) with `WorkspaceEditStaging` (the filesystem transaction and its journal), `LspRefactoringUndo` (Undo
+Last Refactoring and the Project tree's rename participant), `LspRefactorings` (Rename and the jdtls
+generate/refactor prompts), `LspNavigation` (definition, references, implementations, hierarchies, workspace
+symbols, library-source tabs; it owns the navigation request generation), `LspSuperMethods` (Go to Super
+Method) and `LspPopups` (hover card, signature help, Smart Type). The commands and other windows still call
+`LspCoordinator`.
 
 Workspace edits retain protocol versions and request-time text snapshots. Create, rename, and delete resource
 operations are staged with overwrite backups and rolled back as a batch on failure or stale text. Production
@@ -749,7 +758,7 @@ source and delete target is resolved, with the buffer's own path, *before* the f
 afterwards the file is gone, so the server's spelling of the old path can no longer be canonicalised, and
 when it differs from the tab's (a project opened through a symlink; `/tmp` on macOS) a second lookup finds
 nothing. The remap then uses the tab's own old path, closes the LSP document under that path, and writes the
-destination in the tab's spelling (`LspCoordinator.inSpellingOf`) so the tab stays under the project and
+destination in the tab's spelling (`LspWorkspaceEdits.inSpellingOf`) so the tab stays under the project and
 LSP root it was opened in. A tab that changed or closed while the transaction was staging rolls the edit
 back; one that still did not follow its file is reported (`status.lsp.editTabNotRemapped`) and the edit is
 **not** reported as applied. `MainController.remapProjectFileLocal` looks the tab up before it clears the

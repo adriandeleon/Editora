@@ -574,9 +574,9 @@ class LspWorkspaceEditFxTest {
                 FxTestSupport.callOnFx(
                         () -> coordinator.lastAppliedEdit().files().size()));
 
-        FxTestSupport.runOnFx(() -> coordinator.refactoringUndoChooser = files -> {
+        FxTestSupport.runOnFx(() -> coordinator.refactoringUndo.refactoringUndoChooser = files -> {
             assertEquals(2, files);
-            return LspCoordinator.RefactoringUndoChoice.ALL_FILES;
+            return LspRefactoringUndo.RefactoringUndoChoice.ALL_FILES;
         });
         assertTrue(FxTestSupport.callOnFx(() -> coordinator.offerRefactoringUndo(use)));
         long deadline = System.currentTimeMillis() + 10_000;
@@ -1481,7 +1481,7 @@ class LspWorkspaceEditFxTest {
                 List.of(new WorkspaceEditMapper.FileDelete(folder, true, false)));
         List<List<com.editora.lsp.WorkspaceEditHazards.Hazard>> asked = new ArrayList<>();
         AtomicReference<Boolean> answer = new AtomicReference<>(false);
-        FxTestSupport.runOnFx(() -> coordinator.destructiveEditConfirmer = hazards -> {
+        FxTestSupport.runOnFx(() -> coordinator.workspaceEdits.destructiveEditConfirmer = hazards -> {
             asked.add(hazards);
             return answer.get();
         });
@@ -1522,7 +1522,7 @@ class LspWorkspaceEditFxTest {
                 List.of(),
                 List.of(new WorkspaceEditMapper.FileCreate(fresh, true, false)), // nothing there to replace
                 List.of(new WorkspaceEditMapper.FileDelete(old, false, false))); // one file: captured, not asked
-        FxTestSupport.runOnFx(() -> coordinator.destructiveEditConfirmer = hazards -> {
+        FxTestSupport.runOnFx(() -> coordinator.workspaceEdits.destructiveEditConfirmer = hazards -> {
             throw new AssertionError("must not ask: " + hazards);
         });
 
@@ -1601,7 +1601,7 @@ class LspWorkspaceEditFxTest {
         Path old = Files.writeString(root.resolve("Old.java"), "old");
         ManualExecutor executor = new ManualExecutor();
         useControlledCoordinator(LspCoordinator.WorkspaceFileOperations.SYSTEM, executor);
-        FxTestSupport.runOnFx(() -> coordinator.workspaceEditJournalDir = journals);
+        FxTestSupport.runOnFx(() -> coordinator.workspaceEdits.workspaceEditJournalDir = journals);
 
         CompletableFuture<Boolean> result = applyAsync(deleting(old));
         executor.runNext(); // stage
@@ -1638,10 +1638,10 @@ class LspWorkspaceEditFxTest {
         List<List<Path>> offered = new ArrayList<>();
         ops.projectRoot = root.resolve("another-project");
         FxTestSupport.runOnFx(() -> {
-            coordinator.workspaceEditJournalDir = journals;
-            coordinator.interruptedEditPrompt = interrupted -> {
+            coordinator.workspaceEdits.workspaceEditJournalDir = journals;
+            coordinator.workspaceEdits.interruptedEditPrompt = interrupted -> {
                 offered.add(interrupted.originals());
-                return LspCoordinator.InterruptedEditChoice.RESTORE;
+                return LspWorkspaceEdits.InterruptedEditChoice.RESTORE;
             };
             coordinator.offerInterruptedEdits();
         });
@@ -1677,10 +1677,10 @@ class LspWorkspaceEditFxTest {
         ops.projectRoot = project;
 
         FxTestSupport.runOnFx(() -> {
-            coordinator.workspaceEditJournalDir = journals;
-            coordinator.interruptedEditPrompt = interrupted -> {
+            coordinator.workspaceEdits.workspaceEditJournalDir = journals;
+            coordinator.workspaceEdits.interruptedEditPrompt = interrupted -> {
                 asked.complete(true);
-                return LspCoordinator.InterruptedEditChoice.LATER;
+                return LspWorkspaceEdits.InterruptedEditChoice.LATER;
             };
             coordinator.offerInterruptedEdits();
         });
@@ -1960,7 +1960,7 @@ class LspWorkspaceEditFxTest {
         assertEquals(null, host.error, "nothing is wrong with it");
 
         List<String> asked = new ArrayList<>();
-        FxTestSupport.runOnFx(() -> coordinator.confirmRenameWithoutEdits = body -> {
+        FxTestSupport.runOnFx(() -> coordinator.refactoringUndo.confirmRenameWithoutEdits = body -> {
             asked.add(body);
             return false;
         });
@@ -1976,19 +1976,19 @@ class LspWorkspaceEditFxTest {
         Path a = root.resolve("A.java");
         Path b = root.resolve("B.java");
         Path util = root.resolve("util");
-        var first = new LspCoordinator.AppliedEdit(
-                List.of(new LspCoordinator.EditedFile(a, "0", "1")),
+        var first = new LspRefactoringUndo.AppliedEdit(
+                List.of(new LspRefactoringUndo.EditedFile(a, "0", "1")),
                 List.of(new WorkspaceEditMapper.FileRename(b, util.resolve("B.java"), false)),
                 List.of());
-        var second = new LspCoordinator.AppliedEdit(
-                List.of(new LspCoordinator.EditedFile(util.resolve("A.java"), "1", "2")),
+        var second = new LspRefactoringUndo.AppliedEdit(
+                List.of(new LspRefactoringUndo.EditedFile(util.resolve("A.java"), "1", "2")),
                 List.of(new WorkspaceEditMapper.FileRename(a, util.resolve("A.java"), false)),
                 List.of());
 
         var merged = LspCoordinator.merged(List.of(first, second));
 
         assertEquals(
-                List.of(new LspCoordinator.EditedFile(
+                List.of(new LspRefactoringUndo.EditedFile(
                         util.resolve("A.java").toAbsolutePath().normalize(), "0", "2")),
                 merged.files(),
                 "A was edited, then moved, then edited again: one entry at its last place, first to last text");
