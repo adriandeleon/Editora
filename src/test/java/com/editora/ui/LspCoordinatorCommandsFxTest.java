@@ -466,7 +466,7 @@ class LspCoordinatorCommandsFxTest {
     // --- peek definition -------------------------------------------------------------------------------
 
     private static void awaitPeekRead() throws Exception {
-        java.lang.reflect.Field f = LspCoordinator.class.getDeclaredField("PEEK_READ");
+        java.lang.reflect.Field f = LspNavigation.class.getDeclaredField("PEEK_READ");
         f.setAccessible(true);
         ((ExecutorService) f.get(null)).submit(() -> {}).get(60, TimeUnit.SECONDS);
     }
