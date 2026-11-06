@@ -1,6 +1,5 @@
 package com.editora.editor;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -11,8 +10,6 @@ import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.scene.Node;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
 import javafx.scene.control.MenuItem;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
@@ -81,7 +78,6 @@ import com.editora.editor.markdown.PreviewLayout;
 import com.editora.editor.markdown.PreviewMenu;
 import com.editora.editor.markdown.PreviewScrollSync;
 import com.editora.editor.markdown.PreviewSurfaces;
-import com.editora.editor.markdown.ScrollAnchor;
 import com.editora.editor.markdown.TypstImages;
 import com.editora.editor.minimap.Minimap;
 import com.editora.editor.notes.NoteDraft;
@@ -127,8 +123,6 @@ import org.fxmisc.richtext.util.UndoUtils;
 import org.fxmisc.undo.UndoManager;
 import org.jspecify.annotations.Nullable;
 import org.reactfx.Subscription;
-
-import static com.editora.i18n.Messages.tr;
 
 /** A single open document: a RichTextFX {@link CodeArea} plus its backing file, language, and dirty state. */
 public class EditorBuffer implements TabContent {
@@ -329,6 +323,14 @@ public class EditorBuffer implements TabContent {
     final SelectionBars selectionBars = new SelectionBars(this);
     /** Multiple cursors and column selection ({@link BufferCarets}). */
     final BufferCarets caretOps = new BufferCarets(this);
+    /** TODO/FIXME highlights and jumps ({@link BufferTodos}). */
+    final BufferTodos todoMarker = new BufferTodos(this);
+    /** The diagnostic tooltip, document-highlight trigger and paste auto-import ({@link BufferLspAssists}). */
+    final BufferLspAssists lspAssists = new BufferLspAssists(this);
+    /** Emacs narrowing ({@link BufferNarrowing}). */
+    final BufferNarrowing narrowing = new BufferNarrowing(this);
+    /** The notice, install and View Mode bars above the text ({@link BufferBanners}). */
+    final BufferBanners banners = new BufferBanners(this);
 
     final BooleanProperty dirty = new SimpleBooleanProperty(false);
     /**
@@ -341,17 +343,6 @@ public class EditorBuffer implements TabContent {
     private boolean forcedDirty;
     /** The line ending the file had when loaded or last saved; a different one is an unsaved change. */
     private String cleanLineEnding = LineEndings.LF;
-    /**
-     * Emacs narrowing: the document text before/after the accessible region (and its styles, symbols and fold
-     * regions, see {@link NarrowCarry}), held aside while the area itself holds only the region. Null when the
-     * buffer is widened (the normal state).
-     */
-    private NarrowCarry.@Nullable Held narrowHeld;
-    /** Fired whenever narrowing turns on or off, from wherever — the UI reconciles off this, not off the
-     *  command, so a widen forced by a whole-document write cannot leave a stale indicator or a suspended
-     *  language server behind. */
-    private Runnable onNarrowChanged = () -> {};
-
     /** Orientation of an optional second, synced view of this document. */
     public enum Split {
         NONE,
@@ -364,33 +355,10 @@ public class EditorBuffer implements TabContent {
     /** Tab content: shows either {@link #root} alone or a SplitPane of [root, secondary view]. */
     final StackPane viewHost = new StackPane(root);
     /** Outermost tab content: a "View Mode" banner (top, read-only only) above {@link #viewHost}. */
-    private final javafx.scene.layout.BorderPane outer = new javafx.scene.layout.BorderPane(viewHost);
-    /** The MS-Word-style read-only banner (lazy); its "Enable Editing" runs {@link #onEnableEditing}. */
-    private @Nullable ViewModeBar viewModeBar;
-
-    private boolean viewModeBarVisible;
-    /** Why this buffer is in View mode when it is not the general reason; cleared when editing is enabled. */
-    private @Nullable String viewModeReason;
-    /** When true, a non-writable-on-disk file offers "Edit as Administrator" instead of a dead-end note. */
-    private boolean adminEditAvailable;
-
-    private @Nullable Boolean
-            writableOnDisk; // null: ask Files.isWritable; else what the window found out (remote files)
-
-    /** IntelliJ-style "install language support?" banner (lazy), stacked above the view-mode bar; driven by
-     *  MainController via {@link #setInstallPrompt}/{@link #showInstallBar}. */
-    private @Nullable NoticeBar installBar;
-
-    private boolean installBarShown;
-    /** A notice about the file itself (a shell script's CRLF/BOM), above the install banner; null until used. */
-    private @Nullable NoticeBar fileNotice;
-
-    private boolean fileNoticeShown;
+    final javafx.scene.layout.BorderPane outer = new javafx.scene.layout.BorderPane(viewHost);
     /** The file's encryption and the views that stand in for its text ({@link BufferEncryption}). */
     final BufferEncryption encryption =
             new BufferEncryption(outer, viewHost, this::applyEditable, this::refreshTopBars);
-    /** Invoked by the banner's "Enable Editing" button; the controller persists + refreshes indicators. */
-    private Runnable onEnableEditing = () -> setViewMode(false);
     /** A second editable view sharing this document (created lazily on first split). */
     @Nullable
     CodeArea area2;
@@ -428,7 +396,8 @@ public class EditorBuffer implements TabContent {
     /** Split scroll sync and position keeping between the editor and the preview ({@link PreviewScrollSync}). */
     PreviewScrollSync scrollSync;
     /** The floating log-viewer control overlaid top-right (Follow / level / regex; injected for log buffers). */
-    private @Nullable Node logControl;
+    @Nullable
+    Node logControl;
     /** The CSV/TSV grid preview node (a ui-layer TableView panel), injected for CSV buffers when the feature
      *  is on; non-null doubles as the CSV-preview enablement gate (mirrors {@link BufferLayout#htmlPreviewControl}). */
     @Nullable
@@ -467,9 +436,10 @@ public class EditorBuffer implements TabContent {
     /** Forces log-viewer mode on a buffer whose extension isn't {@code .log} ("View as Log"). */
     private boolean logViewForced;
     /** Filter, follow and trim state of the log viewer; a filtered view is read-only (see {@link LogView}). */
-    private final LogView logView = new LogView(area, this::applyEditable);
+    final LogView logView = new LogView(area, this::applyEditable);
     /** Fired from the debounced edit pulse while an HTML preview is served (its site reloads on any file's edit). */
-    private @Nullable Runnable htmlPreviewDirtyListener;
+    @Nullable
+    Runnable htmlPreviewDirtyListener;
     /** One document subscription and timer sequence for all differently-timed settled-edit work. */
     private final SettledEditDispatcher settledEdits = new SettledEditDispatcher();
 
@@ -512,7 +482,7 @@ public class EditorBuffer implements TabContent {
     /** User "View mode": non-editable but keeps all normal editor features (separate from huge-file). */
     boolean viewMode;
     /** Temporary non-editable shell while file content is loaded; never presented as user View mode. */
-    private boolean loading;
+    boolean loading;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
     CodeArea focusedArea = area;
     /** {@link #focusedArea} as a value to observe, for what shows the caret of the view the user is in. */
@@ -549,8 +519,8 @@ public class EditorBuffer implements TabContent {
     private boolean movingByLine;
 
     final ColumnRuler columnRuler = new ColumnRuler(area);
-    private final Minimap minimap = new Minimap(area);
-    private final JumpReveal jumps = new JumpReveal(
+    final Minimap minimap = new Minimap(area);
+    final JumpReveal jumps = new JumpReveal(
             () -> this.stickyScrollEnabled,
             a -> a == focusedArea,
             () -> this.folds.regions(),
@@ -566,7 +536,7 @@ public class EditorBuffer implements TabContent {
     private @Nullable LogHighlightOverlay logOverlay; // lazily attached on first activation — see logOverlay()
     private @Nullable InlineValuesOverlay inlineValues; // lazily attached when a debug session first suspends here
     /** Git change bars + blame column, kept on the right lines through unsaved edits. */
-    private final GitGutterLines gitLines = new GitGutterLines(area, dirty, this::refreshGutter, minimap);
+    final GitGutterLines gitLines = new GitGutterLines(area, dirty, this::refreshGutter, minimap);
     /** Fixed annotation-column width in px, computed from the widest author+date when blame is set, so
      *  line numbers stay aligned regardless of which row's gutter is (re)built. */
     private double blameColumnWidth;
@@ -584,13 +554,16 @@ public class EditorBuffer implements TabContent {
             () -> this.httpFeatureEnabled && isHttpFile() && !this.hugeFile,
             () -> this.markdownLintEnabled);
 
-    private @Nullable LspDiagnosticOverlay lspOverlay; // lazily attached — see lspOverlay()
+    @Nullable
+    LspDiagnosticOverlay lspOverlay; // lazily attached — see lspOverlay()
     /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable;
      *  lazily attached when LSP first activates for this buffer — see {@link #diagnosticStripe()}. */
     private @Nullable DiagnosticStripe diagnosticStripe;
+
     /** TODO/highlight overview stripe over the scrollbar (beside the diagnostic stripe); lazily attached with
      *  the first non-empty scan result — see {@link #todoStripe()}. */
-    private @Nullable TodoStripe todoStripe;
+    @Nullable
+    TodoStripe todoStripe;
     /** Markdown-lint overview stripe over the scrollbar (beside the TODO/diagnostic stripes); lazily attached
      *  with the Markdown-lint overlay — see {@link #mdLintStripe()}. */
     private @Nullable MarkdownLintStripe mdLintStripe;
@@ -606,14 +579,13 @@ public class EditorBuffer implements TabContent {
     SearchHighlightOverlay searchOverlay; // lazily attached — see searchOverlay()
 
     private @Nullable OccurrenceHighlightOverlay occurrenceOverlay; // lazily attached — see occurrenceOverlay() (#675)
+
     /** Highlights configured TODO/FIXME-style patterns (per-pattern color), behind the text; lazily attached
      *  with the first non-empty scan result (TODO highlighting is on by default, but most files have no
      *  marks) — see {@link #todoOverlay()}. */
-    private @Nullable TodoHighlightOverlay todoOverlay;
-    /** Injected matcher (compiled patterns) + on/off gate; null/false = no highlight. */
-    private @Nullable TodoMatcher todoMatcher;
+    @Nullable
+    TodoHighlightOverlay todoOverlay;
 
-    private boolean todoEnabled;
     private @Nullable AceJumpOverlay aceJump; // lazily attached — see aceJump()
     /** Async maid validator (text, callback) injected by the controller; null = no linting. */
     private java.util.function.@Nullable BiConsumer<
@@ -657,14 +629,10 @@ public class EditorBuffer implements TabContent {
     /** Fired (deferred a pulse) when a signature trigger char is typed; null = disabled. */
     private java.util.function.@Nullable Consumer<Character> signatureHelpRequester;
 
-    private javafx.scene.control.@Nullable Tooltip lspTooltip;
-    /** Message currently shown by {@link #lspTooltip} — skips a re-{@code show()} (flicker) on each move. */
-    private @Nullable String lspTooltipText;
-
     final FoldManager folds = new FoldManager(area, this::documentTextSnapshot);
 
     /** The gutter numbers, {@code narrowed} style and banner of a narrowed buffer (see {@link NarrowPresentation}). */
-    private final NarrowPresentation narrowView = new NarrowPresentation(this, area, logView, folds);
+    final NarrowPresentation narrowView = new NarrowPresentation(this, area, logView, folds);
 
     /** Pinned enclosing-scope headers over the top of the code pane; see {@link StickyScroll}. */
     final StickyScrollBar stickyScroll = new StickyScrollBar();
@@ -677,7 +645,7 @@ public class EditorBuffer implements TabContent {
     java.util.function.BiConsumer<EditorBuffer, Integer> bookmarkToggleRequest =
             (buffer, line) -> buffer.toggleBookmark(line);
     /** Breakpoints for this buffer (gutter strip + persistence + sent to a live DAP session). */
-    private final BreakpointManager breakpoints = new BreakpointManager(area);
+    final BreakpointManager breakpoints = new BreakpointManager(area);
     /** When true, the leftmost breakpoint strip is reserved + clickable (debugging is enabled). */
     private boolean debugEnabled = false;
     /** Handles a breakpoint-strip click; default toggles. The controller overrides to persist + re-send. */
@@ -686,7 +654,7 @@ public class EditorBuffer implements TabContent {
     /** A right-click on a breakpoint's gutter glyph (the controller shows Edit / Disable / Remove). */
     private BreakpointGutterMenu gutterBreakpointMenu = (buffer, line, e) -> {};
     /** Personal Notes for this buffer (inline marker + highlight + hover). */
-    private final NoteManager notes = new NoteManager(area);
+    final NoteManager notes = new NoteManager(area);
 
     private final NoteHighlightOverlay noteOverlay = new NoteHighlightOverlay(area);
     /** When false, the Personal Notes feature is disabled for this buffer (no "Add Note" menu items). */
@@ -937,7 +905,7 @@ public class EditorBuffer implements TabContent {
                 area); // auto-close ()[]{} and quotes (before auto-indent so it sees the keystroke first)
         typingAids.addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
         completionActions.installCompletionTrigger(area);
-        installOccurrenceTrigger(area); // LSP document highlight (#675)
+        lspAssists.installOccurrenceTrigger(area); // LSP document highlight (#675)
         inlayDecor.installCodeLensClick(area);
         // When an edit shifts bookmarks, repaint the affected lines' gutter markers after the edit's own
         // graphic rebuild settles (deferred to the next pulse), so the moved marker follows its line.
@@ -1105,10 +1073,10 @@ public class EditorBuffer implements TabContent {
                 () -> completionActions.updateCompletion(focusedArea, false));
         settledEdits.at(
                 Duration.ofMillis(300),
-                () -> todoEnabled || lspActive || highlighter.semanticActive || inlayHintsActive,
+                () -> todoMarker.todoEnabled || lspActive || highlighter.semanticActive || inlayHintsActive,
                 () -> {
-                    if (todoEnabled) {
-                        refreshTodoMarks();
+                    if (todoMarker.todoEnabled) {
+                        todoMarker.refreshTodoMarks();
                     }
                     if (lspActive) {
                         sendLspChange();
@@ -1756,7 +1724,7 @@ public class EditorBuffer implements TabContent {
         return occurrenceOverlay;
     }
 
-    private TodoHighlightOverlay todoOverlay() {
+    TodoHighlightOverlay todoOverlay() {
         if (todoOverlay == null) {
             todoOverlay = attachLazyOverlay(new TodoHighlightOverlay(area), OverlayLayer.TODO);
         }
@@ -1833,7 +1801,7 @@ public class EditorBuffer implements TabContent {
         return mdLintStripe;
     }
 
-    private TodoStripe todoStripe() {
+    TodoStripe todoStripe() {
         if (todoStripe == null) {
             todoStripe = attachLazyStripe(new TodoStripe(area), OverlayLayer.TODO_STRIPE);
             todoStripe.setOnActivateIn(jumps::revealLine);
@@ -1868,7 +1836,7 @@ public class EditorBuffer implements TabContent {
         return lintOverlay;
     }
 
-    private LspDiagnosticOverlay lspOverlay() {
+    LspDiagnosticOverlay lspOverlay() {
         if (lspOverlay == null) {
             lspOverlay = attachLazyOverlay(new LspDiagnosticOverlay(area), OverlayLayer.LSP);
         }
@@ -1959,119 +1927,24 @@ public class EditorBuffer implements TabContent {
         inlayDecor.activateCodeLens(line);
     }
 
-    /** Injects the document-highlight request (the coordinator asks the server and pushes spans back);
-     *  null disables the caret-idle trigger entirely. */
     public void setOccurrenceRequester(Runnable requester) {
-        this.occurrenceRequester = requester;
+        lspAssists.setOccurrenceRequester(requester);
     }
 
-    /** Fired ~300 ms after the caret comes to rest while LSP-active; null = feature off. */
-    private @Nullable Runnable occurrenceRequester;
-
-    /** Debounces the caret-rest trigger for document highlight (#675) — one per buffer, both views. */
-    private final javafx.animation.PauseTransition occurrenceIdle =
-            new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
-
-    /**
-     * Caret-idle trigger for document highlight: any caret move clears the wash at once (the old spans
-     * are for the old symbol — leaving them paints the wrong word) and re-arms the 300 ms idle timer;
-     * on rest, the injected requester asks the server. Three field checks per caret move when off.
-     */
-    private void installOccurrenceTrigger(CodeArea a) {
-        a.caretPositionProperty().addListener((o, ov, nv) -> {
-            if (occurrenceRequester == null || !lspActive || largeFile) {
-                return;
-            }
-            clearOccurrenceSpans();
-            occurrenceIdle.setOnFinished(ev -> {
-                if (occurrenceRequester != null && lspActive && a.isFocused()) {
-                    occurrenceRequester.run();
-                }
-            });
-            occurrenceIdle.playFromStart();
-        });
-    }
-
-    /** Enables/disables the TODO-pattern highlight for this buffer and re-scans (the controller pushes the
-     *  effective {@code Settings.todoHighlight}). */
     public void setTodoHighlightEnabled(boolean enabled) {
-        this.todoEnabled = enabled;
-        minimap.setTodoEnabled(enabled && !largeFile);
-        updateTodoStripe(); // (de)activate + position the scrollbar overview stripe
-        refreshTodoMarks();
+        todoMarker.setTodoHighlightEnabled(enabled);
     }
 
-    /** Injects the compiled-pattern matcher (decoupled from the {@code todo}/{@code config} packages) and
-     *  re-scans. */
     public void setTodoMatcher(TodoMatcher matcher) {
-        this.todoMatcher = matcher;
-        refreshTodoMarks();
+        todoMarker.setTodoMatcher(matcher);
     }
 
-    /** Discards an in-flight background TODO scan whose result would be stale (mirrors {@link BufferHighlighter#highlightGen}). */
-    private long todoGen;
-
-    /** Re-scans the buffer text and updates the highlight overlay + the scrollbar/minimap overview stripes;
-     *  inert when off / no matcher / huge file. The multi-pattern scan runs off the FX thread (a generation
-     *  counter discards a superseded result), so a large-but-under-cap file doesn't spend tens of ms scanning
-     *  on the FX thread per debounced edit pulse — mirroring how {@link BufferHighlighter#applyHighlighting} tokenizes. */
-    private void refreshTodoMarks() {
-        if (disposed) {
-            return; // see the disposed field
-        }
-        long gen = ++todoGen; // any newer pulse (or dispose) supersedes an in-flight scan
-        if (!todoEnabled || todoMatcher == null || largeFile) {
-            applyTodoMarks(java.util.List.of());
-            return;
-        }
-        TodoMatcher matcher = todoMatcher; // may be reassigned on the FX thread; capture the current one
-        String text = documentTextSnapshot();
-        HIGHLIGHT_POOL.execute(() -> {
-            java.util.List<TodoMark> marks;
-            try {
-                marks = matcher.match(text);
-            } catch (RuntimeException e) {
-                return; // never let a pathological user pattern kill the scan thread
-            }
-            Platform.runLater(() -> {
-                if (gen != todoGen) {
-                    return; // a newer edit/scan superseded this pass
-                }
-                applyTodoMarks(marks);
-            });
-        });
-    }
-
-    /** Pushes a scan result to the overlay, the stripe and the minimap; the first non-empty one attaches the
-     *  overlay and the stripe (an empty result for a buffer that never had them leaves them unbuilt). */
-    private void applyTodoMarks(java.util.List<TodoMark> marks) {
-        if (!marks.isEmpty() || todoOverlay != null) {
-            todoOverlay().setMarks(marks);
-        }
-        if (!marks.isEmpty() || todoStripe != null) {
-            todoStripe().setMarks(marks);
-        }
-        minimap.setTodoMarks(marks);
-        todoMarks = java.util.Collections.unmodifiableList(marks);
-        if (onTodoMarksChanged != null) {
-            onTodoMarksChanged.run();
-        }
-    }
-
-    /** The last applied TODO/highlight marks (empty when off, unscanned, or a huge file). */
-    private java.util.List<TodoMark> todoMarks = java.util.List.of();
-
-    private @Nullable Runnable onTodoMarksChanged;
-
-    /** The TODO/highlight marks currently shown in this buffer (read-only; empty when the highlight is off). */
     public java.util.List<TodoMark> todoMarks() {
-        return todoMarks;
+        return todoMarker.todoMarks();
     }
 
-    /** Called on the FX thread after every TODO re-scan of this buffer is applied (on load, after debounced
-     *  edits, and when the patterns or the on/off setting change), whether or not the marks changed. */
     public void setOnTodoMarksChanged(Runnable callback) {
-        this.onTodoMarksChanged = callback;
+        todoMarker.setOnTodoMarksChanged(callback);
     }
 
     /** Starts AceJump: the next typed character labels its visible occurrences to jump the caret. */
@@ -3114,14 +2987,14 @@ public class EditorBuffer implements TabContent {
 
     /** Positions the TODO overview stripe over the scrollbar: at the edge (inside the minimap when shown),
      *  shifted left by the diagnostic + lint stripes' widths when those are active, so they sit side by side. */
-    private void updateTodoStripe() {
+    void updateTodoStripe() {
         boolean minimapShown = minimapVisible && !largeFile && !heavyFile;
         double base = minimapShown ? Minimap.WIDTH : 0d;
         double offset = (lspActive ? DiagnosticStripe.WIDTH : 0d)
                 + (markdownLintEnabled && !largeFile && !minimapShown ? MarkdownLintStripe.WIDTH : 0d);
         if (todoStripe != null) { // attached with the first marks (todoStripe()), positioned from then on
             AnchorPane.setRightAnchor(todoStripe, base + offset);
-            todoStripe.setActive(todoEnabled && !largeFile);
+            todoStripe.setActive(todoMarker.todoEnabled && !largeFile);
         }
     }
 
@@ -3196,65 +3069,16 @@ public class EditorBuffer implements TabContent {
                 java.util.function.BooleanSupplier stillValid);
     }
 
-    private @Nullable LspPasteImportsRequester lspPasteImportsRequester;
-    /** Master gate for paste auto-import ({@code Settings.lspPasteImports}), pushed from the controller. */
-    private boolean lspPasteImportsEnabled = true;
-
     public void setLspPasteImportsRequester(LspPasteImportsRequester requester) {
-        this.lspPasteImportsRequester = requester;
+        lspAssists.setLspPasteImportsRequester(requester);
     }
 
     public void setLspPasteImportsEnabled(boolean enabled) {
-        this.lspPasteImportsEnabled = enabled;
+        lspAssists.setLspPasteImportsEnabled(enabled);
     }
 
-    /**
-     * After a paste inserted {@code [start..end)} (absolute offsets), asks the language server for the
-     * imports the pasted code needs (#742). No-op unless the feature is on, a requester is wired, the
-     * buffer is an editable, non-narrowed LSP buffer (a narrowed buffer's coordinates are region-relative
-     * — the same reason LSP sync is suspended there), and the span is non-empty.
-     *
-     * <p>The pending didChange is flushed FIRST ({@link #sendLspChange}) so the server computes against
-     * the post-paste document — JSON-RPC preserves order, the {@code requestLspCompletion} idiom. The
-     * {@code stillValid} supplier the requester must consult before applying: an edit before or inside the pasted
-     * text since drops the answer, never applied to text it wasn't computed for, while typing after it does not,
-     * so a paste followed by Enter keeps its imports (twelfth review AL2). The answer's edit then lands above the
-     * paste, in text that has not changed.
-     */
     public void requestLspPasteImports(int start, int end) {
-        if (!lspPasteImportsEnabled
-                || lspPasteImportsRequester == null
-                || !lspActive
-                || isNarrowed()
-                || !isEditable()
-                || end <= start
-                || end > area.getLength()) {
-            return;
-        }
-        sendLspChange();
-        long version = docVersion;
-        String pasted = area.getText(start, end);
-        boolean[] touched = {false};
-        var watch = area.plainTextChanges().subscribe(c -> {
-            if (c.getPosition() < end) {
-                touched[0] = true; // before or inside the pasted text: its lines moved, or it changed
-            }
-        });
-        var stop = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(30));
-        stop.setOnFinished(e -> {
-            watch.unsubscribe();
-            touched[0] = true; // no longer watched: only an unchanged document still takes the answer
-        });
-        stop.play();
-        var s = area.offsetToPosition(start, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
-        var e = area.offsetToPosition(end, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
-        lspPasteImportsRequester.request(
-                s.getMajor(),
-                s.getMinor(),
-                e.getMajor(),
-                e.getMinor(),
-                pasted,
-                () -> docVersion == version || !touched[0]);
+        lspAssists.requestLspPasteImports(start, end);
     }
 
     /** Async range-formatter for Tab line re-indent: requests the edits the server would apply to a line
@@ -3280,66 +3104,6 @@ public class EditorBuffer implements TabContent {
     public String text() {
         return documentTextSnapshot();
     }
-
-    /** Shows the LSP diagnostic message(s) in a tooltip when hovering a squiggled span. */
-    private void installLspHover(CodeArea a) {
-        a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
-            if (!lspActive || lspOverlay == null || lspOverlay.diagnostics().isEmpty()) {
-                if (lspTooltip != null) {
-                    lspTooltip.hide();
-                }
-                return;
-            }
-            try {
-                var hit = a.hit(e.getX(), e.getY());
-                var pos = a.offsetToPosition(
-                        hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
-                var hits = lspOverlay.at(pos.getMajor(), pos.getMinor());
-                if (hits.isEmpty()) {
-                    if (lspTooltip != null) {
-                        lspTooltip.hide();
-                    }
-                    lspTooltipText = null;
-                    return;
-                }
-                StringBuilder sb = new StringBuilder();
-                for (var d : hits) {
-                    if (sb.length() > 0) {
-                        sb.append('\n');
-                    }
-                    String origin = d.origin();
-                    sb.append(d.message());
-                    if (!origin.isEmpty()) {
-                        sb.append("  (").append(origin).append(')');
-                    }
-                }
-                String text = sb.toString();
-                // Already showing this exact message → don't re-show; re-showing on every MOUSE_MOVED
-                // re-positions the popup to the cursor each pixel, which reads as flicker.
-                if (lspTooltip != null && lspTooltip.isShowing() && text.equals(lspTooltipText)) {
-                    return;
-                }
-                if (lspTooltip == null) {
-                    lspTooltip = new javafx.scene.control.Tooltip();
-                    lspTooltip.getStyleClass().add("lsp-diagnostic-tooltip");
-                    lspTooltip.setWrapText(true);
-                    lspTooltip.setMaxWidth(480);
-                }
-                lspTooltip.setText(text);
-                lspTooltipText = text;
-                lspTooltip.show(a, e.getScreenX() + 12, e.getScreenY() + 16);
-            } catch (RuntimeException ignored) {
-                // viewport mid-layout / hit miss — ignore
-            }
-        });
-        a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> {
-            if (lspTooltip != null) {
-                lspTooltip.hide();
-            }
-        });
-    }
-
-    // --- Debugger editor surfaces: inline values + hover value tooltip --------------------------
 
     /** While suspended: the frame's variable name → value map painted as grey end-of-line annotations on the
      *  visible lines of the function stopped at {@code frameLine}; null/empty clears (resume/terminate). */
@@ -3770,7 +3534,7 @@ public class EditorBuffer implements TabContent {
         caretOps.disposeMultiCaret();
         previewPanes.previewGen++; // discard any in-flight preview result for this (now closed) buffer
         highlighter.highlightGen++; // discard any in-flight highlight result
-        todoGen++; // discard any in-flight TODO scan result
+        todoMarker.todoGen++; // discard any in-flight TODO scan result
         runGutter.runScanGen++; // discard any in-flight run scan result
         languageGen++; // discard any in-flight deferred grammar load
         // RichTextFX's own teardown, last: it stops the caret blink timer — a running timer is a GC root, so a
@@ -4004,7 +3768,7 @@ public class EditorBuffer implements TabContent {
         typingAids.addAutoClose(area2);
         typingAids.addAutoIndent(area2);
         completionActions.installCompletionTrigger(area2);
-        installOccurrenceTrigger(area2); // LSP document highlight (#675)
+        lspAssists.installOccurrenceTrigger(area2); // LSP document highlight (#675)
         inlayDecor.installCodeLensClick(area2);
         if (inlayDecor.inlayFactoryInstalled) {
             area2.setInlayFactory(inlayDecor::inlaysOn); // hints, lenses and results set before the split opened
@@ -4115,7 +3879,7 @@ public class EditorBuffer implements TabContent {
     /** Above this document size the Undo History is disabled (full-text snapshots would cost too much). */
     private static final int UNDO_HISTORY_MAX_BYTES = 1_000_000;
 
-    private final UndoHistory undoHistory = new UndoHistory();
+    final UndoHistory undoHistory = new UndoHistory();
     private @Nullable Runnable onUndoHistoryChanged;
 
     public UndoHistory getUndoHistory() {
@@ -4586,7 +4350,7 @@ public class EditorBuffer implements TabContent {
                 a,
                 () -> markdownLintEnabled || httpVariableMarks.enabled() ? mdLintOverlay : null,
                 hits -> HttpVariableFixes.hint(httpVariableMarks, httpGutter.hooks(), hits));
-        installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
+        lspAssists.installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
         debugHover.install(a);
         noteHover.install(a);
     }
@@ -4599,53 +4363,12 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Moves the caret to the next TODO/highlight match after the caret (wrapping); false if none exist. */
     public boolean jumpToNextTodo() {
-        return jumpTodoMark(true);
+        return todoMarker.jumpToNextTodo();
     }
 
-    /** Moves the caret to the previous TODO/highlight match before the caret (wrapping); false if none. */
     public boolean jumpToPreviousTodo() {
-        return jumpTodoMark(false);
-    }
-
-    private boolean jumpTodoMark(boolean forward) {
-        // Same gates as refreshTodoMarks: without them a huge file (where the highlight is deliberately off
-        // and no marks are drawn) still ran the full multi-pattern scan over the whole document on the FX
-        // thread, and jumped to a match the user cannot see.
-        if (todoMatcher == null || !todoEnabled || largeFile) {
-            return false;
-        }
-        java.util.List<TodoMark> marks = todoMatcher.match(documentTextSnapshot());
-        if (marks.isEmpty()) {
-            return false;
-        }
-        int caret = area.getCaretPosition();
-        TodoMark target = null;
-        if (forward) {
-            for (TodoMark m : marks) {
-                if (m.start() > caret) {
-                    target = m;
-                    break;
-                }
-            }
-            if (target == null) {
-                target = marks.get(0);
-            }
-        } else {
-            for (int i = marks.size() - 1; i >= 0; i--) {
-                if (marks.get(i).start() < caret) {
-                    target = marks.get(i);
-                    break;
-                }
-            }
-            if (target == null) {
-                target = marks.get(marks.size() - 1);
-            }
-        }
-        area.moveTo(Math.min(target.start(), area.getLength()));
-        area.requestFollowCaret();
-        return true;
+        return todoMarker.jumpToPreviousTodo();
     }
 
     /** Removes all bookmarks in this buffer and repaints the gutter. */
@@ -4820,8 +4543,9 @@ public class EditorBuffer implements TabContent {
     /** Associates this buffer with a file and selects the grammar and fold language from its extension. */
     public void setPath(@Nullable Path path) {
         this.path = path;
-        writableOnDisk =
-                path == null || path.getFileSystem() != java.nio.file.FileSystems.getDefault() ? writableOnDisk : null;
+        banners.writableOnDisk = path == null || path.getFileSystem() != java.nio.file.FileSystems.getDefault()
+                ? banners.writableOnDisk
+                : null;
         // The full path (not just the basename) so location-based rules resolve — e.g. ~/.ssh/config,
         // /etc/hosts, .git/config (see ConfigFileType). The registries reduce it to the basename for
         // ordinary extension lookups.
@@ -5227,13 +4951,13 @@ public class EditorBuffer implements TabContent {
      */
     public void setViewMode(boolean viewMode) {
         this.viewMode = viewMode;
-        viewModeReason = viewMode ? viewModeReason : null;
+        banners.viewModeReason = viewMode ? banners.viewModeReason : null;
         applyEditable();
     }
 
     /** View mode, with the banner saying why ({@code reason}) instead of the general sentence. */
     public void setViewMode(boolean viewMode, @Nullable String reason) {
-        viewModeReason = reason;
+        banners.viewModeReason = reason;
         setViewMode(viewMode);
     }
 
@@ -5273,138 +4997,51 @@ public class EditorBuffer implements TabContent {
         if (area2 != null) {
             toggleStyleClass(area2, "read-only", !editable);
         }
-        updateViewModeBar();
+        banners.updateViewModeBar();
     }
 
-    /** Lets the controller wire the banner's "Enable Editing" action (persist + refresh indicators). */
     public void setOnEnableEditing(Runnable onEnableEditing) {
-        this.onEnableEditing = onEnableEditing == null ? () -> setViewMode(false) : onEnableEditing;
+        banners.setOnEnableEditing(onEnableEditing);
     }
 
-    /**
-     * When true, a file that isn't writable on disk shows "Edit as Administrator" in the View-mode banner
-     * (Save then routes through an elevated write) rather than a dead-end "read-only on disk" note. The
-     * controller pushes this = admin-save enabled + the OS elevation tool is available + the file is local.
-     */
     public void setAdminEditAvailable(boolean available) {
-        if (available != adminEditAvailable) {
-            adminEditAvailable = available;
-            updateViewModeBar();
-        }
+        banners.setAdminEditAvailable(available);
     }
 
-    /**
-     * Whether the file's permissions allow writing it, from the layer that can tell: {@code Files.isWritable}
-     * answers yes for any existing SFTP file. {@code null} (the default) asks the file system directly.
-     */
     public void setWritableOnDisk(@Nullable Boolean writable) {
-        writableOnDisk = writable;
-        updateViewModeBar();
+        banners.setWritableOnDisk(writable);
     }
 
-    /**
-     * Shows/hides the MS-Word-style "View Mode" banner above the editor: visible only in user View mode
-     * (not huge-file mode, which can't be made editable). The "Enable Editing" button appears only when
-     * the file is writable; otherwise a "read-only on disk" note replaces it.
-     */
-    private void updateViewModeBar() {
-        boolean show = viewMode && !hugeFile;
-        if (show) {
-            ViewModeBar bar = viewModeBar != null ? viewModeBar : new ViewModeBar(() -> onEnableEditing.run());
-            viewModeBar = bar;
-            bar.setReason(viewModeReason);
-            Button editButton = bar.enableEditing();
-            Label note = bar.note();
-            boolean canEdit = path == null || (writableOnDisk != null ? writableOnDisk : Files.isWritable(path));
-            // A non-writable file offers "Edit as Administrator" when elevation is available (Linux/pkexec),
-            // instead of a dead-end "read-only on disk" note. Enabling editing routes the eventual Save
-            // through the elevated write.
-            boolean adminOffer = !canEdit && adminEditAvailable;
-            editButton.setText(tr(adminOffer ? "viewmode.editAsAdmin" : "viewmode.enableEditing"));
-            // A filtered log is a read-only subset whatever the mode: offering to edit it would do nothing.
-            boolean offer = (canEdit || adminOffer) && !logView.filtered();
-            editButton.setVisible(offer);
-            editButton.setManaged(offer);
-            note.setVisible(!canEdit && !adminOffer);
-            note.setManaged(!canEdit && !adminOffer);
-        }
-        viewModeBarVisible = show;
-        refreshTopBars();
-    }
-
-    /** Puts the active top bars into {@code outer.setTop}: the install banner above the view-mode banner
-     *  (a {@code VBox} when both show), or {@code null} when neither does. */
     public void refreshTopBars() {
-        java.util.List<javafx.scene.Node> bars = new java.util.ArrayList<>(3);
-        if (encryption.notice() != null) {
-            bars.add(encryption.notice());
-        }
-        if (fileNoticeShown && fileNotice != null) {
-            bars.add(fileNotice.node());
-        }
-        if (installBarShown && installBar != null) {
-            bars.add(installBar.node());
-        }
-        if (viewModeBarVisible && viewModeBar != null) {
-            bars.add(viewModeBar.node());
-        }
-        bars.addAll(narrowView.bars()); // the narrowing banner, nearest the text: it describes the text
-        if (logControl != null) {
-            bars.add(logControl);
-        }
-        if (bars.isEmpty()) {
-            outer.setTop(null);
-        } else if (bars.size() == 1) {
-            outer.setTop(bars.get(0));
-        } else {
-            outer.setTop(new javafx.scene.layout.VBox(bars.toArray(new javafx.scene.Node[0])));
-        }
+        banners.refreshTopBars();
     }
 
-    /**
-     * Sets the install banner's content + actions (built lazily). Shown/hidden via {@link #showInstallBar}.
-     * {@code onInstall}/{@code onDismiss} are wired by MainController; the banner stays toolkit-only.
-     */
     public void setInstallPrompt(String message, String actionLabel, Runnable onInstall, Runnable onDismiss) {
-        if (installBar == null) {
-            installBar = new NoticeBar(tr("install.banner.dismiss"), "lsp-install-bar");
-        }
-        installBar.set(message, actionLabel, onInstall, onDismiss);
+        banners.setInstallPrompt(message, actionLabel, onInstall, onDismiss);
     }
 
-    /** Shows or hides the install banner (no-op visual until {@link #setInstallPrompt} has set content). */
     public void showInstallBar(boolean show) {
-        installBarShown = show && installBar != null;
-        refreshTopBars();
+        banners.showInstallBar(show);
     }
 
     public boolean isInstallBarShown() {
-        return installBarShown;
+        return banners.isInstallBarShown();
     }
 
-    /** Reflects an in-progress install: spins the indicator + disables the buttons. */
     public void setInstallBarBusy(boolean busy) {
-        if (installBar != null) {
-            installBar.setBusy(busy);
-        }
+        banners.setInstallBarBusy(busy);
     }
 
-    /** Shows a notice about the file above the editor, with one action; dismissing it only hides it. */
     public void showFileNotice(String message, String actionLabel, String dismissLabel, Runnable onAction) {
-        fileNotice = new NoticeBar(dismissLabel, "lsp-install-bar", "file-notice-bar");
-        fileNotice.set(message, actionLabel, onAction, this::hideFileNotice);
-        fileNoticeShown = true;
-        refreshTopBars();
+        banners.showFileNotice(message, actionLabel, dismissLabel, onAction);
     }
 
     public void hideFileNotice() {
-        fileNoticeShown = false;
-        refreshTopBars();
+        banners.hideFileNotice();
     }
 
-    /** The file notice's message while it is shown, else null. */
     public @Nullable String fileNoticeText() {
-        return fileNoticeShown && fileNotice != null ? fileNotice.text() : null;
+        return banners.fileNoticeText();
     }
 
     public void setSnippetProvider(java.util.function.BiFunction<String, String, Snippet> provider) {
@@ -5530,7 +5167,7 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    private void clearBraceMatch() {
+    void clearBraceMatch() {
         if (completionActions.braceMatch() != null) {
             removeBraceClass(completionActions.braceMatch()[0]);
             removeBraceClass(completionActions.braceMatch()[1]);
@@ -5891,143 +5528,46 @@ public class EditorBuffer implements TabContent {
         if (logView.filtered()) {
             return logView.fullText(); // the area shows only the matching lines
         }
-        return NarrowCarry.wholeText(narrowHeld, documentTextSnapshot());
+        return NarrowCarry.wholeText(narrowing.narrowHeld, documentTextSnapshot());
     }
 
     // --- Narrowing -------------------------------------------------------------------------------
 
     public boolean isNarrowed() {
-        return narrowHeld != null;
+        return narrowing.isNarrowed();
     }
 
-    /** Offset of the accessible region within the whole document (0 when widened). */
     public int narrowStart() {
-        return NarrowCarry.regionStart(narrowHeld);
+        return narrowing.narrowStart();
     }
 
-    /**
-     * Emacs {@code narrow-to-region}: makes only {@code [start, end)} accessible, holding the rest aside.
-     * Returns false when the request is not narrowable (an empty region, or a file large enough that
-     * swapping the text is not worth it).
-     *
-     * <p>The document text really is replaced, so anything reading {@code area.getText()} directly sees
-     * only the region — which is the point, and is why {@link #getContent()} exists to keep whole-file
-     * callers correct.
-     *
-     * <p><b>Undo history is dropped at the boundary.</b> The swap is itself an edit, and undoing across it
-     * would restore the whole document <em>into</em> the narrowed area while the hidden text is still held
-     * aside — duplicating the file. Rather than let that be reachable, both narrowing and widening clear
-     * the history of both split views and the Undo History checkpoints; edits made while narrowed undo
-     * normally.
-     */
     public boolean narrowTo(int start, int end) {
-        if (largeFile || hugeFile || logView.filtered()) {
-            return false;
-        }
-        // Offsets arrive in *area* coordinates (callers read them from the selection), which while
-        // already narrowed are relative to the region — so rebase them onto the document before widening,
-        // or re-narrowing would silently measure the new region from the top of the file instead.
-        int base = narrowStart();
-        NarrowCarry.Held narrowed = narrowHeld;
-        // Re-narrow from the whole document (narrowing does not nest, as in Emacs), without showing it widened.
-        List<FoldRegions.Region> regions = narrowed != null ? widenInternal(narrowed, false) : folds.regions();
-        String full = documentTextSnapshot(); // widened just above, so this is the whole document
-        int s = Math.max(0, Math.min(start + base, full.length()));
-        int e = Math.max(0, Math.min(end + base, full.length()));
-        if (s >= e) {
-            return false;
-        }
-        int caret = area.getCaretPosition();
-        int caret2 = area2 == null ? 0 : area2.getCaretPosition();
-        boolean hadHistory = hasUndoHistory();
-        clearBraceMatch(); // its offsets are the area's, which the swap changes
-        NarrowCarry.Held held = NarrowCarry.hold(area, full, s, e, symbols, regions);
-        narrowHeld = held; // set first: the swap fires the dirty listener, which reads getContent()
-        LineMarks.narrow(s, e, () -> NarrowCarry.narrow(area, s, e), bookmarks, breakpoints, notes, gitLines);
-        symbols = NarrowCarry.narrowSymbols(held); // before the regions: their listeners read the symbols
-        folds.carryRegions(NarrowCarry.narrowRegions(held));
-        forgetHistoryAtNarrowBoundary(hadHistory);
-        area.moveTo(Math.max(0, Math.min(caret - s, area.getLength())));
-        area.requestFollowCaret();
-        moveSplitCaret(caret2 - s);
-        narrowView.narrowed(full, s, e, area2);
-        onNarrowChanged.run();
-        return true;
+        return narrowing.narrowTo(start, end);
     }
 
     public void setOnNarrowChanged(Runnable callback) {
-        this.onNarrowChanged = callback == null ? () -> {} : callback;
+        narrowing.setOnNarrowChanged(callback);
     }
 
-    /** The 0-based file line the region starts on (0 when widened): a narrowed buffer keeps the file's numbering. */
     public int narrowFirstLine() {
-        return narrowView.firstLine();
+        return narrowing.narrowFirstLine();
     }
 
-    /** Whether {@link #narrowTo} can take effect here: not a large, huge or filtered view, and editable or view-only. */
     public boolean canNarrow() {
-        return !largeFile && !hugeFile && !logView.filtered() && (isEditable() || isViewMode());
+        return narrowing.canNarrow();
     }
 
-    /** Emacs {@code widen}: restores access to the whole document. No-op when not narrowed. */
     public void widen() {
-        NarrowCarry.Held held = narrowHeld;
-        if (held == null) { // not narrowed
-            return;
-        }
-        widenInternal(held, true);
-        onNarrowChanged.run();
+        narrowing.widen();
     }
 
-    /** {@code held}: {@link #narrowHeld}. Returns the whole file's regions; a re-narrow (!shown) shows none of it. */
-    private List<FoldRegions.Region> widenInternal(NarrowCarry.Held held, boolean shown) {
-        int prefix = held.prefixText().length();
-        int caret = area.getCaretPosition();
-        int caret2 = area2 == null ? 0 : area2.getCaretPosition();
-        narrowHeld = null; // cleared first: the swap fires the dirty listener, which reads getContent()
-        boolean hadHistory = hasUndoHistory();
-        String region = documentTextSnapshot();
-        clearBraceMatch(); // its offsets are the area's, which the swap changes
-        int top = ScrollAnchor.firstVisibleLine(area); // the region's lines stay put on screen, as in Emacs
-        LineMarks.widen(() -> NarrowCarry.widen(area, held), bookmarks, breakpoints, notes, gitLines);
-        symbols = NarrowCarry.widenSymbols(held, region, symbols); // before the regions, as narrowTo
-        List<FoldRegions.Region> regions = NarrowCarry.widenRegions(held, region, folds.regions());
-        forgetHistoryAtNarrowBoundary(hadHistory);
-        area.moveTo(Math.min(prefix + caret, area.getLength()));
-        if (shown) { // a re-narrow's listeners (the Structure outline) must not see the whole file in between
-            folds.carryRegions(regions);
-            jumps.keepAtTop(area, held.firstLine() + Math.max(0, top), top < 0);
-        }
-        moveSplitCaret(prefix + caret2);
-        narrowView.widened(area2);
-        return regions;
-    }
-
-    /** Puts the split's second caret back after the document was replaced under it (narrowing, widening). */
-    private void moveSplitCaret(int to) {
-        if (area2 != null) {
-            area2.moveTo(Math.clamp(to, 0, area2.getLength()));
-            area2.requestFollowCaret();
-        }
-    }
-
-    /** Something an undo or an Undo History restore could bring back (more than the load's own baseline). */
-    private boolean hasUndoHistory() {
-        return area.isUndoAvailable() || area.isRedoAvailable() || undoHistory.size() > 1;
-    }
-
-    /** Whether a narrow/widen swap cleared a non-empty undo history since the last call: the UI says so. */
     public boolean takeHistoryDropped() {
-        boolean dropped = historyDropped;
-        historyDropped = false;
-        return dropped;
+        return narrowing.takeHistoryDropped();
     }
-
-    private boolean historyDropped;
 
     /** The undo stack and the Undo History checkpoints: neither may be replayed across the boundary. */
-    private void forgetHistoryAtNarrowBoundary(boolean hadHistory) {
-        historyDropped |= hadHistory;
+    void forgetHistoryAtNarrowBoundary(boolean hadHistory) {
+        narrowing.historyDropped |= hadHistory;
         area.getUndoManager().forgetHistory();
         undoHistory.clear();
         if (onUndoHistoryChanged != null) {
@@ -6086,7 +5626,7 @@ public class EditorBuffer implements TabContent {
         if (logView.filtered()) {
             return logView.fullLength();
         }
-        return area.getLength() + NarrowCarry.heldLength(narrowHeld);
+        return area.getLength() + NarrowCarry.heldLength(narrowing.narrowHeld);
     }
 
     public BooleanProperty dirtyProperty() {
@@ -6188,7 +5728,7 @@ public class EditorBuffer implements TabContent {
     public void acknowledgeSavedContent(
             long savedVersion, int savedLength, String savedTextFingerprint, String savedLineEnding) {
         SavedBaseline saved = savedVersion == docVersion
-                        && narrowHeld == null
+                        && narrowing.narrowHeld == null
                         && !logView.filtered()
                         && area.getLength() == savedLength
                 ? SavedBaseline.of(documentTextSnapshot(), savedTextFingerprint)

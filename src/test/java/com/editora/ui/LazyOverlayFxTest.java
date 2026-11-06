@@ -122,7 +122,8 @@ class LazyOverlayFxTest {
         EditorBuffer b = newBuffer();
         FxTestSupport.runOnFx(() -> {
             b.setSearchMatches(SearchMatches.of(0, 0), -1);
-            FxTestSupport.invokeWith(b, "applyTodoMarks", List.class, List.of(mark(0, 4)));
+            FxTestSupport.invokeWith(
+                    FxTestSupport.field(b, "todoMarker"), "applyTodoMarks", List.class, List.of(mark(0, 4)));
         });
 
         Node search = FxTestSupport.field(b, "searchOverlay");
@@ -183,7 +184,11 @@ class LazyOverlayFxTest {
             b.setLspDiagnostics(List.of());
             b.setTodoHighlightEnabled(false);
             b.setTodoHighlightEnabled(true);
-            FxTestSupport.invokeWith(b, "applyTodoMarks", List.class, List.of()); // an empty scan result
+            FxTestSupport.invokeWith(
+                    FxTestSupport.field(b, "todoMarker"),
+                    "applyTodoMarks",
+                    List.class,
+                    List.of()); // an empty scan result
             b.setIndentGuidesVisible(false);
             b.setTabSize(2); // refreshes the indent guides, if any
             b.setLargeFile(true); // suppresses whitespace markers — on an overlay that does not exist
@@ -269,12 +274,13 @@ class LazyOverlayFxTest {
         FxTestSupport.runOnFx(() -> {
             b.setContent("plain\nTODO: later\n");
             b.setTodoHighlightEnabled(true);
-            FxTestSupport.invokeWith(b, "applyTodoMarks", List.class, List.of());
+            FxTestSupport.invokeWith(FxTestSupport.field(b, "todoMarker"), "applyTodoMarks", List.class, List.of());
         });
         assertNull(FxTestSupport.field(b, "todoOverlay"), "an empty scan builds nothing");
         assertNull(FxTestSupport.field(b, "todoStripe"));
 
-        FxTestSupport.runOnFx(() -> FxTestSupport.invokeWith(b, "applyTodoMarks", List.class, List.of(mark(6, 10))));
+        FxTestSupport.runOnFx(() -> FxTestSupport.invokeWith(
+                FxTestSupport.field(b, "todoMarker"), "applyTodoMarks", List.class, List.of(mark(6, 10))));
         Node overlay = FxTestSupport.field(b, "todoOverlay");
         Node stripe = FxTestSupport.field(b, "todoStripe");
         assertNotNull(overlay, "the first mark attaches the overlay");
@@ -299,7 +305,8 @@ class LazyOverlayFxTest {
             new javafx.scene.Scene(new StackPane(b.getNode()), 400, 300);
             b.setWhitespaceVisible(true);
             b.setSearchMatches(SearchMatches.of(0, 5), 0);
-            FxTestSupport.invokeWith(b, "applyTodoMarks", List.class, List.of(mark(0, 5)));
+            FxTestSupport.invokeWith(
+                    FxTestSupport.field(b, "todoMarker"), "applyTodoMarks", List.class, List.of(mark(0, 5)));
             b.setSplit(EditorBuffer.Split.SIDE_BY_SIDE);
             // ...and one attached after the split must reach the second pane too.
             b.setInlineValues(Map.of("alpha", "1"), 0);
