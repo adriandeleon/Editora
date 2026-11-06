@@ -88,6 +88,34 @@ class SettingsModifiedFxTest {
         return false;
     }
 
+    /** A page class left out of {@link SettingsWindow#controlOwners} would lose its rows' modified marks unseen. */
+    @Test
+    void everyPageClassIsReadForItsControls() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            SettingsWindow window = fx.controller.settingsWindow;
+            List<Object> owners = window.controlOwners();
+            for (Field f : SettingsWindow.class.getDeclaredFields()) {
+                if (!Modifier.isStatic(f.getModifiers()) && isPageClass(f.getType())) {
+                    f.setAccessible(true);
+                    Object page = f.get(window);
+                    assertTrue(
+                            owners.stream().anyMatch(o -> o == page),
+                            f.getName() + " is not in SettingsWindow.controlOwners()");
+                }
+            }
+        }
+    }
+
+    /** A class built by the window for some of its pages: it keeps the window in a field. */
+    private static boolean isPageClass(Class<?> type) {
+        for (Field f : type.getDeclaredFields()) {
+            if (f.getType() == SettingsWindow.class) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Test
     void everyControlHasTheKeyItWritesInTheTable() throws Exception {
         try (var fx = FxWindowFixture.create()) {

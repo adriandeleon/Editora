@@ -204,9 +204,6 @@ public class SettingsWindow {
     private final ToolWindowManager toolWindows;
     private final com.editora.git.GitService gitService;
     final com.editora.github.GitHubService githubService;
-    private final com.editora.mermaid.MermaidService mermaidService;
-    private final com.editora.diagram.DiagramService diagramService;
-    private final com.editora.typst.TypstService typstService;
     private final java.util.List<BuildCoordinator> buildCoordinators;
     private final com.editora.lsp.LspManager lspManager;
     private final com.editora.dap.DapManager dapManager;
@@ -358,7 +355,6 @@ public class SettingsWindow {
     private Spinner<Integer> historyMaxPerFileSpinner;
     private Spinner<Integer> historyMaxAgeSpinner;
     private Spinner<Integer> historyMaxTotalSpinner;
-    private CheckBox mermaidCheck;
     private CheckBox httpCheck;
     private CheckBox httpScriptsCheck;
     private CheckBox httpInlineResultsCheck;
@@ -372,19 +368,6 @@ public class SettingsWindow {
     private boolean htmlBrowsersDetected; // until then a stored id is not "missing", just not looked up yet
     private final ToolStatusRow httpNodeStatus = new ToolStatusRow("node");
 
-    private TextField mmdcPathField;
-
-    private TextField maidPathField;
-    private final ToolStatusRow mmdcStatus = new ToolStatusRow("mmdc");
-    private final ToolStatusRow maidStatus = new ToolStatusRow("maid");
-    private CheckBox diagramCheck;
-    private TextField dotPathField;
-    private TextField plantumlPathField;
-    private CheckBox typstCheck;
-    private TextField typstPathField;
-    private final ToolStatusRow typstStatus = new ToolStatusRow("typst");
-    private final ToolStatusRow dotStatus = new ToolStatusRow("dot");
-    private final ToolStatusRow plantumlStatus = new ToolStatusRow("plantuml");
     private final java.util.Map<BuildTool, CheckBox> buildToolChecks = new java.util.EnumMap<>(BuildTool.class);
     private final java.util.Map<BuildTool, TextField> buildToolCommandFields = new java.util.EnumMap<>(BuildTool.class);
     private final ComboBox<JdkChoice> mavenJdkCombo = new ComboBox<>();
@@ -478,9 +461,6 @@ public class SettingsWindow {
         this.toolWindows = toolWindows;
         this.gitService = gitService;
         this.githubService = githubService;
-        this.mermaidService = mermaidService;
-        this.diagramService = diagramService;
-        this.typstService = typstService;
         this.buildCoordinators = buildCoordinators;
         this.lspManager = lspManager;
         this.dapManager = dapManager;
@@ -499,6 +479,7 @@ public class SettingsWindow {
         this.snippetPages = new SettingsSnippetPages(this, config);
         this.markdownPage = new SettingsMarkdownPage(this, config);
         this.gitPages = new SettingsGitPages(this, config, gitService, githubService);
+        this.renderPages = new SettingsRenderToolPages(this, config, mermaidService, diagramService, typstService);
         if (com.editora.AppInfo.isSnapshot()) {
             // Start the (background, bounded) branch lookup now, so About has it without ever waiting on git.
             com.editora.AppInfo.gitBranchAsync();
@@ -703,7 +684,8 @@ public class SettingsWindow {
     }
 
     /** Opens a web page (the Diagrams page's "How to install"); injected by MainController. */
-    private @Nullable Consumer<String> openUrl;
+    @Nullable
+    Consumer<String> openUrl;
 
     public void setOpenUrl(Consumer<String> openUrl) {
         this.openUrl = openUrl;
@@ -714,7 +696,7 @@ public class SettingsWindow {
     public void refreshDetectionStatus() {
         lspPage.refreshLspStatus();
         debugPage.refreshDebugStatus();
-        refreshMermaidStatus();
+        renderPages.refreshMermaidStatus();
         gitPages.refreshGithubStatus();
         refreshBuildToolStatus();
         aiPages.refreshAgentClientStatus();
@@ -1349,61 +1331,7 @@ public class SettingsWindow {
             apply();
         });
 
-        mermaidCheck = new CheckBox(tr("settings.enableMermaid"));
-        mermaidCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setMermaidSupport(now);
-            apply();
-            refreshMermaidStatus();
-        });
-        mmdcPathField = new TextField();
-        mmdcPathField.setPromptText("mmdc");
-        commitOnEnterOrBlur(mmdcPathField, () -> config.getSettings().getMmdcPath(), now -> {
-            config.getSettings().setMmdcPath(now);
-            apply();
-            refreshMermaidStatus();
-        });
-        maidPathField = new TextField();
-        maidPathField.setPromptText(com.editora.mermaid.MermaidService.DEFAULT_MAID);
-        commitOnEnterOrBlur(maidPathField, () -> config.getSettings().getMaidPath(), now -> {
-            config.getSettings().setMaidPath(now);
-            apply();
-            refreshMermaidStatus();
-        });
-
-        diagramCheck = new CheckBox(tr("settings.enableDiagram"));
-        diagramCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setDiagramSupport(now);
-            apply();
-            refreshDiagramStatus();
-        });
-        dotPathField = new TextField();
-        dotPathField.setPromptText("dot");
-        commitOnEnterOrBlur(dotPathField, () -> config.getSettings().getDotPath(), now -> {
-            config.getSettings().setDotPath(now);
-            apply();
-            refreshDiagramStatus();
-        });
-        plantumlPathField = new TextField();
-        plantumlPathField.setPromptText("plantuml");
-        commitOnEnterOrBlur(plantumlPathField, () -> config.getSettings().getPlantumlPath(), now -> {
-            config.getSettings().setPlantumlPath(now);
-            apply();
-            refreshDiagramStatus();
-        });
-
-        typstCheck = new CheckBox(tr("settings.enableTypst"));
-        typstCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setTypstSupport(now);
-            apply();
-            refreshTypstStatus();
-        });
-        typstPathField = new TextField();
-        typstPathField.setPromptText("typst");
-        commitOnEnterOrBlur(typstPathField, () -> config.getSettings().getTypstPath(), now -> {
-            config.getSettings().setTypstPath(now);
-            apply();
-            refreshTypstStatus();
-        });
+        renderPages.buildControls();
 
         for (BuildTool bt : BuildTool.enabled()) {
             CheckBox check = new CheckBox(tr("settings.enableBuildTool", bt.displayName()));
@@ -1711,9 +1639,9 @@ public class SettingsWindow {
         pages.put(Category.LSP, lspPage.build());
         pages.put(Category.DEBUG, debugPage.build());
         pages.put(Category.MARKDOWN, markdownPage.build());
-        pages.put(Category.MERMAID, mermaidPage());
-        pages.put(Category.DIAGRAMS, diagramsPage());
-        pages.put(Category.TYPST, typstPage());
+        pages.put(Category.MERMAID, renderPages.mermaidPage());
+        pages.put(Category.DIAGRAMS, renderPages.diagramsPage());
+        pages.put(Category.TYPST, renderPages.typstPage());
         pages.put(Category.BUILD_TOOLS, buildToolsPage());
         pages.put(Category.WEB, webPage());
         pages.put(Category.EXTERNAL_TOOLS, externalToolsPage());
@@ -3133,7 +3061,8 @@ public class SettingsWindow {
                 keymapsPage,
                 snippetPages,
                 markdownPage,
-                gitPages);
+                gitPages,
+                renderPages);
     }
 
     /** Settings → AI, AI Agent, AI Actions and MCP Server; see {@link SettingsAiPages}. */
@@ -3159,6 +3088,9 @@ public class SettingsWindow {
             java.util.function.BiConsumer<Boolean, java.util.function.BiConsumer<Boolean, String>> probe) {
         aiPages.setAiConnectionProbe(probe);
     }
+
+    /** Settings → Mermaid, Diagrams and Typst; see {@link SettingsRenderToolPages}. */
+    private final SettingsRenderToolPages renderPages;
 
     /** Settings → Git and GitHub; see {@link SettingsGitPages}. */
     private final SettingsGitPages gitPages;
@@ -3407,34 +3339,6 @@ public class SettingsWindow {
         return "npm";
     }
 
-    private VBox mermaidPage() {
-        VBox p = page(tr("settings.cat.mermaid"), tr("settings.mermaid.subtitle"));
-        dependsOn(p, mermaidCheck);
-        Card c = card(p, null);
-        checkRow(
-                c,
-                Category.MERMAID,
-                mermaidCheck,
-                tr("settings.mermaid.hint"),
-                "mermaid diagram enable mmdc render mmd");
-        installButtons.put(
-                "mermaid", mmdcStatus.install(() -> installSupport("mermaid")).installButton());
-        // Mermaid's detection is kept until a path changes (probing mmdc, or a maid command of the user's own,
-        // takes seconds on the thread that lints .mmd files), so a tool installed meanwhile is found on request.
-        mmdcStatus.link(tr("settings.mermaid.recheck"), () -> {
-            if (mermaidService != null) {
-                mermaidService.invalidate();
-                refreshMermaidStatus();
-            }
-        });
-        String m = tr("settings.mermaid.mmdcPath");
-        toolRows(c, Category.MERMAID, m, null, mmdcPathField, mermaidCheck, mmdcStatus, "mermaid mmdc render");
-        String maid = tr("settings.mermaid.maidPath");
-        toolRows(
-                c, Category.MERMAID, maid, null, maidPathField, mermaidCheck, maidStatus, "mermaid maid lint validate");
-        return p;
-    }
-
     /** The kit's tool rows (D13): "<title> [command][Browse…]" (greyed with {@code master}), then "Detected". */
     void toolRows(
             Card c,
@@ -3460,90 +3364,6 @@ public class SettingsWindow {
         if (onInstallSupport != null) {
             onInstallSupport.accept(key);
         }
-    }
-
-    /** LANGUAGES & TOOLS ▸ Diagrams: Graphviz DOT + PlantUML preview (external CLIs). */
-    private VBox diagramsPage() {
-        VBox p = page(tr("settings.cat.diagrams"), tr("settings.diagrams.subtitle"));
-        dependsOn(p, diagramCheck);
-        Card c = card(p, null);
-        checkRow(
-                c,
-                Category.DIAGRAMS,
-                diagramCheck,
-                tr("settings.diagram.hint"),
-                "diagram dot graphviz plantuml enable render preview puml gv");
-        // No installer for Graphviz or PlantUML: the docs say how (a package manager), instead of a button.
-        Runnable docs = () -> {
-            if (openUrl != null) {
-                openUrl.accept(com.editora.AppInfo.HOMEPAGE + "/features/diagrams/");
-            }
-        };
-        dotStatus.linkWhenMissing(tr("settings.diagram.howToInstall"), docs);
-        plantumlStatus.linkWhenMissing(tr("settings.diagram.howToInstall"), docs);
-        String dot = tr("settings.diagram.dotPath");
-        toolRows(c, Category.DIAGRAMS, dot, null, dotPathField, diagramCheck, dotStatus, "diagram dot graphviz render");
-        String puml = tr("settings.diagram.plantumlPath");
-        toolRows(
-                c,
-                Category.DIAGRAMS,
-                puml,
-                null,
-                plantumlPathField,
-                diagramCheck,
-                plantumlStatus,
-                "diagram plantuml puml");
-        return p;
-    }
-
-    private void refreshDiagramStatus() {
-        if (diagramService == null) {
-            return;
-        }
-        dotStatus.checking();
-        plantumlStatus.checking();
-        diagramService.detect(a -> {
-            for (var kind : List.of(com.editora.diagram.DiagramKind.DOT, com.editora.diagram.DiagramKind.PLANTUML)) {
-                boolean found = a.has(kind);
-                List<String> argv = diagramService.command(kind);
-                (kind == com.editora.diagram.DiagramKind.DOT ? dotStatus : plantumlStatus)
-                        .show(found, found ? ToolStatusRow.pathOf(argv) : "", diagramCheck.isSelected());
-            }
-        });
-    }
-
-    /** LANGUAGES & TOOLS ▸ Typst: multi-page rendered document preview (the external typst CLI). */
-    private VBox typstPage() {
-        VBox p = page(tr("settings.cat.typst"), tr("settings.typst.subtitle"));
-        dependsOn(p, typstCheck);
-        Card c = card(p, null);
-        checkRow(
-                c,
-                Category.TYPST,
-                typstCheck,
-                tr("settings.typst.hint"),
-                "typst document enable render preview typ pdf");
-        installButtons.put(
-                "typst", typstStatus.install(() -> installSupport("typst")).installButton());
-        toolRows(
-                c,
-                Category.TYPST,
-                tr("settings.typst.path"),
-                null,
-                typstPathField,
-                typstCheck,
-                typstStatus,
-                "typst cli");
-        return p;
-    }
-
-    private void refreshTypstStatus() {
-        if (typstService == null) {
-            return;
-        }
-        typstStatus.checking();
-        typstService.detect(present -> typstStatus.show(
-                present, present ? ToolStatusRow.pathOf(typstService.command()) : "", typstCheck.isSelected()));
     }
 
     private VBox buildToolsPage() {
@@ -3926,25 +3746,6 @@ public class SettingsWindow {
         for (Region control : controls) {
             control.setMinWidth(Region.USE_PREF_SIZE);
         }
-    }
-
-    private void refreshMermaidStatus() {
-        if (mermaidService == null || mermaidCheck == null) {
-            return; // its page was never built: an install's refresh reached a Settings never shown (fourth review CF3)
-        }
-        mmdcStatus.checking();
-        maidStatus.checking();
-        mermaidService.detect(a -> {
-            boolean on = mermaidCheck.isSelected();
-            mmdcStatus.show(a.mmdc(), a.mmdc() ? ToolStatusRow.pathOf(mermaidService.mmdcCommand()) : "", on);
-            // The default `npx -y @probelabs/maid` is found by its files, never by running npx (which would
-            // fetch it from the npm registry): show where the installed package is.
-            com.editora.mermaid.MaidLocator.Found install = a.maidInstall();
-            maidStatus.show(
-                    a.maid(),
-                    install != null ? install.detail() : ToolStatusRow.pathOf(mermaidService.maidCommand()),
-                    on);
-        });
     }
 
     /** Reads each build coordinator's currently-cached detection (no subprocess probe needed — "found" just
@@ -4909,17 +4710,7 @@ public class SettingsWindow {
             historyMaxAgeSpinner.getValueFactory().setValue(settings.getHistoryMaxAgeDays());
             historyMaxTotalSpinner.getValueFactory().setValue(settings.getHistoryMaxTotalMb());
             updateHistoryRowsEnabled();
-            mermaidCheck.setSelected(settings.isMermaidSupport());
-            mmdcPathField.setText(settings.getMmdcPath());
-            maidPathField.setText(settings.getMaidPath());
-            refreshMermaidStatus();
-            diagramCheck.setSelected(settings.isDiagramSupport());
-            dotPathField.setText(settings.getDotPath());
-            plantumlPathField.setText(settings.getPlantumlPath());
-            refreshDiagramStatus();
-            typstCheck.setSelected(settings.isTypstSupport());
-            typstPathField.setText(settings.getTypstPath());
-            refreshTypstStatus();
+            renderPages.load(settings);
             for (BuildTool bt : BuildTool.enabled()) {
                 CheckBox enable = buildToolChecks.get(bt);
                 TextField command = buildToolCommandFields.get(bt);

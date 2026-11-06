@@ -159,7 +159,7 @@ class SettingsFollowUpsFxTest {
 
                 Map<String, Supplier<String>> stored = new LinkedHashMap<>();
                 Map<String, TextField> fields = new LinkedHashMap<>();
-                fields.put("typst", FxTestSupport.field(w, "typstPathField"));
+                fields.put("typst", SettingsRig.control(w, "typstPathField"));
                 stored.put("typst", s::getTypstPath);
                 fields.put("ripgrep", FxTestSupport.field(w, "ripgrepCommandField"));
                 stored.put("ripgrep", s::getRipgrepCommand);
