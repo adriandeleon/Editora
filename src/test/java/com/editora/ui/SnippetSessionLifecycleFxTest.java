@@ -218,7 +218,8 @@ class SnippetSessionLifecycleFxTest {
             tab(b);
             assertArrayEquals(new int[] {1, 3}, told.get(told.size() - 1));
             assertNotNull(
-                    FxTestSupport.field(b, "snippetOverlay"), "the field overlay is attached with the first session");
+                    FxTestSupport.field(FxTestSupport.field(b, "snippetKeys"), "snippetOverlay"),
+                    "the field overlay is attached with the first session");
             tab(b);
             assertArrayEquals(new int[] {2, 3}, told.get(told.size() - 1));
             press(b, KeyCode.ESCAPE, false);

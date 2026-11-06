@@ -43,7 +43,7 @@ class LazyOverlayFxTest {
             "lintOverlay",
             "lspOverlay",
             "aceJump",
-            "snippetOverlay",
+            "snippetKeys.snippetOverlay",
             "whitespace",
             "indentGuides",
             "mdLintOverlay",
@@ -65,6 +65,16 @@ class LazyOverlayFxTest {
 
     private static int layer(Node node) {
         return (int) node.getProperties().get("editora.overlayLayer");
+    }
+
+    /** A field of the buffer, or of one of its parts ({@code "owner.field"}). */
+    private static Object lazyField(EditorBuffer b, String path) {
+        Object target = b;
+        String[] parts = path.split("\\.");
+        for (int i = 0; i < parts.length - 1; i++) {
+            target = FxTestSupport.field(target, parts[i]);
+        }
+        return FxTestSupport.field(target, parts[parts.length - 1]);
     }
 
     private static AnchorPane root(EditorBuffer b) {
@@ -92,7 +102,7 @@ class LazyOverlayFxTest {
     void offFeatureBufferBuildsNoLazyOverlays() throws Exception {
         EditorBuffer b = newBuffer();
         for (String f : LAZY) {
-            assertNull(FxTestSupport.field(b, f), f + " must not be built for an off-feature buffer");
+            assertNull(lazyField(b, f), f + " must not be built for an off-feature buffer");
         }
         assertNull(
                 FxTestSupport.field(b.getFoldManager(), "linePreview"),

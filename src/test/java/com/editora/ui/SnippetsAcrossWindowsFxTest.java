@@ -143,9 +143,11 @@ class SnippetsAcrossWindowsFxTest {
             Thread.sleep(20);
         }
         assertFalse(settings.isSnippetTabExpansion());
-        assertFalse(FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(bufferA, "snippetTabExpansion")));
+        assertFalse(FxTestSupport.callOnFx(() ->
+                FxTestSupport.<Boolean>field(FxTestSupport.field(bufferA, "snippetKeys"), "snippetTabExpansion")));
         assertFalse(
-                FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(bufferB, "snippetTabExpansion")),
+                FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(
+                        FxTestSupport.field(bufferB, "snippetKeys"), "snippetTabExpansion")),
                 "the other window re-applied the shared setting");
         assertTrue(FxTestSupport.callOnFx(() -> registry.run("view.toggleSnippetTabExpansion")));
         for (int i = 0; i < 10; i++) {
@@ -153,7 +155,8 @@ class SnippetsAcrossWindowsFxTest {
             FxTestSupport.runOnFx(fx.windowManager::flushPendingSettingsBroadcast);
             Thread.sleep(20);
         }
-        assertTrue(FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(bufferB, "snippetTabExpansion")));
+        assertTrue(FxTestSupport.callOnFx(() ->
+                FxTestSupport.<Boolean>field(FxTestSupport.field(bufferB, "snippetKeys"), "snippetTabExpansion")));
     }
 
     @Test

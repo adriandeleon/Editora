@@ -33,21 +33,17 @@ import com.editora.completion.Completion;
 import com.editora.completion.CompletionProvider;
 import com.editora.config.RulerColumns;
 import com.editora.diagram.DiagramKind;
-import com.editora.editops.AutoClose;
 import com.editora.editops.BraceMatcher;
-import com.editora.editops.CommentContinuation;
 import com.editora.editops.Commenter;
 import com.editora.editops.HtmlLinks;
 import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineEndings;
-import com.editora.editops.LineIndent;
 import com.editora.editops.MultiTab;
 import com.editora.editops.TextFingerprint;
 import com.editora.editops.WholeDocumentEdit;
 import com.editora.editor.completion.BufferCompletion;
 import com.editora.editor.completion.CompletionEditTracker;
-import com.editora.editor.completion.SnippetFieldOverlay;
 import com.editora.editor.completion.SnippetTyping;
 import com.editora.editor.crypto.BufferEncryption;
 import com.editora.editor.debug.BreakpointGutterMenu;
@@ -152,7 +148,7 @@ import static com.editora.i18n.Messages.tr;
 /** A single open document: a RichTextFX {@link CodeArea} plus its backing file, language, and dirty state. */
 public class EditorBuffer implements TabContent {
 
-    private final BufferCompletion completionActions = new BufferCompletion(new BufferCompletion.Host() {
+    final BufferCompletion completionActions = new BufferCompletion(new BufferCompletion.Host() {
         @Override
         public CodeArea area() {
             return area;
@@ -275,27 +271,35 @@ public class EditorBuffer implements TabContent {
 
         @Override
         public void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent) {
-            EditorBuffer.this.startSnippet(a, snippet, from, to, reindent);
+            EditorBuffer.this.snippetKeys.startSnippet(a, snippet, from, to, reindent);
         }
 
         @Override
         public com.editora.snippet.TabExpansion.@Nullable Match snippetTrigger(CodeArea a, boolean tabOnly) {
-            if (tabOnly && !snippetTabExpansion) {
+            if (tabOnly && !snippetKeys.snippetTabExpansion) {
                 return null;
             }
             return SnippetTyping.triggerAtCaret(
-                    a, language, isProse(), tabOnly ? snippetProvider : snippetOfferProvider, !tabOnly);
+                    a,
+                    language,
+                    isProse(),
+                    tabOnly ? snippetKeys.snippetProvider : snippetKeys.snippetOfferProvider,
+                    !tabOnly);
         }
 
         @Override
         public com.editora.editops.Abbrev.@Nullable Edit abbrevAtCaret(CodeArea a) {
-            if (!abbrevMode || applyingAbbrev || hugeFile || !isEditable() || abbrevTable.isEmpty()) {
+            if (!snippetKeys.abbrevMode
+                    || snippetKeys.applyingAbbrev
+                    || hugeFile
+                    || !isEditable()
+                    || snippetKeys.abbrevTable.isEmpty()) {
                 return null;
             }
             if (hasActiveSnippet() || multiCaretActiveOn(a) || a.getSelection().getLength() > 0) {
                 return null;
             }
-            return abbrevBefore(a, a.getCaretPosition());
+            return snippetKeys.abbrevBefore(a, a.getCaretPosition());
         }
 
         @Override
@@ -315,11 +319,15 @@ public class EditorBuffer implements TabContent {
 
     final CodeArea area = tagRename.newArea(null);
     final IndentKeys indentKeys = new IndentKeys(area, () -> this.language);
-    private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
+    final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
     /** The preview pane, its hosts and the rendering of every preview format ({@link BufferPreview}). */
     final BufferPreview previewPanes = new BufferPreview(this);
     /** The tab's view composition and its floating corner controls ({@link BufferLayout}). */
     final BufferLayout viewLayout = new BufferLayout(this);
+    /** Auto-indent, auto-close, smart Tab and the other typing assists ({@link BufferTyping}). */
+    final BufferTyping typingAids = new BufferTyping(this);
+    /** Snippet keys and expansion, and abbrevs ({@link BufferSnippets}). */
+    final BufferSnippets snippetKeys = new BufferSnippets(this);
 
     final BooleanProperty dirty = new SimpleBooleanProperty(false);
     /**
@@ -510,11 +518,11 @@ public class EditorBuffer implements TabContent {
      *  toggleable per-buffer. {@code largeFile} implies the same minimap/LSP suppression. */
     boolean heavyFile;
     /** Huge-file mode: implies large-file mode plus read-only (no undo, not editable). */
-    private boolean hugeFile;
+    boolean hugeFile;
     /** The loader could only read part of this file (huge-file cap / log tail) — saving would truncate it. */
-    private boolean truncatedLoad;
+    boolean truncatedLoad;
     /** User "View mode": non-editable but keeps all normal editor features (separate from huge-file). */
-    private boolean viewMode;
+    boolean viewMode;
     /** Temporary non-editable shell while file content is loaded; never presented as user View mode. */
     private boolean loading;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
@@ -546,28 +554,13 @@ public class EditorBuffer implements TabContent {
     /** The preview's right-click menu: its export/print actions and what the pointer was on ({@link PreviewMenu}). */
     final PreviewMenu previewMenu = new PreviewMenu(this, () -> previewPanes.markdownPreview);
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
-    private final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
-    /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
-    private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
-
-    /** As {@link #snippetProvider}, including the triggers a completion offers but Tab alone leaves be. */
-    private java.util.function.BiFunction<String, String, Snippet> snippetOfferProvider = (lang, prefix) -> null;
-
-    private boolean snippetTabExpansion = true;
-    private java.util.function.UnaryOperator<@Nullable Path> snippetWorkspaceRoot = file -> null;
-    private java.util.function.Consumer<int[]> snippetProgress = progress -> {};
-    private @Nullable SnippetFieldOverlay snippetOverlay; // lazily attached when the first session starts
-
-    // Settings: auto-show docs beside the list
-    // per-open session flag (reset on each popup open; Ctrl+Q toggles)
-    // generation guard for the debounced/async doc fetch
-
+    final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
     /**
      * Monotonic count of text changes to this buffer's document — a cheap "has the document moved under me"
      * stamp for the async/deferred completion paths (a caret offset alone can't tell: an edit can land the
      * caret back on the same offset). Bumped for edits made in either view (they share the document).
      */
-    private long docVersion;
+    long docVersion;
 
     /** Coalesces brace-match recomputes to one per pulse (caret moves rapidly while typing). */
     private boolean braceMatchPending;
@@ -697,7 +690,7 @@ public class EditorBuffer implements TabContent {
     private final ImageDrop imageDrop =
             new ImageDrop(() -> (isMarkdown() || isTypst()) && isEditable(), this::isMarkdown, this::caretToDrop);
     /** LSP: overlay active (diagnostics + hover), the debounced didChange sink, and the hover tooltip. */
-    private boolean lspActive;
+    boolean lspActive;
 
     private final java.util.List<CompletionEditTracker> completionEditTrackers = new java.util.ArrayList<>();
 
@@ -821,18 +814,6 @@ public class EditorBuffer implements TabContent {
     private boolean lspImplementationAvailable;
     /** Whether this buffer's server advertises {@code textDocument/typeDefinition} — gates the item (#736). */
     private boolean lspTypeDefinitionAvailable;
-    /** Whether this buffer's server advertises range formatting — enables Tab to re-indent the line. */
-    private boolean lspRangeFormatAvailable;
-    /** Injected range-formatter (the controller wires it to the LSP manager); null = none. */
-    private @Nullable LspRangeFormatter lspRangeFormatter;
-    /** Injected on-type formatter (#740); null = none. */
-    private @Nullable LspOnTypeFormatter lspOnTypeFormatter;
-    /** The characters this buffer's server formats on ({@code ;}, {@code }}, {@code \n} for jdtls) — #740. */
-    private java.util.Set<Character> lspOnTypeTriggers = java.util.Set.of();
-    /** {@code Settings.lspOnTypeFormatting} — the master gate for on-type formatting (#740). */
-    private boolean onTypeFormattingEnabled;
-    /** Generation guard so a stale async re-indent result can't clobber a later edit. */
-    private long reindentGen;
     /** Chars of context captured before/after a note's selection (for re-anchoring). */
     private static final int CONTEXT_CHARS = 40;
 
@@ -848,9 +829,10 @@ public class EditorBuffer implements TabContent {
     /** SHA-256 of the exact bytes last loaded/saved; used for remote save conflict detection. */
     private @Nullable String diskFingerprint;
     /** Language name for the current file (drives fold strategy); see {@link LanguageRegistry}. */
-    private String language = LanguageRegistry.plaintext();
+    String language = LanguageRegistry.plaintext();
     /** TextMate grammar for the current file, or {@code null} when no grammar is bundled. */
-    private @Nullable IGrammar grammar;
+    @Nullable
+    IGrammar grammar;
     /** {@code --source N} version from a Java compact-source shebang (for the run command), else null. */
     private @Nullable Integer shebangJavaSource;
     /** True once the user explicitly picked a language (status bar), so shebang detection won't fight it. */
@@ -865,7 +847,7 @@ public class EditorBuffer implements TabContent {
     private long languageGen;
     /** Per-line grammar end-states and bracket depths of the last applied pass (see {@link HighlightPass});
      *  null = none, so the next pass tokenizes the whole document. Replaced, never modified. */
-    private HighlightPass.@Nullable Lines highlightLines;
+    HighlightPass.@Nullable Lines highlightLines;
     /** The range the next highlight pass owes: every edit since a pass last applied. */
     private final HighlightDirty highlightDirty = new HighlightDirty();
     /** Where {@link #semanticTokens} are no longer painted (edits, lexical restyles) since they were anchored. */
@@ -892,7 +874,7 @@ public class EditorBuffer implements TabContent {
 
     private Color minimapViewport = Color.web("#0969da", 0.14);
     /** Visual tab width (columns); applied to the minimap and persisted via Settings. */
-    private int tabSize = 4;
+    int tabSize = 4;
     // EditorConfig overrides (null = no override → fall back to detection/global). See com.editora.editorconfig.
     /** One full-text materialization shared by every consumer of the current {@link #docVersion}. */
     private final DocumentSnapshots documentSnapshots = new DocumentSnapshots();
@@ -1067,14 +1049,15 @@ public class EditorBuffer implements TabContent {
                 () -> blameColumnWidth,
                 line -> gutterBlameClick.accept(this, line));
         breakpoints.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
-        addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
+        typingAids.addViewModePaging(area); // Space/Backspace = page down/up while in read-only View mode
         completionActions.addCompletionKeys(area); // popup owns Enter/Tab before snippet and indentation filters
         completionActions.installCommitCharacters(area);
-        addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
-        snippetSession.setOnChanged(this::snippetSessionChanged);
+        snippetKeys.addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
+        snippetSession.setOnChanged(snippetKeys::snippetSessionChanged);
         focusedView.addListener((o, was, now) -> snippetSession.focusMovedTo(now)); // the other split view
-        addAutoClose(area); // auto-close ()[]{} and quotes (before auto-indent so it sees the keystroke first)
-        addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
+        typingAids.addAutoClose(
+                area); // auto-close ()[]{} and quotes (before auto-indent so it sees the keystroke first)
+        typingAids.addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
         completionActions.installCompletionTrigger(area);
         installOccurrenceTrigger(area); // LSP document highlight (#675)
         installCodeLensClick(area);
@@ -1183,9 +1166,9 @@ public class EditorBuffer implements TabContent {
         area.plainTextChanges().subscribe(c -> wrap.inserted(c.getInserted())); // a giant token holds wrap off
         // Auto-fill: break the line at a word boundary when it grows past the fill column (off by default,
         // so the very first check short-circuits for every buffer that hasn't turned it on).
-        area.plainTextChanges().subscribe(this::maybeAutoFill);
+        area.plainTextChanges().subscribe(typingAids::maybeAutoFill);
         // Abbrev auto-expand: when abbrev-mode is on, typing a word terminator expands the word before it.
-        area.plainTextChanges().subscribe(this::maybeExpandAbbrev);
+        area.plainTextChanges().subscribe(snippetKeys::maybeExpandAbbrev);
         area.caretPositionProperty().addListener((obs, old, now) -> {
             resetGoalColumn();
             scheduleBraceMatch();
@@ -1656,7 +1639,7 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
-    private final MarkdownEditing markdownEditing = new MarkdownEditing(this);
+    final MarkdownEditing markdownEditing = new MarkdownEditing(this);
 
     /** The markup editing commands of this buffer (inline markers, headings, lists, tables, TOC). */
     public MarkdownEditing markdown() {
@@ -2343,7 +2326,7 @@ public class EditorBuffer implements TabContent {
      * text-rect anchors. The split's second view, if there is one, gets its twin at once; a split opened
      * later finds it with the rest (see {@link SecondaryPane#follow}).
      */
-    private <T extends javafx.scene.layout.Region> T attachLazyOverlay(T overlay, int layer) {
+    <T extends javafx.scene.layout.Region> T attachLazyOverlay(T overlay, int layer) {
         anchorOverText(overlay);
         return attachLazy(overlay, layer);
     }
@@ -3540,19 +3523,16 @@ public class EditorBuffer implements TabContent {
         void format(int line, int character, char ch, java.util.function.Consumer<java.util.List<LspTextEdit>> cb);
     }
 
-    /** Injects the on-type formatting request (#740); null disables it. */
     public void setLspOnTypeFormatter(LspOnTypeFormatter formatter) {
-        this.lspOnTypeFormatter = formatter;
+        typingAids.setLspOnTypeFormatter(formatter);
     }
 
-    /** The characters the server formats on (empty = none / not yet known), refreshed when it reports ready. */
     public void setLspOnTypeTriggers(java.util.Set<Character> chars) {
-        this.lspOnTypeTriggers = chars == null ? java.util.Set.of() : chars;
+        typingAids.setLspOnTypeTriggers(chars);
     }
 
-    /** The {@code Settings.lspOnTypeFormatting} master gate (#740), pushed by {@code applyViewSettings}. */
     public void setOnTypeFormattingEnabled(boolean enabled) {
-        this.onTypeFormattingEnabled = enabled;
+        typingAids.setOnTypeFormattingEnabled(enabled);
     }
 
     /** Sets the completion trigger characters the server advertised (empty = none / not yet known). */
@@ -4365,14 +4345,12 @@ public class EditorBuffer implements TabContent {
                 java.util.function.Consumer<java.util.List<LspTextEdit>> callback);
     }
 
-    /** Injects the range-formatter used by Tab to re-indent the current line (controller-wired; null off). */
     public void setLspRangeFormatter(LspRangeFormatter formatter) {
-        this.lspRangeFormatter = formatter;
+        typingAids.setLspRangeFormatter(formatter);
     }
 
-    /** Whether the server advertises range formatting — gates Tab's LSP line re-indent (else plain Tab). */
     public void setLspRangeFormatAvailable(boolean available) {
-        this.lspRangeFormatAvailable = available;
+        typingAids.setLspRangeFormatAvailable(available);
     }
 
     /** Current document text (for an initial didOpen). */
@@ -4624,14 +4602,8 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Auto-close tags: typing the {@code >} of an HTML/XML open tag inserts the matching closer. */
-    private boolean autoCloseTags;
-
-    private final TagTyping tagTyping = new TagTyping(); // the closer typed after '>', a hand-typed one joined
-
-    /** Enables/disables tag auto-closing (pushed from the controller's view settings). */
     public void setAutoCloseTags(boolean on) {
-        autoCloseTags = on;
+        typingAids.setAutoCloseTags(on);
     }
 
     /** Enables/disables the paired-tag auto-rename (pushed from the controller's view settings). */
@@ -4639,183 +4611,23 @@ public class EditorBuffer implements TabContent {
         tagRename.setEnabled(on);
     }
 
-    /**
-     * After each document change, mirrors a tag-name edit onto the paired open/close tag (the VS
-     * Code Auto Rename Tag behavior) via the pure {@link com.editora.editops.TagRename}. Runs only
-     * for editable html/xml buffers below the large-file tier, never during undo/redo (undoing the
-     * user's edit and the mirror separately must not re-mirror), and never re-entrantly. Cost when
-     * it doesn't apply is one boolean/language check; the document lex runs only when the change
-     * sits inside a tag name.
-     */
-    private boolean autoFill;
-
-    private int fillColumn = com.editora.editops.Filler.DEFAULT_FILL_COLUMN;
-    private boolean applyingAutoFill;
-
-    /** Enables/disables auto-fill (break-as-you-type) for this buffer; pushed from Settings by the controller. */
     public void setAutoFillEnabled(boolean on) {
-        this.autoFill = on;
+        typingAids.setAutoFillEnabled(on);
     }
 
     public void setFillColumn(int column) {
-        this.fillColumn = column > 0 ? column : com.editora.editops.Filler.DEFAULT_FILL_COLUMN;
+        typingAids.setFillColumn(column);
     }
 
-    /**
-     * Emacs {@code auto-fill-mode}: after an insertion, break the current line at a word boundary if it has
-     * grown past the fill column. Prose only ({@link #isProse()}), so it never wraps code. Runs on the
-     * post-edit {@code plainTextChanges} (the tag-rename pattern) — the first field check short-circuits when
-     * off, keeping the per-keystroke cost at one boolean for every buffer that hasn't enabled it.
-     */
-    private java.util.Map<String, String> abbrevTable = java.util.Map.of();
-
-    private boolean abbrevMode;
-    private boolean applyingAbbrev;
-
-    /** Pushes the abbreviation dictionary (lower-cased keys) and the auto-expand mode from Settings. */
     public void setAbbrevs(java.util.Map<String, String> table, boolean autoExpand) {
-        this.abbrevTable = table == null ? java.util.Map.of() : table;
-        this.abbrevMode = autoExpand;
+        snippetKeys.setAbbrevs(table, autoExpand);
     }
 
-    /**
-     * Emacs {@code expand-abbrev} ({@code C-x a e}): expand the abbreviation immediately before the caret,
-     * regardless of abbrev-mode. Returns whether anything expanded.
-     */
     public boolean expandAbbrevAtCaret() {
-        if (!isEditable() || abbrevTable.isEmpty()) {
-            return false;
-        }
-        CodeArea a = getFocusedArea();
-        com.editora.editops.Abbrev.Edit edit =
-                com.editora.editops.Abbrev.expand(a.getText(), a.getCaretPosition(), abbrevTable);
-        if (edit == null) {
-            return false;
-        }
-        a.replaceText(edit.from(), edit.to(), edit.replacement());
-        return true;
+        return snippetKeys.expandAbbrevAtCaret();
     }
 
-    /** Longest word an abbreviation lookup will scan back over — bounds the per-keystroke text slice below. */
-    private static final int MAX_ABBREV_LOOKBACK = 256;
-
-    /**
-     * Abbrev-mode auto-expand: when the just-typed single character is a word terminator (anything but a
-     * letter/digit), expand the word that ended just before it. The terminator stays. Same guarded
-     * {@code plainTextChanges} shape as {@link #maybeAutoFill}; the first field check short-circuits when off.
-     */
-    private void maybeExpandAbbrev(org.fxmisc.richtext.model.PlainTextChange c) {
-        if (!abbrevMode || applyingAbbrev || hugeFile || !isEditable() || abbrevTable.isEmpty()) {
-            return;
-        }
-        if (!c.getRemoved().isEmpty() || !com.editora.editops.Abbrev.terminates(c.getInserted())) {
-            return; // not a typed terminator (still inside a word, or a paste)
-        }
-        if (hasActiveSnippet() || area.getUndoManager().isPerformingAction()) {
-            return;
-        }
-        CodeArea a = getFocusedArea();
-        if (multiCaretActiveOn(a)) {
-            return;
-        }
-        // The terminator sits at c.getPosition(), so the word ends there.
-        com.editora.editops.Abbrev.Edit edit = abbrevBefore(a, Math.min(c.getPosition(), a.getLength()));
-        if (edit == null) {
-            return;
-        }
-        int from = edit.from();
-        int to = edit.to();
-        int caret = caretPast(a, c);
-        int delta = edit.replacement().length() - (to - from);
-        applyingAbbrev = true;
-        try {
-            a.replaceText(from, to, edit.replacement());
-        } finally {
-            applyingAbbrev = false;
-        }
-        // The edit lies before the caret (the terminator we just typed), so shift the caret by the length
-        // change. Deferred for the same reason as auto-fill: RichTextFX re-applies the triggering
-        // insertion's caret after this subscriber returns, which would otherwise mis-place it.
-        // Enter-with-indent and an auto-closed pair place their own caret once this returns (after the
-        // indent, between the pair), so for those it is read back then rather than predicted now.
-        boolean oneChar = c.getInserted().length() == 1;
-        caretFixes.defer(
-                () -> a.moveTo(Math.clamp((oneChar ? caret : a.getCaretPosition()) + delta, 0, a.getLength())));
-    }
-
-    /**
-     * The abbreviation ending at {@code point} of {@code a}, in document offsets, or null. The word fits in a
-     * bounded window before it, so just that window is sliced instead of the whole document — this runs per
-     * word-terminator keystroke and per typing pause.
-     */
-    private com.editora.editops.Abbrev.@Nullable Edit abbrevBefore(CodeArea a, int point) {
-        int windowStart = Math.max(0, point - MAX_ABBREV_LOOKBACK);
-        String window = a.getText(windowStart, point);
-        com.editora.editops.Abbrev.Edit edit = com.editora.editops.Abbrev.expand(window, window.length(), abbrevTable);
-        return edit == null
-                ? null
-                : new com.editora.editops.Abbrev.Edit(
-                        windowStart + edit.from(), windowStart + edit.to(), edit.replacement());
-    }
-
-    /**
-     * {@code a}'s caret once it is past the just-typed {@code c}. The split's second view moves its caret
-     * only after this buffer's change listeners have run, so there it is still in front of the character.
-     */
-    private static int caretPast(CodeArea a, org.fxmisc.richtext.model.PlainTextChange c) {
-        return a.getCaretPosition() == c.getPosition() ? c.getInsertionEnd() : a.getCaretPosition();
-    }
-
-    private void maybeAutoFill(org.fxmisc.richtext.model.PlainTextChange c) {
-        if (!autoFill || applyingAutoFill || hugeFile || !isEditable() || !isProse()) {
-            return;
-        }
-        // Only a single typed character (Emacs self-insert): no deletion, exactly one char, not a newline
-        // (which starts a fresh line). This excludes pastes, file loads/reloads and programmatic reflows —
-        // auto-fill breaks as you *type*, it never rewraps a block that arrived some other way.
-        if (!c.getRemoved().isEmpty()
-                || c.getInserted().length() != 1
-                || c.getInserted().charAt(0) == '\n') {
-            return;
-        }
-        if (hasActiveSnippet() || area.getUndoManager().isPerformingAction()) {
-            return;
-        }
-        CodeArea a = getFocusedArea();
-        if (multiCaretActiveOn(a)) {
-            return;
-        }
-        int par = a.getCurrentParagraph();
-        String line = a.getParagraph(par).getText();
-        if (line.length() <= fillColumn) {
-            return;
-        }
-        com.editora.editops.AutoFill.Break brk = com.editora.editops.AutoFill.computeProse(
-                line,
-                fillColumn,
-                com.editora.editops.Commenter.styleFor(getLanguage()).line());
-        if (brk == null) {
-            return;
-        }
-        int lineStart = a.getAbsolutePosition(par, 0);
-        int caret = caretPast(a, c);
-        int delta = brk.insert().length() - brk.removeLen();
-        int end = lineStart + brk.at() + brk.removeLen();
-        int restored = caret >= end ? caret + delta : caret; // the user's caret, shifted past the inserted prefix
-        applyingAutoFill = true;
-        try {
-            a.replaceText(lineStart + brk.at(), end, brk.insert());
-        } finally {
-            applyingAutoFill = false;
-        }
-        // Restore the caret AFTER the change settles: we ran inside the triggering insertion's
-        // plainTextChanges, and RichTextFX re-applies that insertion's own caret position once our
-        // subscriber returns — which would strand the caret inside the inserted prefix (delta > 0) and send
-        // the next characters to the wrong place. Deferring makes our position the last one to win.
-        caretFixes.defer(() -> a.moveTo(Math.min(restored, a.getLength())));
-    }
-
-    private final DeferredFixes caretFixes = new DeferredFixes();
+    final DeferredFixes caretFixes = new DeferredFixes();
 
     /** Applies pending caret fix-ups now (see {@link DeferredFixes}); a macro replay calls it after each key. */
     public void flushDeferredCaretFixes() {
@@ -5077,7 +4889,7 @@ public class EditorBuffer implements TabContent {
      * as a CI-only suite wedge, but it is an app defect too: closing a big tab right after an edit did
      * exactly this.
      */
-    private volatile boolean disposed;
+    volatile boolean disposed;
 
     // --- Multiple cursors + column/box selection (RichTextFX fork) -------------------------------
 
@@ -5090,10 +4902,10 @@ public class EditorBuffer implements TabContent {
         this.multiCaretEnabled = enabled;
         if (enabled && !hugeFile) {
             if (multiCaret == null) {
-                multiCaret = MultiCarets.install(area, this::tabEdit);
+                multiCaret = MultiCarets.install(area, typingAids::tabEdit);
             }
             if (area2 != null && multiCaret2 == null) {
-                multiCaret2 = MultiCarets.install(area2, this::tabEdit);
+                multiCaret2 = MultiCarets.install(area2, typingAids::tabEdit);
             }
         } else {
             disposeMultiCaret();
@@ -5296,7 +5108,11 @@ public class EditorBuffer implements TabContent {
             case SELECT -> com.editora.editops.LineCommands.selectLine(text, s, e);
             case INDENT, OUTDENT ->
                 com.editora.editops.LineCommands.indentLines(
-                        text, s, e, command == LineCommand.OUTDENT, (from, to, back) -> tabEdit(from, to, back));
+                        text,
+                        s,
+                        e,
+                        command == LineCommand.OUTDENT,
+                        (from, to, back) -> typingAids.tabEdit(from, to, back));
         });
     }
 
@@ -5396,7 +5212,7 @@ public class EditorBuffer implements TabContent {
     /** True when {@code a} currently has extra carets, so this buffer's single-caret KEY filters
      *  (auto-indent/close, snippets, completion, view paging) should stand down and let the fork's
      *  multi-caret input map handle the key for every caret. */
-    private boolean multiCaretActiveOn(@Nullable CodeArea a) {
+    boolean multiCaretActiveOn(@Nullable CodeArea a) {
         if (a == area) {
             return multiCaret != null && multiCaret.hasExtras();
         }
@@ -5533,12 +5349,12 @@ public class EditorBuffer implements TabContent {
         area2.setLineHighlighterOn(area.isLineHighlighterOn());
         area2.setUndoManager(area.getUndoManager()); // one history for the shared document
         area2.setEditable(area.isEditable());
-        addViewModePaging(area2); // same pager keys in the secondary split view
+        typingAids.addViewModePaging(area2); // same pager keys in the secondary split view
         completionActions.addCompletionKeys(area2);
         completionActions.installCommitCharacters(area2);
-        addSnippetKeys(area2);
-        addAutoClose(area2);
-        addAutoIndent(area2);
+        snippetKeys.addSnippetKeys(area2);
+        typingAids.addAutoClose(area2);
+        typingAids.addAutoIndent(area2);
         completionActions.installCompletionTrigger(area2);
         installOccurrenceTrigger(area2); // LSP document highlight (#675)
         installCodeLensClick(area2);
@@ -5547,7 +5363,7 @@ public class EditorBuffer implements TabContent {
         }
         imageDrop.install(area2);
         if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
-            multiCaret2 = MultiCarets.install(area2, this::tabEdit); // same multi-caret add-on in the split view
+            multiCaret2 = MultiCarets.install(area2, typingAids::tabEdit); // same multi-caret add-on in the split view
         }
         area2.setLineHighlighterFill(lineHighlightColor);
         refreshGutter();
@@ -7154,42 +6970,12 @@ public class EditorBuffer implements TabContent {
         return fileNoticeShown && fileNotice != null ? fileNotice.text() : null;
     }
 
-    /**
-     * Pager-style navigation while in read-only View mode: an unmodified Space pages down and Backspace
-     * pages up (like {@code less}/man). Installed as a key <em>filter</em> so it runs before RichTextFX's
-     * own (no-op, since non-editable) handling, and only acts while {@link #viewMode} is on — normal
-     * editing keeps Space/Backspace untouched. Modifier combos (Ctrl/Alt/Meta) are left for the keymap.
-     */
-    private void addViewModePaging(CodeArea a) {
-        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            if (!viewMode || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
-                return;
-            }
-            if (e.getCode() == KeyCode.SPACE) {
-                a.nextPage(SelectionPolicy.CLEAR);
-                e.consume();
-            } else if (e.getCode() == KeyCode.BACK_SPACE) {
-                a.prevPage(SelectionPolicy.CLEAR);
-                e.consume();
-            }
-        });
-    }
-
-    /** Injects the snippet lookup used by Tab-expand (set by the controller). */
     public void setSnippetProvider(java.util.function.BiFunction<String, String, Snippet> provider) {
-        if (provider != null) {
-            this.snippetProvider = provider;
-        }
+        snippetKeys.setSnippetProvider(provider);
     }
 
-    /** Injects the lookup for every snippet a completion may offer for a typed trigger, list-only ones too. */
     public void setSnippetOfferProvider(java.util.function.BiFunction<String, String, Snippet> provider) {
-        if (provider != null) {
-            this.snippetOfferProvider = provider;
-        }
+        snippetKeys.setSnippetOfferProvider(provider);
     }
 
     /** True while a snippet's tab stops are being navigated (Tab cycles fields). */
@@ -7197,16 +6983,13 @@ public class EditorBuffer implements TabContent {
         return snippetSession.isActive();
     }
 
-    /** {@code Settings.snippetTabExpansion}: whether Tab expands a trigger (the popup and picker always do). */
     public void setSnippetTabExpansion(boolean on) {
-        this.snippetTabExpansion = on;
+        snippetKeys.setSnippetTabExpansion(on);
     }
 
-    /** A file's project root ({@code WORKSPACE_*}), and who hears the active field's {position, count} (null = ended). */
     public void setSnippetHooks(
             java.util.function.UnaryOperator<@Nullable Path> root, java.util.function.Consumer<int[]> progress) {
-        this.snippetWorkspaceRoot = root == null ? file -> null : root;
-        this.snippetProgress = progress == null ? p -> {} : progress;
+        snippetKeys.setSnippetHooks(root, progress);
     }
 
     /** Leaves the running snippet session where the caret is (what Escape does). */
@@ -7214,326 +6997,9 @@ public class EditorBuffer implements TabContent {
         snippetSession.cancel();
     }
 
-    private void snippetSessionChanged() {
-        if (snippetOverlay == null && snippetSession.isActive()) {
-            snippetOverlay = attachLazyOverlay(new SnippetFieldOverlay(area, snippetSession), OverlayLayer.SNIPPET);
-        }
-        if (snippetOverlay != null) snippetOverlay.refresh();
-        snippetProgress.accept(snippetSession.progress());
-    }
-
-    /**
-     * Tab/Shift-Tab/Escape handling for snippets, as a key filter (runs before RichTextFX's own Tab
-     * indent). With an active snippet, Tab/Shift-Tab cycle fields and Escape cancels; otherwise Tab
-     * tries to expand the identifier before the caret and only consumes the event when one matched —
-     * so a plain Tab still indents.
-     */
-    private void addSnippetKeys(CodeArea a) {
-        // Typing a printable char into a MIRRORED snippet field is applied atomically (the char + its mirror
-        // update as one undo unit) so a single Ctrl-Z reverts them together instead of leaving the document
-        // half-reverted (#415). Only mirrored fields are intercepted; everything else (single-occurrence fields,
-        // newlines, control keys, paste) falls through to the normal insert + reactive mirror, which is already
-        // one undo unit when there's nothing to mirror.
-        a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-            if (e.isConsumed()) return;
-            if (!hasActiveSnippet() || multiCaretActiveOn(a) || !isEditable()) {
-                return;
-            }
-            String ch = e.getCharacter();
-            if (ch == null || ch.length() != 1 || e.isControlDown() || e.isMetaDown()) {
-                return;
-            }
-            char c = ch.charAt(0);
-            if (c < 0x20 || c == 0x7F) {
-                return; // control / non-printable (Enter, Tab, Backspace handled elsewhere)
-            }
-            // A bracket or quote is paired first (its mirrors follow reactively, as one undo step); the
-            // atomic path below would swallow the key before the auto-close filter saw it.
-            if (TypedText.isText(e) && applyAutoCloseTyped(a, c)
-                    || snippetSession.replaceInActiveField(
-                            a.getSelection().getStart(), a.getSelection().getEnd(), ch)) {
-                e.consume(); // handled atomically; don't let the area also insert the char
-            }
-        });
-        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.isConsumed()) return;
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            // ownsKeys applies the "caret has left the fields" rule first, so a session the caret walked
-            // away from never takes this Tab — it indents like any other.
-            if ((e.getCode() == KeyCode.TAB || e.getCode() == KeyCode.ESCAPE) && snippetSession.ownsKeys(a)) {
-                if (e.getCode() == KeyCode.TAB) {
-                    if (e.isShiftDown()) {
-                        snippetSession.previous();
-                    } else {
-                        snippetSession.next();
-                    }
-                    e.consume();
-                } else if (e.getCode() == KeyCode.ESCAPE) {
-                    snippetSession.cancel();
-                    e.consume();
-                }
-                return;
-            }
-            if (e.getCode() == KeyCode.TAB
-                    && !e.isControlDown()
-                    && !e.isAltDown()
-                    && !e.isMetaDown()
-                    && !completionActions.completionShowing()) {
-                // Plain Tab first tries to expand a snippet prefix; otherwise smart-indent (Shift-Tab
-                // always dedents). Skipped while a completion popup/ghost is showing, so Tab accepts
-                // the completion instead.
-                if (isMarkdown() && isEditable() && !hugeFile && markdownEditing.tab(a, !e.isShiftDown())) {
-                    e.consume(); // Tab/Shift-Tab: between table cells, or a list item in/out one level
-                } else if (!e.isShiftDown() && expandPrefixAtCaret(a)) {
-                    e.consume();
-                } else if (!e.isShiftDown() && tryLspReindentLine(a)) {
-                    e.consume(); // LSP re-indents the current line (async); see tryLspReindentLine
-                } else if (applySmartTab(a, e.isShiftDown())) {
-                    e.consume();
-                }
-            }
-        });
-    }
-
-    /**
-     * Smart Tab / Shift-Tab via the pure {@link Indenter#smartTab}: block-indent a selection, indent the
-     * current line in leading whitespace, insert one indent unit mid-line, and Shift-Tab dedents — using
-     * the file's indent unit. Prose and unstyled languages get the same minus the context re-indent
-     * ({@link com.editora.editops.PlainTab}). Returns false (leaving the default Tab) only in
-     * read-only/large-file mode.
-     */
-    private boolean applySmartTab(CodeArea a, boolean shift) {
-        Indenter.TabEdit edit =
-                tabEdit(a.getSelection().getStart(), a.getSelection().getEnd(), shift);
-        if (edit == null) {
-            return false;
-        }
-        if (edit.from() != edit.to() || !edit.replacement().isEmpty()) {
-            a.replaceText(edit.from(), edit.to(), edit.replacement());
-        }
-        a.selectRange(edit.selStart(), edit.selEnd());
-        return true;
-    }
-
-    /** The Tab edit for one selection (every caret's, with several); null = leave the key. Smart Tab, or
-     *  for PLAIN (prose/plaintext) no context re-indent but still the file's indent unit — both computed
-     *  from the lines around the selection, not from the whole document. */
-    private Indenter.@Nullable TabEdit tabEdit(int selStart, int selEnd, boolean shift) {
-        if (!isEditable() || hugeFile) {
-            return null;
-        }
-        return IndentWindow.tabEdit(IndentKeys.doc(area), selStart, selEnd, language, tabSize, shift, indentUnit());
-    }
-
     /** The indent unit for this buffer: the EditorConfig override, else the document's own (cached). */
     public String indentUnit() {
         return indentKeys.unit(tabSize, indentInsertSpacesOverride, indentSizeOverride);
-    }
-
-    /**
-     * Plain Tab re-indents the current line to the language server's convention (the chosen behavior:
-     * indentation only, not a full line reformat). Returns {@code true} when it takes over the keystroke
-     * (LSP active + the server supports range formatting + a single caret on a non-blank line) and kicks
-     * off an async request; the result adjusts only the line's leading whitespace. Returns {@code false}
-     * to fall back to the normal smart-Tab indent (no server, unsupported, blank line, or a selection).
-     */
-    private boolean tryLspReindentLine(CodeArea a) {
-        if (!lspActive || !lspRangeFormatAvailable || lspRangeFormatter == null) {
-            return false;
-        }
-        if (!isEditable() || hugeFile || largeFile || a.getSelection().getLength() > 0) {
-            return false;
-        }
-        int par = a.getCurrentParagraph();
-        String line = a.getParagraph(par).getText();
-        // Formatters strip a blank line's whitespace, so they can't indent a fresh line you're about to type on, and
-        // an HTML page's <pre> or <script> line is not theirs to indent (B102): leave those to the local smart Tab.
-        if (line.isBlank() || !IndentWindow.serverReindents(IndentKeys.doc(a), a.getCaretPosition(), language)) {
-            return false;
-        }
-        int caret = a.getCaretPosition();
-        long gen = ++reindentGen;
-        int from = Math.max(0, par - 1); // from the line break: lemminx indents by editing it (XML review B4)
-        lspRangeFormatter.format(from, par == 0 ? 0 : a.getParagraphLength(from), par, line.length(), edits -> {
-            if (gen != reindentGen
-                    || a.getScene() == null
-                    || a.getCurrentParagraph() != par
-                    || !a.getParagraph(par).getText().equals(line)) {
-                return; // stale, detached, or the line changed under us
-            }
-            if (!applyLspLineIndent(a, par, line, caret, edits, true) && a.getCaretPosition() == caret) {
-                applySmartTab(a, false); // no usable indent: Tab still does what it does without a server
-            }
-        });
-        return true;
-    }
-
-    /**
-     * Adopts the formatter's leading whitespace for the current line, leaving the rest of the line as-is.
-     *
-     * <p>{@code fromTab} distinguishes the two callers, and only matters when the indent is already right:
-     * a Tab pressed from inside the leading whitespace must still put the caret where typing starts (the
-     * same rule the re-indent below applies), whereas on-type formatting fires while the user is typing and
-     * must never move the caret out from under them. False when the answer gives no usable indent.
-     */
-    private boolean applyLspLineIndent(
-            CodeArea a, int par, String line, int caret, java.util.List<LspTextEdit> edits, boolean fromTab) {
-        String newIndent = LineIndent.formattedIndent(line, edits, par);
-        if (newIndent == null) {
-            return false; // unusable (multi-line) result → leave the line untouched
-        }
-        String oldIndent = LineIndent.leadingWhitespace(line);
-        if (newIndent.equals(oldIndent)) {
-            // Already correctly indented: no edit, but Tab from within the indent still moves the caret to
-            // its end — otherwise Tab looks like it did nothing at all.
-            int indentEnd = a.getAbsolutePosition(par, 0) + oldIndent.length();
-            if (fromTab && caret < indentEnd && indentEnd <= a.getLength()) {
-                a.moveTo(indentEnd);
-            }
-            return true;
-        }
-        int lineStart = a.getAbsolutePosition(par, 0);
-        int oldEnd = lineStart + oldIndent.length();
-        a.replaceText(lineStart, oldEnd, newIndent);
-        int delta = newIndent.length() - oldIndent.length();
-        int newCaret = caret <= oldEnd ? lineStart + newIndent.length() : caret + delta;
-        newCaret = Math.max(lineStart, Math.min(newCaret, a.getLength()));
-        a.moveTo(newCaret);
-        // Re-indenting isn't the user typing a word — don't let the edit we just made pop the completion.
-        completionActions.suppressCompletionAt(docVersion);
-        return true;
-    }
-
-    /**
-     * Auto/smart indentation (installed on {@code area}/{@code area2}). On <b>Enter</b>, inserts a
-     * newline indented per {@link Indenter} (inherit + block-opener +1 + matching-pair split). When a
-     * <b>closing token</b> is typed — a {@code )]}} bracket alone on the line, or a closer keyword like
-     * {@code end}/{@code fi} completed — the line is re-aligned to its opener's indent. Inert in
-     * read-only mode. Inside a snippet field these assists work as anywhere else: the session's range
-     * tracking absorbs their edits.
-     */
-    private void addAutoIndent(CodeArea a) {
-        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.isConsumed()) return;
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            if (e.getCode() != KeyCode.ENTER
-                    || e.isShiftDown()
-                    || e.isControlDown()
-                    || e.isAltDown()
-                    || e.isMetaDown()) {
-                return;
-            }
-            if (!isEditable()) {
-                return;
-            }
-            applyEnter(a);
-            e.consume(); // we inserted the newline+indent ourselves
-        });
-        // Smart backspace: when the caret is in a line's leading whitespace, one Backspace clears the
-        // whole indent — and on an otherwise-blank (auto-indented) line it also removes the newline, so
-        // a single press jumps back to the end of the previous line ("back to where you hit Enter").
-        // Only consumes when it removes more than one char, so a normal single-char Backspace still runs
-        // everywhere else. The auto-close empty-pair handler is registered earlier and gets first dibs: it
-        // consumes when it deletes a pair, but JavaFX runs *every* filter on a node regardless of consume()
-        // (consume only stops propagation to other nodes), so we must re-check isConsumed() here ourselves —
-        // otherwise Backspace on an empty pair inside leading whitespace deletes the pair AND the indent.
-        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.isConsumed()) { // the empty-pair handler already consumed this Backspace
-                return;
-            }
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            if (e.getCode() != KeyCode.BACK_SPACE
-                    || viewMode
-                    || !isEditable()
-                    || e.isControlDown()
-                    || e.isAltDown()
-                    || e.isMetaDown()
-                    || e.isShiftDown()
-                    || a.getSelection().getLength() > 0) {
-                return;
-            }
-            int par = a.getCurrentParagraph();
-            int lineStart = a.getAbsolutePosition(par, 0);
-            int caret = a.getCaretPosition();
-            int col = caret - lineStart;
-            if (col <= 0) {
-                return; // at column 0 — let normal Backspace join the previous line
-            }
-            String line = a.getParagraph(par).getText();
-            // Markdown: Backspace at the end of an empty list/quote item ("- ", "1. ", "> ", "- [ ] ")
-            // steps out one level (a nested item moves to its parent's level, a top-level one is cleared).
-            if (isMarkdown() && markdownEditing.backspace(a)) {
-                e.consume();
-                return;
-            }
-            int marker = isTypst() ? TypstMarkup.emptyMarkerDeleteLength(line, col) : 0;
-            if (marker > 0) {
-                a.deleteText(caret - marker, caret);
-                e.consume();
-                return;
-            }
-            int del = Indenter.smartBackspaceCount(
-                    line.substring(0, col), line.substring(col), par > 0, language, indentUnit(), tabSize);
-            if (del > 1) {
-                a.deleteText(caret - del, caret);
-                e.consume();
-            }
-        });
-        a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-            if (e.isConsumed()) { // the auto-close KEY_TYPED handler (registered earlier) already acted
-                return;
-            }
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            if (!isEditable()
-                    || e.getCharacter().length() != 1
-                    || !TypedText.isText(e)
-                    || a.getSelection().getLength() > 0) {
-                return;
-            }
-            char typed = e.getCharacter().charAt(0);
-            if (typed == '*' && closeJavadocOpening(a)) {
-                e.consume();
-                return;
-            }
-            // Fires while the caret is still where the user typed and the document has no ';' yet — the
-            // state the server's answer is expressed in. Never consumes, so the char inserts as normal.
-            maybeSmartSemicolon(a, typed); // #746
-            applyCloserDedent(a, typed);
-            // #740. Deferred: this filter runs BEFORE the character is inserted, and both the request's
-            // position and its staleness baseline must describe the line with the character in it.
-            Platform.runLater(() -> maybeOnTypeFormat(a, typed));
-        });
-    }
-
-    /**
-     * In Java with the language server on, the {@code *} that makes a line {@code /**} also closes it —
-     * {@code /**|*}{@code /} — and asks for completion there, where jdtls offers the declaration's Javadoc
-     * template ({@link CommentContinuation#closesDocOpening}). Enter instead still splits the comment.
-     */
-    private boolean closeJavadocOpening(CodeArea a) {
-        if (!lspActive || !"java".equals(language) || hugeFile) {
-            return false;
-        }
-        int caret = a.getCaretPosition();
-        String line = a.getParagraph(a.getCurrentParagraph()).getText();
-        int col = a.getCaretColumn();
-        String before = line.substring(0, col);
-        if (!before.strip().equals("/*") // cheap first: the whole text only on a "/*" line
-                || !CommentContinuation.closesDocOpening(a.getText(), caret, before, line.substring(col))) {
-            return false;
-        }
-        a.insertText(caret, "* */");
-        a.moveTo(caret + 1);
-        triggerCompletion();
-        return true;
     }
 
     /** Async smart-semicolon lookup; delivers the target {@code {line, character}} or null on the FX thread. */
@@ -7541,247 +7007,12 @@ public class EditorBuffer implements TabContent {
         void request(int line, int character, java.util.function.Consumer<int[]> callback);
     }
 
-    private @Nullable LspSmartSemicolonRequester smartSemicolonRequester;
-    /** {@code Settings.lspSmartSemicolon} — OFF by default, as in VS Code. */
-    private boolean smartSemicolonEnabled;
-
-    private long smartSemicolonGen;
-
     public void setLspSmartSemicolonRequester(LspSmartSemicolonRequester requester) {
-        this.smartSemicolonRequester = requester;
+        typingAids.setLspSmartSemicolonRequester(requester);
     }
 
     public void setSmartSemicolonEnabled(boolean enabled) {
-        this.smartSemicolonEnabled = enabled;
-    }
-
-    /**
-     * Smart-semicolon detection (#746): a {@code ;} typed part-way through an expression belongs at the end
-     * of the statement — {@code compute(1, 2|)} should become {@code compute(1, 2);|}.
-     *
-     * <p><b>Type first, correct after</b> — the semicolon is never held back waiting for the server. Making
-     * a keystroke wait on a round trip is exactly the latency the performance rules forbid, and a slow or
-     * cold server would let the character land after whatever was typed next. So the {@code ;} inserts
-     * normally and the answer, if it disagrees, moves it — as a single ranged {@code replaceText}, hence one
-     * undo step rather than a delete plus an insert.
-     *
-     * <p>The consequence, stated rather than hidden: if the user types straight through (a very common
-     * {@code ;}-then-Enter), {@link #docVersion} has moved by more than the semicolon and the correction is
-     * <b>dropped</b>. That is deliberate — the alternative is rewriting text the user has already moved past
-     * — and it leaves the semicolon exactly where it would have been with the feature off, never worse.
-     */
-    private void maybeSmartSemicolon(CodeArea a, char typed) {
-        if (typed != ';' || !smartSemicolonEnabled || !lspActive || smartSemicolonRequester == null) {
-            return;
-        }
-        if (!isEditable() || hugeFile || largeFile || isNarrowed()) {
-            return;
-        }
-        int typedAt = a.getCaretPosition();
-        int line = a.getCurrentParagraph();
-        int column = a.getCaretColumn();
-        long version = docVersion;
-        long gen = ++smartSemicolonGen;
-        sendLspChange(); // the position refers to the pre-';' text, so the server must have exactly that
-        smartSemicolonRequester.request(line, column, target -> {
-            // docVersion bumps once per change, so "+1" is precisely "only the semicolon landed since".
-            if (gen != smartSemicolonGen || target == null || a.getScene() == null || docVersion != version + 1) {
-                return;
-            }
-            moveTypedSemicolon(a, typedAt, line, column, target);
-        });
-    }
-
-    /**
-     * Moves the just-typed semicolon from {@code typedAt} to the server's target, which is expressed in
-     * <b>pre-insert</b> coordinates — so a target on the same line has to be shifted past the semicolon
-     * that now sits before it, while a target on a later line needs no adjustment (its columns are
-     * untouched and its absolute offset already includes the inserted character).
-     */
-    private void moveTypedSemicolon(CodeArea a, int typedAt, int typedLine, int typedColumn, int[] target) {
-        int targetPost;
-        try {
-            targetPost = target[0] == typedLine && target[1] >= typedColumn
-                    ? a.getAbsolutePosition(target[0], target[1] + 1)
-                    : a.getAbsolutePosition(target[0], target[1]);
-        } catch (RuntimeException outOfRange) {
-            return; // a target the document can no longer address
-        }
-        if (targetPost <= typedAt + 1 || targetPost > a.getLength()) {
-            return; // already where it was typed (the ordinary answer), or past the end
-        }
-        // Rewrite [typedAt, targetPost) as "the text after the semicolon, then the semicolon" — one edit,
-        // so one Ctrl-Z puts it back where it was typed.
-        a.replaceText(typedAt, targetPost, a.getText(typedAt + 1, targetPost) + ";");
-    }
-
-    /**
-     * On-type formatting (#740): after a character the server named as a trigger ({@code ;}, {@code }},
-     * {@code \n} for jdtls), ask it how the line should be indented and adopt only that.
-     *
-     * <p><b>The local assist runs first and the server refines it.</b> That is the resolution of the
-     * conflict between this and {@link #applyCloserDedent}/{@link #applyEnter}, which already act on
-     * {@code }} and Enter: making a very common keystroke wait on a round-trip would be felt, and the local
-     * result is usually already right — in which case {@link #applyLspLineIndent} finds the indent unchanged
-     * and does nothing at all. So the two never fight; the server only corrects a disagreement.
-     *
-     * <p>Indentation only, never a full reformat — the user is mid-edit, and rewriting the line under them
-     * is the behaviour that makes on-type formatting infuriating in other editors.
-     *
-     * <p>Inert unless the setting is on, the server advertises a trigger set containing this character, and
-     * the buffer is an editable, normal-sized, single-caret LSP buffer. A trigger
-     * consumed by auto-close (typing {@code }} to skip over an inserted one) doesn't reach here — that path
-     * leaves the line already correct.
-     */
-    private void maybeOnTypeFormat(CodeArea a, char typed) {
-        if (disposed || !onTypeFormattingEnabled || !lspActive || lspOnTypeFormatter == null) {
-            return;
-        }
-        if (!lspOnTypeTriggers.contains(typed)) {
-            return;
-        }
-        if (!isEditable() || hugeFile || largeFile || a.getSelection().getLength() > 0) {
-            return;
-        }
-        int par = a.getCurrentParagraph();
-        String line = a.getParagraph(par).getText();
-        int caret = a.getCaretPosition();
-        if (a.getCaretColumn() == 0 || line.charAt(a.getCaretColumn() - 1) != typed) {
-            return; // the keystroke did not insert its character after all
-        }
-        long gen = ++reindentGen; // shares the Tab re-indent's generation: both adjust the same line's indent
-        lspOnTypeFormatter.format(par, a.getCaretColumn(), typed, edits -> {
-            if (gen != reindentGen
-                    || a.getScene() == null
-                    || a.getCurrentParagraph() != par
-                    || !a.getParagraph(par).getText().equals(line)) {
-                return; // stale, detached, or the user kept typing and the line moved on
-            }
-            applyLspLineIndent(a, par, line, caret, edits, false);
-        });
-    }
-
-    /**
-     * The body of the Enter auto-indent (Markdown list/blockquote continuation, else {@link Indenter}):
-     * clears any selection, inserts the indented newline, and moves the caret. Shared by the {@code ENTER}
-     * key filter and macro replay ({@link #typeChar} for {@code '\n'}).
-     */
-    private void applyEnter(CodeArea a) {
-        if (a.getSelection().getLength() > 0) {
-            a.replaceSelection("");
-        }
-        int caret = a.getCaretPosition();
-        // Markdown: Enter inside a table or a list/quote item (continue it, or step out of an empty one).
-        if (isMarkdown() && markdownEditing.enter(a)) {
-            return;
-        }
-        // Typst list continuation, with its own markers (-, +, N. — never *, which is bold).
-        if (isTypst()) {
-            int par = a.getCurrentParagraph();
-            int lineStart = a.getAbsolutePosition(par, 0);
-            String line = a.getParagraph(par).getText();
-            int markerLen = TypstMarkup.markerLength(line);
-            if (markerLen > 0 && caret - lineStart >= markerLen) {
-                if (TypstMarkup.isEmptyItem(line)) {
-                    a.replaceText(lineStart, lineStart + line.length(), ""); // exit list (clear marker)
-                    a.requestFollowCaret();
-                    return;
-                }
-                String cont = TypstMarkup.continuation(line);
-                if (cont != null) {
-                    a.replaceText(caret, caret, "\n" + cont);
-                    a.moveTo(caret + 1 + cont.length());
-                    a.requestFollowCaret();
-                    return;
-                }
-            }
-        }
-        applyCloserDedent(a, '\n'); // Enter finishes a closer keyword (fi, end, done): align it first
-        caret = a.getCaretPosition();
-        int par = a.getCurrentParagraph(); // Enter between JSX tags goes a level in (A104), else the usual rules
-        Indenter.EnterEdit jsx = JsxContext.enter(
-                grammar, highlightLines, par, a.getParagraph(par).getText(), a.getCaretColumn(), indentUnit());
-        Indenter.EnterEdit edit =
-                jsx != null ? jsx : IndentWindow.enterEdit(IndentKeys.doc(a), caret, language, indentUnit());
-        a.replaceText(caret, caret, edit.insert());
-        a.moveTo(caret + edit.caretOffset());
-        a.requestFollowCaret();
-    }
-
-    /**
-     * Auto-close decision for a typed character (see {@link AutoClose}): insert a pair / type over a
-     * closer / wrap the selection. Returns {@code true} when it acted (so the caller consumes the event and
-     * skips normal insertion), {@code false} for ordinary typing. Shared by the auto-close key filter and
-     * macro replay ({@link #typeChar}).
-     */
-    private boolean applyAutoCloseTyped(CodeArea a, char c) {
-        if (autoCloseTags && tagTyping.typed(a, c, language)) {
-            return true; // html/xml: the > completed an open tag, or a hand-typed closer joined the one there
-        }
-        if (isMarkdown() && markdownEditing.typed(a, c)) {
-            return true; // emphasis wrap / pair, smart typography — before the generic bracket and quote pairs
-        }
-        if (AutoClose.closerFor(c) == 0 && !AutoClose.isCloser(c)) {
-            return false; // not a bracket or quote
-        }
-        int caret = a.getCaretPosition();
-        char next = caret < a.getLength() ? a.getText(caret, caret + 1).charAt(0) : 0;
-        boolean hasSel = a.getSelection().getLength() > 0;
-        int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
-        AutoClose.Decision d = AutoClose.decide(
-                c, a.getText(lineStart, caret), next, hasSel, language, TypingContext.inLiteral(a, caret, language));
-        switch (d.action()) {
-            case INSERT_PAIR -> {
-                a.replaceText(caret, caret, "" + c + d.closer());
-                a.moveTo(caret + 1);
-                return true;
-            }
-            case INSERT_TRIPLE -> { // the third quote of a Python triple quote: close it too
-                a.replaceText(caret, caret, String.valueOf(c).repeat(4));
-                a.moveTo(caret + 1);
-                return true;
-            }
-            case SKIP_OVER -> {
-                a.moveTo(caret + 1);
-                return true;
-            }
-            case WRAP_SELECTION -> {
-                int s = a.getSelection().getStart();
-                String sel = a.getSelectedText();
-                a.replaceText(s, a.getSelection().getEnd(), "" + c + sel + d.closer());
-                a.selectRange(s + 1, s + 1 + sel.length());
-                return true;
-            }
-            case NONE -> {
-                return false; // normal typing (and the auto-indent closer-dedent may run)
-            }
-        }
-        return false;
-    }
-
-    /**
-     * When a closing token is typed alone on a line (a {@code )]}} bracket, or the character/Enter that
-     * finishes a closer keyword like {@code end}/{@code fi}), re-aligns the line's indent to its opener. Does
-     * <em>not</em> insert {@code c} (the caller does). Shared by the key filters and macro replay.
-     */
-    private void applyCloserDedent(CodeArea a, char c) {
-        Indenter.Style style = IndentWindow.styleAt(IndentKeys.doc(a), a.getCaretPosition(), language, c);
-        int caret = a.getCaretPosition();
-        int lineStart = a.getAbsolutePosition(a.getCurrentParagraph(), 0);
-        String beforeCaret = a.getText(lineStart, caret);
-        boolean bracket = Indenter.isCloserChar(style, c) && !beforeCaret.isEmpty() && beforeCaret.isBlank();
-        boolean keyword = Indenter.completesCloserKeyword(style, beforeCaret + c, language);
-        if (!bracket && !keyword) {
-            return;
-        }
-        // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
-        String currentIndent = completionActions.leadingIndent(beforeCaret);
-        String aligned = IndentWindow.closerAlignIndent(
-                style, IndentKeys.doc(a), caret, tabSize, currentIndent, c, indentUnit(), language);
-        if (!aligned.equals(currentIndent)) {
-            a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
-            a.moveTo(caret + aligned.length() - currentIndent.length()); // back after the closer, not the indent
-        }
+        typingAids.setSmartSemicolonEnabled(enabled);
     }
 
     /**
@@ -7817,116 +7048,12 @@ public class EditorBuffer implements TabContent {
         return false;
     }
 
-    /**
-     * Replays a bare editing/navigation key press from a recorded macro — Backspace, Delete, an arrow,
-     * Home/End, Page Up/Down — by {@code KeyCode} name.
-     *
-     * <p>The token carries the modifiers ({@code BACK_SPACE}, {@code S-DOWN}, {@code C-LEFT}), because the
-     * area acts on modified variants too — Shift-Down extends the selection, Ctrl-Left goes a word left —
-     * and replaying those as a bare arrow would move the caret instead.
-     *
-     * <p>Unlike {@link #typeString}, there is no "apply" method to reuse here: the behavior of these keys
-     * lives in the area's own input map (and in the Backspace filters — smart-backspace, the auto-close
-     * empty-pair delete, the Markdown empty-marker delete). So this fires a real {@code KEY_PRESSED} at the
-     * focused area, which runs exactly the handlers a hand-pressed key runs. Recording only ever captures
-     * keys bound to no command, so the re-dispatch can't also fire a chord; the macro recorder is inert
-     * during replay in any case.
-     */
     public void pressKey(String macroKeyToken) {
-        com.editora.macro.MacroKey.Decoded k = com.editora.macro.MacroKey.decode(macroKeyToken);
-        if (k == null || !isEditable() || hugeFile) {
-            return;
-        }
-        KeyCode code;
-        try {
-            code = KeyCode.valueOf(k.keyCodeName());
-        } catch (IllegalArgumentException e) {
-            return; // a hand-edited macros.json / a step typed into the Settings editor
-        }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        a.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, k.shift(), k.ctrl(), k.alt(), k.meta()));
+        typingAids.pressKey(macroKeyToken);
     }
 
-    /** Types a single character through the editor's typing assists. See {@link #typeString}. */
     public void typeChar(char c) {
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        if (!isEditable() || hugeFile) {
-            return;
-        }
-        if (c == '\n' || c == '\r') {
-            applyEnter(a);
-            return;
-        }
-        if (c == '\t') {
-            if (!applySmartTab(a, false)) {
-                a.replaceSelection("\t");
-            }
-            a.requestFollowCaret();
-            return;
-        }
-        // Mirror the live KEY_TYPED order: auto-close first; if it didn't act, closer-dedent then insert.
-        if (applyAutoCloseTyped(a, c)) {
-            a.requestFollowCaret();
-            return;
-        }
-        if (a.getSelection().getLength() == 0) {
-            applyCloserDedent(a, c);
-        }
-        a.replaceSelection(String.valueOf(c));
-        a.requestFollowCaret();
-    }
-
-    /**
-     * Auto-closes brackets/quotes (installed on {@code area}/{@code area2}). A {@code KEY_TYPED} filter
-     * inserts the matching closer / types over an existing one / wraps a selection (see {@link AutoClose});
-     * a {@code KEY_PRESSED} filter removes both halves of an empty pair on Backspace. Added before
-     * {@link #addAutoIndent} so it sees the keystroke first; when it does nothing it leaves the event
-     * for normal typing (and the indent closer-dedent).
-     */
-    private void addAutoClose(CodeArea a) {
-        a.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-            if (e.isConsumed()) return;
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            if (!isEditable() || e.getCharacter().length() != 1 || !TypedText.isText(e)) {
-                return;
-            }
-            char c = e.getCharacter().charAt(0);
-            if (applyAutoCloseTyped(a, c)) {
-                e.consume();
-            }
-        });
-        a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.isConsumed()) return;
-            if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
-                return;
-            }
-            if (e.getCode() != KeyCode.BACK_SPACE
-                    || viewMode
-                    || !isEditable()
-                    || e.isControlDown()
-                    || e.isAltDown()
-                    || e.isMetaDown()
-                    || e.isShiftDown()
-                    || a.getSelection().getLength() > 0) {
-                return;
-            }
-            int caret = a.getCaretPosition();
-            if (caret <= 0 || caret >= a.getLength()) {
-                return;
-            }
-            if (autoCloseTags && tagTyping.backspace(a, language)) {
-                e.consume(); // a pending close-tag join takes back the last typed character (C22)
-                return;
-            }
-            char prev = a.getText(caret - 1, caret).charAt(0);
-            char next = a.getText(caret, caret + 1).charAt(0);
-            if (AutoClose.isEmptyPair(prev, next)) {
-                a.deleteText(caret - 1, caret + 1); // remove both halves of the empty pair
-                e.consume();
-            }
-        });
+        typingAids.typeChar(c);
     }
 
     /** Coalesces a matching-bracket recompute to the next pulse (caret moves rapidly while typing). */
@@ -7997,64 +7124,13 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Inserts a snippet from the picker, replacing the selection (if any), and starts its session. */
     public void insertSnippet(Snippet snippet) {
-        if (snippet == null || !isEditable()) {
-            return;
-        }
-        CodeArea a = focusedArea;
-        int from = a.getSelection().getLength() > 0 ? a.getSelection().getStart() : a.getCaretPosition();
-        int to = a.getSelection().getLength() > 0 ? a.getSelection().getEnd() : from;
-        int[] range = to > from ? SnippetTyping.wrappedRange(a.getText(), from, to) : new int[] {from, to};
-        startSnippet(a, snippet, range[0], range[1]);
-        a.requestFocus();
+        snippetKeys.insertSnippet(snippet);
     }
 
-    /** Expands the trigger before the caret if Tab may ({@link SnippetTyping#triggerAtCaret}); returns whether it did. */
-    private boolean expandPrefixAtCaret(CodeArea a) {
-        if (!isEditable() || !snippetTabExpansion || a.getSelection().getLength() > 0) {
-            return false;
-        }
-        com.editora.snippet.TabExpansion.Match m =
-                SnippetTyping.triggerAtCaret(a, language, isProse(), snippetProvider);
-        if (m != null) {
-            startSnippet(a, m.snippet(), m.start(), a.getCaretPosition());
-        }
-        return m != null;
-    }
-
-    /** Parses {@code snippet}, replaces {@code [from,to)} with the expansion, and begins a session. */
-    private void startSnippet(CodeArea a, Snippet snippet, int from, int to) {
-        startSnippet(a, snippet, from, to, true);
-    }
-
-    private void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent) {
-        Path root = path == null ? null : snippetWorkspaceRoot.apply(path);
-        ParsedSnippet parsed = SnippetTyping.parse(snippet, a, from, to, path, language, root);
-        String currentLine = a.getParagraph(SnippetTyping.lineOf(a, from)).getText();
-        String indent = reindent ? completionActions.leadingIndent(currentLine) : "";
-        // asIs (no reindent) keeps the text untouched; otherwise the body's indentation becomes the buffer's unit.
-        String unit = reindent ? indentUnit() : null;
-        snippetSession.start(a, parsed, from, to, indent, unit);
-    }
-
-    /**
-     * Inserts an already-parsed file template into this (typically empty, untitled) buffer over its full
-     * content, honoring the template's {@code ${cursor}} ({@code $0}) final caret and any {@code $1…} tab
-     * stops via a snippet session. No-op when not editable.
-     */
     public void applyTemplate(ParsedSnippet parsed) {
-        if (parsed == null || !isEditable()) {
-            return;
-        }
-        snippetSession.cancel();
-        snippetSession.start(area, parsed, 0, area.getLength(), "");
-        area.requestFocus();
+        snippetKeys.applyTemplate(parsed);
     }
-
-    // ---- Autocomplete (snippet + dictionary completions; see com.editora.completion) ----
-
-    // ---- AI inline completion (ghost text from an AI provider; see ui.AiCoordinator) ----
 
     /** Requests a short AI continuation of the text around the caret; the result must be delivered on
      *  the FX thread (null/empty = nothing to show). Kept editor-neutral so {@code editor} stays free
