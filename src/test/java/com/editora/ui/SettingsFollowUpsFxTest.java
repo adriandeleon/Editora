@@ -167,7 +167,7 @@ class SettingsFollowUpsFxTest {
                 stored.put("maven command", () -> BuildTool.MAVEN.commandIn(s));
                 fields.put("maven catalog", FxTestSupport.field(w, "mavenArchetypeCatalogField"));
                 stored.put("maven catalog", s::getMavenArchetypeCatalogUrlRaw);
-                fields.put("plugin registry", FxTestSupport.field(w, "pluginRegistryField"));
+                fields.put("plugin registry", SettingsRig.control(w, "pluginRegistryField"));
                 stored.put("plugin registry", s::getPluginRegistryUrlRaw);
                 fields.put("ai endpoint", FxTestSupport.field(w, "aiEndpointField"));
                 stored.put("ai endpoint", () -> s.getAiEndpointFor(ai));

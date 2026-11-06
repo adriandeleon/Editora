@@ -81,7 +81,7 @@ public class SettingsWindow {
     /** Wide enough to read a path or a command in; SettingRowPane puts the field under its title when the row is narrow. */
     private static final double PATH_FIELD_WIDTH = 320;
     /** Wide enough to show a whole {@code https://github.com/<owner>/<repository>.git}. */
-    private static final double REPO_URL_FIELD_WIDTH = 480;
+    static final double REPO_URL_FIELD_WIDTH = 480;
 
     /**
      * The narrowest the window may be made. The pages that put a list beside a form (Snippets, Templates,
@@ -207,14 +207,14 @@ public class SettingsWindow {
 
     private final ToolWindowManager toolWindows;
     private final com.editora.git.GitService gitService;
-    private final com.editora.github.GitHubService githubService;
+    final com.editora.github.GitHubService githubService;
     private final com.editora.mermaid.MermaidService mermaidService;
     private final com.editora.diagram.DiagramService diagramService;
     private final com.editora.typst.TypstService typstService;
     private final java.util.List<BuildCoordinator> buildCoordinators;
     private final com.editora.lsp.LspManager lspManager;
     private final com.editora.dap.DapManager dapManager;
-    private final Stage stage = new Stage();
+    final Stage stage = new Stage();
 
     // --- controls (same set as before, regrouped into pages) ---
     private ComboBox<String> languageCombo;
@@ -497,24 +497,7 @@ public class SettingsWindow {
     /** Injected probe (MainController): runs {@code rg --version} off-thread, delivers found/not-found on FX. */
     private java.util.function.@Nullable Consumer<java.util.function.Consumer<Boolean>> ripgrepProbe;
 
-    private com.editora.plugin.@Nullable PluginManager pluginManager; // shared, injected after construction
-    private CheckBox pluginCheck;
-    private CheckBox pluginRequireSigCheck;
-    private @Nullable VBox pluginListBox; // rebuilt on each load() from the shared PluginManager's descriptors
-    private @Nullable TextField pluginRegistryField;
-    private @Nullable Label pluginRegistryWarn; // shown when the registry URL isn't the trusted default
     private @Nullable Runnable onKeymapChanged; // → MainController: reload the shared keymap live
-    private @Nullable Runnable onBrowsePlugins; // → MainController.browsePlugins
-    private @Nullable Runnable onInstallPluginFromFile; // → MainController.installPluginFromDisk
-    private @Nullable Consumer<com.editora.plugin.PluginDescriptor> onUninstallPlugin; // the clicked row's plugin
-    /** Ticking a row: asks the consent (what it can do) and stores it; false = not enabled. */
-    private java.util.function.Predicate<com.editora.plugin.PluginDescriptor> onEnablePlugin = d -> false;
-    /** Unticking a row: switches it off. */
-    private Consumer<com.editora.plugin.PluginDescriptor> onDisablePlugin = d -> {};
-
-    private @Nullable Label pluginStatusLabel; // what Browse / Install from file did, said where the user clicked
-    /** What the installed list was last built from; an unchanged list is not rebuilt on every Settings open. */
-    private @Nullable Object pluginListKey;
 
     private CheckBox lspCheck;
     /** Per-server LSP controls, keyed by server id (data-driven so adding a server is one descriptor). */
@@ -571,7 +554,7 @@ public class SettingsWindow {
             }""";
 
     private boolean built;
-    private boolean loading;
+    boolean loading;
 
     public SettingsWindow(
             ConfigManager config,
@@ -606,11 +589,16 @@ public class SettingsWindow {
         this.onOpenFile = onOpenFile;
         this.onExportConfig = onExportConfig;
         this.onShowDebugLog = onShowDebugLog;
+        this.syncPage = new SettingsSyncPage(this, config);
+        this.pluginsPage = new SettingsPluginsPage(this, config);
         if (com.editora.AppInfo.isSnapshot()) {
             // Start the (background, bounded) branch lookup now, so About has it without ever waiting on git.
             com.editora.AppInfo.gitBranchAsync();
         }
     }
+
+    /** Settings → Plugins; see {@link SettingsPluginsPage}. */
+    private final SettingsPluginsPage pluginsPage;
 
     /**
      * Injects the shared {@link com.editora.plugin.PluginManager} (set after construction by
@@ -618,7 +606,7 @@ public class SettingsWindow {
      * {@link #build} (the page is built lazily on first {@link #show}).
      */
     public void setPluginManager(com.editora.plugin.@Nullable PluginManager pluginManager) {
-        this.pluginManager = pluginManager;
+        pluginsPage.setPluginManager(pluginManager);
     }
 
     /** Injects the shared {@link com.editora.snippet.SnippetManager} backing the Snippets management page. */
@@ -728,11 +716,7 @@ public class SettingsWindow {
             Consumer<com.editora.plugin.PluginDescriptor> onUninstall,
             java.util.function.Predicate<com.editora.plugin.PluginDescriptor> onEnable,
             Consumer<com.editora.plugin.PluginDescriptor> onDisable) {
-        this.onBrowsePlugins = onBrowse;
-        this.onInstallPluginFromFile = onInstallFromFile;
-        this.onUninstallPlugin = onUninstall;
-        this.onEnablePlugin = onEnable == null ? d -> false : onEnable;
-        this.onDisablePlugin = onDisable == null ? d -> {} : onDisable;
+        pluginsPage.setPluginActions(onBrowse, onInstallFromFile, onUninstall, onEnable, onDisable);
     }
 
     /** Wires the security-notice confirm shown before the MCP checkbox enables the server. */
@@ -970,7 +954,7 @@ public class SettingsWindow {
             search.setListSource(
                     new SettingsSearch.ListSource(Category.KEYMAPS, shortcutFilter, this::shortcutMatches));
         }
-        modified = new SettingsModified(this);
+        modified = new SettingsModified(controlOwners());
 
         searchField = new TextField();
         searchField.setPromptText(tr("settings.search.prompt"));
@@ -1980,16 +1964,7 @@ public class SettingsWindow {
                     apply();
                 });
 
-        pluginCheck = new CheckBox(tr("settings.enablePlugins"));
-        pluginCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setPluginSupport(now);
-            apply();
-        });
-        pluginRequireSigCheck = new CheckBox(tr("settings.plugins.requireSignature"));
-        pluginRequireSigCheck.selectedProperty().addListener((obs, was, now) -> {
-            config.getSettings().setPluginRequireSignature(now);
-            apply();
-        });
+        pluginsPage.buildControls();
 
         templateAuthorField = new TextField();
         templateAuthorField.setPromptText(System.getProperty("user.name", ""));
@@ -2288,8 +2263,8 @@ public class SettingsWindow {
         pages.put(Category.MACROS, macrosPage());
         pages.put(Category.REMOTE, remotePage());
         pages.put(Category.ENCRYPTION, encryptionPage());
-        pages.put(Category.PLUGINS, pluginsPage());
-        pages.put(Category.SYNC, syncPage());
+        pages.put(Category.PLUGINS, pluginsPage.build());
+        pages.put(Category.SYNC, syncPage.build());
         pages.put(Category.MCP, mcpPage());
         pages.put(Category.AI_GENERAL, aiGeneralPage());
         pages.put(Category.AGENT, agentPage());
@@ -4489,532 +4464,30 @@ public class SettingsWindow {
         return p;
     }
 
-    // --- Sync page -----------------------------------------------------------------------------------------
-
-    private @Nullable SettingsSync settingsSync;
-    private @Nullable VBox syncCredentialsWarning;
-    private final Runnable syncStateListener = this::refreshSyncControls;
-    private @Nullable TextField syncUrlField;
-    private @Nullable TextField syncBranchField;
-    private @Nullable Button syncConnectButton;
-    private @Nullable Button syncDisconnectButton;
-    private @Nullable Button syncCreateGithubButton;
-    private @Nullable Button syncNowButton;
-    private @Nullable Button syncAnywayButton;
-    private @Nullable Label syncStateLabel;
-    /** The Status row's pill: Connected (green), Not connected (amber), Sync failing (red); see {@link SyncStatus}. */
-    private @Nullable Label syncPill;
-
-    private @Nullable Label syncAccountLabel;
-    private @Nullable CheckBox syncSnippetsCheck;
-    private @Nullable CheckBox syncAbbreviationsCheck;
-    private @Nullable CheckBox syncTemplatesCheck;
-    private @Nullable CheckBox syncDictionaryCheck;
-    private @Nullable CheckBox syncKeybindingsCheck;
-    private @Nullable CheckBox syncAutoCheck;
-    private @Nullable Spinner<Integer> syncIntervalSpinner;
-    /** A message about the connect attempt in progress; shown instead of the service's state until it ends. */
-    private @Nullable String syncConnectMessage;
-    /** Connect's look at the repository is under way; {@link #syncConnectRun} tells a cancelled one apart. */
-    private boolean syncChecking;
-
-    private int syncConnectRun;
-    private @Nullable Button syncCancelButton;
     /**
-     * Why the last Connect or Create did not go through (an unusable URL, an unreachable repository, a gh
-     * error). Kept, rather than written to the label once, so that a refresh arriving afterwards — the
-     * GitHub sign-in check finishing, the service reporting its state — does not replace it with "Not
-     * connected." before it was read. It goes when the user edits the repository, tries again or
-     * disconnects.
+     * The objects that hold this window's controls: the window and the page classes it builds. {@link
+     * SettingsModified} finds the controls there by field name.
      */
-    private @Nullable String syncNotice;
+    List<Object> controlOwners() {
+        return List.of(this, syncPage, pluginsPage);
+    }
+
+    /** Settings → Sync; see {@link SettingsSyncPage}. */
+    private final SettingsSyncPage syncPage;
 
     /** Injects the application's settings sync (null in a window that has none, e.g. a test double). */
     void setSettingsSync(@Nullable SettingsSync sync) {
-        if (settingsSync != null) {
-            settingsSync.removeListener(syncStateListener);
-        }
-        settingsSync = sync;
-        if (sync != null) {
-            sync.addListener(syncStateListener);
-        }
-        refreshSyncControls();
+        syncPage.setSettingsSync(sync);
     }
 
     @Nullable
     SettingsSync settingsSync() {
-        return settingsSync;
+        return syncPage.settingsSync();
     }
 
     /** The user changed synced data on a page of this window. */
     private void markSyncDirty() {
-        if (settingsSync != null) {
-            settingsSync.markDirty();
-        }
-    }
-
-    /** SYSTEM ▸ Sync: the repository, what is synced, when, and how the last run went. */
-    private VBox syncPage() {
-        VBox p = page(tr("settings.cat.sync"), tr("settings.sync.subtitle"));
-        Settings settings = config.getSettings();
-
-        // A URL stored with a password or token before the field refused them: offered, once, to take it out.
-        TextField urlField = new TextField();
-        Button removeSecret = new Button(tr("settings.sync.credentials.remove"));
-        removeSecret.setOnAction(e -> {
-            String clean = com.editora.sync.SyncEngine.withoutCredentials(
-                    config.getSettings().getSyncRepoUrl());
-            config.getSettings().setSyncRepoUrl(clean);
-            urlField.setText(clean);
-            syncSettingsChanged(); // saves; the clone's remote is rewritten at the next sync
-            showSyncNotice(tr("settings.sync.credentials.removed"));
-        });
-        Button keepSecret = new Button(tr("settings.sync.credentials.keep"));
-        keepSecret.setOnAction(e -> {
-            if (settingsSync != null) { // the warning only shows with one
-                settingsSync.storedCredentialsKept = true;
-            }
-            refreshSyncControls();
-        });
-        syncCredentialsWarning =
-                new VBox(6, noteBox(tr("settings.sync.credentials.stored")), new HBox(8, removeSecret, keepSecret));
-        p.getChildren().add(syncCredentialsWarning);
-        Card repo = card(p, null);
-        syncUrlField = urlField;
-        syncUrlField.setPromptText(tr("settings.sync.repo.prompt"));
-        syncUrlField.setPrefWidth(REPO_URL_FIELD_WIDTH);
-        // A password or token in the URL would be stored in plain text: refused, with the reason, until removed.
-        syncUrlField.textProperty().addListener((o, was, now) -> {
-            boolean secret = com.editora.sync.SyncEngine.hasCredentials(now);
-            urlField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, secret);
-            urlField.setTooltip(secret ? new Tooltip(tr("settings.sync.repo.credentials")) : null);
-        });
-        commitOnEnterOrBlur(syncUrlField, settings::getSyncRepoUrl, text -> {
-            if (com.editora.sync.SyncEngine.hasCredentials(text)) {
-                showSyncNotice(tr("settings.sync.repo.credentials"));
-                return;
-            }
-            config.getSettings().setSyncRepoUrl(text);
-            config.save();
-            syncNotice = null;
-            refreshSyncControls();
-        });
-        cardRow(
-                repo,
-                Category.SYNC,
-                settingRow(tr("settings.sync.repo"), tr("settings.sync.repo.desc"), syncUrlField),
-                "sync repository url git remote github gitlab clone ssh https");
-        TextField branchField = new TextField();
-        syncBranchField = branchField;
-        syncBranchField.setPrefWidth(140);
-        syncBranchField.textProperty().addListener((o, was, now) -> {
-            boolean bad = !now.isBlank() && !com.editora.sync.SyncEngine.isUsableBranch(now.strip());
-            branchField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, bad);
-            branchField.setTooltip(bad ? new Tooltip(tr("settings.sync.branch.invalid")) : null);
-        });
-        commitOnEnterOrBlur(syncBranchField, settings::getSyncBranch, text -> {
-            if (!text.isBlank() && !com.editora.sync.SyncEngine.isUsableBranch(text.strip())) {
-                return; // red, with the reason; the branch in use stays
-            }
-            config.getSettings().setSyncBranch(text);
-            config.save();
-            syncNotice = null;
-            refreshSyncControls();
-        });
-        syncConnectButton = new Button(tr("settings.sync.connect"));
-        syncConnectButton.setOnAction(e -> connectSync());
-        syncDisconnectButton = new Button(tr("settings.sync.disconnect"));
-        syncDisconnectButton.setOnAction(e -> {
-            config.getSettings().setSyncEnabled(false);
-            config.save();
-            if (settingsSync != null) {
-                settingsSync.disconnected();
-            }
-            syncNotice = null;
-            refreshSyncControls();
-        });
-        syncCreateGithubButton = new Button(tr("settings.sync.createGithub"));
-        syncCreateGithubButton.setOnAction(e -> createSyncRepoOnGithub());
-        cardRow(
-                repo,
-                Category.SYNC,
-                settingRow(
-                        tr("settings.sync.branch"),
-                        tr("settings.sync.branch.desc"),
-                        new HBox(8, syncBranchField, syncConnectButton, syncDisconnectButton, syncCreateGithubButton)),
-                "sync branch connect disconnect enable turn on off create private repository github gh");
-        syncStateLabel = new Label();
-        syncStateLabel.setWrapText(true);
-        syncStateLabel.setMaxWidth(420);
-        syncPill = new Label();
-        syncPill.setWrapText(true);
-        syncPill.setMaxWidth(420);
-        // "synced 5 min ago" moves on while the window is open.
-        javafx.animation.Timeline syncPillTick = new javafx.animation.Timeline(
-                new javafx.animation.KeyFrame(javafx.util.Duration.seconds(30), e -> refreshSyncControls()));
-        syncPillTick.setCycleCount(javafx.animation.Animation.INDEFINITE);
-        stage.showingProperty().addListener((o, was, now) -> {
-            if (now) {
-                syncPillTick.play();
-            } else {
-                syncPillTick.stop();
-            }
-        });
-        syncAccountLabel = new Label();
-        syncAccountLabel.getStyleClass().add("settings-row-desc");
-        syncAccountLabel.setWrapText(true);
-        syncAccountLabel.setMaxWidth(420);
-        syncNowButton = new Button(tr("settings.sync.now"));
-        syncNowButton.setOnAction(e -> {
-            if (settingsSync != null) {
-                settingsSync.syncNow();
-            }
-        });
-        syncAnywayButton = new Button(tr("settings.sync.anyway"));
-        syncAnywayButton.setOnAction(e -> {
-            if (settingsSync != null) {
-                settingsSync.syncAllowingLargeRemoval();
-            }
-        });
-        syncCancelButton = new Button(tr("settings.sync.cancel"));
-        syncCancelButton.setOnAction(e -> {
-            if (!syncChecking) { // a sync under way: stopped before it writes anything here, or let finish
-                if (settingsSync != null && !settingsSync.cancelSync()) {
-                    showSyncNotice(tr("settings.sync.cancelTooLate"));
-                }
-                return;
-            }
-            // Connect's look: stops waiting; git finishes (or times out) on its own, unused
-            syncConnectRun++;
-            syncChecking = false;
-            syncConnectMessage = null;
-            showSyncNotice(tr("settings.sync.cancelled"));
-        });
-        Button openFolder = new Button(tr("settings.sync.openFolder"));
-        openFolder.setOnAction(e -> openSyncFolder());
-        cardRow(
-                repo,
-                Category.SYNC,
-                settingRow(
-                        tr("settings.sync.status"),
-                        null,
-                        new VBox(
-                                6,
-                                new HBox(syncPill), // a pill as wide as its words
-                                syncStateLabel,
-                                syncAccountLabel,
-                                new HBox(8, syncNowButton, syncAnywayButton, syncCancelButton, openFolder))),
-                "sync now status last synced received sent conflict backups folder github account signed in");
-
-        Card what = card(p, tr("settings.sync.what"));
-        syncSnippetsCheck = syncCategoryCheck("settings.sync.snippets", Settings::setSyncSnippets);
-        syncAbbreviationsCheck = syncCategoryCheck("settings.sync.abbreviations", Settings::setSyncAbbreviations);
-        syncTemplatesCheck = syncCategoryCheck("settings.sync.templates", Settings::setSyncTemplates);
-        syncDictionaryCheck = syncCategoryCheck("settings.sync.dictionary", Settings::setSyncDictionary);
-        syncKeybindingsCheck = syncCategoryCheck("settings.sync.keybindings", Settings::setSyncKeybindings);
-        checkRow(what, Category.SYNC, syncSnippetsCheck, null, "sync snippets");
-        checkRow(what, Category.SYNC, syncAbbreviationsCheck, null, "sync abbreviations abbrev");
-        checkRow(what, Category.SYNC, syncTemplatesCheck, null, "sync templates file project");
-        checkRow(what, Category.SYNC, syncDictionaryCheck, null, "sync spell check personal dictionary words");
-        checkRow(
-                what,
-                Category.SYNC,
-                syncKeybindingsCheck,
-                tr("settings.sync.keybindings.desc"),
-                "sync keybindings key bindings shortcuts keymap rebind");
-        cardRow(what, Category.SYNC, note(tr("settings.sync.notSynced")), "sync not synced preferences macros");
-
-        Card when = card(p, null);
-        syncAutoCheck = new CheckBox(tr("settings.sync.auto"));
-        syncAutoCheck.selectedProperty().addListener((obs, was, now) -> {
-            if (syncIntervalSpinner != null) { // made just below
-                syncIntervalSpinner.setDisable(!now);
-            }
-            if (loading) {
-                return;
-            }
-            config.getSettings().setSyncAuto(now);
-            syncSettingsChanged();
-        });
-        syncIntervalSpinner =
-                IntSpinners.editable(1, Settings.MAX_GIT_AUTO_FETCH_MINUTES, settings.getSyncIntervalMinutes(), 1);
-        syncIntervalSpinner.setPrefWidth(90);
-        syncIntervalSpinner.setAccessibleText(tr("settings.git.autoFetchMinutes"));
-        syncIntervalSpinner.valueProperty().addListener((obs, was, now) -> {
-            if (loading || now == null) {
-                return;
-            }
-            config.getSettings().setSyncIntervalMinutes(now);
-            syncSettingsChanged();
-        });
-        Label unit = new Label(tr("settings.git.autoFetchMinutes"));
-        unit.setLabelFor(syncIntervalSpinner);
-        cardRow(
-                when,
-                Category.SYNC,
-                settingRow(
-                        tr("settings.sync.auto"),
-                        tr("settings.sync.auto.desc"),
-                        new HBox(8, syncIntervalSpinner, unit, switchFor(syncAutoCheck))),
-                "sync automatically auto background interval minutes startup");
-
-        row(p, Category.SYNC, null, noteBox(tr("settings.sync.privacy")), "private repository privacy secret");
-        return p;
-    }
-
-    private CheckBox syncCategoryCheck(String key, java.util.function.BiConsumer<Settings, Boolean> set) {
-        CheckBox check = new CheckBox(tr(key));
-        check.selectedProperty().addListener((obs, was, now) -> {
-            if (loading) {
-                return;
-            }
-            set.accept(config.getSettings(), now);
-            syncSettingsChanged();
-        });
-        return check;
-    }
-
-    /** Saves a changed {@code sync*} setting and lets the service re-read it. */
-    private void syncSettingsChanged() {
-        config.save();
-        if (settingsSync != null) {
-            settingsSync.settingsChanged();
-        }
-    }
-
-    private void loadSyncControls(Settings settings) {
-        if (syncUrlField == null
-                || syncBranchField == null
-                || syncSnippetsCheck == null
-                || syncAbbreviationsCheck == null
-                || syncTemplatesCheck == null
-                || syncDictionaryCheck == null
-                || syncKeybindingsCheck == null
-                || syncAutoCheck == null
-                || syncIntervalSpinner == null) {
-            return; // all made by syncPage(), which build() runs before any load()
-        }
-        syncUrlField.setText(settings.getSyncRepoUrl());
-        syncBranchField.setText(settings.getSyncBranch());
-        syncSnippetsCheck.setSelected(settings.isSyncSnippets());
-        syncAbbreviationsCheck.setSelected(settings.isSyncAbbreviations());
-        syncTemplatesCheck.setSelected(settings.isSyncTemplates());
-        syncDictionaryCheck.setSelected(settings.isSyncDictionary());
-        syncKeybindingsCheck.setSelected(settings.isSyncKeybindings());
-        syncAutoCheck.setSelected(settings.isSyncAuto());
-        syncIntervalSpinner.getValueFactory().setValue(settings.getSyncIntervalMinutes());
-        syncIntervalSpinner.setDisable(!settings.isSyncAuto());
-        refreshSyncControls();
-        if (githubService != null) {
-            githubService.detect(availability -> refreshSyncControls()); // "Create on GitHub" needs a signed-in gh
-        }
-    }
-
-    /** Shows the service's state: which buttons apply, and the status line. */
-    private void refreshSyncControls() {
-        if (syncStateLabel == null
-                || syncUrlField == null
-                || syncBranchField == null
-                || syncConnectButton == null
-                || syncDisconnectButton == null
-                || syncCreateGithubButton == null
-                || syncNowButton == null
-                || syncAnywayButton == null
-                || syncCancelButton == null
-                || syncCredentialsWarning == null
-                || syncAccountLabel == null
-                || syncPill == null) {
-            return; // not built yet
-        }
-        Settings settings = config.getSettings();
-        boolean available = settingsSync != null && settingsSync.primaryInstance();
-        boolean connected = settings.isSyncEnabled();
-        SettingsSync.State state = settingsSync == null ? null : settingsSync.state();
-        boolean syncing = state != null && state.phase() == SettingsSync.Phase.SYNCING;
-        syncUrlField.setDisable(connected);
-        syncBranchField.setDisable(connected);
-        syncConnectButton.setVisible(!connected);
-        syncConnectButton.setManaged(!connected);
-        syncConnectButton.setDisable(!available || syncConnectMessage != null);
-        syncDisconnectButton.setVisible(connected);
-        syncDisconnectButton.setManaged(connected);
-        com.editora.github.GitHubService.Availability gh = githubService == null ? null : githubService.availability();
-        boolean canCreate = available && !connected && gh != null && gh.found() && gh.authenticated();
-        syncCreateGithubButton.setVisible(canCreate);
-        syncCreateGithubButton.setManaged(canCreate);
-        syncCreateGithubButton.setDisable(syncConnectMessage != null);
-        syncNowButton.setDisable(!available || !connected || syncing);
-        boolean needsConfirmation = state != null
-                && state.phase() == SettingsSync.Phase.PROBLEM
-                && state.report() != null
-                && state.report().status() == com.editora.sync.SyncReport.Status.NEEDS_CONFIRMATION;
-        syncAnywayButton.setVisible(needsConfirmation);
-        syncAnywayButton.setManaged(needsConfirmation);
-        syncCancelButton.setVisible(syncChecking || syncing);
-        syncCancelButton.setManaged(syncChecking || syncing);
-        boolean secret = com.editora.sync.SyncEngine.hasCredentials(settings.getSyncRepoUrl())
-                && settingsSync != null
-                && !settingsSync.storedCredentialsKept;
-        syncCredentialsWarning.setVisible(secret);
-        syncCredentialsWarning.setManaged(secret);
-        String account = connected && settingsSync != null ? settingsSync.account() : "";
-        syncAccountLabel.setText(account.isEmpty() ? "" : tr("sync.state.account", account));
-        syncAccountLabel.setVisible(!account.isEmpty());
-        syncAccountLabel.setManaged(!account.isEmpty());
-        syncStateLabel.setText(
-                syncConnectMessage != null
-                        ? syncConnectMessage
-                        : syncNotice != null
-                                ? syncNotice
-                                : settingsSync == null ? tr("sync.state.off") : settingsSync.stateText());
-        SyncStatus.Pill pill = SyncStatus.of(
-                connected && com.editora.sync.SyncEngine.isUsableUrl(settings.getSyncRepoUrl()),
-                available,
-                state,
-                java.time.LocalTime.now());
-        syncPill.setText(pill.text());
-        syncPill.setAccessibleText(pill.accessibleText());
-        syncPill.getStyleClass().setAll("settings-git-status", pill.level().pillClass());
-        syncPill.setTooltip(new Tooltip(syncStateLabel.getText()));
-        // The line under the pill: a notice, the reason a run failed, or what the last run did. The pill alone
-        // says "Not connected" and "syncing…".
-        SettingsSync.Phase phase = state == null ? SettingsSync.Phase.OFF : state.phase();
-        boolean detail = syncConnectMessage != null
-                || syncNotice != null
-                || !available && settingsSync != null
-                || phase == SettingsSync.Phase.PROBLEM
-                || phase == SettingsSync.Phase.IDLE
-                        && state != null // phase is OFF without one
-                        && state.report() != null
-                        && state.report().ok();
-        syncStateLabel.setVisible(detail);
-        syncStateLabel.setManaged(detail);
-    }
-
-    /** Shows {@code text} in the status line until the user next acts on the repository (see {@link #syncNotice}). */
-    private void showSyncNotice(String text) {
-        syncNotice = text;
-        refreshSyncControls();
-    }
-
-    /**
-     * "Connect": looks at the repository first. When it already holds data that this computer would receive,
-     * says how much and asks; then switches sync on and runs the first sync.
-     */
-    private void connectSync() {
-        SettingsSync sync = settingsSync;
-        if (sync == null) {
-            return;
-        }
-        commitPendingFields();
-        syncNotice = null;
-        Settings settings = config.getSettings();
-        String url = settings.getSyncRepoUrl();
-        if (syncUrlField == null || syncBranchField == null) {
-            return; // Connect is a button on the page that makes both
-        }
-        if (com.editora.sync.SyncEngine.hasCredentials(syncUrlField.getText())) {
-            showSyncNotice(tr("settings.sync.repo.credentials")); // the stored URL is not the one shown
-            return;
-        }
-        String typedBranch = syncBranchField.getText().strip();
-        if (!typedBranch.isEmpty() && !com.editora.sync.SyncEngine.isUsableBranch(typedBranch)) {
-            showSyncNotice(tr("settings.sync.branch.invalid")); // nor is the stored branch
-            return;
-        }
-        String branch = settings.getSyncBranch();
-        if (!com.editora.sync.SyncEngine.isUsableUrl(url) || !com.editora.sync.SyncEngine.isUsableBranch(branch)) {
-            showSyncNotice(tr("status.sync.invalidRepository"));
-            return;
-        }
-        syncConnectMessage = tr("sync.state.checking");
-        int run = ++syncConnectRun;
-        syncChecking = true;
-        refreshSyncControls();
-        sync.preview(url, branch, report -> {
-            if (run != syncConnectRun) {
-                return; // cancelled: the user stopped waiting for this look
-            }
-            syncChecking = false;
-            syncConnectMessage = null;
-            if (!report.ok()) {
-                showSyncNotice(SettingsSync.problemText(report));
-                return;
-            }
-            if (!report.received().isEmpty()) {
-                Alert confirm = Dialogs.styled(new Alert(
-                        Alert.AlertType.CONFIRMATION,
-                        tr(
-                                "dialog.sync.connect.content",
-                                report.received().size(),
-                                report.sent().size(),
-                                report.conflicts().size()),
-                        ButtonType.OK,
-                        ButtonType.CANCEL));
-                confirm.initOwner(stage);
-                confirm.setTitle(tr("settings.cat.sync"));
-                confirm.setHeaderText(tr("dialog.sync.connect.header"));
-                if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
-                    refreshSyncControls();
-                    return;
-                }
-            }
-            config.getSettings().setSyncEnabled(true);
-            config.save();
-            sync.connected();
-            refreshSyncControls();
-        });
-    }
-
-    /** "Create Private Repository on GitHub…": asks for a name, creates it with gh, then connects to it. */
-    private void createSyncRepoOnGithub() {
-        if (settingsSync == null || githubService == null) {
-            return;
-        }
-        javafx.scene.control.TextInputDialog ask =
-                Dialogs.styled(new javafx.scene.control.TextInputDialog("editora-sync"));
-        ask.initOwner(stage);
-        ask.setTitle(tr("settings.cat.sync"));
-        ask.setHeaderText(tr("dialog.sync.createGithub.header"));
-        ask.setContentText(tr("dialog.sync.createGithub.name"));
-        String name = ask.showAndWait().map(String::strip).orElse("");
-        if (name.isEmpty()) {
-            return;
-        }
-        syncNotice = null;
-        if (!name.matches("[A-Za-z0-9._-]+")) {
-            showSyncNotice(tr("status.sync.invalidRepositoryName"));
-            return;
-        }
-        syncConnectMessage = tr("sync.state.creating");
-        refreshSyncControls();
-        githubService.createPrivateRepo(name, tr("settings.sync.githubDescription"), created -> {
-            syncConnectMessage = null;
-            if (!created.ok()) {
-                showSyncNotice(tr("status.sync.failed", created.error()));
-                return;
-            }
-            config.getSettings().setSyncRepoUrl(created.url());
-            config.save();
-            if (syncUrlField != null) {
-                syncUrlField.setText(created.url());
-            }
-            connectSync();
-        });
-    }
-
-    private void openSyncFolder() {
-        if (settingsSync == null) {
-            return;
-        }
-        Path dir = settingsSync.syncDir();
-        try {
-            java.nio.file.Files.createDirectories(dir);
-        } catch (java.io.IOException e) {
-            showSyncNotice(String.valueOf(e.getMessage()));
-            return;
-        }
-        com.editora.process.DesktopActions.reveal(dir, true, this::showSyncNotice);
+        syncPage.markSyncDirty();
     }
 
     /** Reference implementation of the UI Kit card page — see {@link #card}/{@link #settingRow}. The
@@ -6699,138 +6172,6 @@ public class SettingsWindow {
         return p;
     }
 
-    private VBox pluginsPage() {
-        VBox p = page(tr("settings.cat.plugins"), tr("settings.plugins.subtitle"));
-        Card mainCard = card(p, null);
-        Label warn = note(tr("settings.plugins.note"));
-        warn.getStyleClass().add("settings-experimental");
-        warn.setWrapText(true);
-        warn.setMaxWidth(440);
-        cardRow(mainCard, Category.PLUGINS, warn, "plugins extensions untrusted security warning");
-        checkRow(mainCard, Category.PLUGINS, pluginCheck, null, "plugins extensions enable support");
-        if (com.editora.plugin.PluginManager.disabledForSession()) {
-            Label off = note(tr("settings.plugins.disabledForSession"));
-            off.getStyleClass().add("settings-git-missing");
-            off.setWrapText(true);
-            off.setMaxWidth(440);
-            cardRow(mainCard, Category.PLUGINS, off, "plugins disable session safe mode command line");
-        }
-        Label restart = note(tr("settings.plugins.restart"));
-        restart.setWrapText(true);
-        restart.setMaxWidth(440);
-        cardRow(mainCard, Category.PLUGINS, restart, "plugins restart apply");
-
-        // Installed Plugins first: they are what people come to this page for.
-        Card installed = card(p, tr("settings.plugins.installed"));
-        Button reload = new Button(tr("settings.plugins.reload"));
-        reload.setOnAction(e -> {
-            if (pluginManager != null) {
-                pluginManager.discover(); // the list only: what runs is the launch's set until a restart
-                pluginListKey = null;
-                refreshPluginList();
-            }
-        });
-        Label folderLabel = new Label(tr("settings.plugins.folder"));
-        Label folderPath =
-                new Label(pluginManager == null ? "" : config.getPluginsDir().toString());
-        folderPath.getStyleClass().add("settings-hint");
-        folderPath.setWrapText(true);
-        folderPath.setMaxWidth(380);
-        HBox folderRow = new HBox(6, folderLabel, folderPath);
-        folderRow.setAlignment(Pos.CENTER_LEFT);
-        HBox listHeader = new HBox(8, reload, folderRow);
-        listHeader.setAlignment(Pos.CENTER_LEFT);
-        pluginListBox = new VBox(8);
-        cardRow(
-                installed,
-                Category.PLUGINS,
-                new VBox(
-                        6,
-                        SettingsDependents.note(pluginCheck.selectedProperty(), tr("settings.enablePlugins")),
-                        listHeader,
-                        pluginListBox),
-                "plugins installed list enable disable reload rescan folder directory");
-
-        // --- Marketplace: a curated GitHub-hosted registry + install-from-disk.
-        Card market = card(p, tr("settings.plugins.marketplace"));
-        Button browse = new Button(tr("settings.plugins.browse"));
-        browse.setOnAction(e -> {
-            if (onBrowsePlugins != null) {
-                onBrowsePlugins.run(); // the picker hides this window only once it opens (hideForMainWindowPicker)
-            }
-        });
-        Button installFile = new Button(tr("settings.plugins.installFromFile"));
-        installFile.setOnAction(e -> {
-            if (onInstallPluginFromFile != null) {
-                onInstallPluginFromFile.run();
-            }
-        });
-        HBox marketButtons = new HBox(8, browse, installFile);
-        marketButtons.setAlignment(Pos.CENTER_LEFT);
-        // Greyed with the master switch, like the rows: they did nothing visible while plugins were off.
-        SettingsDependents.bind(pluginCheck.selectedProperty(), marketButtons);
-        pluginStatusLabel = new Label();
-        pluginStatusLabel.setWrapText(true);
-        pluginStatusLabel.setMaxWidth(440);
-        pluginStatusLabel.getStyleClass().add("settings-hint");
-        pluginStatusLabel.setVisible(false);
-        pluginStatusLabel.managedProperty().bind(pluginStatusLabel.visibleProperty());
-        cardRow(
-                market,
-                Category.PLUGINS,
-                new VBox(4, marketButtons, pluginStatusLabel),
-                "plugins browse install file zip marketplace registry");
-        TextField registryField = new TextField();
-        pluginRegistryField = registryField;
-        pluginRegistryField.setPromptText(com.editora.config.Settings.DEFAULT_PLUGIN_REGISTRY);
-        // Wide enough to show a full registry URL (the default is ~75 chars); also grows with the page.
-        pluginRegistryField.setPrefColumnCount(64);
-        pluginRegistryField.setPrefWidth(560);
-        pluginRegistryField.setMaxWidth(Double.MAX_VALUE);
-        pluginRegistryWarn = new Label();
-        pluginRegistryWarn.getStyleClass().add("settings-git-missing"); // amber/red "caution" styling
-        pluginRegistryWarn.setWrapText(true);
-        pluginRegistryWarn.setMaxWidth(440);
-        commitOnEnterOrBlur(
-                pluginRegistryField,
-                () -> shownOrBlank(
-                        registryField,
-                        config.getSettings().getPluginRegistryUrl(),
-                        config.getSettings().getPluginRegistryUrlRaw()),
-                now -> {
-                    if (!com.editora.config.Settings.isAcceptableRegistryUrl(now)) {
-                        return; // not https: the field is red and says why; the registry in use stays
-                    }
-                    config.getSettings().setPluginRegistryUrl(now);
-                    apply();
-                    updateRegistryWarn();
-                });
-        pluginRegistryField.textProperty().addListener((o, was, now) -> {
-            boolean bad = !now.isBlank() && !com.editora.plugin.PluginRegistry.isHttps(now);
-            registryField.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, bad);
-            registryField.setTooltip(bad ? new Tooltip(tr("settings.plugins.registryNotHttps")) : null);
-        });
-        Label regNote = note(tr("settings.plugins.registryNote"));
-        regNote.setWrapText(true);
-        regNote.setMaxWidth(440);
-        VBox regBox = new VBox(4, pluginRegistryField, pluginRegistryWarn, regNote);
-        controlRow(
-                market,
-                Category.PLUGINS,
-                tr("settings.plugins.registryUrl"),
-                null,
-                regBox,
-                "plugins registry url index marketplace github browse");
-        checkRow(
-                market,
-                Category.PLUGINS,
-                pluginRequireSigCheck,
-                tr("settings.plugins.requireSignatureNote"),
-                "plugins signature signed verify registry security trust");
-        refreshPluginList();
-        return p;
-    }
-
     /**
      * The plugin picker is an overlay in the main window, which this window would cover: hidden when the picker
      * actually opens, so a registry that fails to load leaves Settings where it was, with the reason.
@@ -6850,174 +6191,22 @@ public class SettingsWindow {
         if (!built || stage.isShowing()) {
             return;
         }
-        pluginListKey = null;
+        pluginsPage.forgetListKey();
         load();
         stage.show();
         sidebar.getSelectionModel().select(Category.PLUGINS);
         stage.toFront();
     }
 
+    /** Says what a plugin action started here did, under the Browse buttons (error: in the warning colour). */
+    void showPluginStatus(String message, boolean error) {
+        pluginsPage.showPluginStatus(message, error);
+    }
+
     /** This window's stage while it is open (the owner for plugin dialogs started here), else null. */
     @Nullable
     Window stageIfShowing() {
         return built && stage.isShowing() ? stage : null;
-    }
-
-    /** Says what a plugin action started here did, under the Browse buttons (error: in the warning colour). */
-    void showPluginStatus(String message, boolean error) {
-        if (pluginStatusLabel == null) {
-            return;
-        }
-        boolean shown = message != null && !message.isBlank();
-        pluginStatusLabel.setText(shown ? message : "");
-        pluginStatusLabel.setVisible(shown);
-        pluginStatusLabel.getStyleClass().removeAll("settings-hint", "settings-git-missing");
-        pluginStatusLabel.getStyleClass().add(error ? "settings-git-missing" : "settings-hint");
-    }
-
-    /**
-     * Rebuilds the per-plugin list from the shared {@link com.editora.plugin.PluginManager}: each row says what
-     * it is (name, version, id, a load or start error) and how it differs from what this session runs — the
-     * launch set — with a Restart now. A row that failed to load cannot be ticked: what it would do cannot be
-     * shown, so it cannot be consented to. Skipped when neither the list nor the store changed since.
-     */
-    private void refreshPluginList() {
-        if (pluginListBox == null) {
-            return;
-        }
-        java.util.List<com.editora.plugin.PluginDescriptor> ds =
-                pluginManager == null ? java.util.List.of() : pluginManager.descriptors();
-        com.editora.config.PluginStore store = config.getPluginStore();
-        Object key =
-                java.util.List.of(ds, Map.copyOf(store.enabled), Map.copyOf(store.consent), pluginCheck.isSelected());
-        if (key.equals(pluginListKey)) {
-            return; // D6: re-opening Settings no longer rebuilds an unchanged list
-        }
-        pluginListKey = key;
-        pluginListBox.getChildren().clear();
-        if (ds.isEmpty() || pluginManager == null) { // no manager, no descriptors
-            Label empty = note(tr("settings.plugins.none"));
-            empty.setWrapText(true);
-            pluginListBox.getChildren().add(empty);
-            return;
-        }
-        for (com.editora.plugin.PluginDescriptor d : ds) {
-            pluginListBox.getChildren().add(pluginRow(pluginManager, d, store));
-        }
-    }
-
-    private Node pluginRow(
-            com.editora.plugin.PluginManager pluginManager,
-            com.editora.plugin.PluginDescriptor d,
-            com.editora.config.PluginStore store) {
-        String name = d.displayName();
-        String ver = d.manifest().version == null ? "" : d.manifest().version.strip();
-        com.editora.plugin.PluginDescriptor runningNow = pluginManager.running(d.id());
-        boolean wanted = store.allows(d.id(), d.digest());
-        PluginRowState.Pill pill = PluginRowState.pill(
-                wanted,
-                store.isEnabled(d.id()),
-                runningNow != null,
-                runningNow == null ? null : runningNow.manifest().version,
-                ver,
-                pluginManager.pendingUpdate(d.id()),
-                pluginManager.pendingRemoval(d.id()));
-        CheckBox cb = new CheckBox(PluginDisclosure.clean(ver.isBlank() ? name : name + "  " + ver, 120));
-        cb.setSelected(wanted || pill == PluginRowState.Pill.UPDATE_PENDING);
-        cb.setMinWidth(0);
-        cb.setTooltip(new Tooltip(name + (ver.isBlank() ? "" : " " + ver) + " (" + d.id() + ")"));
-        SettingsDependents.bind(pluginCheck.selectedProperty(), cb); // follows the switch as it is flipped
-        if (d.loadError() != null || pill == PluginRowState.Pill.REMOVAL_PENDING) {
-            SettingsDependents.lockOf(cb).set(true); // a broken (or departing) plugin cannot be ticked at all
-        }
-        cb.selectedProperty().addListener((obs, was, now) -> {
-            if (loading) {
-                return;
-            }
-            // Enabling arms code on the next launch — disclose capabilities + confirm. Disabling is free.
-            if (now) {
-                if (!onEnablePlugin.test(d)) {
-                    cb.setSelected(false); // declined: revert (fires again with now=false, was=true → off)
-                    return;
-                }
-            } else if (was && store.isEnabled(d.id())) {
-                onDisablePlugin.accept(d);
-            }
-            pluginListKey = null;
-            javafx.application.Platform.runLater(this::refreshPluginList); // the row's pill follows
-        });
-        Label id = new Label(d.id());
-        id.getStyleClass().add("settings-hint");
-        id.setMinWidth(Region.USE_PREF_SIZE);
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        Button remove = new Button(tr("settings.plugins.remove"));
-        remove.getStyleClass().add("settings-link-button");
-        remove.setMinWidth(Region.USE_PREF_SIZE); // a long name elides the label, never the button
-        remove.setAccessibleText(tr("settings.plugins.removeNamed", name));
-        remove.setDisable(pill == PluginRowState.Pill.REMOVAL_PENDING);
-        remove.setOnAction(ev -> {
-            if (onUninstallPlugin != null) {
-                onUninstallPlugin.accept(d);
-            }
-        });
-        HBox header = new HBox(8, cb, id, spacer, remove);
-        header.setAlignment(Pos.CENTER_LEFT);
-        HBox.setHgrow(cb, Priority.SOMETIMES);
-        VBox entry = new VBox(2, header);
-        String pillText = PluginRowState.text(pill, pluginManager.pendingUpdate(d.id()));
-        if (pillText != null) {
-            Label restartPill = new Label(pillText);
-            restartPill.getStyleClass().add("settings-git-status");
-            HBox pillRow = new HBox(8, restartPill);
-            pillRow.setAlignment(Pos.CENTER_LEFT);
-            Runnable restart = onRestart;
-            if (pill != PluginRowState.Pill.CHANGED && restart != null) {
-                Button restartNow = new Button(tr("settings.restart.now"));
-                restartNow.getStyleClass().add("settings-link-button");
-                restartNow.setOnAction(e -> restart.run());
-                pillRow.getChildren().add(restartNow);
-            }
-            pillRow.setPadding(new Insets(0, 0, 0, 20));
-            entry.getChildren().add(pillRow);
-        }
-        com.editora.plugin.PluginDescriptor.LoadProblem runtime = pluginManager.runtimeProblem(d.id());
-        String problemText = d.loadError() != null
-                ? PluginLoadProblems.text(d)
-                : runtime != null ? PluginLoadProblems.text(runtime) : null;
-        if (problemText != null) {
-            Label err = new Label(problemText);
-            String detail = d.loadError() != null ? PluginLoadProblems.detail(d) : PluginLoadProblems.detail(runtime);
-            err.setTooltip(detail == null ? null : new Tooltip(detail));
-            err.getStyleClass().add("settings-git-missing");
-            err.setWrapText(true);
-            err.setMaxWidth(420);
-            err.setPadding(new Insets(0, 0, 0, 20));
-            entry.getChildren().add(err);
-        }
-        return entry;
-    }
-
-    /** Warns (with the host) when the registry URL isn't the bundled default — a phishing-vector guard. */
-    private void updateRegistryWarn() {
-        if (pluginRegistryWarn == null) {
-            return;
-        }
-        String url = config.getSettings().getPluginRegistryUrl();
-        boolean custom = url != null
-                && !url.isBlank()
-                && !url.strip().equals(com.editora.config.Settings.DEFAULT_PLUGIN_REGISTRY);
-        String host = "";
-        if (custom) {
-            try {
-                host = java.net.URI.create(url.strip()).getHost();
-            } catch (RuntimeException ignored) {
-                host = url.strip();
-            }
-        }
-        pluginRegistryWarn.setText(custom ? tr("settings.plugins.customRegistry", host == null ? "?" : host) : "");
-        pluginRegistryWarn.setVisible(custom);
-        pluginRegistryWarn.setManaged(custom);
     }
 
     /** The page's "Turn on “X” to change these settings." note, shown while {@code master} is off. */
@@ -7724,8 +6913,7 @@ public class SettingsWindow {
      * that happened to resolve was launched and killed by the next. For the other fields it saved the settings
      * file, re-applied every window and probed a half-typed executable or URL on each key.
      */
-    private void commitOnEnterOrBlur(
-            TextField field, java.util.function.Supplier<String> stored, Consumer<String> commit) {
+    void commitOnEnterOrBlur(TextField field, java.util.function.Supplier<String> stored, Consumer<String> commit) {
         Runnable run = () -> {
             String text = field.getText() == null ? "" : field.getText();
             String current = stored.get();
@@ -7764,7 +6952,7 @@ public class SettingsWindow {
      * Commits whatever is typed but not yet committed. A field commits when focus leaves it, and closing the
      * window (Esc, the title bar, the owner closing) is not a focus change the toolkit reliably reports first.
      */
-    private void commitPendingFields() {
+    void commitPendingFields() {
         List.copyOf(commitFields).forEach(SettingsWindow::commitNow);
     }
 
@@ -7773,7 +6961,7 @@ public class SettingsWindow {
      * field equals {@code resolved}; once the user empties it to go back to the built-in URL it must be
      * compared with what is stored ({@code raw}), or every later focus loss would save and apply again.
      */
-    private static String shownOrBlank(TextField field, String resolved, String raw) {
+    static String shownOrBlank(TextField field, String resolved, String raw) {
         String text = field.getText();
         return text == null || text.isBlank() ? raw : resolved;
     }
@@ -8413,7 +7601,7 @@ public class SettingsWindow {
 
     // --- page helpers ---
 
-    private VBox page(String title) {
+    VBox page(String title) {
         // A Text node (with VISUAL bounds) rather than a Label: a JavaFX Label clips its text to the
         // glyphs' logical (advance-based) bounds, which shaves the outer strokes of bold faces — the
         // bold heading on every Settings page looked like it was missing slivers of letters. A Text node
@@ -8429,7 +7617,7 @@ public class SettingsWindow {
     }
 
     /** A page with the kit's one-line subtitle under its heading, saying what the page is for. */
-    private VBox page(String title, String subtitle) {
+    VBox page(String title, String subtitle) {
         VBox box = page(title);
         if (subtitle != null && !subtitle.isBlank()) {
             Label sub = new Label(subtitle);
@@ -8449,7 +7637,7 @@ public class SettingsWindow {
         return h;
     }
 
-    private void row(VBox page, Category cat, @Nullable Label section, Node node, String keywords) {
+    void row(VBox page, Category cat, @Nullable Label section, Node node, String keywords) {
         page.getChildren().add(node);
         rows.add(new SettingsSearch.Row(cat, node, keywords, section, null));
     }
@@ -8464,7 +7652,7 @@ public class SettingsWindow {
     /** A card and the box its rows are appended to (the title, if any, sits above that box). */
     record Card(VBox box, VBox body) {}
 
-    private Card card(VBox page, @Nullable String title) {
+    Card card(VBox page, @Nullable String title) {
         VBox body = new VBox();
         body.getStyleClass().add("settings-card-body");
         VBox box = new VBox();
@@ -8485,7 +7673,7 @@ public class SettingsWindow {
      * search filter can hide the whole card once every row inside it is filtered out — otherwise a
      * non-matching page would keep showing an empty bordered box.
      */
-    private void cardRow(Card card, Category cat, Node node, String keywords) {
+    void cardRow(Card card, Category cat, Node node, String keywords) {
         // Any node can be a card row, not just a settingRow() — a page mid-migration still has plain
         // checkboxes, status labels and path fields. Wrap those (rather than adding the class to them)
         // so .settings-row's padding can't collide with the node's own.
@@ -8506,7 +7694,7 @@ public class SettingsWindow {
      * label, the (optional) description is an existing localized string, and the control is the bound
      * toggle switch. This is what makes migrating a page mechanical rather than a translation project.
      */
-    private void checkRow(Card card, Category cat, CheckBox check, @Nullable String description, String keywords) {
+    void checkRow(Card card, Category cat, CheckBox check, @Nullable String description, String keywords) {
         cardRow(card, cat, settingRow(check.getText(), description, switchFor(check)), keywords);
     }
 
@@ -8518,7 +7706,7 @@ public class SettingsWindow {
     }
 
     /** A labeled field/control as a card row: title left, the control right (kit "Git command" shape). */
-    private void controlRow(
+    void controlRow(
             Card card,
             Category cat,
             String title,
@@ -8576,7 +7764,7 @@ public class SettingsWindow {
      * stays out of the scene graph. Every existing writer keeps working untouched. {@link SettingSwitch}
      * is what makes it operable from the keyboard and visible to a screen reader.
      */
-    private static SettingSwitch switchFor(CheckBox check) {
+    static SettingSwitch switchFor(CheckBox check) {
         return SettingSwitch.boundTo(check);
     }
 
@@ -8593,14 +7781,14 @@ public class SettingsWindow {
         return h;
     }
 
-    private static Label note(String text) {
+    static Label note(String text) {
         Label l = new Label(text);
         l.getStyleClass().add("settings-hint");
         return l;
     }
 
     /** The kit's boxed page note (its {@code .set-note}) — a tinted, rounded paragraph, not a bare hint. */
-    private static Label noteBox(String text) {
+    static Label noteBox(String text) {
         Label l = new Label(text);
         l.getStyleClass().add("settings-note-box");
         l.setWrapText(true);
@@ -9088,7 +8276,7 @@ public class SettingsWindow {
             gitAutoFetchCheck.setSelected(settings.isGitAutoFetch());
             gitAutoFetchSpinner.getValueFactory().setValue(settings.getGitAutoFetchMinutes());
             gitAutoFetchSpinner.setDisable(!settings.isGitAutoFetch());
-            loadSyncControls(settings);
+            syncPage.load(settings);
             githubCheck.setSelected(settings.isGithubSupport());
             ghPathField.setText(settings.getGhPath());
             ghPathField.setDisable(!settings.isGithubSupport());
@@ -9165,15 +8353,7 @@ public class SettingsWindow {
                     com.editora.ai.AiProvider.from(settings.getAiProvider()).id());
             syncAiProviderFields();
             javafx.application.Platform.runLater(() -> refreshAiStatus(false)); // only if the AI page is shown
-            pluginCheck.setSelected(settings.isPluginSupport());
-            if (pluginRequireSigCheck != null) {
-                pluginRequireSigCheck.setSelected(settings.isPluginRequireSignature());
-            }
-            if (pluginRegistryField != null) {
-                pluginRegistryField.setText(settings.getPluginRegistryUrl());
-                updateRegistryWarn();
-            }
-            refreshPluginList(); // re-read enabled state + reflect the master gate
+            pluginsPage.load(settings);
             debugCheck.setSelected(settings.isDebugSupport());
             debugProgramConsoleCheck.setSelected(settings.isDebugProgramConsole());
             debugProgramInTerminalCheck.setSelected(settings.isDebugProgramInTerminal());
@@ -9413,8 +8593,7 @@ public class SettingsWindow {
         boolean prev = loading;
         loading = true;
         try {
-            pluginCheck.setSelected(config.getSettings().isPluginSupport());
-            refreshPluginList();
+            pluginsPage.syncCheck();
         } finally {
             loading = prev;
         }
@@ -9781,7 +8960,7 @@ public class SettingsWindow {
                 config.getSettings().getJavaCleanups().size()));
     }
 
-    private void apply() {
+    void apply() {
         if (loading) {
             return;
         }
@@ -9823,7 +9002,9 @@ public class SettingsWindow {
             new javafx.scene.control.ToggleButton(tr("settings.search.modifiedOnly"));
     private final Label restartNote = new Label();
     private final HBox restartBox = new HBox(8);
-    private @Nullable Runnable onRestart;
+
+    @Nullable
+    Runnable onRestart;
 
     /** What "Restart now" runs (the {@code app.restart} command: quit after the usual questions, start again). */
     public void setOnRestart(Runnable onRestart) {

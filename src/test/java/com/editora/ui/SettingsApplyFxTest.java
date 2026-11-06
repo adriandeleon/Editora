@@ -67,7 +67,7 @@ class SettingsApplyFxTest {
     }
 
     private <T> T control(String name) {
-        return FxTestSupport.field(window, name);
+        return SettingsRig.control(window, name);
     }
 
     private static void flip(CheckBox check) {
