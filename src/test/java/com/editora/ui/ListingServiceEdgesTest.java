@@ -57,6 +57,7 @@ class ListingServiceEdgesTest {
     void aListingLeavesOutHiddenAndSaveTemporaryNamesAndFollowsALinkToAFolder() throws Exception {
         Path folder = Files.createDirectory(temp.resolve("folder"));
         Files.writeString(folder.resolve(".hidden"), "h");
+        Files.createDirectory(folder.resolve(".git"));
         Files.writeString(folder.resolve("page.md.editora-tmp"), "t");
         Files.writeString(folder.resolve(".editora-typst-123"), "t");
         Files.writeString(folder.resolve("visible.txt"), "v");
@@ -69,7 +70,7 @@ class ListingServiceEdgesTest {
         assertEquals(
                 List.of("link", ".hidden", "visible.txt"),
                 names(listings.list(folder, true, () -> false)),
-                "hidden names shown when asked; a save's temporary sibling never");
+                "hidden names shown when asked; a save's temporary sibling and the repository's .git never");
         ListingService.Item linked = ListingService.stat(link);
         assertNotNull(linked);
         assertTrue(linked.directory(), "a link to a folder is a folder");

@@ -1348,6 +1348,44 @@ final class LanguageServerSession implements LanguageClient {
      */
     private volatile List<Map<String, Object>> javaRuntimes = List.of();
 
+    /**
+     * Whether this jdtls started on a folder that is not trusted, so its Maven and Gradle imports are off (see
+     * {@link UntrustedBuilds}); every settings push keeps them off. Set before the start and never changed: trusting
+     * the folder restarts the server instead.
+     */
+    private volatile boolean buildImportsOff;
+
+    /**
+     * Whether this jdtls's folder has a Maven or Gradle build it did not load ({@link #buildImportsOff} on a folder
+     * that holds one): what the Trust Folder notice on its files says.
+     */
+    private volatile boolean buildNotLoaded;
+
+    /** Whether this session's folder was trusted when it started (see {@link UntrustedBuilds}); true until told. */
+    private volatile boolean startedTrusted = true;
+
+    /** Records how the folder's trust shaped this start: trusted or not, and for jdtls whether a build was left out. */
+    void setStartTrust(boolean trusted, boolean importsOff, boolean buildPresent) {
+        startedTrusted = trusted;
+        buildImportsOff = importsOff;
+        buildNotLoaded = importsOff && buildPresent;
+    }
+
+    /** See {@link #startedTrusted}. */
+    boolean startedTrusted() {
+        return startedTrusted;
+    }
+
+    /** See {@link #buildImportsOff}. */
+    public boolean buildImportsOff() {
+        return buildImportsOff;
+    }
+
+    /** See {@link #buildNotLoaded}. */
+    public boolean buildNotLoaded() {
+        return buildNotLoaded;
+    }
+
     /** {@link #javaRuntimes}: the JDKs jdtls was told about, the default one marked. */
     List<Map<String, Object>> javaRuntimes() {
         return javaRuntimes;
@@ -1420,6 +1458,9 @@ final class LanguageServerSession implements LanguageClient {
             merged.put("completion", completion);
             JavaLibrarySources.into(merged, javaDownloadSources);
             merged = LspManager.withRuntimes(merged, javaRuntimes); // the JDKs, and which one is the default
+            if (buildImportsOff) {
+                merged = UntrustedBuilds.withImportsOff(merged); // an untrusted folder's build stays unloaded
+            }
             settings = Map.of("java", merged); // the project's own style, and the chosen clean-ups
         }
         try {

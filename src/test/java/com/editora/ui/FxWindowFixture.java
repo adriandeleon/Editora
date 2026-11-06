@@ -87,10 +87,12 @@ final class FxWindowFixture implements AutoCloseable {
             Consumer<MainController> onBuilt)
             throws Exception {
         return FxTestSupport.callOnFx(() -> {
+            boolean fresh = !savesLanguageServers(dir);
             ConfigManager bootstrap = new ConfigManager(dir);
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
+            quietLanguageServers(shared, fresh);
             isolateExports(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());
@@ -112,6 +114,24 @@ final class FxWindowFixture implements AutoCloseable {
     }
 
     /**
+     * Language servers start off in a fresh test window, as they did before they became the default: with them on,
+     * every code file a test opens would start whatever server this machine has installed. A test about them switches
+     * them on itself. A window on a config folder whose settings already say (a test that starts again on it) keeps
+     * what was saved there.
+     */
+    /** Whether {@code dir}'s settings file already says whether language servers are on. */
+    private static boolean savesLanguageServers(Path dir) throws IOException {
+        Path file = dir.resolve("settings.json");
+        return Files.exists(file) && Files.readString(file).contains("\"lspSupport\"");
+    }
+
+    private static void quietLanguageServers(SharedConfig shared, boolean fresh) {
+        if (fresh) {
+            shared.getSettings().setLspSupport(false);
+        }
+    }
+
+    /**
      * Export Configuration writes its zip to the home directory; a test window writes it to a temporary folder
      * of its own, so the command sweep (which runs {@code config.export}) leaves nothing in the real home.
      */
@@ -127,10 +147,12 @@ final class FxWindowFixture implements AutoCloseable {
      */
     static FxWindowFixture create(Path dir, Consumer<SharedConfig> beforeWindows) throws Exception {
         return FxTestSupport.callOnFx(() -> {
+            boolean fresh = !savesLanguageServers(dir);
             ConfigManager bootstrap = new ConfigManager(dir);
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
+            quietLanguageServers(shared, fresh);
             isolateExports(shared);
             beforeWindows.accept(shared);
             KeymapManager keymap = new KeymapManager();
@@ -161,10 +183,12 @@ final class FxWindowFixture implements AutoCloseable {
     static FxWindowFixture createDiff(Path dir, Path left, Path right, Consumer<MainController> onBuilt)
             throws Exception {
         return FxTestSupport.callOnFx(() -> {
+            boolean fresh = !savesLanguageServers(dir);
             ConfigManager bootstrap = new ConfigManager(dir);
             bootstrap.load();
             SharedConfig shared = bootstrap.shared();
             quietRemoteExecution(shared);
+            quietLanguageServers(shared, fresh);
             isolateExports(shared);
             KeymapManager keymap = new KeymapManager();
             keymap.loadNamed(shared.getSettings().getKeymap());

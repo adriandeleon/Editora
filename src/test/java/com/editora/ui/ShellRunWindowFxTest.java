@@ -74,13 +74,14 @@ class ShellRunWindowFxTest {
 
     @Test
     void aNewUserCanRunAShellScript() throws Exception {
-        // Defaults: LSP off. Shell Run used to need LSP *and* the Bash server toggle, so a .sh had no ▶, no
+        // LSP off (the default until 0.27.1). Shell Run used to need LSP *and* the Bash server toggle, so a .sh had no
+        // ▶, no
         // Run File item, and Run said "Not a runnable file" while a .py beside it ran.
         Path script = dir.resolve("hello.sh");
         Files.writeString(script, "#!/bin/sh\necho \"hello from sh\"\n");
         try (FxWindowFixture fx = FxWindowFixture.create()) {
             MainController c = fx.controller;
-            assertFalse(fx.shared.getSettings().isLspSupport(), "a new user's settings");
+            assertFalse(fx.shared.getSettings().isLspSupport(), "language servers off, as a test window starts");
             EditorBuffer b = open(c, script);
             assertTrue(FxTestSupport.callOnFx(b::isRunnable), "the gutter ▶ and Run File are there");
 

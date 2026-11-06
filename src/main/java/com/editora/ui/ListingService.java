@@ -562,8 +562,11 @@ final class ListingService implements AutoCloseable {
                     if (fileName != null && ProjectWatchChanges.isInternalName(fileName.toString())) {
                         continue; // a save's temporary sibling: gone in a moment, and its removal raises no event
                     }
-                    if (!showHidden && fileName != null && fileName.toString().startsWith(".")) {
-                        continue;
+                    if (fileName != null
+                            && (showHidden
+                                    ? fileName.toString().equals(".git")
+                                    : fileName.toString().startsWith("."))) {
+                        continue; // the repository's own .git is never project content (as in ProjectWalk)
                     }
                     children.add(child);
                 }
