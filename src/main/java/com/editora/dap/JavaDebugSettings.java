@@ -20,9 +20,16 @@ import com.google.gson.Gson;
  * @param exceptionTypes exception classes the exception breakpoints are limited to (empty: every exception)
  * @param showToString objects show their {@code toString()} (off: {@code Type@id}, and no program code runs to show
  *     a value — review 3, B201)
+ * @param suspendAllThreads a breakpoint, exception or step stops every thread of the program, and Continue resumes
+ *     them all (java-debug's {@code suspendAllThreads}, read when a session starts); off stops only the thread that
+ *     hit it
  */
 public record JavaDebugSettings(
-        boolean stepFilters, boolean showStatics, List<String> exceptionTypes, boolean showToString) {
+        boolean stepFilters,
+        boolean showStatics,
+        List<String> exceptionTypes,
+        boolean showToString,
+        boolean suspendAllThreads) {
 
     /** The jdtls command java-debug registers for these settings. */
     public static final String COMMAND = "vscode.java.updateDebugSettings";
@@ -42,9 +49,14 @@ public record JavaDebugSettings(
         this(stepFilters, showStatics, exceptionTypes, true);
     }
 
-    /** The defaults: step filters on, statics and toString() values shown, every exception. */
+    public JavaDebugSettings(
+            boolean stepFilters, boolean showStatics, List<String> exceptionTypes, boolean showToString) {
+        this(stepFilters, showStatics, exceptionTypes, showToString, false);
+    }
+
+    /** The defaults: step filters on, statics and toString() values shown, every exception, one thread stops. */
     public static JavaDebugSettings defaults() {
-        return new JavaDebugSettings(true, true, List.of(), true);
+        return new JavaDebugSettings(true, true, List.of(), true, false);
     }
 
     /** Pure: the exception classes in {@code text} — separated by commas, spaces or semicolons — in order. */
@@ -77,6 +89,7 @@ public record JavaDebugSettings(
         settings.put("logLevel", "WARNING");
         settings.put("showStaticVariables", showStatics);
         settings.put("showToString", showToString);
+        settings.put("suspendAllThreads", suspendAllThreads);
         settings.put("stepFilters", filters);
         settings.put("exceptionFilters", exceptions);
         // Re-applies the exception breakpoints of a live session with the new types.

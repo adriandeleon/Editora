@@ -631,7 +631,8 @@ final class DebugCoordinator {
                 s.isDebugStepFilters(),
                 s.isDebugShowStatics(),
                 com.editora.dap.JavaDebugSettings.parseExceptionTypes(s.getDebugExceptionTypes()),
-                s.isDebugShowToString()));
+                s.isDebugShowToString(),
+                s.isDebugSuspendAllThreads()));
         List<String> bundles = on ? dapManager.bundlePaths() : List.of();
         boolean changed = !bundles.equals(appliedDebugBundles);
         lspManager.setDebugBundles(bundles); // set before sessions start — jdtls always gets the bundle
@@ -1336,6 +1337,7 @@ final class DebugCoordinator {
                 // that went into library code shows that code (B5): the user asked to go there.
                 int shown = frameToShow(reason, frames, DebugCoordinator.this::hasSource);
                 panel().setCallStack(frames, shown);
+                removeTemporaryBreakpointHit(reason, frames);
                 if (shown > 0) {
                     // A JDK or library frame jdtls can show is "library code", not "no source" (review 2, B107).
                     host.setStatus(tr(
@@ -3604,6 +3606,8 @@ final class DebugCoordinator {
         hitCondition.setPromptText(BreakpointFormText.hitConditionPrompt(b.getLanguage()));
         CheckBox enabled = new CheckBox(tr("dialog.debug.breakpointEnabled"));
         enabled.setSelected(bp.enabled());
+        CheckBox temporary = new CheckBox(tr("dialog.debug.breakpointTemporary"));
+        temporary.setSelected(bp.temporary());
 
         GridPane grid = new GridPane();
         grid.setHgap(8);
@@ -3619,7 +3623,7 @@ final class DebugCoordinator {
         grid.add(logMessage, 1, 2);
         grid.add(new Label(tr("dialog.debug.hitConditionLabel")), 0, 3);
         grid.add(hitCondition, 1, 3);
-        grid.add(enabled, 1, 4);
+        grid.add(new javafx.scene.layout.HBox(16, enabled, temporary), 1, 4);
         grid.add(note(tr("dialog.debug.logMessageHint")), 1, 5);
         GridPane.setHgrow(condition, Priority.ALWAYS);
         GridPane.setHgrow(logMessage, Priority.ALWAYS);
@@ -3639,6 +3643,7 @@ final class DebugCoordinator {
                     mgr.setLogMessage(line, logMessage.getText().trim());
                     mgr.setHitCondition(line, hitCondition.getText().trim());
                     mgr.setEnabled(line, enabled.isSelected());
+                    mgr.setTemporary(line, temporary.isSelected());
                 },
                 null,
                 false);
@@ -4288,6 +4293,58 @@ final class DebugCoordinator {
         }
     }
 
+    /**
+     * Debug: Toggle Temporary Breakpoint — a breakpoint on the caret line that is removed once the program stops on
+     * it (IntelliJ's Ctrl+Alt+Shift+F8). On a line with a temporary breakpoint it removes it; on one with an
+     * ordinary breakpoint it makes that one temporary.
+     */
+    void toggleTemporaryBreakpointAtCaret() {
+        EditorBuffer b = breakpointBuffer();
+        if (b == null) {
+            return;
+        }
+        int line = b.getFocusedArea().getCurrentParagraph();
+        if (!breakpointAllowed(b, line)) {
+            return;
+        }
+        var mgr = b.getBreakpointManager();
+        Breakpoint bp = mgr.get(line);
+        if (bp != null && bp.temporary()) {
+            b.toggleBreakpoint(line);
+            return;
+        }
+        if (bp == null) {
+            b.toggleBreakpoint(line);
+        }
+        mgr.setTemporary(line, true);
+        b.refreshGutterLine(line);
+        host.setStatus(tr("status.debug.temporaryAdded", line + 1));
+    }
+
+    /**
+     * The program stopped on a breakpoint: when it is a temporary one, it is removed, which also takes it out of the
+     * live session. Waits for the stopped file's buffer to load: the stop may have just opened it.
+     */
+    private void removeTemporaryBreakpointHit(String reason, List<DapModels.StackFrameInfo> frames) {
+        if (!"breakpoint".equals(reason) || frames.isEmpty() || frames.get(0).file() == null) {
+            return;
+        }
+        DapModels.StackFrameInfo top = frames.get(0);
+        EditorBuffer b = ops.bufferForPath(top.file());
+        if (b == null) {
+            return;
+        }
+        ops.afterBufferLoad(b, () -> {
+            var mgr = b.getBreakpointManager();
+            int line = top.line() - mgr.regionFirstLine();
+            Breakpoint bp = mgr.get(line);
+            if (bp != null && bp.temporary() && bp.enabled() && !bp.isLogpoint()) {
+                b.toggleBreakpoint(line);
+                host.setStatus(tr("status.debug.temporaryRemoved", top.line() + 1));
+            }
+        });
+    }
+
     /** Debug: Enable / Disable Breakpoint — flips the caret line's breakpoint without removing it. */
     void toggleBreakpointEnabledAtCaret() {
         EditorBuffer b = breakpointBuffer();
@@ -4392,6 +4449,8 @@ final class DebugCoordinator {
         // Icons like the rest of the editor menu (review 2 C110).
         items.add(menuItem("debug.toggleBreakpoint", breakpointGlyph(), this::toggleBreakpointAtCaret));
         items.add(menuItem("debug.editBreakpoint", Icons.edit(), this::editBreakpointAtCaret));
+        items.add(
+                menuItem("debug.toggleTemporaryBreakpoint", breakpointGlyph(), this::toggleTemporaryBreakpointAtCaret));
         if (dapManager.state() == DapManager.State.SUSPENDED) {
             items.add(menuItem("debug.runToCursor", Icons.debugRunToCursor(), this::debugRunToCursor));
             items.add(menuItem("debug.showValue", Icons.find(), this::showValueAtCaret));

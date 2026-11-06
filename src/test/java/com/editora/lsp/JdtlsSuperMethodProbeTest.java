@@ -94,7 +94,7 @@ class JdtlsSuperMethodProbeTest {
                 project,
                 d -> {},
                 (type, message) -> {},
-                LspManager.javaInitOptions(List.of()));
+                ServerInitOptions.javaInitOptions(List.of()));
         try {
             assertTrue(s.start());
             s.didOpen(uri, "java", SOURCE);

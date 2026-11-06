@@ -526,6 +526,33 @@ class ProjectMapViewsReview4FxTest {
                 "the column ends above the sheet: nothing covered");
     }
 
+    @Test
+    void aCardOpenedCentredWithNoRoomBesideItPansTheMapForItsNote() {
+        double room = 256; // the sheet and its offset from the card
+        double sheet = 220;
+        // A 640-wide card at 242 in an 1100-wide map area, as a stop's card opens centred: 242 on its left, 218 on
+        // its right, short of a sheet on both sides — the sheet would stand over the stop's lines.
+        assertEquals(
+                CardAttachment.Side.OVER,
+                ProjectMapTrailNote.viewsSide(242, 882, room, 1100, 100, 120, sheet, List.of()));
+        assertEquals(
+                new ProjectMapTrailNote.RoomPan(CardAttachment.Side.LEFT, 14),
+                ProjectMapTrailNote.viewsRoomPan(242, 882, room, 1100, 100, 120, sheet, List.of()),
+                "the shorter pan: 14 right frees the left, where 38 left would free the right");
+        List<double[]> leftColumn = List.<double[]>of(new double[] {14, 0, 188, 900, 1});
+        assertEquals(
+                new ProjectMapTrailNote.RoomPan(CardAttachment.Side.RIGHT, -38),
+                ProjectMapTrailNote.viewsRoomPan(242, 882, room, 1100, 100, 120, sheet, leftColumn),
+                "the row's column on the left: the right, though the pan is longer");
+        assertEquals(
+                new ProjectMapTrailNote.RoomPan(CardAttachment.Side.RIGHT, -26),
+                ProjectMapTrailNote.viewsRoomPan(230, 870, room, 1100, 100, 120, sheet, List.of()),
+                "exactly centred: the right, as a side is chosen");
+        assertNull(
+                ProjectMapTrailNote.viewsRoomPan(100, 900, room, 1000, 100, 120, sheet, List.of()),
+                "the card and its sheet are wider than the map area: no pan, the sheet stands over the card");
+    }
+
     // --- A9 -----------------------------------------------------------------------------------------------------
 
     @Test

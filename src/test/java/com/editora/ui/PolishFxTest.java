@@ -190,7 +190,7 @@ class PolishFxTest {
                 assertSame(codePane, toggle.getParent().getParent(), "Editor mode: top-right of the code pane");
 
                 buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.SPLIT);
-                Node previewHost = FxTestSupport.field(buffer, "previewHost");
+                Node previewHost = FxTestSupport.field(FxTestSupport.field(buffer, "previewPanes"), "previewHost");
                 assertSame(previewHost, toggle.getParent(), "Split: it rides the preview side");
 
                 buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.PREVIEW);

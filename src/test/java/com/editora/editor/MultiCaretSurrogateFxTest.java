@@ -38,7 +38,7 @@ class MultiCaretSurrogateFxTest {
                 buffer.addCaretBelow();
                 assertTrue(buffer.hasMultipleCarets());
 
-                MultiCarets carets = (MultiCarets) field(buffer, "multiCaret");
+                MultiCarets carets = (MultiCarets) field(buffer.caretOps, "multiCaret");
                 carets.getManager().typeText("X");
 
                 String text = buffer.getContent();

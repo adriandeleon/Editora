@@ -48,8 +48,8 @@ class PreviewSelectionCommandsFxTest {
         });
         long end = System.nanoTime() + 20_000_000_000L;
         while (!EditorFx.callFx(() -> {
-            MarkdownPreview p = EditorFx.field(buffer, "markdownPreview");
-            ScrollPane pane = EditorFx.field(buffer, "previewPane");
+            MarkdownPreview p = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "markdownPreview");
+            ScrollPane pane = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "previewPane");
             return p != null
                     && p.isShowing()
                     && p.column().getChildrenUnmodifiable().size() == 3
@@ -62,7 +62,8 @@ class PreviewSelectionCommandsFxTest {
             Thread.sleep(20);
         }
         EditorFx.drain();
-        return EditorFx.callFx(() -> EditorFx.<MarkdownPreview>field(buffer, "markdownPreview"));
+        return EditorFx.callFx(
+                () -> EditorFx.<MarkdownPreview>field(EditorFx.field(buffer, "previewPanes"), "markdownPreview"));
     }
 
     /** Waits (off the FX thread) until {@code done}, checked on it, holds. */
@@ -126,12 +127,13 @@ class PreviewSelectionCommandsFxTest {
             assertFalse(buffer.previewEditCommand(true));
 
             // The preview pane has the focus: they are the preview's.
-            ScrollPane pane = EditorFx.field(buffer, "previewPane");
+            ScrollPane pane = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "previewPane");
             stage.requestFocus(); // (another test's window may have been the focused one)
             pane.requestFocus();
         });
         await(
-                () -> EditorFx.<ScrollPane>field(buffer, "previewPane").isFocused(),
+                () -> EditorFx.<ScrollPane>field(EditorFx.field(buffer, "previewPanes"), "previewPane")
+                        .isFocused(),
                 "the preview pane never got the focus");
         EditorFx.onFx(() -> {
             EditorFx.clipboard("before");
@@ -176,8 +178,8 @@ class PreviewSelectionCommandsFxTest {
         });
         await(
                 () -> {
-                    MarkdownPreview p = EditorFx.field(buffer, "markdownPreview");
-                    ScrollPane pane = EditorFx.field(buffer, "previewPane");
+                    MarkdownPreview p = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "markdownPreview");
+                    ScrollPane pane = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "previewPane");
                     return p != null
                             && pane != null
                             && pane.getScene() != null
@@ -187,8 +189,8 @@ class PreviewSelectionCommandsFxTest {
                 },
                 "the picture never loaded");
         EditorFx.onFx(() -> {
-            MarkdownPreview preview = EditorFx.field(buffer, "markdownPreview");
-            ScrollPane pane = EditorFx.field(buffer, "previewPane");
+            MarkdownPreview preview = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "markdownPreview");
+            ScrollPane pane = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "previewPane");
             javafx.scene.Node picture = preview.column().lookup(".md-image");
             javafx.scene.Node text = preview.column().lookup(".md-text");
             java.util.function.Consumer<javafx.scene.Node> ask = on -> pane.fireEvent(new ContextMenuEvent(
@@ -212,7 +214,7 @@ class PreviewSelectionCommandsFxTest {
     void theContextMenuOffersCopyOfTheSelectionSelectAllAndTheWayToTheSource() throws Exception {
         MarkdownPreview preview = open(MarkdownViewMode.SPLIT);
         EditorFx.onFx(() -> {
-            ScrollPane pane = EditorFx.field(buffer, "previewPane");
+            ScrollPane pane = EditorFx.field(EditorFx.field(buffer, "previewPanes"), "previewPane");
             Text second = (Text) preview.column().lookupAll(".md-text").stream()
                     .filter(n -> "Second paragraph.".equals(((Text) n).getText()))
                     .findFirst()

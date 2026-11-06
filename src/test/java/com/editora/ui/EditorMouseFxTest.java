@@ -215,7 +215,8 @@ class EditorMouseFxTest {
                             true,
                             null));
         });
-        ContextMenu menu = FxTestSupport.field(b, "contextMenu"); // built by that first request
+        ContextMenu menu =
+                FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "contextMenu"); // built by that first request
         Bounds caret = FxTestSupport.callOnFx(() -> area.getCaretBounds().orElseThrow());
         assertTrue(FxTestSupport.callOnFx(menu::isShowing));
         assertEquals(caret.getMinX(), FxTestSupport.callOnFx(menu::getAnchorX), 1.0, "opens at the caret");
@@ -469,7 +470,7 @@ class EditorMouseFxTest {
 
     /** The buffer's multi-caret manager, for placing extra carets the way Ctrl+click and Alt+drag do. */
     private static org.fxmisc.richtext.multi.MultiCaretManager<?, ?, ?> carets(EditorBuffer b) {
-        Object layer = FxTestSupport.field(b, "multiCaret");
+        Object layer = FxTestSupport.field(FxTestSupport.field(b, "caretOps"), "multiCaret");
         assertNotNull(layer, "multiple carets are enabled");
         return (org.fxmisc.richtext.multi.MultiCaretManager<?, ?, ?>)
                 FxTestSupport.call(layer, "getManager", new Class<?>[] {});
@@ -489,7 +490,7 @@ class EditorMouseFxTest {
     /** Fires the open context menu's item titled {@code key}, searching one level of submenus, and closes it. */
     private void fire(EditorBuffer b, String key) throws Exception {
         FxTestSupport.runOnFx(() -> {
-            ContextMenu menu = FxTestSupport.field(b, "contextMenu");
+            ContextMenu menu = FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "contextMenu");
             MenuItem item = menu.getItems().stream()
                     .filter(i -> tr(key).equals(i.getText()))
                     .findFirst()
@@ -502,7 +503,7 @@ class EditorMouseFxTest {
     }
 
     private static void hideMenu(EditorBuffer b) {
-        ((ContextMenu) FxTestSupport.field(b, "contextMenu")).hide();
+        ((ContextMenu) FxTestSupport.field(FxTestSupport.field(b, "editorMenu"), "contextMenu")).hide();
     }
 
     private static void mouse(CodeArea area, EventType<MouseEvent> type, double sx, double sy, int clicks) {

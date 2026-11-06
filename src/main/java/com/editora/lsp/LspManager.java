@@ -14,17 +14,11 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
+import com.editora.lsp.WorkspaceEditDrafts.EditBasis;
 import com.editora.process.ProcessRunner;
 import com.editora.text.LspDiagnostic;
-import com.editora.text.OccurrenceSpan;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import org.eclipse.lsp4j.CompletionItem;
-import org.eclipse.lsp4j.Hover;
-import org.eclipse.lsp4j.Location;
-import org.eclipse.lsp4j.LocationLink;
-import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -56,9 +50,9 @@ public final class LspManager {
     }
 
     /** The scheme jdtls uses for class-file (JDK/dependency) contents — a URI no filesystem can open. */
-    private static final String JDT_SCHEME = "jdt://";
+    static final String JDT_SCHEME = "jdt://";
 
-    private final BiConsumer<Path, List<LspDiagnostic>> onDiagnostics;
+    final BiConsumer<Path, List<LspDiagnostic>> onDiagnostics;
     /** Server status: {@code accept(type, message)} (e.g. "ServiceReady"/"Ready"), posted to the FX thread. */
     private final BiConsumer<String, String> onStatus;
     /** Fired (on the FX thread) when a session died on its own — crash or failed handshake, never a
@@ -76,8 +70,47 @@ public final class LspManager {
 
     private volatile RefreshHandler onRefreshRequested = (kind, origin) -> {};
 
+    /** Definition, references, hierarchies and the other "where does this lead" requests. */
+    private final LspNavigationRequests navigation = new LspNavigationRequests(this);
+
+    /** Completion, signature help, highlights and hover. */
+    private final LspAssists assists = new LspAssists(this);
+
+    /** Code actions, and every server edit on its way to the editor. */
+    final LspCodeActions codeActions = new LspCodeActions(this);
+
+    /** Document, range and on-type formatting. */
+    private final LspFormatting formatting = new LspFormatting(this);
+
+    /** Outlines, folding and selection ranges, colours and symbol search. */
+    private final LspDocumentSymbols outline = new LspDocumentSymbols(this);
+
+    /** Code lenses and inlay hints. */
+    private final LspInlineHints inlineHints = new LspInlineHints(this);
+
+    /** Semantic tokens and the per-document state their deltas need. */
+    final SemanticTokenRequests semanticTokens = new SemanticTokenRequests(this);
+
+    /** Symbol renames, and the edits a file or folder rename takes along. */
+    private final LspRename renames = new LspRename(this);
+
+    /** jdtls's own requests: generate, refactorings, paste imports and the rest. */
+    private final JdtlsCommands jdtls = new JdtlsCommands(this);
+
+    /** Java project builds through jdtls. */
+    final JavaBuilds builds = new JavaBuilds(this);
+
+    /** Organize Imports, per server. */
+    private final LspOrganizeImports imports = new LspOrganizeImports(this);
+
+    /** Published and pulled diagnostics, and the raw ones code actions send back. */
+    private final LspDiagnostics diagnostics = new LspDiagnostics(this);
+
+    /** Root watchers and remote scanners, and the file changes they forward to the servers. */
+    private final LspFileWatching watching = new LspFileWatching(this);
+
     /** One unanswered request per document and kind; see {@link LatestRequests}. */
-    private final LatestRequests latest = new LatestRequests();
+    final LatestRequests latest = new LatestRequests();
 
     private final ExecutorService detectExec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "lsp-detect");
@@ -94,8 +127,8 @@ public final class LspManager {
         return t;
     });
 
-    private final Map<String, LanguageServerSession> sessionsByRoot = new ConcurrentHashMap<>();
-    private final Map<String, LanguageServerSession> sessionByDocUri = new ConcurrentHashMap<>();
+    final Map<String, LanguageServerSession> sessionsByRoot = new ConcurrentHashMap<>();
+    final Map<String, LanguageServerSession> sessionByDocUri = new ConcurrentHashMap<>();
 
     /**
      * The Java servers of every window in this process, by session key (Java review C12). A second window on a
@@ -159,7 +192,7 @@ public final class LspManager {
     private final java.util.Set<LanguageServerSession> endedHere = ConcurrentHashMap.newKeySet();
 
     /** Whether this window has the focus: a question a shared server asks goes to the focused window. */
-    private volatile java.util.function.BooleanSupplier windowFocused = () -> false;
+    volatile java.util.function.BooleanSupplier windowFocused = () -> false;
 
     public void setWindowFocused(java.util.function.BooleanSupplier focused) {
         windowFocused = focused == null ? () -> false : focused;
@@ -176,7 +209,7 @@ public final class LspManager {
      * Told (on the FX thread) of the files this manager's own watchers saw change outside Editora, after the servers
      * were: a pom fixed by a git pull re-imports a failed project as a save does (fourteenth check CJ8).
      */
-    private volatile java.util.function.Consumer<List<WatchedFile>> onWatchedFiles = changes -> {};
+    volatile java.util.function.Consumer<List<WatchedFile>> onWatchedFiles = changes -> {};
 
     public void setOnWatchedFiles(java.util.function.Consumer<List<WatchedFile>> handler) {
         onWatchedFiles = handler == null ? changes -> {} : handler;
@@ -338,7 +371,7 @@ public final class LspManager {
             for (String kind : REFRESHABLE_KINDS) {
                 latest.cancel(uri, kind);
             }
-            wholeDocumentTokens.remove(uri);
+            semanticTokens.wholeDocumentTokens.remove(uri);
         }
     }
 
@@ -362,7 +395,7 @@ public final class LspManager {
             String uri = uri(file);
             latest.cancel(uri, kind);
             if (kind.equals("semanticTokens")) {
-                wholeDocumentTokens.remove(uri);
+                semanticTokens.wholeDocumentTokens.remove(uri);
             }
         }
     }
@@ -385,7 +418,7 @@ public final class LspManager {
         if (enabled) {
             ProcessRunner.warmAugmentedPathAsync(); // before the first session start reads it on FX
         } else {
-            closeRootWatchers(); // no server to tell: a folder watcher left running held an inotify instance
+            watching.closeRootWatchers(); // no server to tell: a folder watcher left running held an inotify instance
             pythonLibraries.closeAll();
             shutdownAll();
             com.editora.perf.AfterFirstPaint.run(ProcessRunner::warmAugmentedPathAsync);
@@ -539,18 +572,18 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(OrganizeOutcome.UNCHANGED));
             return;
         }
-        EditBasis expected = editBasis(s);
+        EditBasis expected = WorkspaceEditDrafts.editBasis(s);
         s.rawRequest("java/cleanup", new org.eclipse.lsp4j.TextDocumentIdentifier(serverUri(file)))
                 .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .whenComplete((r, e) -> {
-                    org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
+                    org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : JdtlsCommands.asWorkspaceEdit(r);
                     Platform.runLater(() -> {
                         if (e != null) {
                             cb.accept(OrganizeOutcome.FAILED);
-                        } else if (edit == null || !changesText(edit)) {
+                        } else if (edit == null || !LspOrganizeImports.changesText(edit)) {
                             cb.accept(OrganizeOutcome.UNCHANGED);
                         } else {
-                            applyWorkspaceEdit(
+                            codeActions.applyWorkspaceEdit(
                                     edit,
                                     expected,
                                     ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.FAILED));
@@ -618,22 +651,9 @@ public final class LspManager {
         }
     }
 
-    /** Whether Editora's own markup check joins the HTML server's diagnostics (HTML review D5); read off the FX thread. */
-    private volatile java.util.function.BooleanSupplier htmlMarkupChecks = () -> true;
-
-    /** Sets what says whether the markup check runs (Settings → Editor → HTML markup checks). */
+    /** See {@link LspDiagnostics#setHtmlMarkupChecks}. */
     public void setHtmlMarkupChecks(java.util.function.BooleanSupplier on) {
-        htmlMarkupChecks = on == null ? () -> true : on;
-    }
-
-    /** {@code mapped} with the markup check's diagnostics added for an HTML page (D5); null stays null. */
-    private @Nullable List<LspDiagnostic> withMarkupChecks(
-            LanguageServerSession s, @Nullable String documentUri, Path file, @Nullable List<LspDiagnostic> mapped) {
-        String text = documentUri == null || mapped == null
-                ? null
-                : s.documentSnapshots().get(documentUri);
-        return HtmlMarkupLint.merged(
-                s.serverId(), file, text, s.root(), mapped, text != null && htmlMarkupChecks.getAsBoolean());
+        diagnostics.setHtmlMarkupChecks(on);
     }
 
     /** The XML servers' settings (Settings → LSP → XML); each session gets them for its own root. */
@@ -668,37 +688,14 @@ public final class LspManager {
         Map<String, Object> xml =
                 new java.util.LinkedHashMap<>(xmlServerSettings.section(base, folderTrust.test(root), local));
         if (LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)) {
-            xml.put("maven", mavenSection(mavenCentralIndex, local ? mavenRepoLocal() : null));
+            xml.put(
+                    "maven",
+                    ServerInitOptions.mavenSection(
+                            mavenCentralIndex, local ? ServerInitOptions.mavenRepoLocal() : null));
             // lemminx-maven says only in its log that a coordinate completion failed on its workspace (E21)
             xml.put("logs", Map.of("client", true));
         }
         return Map.copyOf(xml);
-    }
-
-    /**
-     * lemminx-maven's {@code xml.maven} object: whether it may search Maven Central, and the local repository Editora
-     * reads ({@code repo.local}, null = none sent), so the server keeps its {@code .lemminx-maven} store beside the
-     * repository Doctor shows rather than one it worked out differently (XML/pom review 4, A34). Pure.
-     */
-    static Map<String, Object> mavenSection(boolean centralIndex, @Nullable String repoLocal) {
-        Map<String, Object> maven = new java.util.LinkedHashMap<>();
-        maven.put("central", Map.of("skip", !centralIndex));
-        if (repoLocal != null && !repoLocal.isBlank()) {
-            maven.put("repo", Map.of("local", repoLocal));
-        }
-        return Map.copyOf(maven);
-    }
-
-    /** The local Maven repository as an absolute path, read from {@code settings.xml} under Editora's user.home. */
-    private static @Nullable String mavenRepoLocal() {
-        try {
-            return com.editora.maven.MavenPluginGoals.localRepository(Path.of(System.getProperty("user.home", "")))
-                    .toAbsolutePath()
-                    .normalize()
-                    .toString();
-        } catch (RuntimeException e) {
-            return null;
-        }
     }
 
     /** Root → the HTML server's settings there (Settings → LSP → HTML, a project's {@code html} object). */
@@ -729,42 +726,6 @@ public final class LspManager {
             @Nullable Path projectRoot) {
         HtmlServerSettings own = HtmlServerSettings.of(user);
         setHtmlSettings(HtmlServerSettings.perRoot(own.withProject(projectHtml), own, projectRoot));
-    }
-
-    /**
-     * A formatting request's options for {@code s}: {@code indent}'s, and for the HTML server the document's wrap
-     * column and final newline too, which it takes from settings it may have cached before they changed (A3, D6).
-     */
-    private static org.eclipse.lsp4j.FormattingOptions formattingOptions(
-            LanguageServerSession s, FormattingIndent indent) {
-        return HtmlServerSettings.SERVER_ID.equals(s.serverId())
-                ? s.htmlSettings().formattingOptions(indent)
-                : indent.options();
-    }
-
-    /**
-     * {@code edits}, the HTML server's format of {@code sent}, with the final newline Editora keeps itself (HTML
-     * review 2, B104); any other server's as they are. {@code whole}: a Format Document, not a selection's.
-     */
-    private static List<com.editora.text.LspTextEdit> keptFinalNewline(
-            LanguageServerSession s,
-            FormattingIndent indent,
-            @Nullable String sent,
-            List<com.editora.text.LspTextEdit> edits,
-            boolean whole) {
-        Boolean want = HtmlServerSettings.SERVER_ID.equals(s.serverId())
-                ? s.htmlSettings().finalNewline(indent)
-                : null;
-        return want == null || sent == null
-                ? edits
-                : com.editora.text.LspTextEdits.withFinalNewline(sent, edits, want, whole);
-    }
-
-    /** The text an HTML server holds for {@code file}, what its format edits are against; null for other servers. */
-    private static @Nullable String htmlText(LanguageServerSession s, Path file) {
-        return HtmlServerSettings.SERVER_ID.equals(s.serverId())
-                ? s.documentSnapshots().get(uri(file))
-                : null;
     }
 
     /**
@@ -845,7 +806,7 @@ public final class LspManager {
      * An environment folder appeared or went: told now and twice more, since {@code python -m venv} writes the
      * folder first and its {@code pyvenv.cfg} and interpreter a moment later, inside a folder no watcher reports.
      */
-    private void pythonEnvironmentChanged() {
+    void pythonEnvironmentChanged() {
         Platform.runLater(() -> onPythonEnvironmentChanged.run());
         Thread.ofVirtual().name("lsp-python-environment").start(() -> {
             for (long wait : new long[] {2_000, 4_000}) {
@@ -892,172 +853,26 @@ public final class LspManager {
     }
 
     /** Re-reads shell files changed on disk for the Bash server, which has no watched-files support (B7). */
-    private final BashReanalysis bashReanalysis = new BashReanalysis(Platform::runLater);
+    final BashReanalysis bashReanalysis = new BashReanalysis(Platform::runLater);
 
-    /** Root → its watcher; at most {@link #MAX_ROOT_WATCHERS}, closed with the manager. */
-    private final Map<Path, RootWatcher> rootWatchers = new ConcurrentHashMap<>();
-
-    static final int MAX_ROOT_WATCHERS = 8;
-
-    /**
-     * The grammar files lemminx registers to be told of ({@code **}{@code /*.xsd}, {@code *.dtd}, {@code *.rng},
-     * {@code *.rnc}), plus the DTD fragments it reads ({@code .ent}, {@code .mod}).
-     */
-    private static final java.util.Set<String> XML_GRAMMAR_EXTENSIONS =
-            java.util.Set.of("xsd", "dtd", "rng", "rnc", "ent", "mod");
-
-    /** Whether a file is one an XML server revalidates its documents against when it changes (XML review B9). */
-    static boolean xmlGrammarFile(Path file) {
-        Path name = file.getFileName();
-        String n = name == null ? "" : name.toString();
-        int dot = n.lastIndexOf('.');
-        return dot > 0 && XML_GRAMMAR_EXTENSIONS.contains(n.substring(dot + 1).toLowerCase(java.util.Locale.ROOT));
-    }
-
-    /** The build files jdtls updates a project's configuration from when told they changed. */
-    private static final java.util.Set<String> JAVA_BUILD_FILES =
-            java.util.Set.of("pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts");
-
-    /**
-     * Whether a file is one a server rebuilds its model from when it changes: an XML grammar (XML review B9) or a
-     * Java build file (twelfth review CL1).
-     */
-    static boolean modelFile(Path file) {
-        Path name = file.getFileName();
-        return xmlGrammarFile(file) || (name != null && JAVA_BUILD_FILES.contains(name.toString()));
-    }
-
-    /**
-     * Starts watching a local server's {@code root}, the whole tree, when nothing watches it yet (any thread). The
-     * Project panel watches only the folders it shows expanded, so a file changed by git, a terminal or another
-     * editor in a collapsed one never reached the servers: a schema regenerated there left lemminx's errors stale
-     * (XML review B9), a module's pom.xml left jdtls's classpath stale (twelfth review CL1), a sourced library left
-     * the Bash server's lines and functions stale (Bash review B16, B7). The panel's own events are forwarded only for
-     * the files this watcher does not report ({@link #reportsChangesTo}). One watcher per root, none for a root
-     * inside one already watched, at most {@link #MAX_ROOT_WATCHERS}; each bounded by {@link RootWatcher#MAX_DIRS}
-     * folders, skipping hidden, dependency and {@code .gitignore}d ones.
-     */
-    private void ensureRootWatcher(Path root, String serverId) {
-        if (closed
-                || root == null
-                || !com.editora.process.ExecTargets.runsHere(root)
-                || RootResolver.isBroadRoot(root)) {
-            return;
-        }
-        Path key = root.toAbsolutePath().normalize();
-        synchronized (rootWatchers) {
-            if (rootWatchers.containsKey(key)
-                    || rootWatchers.size() >= MAX_ROOT_WATCHERS
-                    || rootWatchers.values().stream().anyMatch(w -> key.startsWith(w.root()) && w.watches(key))) {
-                return;
-            }
-            java.util.function.Consumer<List<WatchedFile>> sink = batch -> Platform.runLater(() -> {
-                notifyWatchedFiles(batch);
-                onWatchedFiles.accept(batch);
-            });
-            RootWatcher w = RootWatcher.start(key, sink);
-            if (w == null) {
-                return;
-            }
-            rootWatchers
-                    .entrySet()
-                    .removeIf(
-                            e -> { // a root inside this one: its events would go out twice
-                                boolean inside = e.getKey().startsWith(key);
-                                if (inside) {
-                                    e.getValue().close();
-                                }
-                                return inside;
-                            });
-            rootWatchers.put(key, w);
-        }
-        if (closed) {
-            closeRootWatchers();
-        }
-    }
-
-    private void closeRootWatchers() {
-        synchronized (rootWatchers) {
-            rootWatchers.values().forEach(RootWatcher::close);
-            rootWatchers.clear();
-            remoteScanners.values().forEach(RemoteRootScanner::close);
-            remoteScanners.clear();
-        }
-    }
-
-    /** Remote root → its scanner ({@link RemoteRootScanner}); at most {@link #MAX_ROOT_WATCHERS}. */
-    private final Map<Path, RemoteRootScanner> remoteScanners = new ConcurrentHashMap<>();
-
-    /**
-     * Starts listing a server's folder on another machine — an SSH host, WSL, a container — when the window comes
-     * to the front, so a file {@code git pull} created there reaches the server (Python review 2, B108). Any thread.
-     */
-    private void ensureRemoteScanner(Path root) {
-        if (closed || root == null) {
-            return;
-        }
-        synchronized (rootWatchers) {
-            remoteScanners
-                    .entrySet()
-                    .removeIf(
-                            e -> { // a dropped connection's: its tabs moved to the new one
-                                boolean gone = !e.getKey().getFileSystem().isOpen();
-                                if (gone) {
-                                    e.getValue().close();
-                                }
-                                return gone;
-                            });
-            if (remoteScanners.containsKey(root)
-                    || remoteScanners.size() >= MAX_ROOT_WATCHERS
-                    || remoteScanners.keySet().stream() // paths of two connections cannot be compared
-                            .anyMatch(k -> k.getFileSystem() == root.getFileSystem() && root.startsWith(k))) {
-                return;
-            }
-            remoteScanners.put(
-                    root,
-                    new RemoteRootScanner(
-                                    root,
-                                    batch -> Platform.runLater(() -> {
-                                        if (!closed) {
-                                            notifyWatchedFiles(batch);
-                                            onWatchedFiles.accept(batch);
-                                        }
-                                    }),
-                                    () -> windowFocused.getAsBoolean())
-                            .start());
-        }
-    }
-
-    /** The remote roots being listed (tests). */
+    /** See {@link LspFileWatching#scannedRemoteRoots}. */
     java.util.Set<Path> scannedRemoteRoots() {
-        return java.util.Set.copyOf(remoteScanners.keySet());
+        return watching.scannedRemoteRoots();
     }
 
-    /**
-     * Whether a watcher of this manager's own reports changes to {@code file}, a build file or a grammar: one that
-     * watches the file's own folder, not merely its root, which a large tree is watched only in part of (thirteenth
-     * review CK3).
-     */
+    /** See {@link LspFileWatching#watchesModelFile}. */
     public boolean watchesModelFile(Path file) {
-        return modelFile(file.toAbsolutePath().normalize()) && reportsChangesTo(file);
+        return watching.watchesModelFile(file);
     }
 
-    private static boolean watches(RootWatcher w, Path file) {
-        return file.startsWith(w.root()) && file.getParent() != null && w.watches(file.getParent());
-    }
-
-    /**
-     * Whether a watcher of this manager's own reports changes to {@code file} (its folder is watched): the Project
-     * panel's own event for it would go out twice (twelfth review CL1, Bash review B16).
-     */
+    /** See {@link LspFileWatching#reportsChangesTo}. */
     public boolean reportsChangesTo(Path file) {
-        Path at = file.toAbsolutePath().normalize();
-        return rootWatchers.values().stream().anyMatch(w -> watches(w, at));
+        return watching.reportsChangesTo(file);
     }
 
-    /** The roots watched by this manager itself (tests). */
+    /** See {@link LspFileWatching#watchedRoots}. */
     java.util.Set<Path> watchedRoots() {
-        return java.util.Set.copyOf(rootWatchers.keySet());
+        return watching.watchedRoots();
     }
 
     /** The workspace root of the session serving {@code file}, or null when none does. */
@@ -1193,7 +1008,7 @@ public final class LspManager {
     }
 
     /** Where servers' questions are asked (FX thread); null: unanswered, as before a window installs one. */
-    private volatile @Nullable LspClientUi clientUi;
+    volatile @Nullable LspClientUi clientUi;
 
     /**
      * Installs the window's answers to server questions ({@code window/showMessageRequest}, Metals' input box,
@@ -1209,89 +1024,7 @@ public final class LspManager {
     }
 
     /** {@link #clientUi} reached from a session's reader thread: every call is posted to the FX thread. */
-    private final LspClientUi fxClientUi = new LspClientUi() {
-        @Override
-        public java.util.concurrent.CompletableFuture<String> chooseAction(
-                String serverId, org.eclipse.lsp4j.MessageType type, String message, List<String> actions) {
-            return onFx(ui -> ui.chooseAction(serverId, type, message, actions));
-        }
-
-        @Override
-        public java.util.concurrent.CompletableFuture<String> inputBox(
-                String serverId, @Nullable String prompt, @Nullable String value, @Nullable String placeHolder) {
-            return onFx(ui -> ui.inputBox(serverId, prompt, value, placeHolder));
-        }
-
-        @Override
-        public java.util.concurrent.CompletableFuture<String> quickPick(
-                String serverId, @Nullable String placeHolder, List<PickItem> items) {
-            return onFx(ui -> ui.quickPick(serverId, placeHolder, items));
-        }
-
-        @Override
-        public java.util.concurrent.CompletableFuture<String> chooseImport(
-                String serverId, String simpleName, int line, List<PickItem> items) {
-            return onFx(ui -> ui.chooseImport(serverId, simpleName, line, items));
-        }
-
-        @Override
-        public void openLocation(String serverId, Path file, int line, int column) {
-            Platform.runLater(() -> {
-                LspClientUi ui = clientUi;
-                if (ui != null && !closed) {
-                    ui.openLocation(serverId, file, line, column);
-                }
-            });
-        }
-
-        @Override
-        public java.util.concurrent.CompletableFuture<Object> clientCommand(
-                String serverId, String command, List<Object> arguments) {
-            var answer = new java.util.concurrent.CompletableFuture<Object>();
-            Platform.runLater(() -> {
-                LspClientUi ui = clientUi;
-                if (ui == null || closed) {
-                    answer.complete(null);
-                    return;
-                }
-                try {
-                    ui.clientCommand(serverId, command, arguments)
-                            .whenComplete((v, e) -> answer.complete(e == null ? v : null));
-                } catch (RuntimeException e) {
-                    LOG.log(java.util.logging.Level.FINE, "client command not run: " + command, e);
-                    answer.complete(null);
-                }
-            });
-            return answer;
-        }
-
-        private java.util.concurrent.CompletableFuture<String> onFx(
-                java.util.function.Function<LspClientUi, java.util.concurrent.CompletableFuture<String>> ask) {
-            var answer = new java.util.concurrent.CompletableFuture<String>();
-            Platform.runLater(() -> {
-                LspClientUi ui = clientUi;
-                if (ui == null || closed || answer.isDone()) {
-                    answer.complete(null);
-                    return;
-                }
-                try {
-                    var shown = ask.apply(ui);
-                    shown.whenComplete((v, e) -> answer.complete(e == null ? v : null));
-                    // The session cancels the question when the request that asked it ends: the picker goes too.
-                    // Cancelling only this wrapper left the picker on screen, answering nothing (sixth review DV1).
-                    answer.whenComplete((v, e) -> {
-                        if (answer.isCancelled()) {
-                            shown.cancel(false);
-                        }
-                    });
-                } catch (RuntimeException e) {
-                    LOG.log(java.util.logging.Level.FINE, "server question not shown", e);
-                    answer.complete(null);
-                }
-            });
-            return answer;
-        }
-    };
+    private final LspClientUi fxClientUi = new FxClientUi(this);
 
     /** Whether {@code file}'s server is waiting on the user's answer to an import question (sixth review AS2). */
     public boolean questionOpen(Path file) {
@@ -1434,7 +1167,7 @@ public final class LspManager {
      * Whether {@code file} can be served: its tools run here, or where they run (a remote host, a container,
      * WSL) can run commands now — its server runs there.
      */
-    private static boolean servable(Path file) {
+    static boolean servable(Path file) {
         return com.editora.process.ExecTargets.forPath(file).isAvailable();
     }
 
@@ -1657,15 +1390,15 @@ public final class LspManager {
         String uri = uri(file);
         LanguageServerSession s = sessionByDocUri.remove(uri);
         documentIndents.remove(uri);
-        semanticTokenState.remove(uri); // the next open starts from a full request (#679)
-        semanticRequestGeneration.remove(uri);
-        wholeDocumentTokens.remove(uri);
+        semanticTokens.semanticTokenState.remove(uri); // the next open starts from a full request (#679)
+        semanticTokens.semanticRequestGeneration.remove(uri);
+        semanticTokens.wholeDocumentTokens.remove(uri);
         // Removed, not bumped: generations are unique across documents (see nextDiagnosticGeneration), so a
         // reply still on its way finds no entry — or a later one — and is rejected either way.
-        diagnosticRequestGeneration.remove(uri);
+        diagnostics.diagnosticRequestGeneration.remove(uri);
         latest.cancelAll(uri);
         DocumentUris.forget(file);
-        rawDiagnostics.remove(uri); // open-documents-only retention (#670); keyed by this, our own, URI
+        diagnostics.rawDiagnostics.remove(uri); // open-documents-only retention (#670); keyed by this, our own, URI
         deleteJavaScriptShadow(javaScriptShadows.remove(uri));
         if (s != null) {
             s.didClose(uri, this);
@@ -1820,19 +1553,17 @@ public final class LspManager {
         return file != null && servable(file) && (sessionFor(file) != null || runningSessionFor(file) != null);
     }
 
-    /** True if {@code file}'s server is ready and answers {@code textDocument/references}. */
+    /** See {@link LspNavigationRequests#supportsReferences}. */
     public boolean supportsReferences(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        var caps = s == null ? null : s.capabilities();
-        var provider = caps == null ? null : caps.getReferencesProvider();
-        return provider != null && (provider.isRight() || Boolean.TRUE.equals(provider.getLeft()));
+        return navigation.supportsReferences(file);
     }
 
     /**
      * The session of this window, started and initialised, that would serve {@code file}: its language's server at
      * the deepest root that holds it. Null when there is none; nothing is started.
      */
-    private @Nullable LanguageServerSession runningSessionFor(Path file) {
+    @Nullable
+    LanguageServerSession runningSessionFor(Path file) {
         String name = file.getFileName() == null ? "" : file.getFileName().toString();
         String serverId = LspServerRegistry.serverIdFor(com.editora.text.LanguageRegistry.forFileName(name));
         if (serverId == null) {
@@ -1928,9 +1659,9 @@ public final class LspManager {
         if (session.wasShared()) {
             session.reportEndedForAll(); // the other windows reopen their documents on a new server
         }
-        String workspace = jdtlsWorkspaceBySession.remove(session);
+        String workspace = JdtlsWorkspaces.jdtlsWorkspaceBySession.remove(session);
         CompletableFuture<Void> gone =
-                session.exited().whenComplete((done, error) -> releaseJdtlsWorkspaceName(workspace));
+                session.exited().whenComplete((done, error) -> JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspace));
         if (!gone.isDone()) {
             exiting.put(key, gone);
             gone.whenComplete((done, error) -> exiting.remove(key, gone));
@@ -2051,175 +1782,9 @@ public final class LspManager {
         return null;
     }
 
-    /**
-     * What a response is validated against: the text of every document the session held when the request
-     * was sent (keyed by local path, as opened and canonical), and the wall-clock instant it was sent
-     * ({@code 0} when no request time is known, e.g. an edit handed in without the request that produced it).
-     */
-    record EditBasis(Map<Path, String> documents, long sentAtMillis, WireUris uris) {
-        /** Nothing known, for an edit no session stands behind. One that came from a session uses {@link #unknown}. */
-        static final EditBasis UNKNOWN = unknown(WireUris.LOCAL);
-
-        /** Nothing known about the documents, but the edit's URIs are still {@code uris}'s server's. */
-        static EditBasis unknown(WireUris uris) {
-            return new EditBasis(Map.of(), 0, uris);
-        }
-
-        /** The same documents, re-stamped with the moment a follow-up request is sent. */
-        EditBasis sentNow() {
-            return new EditBasis(documents, System.currentTimeMillis(), uris);
-        }
-    }
-
-    /** A workspace edit ready to apply, or the files that prevented it ({@code mapped} null). */
-    public record EditPlan(WorkspaceEditMapper.@Nullable Mapped mapped, List<Path> blocked) {
-        static final EditPlan REFUSED = new EditPlan(null, List.of());
-    }
-
-    /** Request-time text for every open document in a session, stamped with the current time. */
-    private static EditBasis editBasis(LanguageServerSession session) {
-        return new EditBasis(expectedDocuments(session), System.currentTimeMillis(), session.uris());
-    }
-
-    /** Request-time text for every open document in a session, keyed by local path. */
-    private static Map<Path, String> expectedDocuments(LanguageServerSession session) {
-        Map<Path, String> out = new java.util.LinkedHashMap<>();
-        session.documentSnapshots().forEach((uri, text) -> {
-            Path path = DocumentUris.toPath(uri);
-            if (path != null) {
-                out.put(path, text);
-                out.put(com.editora.config.PathKeys.canonical(path), text);
-            }
-        });
-        return Map.copyOf(out);
-    }
-
-    /** The version {@code didOpen} gives every document ({@link LanguageServerSession}); later ones count up. */
-    static final int FIRST_DOCUMENT_VERSION = 1;
-
-    /** The no-I/O half of planning: the mapped edit with every server-open target's request-time text
-     *  attached, plus the targets the server did not have open (still to be checked against the disk). */
-    record EditDraft(WorkspaceEditMapper.Mapped mapped, List<Path> closedTargets) {}
-
-    /**
-     * Maps {@code edit} and attaches each target's request-time text. A file the same edit creates starts empty,
-     * and a version the server gives it is dropped: the session never opened it, so no version was ever sent
-     * for it to name. lemminx's "Generate … and bind" fixes address their new grammar file with version 0, and
-     * comparing that against a version that cannot exist refused every one of them (XML review C1).
-     */
-    static @Nullable EditDraft draftWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis) {
-        WorkspaceEditMapper.Mapped mapped = WorkspaceEditMapper.map(edit, basis.uris()::toPath);
-        if (mapped == null) {
-            return null;
-        }
-        Map<Path, String> documents = basis == null ? Map.of() : basis.documents();
-        java.util.Set<String> created = mapped.creates().stream()
-                .map(create -> com.editora.config.PathKeys.key(create.file()))
-                .collect(java.util.stream.Collectors.toSet());
-        List<WorkspaceEditMapper.FileEdit> edits =
-                new ArrayList<>(mapped.edits().size());
-        List<Path> closedTargets = new ArrayList<>();
-        for (WorkspaceEditMapper.FileEdit fileEdit : mapped.edits()) {
-            String expected = documents.get(fileEdit.file());
-            if (expected == null) {
-                expected = documents.get(com.editora.config.PathKeys.canonical(fileEdit.file()));
-            }
-            Integer version = fileEdit.version();
-            if (expected == null && created.contains(com.editora.config.PathKeys.key(fileEdit.file()))) {
-                expected = "";
-                version = null;
-            }
-            if (version != null && version < FIRST_DOCUMENT_VERSION) {
-                // A version below the first one this client sends names none of its documents: the server computed
-                // this file's edit from the disk, not from the text it was sent. lemminx-maven's "Extract as new
-                // property in parent" addresses the parent pom so even while it is open — every such edit was
-                // refused, and applied to unsaved text it would land at the wrong lines. It is planned as a closed
-                // file's edit: applied when the file is saved and unchanged on disk since the request (review 2, E5).
-                edits.add(new WorkspaceEditMapper.FileEdit(fileEdit.file(), fileEdit.edits(), null, null, null));
-                closedTargets.add(fileEdit.file());
-                continue;
-            }
-            if (expected != null) {
-                edits.add(new WorkspaceEditMapper.FileEdit(fileEdit.file(), fileEdit.edits(), version, expected, null));
-            } else {
-                edits.add(fileEdit);
-                closedTargets.add(fileEdit.file());
-            }
-        }
-        return new EditDraft(
-                new WorkspaceEditMapper.Mapped(
-                        List.copyOf(edits), mapped.renames(), mapped.creates(), mapped.deletes()),
-                List.copyOf(closedTargets));
-    }
-
-    /**
-     * Completes a draft by establishing a preimage for each target the server did not have open.
-     *
-     * <p>The server computed those edits from the file on disk. Reading the file once the response is in
-     * would bless whatever is there now, so that alone proves nothing; what does is the file's modification
-     * time predating the moment the request was sent — then the content on disk is the content the edit was
-     * computed from. Such a target is marked with that instant, and the applier re-checks it against a clean
-     * buffer. A target that changed since the request, is missing, or belongs to an edit whose request time
-     * is unknown is reported as blocking, and nothing is applied.
-     *
-     * <p>A version the server attached to a document it never had open means nothing to this client (no
-     * version was ever sent for it), so it is dropped rather than compared against a version that cannot
-     * exist. Pure given {@code lastModified} (millis, negative for a missing file).
-     */
-    static EditPlan completeWorkspaceEdit(
-            WorkspaceEditMapper.Mapped mapped,
-            List<Path> closedTargets,
-            EditBasis basis,
-            java.util.function.ToLongFunction<Path> lastModified) {
-        if (closedTargets.isEmpty()) {
-            return new EditPlan(mapped, List.of());
-        }
-        long sentAt = basis == null ? 0 : basis.sentAtMillis();
-        java.util.Set<Path> closed = new java.util.HashSet<>(closedTargets);
-        List<Path> blocked = new ArrayList<>();
-        List<WorkspaceEditMapper.FileEdit> edits =
-                new ArrayList<>(mapped.edits().size());
-        for (WorkspaceEditMapper.FileEdit fileEdit : mapped.edits()) {
-            if (!closed.contains(fileEdit.file())) {
-                edits.add(fileEdit);
-            } else if (WorkspaceEditMapper.unchangedSince(
-                    fileEdit.file(), lastModified.applyAsLong(fileEdit.file()), sentAt)) {
-                edits.add(new WorkspaceEditMapper.FileEdit(fileEdit.file(), fileEdit.edits(), null, null, sentAt));
-            } else {
-                blocked.add(fileEdit.file());
-            }
-        }
-        if (!blocked.isEmpty()) {
-            return new EditPlan(null, List.copyOf(blocked));
-        }
-        return new EditPlan(
-                new WorkspaceEditMapper.Mapped(
-                        List.copyOf(edits), mapped.renames(), mapped.creates(), mapped.deletes()),
-                List.of());
-    }
-
-    /** A file's modification time in millis (by its own machine's clock), or -1 when it cannot be read. */
-    private static long lastModifiedMillis(Path file) {
-        try {
-            return Files.getLastModifiedTime(file).toMillis();
-        } catch (java.io.IOException | RuntimeException e) {
-            return -1;
-        }
-    }
-
-    /** Maps and validates a returned edit in one step. Stats closed targets: call it off the FX thread. */
-    private static EditPlan planWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis) {
-        EditDraft draft = draftWorkspaceEdit(edit, basis);
-        return draft == null
-                ? EditPlan.REFUSED
-                : completeWorkspaceEdit(draft.mapped(), draft.closedTargets(), basis, LspManager::lastModifiedMillis);
-    }
-
-    /** Told (on the FX thread) which files prevented a workspace edit, just before its caller hears failure. */
-    private volatile Consumer<List<Path>> onEditBlocked = files -> {};
-
+    /** See {@link LspCodeActions#setOnEditBlocked}. */
     public void setOnEditBlocked(Consumer<List<Path>> handler) {
-        this.onEditBlocked = handler == null ? files -> {} : handler;
+        codeActions.setOnEditBlocked(handler);
     }
 
     /** The server id currently managing {@code file}, or null if it is not open on any server. Lets the
@@ -2292,7 +1857,8 @@ public final class LspManager {
         // dead for the rest of the session while the status bar still names the server.
         client.onDead = () -> dropSession(key, session);
         client.onRefresh = kind -> Platform.runLater(() -> onRefreshRequested.refreshRequested(kind, session));
-        client.onApplyEdit = (edit, respond) -> onServerApplyEdit(session, edit, respond); // server-side fix (#670)
+        client.onApplyEdit =
+                (edit, respond) -> codeActions.onServerApplyEdit(session, edit, respond); // server-side fix (#670)
         client.ui = fxClientUi; // showMessageRequest and Metals' prompts, answered on the FX thread
         client.focused = () -> windowFocused.getAsBoolean();
         client.onSourceInvalidated = roots -> Platform.runLater(() -> onSourceInvalidated.accept(roots));
@@ -2305,7 +1871,8 @@ public final class LspManager {
      */
     private @Nullable LanguageServerSession join(String key, LanguageServerSession session) {
         LanguageServerSession.Client client = new LanguageServerSession.Client(
-                params -> onPublishDiagnostics(session, params), statusSink(session.serverId(), () -> session));
+                params -> diagnostics.onPublishDiagnostics(session, params),
+                statusSink(session.serverId(), () -> session));
         configureClient(client, key, session);
         if (!session.attach(client)) {
             sharedServers.remove(key, session);
@@ -2317,7 +1884,7 @@ public final class LspManager {
             return prev;
         }
         clientOf.put(session, client);
-        ensureRootWatcher(session.root(), session.serverId());
+        watching.ensureRootWatcher(session.root(), session.serverId());
         if (session.isInitialized()) {
             // the project's own problems first, so its verdict can name them (seventh review CR2)
             session.projectDiagnostics().forEach(client.diagnostics::accept);
@@ -2355,7 +1922,7 @@ public final class LspManager {
             }
         });
         sessionByDocUri.values().removeIf(s -> s == session);
-        pendingApplyExpected.remove(session);
+        codeActions.pendingApplyExpected.remove(session);
         requestErrors.forget(key);
         session.detach(client);
         clientOf.remove(session);
@@ -2403,13 +1970,14 @@ public final class LspManager {
         boolean needsJdtlsWorkspace = LspServerRegistry.JAVA_SERVER_ID.equals(serverId) && claimBase != null;
         String claimedWorkspace = null;
         if (needsJdtlsWorkspace && sessionStarterForTest != null && claimBase != null) {
-            claimedWorkspace = claimUsableJdtlsWorkspaceName(claimBase, LspServerRegistry.workspaceDirName(root));
+            claimedWorkspace =
+                    JdtlsWorkspaces.claimUsableJdtlsWorkspaceName(claimBase, LspServerRegistry.workspaceDirName(root));
         }
         LanguageServerSession[] diagnosticSource = new LanguageServerSession[1];
         LanguageServerSession session = new LanguageServerSession(
                 spec,
                 root,
-                params -> onPublishDiagnostics(diagnosticSource[0], params),
+                params -> diagnostics.onPublishDiagnostics(diagnosticSource[0], params),
                 statusSink(spec.serverId(), () -> diagnosticSource[0]));
         diagnosticSource[0] = session;
         session.setClientThread(Platform::runLater); // a re-sync must not race the FX thread's own document sync
@@ -2427,7 +1995,7 @@ public final class LspManager {
             session.setXmlSettings(xmlSectionFor(serverId, root)); // trust read here, where the trust list is edited
         }
         if (claimedWorkspace != null) {
-            jdtlsWorkspaceBySession.put(session, claimedWorkspace);
+            JdtlsWorkspaces.jdtlsWorkspaceBySession.put(session, claimedWorkspace);
         }
         if (shareable) {
             LanguageServerSession rival = sharedServers.putIfAbsent(key, session);
@@ -2465,7 +2033,7 @@ public final class LspManager {
                 pythonLibraries.update(session);
                 session.setPythonWorkspaceDiagnostics(pythonWholeProject);
             }
-            ensureRootWatcher(root, serverId);
+            watching.ensureRootWatcher(root, serverId);
             sessionStarterForTest.accept(session); // TEST SEAM (see the field): attach a fake, never fork
             return session;
         }
@@ -2490,9 +2058,10 @@ public final class LspManager {
         boolean centralIndex = mavenCentralIndex;
         boolean downloadSources = javaDownloadSources;
         // Trust is read here, on the caller's thread, where the trust list is also edited.
-        Path sdkCeiling = ASTRO_SERVER_ID.equals(serverId) || TypeScriptServer.SERVER_ID.equals(serverId)
-                ? trustedCeiling(root, folderTrust)
-                : null;
+        Path sdkCeiling =
+                ServerInitOptions.ASTRO_SERVER_ID.equals(serverId) || TypeScriptServer.SERVER_ID.equals(serverId)
+                        ? NodeServerPaths.trustedCeiling(root, folderTrust)
+                        : null;
         // lemminx-maven resolves and loads what a pom names (parents, plugins, extensions, its repositories): never
         // on a folder that is not trusted. The coordinator routes such a pom to plain lemminx; this is the backstop.
         boolean pomUntrusted = LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId) && !folderTrust.test(root);
@@ -2512,7 +2081,7 @@ public final class LspManager {
             LspServerRegistry.ServerSpec resolvedSpec = unresolvedSpec;
             String workspaceName = null;
             if (workspaceBaseName != null && workspaceBase != null) {
-                workspaceName = claimUsableJdtlsWorkspaceName(workspaceBase, workspaceBaseName);
+                workspaceName = JdtlsWorkspaces.claimUsableJdtlsWorkspaceName(workspaceBase, workspaceBaseName);
                 if (!workspaceName.equals(workspaceBaseName)) {
                     // Another window (or an earlier server still exiting) holds this project's workspace: this
                     // one imports it again on a server of its own. Said, not hidden (Java review C12).
@@ -2522,12 +2091,12 @@ public final class LspManager {
                         }
                     });
                 }
-                jdtlsWorkspaceBySession.put(session, workspaceName);
+                JdtlsWorkspaces.jdtlsWorkspaceBySession.put(session, workspaceName);
                 // shutdown may race the off-thread claim after the session was put in sessionsByRoot.
                 // Do not leave a claim behind or start a process that its window no longer owns.
                 if (session.isDisposed()) {
-                    jdtlsWorkspaceBySession.remove(session, workspaceName);
-                    releaseJdtlsWorkspaceName(workspaceName);
+                    JdtlsWorkspaces.jdtlsWorkspaceBySession.remove(session, workspaceName);
+                    JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspaceName);
                     return;
                 }
             }
@@ -2538,14 +2107,14 @@ public final class LspManager {
                     resolvedSpec = LspServerRegistry.withDataDir(resolvedSpec, ws.toString());
                 } catch (java.io.IOException e) {
                     // Couldn't create the workspace dir — fall back to the default (better than not starting).
-                    jdtlsWorkspaceBySession.remove(session);
-                    releaseJdtlsWorkspaceName(workspaceName);
+                    JdtlsWorkspaces.jdtlsWorkspaceBySession.remove(session);
+                    JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspaceName);
                 }
             }
             List<JavaRuntimes.Jdk> hostJdks = null;
             java.util.Map<String, String> remoteEnvironment = new java.util.HashMap<>();
             if (remote && LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
-                resolvedSpec = withRemoteJdtlsWorkspace(resolvedSpec, root);
+                resolvedSpec = JdtlsWorkspaces.withRemoteJdtlsWorkspace(resolvedSpec, root);
                 hostJdks = RemoteJavaRuntimes.discover(root);
             }
             List<String> startCommand = remote
@@ -2623,11 +2192,11 @@ public final class LspManager {
                 });
             }
             Path ownTs = ownTypeScriptConfigDir;
-            Path astroTsdk = ASTRO_SERVER_ID.equals(serverId) && !remote
-                    ? astroTypeScriptSdk(
+            Path astroTsdk = ServerInitOptions.ASTRO_SERVER_ID.equals(serverId) && !remote
+                    ? NodeServerPaths.astroTypeScriptSdk(
                             root, sdkCeiling, startCommand, com.editora.install.TypeScriptServerInstall.ownSdk(ownTs))
                     : null;
-            if (ASTRO_SERVER_ID.equals(serverId) && astroTsdk == null) {
+            if (ServerInitOptions.ASTRO_SERVER_ID.equals(serverId) && astroTsdk == null) {
                 // astro-ls cannot initialize without a TypeScript SDK, and the only one on offer belongs
                 // to a folder that is not trusted to choose code that runs. Disposed first, so the drop
                 // reads as deliberate (no crash notice, no auto-restart).
@@ -2638,7 +2207,7 @@ public final class LspManager {
             }
             Path tsserver = null;
             if (TypeScriptServer.SERVER_ID.equals(serverId) && !remote) {
-                TypeScriptServer.Choice choice = typeScriptChoice(
+                TypeScriptServer.Choice choice = NodeServerPaths.typeScriptChoice(
                         root,
                         sdkCeiling,
                         startCommand,
@@ -2666,10 +2235,12 @@ public final class LspManager {
                     Platform.runLater(() -> onFolderTypeScriptIgnored.folderTypeScriptIgnored(root, ignored, running));
                 }
             }
-            if (!remote && (TypeScriptServer.SERVER_ID.equals(serverId) || nodeScriptServer(serverId))) {
+            if (!remote
+                    && (TypeScriptServer.SERVER_ID.equals(serverId) || NodeServerPaths.nodeScriptServer(serverId))) {
                 // the Node.js chosen in Settings runs every npm server's "#!/usr/bin/env node", not only tsserver (A8);
                 // a project's .nvmrc picks only tsserver's, since the others are Editora's tools (HTML review 2 A103)
-                session.setPathPrepend(nodeBinDir(root, nodeSetting, TypeScriptServer.SERVER_ID.equals(serverId)));
+                session.setPathPrepend(
+                        NodeServerPaths.nodeBinDir(root, nodeSetting, TypeScriptServer.SERVER_ID.equals(serverId)));
             }
             Path tsserverPath = tsserver;
             List<JavaRuntimes.Jdk> jdks = hostJdks;
@@ -2689,12 +2260,13 @@ public final class LspManager {
                 session.setPythonWorkspaceDiagnostics(pythonWholeProject);
             }
             if (!remote) {
-                ensureRootWatcher(root, serverId); // file changes nobody else reports reach this server (B7)
+                watching.ensureRootWatcher(root, serverId); // file changes nobody else reports reach this server (B7)
             } else {
-                ensureRemoteScanner(root); // no watcher here can follow it: listed when the window returns (2, B108)
+                watching.ensureRemoteScanner(
+                        root); // no watcher here can follow it: listed when the window returns (2, B108)
             }
             session.configureStart(startCommand, remoteEnvironment, () -> {
-                Object options = startOptions(
+                Object options = ServerInitOptions.startOptions(
                         serverId,
                         remote,
                         root,
@@ -2759,25 +2331,6 @@ public final class LspManager {
     }
 
     /**
-     * A remote jdtls's {@code -data}: {@code jdtls-workspaces/<root hash>} in the host's cache folder, so its
-     * index outlives the session as a local one's does. Not claimed across windows like a local workspace (a
-     * remote project has one window); a folder that cannot be made leaves jdtls its own default.
-     */
-    private static LspServerRegistry.ServerSpec withRemoteJdtlsWorkspace(LspServerRegistry.ServerSpec spec, Path root) {
-        try {
-            com.editora.process.TargetCache cache =
-                    com.editora.process.ExecTargets.forPath(root).cache();
-            if (cache == null) {
-                return spec;
-            }
-            return LspServerRegistry.withDataDir(
-                    spec, cache.makeDirectories("jdtls-workspaces/" + LspServerRegistry.workspaceDirName(root)));
-        } catch (java.io.IOException | RuntimeException e) {
-            return spec;
-        }
-    }
-
-    /**
      * TEST SEAM — when set, a newly created session is handed here <b>instead of being forked</b>, so the
      * routing/lifecycle layer (open→managed→close, idle eviction, crash-vs-dispose, per-server shutdown,
      * diagnostics retention) is reachable without a subprocess. Mirrors
@@ -2833,91 +2386,9 @@ public final class LspManager {
         this.onSessionCrashed = callback == null ? (id, root) -> {} : callback;
     }
 
-    /**
-     * jdtls {@code -data} dirs currently claimed by a live session in <b>any</b> window. {@code LspManager} is
-     * per-window, so two windows opening files under the same Java root would otherwise fork two jdtls against
-     * <b>one</b> Eclipse workspace — whose {@code .metadata/.lock} admits a single process, wedging the second
-     * at {@code initialize} until its 60 s timeout, and every retry the same way (#668). Static so the claim
-     * spans windows; released when the owning session drops. In-process only — a second Editora <i>process</i>
-     * can still collide (rare, pre-existing).
-     */
-    private static final java.util.Set<String> claimedJdtlsWorkspaces = ConcurrentHashMap.newKeySet();
-
-    /**
-     * Session → the jdtls workspace dir name claimed for it, released when it is dropped or shut down. Kept per
-     * process, not per window: a server two windows share (C12) holds its claim until the window that stops it
-     * releases it, whichever window started it.
-     */
-    private static final Map<LanguageServerSession, String> jdtlsWorkspaceBySession = new ConcurrentHashMap<>();
-
-    /** Claims the first free workspace dir name for {@code baseName}: the canonical hash dir when free (so
-     *  the persisted index is reused), else {@code <base>-2}, {@code -3}, … A suffixed dir costs a second
-     *  jdtls index but unwedges the second window. Package-visible for tests. */
-    static String claimJdtlsWorkspaceName(String baseName) {
-        for (int i = 1; i <= 20; i++) {
-            String candidate = workspaceCandidate(baseName, i);
-            if (claimedJdtlsWorkspaces.add(candidate)) {
-                return candidate;
-            }
-        }
-        // 20 live same-root claims cannot happen in practice; hand out a unique last resort anyway.
-        String unique = baseName + "-x" + Long.toHexString(System.nanoTime());
-        claimedJdtlsWorkspaces.add(unique);
-        return unique;
-    }
-
-    /**
-     * Off-thread production claim. Sidecar markers identify caches whose previous session never completed
-     * initialize and could not be safely removed (usually another process still held the Eclipse lock).
-     *
-     * <p>A marker is re-tested here rather than obeyed forever: once the lock is free the rebuildable cache
-     * and its marker are removed and the name is reused. Nothing else ever deleted a marker, so one timed-out
-     * handshake orphaned the canonical index for good and every later start burned another suffix.
-     */
-    static String claimUsableJdtlsWorkspaceName(Path base, String baseName) {
-        for (int i = 1; i <= 20; i++) {
-            String candidate = workspaceCandidate(baseName, i);
-            if (!claimedJdtlsWorkspaces.add(candidate)) {
-                continue;
-            }
-            Path marker = failedWorkspaceMarker(base, candidate);
-            if (!Files.exists(marker)) {
-                return candidate;
-            }
-            if (deleteUnlockedJdtlsWorkspace(base.resolve(candidate))) {
-                try {
-                    Files.deleteIfExists(marker);
-                    return candidate;
-                } catch (java.io.IOException e) {
-                    LOG.log(java.util.logging.Level.FINE, "Could not clear " + marker, e);
-                }
-            }
-            claimedJdtlsWorkspaces.remove(candidate); // still locked by someone else: leave it alone
-        }
-        String unique = baseName + "-x" + Long.toHexString(System.nanoTime());
-        claimedJdtlsWorkspaces.add(unique);
-        return unique;
-    }
-
-    private static Path failedWorkspaceMarker(Path base, @Nullable String name) {
-        return base.resolve("." + name + ".initialize-failed");
-    }
-
-    /** The {@code attempt}-th candidate dir name for {@code baseName} (1 = the canonical name). Pure. */
-    static String workspaceCandidate(String baseName, int attempt) {
-        return attempt <= 1 ? baseName : baseName + "-" + attempt;
-    }
-
-    /** Releases a claim taken by {@link #claimJdtlsWorkspaceName}. Package-visible for tests. */
-    static void releaseJdtlsWorkspaceName(@Nullable String name) {
-        if (name != null) {
-            claimedJdtlsWorkspaces.remove(name);
-        }
-    }
-
     /** Releases the workspace claim held by {@code session}, if any. */
     private void releaseJdtlsWorkspace(LanguageServerSession session) {
-        releaseJdtlsWorkspaceName(jdtlsWorkspaceBySession.remove(session));
+        JdtlsWorkspaces.releaseJdtlsWorkspaceName(JdtlsWorkspaces.jdtlsWorkspaceBySession.remove(session));
     }
 
     /** Removes a session that can no longer serve requests, so the next open starts a fresh one. */
@@ -2928,8 +2399,8 @@ public final class LspManager {
         clientOf.remove(session);
         boolean endedByThisWindow = endedHere.remove(session);
         sessionByDocUri.values().removeIf(s -> s == session);
-        pendingApplyExpected.remove(session);
-        String workspaceName = jdtlsWorkspaceBySession.remove(session);
+        codeActions.pendingApplyExpected.remove(session);
+        String workspaceName = JdtlsWorkspaces.jdtlsWorkspaceBySession.remove(session);
         // Distinguish a crash from a deliberate teardown: dispose() sets its flag BEFORE killing the
         // process, so a session that is dead but never disposed died on its own (process crash, failed/
         // timed-out handshake). Only that case notifies the coordinator to auto-restart — a shutdownServer/
@@ -2941,7 +2412,7 @@ public final class LspManager {
             // again, so say why instead of restarting it into the crash-loop cap (Node review B3).
             endHere(session);
             endedHere.remove(session);
-            releaseJdtlsWorkspaceName(workspaceName);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspaceName);
             StartRefusal refusal = new StartRefusal(StartRefusal.Kind.SERVER_REFUSED, refused);
             Platform.runLater(() -> {
                 if (!closed) {
@@ -2959,7 +2430,7 @@ public final class LspManager {
             if (failedJdtlsInitialization) {
                 repairAfterExit(key, session.exited(), workspaceName);
             } else {
-                releaseJdtlsWorkspaceName(workspaceName);
+                JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspaceName);
             }
             String said = session.initializedOnce() ? null : session.firstStderrLine();
             if (said == null) {
@@ -2969,7 +2440,7 @@ public final class LspManager {
             }
             Platform.runLater(() -> onSessionCrashed.accept(session.serverId(), session.root()));
         } else {
-            releaseJdtlsWorkspaceName(workspaceName);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspaceName);
             if (wasMine && session.wasShared() && !endedByThisWindow) {
                 // Another window restarted the server this one shared, or saw it crash first: reopen quietly.
                 Platform.runLater(() -> {
@@ -2992,8 +2463,8 @@ public final class LspManager {
      */
     void repairAfterExit(String key, CompletableFuture<Void> exited, @Nullable String workspaceName) {
         Runnable repair = () -> {
-            repairFailedJdtlsWorkspace(workspaceName);
-            releaseJdtlsWorkspaceName(workspaceName);
+            JdtlsWorkspaces.repairFailedJdtlsWorkspace(jdtlsWorkspaceBase, workspaceName);
+            JdtlsWorkspaces.releaseJdtlsWorkspaceName(workspaceName);
         };
         if (exited.isDone()) {
             repair.run();
@@ -3009,150 +2480,17 @@ public final class LspManager {
         repaired.whenComplete((done, error) -> exiting.remove(key, repaired));
     }
 
-    /** A jdtls data directory contains only rebuildable Eclipse indexes. After a failed handshake, remove it
-     *  if its OS lock is free; otherwise mark it so this and future Editora processes choose a fresh suffix. */
-    private void repairFailedJdtlsWorkspace(@Nullable String workspaceName) {
-        Path base = jdtlsWorkspaceBase;
-        if (base == null) {
-            return;
-        }
-        Path workspace = base.resolve(workspaceName);
-        Path marker = failedWorkspaceMarker(base, workspaceName);
-        if (deleteUnlockedJdtlsWorkspace(workspace)) {
-            try {
-                Files.deleteIfExists(marker);
-            } catch (java.io.IOException ignored) {
-                // A stale marker only costs a fresh suffix on the next launch.
-            }
-            return;
-        }
-        try {
-            Files.createDirectories(base);
-            Files.writeString(marker, "initialize failed " + java.time.Instant.now());
-        } catch (java.io.IOException e) {
-            LOG.log(java.util.logging.Level.FINE, "Could not mark failed jdtls workspace " + workspace, e);
-        }
-    }
-
-    private static boolean deleteUnlockedJdtlsWorkspace(Path workspace) {
-        if (!Files.exists(workspace)) {
-            return true;
-        }
-        Path lockFile = workspace.resolve(".metadata/.lock");
-        if (Files.exists(lockFile)) {
-            try (var channel = java.nio.channels.FileChannel.open(lockFile, java.nio.file.StandardOpenOption.WRITE);
-                    var lock = channel.tryLock()) {
-                if (lock == null) {
-                    return false;
-                }
-            } catch (java.nio.channels.OverlappingFileLockException | java.io.IOException e) {
-                return false;
-            }
-        }
-        try (var paths = Files.walk(workspace)) {
-            paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
-                try {
-                    Files.deleteIfExists(path);
-                } catch (java.io.IOException e) {
-                    throw new java.io.UncheckedIOException(e);
-                }
-            });
-            return !Files.exists(workspace);
-        } catch (java.io.IOException | java.io.UncheckedIOException e) {
-            return false;
-        }
-    }
-
     /** What {@link #clearJdtlsWorkspaces} did: the caches it deleted, the bytes they held, and the ones it kept
      *  because a server still uses them (or a file in them could not be deleted). */
     public record JdtlsCacheClearResult(int deleted, long bytesFreed, int kept) {}
 
-    /**
-     * Deletes every jdtls workspace under {@code base} that no server is using ({@code lsp.clearJavaIndexCaches}).
-     * Nothing else ever removes one: there is a workspace per Java folder ever opened, each ~40 MB before the
-     * project's own classes (jdtls indexes the JDK into every one), so the folder only grows. jdtls rebuilds a
-     * deleted one on its next start for that project.
-     *
-     * <p>A workspace is kept when a session in this process has claimed it, or another process (a second
-     * Editora) holds its Eclipse lock. The claim is taken here for the duration of the delete, so no session can
-     * start on a half-deleted cache. Failure markers go with their workspace. Blocking I/O: call it off the FX
-     * thread.
-     */
+    /** See {@link JdtlsWorkspaces#clearJdtlsWorkspaces}. */
     public static JdtlsCacheClearResult clearJdtlsWorkspaces(Path base) {
-        if (base == null || !Files.isDirectory(base)) {
-            return new JdtlsCacheClearResult(0, 0, 0);
-        }
-        List<Path> entries;
-        try (var list = Files.list(base)) {
-            entries = list.sorted().toList();
-        } catch (java.io.IOException e) {
-            LOG.log(java.util.logging.Level.FINE, "Could not list " + base, e);
-            return new JdtlsCacheClearResult(0, 0, 0);
-        }
-        int deleted = 0;
-        int kept = 0;
-        long freed = 0;
-        for (Path dir : entries) {
-            if (!Files.isDirectory(dir, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                continue;
-            }
-            String name = dir.getFileName().toString();
-            if (!claimedJdtlsWorkspaces.add(name)) {
-                kept++; // a live session in some window of this process
-                continue;
-            }
-            try {
-                long size = treeSize(dir);
-                if (deleteUnlockedJdtlsWorkspace(dir)) {
-                    deleted++;
-                    freed += size;
-                } else {
-                    kept++;
-                }
-            } finally {
-                claimedJdtlsWorkspaces.remove(name);
-            }
-        }
-        deleteOrphanedFailureMarkers(base);
-        return new JdtlsCacheClearResult(deleted, freed, kept);
+        return JdtlsWorkspaces.clearJdtlsWorkspaces(base);
     }
 
-    /** Deletes the {@code .<name>.initialize-failed} markers whose workspace no longer exists. */
-    private static void deleteOrphanedFailureMarkers(Path base) {
-        String suffix = ".initialize-failed";
-        try (var list = Files.list(base)) {
-            for (Path marker : list.toList()) {
-                String file = marker.getFileName().toString();
-                if (file.startsWith(".") && file.endsWith(suffix) && file.length() > suffix.length() + 1) {
-                    String name = file.substring(1, file.length() - suffix.length());
-                    if (!Files.exists(base.resolve(name), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                        Files.deleteIfExists(marker);
-                    }
-                }
-            }
-        } catch (java.io.IOException e) {
-            LOG.log(java.util.logging.Level.FINE, "Could not clear failure markers in " + base, e);
-        }
-    }
-
-    /** Total size of the regular files under {@code dir}, without following links; 0 when unreadable. */
-    private static long treeSize(Path dir) {
-        try (var paths = Files.walk(dir)) {
-            return paths.filter(p -> Files.isRegularFile(p, java.nio.file.LinkOption.NOFOLLOW_LINKS))
-                    .mapToLong(p -> {
-                        try {
-                            return Files.size(p);
-                        } catch (java.io.IOException e) {
-                            return 0;
-                        }
-                    })
-                    .sum();
-        } catch (java.io.IOException | java.io.UncheckedIOException e) {
-            return 0;
-        }
-    }
-
-    private @Nullable LanguageServerSession sessionFor(@Nullable Path file) {
+    @Nullable
+    LanguageServerSession sessionFor(@Nullable Path file) {
         if (file == null) {
             return null;
         }
@@ -3225,19 +2563,12 @@ public final class LspManager {
 
     // --- Requests (results marshaled to the FX thread) -----------------------------------------
 
+    /** See {@link LspAssists#completion}. */
     public void completion(Path file, int line, int character, Consumer<List<CompletionItem>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            cb.accept(List.of());
-            return;
-        }
-        s.completion(uri(file), new Position(line, character)).whenComplete((result, error) -> {
-            List<CompletionItem> items = error == null ? CompletionMapper.itemsOf(result) : List.of();
-            Platform.runLater(() -> cb.accept(items));
-        });
+        assists.completion(file, line, character, cb);
     }
 
-    /** Maps and ranks off FX; cancellation is wired to the original JSON-RPC future. */
+    /** See {@link LspAssists#completion}. */
     public Runnable completion(
             Path file,
             int line,
@@ -3246,163 +2577,27 @@ public final class LspManager {
             @Nullable String triggerCharacter,
             java.util.function.Function<CompletionItem, @Nullable Runnable> onAccept,
             Consumer<com.editora.completion.CompletionResult> cb) {
-        LanguageServerSession session = sessionFor(file);
-        if (session == null) {
-            cb.accept(com.editora.completion.CompletionResult.EMPTY);
-            return () -> {};
-        }
-        var context =
-                new org.eclipse.lsp4j.CompletionContext(org.eclipse.lsp4j.CompletionTriggerKind.forValue(triggerKind));
-        context.setTriggerCharacter(triggerCharacter);
-        long sent = com.editora.completion.CompletionTrace.now();
-        var request = session.completion(uri(file), new Position(line, character), context);
-        if (sent != 0) request.whenComplete((r, e) -> com.editora.completion.CompletionTrace.elapsed("server", sent));
-        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
-        request.whenCompleteAsync((result, error) -> {
-            if (cancelled.get()) return;
-            long mapping = com.editora.completion.CompletionTrace.now();
-            var items = error == null ? CompletionMapper.itemsOf(result) : List.<CompletionItem>of();
-            if (BashCompletions.SERVER_ID.equals(session.serverId())) {
-                // ranked by the server's own categories, and variables only after `$` (Bash review C11)
-                items = BashCompletions.adjust(
-                        items, BashCompletions.lineBefore(session.documentSnapshot(uri(file)), line, character));
-            }
-            var options = session.capabilities() == null
-                    ? null
-                    : session.capabilities().getCompletionProvider();
-            if (options != null && options.getAllCommitCharacters() != null) {
-                for (var item : items) {
-                    if (item != null && item.getCommitCharacters() == null)
-                        item.setCommitCharacters(options.getAllCommitCharacters());
-                }
-            }
-            var mapped =
-                    com.editora.completion.CompletionEngine.sortLspByRelevance(CompletionMapper.map(items, onAccept));
-            boolean incomplete = error == null
-                    && result != null
-                    && result.isRight()
-                    && result.getRight() != null
-                    && result.getRight().isIncomplete();
-            var batch = new com.editora.completion.CompletionResult(mapped, incomplete);
-            com.editora.completion.CompletionTrace.elapsed("map-and-rank", mapping);
-            Platform.runLater(() -> {
-                if (!cancelled.get() && sessionFor(file) == session) cb.accept(batch);
-            });
-        });
-        return () -> {
-            cancelled.set(true);
-            request.cancel(true);
-        };
+        return assists.completion(file, line, character, triggerKind, triggerCharacter, onAccept, cb);
     }
 
-    /**
-     * Resolves {@code item} (for {@code file}) and delivers its {@code additionalTextEdits} — the extra
-     * edits a completion implies, e.g. a TypeScript auto-import's {@code import} line — to {@code cb} on
-     * the FX thread (empty list if none or unresolved).
-     */
+    /** See {@link LspAssists#resolveCompletion}. */
     public void resolveCompletion(Path file, CompletionItem item, Consumer<List<com.editora.text.LspTextEdit>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || item == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        s.resolveCompletion(item).whenComplete((resolved, error) -> {
-            List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
-            CompletionItem use = error == null && resolved != null ? resolved : item;
-            if (use.getAdditionalTextEdits() != null) {
-                for (org.eclipse.lsp4j.TextEdit e : use.getAdditionalTextEdits()) {
-                    if (e != null && e.getRange() != null) {
-                        edits.add(new com.editora.text.LspTextEdit(
-                                e.getRange().getStart().getLine(),
-                                e.getRange().getStart().getCharacter(),
-                                e.getRange().getEnd().getLine(),
-                                e.getRange().getEnd().getCharacter(),
-                                e.getNewText() == null ? "" : e.getNewText()));
-                    }
-                }
-            }
-            Platform.runLater(() -> cb.accept(edits));
-        });
+        assists.resolveCompletion(file, item, cb);
     }
 
-    /**
-     * Resolves the documentation for a completion item (the opaque {@code token} is the LSP
-     * {@code CompletionItem} from {@link CompletionMapper}) and delivers its markdown/plain-text body to
-     * {@code cb} on the FX thread — {@code null} when there is none. Short-circuits when the item already
-     * carries its documentation (many servers send it eagerly), else issues {@code completionItem/resolve}.
-     * Drives the IntelliJ-style documentation side-popup.
-     */
+    /** See {@link LspAssists#resolveCompletionDoc}. */
     public void resolveCompletionDoc(Path file, Object token, Consumer<String> cb) {
-        if (!(token instanceof CompletionItem item)) {
-            Platform.runLater(() -> cb.accept(null));
-            return;
-        }
-        String existing = documentationOf(item);
-        LanguageServerSession s = sessionFor(file);
-        if (existing != null || s == null) {
-            Platform.runLater(() -> cb.accept(existing));
-            return;
-        }
-        String before = item.getDetail();
-        String fence = TypeScriptServer.SERVER_ID.equals(s.serverId()) ? "typescript" : "";
-        s.resolveCompletion(item).whenComplete((resolved, error) -> {
-            String doc = (error == null && resolved != null)
-                    ? withResolvedDetail(before, resolved.getDetail(), documentationOf(resolved), fence)
-                    : null;
-            Platform.runLater(() -> cb.accept(doc));
-        });
+        assists.resolveCompletionDoc(file, token, cb);
     }
 
-    /**
-     * {@code doc} led by the signature {@code completionItem/resolve} brought, as a fenced code block, when it says
-     * more than the item's own detail ({@code before}): typescript-language-server puts a member's signature, and an
-     * auto-import's "Auto import from './math.js'", only in the resolved {@code detail}, which the doc pane never
-     * showed (JS review B107). Null when there is neither. Pure.
-     */
-    static @Nullable String withResolvedDetail(
-            @Nullable String before, @Nullable String resolved, @Nullable String doc, String fence) {
-        String detail = resolved == null ? "" : resolved.strip();
-        if (detail.isEmpty() || detail.equals(before == null ? "" : before.strip())) {
-            return doc;
-        }
-        String block = "```" + fence + "\n" + detail + "\n```";
-        return doc == null || doc.isBlank() ? block : block + "\n\n" + doc;
-    }
-
-    /**
-     * The item's documentation as Markdown for the doc popup, or null/blank → null. Text marked {@code plaintext}
-     * is escaped first, as a hover's is, so a {@code *} or {@code <tag>} in it shows as written (HTML review D7).
-     */
-    static @Nullable String documentationOf(CompletionItem item) {
-        var doc = item.getDocumentation();
-        if (doc == null) {
-            return null;
-        }
-        var markup = doc.isRight() ? doc.getRight() : null;
-        String s = doc.isLeft() ? doc.getLeft() : (markup == null ? null : markup.getValue());
-        if (s == null || s.isBlank()) {
-            return null;
-        }
-        return markup != null && org.eclipse.lsp4j.MarkupKind.PLAINTEXT.equals(markup.getKind())
-                ? HoverMarkdown.escapePlainText(s)
-                : s;
-    }
-
-    /** True if {@code file}'s server is ready and advertises whole-document formatting. */
+    /** See {@link LspFormatting#supportsFormatting}. */
     public boolean supportsFormatting(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && formattingProvider(s.capabilities());
+        return formatting.supportsFormatting(file);
     }
 
-    /** True if {@code file}'s server is ready and advertises signature help (#674). */
+    /** See {@link LspAssists#supportsSignatureHelp}. */
     public boolean supportsSignatureHelp(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && signatureHelpProvider(s.capabilities());
-    }
-
-    /** Pure: whether a server's capabilities include {@code signatureHelpProvider} (null-safe). */
-    static boolean signatureHelpProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        return caps != null && caps.getSignatureHelpProvider() != null;
+        return assists.supportsSignatureHelp(file);
     }
 
     /**
@@ -3432,39 +2627,12 @@ public final class LspManager {
         return commands != null && commands.contains(JAVA_DEBUG_COMMAND);
     }
 
-    /** The signature-help trigger characters {@code file}'s server advertised (usually {@code (} and
-     *  {@code ,}), retrigger characters included; empty when not ready / none. */
+    /** See {@link LspAssists#signatureTriggerCharacters}. */
     public java.util.Set<Character> signatureTriggerCharacters(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s == null ? java.util.Set.of() : signatureTriggerCharsOf(s.capabilities());
+        return assists.signatureTriggerCharacters(file);
     }
 
-    /** Pure extraction of signature-help trigger + retrigger characters (null-safe). */
-    static java.util.Set<Character> signatureTriggerCharsOf(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null || caps.getSignatureHelpProvider() == null) {
-            return java.util.Set.of();
-        }
-        java.util.Set<Character> out = new java.util.HashSet<>();
-        addFirstChars(out, caps.getSignatureHelpProvider().getTriggerCharacters());
-        addFirstChars(out, caps.getSignatureHelpProvider().getRetriggerCharacters());
-        return out;
-    }
-
-    private static void addFirstChars(java.util.Set<Character> out, List<String> tokens) {
-        if (tokens != null) {
-            for (String t : tokens) {
-                if (t != null && !t.isEmpty()) {
-                    out.add(t.charAt(0));
-                }
-            }
-        }
-    }
-
-    /**
-     * Requests signature help at a 0-based position; the raw lsp4j result (or null) arrives on the FX thread
-     * — resolved for display via {@link SignatureFormat#resolve}. {@code triggerChar} is the character that
-     * fired it ({@code null} = the explicit command), {@code retrigger} that a popup is already open (#725).
-     */
+    /** See {@link LspAssists#signatureHelp}. */
     public void signatureHelp(
             Path file,
             int line,
@@ -3472,9 +2640,10 @@ public final class LspManager {
             String triggerChar,
             boolean retrigger,
             Consumer<org.eclipse.lsp4j.SignatureHelp> cb) {
-        signatureHelp(file, line, character, triggerChar, retrigger, null, cb);
+        assists.signatureHelp(file, line, character, triggerChar, retrigger, cb);
     }
 
+    /** See {@link LspAssists#signatureHelp}. */
     public void signatureHelp(
             Path file,
             int line,
@@ -3483,73 +2652,18 @@ public final class LspManager {
             boolean retrigger,
             org.eclipse.lsp4j.@Nullable SignatureHelp activeHelp,
             Consumer<org.eclipse.lsp4j.SignatureHelp> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(null));
-            return;
-        }
-        String uri = uri(file);
-        // Never joined (the context differs call to call), but a newer request still cancels the older one:
-        // the popup only ever takes the latest answer.
-        latest.issue(
-                uri,
-                "signatureHelp",
-                new Object(),
-                true,
-                () -> s.signatureHelp(uri, new Position(line, character), triggerChar, retrigger, activeHelp),
-                (r, e) -> Platform.runLater(() -> cb.accept(e == null ? r : null)));
+        assists.signatureHelp(file, line, character, triggerChar, retrigger, activeHelp, cb);
     }
 
-    /** True if {@code file}'s server is ready and advertises document highlight (occurrences — #675). */
+    /** See {@link LspAssists#supportsDocumentHighlight}. */
     public boolean supportsDocumentHighlight(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && documentHighlightProvider(s.capabilities());
+        return assists.supportsDocumentHighlight(file);
     }
 
-    /** Pure: whether a server's capabilities include {@code documentHighlightProvider} (null-safe). */
-    static boolean documentHighlightProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return false;
-        }
-        var p = caps.getDocumentHighlightProvider();
-        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
-    }
-
-    /** Occurrences of the symbol at a 0-based position, mapped to neutral {@link OccurrenceSpan}s
-     *  (Write kind flagged) and delivered on the FX thread — empty when unavailable (#675). */
+    /** See {@link LspAssists#documentHighlights}. */
     public void documentHighlights(
             Path file, int line, int character, Consumer<List<com.editora.text.OccurrenceSpan>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        String uri = uri(file);
-        Position at = new Position(line, character);
-        latest.issue(
-                uri,
-                "documentHighlight",
-                stamp(s, uri, at),
-                true,
-                () -> s.documentHighlight(uri, at),
-                (result, error) -> {
-                    List<com.editora.text.OccurrenceSpan> spans = new ArrayList<>();
-                    if (error == null && result != null) {
-                        for (var h : result) {
-                            if (h == null || h.getRange() == null) {
-                                continue;
-                            }
-                            var r = h.getRange();
-                            spans.add(new com.editora.text.OccurrenceSpan(
-                                    r.getStart().getLine(),
-                                    r.getStart().getCharacter(),
-                                    r.getEnd().getLine(),
-                                    r.getEnd().getCharacter(),
-                                    h.getKind() == org.eclipse.lsp4j.DocumentHighlightKind.Write));
-                        }
-                    }
-                    Platform.runLater(() -> cb.accept(spans));
-                });
+        assists.documentHighlights(file, line, character, cb);
     }
 
     // --- Watched files (#677) ------------------------------------------------------------------
@@ -3580,110 +2694,14 @@ public final class LspManager {
         };
     }
 
-    /**
-     * Forwards external file changes to every live session whose root contains them
-     * ({@code workspace/didChangeWatchedFiles}) — how a git checkout / CLI build / external editor reaches
-     * the servers' project models instead of leaving them stale until restart (#677). Callers coalesce
-     * bursts (a branch switch touches hundreds of files); one notification per session per batch.
-     */
+    /** See {@link LspFileWatching#notifyWatchedFiles}. */
     public void notifyWatchedFiles(List<WatchedFile> changes) {
-        if (!enabled || changes == null || changes.isEmpty()) {
-            return;
-        }
-        for (LanguageServerSession s : sessionsByRoot.values()) {
-            List<org.eclipse.lsp4j.FileEvent> events = eventsUnderRoot(changes, s.root(), s.uris());
-            if (!events.isEmpty()) {
-                s.didChangeWatchedFiles(events);
-                bashReanalysis.changed(s, changes); // the Bash server ignores the notification (Bash review B7)
-                openGrammarsChanged(s, changes);
-            }
-        }
-        changes.stream().map(WatchedFile::file).filter(f -> f != null).forEach(this::projectStyleChanged);
-        if (PythonLibraryWatchers.touchesEnvironment(changes)) {
-            pythonEnvironmentChanged(); // python -m venv .venv after the server started (review 2, B103)
-        }
+        watching.notifyWatchedFiles(changes);
     }
 
-    /**
-     * lemminx revalidates the documents that use a grammar when that grammar is saved, and treats a watched-file
-     * change as a save only for a file the client does not hold open (XML/pom review 4, B31): a schema open in a tab
-     * and rewritten on disk by a pull or a build left every document using it with its old errors. Such a change is
-     * told as the save it is on disk; the tab's own text is the editor's to reload.
-     */
-    private static void openGrammarsChanged(LanguageServerSession s, List<WatchedFile> changes) {
-        if (!XmlServerSettings.isLemminx(s.serverId())) {
-            return;
-        }
-        for (WatchedFile c : openGrammarChanges(changes, s::isOpen)) {
-            s.didSave(uri(c.file()), null);
-        }
-    }
-
-    /** Pure: the changes to a grammar file ({@link #xmlGrammarFile}) still on disk whose document {@code open} holds. */
-    static List<WatchedFile> openGrammarChanges(List<WatchedFile> changes, java.util.function.Predicate<String> open) {
-        return changes.stream()
-                .filter(c -> c != null && c.file() != null && c.kind() != WatchedKind.DELETED)
-                .filter(c -> xmlGrammarFile(c.file()) && open.test(uri(c.file())))
-                .toList();
-    }
-
-    /**
-     * {@code file} changed (saved here, or seen by a watcher): when it is one the project's Java style is read
-     * from, the Java servers whose project holds it get the style again (re-review AN5).
-     */
+    /** See {@link LspFileWatching#projectStyleChanged}. */
     public void projectStyleChanged(Path file) {
-        if (file == null || !JavaProjectSettings.isStyleSource(file)) {
-            return;
-        }
-        Path at = file.toAbsolutePath().normalize();
-        refreshStyleUnder(at);
-        String name = at.getFileName() == null ? "" : at.getFileName().toString();
-        if (name.equals(".settings") || name.equals("config")) {
-            // the folder came, or went, with its profile: read again once the files in it have landed too (DN4)
-            CompletableFuture.delayedExecutor(1, java.util.concurrent.TimeUnit.SECONDS)
-                    .execute(() -> Platform.runLater(() -> {
-                        if (!closed) {
-                            refreshStyleUnder(at);
-                        }
-                    }));
-        }
-    }
-
-    private void refreshStyleUnder(Path at) {
-        for (Map.Entry<String, LanguageServerSession> e : sessionsByRoot.entrySet()) {
-            LanguageServerSession s = e.getValue();
-            if (e.getKey().startsWith(sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID))
-                    && at.startsWith(s.root().toAbsolutePath().normalize())) {
-                s.refreshProjectSettings();
-            }
-        }
-    }
-
-    /** Pure: the {@code FileEvent}s for the changes under {@code root} (path-component containment). */
-    static List<org.eclipse.lsp4j.FileEvent> eventsUnderRoot(List<WatchedFile> changes, Path root) {
-        return eventsUnderRoot(changes, root, WireUris.LOCAL);
-    }
-
-    /** As above, with each file named the way {@code uris}'s server names it. */
-    static List<org.eclipse.lsp4j.FileEvent> eventsUnderRoot(List<WatchedFile> changes, Path root, WireUris uris) {
-        Path rootNorm = root.toAbsolutePath().normalize();
-        List<org.eclipse.lsp4j.FileEvent> out = new ArrayList<>();
-        for (WatchedFile c : changes) {
-            if (c == null || c.file() == null) {
-                continue;
-            }
-            Path p = c.file().toAbsolutePath().normalize();
-            if (!p.startsWith(rootNorm)) {
-                continue;
-            }
-            var type = switch (c.kind()) {
-                case CREATED -> org.eclipse.lsp4j.FileChangeType.Created;
-                case CHANGED -> org.eclipse.lsp4j.FileChangeType.Changed;
-                case DELETED -> org.eclipse.lsp4j.FileChangeType.Deleted;
-            };
-            out.add(new org.eclipse.lsp4j.FileEvent(uris.toWire(DocumentUris.of(p)), type));
-        }
-        return out;
+        watching.projectStyleChanged(file);
     }
 
     /**
@@ -3725,123 +2743,22 @@ public final class LspManager {
     /** One code lens: where its declaration's name starts, what it says, and what it counts. */
     public record CodeLensSpan(int line, int col, String title, CodeLensKind kind) {}
 
-    /** True if {@code file}'s server is ready and advertises code lenses. */
+    /** See {@link LspInlineHints#supportsCodeLens}. */
     public boolean supportsCodeLens(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && s.capabilities() != null && s.capabilities().getCodeLensProvider() != null;
+        return inlineHints.supportsCodeLens(file);
     }
 
-    /**
-     * Pure: what a lens counts, read off its command id ({@code java.show.references},
-     * {@code java.show.implementations}, {@code editor.action.showReferences}, …) — or null for a lens that
-     * does something else (a "Run | Debug" lens), which is not shown: its command is the server's own
-     * editor integration and nothing here could carry it out.
-     */
-    static @Nullable CodeLensKind codeLensKind(org.eclipse.lsp4j.Command command) {
-        String id = command == null || command.getCommand() == null
-                ? ""
-                : command.getCommand().toLowerCase(java.util.Locale.ROOT);
-        if (id.contains("implementation")) {
-            return CodeLensKind.IMPLEMENTATIONS;
-        }
-        return id.contains("reference") ? CodeLensKind.REFERENCES : null;
-    }
-
-    /** Pure: the lenses worth showing, as neutral spans in line order. */
-    static List<CodeLensSpan> codeLensSpans(List<org.eclipse.lsp4j.CodeLens> lenses) {
-        List<CodeLensSpan> out = new ArrayList<>();
-        if (lenses == null) {
-            return out;
-        }
-        for (org.eclipse.lsp4j.CodeLens lens : lenses) {
-            if (lens == null || lens.getRange() == null || lens.getCommand() == null) {
-                continue;
-            }
-            CodeLensKind kind = codeLensKind(lens.getCommand());
-            String title = lens.getCommand().getTitle();
-            if (kind == CodeLensKind.IMPLEMENTATIONS
-                    && title != null
-                    && title.strip().startsWith("0 ")) {
-                continue; // jdtls answers for every type and method; "0 implementations" on each is noise
-            }
-            if (kind != null && title != null && !title.isBlank()) {
-                Position start = lens.getRange().getStart();
-                out.add(new CodeLensSpan(start.getLine(), start.getCharacter(), title.strip(), kind));
-            }
-        }
-        out.sort(java.util.Comparator.comparingInt(CodeLensSpan::line).thenComparing(CodeLensSpan::kind));
-        return out;
-    }
-
-    /**
-     * Requests the code lenses on lines {@code [startLine..endLine]}, delivered as neutral spans on the FX
-     * thread — empty when unsupported or failed.
-     */
+    /** See {@link LspInlineHints#requestCodeLens}. */
     public void requestCodeLens(Path file, int startLine, int endLine, Consumer<List<CodeLensSpan>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        String uri = uri(file);
-        latest.issue(
-                uri,
-                "codeLens",
-                stamp(s, uri, List.of(startLine, endLine)),
-                true,
-                () -> s.codeLens(uri, startLine, endLine),
-                (lenses, error) -> {
-                    List<CodeLensSpan> out = error == null ? codeLensSpans(lenses) : List.of();
-                    Platform.runLater(() -> cb.accept(out));
-                });
+        inlineHints.requestCodeLens(file, startLine, endLine, cb);
     }
 
-    /** True if {@code file}'s server is ready and advertises inlay hints (#681). */
+    /** See {@link LspInlineHints#supportsInlayHints}. */
     public boolean supportsInlayHints(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && inlayHintProvider(s.capabilities());
+        return inlineHints.supportsInlayHints(file);
     }
 
-    /** Pure: whether a server's capabilities include {@code inlayHintProvider} (null-safe, either form). */
-    static boolean inlayHintProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return false;
-        }
-        var p = caps.getInlayHintProvider();
-        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
-    }
-
-    /**
-     * The LSP range covering lines {@code [startLine..endLine]} <b>inclusive</b> of a document with
-     * {@code lineCount} lines whose last line is {@code lastLineLength} characters long. Pure; unit-tested.
-     *
-     * <p>Covering line {@code endLine} means an exclusive end of {@code Position(endLine + 1, 0)} — but for
-     * the <em>last</em> line that names a line the document does not have, and <b>jdtls answers an
-     * out-of-range range with an empty list rather than an error</b>. That is the whole of #715: inlay hints
-     * silently never appeared because the padded window always reached past the end of the file, and the
-     * empty response is indistinguishable from "this file has no hints". Measured on jdtls 1.60 with a
-     * 27-line file (last line index 26): end {@code Position(27,0)} → 0 hints, {@code Position(26,0)} → 6.
-     * Unchanged in 1.62 ({@code JdtlsUpgradeProbeTest}: 0 hints past the end, 5 clamped).
-     *
-     * <p>So when {@code endLine + 1} would leave the document, the end becomes the true document end —
-     * {@code Position(lastLine, lastLineLength)} — which still covers the last line in full.
-     */
-    static org.eclipse.lsp4j.Range inclusiveLineRange(int startLine, int endLine, int lineCount, int lastLineLength) {
-        int lastLine = Math.max(0, lineCount - 1);
-        int start = Math.min(Math.max(0, startLine), lastLine);
-        int endExclusive = Math.max(start, Math.max(0, endLine)) + 1;
-        Position end = endExclusive <= lastLine
-                ? new Position(endExclusive, 0)
-                : new Position(lastLine, Math.max(0, lastLineLength));
-        return new org.eclipse.lsp4j.Range(new Position(start, 0), end);
-    }
-
-    /**
-     * Requests inlay hints over the line window {@code [startLine..endLine]} (inclusive), delivered as
-     * neutral spans on the FX thread — empty when unsupported/failed (#681). {@code lineCount} and
-     * {@code lastLineLength} describe the document so the range can be clamped to it: a range reaching past
-     * the last line makes jdtls return nothing at all (see {@link #inclusiveLineRange} — #715).
-     */
+    /** See {@link LspInlineHints#requestInlayHints}. */
     public void requestInlayHints(
             Path file,
             int startLine,
@@ -3849,74 +2766,7 @@ public final class LspManager {
             int lineCount,
             int lastLineLength,
             Consumer<List<InlayHintSpan>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        var range = inclusiveLineRange(startLine, endLine, lineCount, lastLineLength);
-        String uri = uri(file);
-        latest.issue(uri, "inlayHint", stamp(s, uri, range), true, () -> s.inlayHint(uri, range), (hints, error) -> {
-            List<InlayHintSpan> out = new ArrayList<>();
-            if (error == null && hints != null) {
-                for (var h : hints) {
-                    if (h == null || h.getPosition() == null) {
-                        continue;
-                    }
-                    String label = inlayLabel(h);
-                    if (!label.isBlank()) {
-                        out.add(new InlayHintSpan(
-                                h.getPosition().getLine(),
-                                h.getPosition().getCharacter(),
-                                label,
-                                isParameterHint(h.getKind(), label),
-                                Boolean.TRUE.equals(h.getPaddingLeft()),
-                                Boolean.TRUE.equals(h.getPaddingRight())));
-                    }
-                }
-            }
-            Platform.runLater(() -> cb.accept(out));
-        });
-    }
-
-    /**
-     * Pure: whether a hint names an argument (parameter) rather than an inferred type, used to decide
-     * what filtering may touch (#823).
-     *
-     * <p>{@code kind} is <b>optional</b> in the protocol, and a server that omits it would otherwise have
-     * every hint treated as a parameter — so an unkinded {@code : String} would become filterable. The
-     * fallback reads the label instead: a parameter name ends with {@code :} or {@code =} ({@code count:},
-     * {@code ...args:}); anything else is a type — jdtls, which sends no kind, labels a {@code var} with
-     * {@code : int} and a lambda parameter with a bare {@code String}.
-     */
-    static boolean isParameterHint(org.eclipse.lsp4j.InlayHintKind kind, String label) {
-        if (kind == org.eclipse.lsp4j.InlayHintKind.Parameter) {
-            return true;
-        }
-        if (kind == org.eclipse.lsp4j.InlayHintKind.Type) {
-            return false;
-        }
-        String l = label == null ? "" : label.strip();
-        return !l.startsWith(":") && (l.endsWith(":") || l.endsWith("="));
-    }
-
-    /** Pure: an inlay hint's display label — the plain string, or its label parts joined. */
-    static String inlayLabel(org.eclipse.lsp4j.InlayHint h) {
-        if (h.getLabel() == null) {
-            return "";
-        }
-        if (h.getLabel().isLeft()) {
-            return h.getLabel().getLeft() == null ? "" : h.getLabel().getLeft().strip();
-        }
-        StringBuilder sb = new StringBuilder();
-        if (h.getLabel().getRight() != null) {
-            for (var part : h.getLabel().getRight()) {
-                if (part != null && part.getValue() != null) {
-                    sb.append(part.getValue());
-                }
-            }
-        }
-        return sb.toString().strip();
+        inlineHints.requestInlayHints(file, startLine, endLine, lineCount, lastLineLength, cb);
     }
 
     // --- Call / type hierarchy (#682) ----------------------------------------------------------
@@ -3952,188 +2802,60 @@ public final class LspManager {
         }
     }
 
-    /** True if {@code file}'s server is ready and advertises call hierarchy (#682). */
+    /** See {@link LspNavigationRequests#supportsCallHierarchy}. */
     public boolean supportsCallHierarchy(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && callHierarchyProvider(s.capabilities());
+        return navigation.supportsCallHierarchy(file);
     }
 
-    /** True if {@code file}'s server is ready and advertises type hierarchy (#682). */
+    /** See {@link LspNavigationRequests#supportsTypeHierarchy}. */
     public boolean supportsTypeHierarchy(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && typeHierarchyProvider(s.capabilities());
+        return navigation.supportsTypeHierarchy(file);
     }
 
-    /** Pure: whether a server's capabilities include {@code callHierarchyProvider} (null-safe). */
-    static boolean callHierarchyProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return false;
-        }
-        var p = caps.getCallHierarchyProvider();
-        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
-    }
-
-    /** Pure: whether a server's capabilities include {@code typeHierarchyProvider} (null-safe). */
-    static boolean typeHierarchyProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return false;
-        }
-        var p = caps.getTypeHierarchyProvider();
-        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
-    }
-
-    /** The call-hierarchy anchor item(s) at a 0-based position, delivered on the FX thread (#682). */
+    /** See {@link LspNavigationRequests#prepareCallHierarchy}. */
     public void prepareCallHierarchy(Path file, int line, int character, Consumer<List<HierarchyNode>> cb) {
-        prepareCallHierarchyAt(file, null, line, character, cb);
+        navigation.prepareCallHierarchy(file, line, character, cb);
     }
 
-    /**
-     * As above; {@code onError} (when given) hears a failed or timed-out request instead of {@code cb} hearing an
-     * empty list, which read as "No callers found" (Map review 4, C6; as {@link #references} has since Java B13).
-     */
+    /** See {@link LspNavigationRequests#prepareCallHierarchy}. */
     public void prepareCallHierarchy(
             Path file, int line, int character, Consumer<List<HierarchyNode>> cb, @Nullable Consumer<String> onError) {
-        prepareCallHierarchyAt(file, null, line, character, cb, onError);
+        navigation.prepareCallHierarchy(file, line, character, cb, onError);
     }
 
-    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    /** See {@link LspNavigationRequests#prepareCallHierarchyAt}. */
     public void prepareCallHierarchyAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<HierarchyNode>> cb) {
-        prepareCallHierarchyAt(anchor, documentUri, line, character, cb, null);
+        navigation.prepareCallHierarchyAt(anchor, documentUri, line, character, cb);
     }
 
-    private void prepareCallHierarchyAt(
-            Path anchor,
-            @Nullable String documentUri,
-            int line,
-            int character,
-            Consumer<List<HierarchyNode>> cb,
-            @Nullable Consumer<String> onError) {
-        LanguageServerSession s = sessionFor(anchor);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        s.prepareCallHierarchy(documentUri != null ? documentUri : uri(anchor), new Position(line, character))
-                .whenComplete((items, e) -> {
-                    if (e != null && onError != null) {
-                        String why = failureReason(e);
-                        Platform.runLater(() -> onError.accept(why));
-                        return;
-                    }
-                    List<HierarchyNode> out = new ArrayList<>();
-                    if (e == null && items != null) {
-                        for (var i : items) {
-                            if (i != null) {
-                                out.add(callNode(i, s.uris()));
-                            }
-                        }
-                    }
-                    Platform.runLater(() -> cb.accept(out));
-                });
-    }
-
-    /** The callers ({@code incoming=true}) or callees of a call-hierarchy node's {@code raw} item. */
+    /** See {@link LspNavigationRequests#callHierarchyChildren}. */
     public void callHierarchyChildren(Path anchor, Object raw, boolean incoming, Consumer<List<HierarchyNode>> cb) {
-        callHierarchyChildren(anchor, raw, incoming, cb, null);
+        navigation.callHierarchyChildren(anchor, raw, incoming, cb);
     }
 
-    /** As above; {@code onError} (when given) hears a failed or timed-out request (Map review 4, C6). */
+    /** See {@link LspNavigationRequests#callHierarchyChildren}. */
     public void callHierarchyChildren(
             Path anchor,
             Object raw,
             boolean incoming,
             Consumer<List<HierarchyNode>> cb,
             @Nullable Consumer<String> onError) {
-        LanguageServerSession s = sessionFor(anchor);
-        if (s == null || !(raw instanceof org.eclipse.lsp4j.CallHierarchyItem item)) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        if (incoming) {
-            s.incomingCalls(item).whenComplete((calls, e) -> {
-                if (e != null && onError != null) {
-                    String why = failureReason(e);
-                    Platform.runLater(() -> onError.accept(why));
-                    return;
-                }
-                List<HierarchyNode> out = new ArrayList<>();
-                if (e == null && calls != null) {
-                    for (var c : calls) {
-                        if (c != null && c.getFrom() != null) {
-                            out.add(callNode(c.getFrom(), s.uris()).withCalls(callSites(c.getFromRanges())));
-                        }
-                    }
-                }
-                List<HierarchyNode> merged = mergeCalls(out);
-                Platform.runLater(() -> cb.accept(merged));
-            });
-        } else {
-            s.outgoingCalls(item).whenComplete((calls, e) -> {
-                List<HierarchyNode> out = new ArrayList<>();
-                if (e == null && calls != null) {
-                    for (var c : calls) {
-                        if (c != null && c.getTo() != null) {
-                            out.add(callNode(c.getTo(), s.uris()).withCalls(callSites(c.getFromRanges())));
-                        }
-                    }
-                }
-                List<HierarchyNode> merged = mergeCalls(out);
-                Platform.runLater(() -> cb.accept(merged));
-            });
-        }
+        navigation.callHierarchyChildren(anchor, raw, incoming, cb, onError);
     }
 
-    private static int callSites(@Nullable List<?> ranges) {
-        return ranges == null || ranges.isEmpty() ? 1 : ranges.size();
-    }
-
-    /**
-     * One row per called (or calling) member, its call sites added up, in first-seen order. jdtls lists a member
-     * once per call, so {@code append(String)} called twice was two rows that went to the same place. Pure.
-     */
-    static List<HierarchyNode> mergeCalls(List<HierarchyNode> nodes) {
-        Map<String, HierarchyNode> byTarget = new java.util.LinkedHashMap<>();
-        for (HierarchyNode n : nodes) {
-            String key = n.name() + "\u0000" + n.detail() + "\u0000" + n.file() + "\u0000" + n.libraryUri() + "\u0000"
-                    + n.line() + ":" + n.col();
-            HierarchyNode seen = byTarget.get(key);
-            byTarget.put(key, seen == null ? n : seen.withCalls(seen.calls() + n.calls()));
-        }
-        return List.copyOf(byTarget.values());
-    }
-
-    /** The type-hierarchy anchor item(s) at a 0-based position, delivered on the FX thread (#682). */
+    /** See {@link LspNavigationRequests#prepareTypeHierarchy}. */
     public void prepareTypeHierarchy(Path file, int line, int character, Consumer<List<HierarchyNode>> cb) {
-        prepareTypeHierarchyAt(file, null, line, character, cb);
+        navigation.prepareTypeHierarchy(file, line, character, cb);
     }
 
-    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    /** See {@link LspNavigationRequests#prepareTypeHierarchyAt}. */
     public void prepareTypeHierarchyAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<HierarchyNode>> cb) {
-        LanguageServerSession s = sessionFor(anchor);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        s.prepareTypeHierarchy(documentUri != null ? documentUri : uri(anchor), new Position(line, character))
-                .whenComplete((items, e) -> {
-                    List<HierarchyNode> out = new ArrayList<>();
-                    if (e == null && items != null) {
-                        for (var i : items) {
-                            if (i != null) {
-                                out.add(typeNode(i, s.uris()));
-                            }
-                        }
-                    }
-                    Platform.runLater(() -> cb.accept(out));
-                });
+        navigation.prepareTypeHierarchyAt(anchor, documentUri, line, character, cb);
     }
 
-    /**
-     * As above at a position in {@code file} (another file of {@code anchor}'s session), or in {@code libraryUri} (a
-     * class file's), as {@link #memberSpans} reads one.
-     */
+    /** See {@link LspNavigationRequests#prepareTypeHierarchyAt}. */
     public void prepareTypeHierarchyAt(
             Path anchor,
             @Nullable Path file,
@@ -4141,85 +2863,22 @@ public final class LspManager {
             int line,
             int character,
             Consumer<List<HierarchyNode>> cb) {
-        prepareTypeHierarchyAt(
-                anchor, libraryUri != null ? libraryUri : file != null ? uri(file) : null, line, character, cb);
+        navigation.prepareTypeHierarchyAt(anchor, file, libraryUri, line, character, cb);
     }
 
-    /** The supertypes ({@code supertypes=true}) or subtypes of a type-hierarchy node's {@code raw} item. */
+    /** See {@link LspNavigationRequests#typeHierarchyChildren}. */
     public void typeHierarchyChildren(Path anchor, Object raw, boolean supertypes, Consumer<List<HierarchyNode>> cb) {
-        LanguageServerSession s = sessionFor(anchor);
-        if (s == null || !(raw instanceof org.eclipse.lsp4j.TypeHierarchyItem item)) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        var fut = supertypes ? s.supertypes(item) : s.subtypes(item);
-        fut.whenComplete((items, e) -> {
-            List<HierarchyNode> out = new ArrayList<>();
-            if (e == null && items != null) {
-                for (var i : items) {
-                    if (i != null) {
-                        out.add(typeNode(i, s.uris()));
-                    }
-                }
-            }
-            Platform.runLater(() -> cb.accept(out));
-        });
+        navigation.typeHierarchyChildren(anchor, raw, supertypes, cb);
     }
 
-    private static HierarchyNode callNode(org.eclipse.lsp4j.CallHierarchyItem i, WireUris uris) {
-        var pos = i.getSelectionRange() != null
-                ? i.getSelectionRange().getStart()
-                : i.getRange() != null ? i.getRange().getStart() : new Position(0, 0);
-        return new HierarchyNode(
-                i.getName() == null ? "" : i.getName(),
-                i.getDetail() == null ? "" : i.getDetail(),
-                i.getKind() == null ? "" : i.getKind().toString().toLowerCase(java.util.Locale.ROOT),
-                uris.toPath(i.getUri()),
-                pos.getLine(),
-                pos.getCharacter(),
-                i);
-    }
-
-    private static HierarchyNode typeNode(org.eclipse.lsp4j.TypeHierarchyItem i, WireUris uris) {
-        var pos = i.getSelectionRange() != null
-                ? i.getSelectionRange().getStart()
-                : i.getRange() != null ? i.getRange().getStart() : new Position(0, 0);
-        return new HierarchyNode(
-                i.getName() == null ? "" : i.getName(),
-                i.getDetail() == null ? "" : i.getDetail(),
-                i.getKind() == null ? "" : i.getKind().toString().toLowerCase(java.util.Locale.ROOT),
-                uris.toPath(i.getUri()),
-                pos.getLine(),
-                pos.getCharacter(),
-                i);
-    }
-
-    /** True if {@code file}'s server is ready and advertises rename (#676). */
+    /** See {@link LspRename#supportsRename}. */
     public boolean supportsRename(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && renameProvider(s.capabilities());
+        return renames.supportsRename(file);
     }
 
-    /** True if the server also advertises {@code prepareRename} (validate + placeholder). */
+    /** See {@link LspRename#supportsPrepareRename}. */
     public boolean supportsPrepareRename(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || s.capabilities() == null) {
-            return false;
-        }
-        var p = s.capabilities().getRenameProvider();
-        return p != null
-                && p.isRight()
-                && p.getRight() != null
-                && Boolean.TRUE.equals(p.getRight().getPrepareProvider());
-    }
-
-    /** Pure: whether a server's capabilities include {@code renameProvider} (null-safe, either form). */
-    static boolean renameProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return false;
-        }
-        var p = caps.getRenameProvider();
-        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
+        return renames.supportsPrepareRename(file);
     }
 
     /** The outcome of {@code prepareRename}: whether renaming here is possible, and the placeholder (the
@@ -4229,110 +2888,30 @@ public final class LspManager {
         static final RenamePrep REFUSED = new RenamePrep(false, "", 0, 0, 0, 0);
     }
 
-    /** Validates a rename at a 0-based position; the result arrives on the FX thread (#676). */
+    /** See {@link LspRename#prepareRename}. */
     public void prepareRename(Path file, int line, int character, Consumer<RenamePrep> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(RenamePrep.REFUSED));
-            return;
-        }
-        s.prepareRename(uri(file), new Position(line, character))
-                .whenComplete(
-                        (r, e) -> Platform.runLater(() -> cb.accept(e != null ? RenamePrep.REFUSED : mapPrepare(r))));
+        renames.prepareRename(file, line, character, cb);
     }
 
-    /** Pure: maps a {@code prepareRename} response (any of its three shapes; null = refused). */
-    static RenamePrep mapPrepare(
-            org.eclipse.lsp4j.jsonrpc.messages.Either3<
-                            org.eclipse.lsp4j.Range,
-                            org.eclipse.lsp4j.PrepareRenameResult,
-                            org.eclipse.lsp4j.PrepareRenameDefaultBehavior>
-                    r) {
-        if (r == null) {
-            return RenamePrep.REFUSED; // per spec: null/undefined ⇒ rename not valid at this position
-        }
-        if (r.isFirst() && r.getFirst() != null) {
-            var range = r.getFirst();
-            return new RenamePrep(
-                    true,
-                    "",
-                    range.getStart().getLine(),
-                    range.getStart().getCharacter(),
-                    range.getEnd().getLine(),
-                    range.getEnd().getCharacter());
-        }
-        if (r.isSecond() && r.getSecond() != null) {
-            var prep = r.getSecond();
-            var range = prep.getRange();
-            return new RenamePrep(
-                    true,
-                    prep.getPlaceholder() == null ? "" : prep.getPlaceholder(),
-                    range == null ? 0 : range.getStart().getLine(),
-                    range == null ? 0 : range.getStart().getCharacter(),
-                    range == null ? 0 : range.getEnd().getLine(),
-                    range == null ? 0 : range.getEnd().getCharacter());
-        }
-        if (r.isThird() && r.getThird() != null) {
-            // {defaultBehavior: true}: rename the word at the caret. lemminx answers {defaultBehavior: false} where
-            // nothing can be renamed (an attribute value), which VS Code's client reports as "can't be renamed"
-            // instead of opening a dialog that leads nowhere (XML review B11).
-            return r.getThird().isDefaultBehavior() ? new RenamePrep(true, "", 0, 0, 0, 0) : RenamePrep.REFUSED;
-        }
-        return RenamePrep.REFUSED;
-    }
-
-    /**
-     * Asks the server what a rename would change, <b>without applying it</b>, so the caller can preview and
-     * filter first (#768). Delivers null when the server refuses or the edit contains an operation the mapper
-     * will not perform.
-     */
+    /** See {@link LspRename#previewRename}. */
     public void previewRename(
             Path file, int line, int character, String newName, Consumer<WorkspaceEditMapper.Mapped> cb) {
-        previewRename(file, line, character, newName, (mapped, why) -> cb.accept(mapped));
+        renames.previewRename(file, line, character, newName, cb);
     }
 
-    /** As above, with the server's reason when it refused the rename ("Rename to x failed" said nothing — BN9). */
+    /** See {@link LspRename#previewRename}. */
     public void previewRename(
             Path file,
             int line,
             int character,
             String newName,
             java.util.function.BiConsumer<WorkspaceEditMapper.@Nullable Mapped, @Nullable String> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(null, null));
-            return;
-        }
-        EditBasis basis = editBasis(s);
-        s.rename(uri(file), new Position(line, character), newName).whenComplete((edit, e) -> {
-            EditPlan plan = e != null || edit == null ? EditPlan.REFUSED : planWorkspaceEdit(edit, basis);
-            String why = e == null ? null : failureReason(e);
-            Platform.runLater(() -> {
-                if (!plan.blocked().isEmpty()) {
-                    onEditBlocked.accept(plan.blocked());
-                }
-                cb.accept(plan.mapped(), why);
-            });
-        });
+        renames.previewRename(file, line, character, newName, cb);
     }
 
-    /** Renames the symbol at a 0-based position to {@code newName}; the workspace edit applies through the
-     *  registered handler and {@code cb} gets overall success on the FX thread (#676). */
+    /** See {@link LspRename#rename}. */
     public void rename(Path file, int line, int character, String newName, Consumer<Boolean> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(false));
-            return;
-        }
-        EditBasis basis = editBasis(s);
-        s.rename(uri(file), new Position(line, character), newName)
-                .whenComplete((edit, e) -> Platform.runLater(() -> {
-                    if (e != null || edit == null) {
-                        cb.accept(false);
-                    } else {
-                        applyWorkspaceEdit(edit, basis, cb);
-                    }
-                }));
+        renames.rename(file, line, character, newName, cb);
     }
 
     /** True if {@code file}'s server is ready and advertises code actions (quick fixes — #670). */
@@ -4350,67 +2929,17 @@ public final class LspManager {
         return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
     }
 
-    /** Pure: whether a server's capabilities include {@code documentFormattingProvider} (null-safe). */
-    static boolean formattingProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return false;
-        }
-        var p = caps.getDocumentFormattingProvider();
-        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
-    }
-
-    /** True if {@code file}'s server is ready and advertises range formatting (for Tab line re-indent). */
+    /** See {@link LspFormatting#supportsRangeFormatting}. */
     public boolean supportsRangeFormatting(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && rangeFormattingProvider(s.capabilities());
+        return formatting.supportsRangeFormatting(file);
     }
 
-    /** Pure: whether a server's capabilities include {@code documentRangeFormattingProvider} (null-safe). */
-    static boolean rangeFormattingProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return false;
-        }
-        var p = caps.getDocumentRangeFormattingProvider();
-        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
-    }
-
-    /**
-     * Pure: the characters a server formats on ({@code documentOnTypeFormattingProvider}), collected into one
-     * set — the spec splits them into a mandatory {@code firstTriggerCharacter} and an optional
-     * {@code moreTriggerCharacter} list, a distinction that matters to the server and not to us (#740).
-     * Empty when the server has no provider, which is also how the feature stays inert for those servers.
-     */
-    static java.util.Set<Character> onTypeTriggersOf(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null || caps.getDocumentOnTypeFormattingProvider() == null) {
-            return java.util.Set.of();
-        }
-        var provider = caps.getDocumentOnTypeFormattingProvider();
-        java.util.Set<Character> out = new java.util.HashSet<>();
-        String first = provider.getFirstTriggerCharacter();
-        if (first != null && !first.isEmpty()) {
-            out.add(first.charAt(0));
-        }
-        if (provider.getMoreTriggerCharacter() != null) {
-            for (String more : provider.getMoreTriggerCharacter()) {
-                if (more != null && !more.isEmpty()) {
-                    out.add(more.charAt(0));
-                }
-            }
-        }
-        return out;
-    }
-
-    /** The on-type formatting trigger characters for {@code file}'s server; empty when unsupported (#740). */
+    /** See {@link LspFormatting#onTypeTriggerCharacters}. */
     public java.util.Set<Character> onTypeTriggerCharacters(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s == null ? java.util.Set.of() : onTypeTriggersOf(s.capabilities());
+        return formatting.onTypeTriggerCharacters(file);
     }
 
-    /**
-     * On-type formatting ({@code textDocument/onTypeFormatting}, #740): the edits the server would apply
-     * having just seen {@code ch} typed at the given position. Delivered on the FX thread; empty when the
-     * server has no provider or the request fails.
-     */
+    /** See {@link LspFormatting#onTypeFormatting}. */
     public void onTypeFormatting(
             Path file,
             int line,
@@ -4419,39 +2948,10 @@ public final class LspManager {
             int tabSize,
             boolean insertSpaces,
             Consumer<List<com.editora.text.LspTextEdit>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || onTypeTriggersOf(s.capabilities()).isEmpty()) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        s.onTypeFormatting(
-                        uri(file),
-                        new Position(line, character),
-                        String.valueOf(ch),
-                        new org.eclipse.lsp4j.FormattingOptions(tabSize, insertSpaces))
-                .whenComplete((result, error) -> {
-                    List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
-                    if (error == null && result != null) {
-                        for (org.eclipse.lsp4j.TextEdit e : result) {
-                            if (e != null && e.getRange() != null) {
-                                edits.add(new com.editora.text.LspTextEdit(
-                                        e.getRange().getStart().getLine(),
-                                        e.getRange().getStart().getCharacter(),
-                                        e.getRange().getEnd().getLine(),
-                                        e.getRange().getEnd().getCharacter(),
-                                        e.getNewText() == null ? "" : e.getNewText()));
-                            }
-                        }
-                    }
-                    Platform.runLater(() -> cb.accept(edits));
-                });
+        formatting.onTypeFormatting(file, line, character, ch, tabSize, insertSpaces, cb);
     }
 
-    /**
-     * Requests range formatting ({@code textDocument/rangeFormatting}) over the line range
-     * {@code [startLine..endLine]} and delivers the resulting edits to {@code cb} on the FX thread (empty
-     * on error / unsupported). Used by Tab to re-indent the current line to the server's convention.
-     */
+    /** See {@link LspFormatting#rangeFormatting}. */
     public void rangeFormatting(
             Path file,
             int startLine,
@@ -4461,10 +2961,10 @@ public final class LspManager {
             int tabSize,
             boolean insertSpaces,
             Consumer<List<com.editora.text.LspTextEdit>> cb) {
-        rangeFormatting(file, startLine, startChar, endLine, endChar, new FormattingIndent(tabSize, insertSpaces), cb);
+        formatting.rangeFormatting(file, startLine, startChar, endLine, endChar, tabSize, insertSpaces, cb);
     }
 
-    /** As above, with the file's save rules in the request's options (Format Selection). */
+    /** See {@link LspFormatting#rangeFormatting}. */
     public void rangeFormatting(
             Path file,
             int startLine,
@@ -4473,356 +2973,101 @@ public final class LspManager {
             int endChar,
             FormattingIndent indent,
             Consumer<List<com.editora.text.LspTextEdit>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        org.eclipse.lsp4j.Range range =
-                new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
-        String sent = htmlText(s, file);
-        s.rangeFormatting(uri(file), range, formattingOptions(s, indent)).whenComplete((result, error) -> {
-            noteFormatOutcome(file, error);
-            List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
-            if (error == null && result != null) {
-                for (org.eclipse.lsp4j.TextEdit e : result) {
-                    if (e != null && e.getRange() != null) {
-                        edits.add(new com.editora.text.LspTextEdit(
-                                e.getRange().getStart().getLine(),
-                                e.getRange().getStart().getCharacter(),
-                                e.getRange().getEnd().getLine(),
-                                e.getRange().getEnd().getCharacter(),
-                                e.getNewText() == null ? "" : e.getNewText()));
-                    }
-                }
-            }
-            List<com.editora.text.LspTextEdit> kept = keptFinalNewline(s, indent, sent, edits, false);
-            Platform.runLater(() -> cb.accept(kept));
-        });
+        formatting.rangeFormatting(file, startLine, startChar, endLine, endChar, indent, cb);
     }
 
-    /**
-     * Why the last format request of each file failed — {@link FormatFailure} — while it is the last outcome: a
-     * failed, timed-out or abandoned request delivers no edits, which read as "Already formatted" (HTML review A5).
-     */
-    private final Map<Path, FormatFailure> formatFailures = new ConcurrentHashMap<>();
-
-    /** How the last format request of {@code file} failed, or null when it was answered (or none was sent). */
+    /** See {@link LspFormatting#formatFailure}. */
     public @Nullable FormatFailure formatFailure(Path file) {
-        return formatFailures.get(file);
+        return formatting.formatFailure(file);
     }
 
-    private void noteFormatOutcome(Path file, @Nullable Throwable error) {
-        if (error == null) {
-            formatFailures.remove(file);
-        } else {
-            formatFailures.put(file, FormatFailure.of(error));
-        }
-    }
-
-    /**
-     * Requests whole-document formatting ({@code textDocument/formatting}) for {@code file} and delivers the
-     * resulting edits to {@code cb} on the FX thread (empty list if the server returns nothing or errors; {@link
-     * #formatFailure} then says which).
-     * {@code tabSize}/{@code insertSpaces} are formatter hints (many formatters use their own config).
-     */
+    /** See {@link LspFormatting#formatDocument}. */
     public void formatDocument(
             Path file, int tabSize, boolean insertSpaces, Consumer<List<com.editora.text.LspTextEdit>> cb) {
-        formatDocument(file, new FormattingIndent(tabSize, insertSpaces), cb);
+        formatting.formatDocument(file, tabSize, insertSpaces, cb);
     }
 
-    /** As above, with the file's save rules in the request's options (see {@link FormattingIndent#options}). */
+    /** See {@link LspFormatting#formatDocument}. */
     public void formatDocument(Path file, FormattingIndent indent, Consumer<List<com.editora.text.LspTextEdit>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            noteFormatOutcome(file, new IllegalStateException("language server not available"));
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        String sent = htmlText(s, file);
-        s.formatting(uri(file), formattingOptions(s, indent)).whenComplete((result, error) -> {
-            noteFormatOutcome(file, error);
-            List<com.editora.text.LspTextEdit> edits = new ArrayList<>();
-            if (error == null && result != null) {
-                for (org.eclipse.lsp4j.TextEdit e : result) {
-                    if (e != null && e.getRange() != null) {
-                        edits.add(new com.editora.text.LspTextEdit(
-                                e.getRange().getStart().getLine(),
-                                e.getRange().getStart().getCharacter(),
-                                e.getRange().getEnd().getLine(),
-                                e.getRange().getEnd().getCharacter(),
-                                e.getNewText() == null ? "" : e.getNewText()));
-                    }
-                }
-            }
-            List<com.editora.text.LspTextEdit> kept = keptFinalNewline(s, indent, sent, edits, true);
-            Platform.runLater(() -> cb.accept(kept));
-        });
+        formatting.formatDocument(file, indent, cb);
     }
 
-    /** True if {@code file}'s server is ready and advertises the document-symbol outline (Structure window). */
+    /** See {@link LspDocumentSymbols#supportsDocumentSymbols}. */
     public boolean supportsDocumentSymbols(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && documentSymbolProvider(s.capabilities());
+        return outline.supportsDocumentSymbols(file);
     }
 
-    /** Pure: whether a server's capabilities include {@code documentSymbolProvider} (null-safe). */
-    static boolean documentSymbolProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return false;
-        }
-        var p = caps.getDocumentSymbolProvider();
-        return p != null && (p.isRight() || Boolean.TRUE.equals(p.getLeft()));
-    }
-
-    /**
-     * Requests the document-symbol outline ({@code textDocument/documentSymbol}) for {@code file} and delivers
-     * the mapped {@link SymbolNode} tree to {@code cb} on the FX thread (empty when unsupported / on error).
-     * Powers the Structure tool window for LSP-served files.
-     */
+    /** See {@link LspDocumentSymbols#documentSymbols}. */
     public void documentSymbols(Path file, Consumer<List<SymbolNode>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        s.documentSymbol(uri(file)).whenComplete((result, error) -> {
-            List<SymbolNode> symbols = error == null && result != null ? DocumentSymbolMapper.map(result) : List.of();
-            Platform.runLater(() -> cb.accept(symbols));
-        });
+        outline.documentSymbols(file, cb);
     }
 
-    /** How long the Project Map waits for a running server's outline of a file with no tab. */
-    static final java.time.Duration CLOSED_FILE_OUTLINE_TIMEOUT = java.time.Duration.ofSeconds(8);
-
-    /**
-     * Whether the server that already runs in this window for {@code file} ({@link #runsFor}) answers the
-     * document-symbol outline: the Project Map's Structure columns for a file with no tab (Map explore round, position
-     * 10). Never starts a server.
-     */
+    /** See {@link LspDocumentSymbols#outlinesClosedFile}. */
     public boolean outlinesClosedFile(@Nullable Path file) {
-        if (closed || !enabled || file == null || !servable(file)) {
-            return false;
-        }
-        LanguageServerSession s = runningSessionFor(file);
-        return s != null && documentSymbolProvider(s.capabilities());
+        return outline.outlinesClosedFile(file);
     }
 
-    /**
-     * The document-symbol outline of {@code text}, the content of {@code file}, from the server {@link
-     * #outlinesClosedFile} names. A file no window has open is lent to it for this request ({@link #lendDocument}) and
-     * the loan ends when the answer is in; a file another window has open on that session is asked about as it is, so
-     * its unsaved text is never replaced by the disk's. {@code cb} gets the symbols on the FX thread, or null when no
-     * such server runs, it fails or it takes longer than {@link #CLOSED_FILE_OUTLINE_TIMEOUT}. Never starts a server.
-     * FX thread.
-     */
+    /** See {@link LspDocumentSymbols#closedFileSymbols}. */
     public void closedFileSymbols(Path file, String text, Consumer<@Nullable List<SymbolNode>> cb) {
-        LanguageServerSession s = outlinesClosedFile(file) ? runningSessionFor(file) : null;
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(null));
-            return;
-        }
-        String uri = uri(file);
-        Runnable loan = s.isOpen(uri) ? () -> {} : lendDocument(file, text);
-        if (loan == null) {
-            Platform.runLater(() -> cb.accept(null));
-            return;
-        }
-        s.documentSymbol(uri)
-                .orTimeout(CLOSED_FILE_OUTLINE_TIMEOUT.toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)
-                .whenComplete((result, error) -> {
-                    List<SymbolNode> symbols =
-                            error == null && result != null ? DocumentSymbolMapper.map(result) : null;
-                    Platform.runLater(() -> {
-                        loan.run(); // didClose once nothing else holds the document
-                        cb.accept(symbols);
-                    });
-                });
+        outline.closedFileSymbols(file, text, cb);
     }
 
-    /**
-     * The members of {@code libraryUri} (a {@code jdt://} class file), else of {@code file}, else of {@code anchor},
-     * with their whole extents, asked on {@code anchor}'s session (Go to Super Method, eighth review BQ1).
-     */
+    /** See {@link LspDocumentSymbols#memberSpans}. */
     public void memberSpans(
             Path anchor, @Nullable Path file, @Nullable String libraryUri, Consumer<List<MemberSpan>> cb) {
-        LanguageServerSession s = sessionFor(anchor);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        String document = libraryUri != null ? libraryUri : uri(file != null ? file : anchor);
-        Map<String, List<MemberSpan>> cache = libraryUri == null || !jdkClassFile(libraryUri)
-                ? null
-                : libraryOutlines.computeIfAbsent(s, k -> new ConcurrentHashMap<>());
-        List<MemberSpan> cached = cache == null ? null : cache.get(libraryUri);
-        if (cached != null) {
-            Platform.runLater(() -> cb.accept(cached));
-            return;
-        }
-        s.documentSymbol(document).whenComplete((result, error) -> {
-            List<MemberSpan> members =
-                    error == null && result != null ? DocumentSymbolMapper.members(result) : List.of();
-            if (cache != null && !members.isEmpty()) {
-                cache.put(libraryUri, members); // a JDK class does not change while its server runs (BP5)
-            }
-            Platform.runLater(() -> cb.accept(members));
-        });
+        outline.memberSpans(anchor, file, libraryUri, cb);
     }
 
-    /**
-     * Whether {@code libraryUri} is a JDK class ({@code jdt://contents/java.base/…jrt-fs.jar…}): a dependency's jar can
-     * be rebuilt in place ({@code mvn install} of a SNAPSHOT) under the same URI (tenth review DO4).
-     */
+    /** See {@link LspDocumentSymbols#jdkClassFile}. */
     public static boolean jdkClassFile(String libraryUri) {
-        return libraryUri.contains("jrt-fs.jar");
+        return LspDocumentSymbols.jdkClassFile(libraryUri);
     }
 
-    /** JDK class files' outlines per session, read once: a Go to Super Method walk reads many (ninth review BP5). */
-    private final Map<LanguageServerSession, Map<String, List<MemberSpan>>> libraryOutlines =
-            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
-
-    /**
-     * {@link #documentSymbols} for a caller that only ever wants the latest outline (the Structure window,
-     * re-asked on every typing pause): a request for an older document version is cancelled, one already
-     * running for this version is not repeated, and a superseded request never calls {@code cb}. A caller
-     * that waits for its own answer must use {@link #documentSymbols}.
-     */
+    /** See {@link LspDocumentSymbols#latestDocumentSymbols}. */
     public void latestDocumentSymbols(Path file, Consumer<List<SymbolNode>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        String uri = uri(file);
-        latest.issue(uri, "documentSymbol", stamp(s, uri, null), true, () -> s.documentSymbol(uri), (result, error) -> {
-            List<SymbolNode> symbols = error == null && result != null ? DocumentSymbolMapper.map(result) : List.of();
-            Platform.runLater(() -> cb.accept(symbols));
-        });
+        outline.latestDocumentSymbols(file, cb);
     }
 
     /** What a deduplicated request's answer depends on: equal stamps mean the server is asked the same thing. */
-    private record RequestStamp(
+    record RequestStamp(
             @Nullable LanguageServerSession session,
             @Nullable Integer version,
             @Nullable Object arguments) {}
 
-    private static RequestStamp stamp(LanguageServerSession session, String uri, @Nullable Object arguments) {
+    static RequestStamp stamp(LanguageServerSession session, String uri, @Nullable Object arguments) {
         return new RequestStamp(session, session.documentVersion(uri), arguments);
     }
 
     // --- folding ranges (#738) / selection ranges (#739) ---------------------------------------------
 
-    /** Pure: whether a server's capabilities include {@code foldingRangeProvider} (null-safe). */
-    static boolean foldingRangeProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        return caps != null && eitherTrue(caps.getFoldingRangeProvider());
-    }
-
-    /** Pure: whether a server's capabilities include {@code selectionRangeProvider} (null-safe). */
-    static boolean selectionRangeProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        return caps != null && eitherTrue(caps.getSelectionRangeProvider());
-    }
-
-    /** True if {@code file}'s server is ready and advertises folding ranges (#738). */
+    /** See {@link LspDocumentSymbols#supportsFoldingRanges}. */
     public boolean supportsFoldingRanges(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && foldingRangeProvider(s.capabilities());
+        return outline.supportsFoldingRanges(file);
     }
 
-    /** True if {@code file}'s server is ready and advertises selection ranges (#739). */
+    /** See {@link LspDocumentSymbols#supportsSelectionRanges}. */
     public boolean supportsSelectionRanges(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && selectionRangeProvider(s.capabilities());
+        return outline.supportsSelectionRanges(file);
     }
 
-    /**
-     * Requests the document's foldable regions and delivers them on the FX thread as editor
-     * {@link com.editora.text.FoldRegions.Region}s, ordered the way the built-in detector emits them
-     * (see {@link LspFolding#toRegions}). Empty when the server has no folding provider — the caller then
-     * keeps the heuristic regions rather than un-folding the file.
-     */
+    /** See {@link LspDocumentSymbols#foldingRanges}. */
     public void foldingRanges(Path file, Consumer<List<com.editora.text.FoldRegions.Region>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || !foldingRangeProvider(s.capabilities())) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        String uri = uri(file);
-        latest.issue(uri, "foldingRange", stamp(s, uri, null), true, () -> s.foldingRange(uri), (ranges, error) -> {
-            List<com.editora.text.FoldRegions.Region> regions =
-                    error == null ? LspFolding.toRegions(ranges) : List.of();
-            Platform.runLater(() -> cb.accept(regions));
-        });
+        outline.foldingRanges(file, cb);
     }
 
-    /** True if {@code file}'s server is ready and advertises {@code colorProvider} (HTML review D9). */
+    /** See {@link LspDocumentSymbols#supportsDocumentColor}. */
     public boolean supportsDocumentColor(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        var caps = s == null ? null : s.capabilities();
-        return caps != null && eitherTrue(caps.getColorProvider());
+        return outline.supportsDocumentColor(file);
     }
 
-    /**
-     * Requests the document's colour literals and delivers them on the FX thread, in document order (D9). Empty
-     * when the server has none or no colour provider.
-     */
+    /** See {@link LspDocumentSymbols#documentColors}. */
     public void documentColors(Path file, Consumer<List<com.editora.text.ColorSwatch>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || !supportsDocumentColor(file)) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        String uri = uri(file);
-        latest.issue(uri, "documentColor", stamp(s, uri, null), true, () -> s.documentColor(uri), (colors, error) -> {
-            List<com.editora.text.ColorSwatch> out = error == null ? swatches(colors) : List.of();
-            Platform.runLater(() -> cb.accept(out));
-        });
+        outline.documentColors(file, cb);
     }
 
-    /** Pure: the server's colour informations as swatches, in document order (null-safe). */
-    static List<com.editora.text.ColorSwatch> swatches(@Nullable List<org.eclipse.lsp4j.ColorInformation> colors) {
-        if (colors == null || colors.isEmpty()) {
-            return List.of();
-        }
-        List<com.editora.text.ColorSwatch> out = new ArrayList<>(colors.size());
-        for (org.eclipse.lsp4j.ColorInformation c : colors) {
-            if (c == null || c.getRange() == null || c.getRange().getStart() == null || c.getColor() == null) {
-                continue;
-            }
-            Position at = c.getRange().getStart();
-            var color = c.getColor();
-            out.add(new com.editora.text.ColorSwatch(
-                    at.getLine(),
-                    at.getCharacter(),
-                    color.getRed(),
-                    color.getGreen(),
-                    color.getBlue(),
-                    color.getAlpha()));
-        }
-        out.sort(java.util.Comparator.comparingInt(com.editora.text.ColorSwatch::line)
-                .thenComparingInt(com.editora.text.ColorSwatch::column));
-        return List.copyOf(out);
-    }
-
-    /**
-     * Requests the nested selection-range chain at one position and delivers it on the FX thread as
-     * {@code [start, end]} offset pairs, innermost first (see {@link LspSelection#toOffsetChain}). Empty when
-     * the server has no provider or answers nothing, so the caller falls back to the local ladder.
-     *
-     * <p>{@code lineLengths} maps the document's lines to their lengths — the response is in LSP
-     * line/character coordinates and the caller works in offsets, and doing the conversion here keeps the
-     * editor free of {@code lsp4j}.
-     */
+    /** See {@link LspDocumentSymbols#selectionRanges}. */
     public void selectionRanges(Path file, int line, int character, int[] lineStarts, Consumer<List<int[]>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || !selectionRangeProvider(s.capabilities())) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        s.selectionRange(uri(file), List.of(new Position(line, character))).whenComplete((ranges, error) -> {
-            List<int[]> chain = error == null ? LspSelection.toOffsetChain(ranges, lineStarts) : List.of();
-            Platform.runLater(() -> cb.accept(chain));
-        });
+        outline.selectionRanges(file, line, character, lineStarts, cb);
     }
 
     /**
@@ -4865,211 +3110,42 @@ public final class LspManager {
         }
     }
 
-    /** True if {@code file}'s server is ready and advertises {@code workspace/symbol} (Go to Symbol). */
+    /** See {@link LspDocumentSymbols#supportsWorkspaceSymbols}. */
     public boolean supportsWorkspaceSymbols(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && workspaceSymbolProvider(s.capabilities());
+        return outline.supportsWorkspaceSymbols(file);
     }
 
-    /** Pure: whether the server advertises {@code workspace/symbol} (Boolean or options form). Null-safe. */
-    static boolean workspaceSymbolProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        return caps != null && eitherTrue(caps.getWorkspaceSymbolProvider());
-    }
-
-    /**
-     * Runs {@code workspace/symbol} on {@code anchorFile}'s server for {@code query} and delivers the matches
-     * on the FX thread. Empty when the file has no server. Handles both the legacy flat {@code SymbolInformation}
-     * and the modern {@code WorkspaceSymbol} response shapes (the latter may carry a range-less URI-only
-     * location, mapped to line 0).
-     */
+    /** See {@link LspDocumentSymbols#workspaceSymbols}. */
     public void workspaceSymbols(Path anchorFile, String query, Consumer<List<WorkspaceSymbolMatch>> cb) {
-        workspaceSymbols(sessionFor(anchorFile), query, cb);
+        outline.workspaceSymbols(anchorFile, query, cb);
     }
 
-    private static void workspaceSymbols(
-            @Nullable LanguageServerSession s, String query, Consumer<List<WorkspaceSymbolMatch>> cb) {
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        s.workspaceSymbol(query).whenComplete((result, error) -> {
-            List<WorkspaceSymbolMatch> out = new ArrayList<>();
-            if (error == null && result != null) {
-                if (result.isLeft()) {
-                    for (org.eclipse.lsp4j.SymbolInformation si : result.getLeft()) {
-                        addSymbol(out, si.getName(), si.getContainerName(), si.getKind(), si.getLocation(), s.uris());
-                    }
-                } else if (result.getRight() != null) {
-                    for (org.eclipse.lsp4j.WorkspaceSymbol ws : result.getRight()) {
-                        addSymbol(out, ws.getName(), ws.getContainerName(), ws.getKind(), ws.getLocation(), s.uris());
-                    }
-                }
-            }
-            Platform.runLater(() -> cb.accept(out));
-        });
-    }
-
-    /**
-     * The JDK and dependency types ({@code jdt://}) matching {@code query}, from the Java server of the project
-     * holding {@code underRoot} — the classes the server-free index cannot see (Java review E8). Empty without
-     * one. Delivered on the FX thread.
-     */
+    /** See {@link LspDocumentSymbols#javaLibraryTypes}. */
     public void javaLibraryTypes(@Nullable Path underRoot, String query, Consumer<List<WorkspaceSymbolMatch>> cb) {
-        LanguageServerSession s = javaSessionFor(underRoot);
-        if (s == null || s.capabilities() == null) { // none, or not initialized yet
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        workspaceSymbols(s, query, all -> {
-            List<WorkspaceSymbolMatch> types = new ArrayList<>();
-            for (WorkspaceSymbolMatch m : all) {
-                if (m.libraryUri() != null && LIBRARY_TYPE_KINDS.contains(m.kind())) {
-                    types.add(m);
-                }
-            }
-            cb.accept(types);
-        });
+        outline.javaLibraryTypes(underRoot, query, cb);
     }
 
-    private static final java.util.Set<String> LIBRARY_TYPE_KINDS =
-            java.util.Set.of("class", "interface", "enum", "struct");
-
-    /** Adds a {@code SymbolInformation} match (its location always carries a range). */
-    private static void addSymbol(
-            List<WorkspaceSymbolMatch> out,
-            String name,
-            String container,
-            org.eclipse.lsp4j.SymbolKind kind,
-            Location loc,
-            WireUris uris) {
-        if (loc == null) {
-            return;
-        }
-        Path p = uris.toPath(loc.getUri());
-        Position start = loc.getRange() != null ? loc.getRange().getStart() : new Position(0, 0);
-        if (p == null) {
-            // A JDK or dependency symbol (jdtls's jdt:// class-file URI): kept, opened as library source.
-            if (loc.getUri() != null && loc.getUri().startsWith(JDT_SCHEME)) {
-                out.add(new WorkspaceSymbolMatch(
-                        name, container, kindName(kind), null, start.getLine(), start.getCharacter(), loc.getUri()));
-            }
-            return;
-        }
-        out.add(new WorkspaceSymbolMatch(name, container, kindName(kind), p, start.getLine(), start.getCharacter()));
-    }
-
-    /** Adds a {@code WorkspaceSymbol} match whose location is {@code Either<Location, URI-only>}. */
-    private static void addSymbol(
-            List<WorkspaceSymbolMatch> out,
-            String name,
-            String container,
-            org.eclipse.lsp4j.SymbolKind kind,
-            org.eclipse.lsp4j.jsonrpc.messages.Either<Location, org.eclipse.lsp4j.WorkspaceSymbolLocation> loc,
-            WireUris uris) {
-        if (loc == null) {
-            return;
-        }
-        if (loc.isLeft()) {
-            addSymbol(out, name, container, kind, loc.getLeft(), uris);
-        } else if (loc.getRight() != null) {
-            Path p = uris.toPath(loc.getRight().getUri());
-            if (p != null) {
-                out.add(new WorkspaceSymbolMatch(name, container, kindName(kind), p, 0, 0));
-            }
-        }
-    }
-
-    private static String kindName(org.eclipse.lsp4j.SymbolKind k) {
-        return k == null ? "" : k.toString().toLowerCase(java.util.Locale.ROOT);
-    }
-
-    /** True if {@code file}'s server is ready and advertises range semantic tokens (viewport highlighting). */
+    /** See {@link SemanticTokenRequests#supportsSemanticTokens}. */
     public boolean supportsSemanticTokens(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && semanticTokensProvider(s.capabilities()) != null;
-    }
-
-    /**
-     * Pure: the server's semantic-tokens registration options if it supports range <em>or</em> full
-     * requests (and carries a legend), else {@code null}. Null-safe — gates {@link #requestSemanticTokens},
-     * which prefers range (viewport) and falls back to full for range-less servers.
-     */
-    static org.eclipse.lsp4j.@Nullable SemanticTokensWithRegistrationOptions semanticTokensProvider(
-            org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null) {
-            return null;
-        }
-        var p = caps.getSemanticTokensProvider();
-        if (p == null || p.getLegend() == null) {
-            return null;
-        }
-        return (eitherTrue(p.getRange()) || eitherTrue(p.getFull())) ? p : null;
+        return semanticTokens.supportsSemanticTokens(file);
     }
 
     /** True if an LSP {@code Either<Boolean, ?>} capability is present (right form) or explicitly true. */
-    private static boolean eitherTrue(org.eclipse.lsp4j.jsonrpc.messages.Either<Boolean, ?> e) {
+    static boolean eitherTrue(org.eclipse.lsp4j.jsonrpc.messages.Either<Boolean, ?> e) {
         return e != null && (e.isRight() || Boolean.TRUE.equals(e.getLeft()));
     }
 
-    /** The cached whole-document token state for delta requests (#679): the server's {@code resultId} +
-     *  the full data array it identifies. Keyed by document URI; dropped on close/shutdown/error. */
-    private record TokenState(LanguageServerSession session, String resultId, List<Integer> data) {}
-
-    private final Map<String, TokenState> semanticTokenState = new ConcurrentHashMap<>();
-    private final Map<String, Long> semanticRequestGeneration = new ConcurrentHashMap<>();
-    private final Map<String, Long> diagnosticRequestGeneration = new ConcurrentHashMap<>();
-    /** Source of {@link #diagnosticRequestGeneration} values. One counter for every document, so a value is
-     *  never reused: an entry can then be removed when its document closes without a late reply for the
-     *  closed document ever matching the generation of a reopened one. */
-    private final java.util.concurrent.atomic.AtomicLong diagnosticGenerations =
-            new java.util.concurrent.atomic.AtomicLong();
-
-    private long nextDiagnosticGeneration(String uri) {
-        long generation = diagnosticGenerations.incrementAndGet();
-        diagnosticRequestGeneration.put(uri, generation);
-        return generation;
-    }
-
-    /** Tracked documents — package-private so a test can show closing one releases its entry. */
+    /** See {@link LspDiagnostics#diagnosticGenerationEntries}. */
     int diagnosticGenerationEntries() {
-        return diagnosticRequestGeneration.size();
+        return diagnostics.diagnosticGenerationEntries();
     }
 
-    /** The document version a whole-document token set was last delivered for, per URI. */
-    private record TokenMark(
-            LanguageServerSession session, @Nullable Integer version) {}
-
-    private final Map<String, TokenMark> wholeDocumentTokens = new ConcurrentHashMap<>();
-
-    /**
-     * Whether the server would answer a semantic-tokens request for {@code file} with what it last sent:
-     * it has no range requests (so every request covers the whole document) and the document has not
-     * changed on the server since that answer. Scrolling such a document shows nothing new, so the
-     * scroll-settle re-request — a whole-document transfer and decode per scroll — can be skipped.
-     */
+    /** See {@link SemanticTokenRequests#wholeDocumentTokensCurrent}. */
     public boolean wholeDocumentTokensCurrent(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        var prov = s == null ? null : semanticTokensProvider(s.capabilities());
-        if (prov == null || eitherTrue(prov.getRange())) {
-            return false;
-        }
-        String uri = uri(file);
-        TokenMark mark = wholeDocumentTokens.get(uri);
-        return mark != null && mark.session() == s && java.util.Objects.equals(mark.version(), s.documentVersion(uri));
+        return semanticTokens.wholeDocumentTokensCurrent(file);
     }
 
-    /**
-     * Requests semantic tokens over the line window {@code [startLine..endLine]} (inclusive) and delivers
-     * the decoded, CSS-classed {@link com.editora.text.SemanticToken}s to {@code cb} on the FX thread
-     * (empty when unsupported / on error). The window bounds cost on large files — the caller passes the
-     * visible paragraph range. Decoding uses the server's effective legend, never hardcoded indices.
-     *
-     * <p>Range-less servers (jdtls advertises {@code range=false}) take the whole-document path, which —
-     * when the server supports {@code full.delta} and we hold its previous {@code resultId} — asks for a
-     * <b>delta</b> and splices it onto the cached array ({@link SemanticTokensSplice}) instead of
-     * re-transferring every token on each 300 ms edit pulse (#679). Any error/stale delta falls back to a
-     * plain full request.
-     */
+    /** See {@link SemanticTokenRequests#requestSemanticTokens}. */
     public void requestSemanticTokens(
             Path file,
             int startLine,
@@ -5077,154 +3153,20 @@ public final class LspManager {
             int lineCount,
             int lastLineLength,
             Consumer<List<com.editora.text.SemanticToken>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        var prov = s == null ? null : semanticTokensProvider(s.capabilities());
-        if (s == null || prov == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        var legend = prov.getLegend();
-        String uri = uri(file);
-        long requestGeneration = semanticRequestGeneration.merge(uri, 1L, Long::sum);
-        // Prefer a range (viewport) request to bound cost; fall back to a whole-document request for a
-        // server that advertises only `full` (no range).
-        if (eitherTrue(prov.getRange())) {
-            // Clamped to the document — a range past the last line makes a server return nothing (#715).
-            var range = inclusiveLineRange(startLine, endLine, lineCount, lastLineLength);
-            latest.issue(
-                    uri,
-                    SEMANTIC,
-                    stamp(s, uri, range),
-                    true,
-                    () -> s.semanticTokensRange(uri, range),
-                    (tokens, error) -> {
-                        if (!currentSemanticRequest(file, s, uri, requestGeneration)) {
-                            return;
-                        }
-                        List<com.editora.text.SemanticToken> out = (error != null || tokens == null)
-                                ? List.of()
-                                : SemanticTokensDecoder.decode(
-                                        tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
-                        Platform.runLater(() -> cb.accept(out));
-                    });
-            return;
-        }
-        boolean deltaSupported = fullDeltaSupported(prov);
-        TokenState prev = deltaSupported ? semanticTokenState.get(uri) : null;
-        if (prev != null && prev.session() != s) {
-            semanticTokenState.remove(uri, prev);
-            prev = null;
-        }
-        if (prev != null) {
-            TokenState deltaBase = prev;
-            Integer version = s.documentVersion(uri);
-            var delta = stamp(s, uri, "delta:" + deltaBase.resultId());
-            latest.issue(
-                    uri,
-                    SEMANTIC,
-                    delta,
-                    true,
-                    () -> s.semanticTokensFullDelta(uri, deltaBase.resultId()),
-                    (either, error) -> {
-                        if (!currentSemanticRequest(file, s, uri, requestGeneration)) {
-                            return;
-                        }
-                        List<Integer> data = null;
-                        String resultId = null;
-                        if (error == null && either != null) {
-                            if (either.isLeft() && either.getLeft() != null) {
-                                data = either.getLeft().getData(); // server chose to answer with a fresh full set
-                                resultId = either.getLeft().getResultId();
-                            } else if (either.isRight() && either.getRight() != null) {
-                                data = SemanticTokensSplice.apply(
-                                        deltaBase.data(), either.getRight().getEdits());
-                                resultId = either.getRight().getResultId();
-                            }
-                        }
-                        if (data == null) {
-                            semanticTokenState.remove(uri); // stale/failed delta — re-request full
-                            requestSemanticTokensFull(s, file, legend, requestGeneration, cb);
-                            return;
-                        }
-                        rememberTokenState(s, uri, resultId, data);
-                        wholeDocumentTokens.put(uri, new TokenMark(s, version));
-                        List<Integer> decoded = data;
-                        List<com.editora.text.SemanticToken> out = SemanticTokensDecoder.decode(
-                                decoded, legend.getTokenTypes(), legend.getTokenModifiers());
-                        Platform.runLater(() -> cb.accept(out));
-                    });
-            return;
-        }
-        requestSemanticTokensFull(s, file, legend, requestGeneration, cb);
+        semanticTokens.requestSemanticTokens(file, startLine, endLine, lineCount, lastLineLength, cb);
     }
 
-    /** Plain whole-document request; caches {@code resultId}+data when the server supplies one (#679). */
-    private void requestSemanticTokensFull(
-            LanguageServerSession s,
-            Path file,
-            org.eclipse.lsp4j.SemanticTokensLegend legend,
-            long requestGeneration,
-            Consumer<List<com.editora.text.SemanticToken>> cb) {
-        String uri = uri(file);
-        Integer version = s.documentVersion(uri);
-        latest.issue(uri, SEMANTIC, stamp(s, uri, "full"), true, () -> s.semanticTokensFull(uri), (tokens, error) -> {
-            if (!currentSemanticRequest(file, s, uri, requestGeneration)) {
-                return;
-            }
-            if (error != null || tokens == null) {
-                wholeDocumentTokens.remove(uri);
-                Platform.runLater(() -> cb.accept(List.of()));
-                return;
-            }
-            rememberTokenState(s, uri, tokens.getResultId(), tokens.getData());
-            wholeDocumentTokens.put(uri, new TokenMark(s, version));
-            List<com.editora.text.SemanticToken> out =
-                    SemanticTokensDecoder.decode(tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
-            Platform.runLater(() -> cb.accept(out));
-        });
-    }
-
-    /** The {@link LatestRequests} kind shared by the range, full and delta forms: they answer one question. */
-    private static final String SEMANTIC = "semanticTokens";
-
-    private boolean currentSemanticRequest(
-            Path file, @Nullable LanguageServerSession session, String uri, long requestGeneration) {
-        return sessionFor(file) == session
-                && java.util.Objects.equals(semanticRequestGeneration.get(uri), requestGeneration);
-    }
-
-    private void rememberTokenState(
-            LanguageServerSession session, String uri, @Nullable String resultId, List<Integer> data) {
-        if (resultId != null && data != null) {
-            semanticTokenState.put(uri, new TokenState(session, resultId, List.copyOf(data)));
-        } else {
-            semanticTokenState.remove(uri); // no resultId ⇒ the server can't delta from this response
-        }
-    }
-
-    /** Pure: whether the provider's {@code full} form advertises delta support (null-safe). */
-    static boolean fullDeltaSupported(org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions prov) {
-        var full = prov == null ? null : prov.getFull();
-        return full != null
-                && full.isRight()
-                && full.getRight() != null
-                && Boolean.TRUE.equals(full.getRight().getDelta());
-    }
-
+    /** See {@link LspAssists#hover}. */
     public void hover(Path file, int line, int character, Consumer<String> cb) {
-        hover(file, line, character, cb, failure -> cb.accept(""));
+        assists.hover(file, line, character, cb);
     }
 
-    /**
-     * As {@link #hover(Path, int, int, Consumer)}, but a request the server answered with a fault reaches
-     * {@code onFailure} (with the server's message) instead of reading as "no documentation" — the one place
-     * a user looks when hover does nothing (Maven review C2). Both callbacks run on the FX thread.
-     */
+    /** See {@link LspAssists#hover}. */
     public void hover(Path file, int line, int character, Consumer<String> cb, Consumer<String> onFailure) {
-        hoverAt(file, null, line, character, cb, onFailure);
+        assists.hover(file, line, character, cb, onFailure);
     }
 
-    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    /** See {@link LspAssists#hoverAt}. */
     public void hoverAt(
             Path anchor,
             @Nullable String documentUri,
@@ -5232,68 +3174,32 @@ public final class LspManager {
             int character,
             Consumer<String> cb,
             Consumer<String> onFailure) {
-        LanguageServerSession s = sessionFor(anchor);
-        if (s == null) {
-            cb.accept("");
-            return;
-        }
-        BashLsp.hoverDeadline(
-                        s, s.hover(documentUri != null ? documentUri : uri(anchor), new Position(line, character)))
-                .whenComplete((hover, error) -> {
-                    String late = BashLsp.hoverTimedOut(s, error); // explainshell kept it waiting (B10)
-                    if (late != null) {
-                        Platform.runLater(() -> onFailure.accept(late));
-                        return;
-                    }
-                    var fault = error == null ? null : RequestErrorTracker.responseError(error);
-                    if (fault != null && RequestErrorTracker.serverFault(fault.getCode())) {
-                        String why = RequestErrorTracker.describe(fault);
-                        Platform.runLater(() -> onFailure.accept(why));
-                        return;
-                    }
-                    String raw = error == null ? hoverText(hover) : "";
-                    String text = LspServerRegistry.MAVEN_POM_SERVER_ID.equals(s.serverId())
-                            ? MavenPomServer.fixHoverLinks(raw) // a plugin's "managed in" link (review 2, E6)
-                            : raw;
-                    Platform.runLater(() -> cb.accept(text));
-                });
+        assists.hoverAt(anchor, documentUri, line, character, cb, onFailure);
     }
 
+    /** See {@link LspNavigationRequests#definition}. */
     public void definition(Path file, int line, int character, Consumer<List<Target>> cb) {
-        requestDefinition(sessionFor(file), file == null ? null : uri(file), line, character, cb);
+        navigation.definition(file, line, character, cb);
     }
 
-    /**
-     * Definition at an explicit document URI on {@code anchorFile}'s session — how navigation chains
-     * <b>inside</b> an opened {@code jdt://} library source (#684): the library tab has no filesystem path,
-     * but jdtls resolves positions in the jdt documents it has served. {@code anchorFile} is the original
-     * workspace file the library source was reached from.
-     */
+    /** See {@link LspNavigationRequests#definitionAt}. */
     public void definitionAt(
             Path anchorFile, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
-        requestDefinition(
-                sessionFor(anchorFile),
-                documentUri != null ? documentUri : anchorFile == null ? null : uri(anchorFile),
-                line,
-                character,
-                cb);
+        navigation.definitionAt(anchorFile, documentUri, line, character, cb);
     }
 
-    /**
-     * Go to Implementation ({@code textDocument/implementation}, #735) — the concrete overrides of the
-     * member at the caret. Delivers targets on the FX thread; empty when unsupported / on error.
-     */
+    /** See {@link LspNavigationRequests#implementation}. */
     public void implementation(Path file, int line, int character, Consumer<List<Target>> cb) {
-        implementationAt(file, null, line, character, cb);
+        navigation.implementation(file, line, character, cb);
     }
 
-    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    /** See {@link LspNavigationRequests#implementationAt}. */
     public void implementationAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
-        implementationAt(anchor, documentUri, line, character, cb, null);
+        navigation.implementationAt(anchor, documentUri, line, character, cb);
     }
 
-    /** As above; {@code onError} (when given) hears a failed or timed-out request (Java review B13). */
+    /** See {@link LspNavigationRequests#implementationAt}. */
     public void implementationAt(
             Path anchor,
             @Nullable String documentUri,
@@ -5301,28 +3207,21 @@ public final class LspManager {
             int character,
             Consumer<List<Target>> cb,
             @Nullable Consumer<String> onError) {
-        requestLocations(
-                sessionFor(anchor),
-                documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
-                line,
-                character,
-                LanguageServerSession::implementation,
-                cb,
-                onError);
+        navigation.implementationAt(anchor, documentUri, line, character, cb, onError);
     }
 
-    /** Go to Type Definition ({@code textDocument/typeDefinition}, #736) — from a symbol to its type. */
+    /** See {@link LspNavigationRequests#typeDefinition}. */
     public void typeDefinition(Path file, int line, int character, Consumer<List<Target>> cb) {
-        typeDefinitionAt(file, null, line, character, cb);
+        navigation.typeDefinition(file, line, character, cb);
     }
 
-    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    /** See {@link LspNavigationRequests#typeDefinitionAt}. */
     public void typeDefinitionAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
-        typeDefinitionAt(anchor, documentUri, line, character, cb, null);
+        navigation.typeDefinitionAt(anchor, documentUri, line, character, cb);
     }
 
-    /** As above; {@code onError} (when given) hears a failed or timed-out request (Java review B13). */
+    /** See {@link LspNavigationRequests#typeDefinitionAt}. */
     public void typeDefinitionAt(
             Path anchor,
             @Nullable String documentUri,
@@ -5330,20 +3229,10 @@ public final class LspManager {
             int character,
             Consumer<List<Target>> cb,
             @Nullable Consumer<String> onError) {
-        requestLocations(
-                sessionFor(anchor),
-                documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
-                line,
-                character,
-                LanguageServerSession::typeDefinition,
-                cb,
-                onError);
+        navigation.typeDefinitionAt(anchor, documentUri, line, character, cb, onError);
     }
 
-    /**
-     * Go to Super Method (IntelliJ's Ctrl+U): the method the one at the caret overrides, or the class a type extends,
-     * through jdtls's {@code java/findLinks} {@code superImplementation} (sixth review E1).
-     */
+    /** See {@link LspNavigationRequests#superMethodAt}. */
     public void superMethodAt(
             Path anchor,
             @Nullable String documentUri,
@@ -5351,33 +3240,26 @@ public final class LspManager {
             int character,
             Consumer<List<Target>> cb,
             @Nullable Consumer<String> onError) {
-        requestLocations(
-                javaSessionFor(anchor),
-                documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
-                line,
-                character,
-                (s, u, pos) -> s.findLinks("superImplementation", u, pos),
-                cb,
-                onError);
+        navigation.superMethodAt(anchor, documentUri, line, character, cb, onError);
     }
 
-    /** Whether {@code file}'s server is jdtls, which answers Go to Super Method. */
+    /** See {@link LspNavigationRequests#supportsSuperMethod}. */
     public boolean supportsSuperMethod(Path file) {
-        return javaSessionFor(file) != null;
+        return navigation.supportsSuperMethod(file);
     }
 
-    /** Go to Declaration ({@code textDocument/declaration}, #736). */
+    /** See {@link LspNavigationRequests#declaration}. */
     public void declaration(Path file, int line, int character, Consumer<List<Target>> cb) {
-        declarationAt(file, null, line, character, cb);
+        navigation.declaration(file, line, character, cb);
     }
 
-    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    /** See {@link LspNavigationRequests#declarationAt}. */
     public void declarationAt(
             Path anchor, @Nullable String documentUri, int line, int character, Consumer<List<Target>> cb) {
-        declarationAt(anchor, documentUri, line, character, cb, null);
+        navigation.declarationAt(anchor, documentUri, line, character, cb);
     }
 
-    /** As above; {@code onError} (when given) hears a failed or timed-out request (Java review B13). */
+    /** See {@link LspNavigationRequests#declarationAt}. */
     public void declarationAt(
             Path anchor,
             @Nullable String documentUri,
@@ -5385,189 +3267,33 @@ public final class LspManager {
             int character,
             Consumer<List<Target>> cb,
             @Nullable Consumer<String> onError) {
-        requestLocations(
-                sessionFor(anchor),
-                documentUri != null ? documentUri : anchor == null ? null : uri(anchor),
-                line,
-                character,
-                LanguageServerSession::declaration,
-                cb,
-                onError);
+        navigation.declarationAt(anchor, documentUri, line, character, cb, onError);
     }
 
-    /** True if {@code file}'s server is ready and advertises {@code implementationProvider} (#735). */
+    /** See {@link LspNavigationRequests#supportsImplementation}. */
     public boolean supportsImplementation(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && implementationProvider(s.capabilities());
+        return navigation.supportsImplementation(file);
     }
 
-    /** True if {@code file}'s server is ready and advertises {@code typeDefinitionProvider} (#736). */
+    /** See {@link LspNavigationRequests#supportsTypeDefinition}. */
     public boolean supportsTypeDefinition(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && typeDefinitionProvider(s.capabilities());
+        return navigation.supportsTypeDefinition(file);
     }
 
-    /** True if {@code file}'s server is ready and advertises {@code declarationProvider} (#736). */
+    /** See {@link LspNavigationRequests#supportsDeclaration}. */
     public boolean supportsDeclaration(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s != null && declarationProvider(s.capabilities());
+        return navigation.supportsDeclaration(file);
     }
 
-    /** Pure: whether a server's capabilities include {@code implementationProvider} (null-safe). */
-    static boolean implementationProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        return caps != null && eitherTrue(caps.getImplementationProvider());
-    }
-
-    /** Pure: whether a server's capabilities include {@code typeDefinitionProvider} (null-safe). */
-    static boolean typeDefinitionProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        return caps != null && eitherTrue(caps.getTypeDefinitionProvider());
-    }
-
-    /** Pure: whether a server's capabilities include {@code declarationProvider} (null-safe). */
-    static boolean declarationProvider(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        return caps != null && eitherTrue(caps.getDeclarationProvider());
-    }
-
-    /**
-     * One position-to-locations request. {@code definition}, {@code implementation}, {@code typeDefinition}
-     * and {@code declaration} differ only in which session method runs — all four answer in the same two
-     * shapes (a {@code Location} list or a {@code LocationLink} list), and all four can name a {@code jdt://}
-     * class file, so they share one response walk rather than four copies of it.
-     */
-    @FunctionalInterface
-    private interface LocationRequest {
-        CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> run(
-                LanguageServerSession session, String uri, Position pos);
-    }
-
-    private void requestDefinition(
-            @Nullable LanguageServerSession s,
-            @Nullable String documentUri,
-            int line,
-            int character,
-            Consumer<List<Target>> cb) {
-        // XML: the grammar declaration instead of the element's own other tag, else the linked schema (B5, B10);
-        // a pom on the Maven server is lemminx too, its own answer still first (XML/pom review 4, B34).
-        boolean xml = s != null && XmlServerSettings.isLemminx(s.serverId());
-        var missingLink = new java.util.concurrent.atomic.AtomicReference<@Nullable String>();
-        LocationRequest request = xml
-                ? (session, uri, pos) -> XmlServer.definition(session, uri, pos, missingLink::set)
-                : LanguageServerSession::definition;
-        lastMissingInclude = null;
-        Consumer<List<Target>> answer = xml && s != null && documentUri != null
-                ? notingMissingInclude(s, documentUri, new Position(line, character), missingLink, cb)
-                : cb;
-        requestLocations(s, documentUri, line, character, request, answer, null);
-    }
-
-    /**
-     * Where the server's document link at {@code line}/{@code character} of {@code file} points (HTML review B6),
-     * delivered on the FX thread; null when the server has no link there (or is not running). The HTML server
-     * percent-encodes a fragment ({@code about.html%23team}); the target comes back split into file and fragment.
-     */
+    /** See {@link LspNavigationRequests#documentLinkTarget}. */
     public void documentLinkTarget(
             Path file, int line, int character, Consumer<com.editora.editops.HtmlLinks.@Nullable Target> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(null));
-            return;
-        }
-        Position pos = new Position(line, character);
-        s.documentLinks(uri(file))
-                .thenCompose(links -> {
-                    org.eclipse.lsp4j.DocumentLink link = XmlServer.linkAt(links, pos);
-                    return link == null || link.getTarget() != null
-                            ? CompletableFuture.completedFuture(link)
-                            : s.resolveDocumentLink(link);
-                })
-                .<com.editora.editops.HtmlLinks.@Nullable Target>thenApply(link -> {
-                    String target = link == null ? null : link.getTarget();
-                    if (target == null) {
-                        return null;
-                    }
-                    if (target.startsWith("http://") || target.startsWith("https://")) {
-                        return com.editora.editops.HtmlLinks.fromUri(target);
-                    }
-                    Path to = s.uris()
-                            .toPath(com.editora.editops.HtmlLinks.withoutQuery(
-                                    com.editora.editops.HtmlLinks.withoutFragment(target)));
-                    return to == null
-                            ? null
-                            : new com.editora.editops.HtmlLinks.Target(
-                                    com.editora.editops.HtmlLinks.Kind.FILE,
-                                    to,
-                                    com.editora.editops.HtmlLinks.fragmentOf(target),
-                                    "");
-                })
-                .exceptionally(t -> null)
-                .thenAccept(target -> Platform.runLater(() -> cb.accept(target)));
+        navigation.documentLinkTarget(file, line, character, cb);
     }
 
-    /** {@code cb}, after noting when nothing was found on an include href that names no file (C26). */
-    private Consumer<List<Target>> notingMissingInclude(
-            LanguageServerSession s,
-            String documentUri,
-            Position pos,
-            java.util.concurrent.atomic.AtomicReference<@Nullable String> missingLink,
-            Consumer<List<Target>> cb) {
-        return targets -> {
-            String link = missingLink.get();
-            lastMissingInclude =
-                    !targets.isEmpty() ? null : link != null ? link : XmlServer.missingInclude(s, documentUri, pos);
-            cb.accept(targets);
-        };
-    }
-
-    /**
-     * The file the last Go to Definition's include href (C26) or document link (XML/pom review 4, B33) named when it
-     * does not exist, or null.
-     */
-    private volatile @Nullable String lastMissingInclude;
-
+    /** See {@link LspNavigationRequests#lastMissingInclude}. */
     public @Nullable String lastMissingInclude() {
-        return lastMissingInclude;
-    }
-
-    private void requestLocations(
-            @Nullable LanguageServerSession s,
-            @Nullable String documentUri,
-            int line,
-            int character,
-            LocationRequest request,
-            Consumer<List<Target>> cb,
-            @Nullable Consumer<String> onError) {
-        if (s == null || documentUri == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        request.run(s, documentUri, new Position(line, character)).whenComplete((result, error) -> {
-            if (error != null && onError != null) {
-                String why = failureReason(error); // not an empty list, which reads as "none found" (B13)
-                Platform.runLater(() -> onError.accept(why));
-                return;
-            }
-            List<Target> targets = new ArrayList<>();
-            if (error == null && result != null) {
-                if (result.isLeft()) {
-                    for (Location l : result.getLeft()) {
-                        var range = l.getRange(); // a non-conforming server can omit the (spec-required) range
-                        if (range != null) {
-                            addDefinitionTarget(targets, s.uris(), l.getUri(), range.getStart());
-                        }
-                    }
-                } else if (result.getRight() != null) {
-                    for (LocationLink ll : result.getRight()) {
-                        var range = ll.getTargetSelectionRange() != null
-                                ? ll.getTargetSelectionRange()
-                                : ll.getTargetRange();
-                        if (range != null) {
-                            addDefinitionTarget(targets, s.uris(), ll.getTargetUri(), range.getStart());
-                        }
-                    }
-                }
-            }
-            Platform.runLater(() -> cb.accept(targets));
-        });
+        return navigation.lastMissingInclude();
     }
 
     // --- Code actions / quick fixes (#670) ------------------------------------------------------
@@ -5630,37 +3356,18 @@ public final class LspManager {
         return null;
     }
 
-    /**
-     * Last raw published diagnostics per <b>managed document URI</b> — the spelling this client opened the
-     * document under, never the one the server reported it under (open documents only — see
-     * {@link #onPublishDiagnostics}); the context a code-action request sends back to the server.
-     *
-     * <p>Keying by the server's string lost them whenever the server spelled the URI differently
-     * ({@code file:///c%3A/…} for our {@code file:///C:/…}, or a symlink-resolved path): the lookup below
-     * missed, the request went out with empty {@code context.diagnostics}, and every quick fix that keys off
-     * a diagnostic silently disappeared.
-     */
-    private final Map<String, List<org.eclipse.lsp4j.Diagnostic>> rawDiagnostics = new ConcurrentHashMap<>();
-
-    /** The retained raw diagnostics for {@code file}. */
-    private List<org.eclipse.lsp4j.Diagnostic> rawDiagnosticsFor(Path file) {
-        return rawDiagnostics.getOrDefault(uri(file), List.of());
+    /** See {@link LspDiagnostics#rawDiagnosticsFor}. */
+    List<org.eclipse.lsp4j.Diagnostic> rawDiagnosticsFor(Path file) {
+        return diagnostics.rawDiagnosticsFor(file);
     }
 
-    /**
-     * Requests the code actions available over {@code [startLine:startChar .. endLine:endChar]} (0-based),
-     * sending the range-overlapping known diagnostics as context, and delivers them on the FX thread —
-     * preferred actions first, disabled ones dropped.
-     */
+    /** See {@link LspCodeActions#codeActions}. */
     public void codeActions(
             Path file, int startLine, int startChar, int endLine, int endChar, Consumer<List<CodeActionItem>> cb) {
-        codeActions(file, startLine, startChar, endLine, endChar, null, cb);
+        codeActions.codeActions(file, startLine, startChar, endLine, endChar, cb);
     }
 
-    /**
-     * As above, asking only for actions of the {@code only} kinds (null: all): the gutter lightbulb wants quick fixes
-     * and quick assists, and every rest computed jdtls's generators and refactorings too (fifth review AV7).
-     */
+    /** See {@link LspCodeActions#codeActions}. */
     public void codeActions(
             Path file,
             int startLine,
@@ -5669,398 +3376,43 @@ public final class LspManager {
             int endChar,
             @Nullable List<String> only,
             Consumer<List<CodeActionItem>> cb) {
-        var range = new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
-        requestCodeActions(file, range, contextDiagnostics(rawDiagnosticsFor(file), range), only, cb);
+        codeActions.codeActions(file, startLine, startChar, endLine, endChar, only, cb);
     }
 
-    /**
-     * The code actions for {@code diagnostic} alone, at its range, as if the server had reported it: lemminx's
-     * generate-a-grammar fixes for a diagnostic its settings keep it from reporting (XML review 2 C8).
-     */
+    /** See {@link LspCodeActions#codeActionsFor}. */
     public void codeActionsFor(Path file, org.eclipse.lsp4j.Diagnostic diagnostic, Consumer<List<CodeActionItem>> cb) {
-        requestCodeActions(file, diagnostic.getRange(), List.of(diagnostic), null, cb);
+        codeActions.codeActionsFor(file, diagnostic, cb);
     }
 
-    private void requestCodeActions(
-            Path file,
-            org.eclipse.lsp4j.Range range,
-            List<org.eclipse.lsp4j.Diagnostic> context,
-            @Nullable List<String> only,
-            Consumer<List<CodeActionItem>> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(List.of()));
-            return;
-        }
-        EditBasis basis = editBasis(s);
-        Map<Path, String> expected = basis.documents();
-        long sentAt = basis.sentAtMillis();
-        s.codeAction(uri(file), range, context, only).whenComplete((result, error) -> {
-            List<CodeActionItem> items = new ArrayList<>();
-            if (error == null && result != null) {
-                for (var either : result) {
-                    if (either == null) {
-                        continue;
-                    }
-                    if (either.isLeft() && either.getLeft() != null) {
-                        var cmd = either.getLeft();
-                        items.add(new CodeActionItem(
-                                cmd.getTitle() == null ? "" : cmd.getTitle(), "", false, cmd, expected, sentAt));
-                    } else if (either.isRight() && either.getRight() != null) {
-                        var action = either.getRight();
-                        if (action.getDisabled() != null) {
-                            continue; // the server says it doesn't apply here
-                        }
-                        items.add(new CodeActionItem(
-                                action.getTitle() == null ? "" : action.getTitle(),
-                                action.getKind() == null ? "" : action.getKind(),
-                                Boolean.TRUE.equals(action.getIsPreferred()),
-                                action,
-                                expected,
-                                sentAt));
-                    }
-                }
-                items.sort((a, b) -> Boolean.compare(b.preferred(), a.preferred())); // preferred first (stable)
-            }
-            if (PythonCodeActions.SERVER_ID.equals(s.serverId())) { // Pyright gives no quick fixes (Python 2 E102)
-                PythonCodeActions.withQuickFixes(s, uri(file), items, context, only, expected, sentAt)
-                        .whenComplete((all, failed) -> Platform.runLater(() -> cb.accept(all != null ? all : items)));
-                return;
-            }
-            List<CodeActionItem> shown = BashCompletions.SERVER_ID.equals(s.serverId()) // titles, suppressions (C10)
-                    ? BashCodeActions.shape(items, context, uri(file), s.documentSnapshot(uri(file)), expected, sentAt)
-                    : items;
-            Platform.runLater(() -> cb.accept(shown));
-        });
-    }
-
-    /**
-     * Pure: what a code-action request at {@code range} carries as its context — the diagnostics overlapping it,
-     * or, for a bare caret on no squiggle, those on the caret's line. The quick fixes come from the context's
-     * diagnostics, so with the caret at the start of a line, after its {@code ;} or on the next word, there were
-     * none (Java review A5).
-     */
-    static List<org.eclipse.lsp4j.Diagnostic> contextDiagnostics(
-            List<org.eclipse.lsp4j.Diagnostic> all, org.eclipse.lsp4j.Range range) {
-        List<org.eclipse.lsp4j.Diagnostic> overlapping = diagnosticsOverlapping(all, range);
-        if (!overlapping.isEmpty() || !range.getStart().equals(range.getEnd())) {
-            return overlapping;
-        }
-        int line = range.getStart().getLine();
-        List<org.eclipse.lsp4j.Diagnostic> out = new ArrayList<>();
-        for (var d : all) {
-            if (d != null
-                    && d.getRange() != null
-                    && d.getRange().getStart().getLine() <= line
-                    && line <= d.getRange().getEnd().getLine()) {
-                out.add(d);
-            }
-        }
-        return out;
-    }
-
-    /** Pure: the diagnostics whose range overlaps {@code range} (what a code-action context should carry). */
-    static List<org.eclipse.lsp4j.Diagnostic> diagnosticsOverlapping(
-            List<org.eclipse.lsp4j.Diagnostic> all, org.eclipse.lsp4j.Range range) {
-        List<org.eclipse.lsp4j.Diagnostic> out = new ArrayList<>();
-        for (var d : all) {
-            if (d != null && d.getRange() != null && rangesOverlap(d.getRange(), range)) {
-                out.add(d);
-            }
-        }
-        return out;
-    }
-
-    private static boolean rangesOverlap(org.eclipse.lsp4j.Range a, org.eclipse.lsp4j.Range b) {
-        return comparePositions(a.getStart(), b.getEnd()) <= 0 && comparePositions(b.getStart(), a.getEnd()) <= 0;
-    }
-
-    private static int comparePositions(Position a, Position b) {
-        int byLine = Integer.compare(a.getLine(), b.getLine());
-        return byLine != 0 ? byLine : Integer.compare(a.getCharacter(), b.getCharacter());
-    }
-
-    /**
-     * Applies a picked {@link CodeActionItem#raw()}: an inline {@code edit} applies directly; an edit-less
-     * action is first resolved ({@code codeAction/resolve}); a {@code command} (bare, or riding the action)
-     * runs via {@code workspace/executeCommand} — whose server-side handler typically answers with a
-     * {@code workspace/applyEdit} back to us, which the registered apply-edit handler lands in the editor.
-     * {@code cb} gets overall success on the FX thread.
-     */
+    /** See {@link LspCodeActions#applyCodeAction}. */
     public void applyCodeAction(Path file, Object raw, Consumer<Boolean> cb) {
-        lastCodeActionFailure = null;
-        lastCodeActionEmpty = false;
-        lastEditUnresolvedUri = null;
-        LanguageServerSession s = sessionFor(file);
-        // No request time: an edit already inside this action was computed at some earlier, unknown moment,
-        // so nothing can show a closed file is still what the server saw.
-        EditBasis expected = s == null ? EditBasis.UNKNOWN : new EditBasis(expectedDocuments(s), 0, s.uris());
-        if (raw instanceof org.eclipse.lsp4j.Command cmd) {
-            executeCommandExpectingEdit(file, cmd, expected, cb);
-            return;
-        }
-        if (!(raw instanceof org.eclipse.lsp4j.CodeAction action)) {
-            Platform.runLater(() -> cb.accept(false));
-            return;
-        }
-        if (action.getEdit() != null) {
-            Platform.runLater(() -> finishCodeAction(file, action, action.getEdit(), expected, cb));
-            return;
-        }
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(false));
-            return;
-        }
-        s.resolveCodeAction(action).whenComplete((resolved, error) -> {
-            if (error != null) {
-                lastCodeActionFailure = failureReason(error);
-            }
-            org.eclipse.lsp4j.CodeAction use = error == null && resolved != null ? resolved : action;
-            Platform.runLater(() -> finishCodeAction(file, use, use.getEdit(), expected, cb));
-        });
+        codeActions.applyCodeAction(file, raw, cb);
     }
 
-    /** Request-time snapshots and eventual apply result for one command-driven edit per session. */
-    private record PendingApply(EditBasis expected, java.util.concurrent.atomic.AtomicReference<Boolean> applied) {}
-
-    private final Map<LanguageServerSession, PendingApply> pendingApplyExpected = new ConcurrentHashMap<>();
-
-    private void executeCommandExpectingEdit(
-            Path file, org.eclipse.lsp4j.Command command, EditBasis expected, Consumer<Boolean> cb) {
-        LanguageServerSession session = sessionFor(file);
-        if (session == null) {
-            Platform.runLater(() -> cb.accept(false));
-            return;
-        }
-        // The server computes this edit while it runs the command, so closed files are judged against now.
-        PendingApply pending = new PendingApply(
-                (expected == null ? EditBasis.UNKNOWN : expected).sentNow(),
-                new java.util.concurrent.atomic.AtomicReference<>());
-        if (pendingApplyExpected.putIfAbsent(session, pending) != null) {
-            Platform.runLater(() -> cb.accept(false));
-            return; // do not let concurrent commands share or overwrite each other's stale-edit guard
-        }
-        executeCommand(file, command.getCommand(), command.getArguments(), (result, error) -> {
-            if (error != null) {
-                lastCodeActionFailure = failureReason(error);
-            }
-            pendingApplyExpected.remove(session, pending);
-            Boolean applied = pending.applied().get();
-            cb.accept(error == null && !Boolean.FALSE.equals(applied));
-        });
-    }
-
-    /** Why the last code action failed to apply, when the server said; or null. */
-    private volatile @Nullable String lastCodeActionFailure;
-
-    /** The server's reason for the last failed code action, or null ("Could not apply: Inline Method" — BN9). */
+    /** See {@link LspCodeActions#lastCodeActionFailure}. */
     public @Nullable String lastCodeActionFailure() {
-        return lastCodeActionFailure;
+        return codeActions.lastCodeActionFailure();
     }
 
-    /** A URI naming no placeable file in the last refused server edit (lemminx's relative paths), or null. */
-    private volatile @Nullable String lastEditUnresolvedUri;
-
-    /** Why the last code action's edit was refused when it named a file this client cannot place (XML review B1). */
+    /** See {@link LspCodeActions#lastEditUnresolvedUri}. */
     public @Nullable String lastEditUnresolvedUri() {
-        return lastEditUnresolvedUri;
+        return codeActions.lastEditUnresolvedUri();
     }
 
-    /** Whether the last code action resolved to neither an edit nor a command: nothing to apply (ET1). */
-    private volatile boolean lastCodeActionEmpty;
-
+    /** See {@link LspCodeActions#lastCodeActionEmpty}. */
     public boolean lastCodeActionEmpty() {
-        return lastCodeActionEmpty;
+        return codeActions.lastCodeActionEmpty();
     }
 
-    /** Applies a code action together with the request-time snapshots captured when it was listed. */
+    /** See {@link LspCodeActions#applyCodeAction}. */
     public void applyCodeAction(Path file, CodeActionItem item, Consumer<Boolean> cb) {
-        lastCodeActionFailure = null;
-        lastCodeActionEmpty = false;
-        lastEditUnresolvedUri = null;
-        if (item == null) {
-            Platform.runLater(() -> cb.accept(false));
-            return;
-        }
-        Object raw = item.raw();
-        LanguageServerSession owner = sessionFor(file);
-        EditBasis basis = item.basis(owner == null ? WireUris.LOCAL : owner.uris());
-        if (raw instanceof org.eclipse.lsp4j.Command cmd) {
-            executeCommandExpectingEdit(file, cmd, basis, cb);
-            return;
-        }
-        if (!(raw instanceof org.eclipse.lsp4j.CodeAction action)) {
-            Platform.runLater(() -> cb.accept(false));
-            return;
-        }
-        if (action.getEdit() != null) {
-            Platform.runLater(() -> finishCodeAction(file, action, action.getEdit(), basis, cb));
-            return;
-        }
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(false));
-            return;
-        }
-        s.resolveCodeAction(action).whenComplete((resolved, error) -> {
-            if (error != null) {
-                lastCodeActionFailure = failureReason(error);
-            }
-            org.eclipse.lsp4j.CodeAction use = error == null && resolved != null ? resolved : action;
-            Platform.runLater(() -> finishCodeAction(file, use, use.getEdit(), basis, cb));
-        });
+        codeActions.applyCodeAction(file, item, cb);
     }
 
-    /** FX thread: applies {@code edit} (if any), then runs the action's trailing {@code command} (if any). */
-    private void finishCodeAction(
-            Path file,
-            org.eclipse.lsp4j.CodeAction action,
-            org.eclipse.lsp4j.WorkspaceEdit edit,
-            EditBasis expected,
-            Consumer<Boolean> cb) {
-        if (edit != null) {
-            applyWorkspaceEdit(
-                    edit, expected, editOk -> finishCodeActionAfterEdit(file, action, expected, cb, true, editOk));
-            return;
-        }
-        finishCodeActionAfterEdit(file, action, expected, cb, false, true);
-    }
-
-    private void finishCodeActionAfterEdit(
-            Path file,
-            org.eclipse.lsp4j.CodeAction action,
-            EditBasis expected,
-            Consumer<Boolean> cb,
-            boolean editPresent,
-            boolean editOk) {
-        if (editPresent && !editOk) {
-            cb.accept(false);
-            return;
-        }
-        if (action.getCommand() != null && action.getCommand().getCommand() != null) {
-            boolean editApplied = editOk;
-            LanguageServerSession session = sessionFor(file);
-            EditBasis commandExpected = editPresent && editOk && session != null ? editBasis(session) : expected;
-            executeCommandExpectingEdit(
-                    file, action.getCommand(), commandExpected, commandOk -> cb.accept(editApplied && commandOk));
-            return;
-        }
-        // No command and no edit either ⇒ nothing was done — report failure, not a silent success. jdtls answers
-        // so when a refactoring's final check fails (Inline Method on a method with several returns).
-        lastCodeActionEmpty = !editPresent;
-        cb.accept(editPresent && editOk);
-    }
-
-    /** UI-side workspace-edit applier (set by the coordinator; runs on the FX thread): applies each file's
-     *  batch through an undoable buffer, then the trailing file renames — all-or-nothing. Default: refuse. */
-    private volatile java.util.function.BiConsumer<WorkspaceEditMapper.Mapped, Consumer<Boolean>> applyEditHandler =
-            (edits, done) -> done.accept(false);
-
+    /** See {@link LspCodeActions#setApplyEditHandler}. */
     public void setApplyEditHandler(
             java.util.function.BiConsumer<WorkspaceEditMapper.Mapped, Consumer<Boolean>> handler) {
-        this.applyEditHandler = handler == null ? (edits, done) -> done.accept(false) : handler;
-    }
-
-    /**
-     * FX thread: validates {@code edit} against {@code basis} and hands it to the applier. An edit that only
-     * touches documents the server had open is applied in the same call, as before. One that reaches a
-     * closed file needs that file's modification time, so the check runs on a virtual thread and the apply
-     * returns to the FX thread — no file I/O happens here.
-     */
-    private void applyWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis, Consumer<Boolean> done) {
-        applyWorkspaceEdit(edit, basis, null, done);
-    }
-
-    /**
-     * As above; {@code preview}, when given, sees the planned edit first and hands back what to apply (the files
-     * the user kept), or never answers when the user cancels.
-     */
-    private void applyWorkspaceEdit(
-            org.eclipse.lsp4j.WorkspaceEdit edit,
-            EditBasis basis,
-            java.util.function.@Nullable BiConsumer<WorkspaceEditMapper.Mapped, Consumer<WorkspaceEditMapper.Mapped>>
-                    preview,
-            Consumer<Boolean> done) {
-        EditDraft draft = draftWorkspaceEdit(edit, basis);
-        if (draft == null) {
-            lastEditUnresolvedUri = WorkspaceEditMapper.unresolvedUri(edit, basis.uris()::toPath);
-            done.accept(false);
-            return;
-        }
-        Consumer<WorkspaceEditMapper.Mapped> apply = preview == null
-                ? mapped -> applyEditHandler.accept(mapped, done)
-                : mapped -> preview.accept(mapped, kept -> applyEditHandler.accept(kept, done));
-        if (draft.closedTargets().isEmpty()) {
-            apply.accept(draft.mapped());
-            return;
-        }
-        Thread.ofVirtual().name("lsp-edit-preimage").start(() -> {
-            EditPlan plan =
-                    completeWorkspaceEdit(draft.mapped(), draft.closedTargets(), basis, LspManager::lastModifiedMillis);
-            Platform.runLater(() -> {
-                if (plan.mapped() == null) {
-                    onEditBlocked.accept(plan.blocked());
-                    done.accept(false);
-                } else {
-                    apply.accept(plan.mapped());
-                }
-            });
-        });
-    }
-
-    /**
-     * The basis for a server edit that no tracked command is waiting for (the edit of a completion item's
-     * command, one sent after {@code executeCommand} was already answered, an unsolicited one). There is no
-     * request to date it by, but a target the server names <em>with the version the session currently
-     * holds</em> needs none: that version identifies the text, which is the session's own copy. Such targets
-     * get that text as their preimage (and keep the applier's version check); every other target stays
-     * unknown and is refused as before.
-     */
-    static EditBasis versionedBasis(LanguageServerSession session, org.eclipse.lsp4j.WorkspaceEdit edit) {
-        if (session == null) {
-            return EditBasis.UNKNOWN;
-        }
-        WireUris uris = session.uris();
-        if (edit == null || edit.getDocumentChanges() == null) {
-            return EditBasis.unknown(uris);
-        }
-        Map<String, String> snapshots = null;
-        Map<Path, String> documents = new java.util.LinkedHashMap<>();
-        for (var change : edit.getDocumentChanges()) {
-            var id = change != null && change.isLeft() && change.getLeft() != null
-                    ? change.getLeft().getTextDocument()
-                    : null;
-            if (id == null || id.getUri() == null || id.getVersion() == null) {
-                continue;
-            }
-            Path path = uris.toPath(id.getUri());
-            String key = uris.toKey(id.getUri());
-            if (path == null || !id.getVersion().equals(session.documentVersion(key))) {
-                continue;
-            }
-            if (snapshots == null) {
-                snapshots = session.documentSnapshots();
-            }
-            String text = snapshots.get(key);
-            if (text != null) {
-                documents.put(path, text);
-                documents.put(com.editora.config.PathKeys.canonical(path), text);
-            }
-        }
-        return documents.isEmpty() ? EditBasis.unknown(uris) : new EditBasis(Map.copyOf(documents), 0, uris);
-    }
-
-    /** A server-initiated {@code workspace/applyEdit} (from any session): apply on FX, answer the server. */
-    private void onServerApplyEdit(
-            LanguageServerSession session, org.eclipse.lsp4j.WorkspaceEdit edit, Consumer<Boolean> respond) {
-        PendingApply pending = pendingApplyExpected.get(session);
-        EditBasis expected = pending == null ? versionedBasis(session, edit) : pending.expected();
-        Platform.runLater(() -> applyWorkspaceEdit(edit, expected, applied -> {
-            if (pending != null) {
-                pending.applied().set(applied);
-            }
-            respond.accept(applied);
-        }));
+        codeActions.setApplyEditHandler(handler);
     }
 
     /** Why a request failed, as {@code onError} callbacks hear it: {@code "timeout"}, or the server's message. */
@@ -6071,20 +3423,18 @@ public final class LspManager {
         return cause instanceof java.util.concurrent.TimeoutException ? "timeout" : String.valueOf(cause.getMessage());
     }
 
+    /** See {@link LspNavigationRequests#references}. */
     public void references(Path file, int line, int character, Consumer<List<Target>> cb) {
-        references(file, line, character, cb, null);
+        navigation.references(file, line, character, cb);
     }
 
-    /**
-     * As above; {@code onError} (when given) hears a failed or timed-out request instead of {@code cb} hearing an
-     * empty list — which read as "No references found" (Java review B13).
-     */
+    /** See {@link LspNavigationRequests#references}. */
     public void references(
             Path file, int line, int character, Consumer<List<Target>> cb, @Nullable Consumer<String> onError) {
-        referencesAt(file, null, line, character, cb, onError);
+        navigation.references(file, line, character, cb, onError);
     }
 
-    /** As above in {@code documentUri} (a {@code jdt://} library source; null for {@code anchor} itself). */
+    /** See {@link LspNavigationRequests#referencesAt}. */
     public void referencesAt(
             Path anchor,
             @Nullable String documentUri,
@@ -6092,421 +3442,12 @@ public final class LspManager {
             int character,
             Consumer<List<Target>> cb,
             @Nullable Consumer<String> onError) {
-        LanguageServerSession s = sessionFor(anchor);
-        if (s == null) {
-            cb.accept(List.of());
-            return;
-        }
-        s.references(documentUri != null ? documentUri : uri(anchor), new Position(line, character))
-                .whenComplete((locations, error) -> {
-                    if (error != null && onError != null) {
-                        String why = failureReason(error);
-                        Platform.runLater(() -> onError.accept(why));
-                        return;
-                    }
-                    List<Target> targets = new ArrayList<>();
-                    if (error == null && locations != null) {
-                        for (Location l : locations) {
-                            var range = l.getRange(); // guard against a server omitting the spec-required range
-                            if (range != null) {
-                                addTarget(targets, s.uris(), l.getUri(), range.getStart());
-                            }
-                        }
-                    }
-                    Platform.runLater(() -> cb.accept(targets));
-                });
+        navigation.referencesAt(anchor, documentUri, line, character, cb, onError);
     }
 
-    /**
-     * The completion <em>trigger characters</em> {@code file}'s server advertised (e.g. {@code .} for Java,
-     * {@code <} for HTML), or empty if the server isn't ready / advertises none. The editor fires LSP
-     * completion when one of these is typed — so HTML/CSS/etc. complete like VS Code, not just on a word
-     * prefix (see {@code EditorBuffer.setLspTriggerChars}).
-     */
+    /** See {@link LspAssists#triggerCharacters}. */
     public java.util.Set<Character> triggerCharacters(Path file) {
-        LanguageServerSession s = sessionFor(file);
-        return s == null ? java.util.Set.of() : triggerCharsOf(s.capabilities());
-    }
-
-    /** Pure extraction of completion trigger characters from a server's capabilities (null-safe). */
-    static java.util.Set<Character> triggerCharsOf(org.eclipse.lsp4j.@Nullable ServerCapabilities caps) {
-        if (caps == null || caps.getCompletionProvider() == null) {
-            return java.util.Set.of();
-        }
-        List<String> triggers = caps.getCompletionProvider().getTriggerCharacters();
-        if (triggers == null) {
-            return java.util.Set.of();
-        }
-        java.util.Set<Character> out = new java.util.HashSet<>();
-        for (String t : triggers) {
-            if (t != null && !t.isEmpty()) {
-                out.add(t.charAt(0));
-            }
-        }
-        return out;
-    }
-
-    /**
-     * jdtls's {@code initializationOptions}: {@code settings.java.autobuild.enabled=false} always, plus
-     * the java-debug plugin {@code bundles} when {@code debugBundles} is non-empty. Editora only needs
-     * jdtls for per-file diagnostics/completion/hover/nav — never its on-disk build output — but by
-     * default jdtls runs a full incremental Eclipse workspace <em>build</em> on save/change, which m2e
-     * points at the project's own configured Maven/Gradle output directory (e.g. {@code target/classes}
-     * for a Maven project — the exact same directory {@code mvn}/{@code gradle} CLI builds write to).
-     * Racing jdtls's ECJ builder against a CLI build there can leave that directory missing classes (most
-     * visibly javac's synthetic enum-switch-map inner classes, since ECJ doesn't regenerate them in
-     * lockstep) even right after a clean CLI build. Disabling autobuild stops jdtls from ever touching
-     * that directory; live per-file diagnostics still work via reconcile-on-type, which isn't gated by it.
-     * Pure + package-private so it's directly unit-tested.
-     */
-    static Map<String, Object> javaInitOptions(List<String> debugBundles) {
-        return javaInitOptions(debugBundles, false);
-    }
-
-    static Map<String, Object> javaInitOptions(List<String> debugBundles, boolean onTypeFormatting) {
-        return javaInitOptions(debugBundles, onTypeFormatting, null);
-    }
-
-    static Map<String, Object> javaInitOptions(
-            List<String> debugBundles, boolean onTypeFormatting, @Nullable List<JavaRuntimes.Jdk> jdks) {
-        return javaInitOptions(debugBundles, onTypeFormatting, jdks, null);
-    }
-
-    static Map<String, Object> javaInitOptions(
-            List<String> debugBundles,
-            boolean onTypeFormatting,
-            @Nullable List<JavaRuntimes.Jdk> jdks,
-            @Nullable String preferredHome) {
-        Map<String, Object> options = new java.util.HashMap<>();
-        options.put("settings", Map.of("java", javaSettings(onTypeFormatting, jdks, preferredHome)));
-        return finishJavaInitOptions(options, debugBundles);
-    }
-
-    /**
-     * jdtls's {@code settings.java}: autobuild off, plus the JDKs its machine actually has ({@code jdks}, or
-     * this machine's when null).
-     *
-     * <p>{@code configuration.runtimes} is not optional polish. m2e writes a project's execution environment
-     * into its Eclipse {@code .classpath} from the pom, so {@code maven.compiler.release=17} demands
-     * {@code JavaSE-17}; jdtls can only bind that to a JDK it has been told about, and telling it nothing
-     * leaves it knowing only the JVM it runs on. A project targeting any other release then has an
-     * unresolved container, and an unresolved container makes {@code vscode.java.resolveClasspath} return an
-     * <b>empty classpath with no error</b> — which Run could only report as "the project hasn't finished
-     * importing" for a project that had imported perfectly. Declaring the real runtimes also gives jdtls a
-     * sane default to fall back to when a project's exact release isn't installed at all.
-     */
-    private static Map<String, Object> javaSettings(
-            boolean onTypeFormatting, @Nullable List<JavaRuntimes.Jdk> jdks, @Nullable String preferredHome) {
-        // The keys pushed after initialized, sent here too so the first import already runs with them.
-        Map<String, Object> java = new java.util.HashMap<>(LspServerSettings.javaSettings(onTypeFormatting));
-        java.put("autobuild", Map.of("enabled", false));
-        List<Map<String, Object>> runtimes =
-                // jdks given: a remote host's, whose sources are not on this machine's disk to look for
-                JavaRuntimes.runtimes(jdks == null ? JavaRuntimes.discover() : jdks, preferredHome, jdks == null);
-        return Map.copyOf(withRuntimes(java, runtimes));
-    }
-
-    /**
-     * {@code java} (jdtls's {@code settings.java}) with {@code runtimes} as {@code configuration.runtimes}, Gradle
-     * run on their default, and the Gradle daemons jdtls starts told to stop when idle ({@link
-     * #GRADLE_DAEMON_ARGUMENTS}). Sent at start and in every later settings push, so a changed Default JDK reaches
-     * a running jdtls (Java debug review 2, B102). Pure.
-     */
-    static Map<String, Object> withRuntimes(Map<String, Object> java, List<Map<String, Object>> runtimes) {
-        Map<String, Object> out = new java.util.HashMap<>(java);
-        if (runtimes.isEmpty()) {
-            return out;
-        }
-        Map<String, Object> configuration = new java.util.HashMap<>();
-        if (out.get("configuration") instanceof Map<?, ?> existing) {
-            existing.forEach((k, v) -> configuration.put(String.valueOf(k), v));
-        }
-        configuration.put("runtimes", runtimes);
-        out.put("configuration", Map.copyOf(configuration));
-        Map<String, Object> gradle = new java.util.HashMap<>();
-        gradle.put("arguments", GRADLE_DAEMON_ARGUMENTS);
-        String gradleJdk = JavaRuntimes.defaultPath(runtimes);
-        if (gradleJdk != null) {
-            // Gradle runs on the same JDK as the projects' default, not whatever jdtls itself runs on.
-            gradle.put("java", Map.of("home", gradleJdk));
-        }
-        out.put("import", Map.of("gradle", Map.copyOf(gradle)));
-        return out;
-    }
-
-    /**
-     * The Gradle arguments of jdtls's imports: a daemon it starts stops after ten idle minutes, not Gradle's three
-     * hours. jdtls leaves its daemons running when it exits, so each Gradle project opened left a JVM behind long
-     * after Editora closed (Java debug review 2, lead note). Only the daemons these imports start are affected:
-     * Gradle reuses a daemon only when its settings match.
-     */
-    static final String GRADLE_DAEMON_ARGUMENTS = "-Dorg.gradle.daemon.idletimeout=600000";
-
-    private static Map<String, Object> finishJavaInitOptions(Map<String, Object> options, List<String> debugBundles) {
-        options.put("extendedClientCapabilities", javaExtendedClientCapabilities());
-        if (!debugBundles.isEmpty()) {
-            options.put("bundles", debugBundles);
-        }
-        return Map.copyOf(options);
-    }
-
-    /**
-     * jdtls's {@code initializationOptions.extendedClientCapabilities} (#741) — a vendor extension, distinct
-     * from the LSP {@code ClientCapabilities}, that gates a large part of what jdtls will even offer.
-     *
-     * <p><b>Measured, not assumed</b> (driving jdtls 1.60 against the same file and position): declaring these
-     * takes the code actions at a field from <b>9 to 16</b>. Without them, Generate toString / hashCode+equals
-     * / Constructors / Delegate Methods, Override-Implement Methods and Extract Interface are not returned at
-     * all — the server simply doesn't offer what it thinks the client cannot drive. Re-measured on 1.62 by
-     * {@code JdtlsUpgradeProbeTest}: 11 to 17 at its fixture's field, with the same nine titles depending on them.
-     *
-     * <p><b>Each prompt flag is a contract, not a hint.</b> Turning one on changes that action's reply from a
-     * directly-appliable edit into a {@code java.action.*Prompt} command the client must handle. Enabling one
-     * without implementing its prompt doesn't leave the feature as it was — it <em>breaks</em> it: the action
-     * still appears and then does nothing. That is why the accessors actions (which work today without any
-     * flag) are only listed here alongside a real picker; see {@link JdtlsGenerate}.
-     *
-     * <p>{@code resolveAdditionalTextEditsSupport} is the odd one out and needs no UI: it tells jdtls to defer
-     * an auto-import's edits to {@code completionItem/resolve}, which is exactly what
-     * {@code LspCoordinator.autoImportAccept} already does. Without it jdtls computes those edits eagerly for
-     * every item in a completion list — pure waste on a per-keystroke path.
-     */
-    static Map<String, Object> javaExtendedClientCapabilities() {
-        Map<String, Object> caps = new java.util.LinkedHashMap<>();
-        // Needs no client UI.
-        caps.put("classFileContentsSupport", true); // we open jdt:// library source (#665)
-        caps.put("resolveAdditionalTextEditsSupport", true); // we resolve on accept (#410/#445)
-        caps.put("progressReportProvider", true); // legacy language/progressReport, coalesced on the status bar
-        // Each of these is backed by a prompt in JdtlsGenerate — DO NOT enable one without its picker.
-        caps.put("generateToStringPromptSupport", true);
-        caps.put("hashCodeEqualsPromptSupport", true);
-        caps.put("generateConstructorsPromptSupport", true);
-        caps.put("overrideMethodsPromptSupport", true);
-        // Backed by JdtlsGenerate's accessor and delegate-method prompts.
-        caps.put("advancedGenerateAccessorsSupport", true);
-        caps.put("generateDelegateMethodsPromptSupport", true);
-        // Backed by JdtlsRefactor: java.action.applyRefactoringCommand is carried out by the client.
-        // jdtls offers Extract Interface only with both flags. The second one also turns the extract
-        // refactorings (variable, constant, method, field) into that same command; each is one
-        // java/getRefactorEdit away.
-        caps.put("extractInterfaceSupport", true);
-        // Resolving "Add all missing imports" then asks about each ambiguous name (chooseImports), as Organize
-        // Imports does; without it Date was skipped silently (Java review D6).
-        caps.put("advancedOrganizeImportsSupport", true);
-        caps.put("advancedExtractRefactoringSupport", true);
-        caps.put("moveRefactoringSupport", true);
-        // jdtls 1.61+: a move with problems answers a confirmationToken instead of applying anyway; the
-        // coordinator shows the problems and resends with the token (review D11). Older servers ignore it.
-        caps.put("moveRefactoringConfirmationSupport", true);
-        // Extract Method / Variable / Field at a bare caret: the action is offered and the client asks
-        // java/inferSelection which expression to extract (review D7). Introduce Parameter becomes the same
-        // client-driven command, whose edit is one java/getRefactorEdit away.
-        caps.put("inferSelectionSupport", List.of("extractMethod", "extractVariable", "extractField"));
-        caps.put("advancedIntroduceParameterRefactoringSupport", true);
-        // jdtls asks through workspace/executeClientCommand which class an ambiguous name means (Organize
-        // Imports) and waits for the answer; LanguageServerSession.executeClientCommand gives it (review A3).
-        caps.put("executeClientCommandSupport", true);
-        return Map.copyOf(caps);
-    }
-
-    /**
-     * The {@code initializationOptions} a server starts with: the TypeScript server's own, else the server's defaults
-     * with the project's settings and the XML settings laid over them (jdtls's with its library-sources switch).
-     */
-    private static @Nullable Object startOptions(
-            String serverId,
-            boolean remote,
-            Path root,
-            LanguageServerSession session,
-            @Nullable Path tsserverPath,
-            boolean typeAcquisition,
-            boolean loose,
-            List<String> startBundles,
-            @Nullable Path astroTsdk,
-            boolean onTypeFormatting,
-            @Nullable List<JavaRuntimes.Jdk> jdks,
-            boolean centralIndex,
-            @Nullable String javaPreferredHome,
-            boolean downloadSources) {
-        return TypeScriptServer.SERVER_ID.equals(serverId) && !remote
-                ? TypeScriptServer.initializationOptions(tsserverPath, typeAcquisition, loose)
-                : TypeScriptServer.SERVER_ID.equals(serverId)
-                        ? TypeScriptServer.initializationOptions(null, typeAcquisition, false)
-                        : withXmlSettings(
-                                serverId,
-                                withProjectSettings(
-                                        serverId,
-                                        LspServerRegistry.JAVA_SERVER_ID.equals(serverId)
-                                                ? JavaLibrarySources.withDownloadSources(
-                                                        initOptionsFor(
-                                                                serverId,
-                                                                startBundles,
-                                                                astroTsdk,
-                                                                onTypeFormatting,
-                                                                jdks,
-                                                                centralIndex,
-                                                                javaPreferredHome),
-                                                        downloadSources)
-                                                : initOptionsFor(
-                                                        serverId,
-                                                        startBundles,
-                                                        astroTsdk,
-                                                        onTypeFormatting,
-                                                        jdks,
-                                                        centralIndex,
-                                                        javaPreferredHome),
-                                        remote ? null : root),
-                                session.xmlSettings());
-    }
-
-    /**
-     * {@code options} with lemminx's {@code settings.xml} object ({@code xml}, null = none) for an XML or pom server,
-     * so its very first validation already runs with them — no schema download before the first push; anything
-     * else unchanged.
-     */
-    static @Nullable Object withXmlSettings(
-            String serverId, @Nullable Object options, @Nullable Map<String, Object> xml) {
-        return xml == null || !XmlServerSettings.isLemminx(serverId)
-                ? options
-                : XmlServerSettings.withSection(options, xml);
-    }
-
-    /**
-     * {@code options} (jdtls's) with the preferences {@code root}'s own files state ({@link JavaProjectSettings})
-     * merged into {@code settings.java}; anything else unchanged.
-     */
-    @SuppressWarnings("unchecked")
-    static @Nullable Object withProjectSettings(String serverId, @Nullable Object options, @Nullable Path root) {
-        if (!LspServerRegistry.JAVA_SERVER_ID.equals(serverId) || !(options instanceof Map<?, ?> map) || root == null) {
-            return options;
-        }
-        com.editora.process.ExecTarget target = com.editora.process.ExecTargets.forPath(root);
-        Map<String, Object> project = JavaProjectSettings.forRoot(
-                root, target.isLocal() ? null : WireUris.mapped(target)::toWire); // a container or WSL (DF2)
-        Object settings = map.get("settings");
-        if (project.isEmpty() || !(settings instanceof Map<?, ?> s) || !(s.get("java") instanceof Map<?, ?> java)) {
-            return options;
-        }
-        Map<String, Object> out = new java.util.HashMap<>((Map<String, Object>) map);
-        out.put("settings", Map.of("java", JavaProjectSettings.merge((Map<String, Object>) java, project)));
-        return Map.copyOf(out);
-    }
-
-    /**
-     * The {@code initialize.initializationOptions} for a server, or {@code null} for one that needs none. Pure
-     * + package-private so it's unit-tested:
-     * <ul>
-     *   <li><b>java</b> (jdtls): {@code settings.java.autobuild.enabled=false} always + the java-debug plugin
-     *       {@code bundles} when debugging is on (see {@link #javaInitOptions}).</li>
-     *   <li><b>go</b> (gopls): {@code semanticTokens=true} — gopls ships semantic tokens disabled and only
-     *       advertises {@code semanticTokensProvider} when this flat key is set (confirmed; {@code ui.} doesn't).</li>
-     *   <li><b>json/css/html</b> (vscode-*-language-server): {@code provideFormatter=true} — these servers
-     *       implement formatting but only advertise {@code documentFormattingProvider} when VS Code's own
-     *       {@code provideFormatter} flag is passed; without it, Format Document was silently unavailable on a
-     *       {@code .json}/{@code .css}/{@code .html} even though the server would format (#468; verified by
-     *       driving the real servers: the flag flips the advertised capability from false to true).</li>
-     *   <li><b>astro</b> (astro-ls): {@code typescript.tsdk} points at a <i>trusted</i> folder's own TypeScript
-     *       SDK, or the SDK installed beside the language server ({@link #astroTypeScriptSdk}). Astro refuses
-     *       initialization without it, so with neither the server is not started.</li>
-     *   <li><b>maven-pom</b> (JVM lemminx + lemminx-maven): {@code settings.xml.maven.central.skip=true} —
-     *       the lemminx-maven settings live under an {@code xml.maven} object (schema verified against the
-     *       extension's {@code XMLMavenSettings}). {@code central.skip=true} keeps lemminx-maven from asking
-     *       search.maven.org (its {@code RemoteCentralRepositorySearcher}; there is no index download since 0.5)
-     *       as completion is typed, so coordinates come from the local {@code ~/.m2} repository only —
-     *       network-conservative, matching how Git/LSP/update-check are gated — unless Settings → LSP "Search Maven
-     *       Central when completing pom.xml coordinates" is on ({@link #setMavenCentralIndex}, review C10, D13).
-     *       Sending any {@code xml.maven} object is also what activates the extension's POM awareness in the
-     *       first place.</li>
-     * </ul>
-     */
-    static @Nullable Object initOptionsFor(String serverId, List<String> debugBundles) {
-        return initOptionsFor(serverId, debugBundles, null, false);
-    }
-
-    /** {@code astroTsdk} is the SDK {@link #astroTypeScriptSdk} chose; it is only read for the Astro server. */
-    static @Nullable Object initOptionsFor(
-            String serverId, List<String> debugBundles, @Nullable Path astroTsdk, boolean javaOnTypeFormatting) {
-        return initOptionsFor(serverId, debugBundles, astroTsdk, javaOnTypeFormatting, null);
-    }
-
-    /** As above; {@code jdks} are the JDKs jdtls is told about (null: this machine's, discovered now). */
-    static @Nullable Object initOptionsFor(
-            String serverId,
-            List<String> debugBundles,
-            @Nullable Path astroTsdk,
-            boolean javaOnTypeFormatting,
-            @Nullable List<JavaRuntimes.Jdk> jdks) {
-        return initOptionsFor(serverId, debugBundles, astroTsdk, javaOnTypeFormatting, jdks, false);
-    }
-
-    /** As above; {@code mavenCentralIndex} lets lemminx-maven search Maven Central as coordinates are completed. */
-    static @Nullable Object initOptionsFor(
-            String serverId,
-            List<String> debugBundles,
-            @Nullable Path astroTsdk,
-            boolean javaOnTypeFormatting,
-            @Nullable List<JavaRuntimes.Jdk> jdks,
-            boolean mavenCentralIndex) {
-        return initOptionsFor(serverId, debugBundles, astroTsdk, javaOnTypeFormatting, jdks, mavenCentralIndex, null);
-    }
-
-    /** As above; {@code javaPreferredHome} is the JDK jdtls makes its default ({@link JavaRuntimes#preferredHome}). */
-    static @Nullable Object initOptionsFor(
-            String serverId,
-            List<String> debugBundles,
-            @Nullable Path astroTsdk,
-            boolean javaOnTypeFormatting,
-            @Nullable List<JavaRuntimes.Jdk> jdks,
-            boolean mavenCentralIndex,
-            @Nullable String javaPreferredHome) {
-        return switch (serverId == null ? "" : serverId) {
-            case "java" -> javaInitOptions(debugBundles, javaOnTypeFormatting, jdks, javaPreferredHome);
-            case "go" -> Map.of("semanticTokens", true);
-            case "json", "css", "html" -> Map.of("provideFormatter", true);
-            // gvy reads a flat map of its VS Code settings. CodeNarc's style rules flag nearly every line of
-            // ordinary Groovy at Information level; compiler errors are what an editor needs by default.
-            case "groovy" -> Map.of("groovy.codenarc.enabled", false);
-            // Pyright publishes its diagnostics: pulled ones it computes only for the open files unless the client
-            // keeps a workspace/diagnostic request waiting, so Problems → Whole project listed nothing more
-            // (Python review 2, B105). Publishing is how it reports a whole project.
-            case "python" -> Map.of("disablePullDiagnostics", true);
-            case "scala" -> metalsInitOptions();
-            case ASTRO_SERVER_ID ->
-                astroTsdk == null ? null : Map.of("typescript", Map.of("tsdk", astroTsdk.toString()));
-            // lemminx's protocol extensions Editora carries out (XML review D6). The xml settings object is
-            // the Settings → LSP → XML section's (merge it in beside this key).
-            case XmlServer.SERVER_ID -> Map.of("extendedClientCapabilities", XmlServer.extendedClientCapabilities());
-            // The pom server is lemminx with the Maven extension: the same protocol extensions (review 2, D15).
-            case LspServerRegistry.MAVEN_POM_SERVER_ID ->
-                Map.of(
-                        "extendedClientCapabilities",
-                        XmlServer.extendedClientCapabilities(),
-                        "settings",
-                        Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", !mavenCentralIndex)))));
-            default -> null;
-        };
-    }
-
-    private static final String ASTRO_SERVER_ID = "astro";
-
-    /**
-     * Metals' {@code initializationOptions}: what this client implements of its extensions, and nothing more
-     * (an option left out means Metals falls back to plain LSP). Its status items arrive as
-     * {@code metals/status}; prompts as {@code metals/inputBox} / {@code metals/quickPick}; editor actions as
-     * {@code metals/executeClientCommand}; {@code debuggingProvider} lets Debug start Metals' debug adapter
-     * ({@code debug-adapter-start}). {@code isHttpEnabled} off: no local web server for its doctor page.
-     */
-    static Map<String, Object> metalsInitOptions() {
-        Map<String, Object> options = new java.util.LinkedHashMap<>();
-        options.put("statusBarProvider", "on");
-        options.put("icons", "vscode"); // the syntax MetalsStatusView reads (and strips)
-        options.put("isHttpEnabled", false);
-        options.put("debuggingProvider", true);
-        options.put("executeClientCommandProvider", true);
-        options.put("inputBoxProvider", true);
-        options.put("quickPickProvider", true);
-        options.put("isExitOnShutdown", true);
-        return options;
+        return assists.triggerCharacters(file);
     }
 
     /**
@@ -6608,231 +3549,24 @@ public final class LspManager {
         this.onStartRefused = callback == null ? (id, root, why) -> {} : callback;
     }
 
-    /**
-     * The tsserver for a local TypeScript-server root: the folder's own only within its trusted part, else the
-     * one beside the installed server; never a folder's own for the shared loose-files root. Off the FX thread
-     * (PATH and disk).
-     */
-    static TypeScriptServer.Choice typeScriptChoice(
-            Path root, @Nullable Path trustedCeiling, List<String> command, boolean loose) {
-        return typeScriptChoice(root, trustedCeiling, command, loose, null);
-    }
-
-    /**
-     * {@link #typeScriptChoice(Path, Path, List, boolean)} where Editora's own TypeScript ({@code ownTsserver}, null:
-     * not installed) comes before the one beside the server: that one is often a TypeScript 6 or 7 a user installed
-     * globally, where Node.js types go missing or there is no tsserver at all (JS review B101).
-     */
-    static TypeScriptServer.Choice typeScriptChoice(
-            Path root, @Nullable Path trustedCeiling, List<String> command, boolean loose, @Nullable Path ownTsserver) {
-        Path trusted = trustedCeiling == null || loose ? null : TypeScriptServer.findTsserver(root, trustedCeiling);
-        Path any = loose ? null : TypeScriptServer.findTsserver(root, null);
-        Path executable = typeScriptServerExecutable(command);
-        return TypeScriptServer.choose(
-                trusted,
-                any,
-                ownTsserver != null ? ownTsserver : TypeScriptServer.installedTsserver(executable),
-                TypeScriptServer.installedPackageVersion(executable),
-                loose);
-    }
-
-    /**
-     * Where typescript-language-server itself is, links followed: the command's word naming it (a custom command
-     * may run it through {@code node} or a wrapper), else the command's program. Null when it cannot be found.
-     */
+    /** See {@link NodeServerPaths#typeScriptServerExecutable}. */
     public static @Nullable Path typeScriptServerExecutable(List<String> command) {
-        if (command == null || command.isEmpty()) {
-            return null;
-        }
-        String word = command.get(0);
-        for (String w : command) {
-            if (w.contains("typescript-language-server")) {
-                word = w;
-                break;
-            }
-        }
-        List<String> resolved = ProcessRunner.resolveExecutable(List.of(word));
-        if (resolved.isEmpty()) {
-            return null;
-        }
-        try {
-            Path exe = Path.of(resolved.get(0)).toAbsolutePath().normalize();
-            return Files.exists(exe) ? exe.toRealPath() : null;
-        } catch (java.io.IOException | java.nio.file.InvalidPathException e) {
-            return null;
-        }
+        return NodeServerPaths.typeScriptServerExecutable(command);
     }
 
-    /** Whether {@code serverId}'s install is an npm package — a Node.js script (HTML, CSS, JSON, YAML, Bash…). Pure. */
-    static boolean nodeScriptServer(String serverId) {
-        return com.editora.install.InstallCatalog.npmPackage(serverId) != null;
-    }
-
-    /**
-     * The bin folder of the Node.js a server under {@code root} runs with, or null: the Settings Node.js, then —
-     * only when {@code projectVersionFile} (tsserver, which runs the project's own TypeScript) — the project's
-     * {@code .nvmrc}/{@code .node-version}, then PATH. Editora's own npm servers never follow a project's pin: an
-     * old pinned Node.js cannot run them (HTML review 2 A103).
-     */
-    static @Nullable Path nodeBinDir(Path root, String nodeSetting, boolean projectVersionFile) {
-        try {
-            Path file = projectVersionFile ? root.resolve("package.json") : null;
-            return com.editora.run.NodeRuntimes.resolveLocal(file, null, "", nodeSetting)
-                    .binDir()
-                    .orElse(null);
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
-    /**
-     * The topmost ancestor of {@code root} (or {@code root} itself) that is still trusted — how far up a
-     * search for project-supplied code may go — or {@code null} when {@code root} is not trusted at all.
-     */
-    static @Nullable Path trustedCeiling(Path root, java.util.function.Predicate<Path> trusted) {
-        if (root == null || trusted == null) {
-            return null;
-        }
-        Path dir = root.toAbsolutePath().normalize();
-        if (!trusted.test(dir)) {
-            return null;
-        }
-        for (Path parent = dir.getParent(); parent != null && trusted.test(parent); parent = parent.getParent()) {
-            dir = parent;
-        }
-        return dir;
-    }
-
-    /**
-     * Finds the TypeScript SDK required by astro-ls, which loads and <b>runs</b> the JavaScript in that
-     * directory during {@code initialize}. The folder's own TypeScript is therefore taken only from a
-     * trusted folder: {@code trustedCeiling} ({@link #trustedCeiling}) is null for an untrusted root, and
-     * otherwise bounds the upward walk (npm/pnpm workspace hoisting) so it never leaves the trusted folder.
-     * Next comes the SDK beside the resolved astro-ls installation, which is the user's own. A trusted
-     * folder with neither gets its deterministic project-local path, which produces Astro's own clear
-     * "can't find TypeScript" error; an untrusted one gets {@code null} — the server is not started.
-     */
-    static @Nullable Path astroTypeScriptSdk(Path root, @Nullable Path trustedCeiling, List<String> command) {
-        return astroTypeScriptSdk(root, trustedCeiling, command, null);
-    }
-
-    /** As above, with Editora's own TypeScript SDK ({@code ownSdk}, null: none) before the one beside astro-ls (B104). */
-    static @Nullable Path astroTypeScriptSdk(
-            Path root, @Nullable Path trustedCeiling, List<String> command, @Nullable Path ownSdk) {
-        if (trustedCeiling != null) {
-            Path projectSdk = findTypeScriptSdk(root, trustedCeiling);
-            if (projectSdk != null) {
-                return projectSdk;
-            }
-        }
-        if (ownSdk != null) {
-            return ownSdk;
-        }
-        if (command != null && !command.isEmpty()) {
-            List<String> resolved = ProcessRunner.resolveExecutable(command);
-            if (!resolved.isEmpty()) {
-                try {
-                    Path executable = Path.of(resolved.get(0)).toAbsolutePath().normalize();
-                    if (Files.exists(executable)) {
-                        executable = executable.toRealPath();
-                    }
-                    Path installedSdk = findTypeScriptSdk(executable.getParent(), null);
-                    if (installedSdk != null) {
-                        return installedSdk;
-                    }
-                } catch (java.io.IOException | java.nio.file.InvalidPathException ignored) {
-                    // Fall through to the trusted project-local path, or to not starting.
-                }
-            }
-        }
-        if (trustedCeiling == null) {
-            return null;
-        }
-        Path base = root == null ? Path.of("") : root;
-        return base.toAbsolutePath().normalize().resolve("node_modules/typescript/lib");
-    }
-
-    /**
-     * The first {@code node_modules/typescript/lib} walking up from {@code start}; {@code ceiling}, when
-     * given, is the last directory looked at. Public for the trust prompt, which lists what trusting adds.
-     */
+    /** See {@link NodeServerPaths#findTypeScriptSdk}. */
     public static @Nullable Path findTypeScriptSdk(@Nullable Path start, @Nullable Path ceiling) {
-        Path stop = ceiling == null ? null : ceiling.toAbsolutePath().normalize();
-        for (Path dir = start == null ? null : start.toAbsolutePath().normalize(); dir != null; dir = dir.getParent()) {
-            if (stop != null && !dir.startsWith(stop)) {
-                break;
-            }
-            Path candidate = dir.resolve("node_modules/typescript/lib");
-            if (Files.isRegularFile(candidate.resolve("typescript.js"))
-                    || Files.isRegularFile(candidate.resolve("tsserverlibrary.js"))) {
-                return candidate;
-            }
-        }
-        return null;
+        return NodeServerPaths.findTypeScriptSdk(start, ceiling);
     }
 
-    /** Told (FX thread) that a document's diagnostics are confirmed unchanged by its server. */
-    private volatile Consumer<Path> onDiagnosticsUnchanged = file -> {};
-
+    /** See {@link LspDiagnostics#setOnDiagnosticsUnchanged}. */
     public void setOnDiagnosticsUnchanged(Consumer<Path> handler) {
-        onDiagnosticsUnchanged = handler == null ? file -> {} : handler;
+        diagnostics.setOnDiagnosticsUnchanged(handler);
     }
 
-    /**
-     * Requests <em>pull</em> diagnostics ({@code textDocument/diagnostic}) for {@code file} and routes the
-     * result through the same diagnostics callback as pushed {@code publishDiagnostics}. A no-op unless the
-     * file's server advertises a {@code diagnosticProvider} (so push-only servers like jdtls/pyright/tsserver
-     * are untouched). An "unchanged" report leaves the current diagnostics in place.
-     */
+    /** See {@link LspDiagnostics#pullDiagnostics}. */
     public void pullDiagnostics(Path file) {
-        if (file == null) {
-            return;
-        }
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || s.capabilities() == null || s.capabilities().getDiagnosticProvider() == null) {
-            return;
-        }
-        String documentUri = uri(file);
-        Integer requestedVersion = s.documentVersion(documentUri);
-        // The generation is taken when the request is really sent: a call that finds the same pull still
-        // unanswered sends nothing and must not outdate the answer it is waiting for along with it.
-        long[] sent = new long[1];
-        java.util.function.Supplier<CompletableFuture<org.eclipse.lsp4j.DocumentDiagnosticReport>> send = () -> {
-            sent[0] = nextDiagnosticGeneration(documentUri);
-            return s.diagnostic(documentUri);
-        };
-        latest.issue(documentUri, "diagnostic", stamp(s, documentUri, null), false, send, (report, error) -> {
-            long generation = sent[0];
-            if (error != null) {
-                return;
-            }
-            List<LspDiagnostic> mapped = withMarkupChecks(s, documentUri, file, DiagnosticMapper.mapReport(report));
-            if (mapped == null) {
-                // An "unchanged" report: what was shown before the edit is still right. The editor cleared
-                // its marks on the edit, so say so rather than leave it showing a clean file.
-                Platform.runLater(() -> {
-                    if (sessionFor(file) == s
-                            && java.util.Objects.equals(diagnosticRequestGeneration.get(documentUri), generation)) {
-                        onDiagnosticsUnchanged.accept(file);
-                    }
-                });
-                return;
-            }
-            var full = report == null ? null : report.getRelatedFullDocumentDiagnosticReport();
-            List<org.eclipse.lsp4j.Diagnostic> raw =
-                    full == null || full.getItems() == null ? List.of() : List.copyOf(full.getItems());
-            Platform.runLater(() -> {
-                if (sessionFor(file) == s
-                        && java.util.Objects.equals(diagnosticRequestGeneration.get(documentUri), generation)
-                        && java.util.Objects.equals(s.documentVersion(documentUri), requestedVersion)) {
-                    // The code-action context is built from these. A pull-only server (vscode-css, ruby-lsp)
-                    // never publishes, so without this it was always asked with an empty context and offered
-                    // no quick fix for a diagnostic the editor was showing.
-                    rawDiagnostics.put(documentUri, raw);
-                    onDiagnostics.accept(file, mapped);
-                }
-            });
-        });
+        diagnostics.pullDiagnostics(file);
     }
 
     /**
@@ -6847,7 +3581,7 @@ public final class LspManager {
         MANAGERS.remove(this);
         closed = true;
         enabled = false;
-        closeRootWatchers();
+        watching.closeRootWatchers();
         pythonLibraries.close();
         shutdownAll();
         pendingEvictions.values().forEach(timer -> timer.cancel(false));
@@ -6890,13 +3624,13 @@ public final class LspManager {
             sessions.entrySet().removeIf(e -> leaveShared(e.getKey(), e.getValue()));
         }
         sessionByDocUri.clear();
-        rawDiagnostics.clear();
-        semanticTokenState.clear();
-        semanticRequestGeneration.clear();
-        wholeDocumentTokens.clear();
+        diagnostics.rawDiagnostics.clear();
+        semanticTokens.semanticTokenState.clear();
+        semanticTokens.semanticRequestGeneration.clear();
+        semanticTokens.wholeDocumentTokens.clear();
         latest.clear();
-        diagnosticRequestGeneration.clear();
-        pendingApplyExpected.clear();
+        diagnostics.diagnosticRequestGeneration.clear();
+        codeActions.pendingApplyExpected.clear();
         javaScriptShadows.values().forEach(LspManager::deleteJavaScriptShadow);
         javaScriptShadows.clear();
         sessions.forEach(this::disposeDeliberately);
@@ -6920,7 +3654,7 @@ public final class LspManager {
                             com.editora.process.ExecTargets.forPath(s.root()).id())) {
                 it.remove(); // before it stops: this window's own drop must not read as another's
                 sessionByDocUri.values().removeIf(v -> v == s);
-                pendingApplyExpected.remove(s);
+                codeActions.pendingApplyExpected.remove(s);
                 disposeDeliberately(e.getKey(), s);
                 any = true;
             }
@@ -6964,16 +3698,13 @@ public final class LspManager {
                 LanguageServerSession s = e.getValue();
                 it.remove(); // before it stops: this window's own drop must not read as another's
                 sessionByDocUri.values().removeIf(v -> v == s);
-                pendingApplyExpected.remove(s);
+                codeActions.pendingApplyExpected.remove(s);
                 disposeDeliberately(e.getKey(), s);
             }
         }
     }
 
     // --- Internals -----------------------------------------------------------------------------
-
-    /** Whether diagnostics published for a file that is not open on the publishing server are dropped. */
-    private volatile boolean openDocumentDiagnosticsOnly;
 
     /** Whether Problems shows the whole project, which Pyright then checks file by file (review 2, B105). */
     private volatile boolean pythonWholeProject;
@@ -6983,7 +3714,7 @@ public final class LspManager {
      * scope). It then never sees a publish for any other file. Off by default: everything is delivered.
      */
     public void setOpenDocumentDiagnosticsOnly(boolean openDocumentsOnly) {
-        openDocumentDiagnosticsOnly = openDocumentsOnly;
+        diagnostics.openDocumentDiagnosticsOnly = openDocumentsOnly;
         pythonWholeProject = !openDocumentsOnly;
         for (LanguageServerSession s : sessionsByRoot.values()) {
             if (PYTHON_SERVER_ID.equals(s.serverId())) {
@@ -7010,149 +3741,13 @@ public final class LspManager {
                 || java.nio.file.Files.isDirectory(file);
     }
 
-    private void onPublishDiagnostics(LanguageServerSession source, org.eclipse.lsp4j.PublishDiagnosticsParams params) {
-        if (source == null || source.isDisposed()) {
-            return;
-        }
-        String reported = source.uris().toKey(params.getUri());
-        Path file = DocumentUris.toPath(reported);
-        if (file == null) {
-            return;
-        }
-        params.setDiagnostics(BashLsp.diagnostics(source.serverId(), file, params.getDiagnostics())); // D2, A15
-        String sourceUri = managedDocumentUri(source, file, reported);
-        if (params.getVersion() != null
-                && (sourceUri == null
-                        || !java.util.Objects.equals(params.getVersion(), source.documentVersion(sourceUri)))) {
-            return; // ranges from an older server snapshot must never replace current diagnostics
-        }
-        if (!buildCaptures.isEmpty()) {
-            captureBuildErrors(source, file, DiagnosticMapper.map(params.getDiagnostics()));
-        }
-        if (sourceUri == null && openDocumentDiagnosticsOnly && !projectLevel(file)) {
-            // Nobody shows a file that is not open here, and a server publishes for its whole project
-            // (jdtls: once per file on import). Dropped on this, the reader, thread: each one used to
-            // cost the FX thread a queued task, a search of the tabs and a path resolution to learn that.
-            return;
-        }
-        // Only an open document is tracked: successive publishes for any other file are applied in the
-        // order they were queued, and one entry per file a server ever mentioned was never released.
-        long generation = sourceUri == null ? 0 : nextDiagnosticGeneration(sourceUri);
-        // Retain the RAW lsp4j diagnostics for open documents: a code-action request must send the
-        // originals as context (their code/source/data are what a quick fix keys off — the mapped neutral
-        // LspDiagnostic loses them). Open-documents-only, so a server's project-wide publishes don't
-        // accumulate (#670).
-        Integer acceptedVersion = params.getVersion();
-        List<org.eclipse.lsp4j.Diagnostic> raw =
-                params.getDiagnostics() == null ? List.of() : List.copyOf(params.getDiagnostics());
-        List<LspDiagnostic> mapped = withMarkupChecks(
-                source,
-                sourceUri,
-                file,
-                MavenPomServer.adjustDiagnostics(
-                        serverDisplayName(source.serverId()), DiagnosticMapper.map(params.getDiagnostics())));
-        Platform.runLater(() -> {
-            if (source.isDisposed()
-                    || !sessionsByRoot.containsValue(source)
-                    || sourceUri != null
-                            && !java.util.Objects.equals(diagnosticRequestGeneration.get(sourceUri), generation)
-                    || sourceUri != null && sessionByDocUri.get(sourceUri) != source
-                    || acceptedVersion != null
-                            && !java.util.Objects.equals(acceptedVersion, source.documentVersion(sourceUri))) {
-                return;
-            }
-            if (sourceUri != null) {
-                rawDiagnostics.put(sourceUri, raw);
-            }
-            onDiagnostics.accept(file, mapped);
-        });
-    }
-
-    /** The name a diagnostic without a {@code source} is attributed to: the server's display name, else its id. */
-    private static String serverDisplayName(String serverId) {
-        String name = LspServerRegistry.displayNameFor(serverId);
-        return name != null ? name : serverId;
-    }
-
-    private @Nullable String managedDocumentUri(LanguageServerSession source, Path file, String reportedUri) {
-        if (sessionByDocUri.get(reportedUri) == source) {
-            return reportedUri;
-        }
-        Path canonical = null;
-        for (var entry : sessionByDocUri.entrySet()) {
-            if (entry.getValue() == source) {
-                Path openPath = DocumentUris.toPath(entry.getKey());
-                if (openPath == null) {
-                    continue;
-                }
-                if (com.editora.config.PathKeys.sameNormalized(openPath, file)) {
-                    return entry.getKey();
-                }
-                // A server may report the symlink-resolved path (/private/tmp for /tmp). Off the FX thread
-                // (the reader thread), and the resolution is cached.
-                if (canonical == null) {
-                    canonical = com.editora.config.PathKeys.canonical(file);
-                }
-                if (canonical.equals(com.editora.config.PathKeys.canonical(openPath))) {
-                    return entry.getKey();
-                }
-            }
-        }
-        return null;
-    }
-
-    private static void addTarget(List<Target> out, WireUris uris, String uri, Position start) {
-        Path p = uris.toPath(uri);
-        if (p != null && start != null) {
-            out.add(new Target(p, start.getLine(), start.getCharacter()));
-        }
-    }
-
-    /**
-     * Like {@link #addTarget}, but also keeps a {@code jdt://} class-file target (as a path-less
-     * {@link Target} carrying the URI). Definition-only: silently dropping these made {@code M-.} on
-     * {@code String}/{@code List}/any dependency symbol report "no definition" — the most common Java
-     * navigation (#665). References stay file-only (the References panel is file-based).
-     */
-    private static void addDefinitionTarget(List<Target> out, WireUris uris, String uri, Position start) {
-        if (start == null) {
-            return;
-        }
-        Path p = uris.toPath(uri);
-        if (p != null) {
-            out.add(new Target(p, start.getLine(), start.getCharacter()));
-        } else if (uri != null && uri.startsWith(JDT_SCHEME)) {
-            out.add(new Target(null, start.getLine(), start.getCharacter(), uri));
-        }
-    }
-
-    /**
-     * Step 1 of a jdtls generate prompt (#741): runs the {@code java/check…} request and delivers the
-     * choosable candidates on the FX thread. Empty when the server has no session, the request fails, or the
-     * response isn't the expected shape — the caller then reports "nothing to generate" rather than opening
-     * an empty picker.
-     */
+    /** See {@link JdtlsCommands#jdtlsGenerateCandidates}. */
     public void jdtlsGenerateCandidates(
             Path file, JdtlsGenerate.Kind kind, Object actionParams, Consumer<JdtlsGenerate.Plan> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || kind == null) {
-            Platform.runLater(() -> cb.accept(new JdtlsGenerate.Plan(List.of(), null)));
-            return;
-        }
-        s.rawRequest(kind.checkRequest(), actionParams)
-                .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .whenComplete((r, e) -> {
-                    JdtlsGenerate.Plan plan =
-                            e != null ? new JdtlsGenerate.Plan(List.of(), null) : JdtlsGenerate.plan(kind, asJson(r));
-                    Platform.runLater(() -> cb.accept(plan));
-                });
+        jdtls.jdtlsGenerateCandidates(file, kind, actionParams, cb);
     }
 
-    /**
-     * Step 2 of a jdtls generate prompt (#741): runs the {@code java/generate…} request with the user's
-     * choice and applies the {@code WorkspaceEdit} it answers with. {@code cb} reports whether anything was
-     * applied.
-     */
+    /** See {@link JdtlsCommands#jdtlsGenerateApply}. */
     public void jdtlsGenerateApply(
             Path file,
             JdtlsGenerate.Kind kind,
@@ -7161,10 +3756,10 @@ public final class LspManager {
             Map<Path, String> expectedAtAction,
             List<JdtlsGenerate.Candidate> chosen,
             Consumer<Boolean> cb) {
-        jdtlsGenerateApply(file, kind, actionParams, checkResponse, expectedAtAction, chosen, null, cb);
+        jdtls.jdtlsGenerateApply(file, kind, actionParams, checkResponse, expectedAtAction, chosen, cb);
     }
 
-    /** As above, with the super constructors the user chose (constructors only; null = all on offer). */
+    /** See {@link JdtlsCommands#jdtlsGenerateApply}. */
     public void jdtlsGenerateApply(
             Path file,
             JdtlsGenerate.Kind kind,
@@ -7174,68 +3769,26 @@ public final class LspManager {
             List<JdtlsGenerate.Candidate> chosen,
             @Nullable List<JdtlsGenerate.Candidate> chosenConstructors,
             Consumer<Boolean> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || kind == null) {
-            Platform.runLater(() -> cb.accept(false));
-            return;
-        }
-        EditBasis expected = expectedAtAction == null || expectedAtAction.isEmpty()
-                ? editBasis(s)
-                : new EditBasis(expectedAtAction, System.currentTimeMillis(), s.uris());
-        s.rawRequest(
-                        kind.generateRequest(),
-                        JdtlsGenerate.generateParams(
-                                kind, asJson(actionParams), chosen, checkResponse, chosenConstructors))
-                .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .whenComplete((r, e) -> {
-                    org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
-                    Platform.runLater(() -> {
-                        if (edit == null) {
-                            cb.accept(false);
-                        } else {
-                            applyWorkspaceEdit(edit, expected, cb);
-                        }
-                    });
-                });
+        jdtls.jdtlsGenerateApply(
+                file, kind, actionParams, checkResponse, expectedAtAction, chosen, chosenConstructors, cb);
     }
 
-    /**
-     * Sends a custom {@code java/…} request and delivers its untyped JSON answer on the FX thread —
-     * {@code null} when there is no session or the request fails. For the look-ups a client-driven
-     * refactoring makes before it asks for an edit (destinations, candidates, a method's signature).
-     */
+    /** See {@link JdtlsCommands#jdtlsRequest}. */
     public void jdtlsRequest(Path file, String method, Object params, Consumer<JsonElement> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(null));
-            return;
-        }
-        s.rawRequest(method, params).whenComplete((r, e) -> {
-            JsonElement json = e != null ? null : asJson(r);
-            Platform.runLater(() -> cb.accept(json));
-        });
+        jdtls.jdtlsRequest(file, method, params, cb);
     }
 
-    /**
-     * Sends a custom {@code java/…} request whose answer is, or wraps, a {@code WorkspaceEdit}
-     * ({@link JdtlsRefactor#editOf}) and applies it. {@code cb} gets whether an edit was applied, and the
-     * server's own {@code errorMessage} when it refused the refactoring (else null).
-     */
+    /** See {@link JdtlsCommands#jdtlsApplyEdit}. */
     public void jdtlsApplyEdit(
             Path file,
             String method,
             Object params,
             Map<Path, String> expectedAtAction,
             java.util.function.BiConsumer<Boolean, String> cb) {
-        jdtlsApplyEdit(file, method, params, expectedAtAction, null, cb);
+        jdtls.jdtlsApplyEdit(file, method, params, expectedAtAction, cb);
     }
 
-    /**
-     * As above, for a request jdtls may answer with problems and a {@code confirmationToken} instead of an edit
-     * ({@code java/move} once {@code moveRefactoringConfirmationSupport} is declared). {@code confirm} gets the
-     * problems on the FX thread and the action that asks again with the token; without it, or for any other
-     * answer, this behaves exactly as above.
-     */
+    /** See {@link JdtlsCommands#jdtlsApplyEdit}. */
     public void jdtlsApplyEdit(
             Path file,
             String method,
@@ -7243,13 +3796,10 @@ public final class LspManager {
             Map<Path, String> expectedAtAction,
             java.util.function.@Nullable BiConsumer<String, Runnable> confirm,
             java.util.function.BiConsumer<Boolean, String> cb) {
-        jdtlsApplyEdit(file, method, params, expectedAtAction, confirm, null, cb);
+        jdtls.jdtlsApplyEdit(file, method, params, expectedAtAction, confirm, cb);
     }
 
-    /**
-     * As above; {@code onRename} gets the new name's place ({@link JdtlsRefactor#renameAt}) on the FX thread
-     * once an edit that carries one is applied.
-     */
+    /** See {@link JdtlsCommands#jdtlsApplyEdit}. */
     public void jdtlsApplyEdit(
             Path file,
             String method,
@@ -7258,10 +3808,10 @@ public final class LspManager {
             java.util.function.@Nullable BiConsumer<String, Runnable> confirm,
             java.util.function.@Nullable Consumer<JdtlsRefactor.RenameAt> onRename,
             java.util.function.BiConsumer<Boolean, String> cb) {
-        jdtlsApplyEdit(file, method, params, expectedAtAction, confirm, onRename, null, cb);
+        jdtls.jdtlsApplyEdit(file, method, params, expectedAtAction, confirm, onRename, cb);
     }
 
-    /** As above; {@code preview} sees the planned edit before it is applied (see {@link #applyWorkspaceEdit}). */
+    /** See {@link JdtlsCommands#jdtlsApplyEdit}. */
     public void jdtlsApplyEdit(
             Path file,
             String method,
@@ -7272,40 +3822,7 @@ public final class LspManager {
             java.util.function.@Nullable BiConsumer<WorkspaceEditMapper.Mapped, Consumer<WorkspaceEditMapper.Mapped>>
                     preview,
             java.util.function.BiConsumer<Boolean, String> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null) {
-            Platform.runLater(() -> cb.accept(false, null));
-            return;
-        }
-        EditBasis expected = expectedAtAction == null || expectedAtAction.isEmpty()
-                ? editBasis(s)
-                : new EditBasis(expectedAtAction, System.currentTimeMillis(), s.uris());
-        s.rawRequest(method, params).whenComplete((r, e) -> {
-            JsonElement json = e != null ? null : asJson(r);
-            String refused = JdtlsRefactor.errorMessage(json);
-            String token = JdtlsRefactor.confirmationToken(json);
-            if (token != null && confirm != null && params instanceof JsonObject asked) {
-                JsonObject again = JdtlsRefactor.withConfirmationToken(asked, token);
-                Platform.runLater(() -> confirm.accept(
-                        refused == null ? "" : refused,
-                        () -> jdtlsApplyEdit(file, method, again, expectedAtAction, null, onRename, preview, cb)));
-                return;
-            }
-            org.eclipse.lsp4j.WorkspaceEdit edit = asWorkspaceEdit(JdtlsRefactor.editOf(json));
-            JdtlsRefactor.RenameAt renameAt = onRename == null ? null : JdtlsRefactor.renameAt(json);
-            Platform.runLater(() -> {
-                if (edit == null) {
-                    cb.accept(false, refused);
-                } else {
-                    applyWorkspaceEdit(edit, expected, preview, ok -> {
-                        cb.accept(ok, refused);
-                        if (ok && renameAt != null && onRename != null) {
-                            onRename.accept(renameAt);
-                        }
-                    });
-                }
-            });
-        });
+        jdtls.jdtlsApplyEdit(file, method, params, expectedAtAction, confirm, onRename, preview, cb);
     }
 
     /** The raw result as gson, or null — the custom {@code java/…} requests answer as untyped JSON. */
@@ -7316,19 +3833,7 @@ public final class LspManager {
         return raw == null ? null : LanguageServerSession.LSP_GSON.toJsonTree(raw);
     }
 
-    /**
-     * Auto-import for pasted code (#742): asks jdtls's {@code java.edit.handlePasteEvent} what the text
-     * pasted at {@code [start..end]} (post-paste coordinates) needs, and applies the answered
-     * {@code additionalEdit} — the import insertion — through the normal workspace-edit path. Gated on
-     * the server actually advertising the command ({@link JdtlsPaste#supportsPasteEvent}), so a non-jdtls
-     * java setup (or any other language's server) never even sends the request.
-     *
-     * <p>{@code stillValid} is consulted on the FX thread immediately before applying: the round trip is
-     * asynchronous and the edit was computed against the post-paste document, so if the user typed in the
-     * meantime the answer is dropped rather than applied against text it wasn't computed for (the
-     * {@code docVersion} idiom — the caller supplies the check because only it can see the buffer).
-     * {@code cb} reports whether an edit was applied.
-     */
+    /** See {@link JdtlsCommands#handlePasteEvent}. */
     public void handlePasteEvent(
             Path file,
             int startLine,
@@ -7340,30 +3845,11 @@ public final class LspManager {
             boolean insertSpaces,
             java.util.function.BooleanSupplier stillValid,
             Consumer<Boolean> cb) {
-        handlePasteEvent(
-                file,
-                startLine,
-                startChar,
-                endLine,
-                endChar,
-                pastedText,
-                tabSize,
-                insertSpaces,
-                null,
-                stillValid,
-                null,
-                true,
-                cb);
+        jdtls.handlePasteEvent(
+                file, startLine, startChar, endLine, endChar, pastedText, tabSize, insertSpaces, stillValid, cb);
     }
 
-    /**
-     * As above, with the Java file the text was copied from ({@code copiedFrom}, or null). jdtls answers null when
-     * asked a few milliseconds after the paste's change, before it has read it (most pastes): asked once more, after
-     * the change has settled, it answers (eleventh review AM2). {@code current}, when given, is the document's text
-     * now: an answer that inserts only above the pasted text applies to it though the user typed after the paste,
-     * which {@code stillValid} allows (twelfth review AL2). A null or failed answer with {@code copiedFrom} is asked
-     * again without it: jdtls answers nothing when that file is gone (AL3).
-     */
+    /** See {@link JdtlsCommands#handlePasteEvent}. */
     public void handlePasteEvent(
             Path file,
             int startLine,
@@ -7378,15 +3864,8 @@ public final class LspManager {
             java.util.function.@Nullable Supplier<String> current,
             boolean retry,
             Consumer<Boolean> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || !JdtlsPaste.supportsPasteEvent(s.capabilities())) {
-            Platform.runLater(() -> cb.accept(false));
-            return;
-        }
-        // The params go over the wire as a STRINGIFIED json — an object argument deserializes to null
-        // server-side (established empirically; see JdtlsPaste).
-        String params = JdtlsPaste.paramsJson(
-                s.uris().toWire(uri(file)),
+        jdtls.handlePasteEvent(
+                file,
                 startLine,
                 startChar,
                 endLine,
@@ -7394,217 +3873,31 @@ public final class LspManager {
                 pastedText,
                 tabSize,
                 insertSpaces,
-                copiedFrom == null ? null : s.uris().toWire(uri(copiedFrom)));
-        EditBasis expected = editBasis(s);
-        s.executeCommand(JdtlsPaste.COMMAND, List.of(params))
-                .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .whenComplete((r, e) -> {
-                    org.eclipse.lsp4j.WorkspaceEdit edit = e != null
-                            ? null
-                            : asWorkspaceEdit(
-                                    JdtlsPaste.keepPastedImports(JdtlsPaste.additionalEdit(asJson(r)), pastedText));
-                    com.google.gson.JsonElement json = e == null ? asJson(r) : null;
-                    boolean unanswered = e == null && (json == null || json.isJsonNull());
-                    Platform.runLater(() -> {
-                        if (copiedFrom != null && (e != null || (unanswered && !retry)) && stillValid.getAsBoolean()) {
-                            // no answer even once settled, or a failure: perhaps the copied file is gone (AL3)
-                            handlePasteEvent(
-                                    file,
-                                    startLine,
-                                    startChar,
-                                    endLine,
-                                    endChar,
-                                    pastedText,
-                                    tabSize,
-                                    insertSpaces,
-                                    null,
-                                    stillValid,
-                                    current,
-                                    retry,
-                                    cb);
-                        } else if (unanswered && retry && stillValid.getAsBoolean()) {
-                            var later = new javafx.animation.PauseTransition(javafx.util.Duration.millis(400));
-                            later.setOnFinished(ev -> {
-                                if (stillValid.getAsBoolean()) {
-                                    handlePasteEvent(
-                                            file,
-                                            startLine,
-                                            startChar,
-                                            endLine,
-                                            endChar,
-                                            pastedText,
-                                            tabSize,
-                                            insertSpaces,
-                                            copiedFrom,
-                                            stillValid,
-                                            current,
-                                            false,
-                                            cb);
-                                } else {
-                                    cb.accept(false);
-                                }
-                            });
-                            later.play();
-                        } else if (edit == null || !stillValid.getAsBoolean()) {
-                            cb.accept(false);
-                        } else {
-                            String now = current == null ? null : current.get();
-                            applyWorkspaceEdit(
-                                    edit,
-                                    now != null && JdtlsPaste.above(edit, startLine, startChar)
-                                            ? rebased(expected, file, now)
-                                            : expected,
-                                    cb);
-                        }
-                    });
-                });
+                copiedFrom,
+                stillValid,
+                current,
+                retry,
+                cb);
     }
 
-    /** {@code basis} with {@code file}'s text as {@code now}: an edit in text that has not changed since. */
-    private static EditBasis rebased(EditBasis basis, Path file, String now) {
-        Map<Path, String> documents = new java.util.HashMap<>(basis.documents());
-        documents.put(file, now);
-        documents.put(com.editora.config.PathKeys.canonical(file), now);
-        return new EditBasis(Map.copyOf(documents), basis.sentAtMillis(), basis.uris());
-    }
-
-    /**
-     * Smart-semicolon detection (#746): asks jdtls where a {@code ;} typed at {@code (line, character)}
-     * belongs — normally the end of the enclosing statement. Delivers the answered {@code {line, char}} on
-     * the FX thread, or {@code null} when the server has nothing to say (already at the statement end, or
-     * not a jdtls session). Gated on the command being advertised, so no other language pays a request.
-     *
-     * <p>The document must be in the state the caret refers to — i.e. <b>before</b> the semicolon is typed —
-     * which is why the caller flushes its pending didChange first.
-     */
+    /** See {@link JdtlsCommands#smartSemicolonPosition}. */
     public void smartSemicolonPosition(Path file, int line, int character, Consumer<int[]> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || !JdtlsSmartSemicolon.supported(s.capabilities())) {
-            Platform.runLater(() -> cb.accept(null));
-            return;
-        }
-        String params = JdtlsSmartSemicolon.paramsJson(s.uris().toWire(uri(file)), line, character);
-        s.executeCommand(JdtlsSmartSemicolon.COMMAND, List.of(params))
-                .orTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
-                .whenComplete((r, e) -> {
-                    int[] at = e != null ? null : JdtlsSmartSemicolon.answeredPosition(asJson(r));
-                    Platform.runLater(() -> cb.accept(at));
-                });
+        jdtls.smartSemicolonPosition(file, line, character, cb);
     }
 
-    /**
-     * Decodes a {@code java/generate…} answer (an untyped {@code WorkspaceEdit}) into the typed form — with
-     * LSP4J's own gson, whose adapters are what read the {@code Either}s inside {@code documentChanges}. A
-     * plain gson cannot, so an answer in that shape was dropped as "nothing generated".
-     */
-    private static org.eclipse.lsp4j.@Nullable WorkspaceEdit asWorkspaceEdit(@Nullable Object raw) {
-        try {
-            com.google.gson.JsonElement json = asJson(raw);
-            return json == null || !json.isJsonObject()
-                    ? null
-                    : LanguageServerSession.LSP_GSON.fromJson(json, org.eclipse.lsp4j.WorkspaceEdit.class);
-        } catch (RuntimeException malformed) {
-            return null; // a malformed answer degrades to "nothing generated", never an exception
-        }
-    }
-
-    /**
-     * Whether jdtls considers {@code file} a <em>test</em> source ({@code java.project.isTestFile}, #745).
-     *
-     * <p>Answered from the Eclipse project model — it knows which source folders are test folders — where
-     * {@code test/JavaTestScanner} can only guess syntactically from annotations. Delivers {@code null}
-     * (not {@code false}) when there's no session or the command fails, so the caller keeps its own answer
-     * rather than treating "don't know" as "not a test".
-     *
-     * <p>Only a {@code .java} file is asked about. Of any other name jdtls has no compilation unit and answers
-     * with an error whose stack trace lands in the Debug Log on every tab switch; a Java script is shown to it
-     * as a stand-in ({@link JavaScriptShadow}), but one outside every project, where nothing is a test.
-     */
+    /** See {@link JdtlsCommands#isTestFile}. */
     public void isTestFile(Path file, Consumer<Boolean> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || file == null || !isJavaSourceName(file)) {
-            Platform.runLater(() -> cb.accept(null));
-            return;
-        }
-        executeCommand(file, "java.project.isTestFile", List.of(serverUri(file)), (result, error) -> {
-            Boolean answer = error != null ? null : asBoolean(result);
-            cb.accept(answer);
-        });
+        jdtls.isTestFile(file, cb);
     }
 
-    /** Pure: whether jdtls can make a compilation unit of {@code file} — it must be named {@code *.java}. */
-    static boolean isJavaSourceName(Path file) {
-        Path name = file.getFileName();
-        return name != null && name.toString().endsWith(".java");
-    }
-
-    /**
-     * Resolves one stack-trace line to the URI it points at
-     * ({@code java.project.resolveStackTraceLocation}, #744).
-     *
-     * <p>jdtls resolves it against the real classpath, so unlike the regex+filesystem walk in
-     * {@code MainController.resolveRunLinkFile} it can name a frame inside a dependency or the JDK — which
-     * comes back as a {@code jdt://} URI the class-file viewer (#665) already opens. Delivers null when
-     * there's no session, the command fails, or the server can't place the frame.
-     *
-     * @param traceLine the console line verbatim, e.g. {@code "\tat demo.Person.of(Person.java:12)"}
-     */
+    /** See {@link JdtlsCommands#resolveStackTraceLocation}. */
     public void resolveStackTraceLocation(Path anchorFile, String traceLine, Consumer<String> cb) {
-        LanguageServerSession s = sessionFor(anchorFile);
-        if (s == null || traceLine == null || traceLine.isBlank()) {
-            Platform.runLater(() -> cb.accept(null));
-            return;
-        }
-        // The second argument is the project-name filter; an empty list means "search them all", which is
-        // what we want — the console line doesn't say which project it came from.
-        executeCommand(
-                anchorFile,
-                "java.project.resolveStackTraceLocation",
-                List.of(traceLine, List.of()),
-                (result, error) -> {
-                    String uri = error != null ? null : rawStringResult(result);
-                    cb.accept(uri == null || uri.isBlank() ? null : uri);
-                });
+        jdtls.resolveStackTraceLocation(anchorFile, traceLine, cb);
     }
 
-    /** A command result that is (or wraps) a boolean, else null. */
-    private static @Nullable Boolean asBoolean(Object raw) {
-        if (raw instanceof Boolean b) {
-            return b;
-        }
-        if (raw instanceof com.google.gson.JsonPrimitive p && p.isBoolean()) {
-            return p.getAsBoolean();
-        }
-        return null;
-    }
-
-    /** The budget for a full workspace build — passed to the session too, whose own request bound would
-     *  otherwise cancel the build at the ordinary 30 seconds. */
-    static final java.time.Duration BUILD_WORKSPACE_TIMEOUT = java.time.Duration.ofMinutes(10);
-
-    /**
-     * Rebuilds the project and republishes its diagnostics ({@code java.project.refreshDiagnostics}, #743).
-     *
-     * <p>Editora runs jdtls with {@code autobuild} disabled (see {@link #javaInitOptions}), so nothing ever
-     * recomputes diagnostics for files that aren't open — this is the manual trigger. The results arrive the
-     * usual way, as {@code publishDiagnostics} notifications, not as this command's return value.
-     *
-     * <p>Given a longer timeout than the other commands: a cold full build of a large project genuinely
-     * takes minutes, and timing out early would leave the caller reporting failure while the build ran on.
-     */
+    /** See {@link JavaBuilds#refreshProjectDiagnostics}. */
     public void refreshProjectDiagnostics(Path file, Consumer<BuildOutcome> cb) {
-        LanguageServerSession s = javaSessionFor(file);
-        if (s == null || file == null) {
-            Platform.runLater(() -> cb.accept(BuildOutcome.UNAVAILABLE));
-            return;
-        }
-        // (uri, isFullBuild) — a full build, since the point is the files we have NOT opened.
-        s.rawRequest("java/buildWorkspace", Boolean.TRUE, BUILD_WORKSPACE_TIMEOUT)
-                .orTimeout(BUILD_WORKSPACE_TIMEOUT.toMinutes(), java.util.concurrent.TimeUnit.MINUTES)
-                .whenComplete((r, e) -> {
-                    BuildOutcome outcome = e != null ? BuildOutcome.UNAVAILABLE : buildOutcome(r);
-                    Platform.runLater(() -> cb.accept(outcome));
-                });
+        builds.refreshProjectDiagnostics(file, cb);
     }
 
     /**
@@ -7613,12 +3906,14 @@ public final class LspManager {
      * none, edits it. Before this, Reload and Build Project run from a pom.xml tab went to lemminx-maven (Java
      * review C2). Null when no jdtls serves the file's folder.
      */
-    private @Nullable LanguageServerSession javaSessionFor(@Nullable Path file) {
+    @Nullable
+    LanguageServerSession javaSessionFor(@Nullable Path file) {
         return serverSessionFor(LspServerRegistry.JAVA_SERVER_ID, file);
     }
 
     /** {@code serverId}'s session serving {@code file}: its own, else the live one whose root holds it most closely. */
-    private @Nullable LanguageServerSession serverSessionFor(String serverId, @Nullable Path file) {
+    @Nullable
+    LanguageServerSession serverSessionFor(String serverId, @Nullable Path file) {
         LanguageServerSession own = sessionFor(file);
         if (own != null && serverId.equals(own.serverId())) {
             return own;
@@ -7645,15 +3940,9 @@ public final class LspManager {
         return best;
     }
 
-    /**
-     * Before {@code from} is renamed to {@code to} on disk (a Project tree rename): asks the Java server of its
-     * project for the edits that go with it ({@code workspace/willRenameFiles} — the class renamed with its
-     * {@code .java} file, the package declarations and imports of a moved folder) and applies them, then calls
-     * {@code proceed} on the FX thread with whether the edits are in. With no Java server, or none it wants
-     * made, {@code proceed} runs at once with true (Java review B15).
-     */
+    /** See {@link LspRename#willRenameFile}. */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed) {
-        willRenameFile(from, to, proceed, (f, t, answered) -> true);
+        renames.willRenameFile(from, to, proceed);
     }
 
     /**
@@ -7665,177 +3954,14 @@ public final class LspManager {
         boolean renameWithoutEdits(Path from, Path to, boolean answered);
     }
 
-    private static final java.util.regex.Pattern PACKAGE_LINE =
-            java.util.regex.Pattern.compile("^\\s*package\\s+([\\w.]+)\\s*;", java.util.regex.Pattern.MULTILINE);
-
-    /** Whether {@code file}'s {@code package} line is what the folder {@code into} implies: it ends with the package. */
-    static boolean packageFits(Path file, Path into) {
-        String text;
-        try (var in = Files.newInputStream(file)) {
-            text = new String(in.readNBytes(16_384), java.nio.charset.StandardCharsets.UTF_8);
-        } catch (java.io.IOException | RuntimeException e) {
-            return false;
-        }
-        var m = PACKAGE_LINE.matcher(text);
-        if (!m.find()) {
-            return false; // the default package: whether the folder is a source root is not known here
-        }
-        Path tail = Path.of(m.group(1).replace('.', '/'));
-        return into.toAbsolutePath().normalize().endsWith(tail);
-    }
-
-    /**
-     * Whether {@code dir} is a folder with a {@code .java} file in it, at any depth. Build output, dependency and VCS
-     * folders are not walked: a 40,000-file {@code node_modules} took 61 ms (sixth review BV5).
-     */
-    static boolean holdsJava(Path dir) {
-        return holdsJava(dir, Integer.MAX_VALUE);
-    }
-
-    /**
-     * {@link #holdsJava}, fast enough for the UI thread: after 5,000 entries it stops and says yes. A
-     * drag's question counted a folder of text files as a Java item (eighth review BV3).
-     */
+    /** See {@link LspRename#mayHoldJava}. */
     public static boolean mayHoldJava(Path dir) {
-        return holdsJava(dir, QUICK_WALK);
+        return LspRename.mayHoldJava(dir);
     }
 
-    private static final int QUICK_WALK = 5_000;
-
-    private static boolean holdsJava(Path dir, int maxEntries) {
-        if (!Files.isDirectory(dir)) {
-            return false;
-        }
-        boolean[] found = {false};
-        int[] seen = {0};
-        try {
-            Files.walkFileTree(dir, java.util.Set.of(), 32, new java.nio.file.SimpleFileVisitor<>() {
-                @Override
-                public java.nio.file.FileVisitResult preVisitDirectory(
-                        Path d, java.nio.file.attribute.BasicFileAttributes attrs) {
-                    String name = d.getFileName() == null ? "" : d.getFileName().toString();
-                    return !d.equals(dir) && notSources(d, name)
-                            ? java.nio.file.FileVisitResult.SKIP_SUBTREE
-                            : java.nio.file.FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public java.nio.file.FileVisitResult visitFile(
-                        Path f, java.nio.file.attribute.BasicFileAttributes attrs) {
-                    if (f.toString().endsWith(".java") || ++seen[0] >= maxEntries) {
-                        found[0] = true;
-                        return java.nio.file.FileVisitResult.TERMINATE;
-                    }
-                    return java.nio.file.FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public java.nio.file.FileVisitResult visitFileFailed(Path f, java.io.IOException e) {
-                    return java.nio.file.FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (java.io.IOException | RuntimeException e) {
-            return found[0];
-        }
-        return found[0];
-    }
-
-    /** Folders that hold no Java sources a move could need edits for, whatever their place. */
-    private static final java.util.Set<String> NOT_SOURCES =
-            com.editora.search.DependencyDirs.with(".git", ".svn", ".hg", ".gradle", ".idea");
-
-    /** Build output folders, skipped only beside a build file: elsewhere they are packages (seventh review BR3). */
-    private static final java.util.Set<String> BUILD_OUTPUTS = java.util.Set.of("target", "build", "out");
-
-    private static boolean notSources(Path folder, String name) {
-        if (NOT_SOURCES.contains(name)) {
-            return true;
-        }
-        Path module = folder.getParent();
-        return BUILD_OUTPUTS.contains(name)
-                && module != null
-                && (Files.exists(module.resolve("pom.xml"))
-                        || Files.exists(module.resolve("build.gradle"))
-                        || Files.exists(module.resolve("build.gradle.kts")));
-    }
-
-    /** As {@link #willRenameFile(Path, Path, Consumer)}, asking {@code fallback} when jdtls has no edit for it. */
+    /** See {@link LspRename#willRenameFile}. */
     public void willRenameFile(Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
-        // a folder a Java server serves stays jdtls's: its package lines and imports are what a move breaks
-        LanguageServerSession ts =
-                TypeScriptServer.renamesImports(from) && (!Files.isDirectory(from) || javaSessionFor(from) == null)
-                        ? serverSessionFor(TypeScriptServer.SERVER_ID, from)
-                        : null;
-        if (ts != null && ts.isInitialized() && ts.capabilities() != null && willRenameAdvertised(ts)) {
-            // the imports of a moved or renamed .ts/.js file (or folder) follow it (JS review B105)
-            EditBasis expected = editBasis(ts);
-            ts.willRenameFiles(ts.uris().toWire(uri(from)), ts.uris().toWire(uri(to)))
-                    .whenComplete((edit, e) -> Platform.runLater(() -> {
-                        if (e != null || edit == null || !changesText(edit)) {
-                            proceed.accept(true); // nothing to update: the file is moved as it is
-                        } else {
-                            applyWorkspaceEdit(edit, expected, proceed);
-                        }
-                    }));
-            return;
-        }
-        LanguageServerSession s = javaSessionFor(from);
-        // No Java server for the folder: nothing to ask, and no folder walked (fifth review BV5)
-        if (s == null || (!from.toString().endsWith(".java") && !Files.isDirectory(from))) {
-            Platform.runLater(() -> proceed.accept(true));
-            return;
-        }
-        if (Files.isDirectory(from)) {
-            // A folder is walked for .java files off the UI thread: the drop no longer waits on it (sixth BV5)
-            CompletableFuture.supplyAsync(() -> holdsJava(from))
-                    .whenComplete((java, e) -> Platform.runLater(() -> {
-                        if (Boolean.TRUE.equals(java)) {
-                            askWillRename(s, from, to, proceed, fallback);
-                        } else {
-                            proceed.accept(true);
-                        }
-                    }));
-            return;
-        }
-        askWillRename(s, from, to, proceed, fallback);
-    }
-
-    /** Whether {@code s} said it wants {@code workspace/willRenameFiles}. */
-    private static boolean willRenameAdvertised(LanguageServerSession s) {
-        var caps = s.capabilities();
-        var ws = caps == null ? null : caps.getWorkspace();
-        var ops = ws == null ? null : ws.getFileOperations();
-        return ops != null && ops.getWillRename() != null;
-    }
-
-    private void askWillRename(
-            LanguageServerSession s, Path from, Path to, Consumer<Boolean> proceed, RenameFallback fallback) {
-        Path into = to.getParent();
-        if (into != null && !into.equals(from.getParent()) && Files.isDirectory(into)) {
-            // jdtls answers null for a package it has not heard of: a folder made a moment ago, before the
-            // watcher's batch reached it, or any new folder of an SSH project (fourth review DF3). Saying it
-            // exists is idempotent, and goes out before the request on the same channel.
-            s.didChangeWatchedFiles(
-                    eventsUnderRoot(List.of(new WatchedFile(into, WatchedKind.CREATED)), s.root(), s.uris()));
-        }
-        // A .java file moved to another folder whose package line does not fit it: the case where an empty answer
-        // means jdtls left it wrong. Moved main → test in the same package, or back by Undo Move, nothing is wrong
-        // (fifth review BV4).
-        boolean moved = into != null
-                && !into.equals(from.getParent())
-                && from.toString().endsWith(".java")
-                && !packageFits(from, into);
-        EditBasis expected = editBasis(s);
-        s.willRenameFiles(s.uris().toWire(uri(from)), s.uris().toWire(uri(to)))
-                .whenComplete((edit, e) -> Platform.runLater(() -> {
-                    if (e != null || edit == null) {
-                        proceed.accept(fallback.renameWithoutEdits(from, to, false));
-                    } else if (!changesText(edit)) {
-                        proceed.accept(!moved || fallback.renameWithoutEdits(from, to, true));
-                    } else {
-                        applyWorkspaceEdit(edit, expected, proceed);
-                    }
-                }));
+        renames.willRenameFile(from, to, proceed, fallback);
     }
 
     /**
@@ -7848,7 +3974,7 @@ public final class LspManager {
     public void cleanJavaWorkspace(Path file, Consumer<Boolean> done) {
         LanguageServerSession s = javaSessionFor(file);
         Path base = jdtlsWorkspaceBase;
-        String name = s == null ? null : jdtlsWorkspaceBySession.get(s);
+        String name = s == null ? null : JdtlsWorkspaces.jdtlsWorkspaceBySession.get(s);
         String key = null;
         for (var e : sessionsByRoot.entrySet()) {
             if (e.getValue() == s) {
@@ -7861,7 +3987,7 @@ public final class LspManager {
         }
         sessionsByRoot.remove(key);
         sessionByDocUri.values().removeIf(x -> x == s);
-        pendingApplyExpected.remove(s);
+        codeActions.pendingApplyExpected.remove(s);
         disposeDeliberately(key, s);
         String exitedKey = key;
         Path workspace = base.resolve(name);
@@ -7881,11 +4007,11 @@ public final class LspManager {
             }
             boolean deleted = false;
             for (int attempt = 0; attempt < 50 && !deleted; attempt++) {
-                if (claimedJdtlsWorkspaces.add(name)) {
+                if (JdtlsWorkspaces.claimedJdtlsWorkspaces.add(name)) {
                     try {
-                        deleted = deleteUnlockedJdtlsWorkspace(workspace);
+                        deleted = JdtlsWorkspaces.deleteUnlockedJdtlsWorkspace(workspace);
                     } finally {
-                        claimedJdtlsWorkspaces.remove(name);
+                        JdtlsWorkspaces.claimedJdtlsWorkspaces.remove(name);
                     }
                 }
                 if (!deleted) {
@@ -7945,40 +4071,9 @@ public final class LspManager {
         UNAVAILABLE
     }
 
-    /**
-     * Builds the Java workspace {@code file} belongs to — incrementally unless {@code full} — and reports how it
-     * went (callback on the FX thread). With autobuild off this is what turns saved sources into class files
-     * jdtls (and java-debug inside it, for hot code replace) can see.
-     */
+    /** See {@link JavaBuilds#buildJavaWorkspace}. */
     public void buildJavaWorkspace(Path file, boolean full, Consumer<BuildOutcome> cb) {
-        LanguageServerSession s = file == null ? null : javaSessionFor(file);
-        if (s == null || !LspServerRegistry.JAVA_SERVER_ID.equals(s.serverId())) {
-            Platform.runLater(() -> cb.accept(BuildOutcome.UNAVAILABLE));
-            return;
-        }
-        s.rawRequest("java/buildWorkspace", full, BUILD_WORKSPACE_TIMEOUT)
-                .orTimeout(BUILD_WORKSPACE_TIMEOUT.toMinutes(), java.util.concurrent.TimeUnit.MINUTES)
-                .whenComplete((r, e) -> {
-                    BuildOutcome outcome = e != null ? BuildOutcome.UNAVAILABLE : buildOutcome(r);
-                    Platform.runLater(() -> cb.accept(outcome));
-                });
-    }
-
-    /** Pure: jdtls's {@code BuildWorkspaceStatus} — an ordinal (0 FAILED, 1 SUCCEED, 2 WITH_ERROR, 3 CANCELLED)
-     *  or its name, possibly as a gson primitive. */
-    static BuildOutcome buildOutcome(Object reply) {
-        String text = reply instanceof com.google.gson.JsonPrimitive p ? p.getAsString() : String.valueOf(reply);
-        text = text.strip();
-        if (text.endsWith(".0")) {
-            text = text.substring(0, text.length() - 2); // a number gson read as a double
-        }
-        return switch (text.toUpperCase(java.util.Locale.ROOT)) {
-            case "0", "FAILED" -> BuildOutcome.FAILED;
-            case "1", "SUCCEED", "SUCCEEDED" -> BuildOutcome.SUCCEEDED;
-            case "2", "WITH_ERROR", "WITH_ERRORS" -> BuildOutcome.WITH_ERRORS;
-            case "3", "CANCELLED" -> BuildOutcome.CANCELLED;
-            default -> BuildOutcome.UNAVAILABLE;
-        };
+        builds.buildJavaWorkspace(file, full, cb);
     }
 
     /**
@@ -7987,85 +4082,9 @@ public final class LspManager {
      */
     public record BuildResult(BuildOutcome outcome, Map<Path, List<LspDiagnostic>> errors) {}
 
-    /** The error diagnostics each building session publishes, captured on the reader thread (see buildWorkspace). */
-    private final Map<LanguageServerSession, Map<Path, List<LspDiagnostic>>> buildCaptures =
-            new java.util.concurrent.ConcurrentHashMap<>();
-
-    /** Records {@code file}'s errors for a build of {@code source} in progress (reader thread). */
-    private void captureBuildErrors(LanguageServerSession source, Path file, List<LspDiagnostic> mapped) {
-        Map<Path, List<LspDiagnostic>> capture = buildCaptures.get(source);
-        if (capture == null) {
-            return;
-        }
-        List<LspDiagnostic> errors = mapped.stream()
-                .filter(d -> d.severity() == LspDiagnostic.Severity.ERROR)
-                .toList();
-        if (errors.isEmpty()) {
-            capture.remove(file);
-        } else {
-            capture.put(file, errors);
-        }
-    }
-
-    /**
-     * Builds {@code file}'s Java project the way a debug launch needs it: Editora runs jdtls with autobuild off,
-     * so nothing else writes the class files the program is launched from. An incremental build first; when it
-     * reports errors without publishing any (the markers were already there), a full build, which republishes
-     * them all. The result is delivered on the FX thread.
-     */
+    /** See {@link JavaBuilds#buildJavaWorkspaceForLaunch}. */
     public void buildJavaWorkspaceForLaunch(Path file, Consumer<BuildResult> cb) {
-        LanguageServerSession s = file == null ? null : sessionFor(file);
-        if (s == null || !LspServerRegistry.JAVA_SERVER_ID.equals(s.serverId())) {
-            Platform.runLater(() -> cb.accept(new BuildResult(BuildOutcome.UNAVAILABLE, Map.of())));
-            return;
-        }
-        Runnable launchBuild = () -> build(s, false, first -> {
-            if (first.outcome() == BuildOutcome.WITH_ERRORS && first.errors().isEmpty()) {
-                build(s, true, cb);
-            } else {
-                cb.accept(first);
-            }
-        });
-        Path root = s.root();
-        if (root == null || !com.editora.process.ExecTargets.runsHere(root)) {
-            launchBuild.run();
-            return;
-        }
-        // What was written on disk just now may not have reached jdtls through a watcher yet (review 3, A207).
-        Thread.ofVirtual().name("java-launch-fresh-sources").start(() -> {
-            List<WatchedFile> fresh = FreshJavaSources.since(
-                    root, System.currentTimeMillis() - FreshJavaSources.WINDOW_MS, FreshJavaSources.MAX_VISITED);
-            Platform.runLater(() -> {
-                // an open file's edits reach jdtls as its document's; only files changed outside Editora count
-                List<org.eclipse.lsp4j.FileEvent> events = eventsUnderRoot(fresh, root, s.uris()).stream()
-                        .filter(e -> !s.isOpen(e.getUri()))
-                        .toList();
-                if (events.isEmpty()) {
-                    launchBuild.run();
-                    return;
-                }
-                s.didChangeWatchedFiles(events);
-                // jdtls takes watched-file events in on a thread of its own: give it a moment before the build
-                javafx.animation.PauseTransition settle =
-                        new javafx.animation.PauseTransition(javafx.util.Duration.millis(FreshJavaSources.SETTLE_MS));
-                settle.setOnFinished(e -> launchBuild.run());
-                settle.play();
-            });
-        });
-    }
-
-    private void build(LanguageServerSession s, boolean full, Consumer<BuildResult> cb) {
-        Map<Path, List<LspDiagnostic>> capture = new java.util.concurrent.ConcurrentHashMap<>();
-        buildCaptures.put(s, capture);
-        s.rawRequest("java/buildWorkspace", full, BUILD_WORKSPACE_TIMEOUT)
-                .orTimeout(BUILD_WORKSPACE_TIMEOUT.toMinutes(), java.util.concurrent.TimeUnit.MINUTES)
-                .whenComplete((r, e) -> {
-                    buildCaptures.remove(s, capture);
-                    BuildOutcome outcome = e != null ? BuildOutcome.UNAVAILABLE : buildOutcome(r);
-                    Map<Path, List<LspDiagnostic>> errors = new java.util.TreeMap<>(capture);
-                    Platform.runLater(
-                            () -> cb.accept(new BuildResult(outcome, java.util.Collections.unmodifiableMap(errors))));
-                });
+        builds.buildJavaWorkspaceForLaunch(file, cb);
     }
 
     /** What an Organize Imports did. */
@@ -8080,221 +4099,29 @@ public final class LspManager {
         STALE
     }
 
-    /**
-     * Organizes {@code file}'s imports the way its server does it: jdtls's {@code java/organizeImports},
-     * Pyright's {@code pyright.organizeimports} command (basedpyright's own name for it), else a
-     * {@code source.organizeImports} code action. Before this every server was sent the jdtls request, so on a
-     * Python file it failed and the status bar said "Imports already organized" (review B5).
-     */
+    /** See {@link LspOrganizeImports#organizeImportsAny}. */
     public void organizeImportsAny(Path file, int lastLine, int lastChar, Consumer<OrganizeOutcome> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || file == null) {
-            Platform.runLater(() -> cb.accept(OrganizeOutcome.UNSUPPORTED));
-            return;
-        }
-        String serverId = s.serverId();
-        if (LspServerRegistry.JAVA_SERVER_ID.equals(serverId)) {
-            organizeJavaImports(s, file, lastLine, lastChar, cb);
-            return;
-        }
-        if (PYTHON_SERVER_ID.equals(serverId)) {
-            EditBasis expected = editBasis(s);
-            String command = pyrightOrganizeCommand(s.command());
-            s.executeCommand(command, List.of(serverUri(file)))
-                    .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                    .whenComplete((r, e) -> {
-                        org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
-                        Platform.runLater(() -> {
-                            if (e != null) {
-                                cb.accept(OrganizeOutcome.UNSUPPORTED); // pylsp, ruff, jedi: no such command
-                            } else if (edit == null || !changesText(edit)) {
-                                cb.accept(OrganizeOutcome.UNCHANGED);
-                            } else {
-                                applyWorkspaceEdit(
-                                        edit,
-                                        expected,
-                                        ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.UNCHANGED));
-                            }
-                        });
-                    });
-            return;
-        }
-        if (TypeScriptServer.SERVER_ID.equals(serverId)) {
-            organizeTypeScriptImports(s, file, cb);
-            return;
-        }
-        codeActions(file, 0, 0, lastLine, lastChar, items -> {
-            CodeActionItem organize = items.stream()
-                    .filter(i -> i.kind().startsWith("source.organizeImports"))
-                    .findFirst()
-                    .orElse(null);
-            if (organize == null) {
-                cb.accept(OrganizeOutcome.UNSUPPORTED);
-            } else {
-                applyCodeAction(
-                        file, organize, ok -> cb.accept(ok ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.UNCHANGED));
-            }
-        });
+        imports.organizeImportsAny(file, lastLine, lastChar, cb);
     }
 
-    /**
-     * typescript-language-server's own Organize Imports ({@code _typescript.organizeImports}): it sorts, combines
-     * and removes unused imports, and sends the edit back as {@code workspace/applyEdit}. Its
-     * {@code source.organizeImports} code action only sorts, and was never offered at all without {@code only}
-     * (Node review B5). No edit coming back means the imports were already organized.
-     */
-    private void organizeTypeScriptImports(LanguageServerSession s, Path file, Consumer<OrganizeOutcome> cb) {
-        PendingApply pending =
-                new PendingApply(editBasis(s).sentNow(), new java.util.concurrent.atomic.AtomicReference<>());
-        if (pendingApplyExpected.putIfAbsent(s, pending) != null) {
-            Platform.runLater(() -> cb.accept(OrganizeOutcome.UNCHANGED));
-            return;
-        }
-        String serverPath;
-        try {
-            serverPath = Path.of(java.net.URI.create(serverUri(file))).toString();
-        } catch (RuntimeException e) {
-            serverPath = java.net.URI.create(serverUri(file)).getPath();
-        }
-        executeCommand(file, "_typescript.organizeImports", List.of(serverPath), (result, error) -> {
-            pendingApplyExpected.remove(s, pending);
-            Boolean applied = pending.applied().get();
-            cb.accept(
-                    error != null
-                            ? OrganizeOutcome.UNSUPPORTED
-                            : Boolean.TRUE.equals(applied) ? OrganizeOutcome.ORGANIZED : OrganizeOutcome.UNCHANGED);
-        });
-    }
-
-    /**
-     * Pyright's organize-imports command, under basedpyright's name when that is the server — whichever word of the
-     * command names it: {@code npx basedpyright-langserver --stdio} ran basedpyright under Pyright's name, which it
-     * does not answer (Python review 2, D110). Pure.
-     */
-    static String pyrightOrganizeCommand(List<String> serverCommand) {
-        boolean based = serverCommand != null
-                && serverCommand.stream().anyMatch(word -> word != null && word.contains("basedpyright"));
-        return based ? "basedpyright.organizeimports" : "pyright.organizeimports";
-    }
-
-    /** Whether {@code edit} carries any text change (Pyright answers an already-sorted file with none). */
-    private static boolean changesText(org.eclipse.lsp4j.WorkspaceEdit edit) {
-        if (edit.getChanges() != null && edit.getChanges().values().stream().anyMatch(l -> l != null && !l.isEmpty())) {
-            return true;
-        }
-        return edit.getDocumentChanges() != null && !edit.getDocumentChanges().isEmpty();
-    }
-
-    /**
-     * Organize Imports as a save runs it: no question for an ambiguous name (it is left unimported), and the
-     * outcome reported. {@code cb} on the FX thread.
-     */
+    /** See {@link LspOrganizeImports#organizeImportsQuietly}. */
     public void organizeImportsQuietly(Path file, int lastLine, int lastChar, Consumer<OrganizeOutcome> cb) {
-        LanguageServerSession s = javaSessionFor(file);
-        if (s == null || file == null || sessionFor(file) != s) {
-            Platform.runLater(() -> cb.accept(OrganizeOutcome.FAILED));
-            return;
-        }
-        String quiet = s.uris().toWire(uri(file));
-        s.quietImportChoices.add(quiet);
-        organizeJavaImports(s, file, lastLine, lastChar, outcome -> {
-            s.quietImportChoices.remove(quiet);
-            cb.accept(outcome);
-        });
+        imports.organizeImportsQuietly(file, lastLine, lastChar, cb);
     }
 
-    /**
-     * Organize imports for a whole file ({@code java/organizeImports}, #746) and apply the resulting edit.
-     *
-     * <p>The same operation is also reachable as the {@code source.organizeImports} code action, but only by
-     * opening the code-action picker and choosing it. This is the direct, bindable form.
-     *
-     * <p>Signature read off the jdtls jar: it takes {@code CodeActionParams} — the whole file's range, not a
-     * position — and answers a {@code WorkspaceEdit}.
-     */
+    /** See {@link LspOrganizeImports#organizeImports}. */
     public void organizeImports(Path file, int lastLine, int lastChar, Consumer<Boolean> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || file == null) {
-            Platform.runLater(() -> cb.accept(false));
-            return;
-        }
-        organizeJavaImports(s, file, lastLine, lastChar, outcome -> cb.accept(outcome == OrganizeOutcome.ORGANIZED));
+        imports.organizeImports(file, lastLine, lastChar, cb);
     }
 
-    /**
-     * jdtls's {@code java/organizeImports}. For a name with several candidates jdtls asks the client
-     * ({@code java.action.organizeImports.chooseImports}, answered by {@link LanguageServerSession}). Unanswered,
-     * it cancelled the whole operation and answered null, which reads exactly like "nothing to change" — so the
-     * question is what had to be answered (Java review A3); a request that fails is {@link OrganizeOutcome#FAILED}.
-     */
-    private void organizeJavaImports(
-            LanguageServerSession s, Path file, int lastLine, int lastChar, Consumer<OrganizeOutcome> cb) {
-        var range = new org.eclipse.lsp4j.Range(new Position(0, 0), new Position(lastLine, lastChar));
-        var params = new org.eclipse.lsp4j.CodeActionParams(
-                new org.eclipse.lsp4j.TextDocumentIdentifier(serverUri(file)),
-                range,
-                new org.eclipse.lsp4j.CodeActionContext(List.of()));
-        EditBasis expected = editBasis(s);
-        // Bounded by the session, which waits while an import question is open (fifth review DV1).
-        s.rawRequest("java/organizeImports", params).whenComplete((r, e) -> {
-            org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
-            Platform.runLater(() -> {
-                if (e != null) {
-                    cb.accept(OrganizeOutcome.FAILED);
-                } else if (edit == null || !changesText(edit)) {
-                    cb.accept(OrganizeOutcome.UNCHANGED);
-                } else {
-                    applyWorkspaceEdit(edit, expected, ok -> {
-                        // refused because the file changed under the question, not because the server gave up
-                        // (seventh review AR1)
-                        String then = expected.documents().get(file);
-                        boolean changed = then != null
-                                && !then.equals(expectedDocuments(s).get(file));
-                        cb.accept(
-                                ok
-                                        ? OrganizeOutcome.ORGANIZED
-                                        : changed ? OrganizeOutcome.STALE : OrganizeOutcome.FAILED);
-                    });
-                }
-            });
-        });
-    }
-
-    /**
-     * The fully qualified name of the symbol at a position ({@code java.getFullyQualifiedName}, #746) —
-     * what "Copy Reference" copies in an IDE. Null when there's no session or nothing resolves there.
-     */
+    /** See {@link JdtlsCommands#fullyQualifiedName}. */
     public void fullyQualifiedName(Path file, int line, int character, Consumer<String> cb) {
-        LanguageServerSession s = sessionFor(file);
-        if (s == null || file == null) {
-            Platform.runLater(() -> cb.accept(null));
-            return;
-        }
-        var params = new org.eclipse.lsp4j.TextDocumentPositionParams(
-                new org.eclipse.lsp4j.TextDocumentIdentifier(serverUri(file)), new Position(line, character));
-        executeCommand(file, "java.getFullyQualifiedName", List.of(params), (result, error) -> {
-            String name = error != null ? null : rawStringResult(result);
-            cb.accept(name == null || name.isBlank() ? null : name);
-        });
+        jdtls.fullyQualifiedName(file, line, character, cb);
     }
 
-    /**
-     * Re-reads the project's build configuration ({@code java/projectConfigurationUpdate}, #746) — the
-     * manual escape hatch when a {@code pom.xml} / {@code build.gradle} change hasn't been picked up. Asks the
-     * Java server of {@code file}'s project; false when there is none.
-     *
-     * <p>A <b>notification</b>, not a request (jdtls declares it {@code void}), so there is nothing to
-     * report back and nothing to wait for; the result shows up as fresh diagnostics.
-     */
+    /** See {@link JdtlsCommands#reloadProjectConfiguration}. */
     public boolean reloadProjectConfiguration(Path file) {
-        LanguageServerSession s = javaSessionFor(file);
-        if (s != null && file != null) {
-            // jdtls takes the build file itself as well as any source file of the project.
-            s.rawNotify(
-                    "java/projectConfigurationUpdate", new org.eclipse.lsp4j.TextDocumentIdentifier(serverUri(file)));
-            return true;
-        }
-        return false;
+        return jdtls.reloadProjectConfiguration(file);
     }
 
     /**
@@ -8306,36 +4133,9 @@ public final class LspManager {
         return s == null ? null : s.documentSnapshot(uri(file));
     }
 
-    /**
-     * Fetches the source of a {@code jdt://} class-file URI via jdtls's {@code java/classFileContents}
-     * request (the attached/decompiled source of a JDK or dependency class) and delivers it on the FX
-     * thread — {@code null} when the session is gone, the request fails/times out, or the server returns
-     * nothing. {@code anchorFile} is any file managed by the jdtls session that produced the URI.
-     */
+    /** See {@link JdtlsCommands#classFileContents}. */
     public void classFileContents(Path anchorFile, @Nullable String jdtUri, Consumer<String> cb) {
-        LanguageServerSession s = sessionFor(anchorFile);
-        if (s == null || jdtUri == null) {
-            Platform.runLater(() -> cb.accept(null));
-            return;
-        }
-        s.rawRequest("java/classFileContents", new org.eclipse.lsp4j.TextDocumentIdentifier(jdtUri))
-                .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .whenComplete((r, e) -> {
-                    String text = e != null ? null : rawStringResult(r);
-                    Platform.runLater(() -> cb.accept(text == null || text.isBlank() ? null : text));
-                });
-    }
-
-    /** The string payload of a raw (untyped) JSON-RPC response — lsp4j decodes an unknown method's result
-     *  as a gson element, so accept both. Null for anything else. */
-    static @Nullable String rawStringResult(Object r) {
-        if (r instanceof String s) {
-            return s;
-        }
-        if (r instanceof com.google.gson.JsonPrimitive p && p.isString()) {
-            return p.getAsString();
-        }
-        return null;
+        jdtls.classFileContents(anchorFile, jdtUri, cb);
     }
 
     /**
@@ -8354,10 +4154,6 @@ public final class LspManager {
         int slash = noQuery.lastIndexOf('/');
         String name = slash >= 0 && slash < noQuery.length() - 1 ? noQuery.substring(slash + 1) : noQuery;
         return name.isBlank() ? jdtUri : name;
-    }
-
-    static String hoverText(Hover hover) {
-        return HoverMarkdown.of(hover);
     }
 
     /** The document URI for {@code file}; remembered, because computing one stats the file. */
@@ -8391,13 +4187,13 @@ public final class LspManager {
         s.executeCommand(XmlServer.ASSOCIATE_GRAMMAR, args).whenComplete((result, error) -> {
             org.eclipse.lsp4j.WorkspaceEdit edit = error == null ? XmlServer.associateEdit(result) : null;
             if (error != null) {
-                lastCodeActionFailure = failureReason(error);
+                codeActions.lastCodeActionFailure = failureReason(error);
             }
             Platform.runLater(() -> {
                 if (edit == null) {
                     cb.accept(false);
                 } else {
-                    applyWorkspaceEdit(edit, versionedBasis(s, edit), cb);
+                    codeActions.applyWorkspaceEdit(edit, WorkspaceEditDrafts.versionedBasis(s, edit), cb);
                 }
             });
         });

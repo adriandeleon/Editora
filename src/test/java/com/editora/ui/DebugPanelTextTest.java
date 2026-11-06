@@ -123,4 +123,21 @@ class DebugPanelTextTest {
                 com.editora.i18n.Messages.tr(tr, com.editora.i18n.Messages.tr("debugpanel.exceptions.both")),
                 DebugPanelText.exceptionsTip(true, true));
     }
+
+    @Test
+    void aCallStackIsCopiedAsAJavaStackTraceReads() {
+        java.util.List<com.editora.dap.DapModels.StackFrameInfo> frames = java.util.List.of(
+                new com.editora.dap.DapModels.StackFrameInfo(
+                        1, "Main.work", java.nio.file.Path.of("/p/Main.java"), 11, 1),
+                new com.editora.dap.DapModels.StackFrameInfo(2, "Native.call", null, -1, 0),
+                new com.editora.dap.DapModels.StackFrameInfo(
+                        3, "Main.main", java.nio.file.Path.of("/p/Main.java"), 3, 1));
+        assertEquals(
+                com.editora.i18n.Messages.tr("debugpanel.copiedStackThread", "main") + "\n"
+                        + "    at Main.work(Main.java:12)\n"
+                        + "    at Native.call\n"
+                        + "    at Main.main(Main.java:4)\n",
+                DebugPanelText.callStackText("main", frames));
+        assertEquals("    at Main.main(Main.java:4)\n", DebugPanelText.callStackText("", frames.subList(2, 3)));
+    }
 }

@@ -97,7 +97,7 @@ class BashSettingsPageFxTest {
     @Test
     void theCardSaysWhetherShellCheckAndShfmtAreThereAndOffersToInstallThem(
             @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
-        Map<String, ToolStatusRow> status = FxTestSupport.field(window, "bashToolStatusLabels");
+        Map<String, ToolStatusRow> status = SettingsRig.control(window, "bashToolStatusLabels");
         Map<String, javafx.scene.control.Button> installs = FxTestSupport.field(window, "installButtons");
 
         commit(row("lsp.bash.shfmtPath"), dir.resolve("nowhere/shfmt").toString());

@@ -53,7 +53,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 158;
+    public static final int SCHEMA_VERSION = 159;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -869,6 +869,11 @@ public class Settings {
      * "Enable toString() object view" does when cleared.
      */
     private boolean debugShowToString = true;
+    /**
+     * Java debugging: a breakpoint, exception or step stops every thread of the program, and Continue resumes them
+     * all (java-debug's {@code suspendAllThreads}; IntelliJ's "Suspend: All"). Off stops only the thread that hit it.
+     */
+    private boolean debugSuspendAllThreads = false;
     /**
      * Java debugging: the exception classes the exception breakpoints are limited to, separated by commas
      * (e.g. {@code java.lang.IllegalStateException}); blank = every exception.
@@ -3563,6 +3568,14 @@ public class Settings {
 
     public void setDebugShowToString(boolean debugShowToString) {
         this.debugShowToString = debugShowToString;
+    }
+
+    public boolean isDebugSuspendAllThreads() {
+        return debugSuspendAllThreads;
+    }
+
+    public void setDebugSuspendAllThreads(boolean debugSuspendAllThreads) {
+        this.debugSuspendAllThreads = debugSuspendAllThreads;
     }
 
     public String getDebugExceptionTypes() {

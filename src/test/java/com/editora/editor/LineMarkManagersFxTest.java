@@ -93,6 +93,27 @@ class LineMarkManagersFxTest {
     }
 
     @Test
+    void aTemporaryBreakpointCarriesItsOwnGlyphClass() throws Exception {
+        EditorFx.onFx(() -> {
+            BreakpointManager manager = new BreakpointManager(area(TEXT));
+            AtomicInteger changes = new AtomicInteger();
+            manager.setOnChanged(changes::incrementAndGet);
+            manager.toggle(2);
+            manager.setTemporary(2, true);
+            manager.setTemporary(2, true); // no change
+            assertEquals("temporary", manager.styleClasses(2));
+            manager.setCondition(2, "i > 3");
+            assertEquals("conditional temporary", manager.styleClasses(2), "its kind and its \"1\"");
+            manager.setLogMessage(2, "at {i}");
+            assertEquals("logpoint", manager.styleClasses(2), "a logpoint never stops, so is never removed");
+            manager.setTemporary(2, false);
+            manager.setTemporary(5, true); // no breakpoint on that line: nothing to edit
+            assertFalse(manager.isBreakpoint(5));
+            assertEquals(5, changes.get(), "each real change is reported once");
+        });
+    }
+
+    @Test
     void aLiveDebugSessionMarksUnboundAndRejectedBreakpoints() throws Exception {
         EditorFx.onFx(() -> {
             BreakpointManager manager = new BreakpointManager(area(TEXT));

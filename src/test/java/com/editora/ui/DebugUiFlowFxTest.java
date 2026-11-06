@@ -1274,7 +1274,7 @@ class DebugUiFlowFxTest {
                     List.of("text", "variable", DebugPanel.TOKEN),
                     List.copyOf(runs.get(0).getStyleClass()));
             assertEquals(
-                    List.of("text", "string", DebugPanel.TOKEN),
+                    List.of("debug-val", "text", "string", DebugPanel.TOKEN), // debug-val: bold when changed
                     List.copyOf(runs.get(2).getStyleClass()));
             assertEquals(
                     List.of("text", "type", DebugPanel.TOKEN),

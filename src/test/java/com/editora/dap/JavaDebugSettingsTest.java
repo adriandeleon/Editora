@@ -62,4 +62,17 @@ class JavaDebugSettingsTest {
         assertEquals(List.of(), JavaDebugSettings.parseExceptionTypes("  "));
         assertEquals(List.of(), JavaDebugSettings.parseExceptionTypes(null));
     }
+
+    @Test
+    void suspendAllThreadsIsOffByDefaultAndSentWhenOn() {
+        assertFalse(JsonParser.parseString(JavaDebugSettings.defaults().toJson())
+                .getAsJsonObject()
+                .get("suspendAllThreads")
+                .getAsBoolean());
+        assertFalse(new JavaDebugSettings(true, true, List.of(), true).suspendAllThreads());
+        assertTrue(JsonParser.parseString(new JavaDebugSettings(true, true, List.of(), true, true).toJson())
+                .getAsJsonObject()
+                .get("suspendAllThreads")
+                .getAsBoolean());
+    }
 }

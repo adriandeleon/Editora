@@ -74,4 +74,41 @@ class BreakpointTest {
                 Breakpoint.class);
         assertEquals("", old.hitCondition());
     }
+
+    @Test
+    void aTemporaryBreakpointStaysTemporaryThroughTheWithersAndJson() throws Exception {
+        Breakpoint b = Breakpoint.plain(4, "total += i").withTemporary(true);
+        assertTrue(b.temporary());
+        Breakpoint changed = b.withLine(9)
+                .withLineText("y")
+                .withCondition("i > 0")
+                .withLogMessage("")
+                .withEnabled(false)
+                .withHitCondition("2");
+        assertTrue(changed.temporary(), "every wither keeps it");
+        assertFalse(changed.withTemporary(false).temporary());
+        assertFalse(Breakpoint.plain(1, "x").temporary(), "a breakpoint stays after a hit by default");
+
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertEquals(b, json.readValue(json.writeValueAsString(b), Breakpoint.class));
+        // breakpoints.json written before temporary breakpoints existed
+        Breakpoint old = json.readValue(
+                "{\"line\":2,\"condition\":\"\",\"logMessage\":\"\",\"enabled\":true,\"lineText\":\"x\","
+                        + "\"hitCondition\":\"3\"}",
+                Breakpoint.class);
+        assertFalse(old.temporary());
+        assertEquals("3", old.hitCondition());
+    }
+
+    @Test
+    void aTemporaryBreakpointSaysSoInItsDescriptionUnlessItOnlyLogs() {
+        Breakpoint b = Breakpoint.plain(4, "x").withTemporary(true);
+        assertEquals(
+                List.of(com.editora.i18n.Messages.tr("debug.breakpoint.temporary")),
+                com.editora.editor.debug.BreakpointDescription.lines(b));
+        assertEquals(
+                List.of(com.editora.i18n.Messages.tr("debug.breakpoint.logMessage", "at {i}")),
+                com.editora.editor.debug.BreakpointDescription.lines(b.withLogMessage("at {i}")),
+                "a logpoint never stops, so it is never removed");
+    }
 }

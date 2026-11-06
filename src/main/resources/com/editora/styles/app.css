@@ -4761,6 +4761,13 @@
 .debug-panel .debug-val-plain { -fx-fill: -color-fg-default; }
 /* A watch the adapter could not evaluate: its message, not a value. */
 .debug-panel .debug-val-error { -fx-fill: -state-red; -fx-font-style: italic; }
+/* A value that changed since the previous stop in the same frame (DebugValueChanges): tinted and bold, keeping its
+   syntax colour. */
+.debug-panel .debug-row-changed {
+    -fx-background-color: -state-accent-bg;
+    -fx-background-radius: 3;
+}
+.debug-panel .debug-row-changed .debug-val { -fx-font-weight: bold; }
 /* Why a row shows only Type@id: "click to load", "toString() not available after Pause" (review 3, B201/B202). */
 .debug-panel .debug-val-note { -fx-fill: -color-fg-muted; -fx-font-style: italic; }
 /* The UI theme and the editor theme disagree on light vs dark (review 2 C111): the editor's token colours are
@@ -4950,8 +4957,8 @@
 .fold-gutter .run-slot:hover .run-marker.http-result-server-error,
 .fold-gutter .run-slot:hover .run-marker.http-result-failed { -fx-fill: derive(-state-red, 25%); }
 
-/* Gutter breakpoint dot (leftmost strip). Plain = solid red; a conditional one carries "=" marks, a logpoint
-   is a diamond (shape as well as colour, review C11); disabled is grey. */
+/* Gutter breakpoint dot (leftmost strip). Plain = solid red; a conditional one carries "=" marks, a temporary one
+   (removed once hit) a "1", a logpoint is a diamond (shape as well as colour, review C11); disabled is grey. */
 .breakpoint-marker { -fx-fill: #e51400; }
 .breakpoint-marker.breakpoint-conditional { -fx-fill: #b8860b; }
 .breakpoint-marker.breakpoint-logpoint { -fx-fill: #1f6feb; }

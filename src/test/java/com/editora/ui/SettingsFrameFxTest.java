@@ -207,7 +207,7 @@ class SettingsFrameFxTest {
             }
             // A command name is found through the Keymaps list, and carried into its filter.
             search(search, "Duplicate Line");
-            TextField shortcutFilter = FxTestSupport.field(window, "shortcutFilter");
+            TextField shortcutFilter = SettingsRig.control(window, "shortcutFilter");
             FxTestSupport.runOnFx(() -> assertEquals("Duplicate Line", shortcutFilter.getText()));
             search(search, "");
             FxTestSupport.runOnFx(() -> assertEquals("", shortcutFilter.getText(), "clearing the search clears it"));
@@ -361,10 +361,10 @@ class SettingsFrameFxTest {
                 a.show(FxTestSupport.<Stage>field(fx.controller, "stage"));
                 b.show(FxTestSupport.<Stage>field(other, "stage"));
             });
-            javafx.scene.control.Label gitStatus = FxTestSupport.field(b, "gitStatusLabel");
+            javafx.scene.control.Label gitStatus = SettingsRig.control(b, "gitStatusLabel");
             String checking = com.editora.i18n.Messages.tr("settings.git.checking");
             await(() -> !gitStatus.getText().equals(checking), "the first git probe");
-            TextField gitPath = FxTestSupport.field(b, "gitPathField");
+            TextField gitPath = SettingsRig.control(b, "gitPathField");
             Spinner<Integer> tabA = FxTestSupport.field(a, "tabSizeSpinner");
             Spinner<Integer> tabB = FxTestSupport.field(b, "tabSizeSpinner");
             FxTestSupport.runOnFx(() -> {
@@ -627,7 +627,7 @@ class SettingsFrameFxTest {
             FxTestSupport.runOnFx(() -> window.show(FxTestSupport.<Stage>field(fx.controller, "stage")));
             javafx.scene.control.ToolBar bar = FxTestSupport.field(fx.controller, "toolBar");
             javafx.scene.control.CheckBox minimap = FxTestSupport.field(window, "minimapCheck");
-            javafx.scene.control.CheckBox git = FxTestSupport.field(window, "gitCheck");
+            javafx.scene.control.CheckBox git = SettingsRig.control(window, "gitCheck");
             java.nio.file.Path file = java.nio.file.Files.writeString(
                     java.nio.file.Files.createTempFile("editora-reapply", ".txt"), "text\n");
             FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");

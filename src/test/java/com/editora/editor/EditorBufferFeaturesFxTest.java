@@ -329,7 +329,7 @@ class EditorBufferFeaturesFxTest {
 
             buffer.setMultiCaretEnabled(false);
             buffer.setMultiCaretEnabled(true); // re-installs multi-caret on both views
-            assertNotNull(EditorFx.field(buffer, "multiCaret2"));
+            assertNotNull(EditorFx.field(EditorFx.field(buffer, "caretOps"), "multiCaret2"));
 
             buffer.toggleSplit(Split.SIDE_BY_SIDE);
             assertEquals(Split.NONE, buffer.getSplit(), "toggling the same orientation closes the split");
@@ -439,20 +439,20 @@ class EditorBufferFeaturesFxTest {
             buffer.setSemanticTokens(List.of(new SemanticToken(0, 0, 3, "variable")));
             assertEquals(
                     1,
-                    EditorFx.<List<SemanticToken>>field(buffer, "semanticTokens")
+                    EditorFx.<List<SemanticToken>>field(EditorFx.field(buffer, "highlighter"), "semanticTokens")
                             .size());
             buffer.setSemanticTokens(null);
-            assertTrue(EditorFx.<List<SemanticToken>>field(buffer, "semanticTokens")
+            assertTrue(EditorFx.<List<SemanticToken>>field(EditorFx.field(buffer, "highlighter"), "semanticTokens")
                     .isEmpty());
             buffer.setSemanticTokens(List.of(new SemanticToken(0, 0, 3, "variable")));
             buffer.setSemanticTokens(List.of(), buffer.semanticGen() - 1);
             assertEquals(
                     1,
-                    EditorFx.<List<SemanticToken>>field(buffer, "semanticTokens")
+                    EditorFx.<List<SemanticToken>>field(EditorFx.field(buffer, "highlighter"), "semanticTokens")
                             .size(),
                     "an answer to an older request is ignored");
             buffer.setSemanticActive(false);
-            assertTrue(EditorFx.<List<SemanticToken>>field(buffer, "semanticTokens")
+            assertTrue(EditorFx.<List<SemanticToken>>field(EditorFx.field(buffer, "highlighter"), "semanticTokens")
                     .isEmpty());
             buffer.dispose();
         });

@@ -327,7 +327,8 @@ class SplitPaneOverlaysFxTest {
         });
         settle();
         moveOver(second, 3, 14);
-        javafx.scene.control.Tooltip tip = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "lspTooltip"));
+        javafx.scene.control.Tooltip tip =
+                FxTestSupport.callOnFx(() -> FxTestSupport.field(FxTestSupport.field(b, "lspAssists"), "lspTooltip"));
         assertNotNull(tip, "hovering a squiggle in pane 2 opens the diagnostic popup");
         assertTrue(FxTestSupport.callOnFx(tip::isShowing));
         assertTrue(FxTestSupport.callOnFx(tip::getText).contains("cannot find symbol value"));

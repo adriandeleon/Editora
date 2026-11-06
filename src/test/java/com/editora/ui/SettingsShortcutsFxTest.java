@@ -92,7 +92,7 @@ class SettingsShortcutsFxTest {
                 fx.shared.getMacroStore().put(new Macro("m1", "Wrap", new ArrayList<>(List.of(MacroStep.text("x")))));
                 SettingsWindow w = shown(fx, "MACROS");
                 w.refreshMacrosList();
-                MacroSettingsPane pane = FxTestSupport.field(w, "macroPane");
+                MacroSettingsPane pane = SettingsRig.control(w, "macroPane");
                 pane.macroList().getSelectionModel().select(0);
                 button(pane, tr("settings.macro.addKey")).fire();
                 TextField key = all(pane, TextField.class, new ArrayList<>()).stream()
@@ -134,7 +134,7 @@ class SettingsShortcutsFxTest {
     }
 
     static HBox row(SettingsWindow w, String commandId) {
-        Map<String, HBox> rows = FxTestSupport.field(w, "shortcutRowsById");
+        Map<String, HBox> rows = SettingsRig.control(w, "shortcutRowsById");
         return rows.get(commandId);
     }
 
@@ -249,7 +249,7 @@ class SettingsShortcutsFxTest {
                 SettingsWindow.ShortcutActions actions = FxTestSupport.field(w, "shortcutActions");
                 actions.rebind("file.save", open);
                 assertNull(rawChord(fx, "file.open"), "precondition: File: Open lost its chord");
-                FxTestSupport.call(w, "refreshShortcuts", new Class<?>[] {});
+                FxTestSupport.call(FxTestSupport.field(w, "keymapsPage"), "refreshShortcuts", new Class<?>[] {});
                 java.util.function.BiPredicate<String, String> answer = (title, body) -> asked.add(body);
                 setField(w, "confirmLoss", answer);
                 press(row(w, "file.open"), KeyCode.ENTER);
@@ -272,7 +272,7 @@ class SettingsShortcutsFxTest {
         try (var fx = FxWindowFixture.create()) {
             FxTestSupport.runOnFx(() -> {
                 SettingsWindow w = shown(fx, "KEYMAPS");
-                TextField filter = FxTestSupport.field(w, "shortcutFilter");
+                TextField filter = SettingsRig.control(w, "shortcutFilter");
                 filter.setText("save file");
                 assertTrue(row(w, "file.save") != null, "words in any order");
                 filter.setText("Ctrl+X Ctrl+S");

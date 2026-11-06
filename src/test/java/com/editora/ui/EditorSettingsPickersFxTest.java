@@ -81,7 +81,7 @@ class EditorSettingsPickersFxTest {
     }
 
     private <T> T settingsControl(String name) {
-        return FxTestSupport.field(settingsWindow, name);
+        return SettingsRig.control(settingsWindow, name);
     }
 
     private static void typeKey(org.fxmisc.richtext.CodeArea area, String ch) {

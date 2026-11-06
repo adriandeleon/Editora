@@ -908,4 +908,89 @@ final class Icons {
     static Node remove() {
         return of("M19 13H5v-2h14v2z");
     }
+
+    // ---- The Project Map's options (⋯) menu --------------------------------------------------------------
+
+    /** A magnifier holding an equals sign — the Map's "Keep current zoom" when a column opens. */
+    static Node keepZoom() {
+        return line("M2.5 7a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0-9 0M10.2 10.2l3.6 3.6M5.2 6h3.6M5.2 8h3.6");
+    }
+
+    /** Two columns with an arrow from the first into the second — the Map's "Focus new column". */
+    static Node focusNewColumn() {
+        return line("M2 3h3.5v10H2zM10.5 3H14v10h-3.5zM6.5 8h2.8M7.9 6.6L9.3 8 7.9 9.4");
+    }
+
+    /** A pointer — the Map's "Single-click opens files". */
+    static Node pointer() {
+        return line("M4 2.2v10.3l2.7-2.5 1.8 4 1.7-.8-1.8-3.9h3.8z");
+    }
+
+    /** A folder with two chevrons inside — the Map's "Compact folder chains" (a/b/c drawn as one column). */
+    static Node compactChains() {
+        return line("M1.5 3.5h4.2l1.5 2h7.3v7H1.5zM5.2 7.6l1.4 1.4-1.4 1.4M8.4 7.6l1.4 1.4-1.4 1.4");
+    }
+
+    /** Close-set lines with arrows pressing in from above and below — the Map's "Compact rows". */
+    static Node compactRows() {
+        return line("M2.5 6h11M2.5 8h11M2.5 10h11M8 1.6v2.4M6.8 2.8 8 4l1.2-1.2M8 14.4V12M6.8 13.2 8 12l1.2 1.2");
+    }
+
+    /** A struck-through eye — the Map's "Hide ignored and generated". */
+    static Node hidden() {
+        return line("M1.5 8s2.4-4.3 6.5-4.3S14.5 8 14.5 8s-2.4 4.3-6.5 4.3S1.5 8 1.5 8z"
+                + "M6 8a2 2 0 1 0 4 0a2 2 0 1 0-4 0M2.5 2.5l11 11");
+    }
+
+    /** {@link #notes()} struck through — the Map's "Hide all open Personal Notes". */
+    static Node notesHidden() {
+        return line("M3 2.5h10v8l-3 3H3zM10 13.5v-3h3M14.2 1.8L1.8 14.2");
+    }
+
+    /** A page with a tick — the Map's "Always select opened file". */
+    static Node fileSelected() {
+        return line("M4.5 2.5h4.6l2.9 2.9v8.1h-7.5zM9.1 2.5v2.9h2.9M6.2 9.6l1.4 1.4 2.6-2.6");
+    }
+
+    /** One stem branching in two — the Map's Flow (which way the columns grow). */
+    static Node flow() {
+        return line("M1.8 8h4.2M6 8c2.2 0 1.8-4 4-4h3.5M6 8c2.2 0 1.8 4 4 4h3.5M12 2.5 13.5 4 12 5.5M12 10.5l1.5 1.5"
+                + "-1.5 1.5");
+    }
+
+    /** Four panes of a dashboard — the Map's Project overview card. */
+    static Node overview() {
+        return line("M2.5 2.5h4.5v6H2.5zM9 2.5h4.5v3.5H9zM9 8h4.5v5.5H9zM2.5 10.5h4.5v3H2.5z");
+    }
+
+    /** Two cards, one laid over the other — the Map's Open cards. */
+    static Node cards() {
+        return line("M2.5 5.5h8v8h-8zM5.5 5.5v-3h8v8h-3");
+    }
+
+    /** Chevrons closing in on a line — the Map's Collapse All (every column folds back). */
+    static Node collapseAll() {
+        return line("M2.5 5l3 3-3 3M13.5 5l-3 3 3 3M8 2.5v11");
+    }
+
+    /** Three stacked layers — the Map's Working sets (saved views of it). */
+    static Node layers() {
+        return line("M8 2l6 3-6 3-6-3zM2 8l6 3 6-3M2 11l6 3 6-3");
+    }
+
+    /** A winding route between two stops — the Map's Trails (guided tours). */
+    static Node trail() {
+        return line("M2.5 12.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0M10.5 3.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0"
+                + "M5.5 12.5h4a2 2 0 0 0 0-4h-3a2 2 0 0 1 0-4h4");
+    }
+
+    /** A page with a down arrow — export a document (the Map's PDF…). */
+    static Node exportDocument() {
+        return line("M4.5 2.5h4.6l2.9 2.9v8.1h-7.5zM9.1 2.5v2.9h2.9M8.25 6.8v4.6M6.5 9.7l1.75 1.75L10 9.7");
+    }
+
+    /** A picture: frame, hills and sun — export an image (the Map's Export ▸ PNG / SVG). */
+    static Node image() {
+        return line("M2.5 3h11v10h-11zM2.5 11l3.5-3.5 2.5 2.5 2-2 3 3M10 5.8a.8.8 0 1 0 1.6 0a.8.8 0 1 0-1.6 0");
+    }
 }

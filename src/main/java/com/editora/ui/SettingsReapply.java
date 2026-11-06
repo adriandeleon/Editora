@@ -114,7 +114,7 @@ final class SettingsReapply {
         w.refreshBuildTools();
         // The keymap may have switched (it's shared); refresh every chord hint so none stays frozen to the
         // old keymap. Cheap (~25 tooltips + one palette/welcome relabel) and only on a settings/keymap apply.
-        w.refreshToolbarTooltips();
+        w.toolbar.refreshToolbarTooltips();
         if (w.toolbarCoordinator != null) {
             w.toolbarCoordinator.rebuild(); // the toolbar layout is a shared setting — rebuild from it
         }

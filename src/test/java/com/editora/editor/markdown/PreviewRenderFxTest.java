@@ -53,11 +53,11 @@ class PreviewRenderFxTest {
     }
 
     private static StackPane treeHolder(EditorBuffer buffer) {
-        return EditorFx.call(buffer, "structuredContentHolder");
+        return EditorFx.call(EditorFx.field(buffer, "previewPanes"), "structuredContentHolder");
     }
 
     private static ScrollPane pane(EditorBuffer buffer) {
-        return EditorFx.call(buffer, "previewPane");
+        return EditorFx.call(EditorFx.field(buffer, "previewPanes"), "previewPane");
     }
 
     /** Runs {@code trigger} and waits for the tree-hosted preview (JSON, XML, crontab, …) to be replaced. */
@@ -351,7 +351,7 @@ class PreviewRenderFxTest {
         buffer.getNode().applyCss(); // a SplitPane only parents its items once its skin exists
         buffer.getNode().layout();
         holder.fireEvent(new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 200, 200, false, null));
-        return EditorFx.field(buffer, "treePreviewContextMenu");
+        return EditorFx.field(EditorFx.field(buffer, "previewPanes"), "treePreviewContextMenu");
     }
 
     @Test
@@ -791,12 +791,12 @@ class PreviewRenderFxTest {
         });
         EditorBuffer buffer = ref[0];
         awaitPane(buffer, () -> buffer.setMarkdownViewMode(MarkdownViewMode.PREVIEW));
-        long gen = EditorFx.callFx(() -> EditorFx.<Long>field(buffer, "previewGen"));
+        long gen = EditorFx.callFx(() -> EditorFx.<Long>field(EditorFx.field(buffer, "previewPanes"), "previewGen"));
 
         awaitPane(
                 buffer,
                 () -> EditorFx.call(
-                        buffer,
+                        EditorFx.field(buffer, "previewPanes"),
                         "surfaceMarkdownPreviewError",
                         new Class<?>[] {long.class, Throwable.class},
                         gen,
@@ -811,7 +811,7 @@ class PreviewRenderFxTest {
         awaitPane(buffer, buffer::refreshPreview);
         EditorFx.onFx(() -> {
             EditorFx.call(
-                    buffer,
+                    EditorFx.field(buffer, "previewPanes"),
                     "surfaceMarkdownPreviewError",
                     new Class<?>[] {long.class, Throwable.class},
                     gen,
@@ -822,11 +822,12 @@ class PreviewRenderFxTest {
                 assertTrue(EditorFx.textOf(pane(buffer).getContent()).contains("fine"), "the newer render stays"));
 
         // The tree host reports the same way; an exception with no message falls back to its class name.
-        long treeGen = EditorFx.callFx(() -> EditorFx.<Long>field(buffer, "previewGen"));
+        long treeGen =
+                EditorFx.callFx(() -> EditorFx.<Long>field(EditorFx.field(buffer, "previewPanes"), "previewGen"));
         awaitTree(
                 buffer,
                 () -> EditorFx.call(
-                        buffer,
+                        EditorFx.field(buffer, "previewPanes"),
                         "surfaceTreePreviewError",
                         new Class<?>[] {long.class, Throwable.class},
                         treeGen,
@@ -834,7 +835,7 @@ class PreviewRenderFxTest {
         EditorFx.onFx(() -> {
             assertEquals("java.lang.NoClassDefFoundError\n", EditorFx.textOf(treeHolder(buffer)));
             EditorFx.call(
-                    buffer,
+                    EditorFx.field(buffer, "previewPanes"),
                     "surfaceTreePreviewError",
                     new Class<?>[] {long.class, Throwable.class},
                     treeGen - 1,
@@ -852,7 +853,7 @@ class PreviewRenderFxTest {
         EditorFx.onFx(() -> {
             EditorBuffer buffer = buffer("markdown", "x");
             buffer.setPreviewLoading(true, "Explaining…");
-            Node overlay = EditorFx.call(buffer, "previewLoadingOverlay");
+            Node overlay = EditorFx.call(EditorFx.field(buffer, "previewPanes"), "previewLoadingOverlay");
             assertTrue(overlay.isVisible());
             assertTrue(EditorFx.textOf(overlay).contains("Explaining…"));
             buffer.setPreviewLoading(false, null);

@@ -15,7 +15,13 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record Breakpoint(
-        int line, String condition, String logMessage, boolean enabled, String lineText, String hitCondition) {
+        int line,
+        String condition,
+        String logMessage,
+        boolean enabled,
+        String lineText,
+        String hitCondition,
+        boolean temporary) {
 
     /** Max stored length of the captured line snapshot. */
     public static final int MAX_LINE_TEXT = 200;
@@ -28,6 +34,12 @@ public record Breakpoint(
         if (lineText.length() > MAX_LINE_TEXT) {
             lineText = lineText.substring(0, MAX_LINE_TEXT);
         }
+    }
+
+    /** A breakpoint that stays after it is hit. */
+    public Breakpoint(
+            int line, String condition, String logMessage, boolean enabled, String lineText, String hitCondition) {
+        this(line, condition, logMessage, enabled, lineText, hitCondition, false);
     }
 
     /** A breakpoint without a hit condition (stops on every hit that meets its condition). */
@@ -51,24 +63,24 @@ public record Breakpoint(
     }
 
     public Breakpoint withLine(int newLine) {
-        return new Breakpoint(newLine, condition, logMessage, enabled, lineText, hitCondition);
+        return new Breakpoint(newLine, condition, logMessage, enabled, lineText, hitCondition, temporary);
     }
 
     /** This breakpoint with a fresh snapshot of its line's text (the line was edited in place). */
     public Breakpoint withLineText(String newLineText) {
-        return new Breakpoint(line, condition, logMessage, enabled, newLineText, hitCondition);
+        return new Breakpoint(line, condition, logMessage, enabled, newLineText, hitCondition, temporary);
     }
 
     public Breakpoint withCondition(String newCondition) {
-        return new Breakpoint(line, newCondition, logMessage, enabled, lineText, hitCondition);
+        return new Breakpoint(line, newCondition, logMessage, enabled, lineText, hitCondition, temporary);
     }
 
     public Breakpoint withLogMessage(String newLog) {
-        return new Breakpoint(line, condition, newLog, enabled, lineText, hitCondition);
+        return new Breakpoint(line, condition, newLog, enabled, lineText, hitCondition, temporary);
     }
 
     public Breakpoint withEnabled(boolean newEnabled) {
-        return new Breakpoint(line, condition, logMessage, newEnabled, lineText, hitCondition);
+        return new Breakpoint(line, condition, logMessage, newEnabled, lineText, hitCondition, temporary);
     }
 
     /**
@@ -76,6 +88,14 @@ public record Breakpoint(
      * fifth), and with debugpy also {@code >= 3} or {@code % 2}. Blank: every hit.
      */
     public Breakpoint withHitCondition(String newHitCondition) {
-        return new Breakpoint(line, condition, logMessage, enabled, lineText, newHitCondition);
+        return new Breakpoint(line, condition, logMessage, enabled, lineText, newHitCondition, temporary);
+    }
+
+    /**
+     * This breakpoint, removed once the program stops on it ({@code true}) or kept ({@code false}) — IntelliJ's
+     * "Remove once hit", Visual Studio's temporary breakpoint.
+     */
+    public Breakpoint withTemporary(boolean newTemporary) {
+        return new Breakpoint(line, condition, logMessage, enabled, lineText, hitCondition, newTemporary);
     }
 }

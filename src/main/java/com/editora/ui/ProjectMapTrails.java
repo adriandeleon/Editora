@@ -690,7 +690,8 @@ final class ProjectMapTrails {
                     target.note(),
                     target.startLine() - 1,
                     view.cards::viewsConnectorsMoved,
-                    view::viewsColumns);
+                    view::viewsColumns,
+                    view::viewsPanAcross);
             sheet.setAvoid(() -> bar.getParent() == null ? null : bar.getBoundsInParent());
             view.cards.viewsAttach(card, sheet);
         }

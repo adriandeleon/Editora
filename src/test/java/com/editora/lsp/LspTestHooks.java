@@ -217,7 +217,7 @@ public final class LspTestHooks {
     public static void useLiveGradleServer(
             LspManager manager, String command, java.nio.file.Path workspace, String gradleJava) {
         manager.setSessionStarterForTest(session -> Thread.ofVirtual().start(() -> {
-            var options = new java.util.HashMap<>(LspManager.javaInitOptions(java.util.List.of()));
+            var options = new java.util.HashMap<>(ServerInitOptions.javaInitOptions(java.util.List.of()));
             if (gradleJava != null) {
                 @SuppressWarnings("unchecked")
                 var settings = (java.util.Map<String, Object>) options.get("settings");

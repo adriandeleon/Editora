@@ -77,8 +77,8 @@ class JavaEditingResponsesFxTest {
         });
         fake = fakes.getFirst();
         scope.onClose(() -> FxTestSupport.runOnFx(() -> {
-            FxTestSupport.call(coordinator, "hideSignaturePopup", new Class<?>[] {});
-            FxTestSupport.call(coordinator, "hideHoverPopup", new Class<?>[] {});
+            FxTestSupport.call(coordinator.popups, "hideSignaturePopup", new Class<?>[] {});
+            FxTestSupport.call(coordinator.popups, "hideHoverPopup", new Class<?>[] {});
             buffer.dispose();
             manager.close(); // close, not shutdownAll: it also stops the folder watchers (inotify instances)
             stage.close();
@@ -106,11 +106,11 @@ class JavaEditingResponsesFxTest {
         });
         FxTestSupport.runOnFx(() -> newer.complete(help("foo(String value)")));
         scope.awaitFx();
-        Object popup = FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "signaturePopup"));
+        Object popup = FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.popups, "signaturePopup"));
         assertNotNull(popup);
         FxTestSupport.runOnFx(() -> old.complete(new SignatureHelp()));
         scope.awaitFx();
-        assertSame(popup, FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "signaturePopup")));
+        assertSame(popup, FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.popups, "signaturePopup")));
     }
 
     @Test
@@ -125,11 +125,11 @@ class JavaEditingResponsesFxTest {
             });
             FxTestSupport.runOnFx(() -> pending.complete(help("foo(String value)")));
             scope.awaitFx();
-            assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "signaturePopup")));
+            assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.popups, "signaturePopup")));
             if (escape)
                 FxTestSupport.runOnFx(() -> {
                     int requests = fake.signatureHelps.size();
-                    FxTestSupport.call(coordinator, "refreshSignatureHelpIfShowing", new Class<?>[] {});
+                    FxTestSupport.call(coordinator.popups, "refreshSignatureHelpIfShowing", new Class<?>[] {});
                     assertEquals(requests, fake.signatureHelps.size(), "Escape must disarm the settled retry");
                 });
         }
@@ -147,15 +147,15 @@ class JavaEditingResponsesFxTest {
         });
         scope.awaitFx();
         FxTestSupport.runOnFx(() -> {
-            assertNull(FxTestSupport.field(coordinator, "signaturePopup"));
+            assertNull(FxTestSupport.field(coordinator.popups, "signaturePopup"));
             fake.signatureHelpFuture = current;
             int requests = fake.signatureHelps.size();
-            FxTestSupport.call(coordinator, "refreshSignatureHelpIfShowing", new Class<?>[] {});
+            FxTestSupport.call(coordinator.popups, "refreshSignatureHelpIfShowing", new Class<?>[] {});
             assertEquals(requests + 1, fake.signatureHelps.size());
             current.complete(help("foo(current)"));
         });
         scope.awaitFx();
-        assertNotNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "signaturePopup")));
+        assertNotNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.popups, "signaturePopup")));
     }
 
     @Test
@@ -174,7 +174,7 @@ class JavaEditingResponsesFxTest {
             pending.complete(help("foo(String value)"));
         });
         scope.awaitFx();
-        assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "signaturePopup")));
+        assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.popups, "signaturePopup")));
     }
 
     @Test
@@ -198,8 +198,8 @@ class JavaEditingResponsesFxTest {
             hover.complete(new Hover(new MarkupContent("plaintext", "old view")));
         });
         scope.awaitFx();
-        assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "signaturePopup")));
-        assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "hoverPopup")));
+        assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.popups, "signaturePopup")));
+        assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.popups, "hoverPopup")));
     }
 
     @Test
@@ -212,7 +212,7 @@ class JavaEditingResponsesFxTest {
         });
         FxTestSupport.runOnFx(() -> pending.complete(new Hover(new MarkupContent("plaintext", "stale"))));
         scope.awaitFx();
-        assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "hoverPopup")));
+        assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.popups, "hoverPopup")));
     }
 
     @Test
@@ -225,28 +225,28 @@ class JavaEditingResponsesFxTest {
             coordinator.signatureHelp(true);
         });
         scope.awaitFx();
-        Object popup = FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "signaturePopup"));
+        Object popup = FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.popups, "signaturePopup"));
         assertNotNull(popup);
         FxTestSupport.runOnFx(() -> {
             coordinator.moveSignature(1);
             buffer.typeString("\n  x");
-            assertSame(popup, FxTestSupport.field(coordinator, "signaturePopup"));
+            assertSame(popup, FxTestSupport.field(coordinator.popups, "signaturePopup"));
             coordinator.signatureHelp(false);
             var context = fake.signatureHelps.getLast().getContext();
             assertTrue(context.isRetrigger());
             assertEquals(1, context.getActiveSignatureHelp().getActiveSignature());
         });
         scope.awaitFx();
-        assertSame(popup, FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "signaturePopup")));
+        assertSame(popup, FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.popups, "signaturePopup")));
         FxTestSupport.runOnFx(() -> {
-            var selection = (SignatureSelection) FxTestSupport.field(coordinator, "signatureSelection");
+            var selection = (SignatureSelection) FxTestSupport.field(coordinator.popups, "signatureSelection");
             assertEquals("foo(String value)", selection.active().label());
             fake.signatureHelpResponse = new SignatureHelp();
             buffer.typeString(")");
             coordinator.signatureHelp(false);
         });
         scope.awaitFx();
-        assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "signaturePopup")));
+        assertNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator.popups, "signaturePopup")));
     }
 
     @Test

@@ -82,7 +82,7 @@ class XmlSettingsRowsFxTest {
      */
     @Test
     void theServerCommandFieldShowsItsWholeValueAndHasAName() throws Exception {
-        java.util.Map<String, TextField> commands = FxTestSupport.field(window, "lspCommandFields");
+        java.util.Map<String, TextField> commands = SettingsRig.control(window, "lspCommandFields");
         TextField xml = commands.get("xml");
         assertNotNull(xml);
         String longCommand = "/home/someone/.editora/plugins/lsp/xml/lemminx-linux-x86_64 -Dsome.option=value -Xmx1g";

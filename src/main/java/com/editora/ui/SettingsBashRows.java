@@ -23,7 +23,7 @@ final class SettingsBashRows {
 
     private SettingsBashRows() {}
 
-    static void add(SettingsWindow w, SettingsWindow.Card c) {
+    static void add(SettingsWindow w, SettingsLspPage lsp, SettingsWindow.Card c) {
         SettingsWindow.Category cat = SettingsWindow.Category.LSP;
         w.switchRow(
                 c,
@@ -33,7 +33,7 @@ final class SettingsBashRows {
                 Settings::isBashShellcheckEnabled,
                 Settings::setBashShellcheckEnabled,
                 WORDS + "lint linting diagnostics problems on off disable");
-        w.bashPathRow(c, "shellcheckPath", Settings::getBashShellcheckPath, Settings::setBashShellcheckPath);
+        lsp.bashPathRow(c, "shellcheckPath", Settings::getBashShellcheckPath, Settings::setBashShellcheckPath);
         w.textRow(
                 c,
                 cat,
@@ -58,7 +58,7 @@ final class SettingsBashRows {
                 Settings::isBashShfmtEnabled,
                 Settings::setBashShfmtEnabled,
                 WORDS + "formatting format document on off disable");
-        w.bashPathRow(c, "shfmtPath", Settings::getBashShfmtPath, Settings::setBashShfmtPath);
+        lsp.bashPathRow(c, "shfmtPath", Settings::getBashShfmtPath, Settings::setBashShfmtPath);
         w.choiceRow(
                 c,
                 cat,

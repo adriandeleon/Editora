@@ -56,7 +56,7 @@ import org.junit.jupiter.api.Test;
  *
  * <ol>
  *   <li><b>BROKEN</b> — {@code Position(lineCount, 0)}, the old behaviour (one past the last line)</li>
- *   <li><b>FIXED</b> — the range {@link LspManager#inclusiveLineRange} produces, i.e. the production path</li>
+ *   <li><b>FIXED</b> — the range {@link LspInlineHints#inclusiveLineRange} produces, i.e. the production path</li>
  *   <li><b>FIXED, padded</b> — the same through the coordinator's over-scan, which is what actually runs
  *       (the clamp has to survive the padding)</li>
  * </ol>
@@ -100,7 +100,7 @@ class JdtlsInlayRangeProbeTest {
         ip.setRootUri(PROJECT.toUri().toString());
         ip.setWorkspaceFolders(List.of(new WorkspaceFolder(PROJECT.toUri().toString(), "fixture")));
         ip.setCapabilities(editoraCapabilities());
-        ip.setInitializationOptions(LspManager.javaInitOptions(List.of())); // exactly what Editora sends
+        ip.setInitializationOptions(ServerInitOptions.javaInitOptions(List.of())); // exactly what Editora sends
         server.initialize(ip).get(180, TimeUnit.SECONDS);
         server.initialized(new InitializedParams());
         server.getTextDocumentService()
@@ -119,12 +119,12 @@ class JdtlsInlayRangeProbeTest {
         System.out.println("\n=== 1. BROKEN (pre-fix): end = Position(" + lineCount + ",0) ===");
         int broken = report(server, uri, new Range(new Position(0, 0), new Position(lineCount, 0)));
 
-        System.out.println("\n=== 2. FIXED: LspManager.inclusiveLineRange(0, " + lastLine + ", …) ===");
-        int fixed = report(server, uri, LspManager.inclusiveLineRange(0, lastLine, lineCount, lastLineLength));
+        System.out.println("\n=== 2. FIXED: LspInlineHints.inclusiveLineRange(0, " + lastLine + ", …) ===");
+        int fixed = report(server, uri, LspInlineHints.inclusiveLineRange(0, lastLine, lineCount, lastLineLength));
 
         System.out.println("\n=== 3. FIXED with the coordinator's +" + PAD + " over-scan ===");
         int padded =
-                report(server, uri, LspManager.inclusiveLineRange(-PAD, lastLine + PAD, lineCount, lastLineLength));
+                report(server, uri, LspInlineHints.inclusiveLineRange(-PAD, lastLine + PAD, lineCount, lastLineLength));
 
         System.out.println("\n##### VERDICT: broken=" + broken + "  fixed=" + fixed + "  fixed+padded=" + padded);
         proc.destroyForcibly();

@@ -135,7 +135,7 @@ class LemminxMavenProbeTest {
                 project,
                 diagnostics -> {},
                 (type, message) -> {},
-                LspManager.initOptionsFor(LspServerRegistry.MAVEN_POM_SERVER_ID, List.of()));
+                ServerInitOptions.initOptionsFor(LspServerRegistry.MAVEN_POM_SERVER_ID, List.of()));
         try {
             assertTrue(s.start());
             s.didOpen(uri, "xml", POM);

@@ -62,11 +62,11 @@ class MarkdownPreviewFxTest {
     }
 
     private static ScrollPane pane(EditorBuffer buffer) {
-        return EditorFx.call(buffer, "previewPane");
+        return EditorFx.call(EditorFx.field(buffer, "previewPanes"), "previewPane");
     }
 
     private static MarkdownPreview preview(EditorBuffer buffer) {
-        return EditorFx.field(buffer, "markdownPreview");
+        return EditorFx.field(EditorFx.field(buffer, "previewPanes"), "markdownPreview");
     }
 
     private static VBox column(EditorBuffer buffer) {
@@ -1261,11 +1261,13 @@ class MarkdownPreviewFxTest {
             EditorBuffer huge = markdown("x".repeat(EditorBuffer.PREVIEW_LIVE_MAX_CHARS + 1));
             huge.setLargeFile(true);
             assertFalse(EditorFx.<Boolean>call(huge, "previewLive"));
-            Node strip = EditorFx.styled(EditorFx.<Node>call(huge, "previewHost"), "md-preview-paused");
+            Node strip = EditorFx.styled(
+                    EditorFx.<Node>call(EditorFx.field(huge, "previewPanes"), "previewHost"), "md-preview-paused");
             assertNotNull(strip, "the reader is told the preview no longer follows edits");
             assertTrue(EditorFx.textOf(strip).contains(tr("markdown.preview.paused")));
             assertTrue(EditorFx.textOf(strip).contains(tr("markdown.preview.refresh")));
-            assertNull(EditorFx.styled(EditorFx.<Node>call(md, "previewHost"), "md-preview-paused"));
+            assertNull(EditorFx.styled(
+                    EditorFx.<Node>call(EditorFx.field(md, "previewPanes"), "previewHost"), "md-preview-paused"));
             huge.dispose();
             md.dispose();
             code.dispose();
@@ -1292,7 +1294,7 @@ class MarkdownPreviewFxTest {
         open(buffer, MarkdownViewMode.PREVIEW);
         EditorFx.onFx(() -> {
             ScrollPane pane = pane(buffer);
-            Node zoom = EditorFx.call(buffer, "zoomControl");
+            Node zoom = EditorFx.call(EditorFx.field(buffer, "previewPanes"), "zoomControl");
             Node first = column(buffer).getChildren().get(0);
             double controlsBottom = zoom.localToScene(zoom.getBoundsInLocal()).getMaxY();
             double firstTop = first.localToScene(first.getBoundsInLocal()).getMinY();

@@ -107,6 +107,8 @@ public final class FoldManager {
     static final String LOGPOINT_GLYPH_PATH = "M12 1.5L22.5 12L12 22.5L1.5 12z";
     /** Two bars over the dot — a conditional breakpoint ("="), as VS Code marks one. */
     static final String CONDITION_MARK_PATH = "M7 8.5h10v2.4H7zM7 13.1h10v2.4H7z";
+    /** A "1" over the dot of a temporary breakpoint (removed once hit), in the dot's 24-unit box. */
+    static final String TEMPORARY_MARK_PATH = "M10.6 6.5h2.8v11h-2.8zM8.4 8.6l2.2-2.1v2.9l-2.2 1.2z";
     /** The execution-point arrow drawn in the breakpoint strip of the line the debugger is stopped on. */
     static final String EXEC_ARROW_PATH = "M3 7.5h9V3l9.5 9-9.5 9v-4.5H3z";
     /** Material "play_arrow" triangle, shared by the gutter Run glyph and the right-click Run menu item. */
@@ -2040,11 +2042,13 @@ public final class FoldManager {
         }
         svg.setScaleX(0.5);
         svg.setScaleY(0.5);
-        if (!kinds.contains("conditional")) {
+        boolean conditional = kinds.contains("conditional");
+        if (!conditional && !kinds.contains("temporary")) {
             return new Group(svg);
         }
-        SVGPath mark = new SVGPath(); // "=" over the dot: a condition, readable without telling colours apart
-        mark.setContent(CONDITION_MARK_PATH);
+        // "=" over the dot: a condition, readable without telling colours apart; "1" a temporary breakpoint.
+        SVGPath mark = new SVGPath();
+        mark.setContent(conditional ? CONDITION_MARK_PATH : TEMPORARY_MARK_PATH);
         mark.getStyleClass().add("breakpoint-condition-mark");
         if (kinds.contains("muted")) {
             mark.getStyleClass().add("breakpoint-muted"); // faded with its dot

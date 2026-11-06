@@ -553,7 +553,7 @@ class SettingsFollowsFxTest {
     void theBodyEditorsMoveAndDeleteWithTheEmacsKeys() throws Exception {
         FxTestSupport.runOnFx(() -> {
             CodeArea area = new CodeArea("hello world\nsecond\n\nlast");
-            SettingsWindow.installEmacsKeys(area);
+            SettingsSnippetPages.installEmacsKeys(area);
 
             area.moveTo(3);
             Event.fireEvent(area, ctrl(KeyCode.E));
@@ -625,35 +625,35 @@ class SettingsFollowsFxTest {
 
     @Test
     void onlyShiftTabAndCtrlTabLeaveABodyEditor() {
-        assertEquals(TraversalDirection.PREVIOUS, SettingsWindow.focusEscape(KeyCode.TAB, true, false, false));
-        assertEquals(TraversalDirection.NEXT, SettingsWindow.focusEscape(KeyCode.TAB, false, true, false));
-        assertEquals(TraversalDirection.PREVIOUS, SettingsWindow.focusEscape(KeyCode.TAB, true, true, false));
-        assertNull(SettingsWindow.focusEscape(KeyCode.TAB, false, false, false), "Tab types a tab");
-        assertNull(SettingsWindow.focusEscape(KeyCode.TAB, true, false, true), "Alt+Shift+Tab is the system's");
-        assertNull(SettingsWindow.focusEscape(KeyCode.ENTER, true, false, false));
+        assertEquals(TraversalDirection.PREVIOUS, SettingsSnippetPages.focusEscape(KeyCode.TAB, true, false, false));
+        assertEquals(TraversalDirection.NEXT, SettingsSnippetPages.focusEscape(KeyCode.TAB, false, true, false));
+        assertEquals(TraversalDirection.PREVIOUS, SettingsSnippetPages.focusEscape(KeyCode.TAB, true, true, false));
+        assertNull(SettingsSnippetPages.focusEscape(KeyCode.TAB, false, false, false), "Tab types a tab");
+        assertNull(SettingsSnippetPages.focusEscape(KeyCode.TAB, true, false, true), "Alt+Shift+Tab is the system's");
+        assertNull(SettingsSnippetPages.focusEscape(KeyCode.ENTER, true, false, false));
     }
 
     @Test
     void aBodyIsHighlightedForItsLanguageAndLeftPlainForNone() throws Exception {
         FxTestSupport.runOnFx(() -> {
             CodeArea area = new CodeArea("class A { int x = 1; }");
-            SettingsWindow.highlightSnippetBody(area, "java");
+            SettingsSnippetPages.highlightSnippetBody(area, "java");
             assertTrue(
                     area.getStyleSpans(0, area.getLength()).stream()
                             .anyMatch(span -> !span.getStyle().isEmpty()),
                     "Java source gets token styles");
 
             for (String plain : new String[] {"global", "", null, "no-such-language"}) {
-                SettingsWindow.highlightSnippetBody(area, plain);
+                SettingsSnippetPages.highlightSnippetBody(area, plain);
                 assertTrue(
                         area.getStyleSpans(0, area.getLength()).stream()
                                 .allMatch(span -> span.getStyle().isEmpty()),
                         "no styles for " + plain);
-                SettingsWindow.highlightSnippetBody(area, "java");
+                SettingsSnippetPages.highlightSnippetBody(area, "java");
             }
 
             CodeArea empty = new CodeArea("");
-            SettingsWindow.highlightSnippetBody(empty, "global"); // nothing to clear
+            SettingsSnippetPages.highlightSnippetBody(empty, "global"); // nothing to clear
             assertEquals("", empty.getText());
         });
     }

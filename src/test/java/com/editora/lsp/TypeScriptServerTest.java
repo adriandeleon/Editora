@@ -163,7 +163,8 @@ class TypeScriptServerTest {
         // a TypeScript 7 beside the server and no own copy: nothing to run
         Files.delete(beside.resolve("tsserver.js"));
         assertFalse(TypeScriptServer.sdk(cli, null).found());
-        // the start choice takes the own one even then (LspManager.typeScriptChoice passes it as the installed one)
+        // the start choice takes the own one even then (NodeServerPaths.typeScriptChoice passes it as the installed
+        // one)
         var choice = TypeScriptServer.choose(null, null, own.resolve("tsserver.js"), "7.0.2", false);
         assertEquals(TypeScriptServer.Outcome.INSTALLED, choice.outcome());
     }
