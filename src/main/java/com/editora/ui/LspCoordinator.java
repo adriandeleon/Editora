@@ -27,8 +27,12 @@ import static com.editora.i18n.Messages.tr;
  * The whole Language Server Protocol integration, extracted from {@link MainController} via the
  * {@link CoordinatorHost} pattern. Owns:
  * <ul>
- *   <li>the on-demand <em>navigation/format</em> flows — go-to-definition, find-references, hover, and
- *       document formatting (the {@code lsp.*} commands + editor right-click items) plus the hover popup;
+ *   <li>the on-demand <em>navigation/format</em> flows — the {@code lsp.*} commands and editor right-click
+ *       items — through the owners it constructs and forwards to: {@link LspNavigation} and
+ *       {@link LspSuperMethods} (definition, references, hierarchies, symbols), {@link LspPopups} (hover,
+ *       signature help), {@link LspRefactorings} (Rename, jdtls refactorings), {@link LspWorkspaceEdits} and
+ *       {@link LspRefactoringUndo} (applying and undoing workspace edits); document formatting and code
+ *       actions stay here;
  *   <li>the <em>diagnostics routing</em> — the per-open-file {@code problems} map, the {@link ProblemsPanel},
  *       and the {@code publishDiagnostics} callback ({@link #onDiagnostics});
  *   <li>the <em>configure/detect/gating + per-buffer lifecycle</em> — {@link #applySupport} (mirrors

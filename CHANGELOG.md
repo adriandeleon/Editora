@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Refactor:** Go to Implementation's picker-row text (`implementationLabel`, `implementationDetail`,
   `libraryPackage`) moved from `LspCoordinator` to a new `ImplementationTargets`, which brings `LspCoordinator` back
   under the 10,000-line `SourceFileSizeTest` limit it crossed in #1445.
+- **Refactor:** `LspCoordinator` (9,971 lines) is split into package-private owners: `LspWorkspaceEdits` and
+  `WorkspaceEditStaging` (applying workspace edits), `LspRefactoringUndo` (Undo Last Refactoring, the Project tree's
+  rename participant), `LspRefactorings` (Rename, the jdtls refactoring prompts), `LspNavigation` and
+  `LspSuperMethods` (navigation), and `LspPopups` (hover, signature help). It is now about 5,500 lines; no behaviour
+  changes.
 - **Language servers and debugging are no longer marked Beta.** Their Settings pages lose the Beta pill and the
   "Experimental — may be unstable" note.
 - **The Map's preview eye closes an open card.** Clicking the eye on a file row whose preview card is open closes
