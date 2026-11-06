@@ -122,10 +122,10 @@ right-to-left to left-to-right once (`ConfigMigrations.resetRightToLeftMapFlow`)
 | Row menu → **Close Other Branches** | Close every column, folder or Structure, that is not on the way to that row; a folder row keeps its own column. Offered while such a column is open |
 | Options (⋯) menu → **Collapse All** | Close every column but the first and the ones on the way to the selection (`ProjectMapView.canvasCloseOthers`, `MapLoader.canvasCloseOthers`); cards opened from the closed columns close with them. "Nothing to collapse" when only those are open |
 | Options (⋯) menu → **Open cards** | List the open cards, the most recently used first; one brings its card into the middle of the map area with the keyboard in it |
-| Options (⋯) menu → **Print…** | Open the standard print preview for the complete map layout |
-| Options (⋯) menu → **PDF…** | Export the complete map layout using the configured PDF page size; its names are searchable text |
+| Options (⋯) menu → **Print…** | Open the standard print preview for the complete map layout, the open cards where they stand |
+| Options (⋯) menu → **PDF…** | Export the complete map layout and the open cards using the configured PDF page size; the map's names are searchable text |
 | Options (⋯) menu → **Export ▸ PNG…** | Save the map as it is on screen at 2× (cards and connectors, not the zoom bar, overview or notices), at most 8,192 px a side |
-| Options (⋯) menu → **Export ▸ SVG…** | Save the whole map as Print/PDF lays it out, every row name and column title as SVG text |
+| Options (⋯) menu → **Export ▸ SVG…** | Save the whole map as Print/PDF lays it out (without the cards), every row name and column title as SVG text |
 | Editor tab menu / Project tree menu → **Reveal in Map** | Open the Map window (or bring it forward) and select that file or folder, beside Reveal in File Manager |
 | Click **?** | Show what the Map is for and its pointer, cards and notes, keyboard, search ("where am I" included: Reveal Active File, Always select opened file, Project overview) and filter models in a popover (key names in the user's language, modifiers as the platform writes them) |
 | Click or drag in the overview | Centre the view on that point of the map, clamped to the map's bounds; a press on a card's mark brings that card into view |
@@ -931,6 +931,16 @@ invisible text (text render mode 3, as an OCR'd scan carries its text: `ImagePdf
 `TextBox`es, Inter embedded as a subset, the system fallback fonts for other scripts, each name stretched to the
 width the picture gives it). A viewer's Find, selection and copy reach the names; the page looks the same. Print
 does not need the text and leaves it out.
+
+The open cards are on paper as on screen: every visible preview, note and Overview card and every part of what is
+stuck on one (sticky notes, Structure columns, link chips, trail notes — `MapCards.outputNodes`, the map area's
+children back to front) widens `outputBounds` and is a page-cut obstacle, so a card beyond the columns grows the
+page and a cut avoids crossing one. Before the pages are painted each is snapshotted once in its parent's coordinates
+(its own map-zoom scale and shadow included, in the live theme, at most 4,096 px a side) at the output's image
+scale, and the rows are frozen in the output layout at the live zoom; each page tile then draws, through one affine
+transform from live map-area pixels to tile pixels, the connectors (`MapCards.drawOutputConnectors`, the live
+drawing code with the frozen rows) and the card pictures over the map. Card text is pixels only; the SVG export
+leaves the cards out.
 
 **Export ▸ PNG…** snapshots the map area (`canvasViewImage`) at 2× with the zoom bar, overview, loading and
 no-match notices hidden for the shot. A node's snapshot is taken in its parent's coordinates, so the viewport starts

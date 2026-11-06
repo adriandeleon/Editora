@@ -2779,6 +2779,45 @@ final class MapCards {
                 Platform.runLater(this::closeOrphanedCards); // not from inside a paint or a layout pass
             }
         }
+        paintConnectors(g, host::rowBox, previewConnectors);
+    }
+
+    /**
+     * Print and PDF: every connector as {@link #drawConnectors} draws it, onto {@code g} in the map area's pixels, with
+     * {@code rowBox} for where each row of the map is. Changes nothing.
+     */
+    void drawOutputConnectors(GraphicsContext g, Function<Path, double @Nullable []> rowBox) {
+        paintConnectors(g, rowBox, null);
+    }
+
+    /**
+     * Print and PDF: what of the cards is drawn now, back to front — each visible card and every part of what is stuck
+     * on one (sticky notes, Structure columns, link chips, trail notes) — as the map area's children.
+     */
+    List<Node> outputNodes() {
+        List<CardAttachment> stuck = allAttachments();
+        Set<Node> cards = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        cards.addAll(previews.values());
+        cards.addAll(notePreviews.values());
+        ProjectMapOverviewCard overview = overviewCard;
+        if (overview != null) {
+            cards.add(overview);
+        }
+        List<Node> nodes = new ArrayList<>();
+        for (Node child : canvasHost.getChildren()) {
+            if (child.isVisible()
+                    && (cards.contains(child) || stuck.stream().anyMatch(attachment -> attachment.contains(child)))) {
+                nodes.add(child);
+            }
+        }
+        return nodes;
+    }
+
+    /** Draws the connectors on {@code g}; {@code drawn}, when given, records each code card's (for tests). */
+    private void paintConnectors(
+            GraphicsContext g,
+            Function<Path, double @Nullable []> rowBox,
+            @Nullable Map<Path, PreviewConnector> drawn) {
         g.setStroke(host.accent());
         g.setGlobalAlpha(0.78);
         g.setLineWidth(1.5);
@@ -2790,20 +2829,21 @@ final class MapCards {
             // A declaration card is tied to the Structure column it was asked for from: its file card's, else the
             // Map's; the other one's row when that one's is not in sight.
             double[] row = cardStructureRow(entry.getKey());
-            double[] anchor = host.rowBox(entry.getKey());
+            double[] anchor = rowBox.apply(entry.getKey());
+            PreviewConnector connector = null;
             if (row != null && (anchor == null || cardColumnCards.contains(preview))) {
-                previewConnectors.put(
-                        entry.getKey(), drawPreviewConnector(g, row[0], row[1], row[2], row[3], true, preview));
-                continue;
+                connector = drawPreviewConnector(g, row[0], row[1], row[2], row[3], true, preview);
+            } else if (anchor != null) {
+                connector = drawPreviewConnector(g, anchor, preview);
             }
-            if (anchor != null) {
-                previewConnectors.put(entry.getKey(), drawPreviewConnector(g, anchor, preview));
+            if (connector != null && drawn != null) {
+                drawn.put(entry.getKey(), connector);
             }
         }
         g.setStroke(host.note());
         for (Map.Entry<Path, ProjectMapNotePreview> entry : notePreviews.entrySet()) {
             ProjectMapNotePreview preview = entry.getValue();
-            double[] anchor = host.rowBox(entry.getKey());
+            double[] anchor = rowBox.apply(entry.getKey());
             if (!preview.isVisible() || anchor == null || preview.getWidth() <= 0 || preview.getHeight() <= 0) {
                 continue;
             }

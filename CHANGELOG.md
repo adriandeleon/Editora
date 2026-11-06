@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A file card's Structure column is narrower.** It fits only the rows it shows (refitting as a row opens or
   closes), between 200 and 360 px, instead of every member of closed rows up to 560 px.
 
+### Fixed
+
+- **Map Print and Export PDF include the open cards.** Preview, note and Overview cards, what is stuck on them
+  (sticky notes, Structure columns, link chips) and their connectors are drawn on the pages where they stand on the
+  map, as on screen; the pages grow to take in a card standing beyond the columns. Export ▸ SVG still leaves the
+  cards out.
+
 ## [0.27.0] - 2026-11-05
 
 ### Added
