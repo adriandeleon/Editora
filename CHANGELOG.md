@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Language servers and debugging are no longer marked Beta.** Their Settings pages lose the Beta pill and the
+  "Experimental — may be unstable" note.
 - **The Map's preview eye closes an open card.** Clicking the eye on a file row whose preview card is open closes
   the card, as Shift+Enter does; its hint says so.
 - **A file card's Structure column is narrower.** It fits only the rows it shows (refitting as a row opens or
