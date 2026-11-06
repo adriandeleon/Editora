@@ -366,7 +366,10 @@ public enum ConfigSchema {
                     Map.entry(156, (Migration) ConfigMigrations::identity),
                     // v157→158: + debugShowToString (on) — Java objects show their toString() in Variables; off
                     // shows Type@id (Java debugging review 3, B201). Additive: absent is the default.
-                    Map.entry(157, (Migration) ConfigMigrations::identity)),
+                    Map.entry(157, (Migration) ConfigMigrations::identity),
+                    // v158→159: + debugSuspendAllThreads (off) — a Java stop suspends every thread, Continue resumes
+                    // them all. Additive: absent is the default.
+                    Map.entry(158, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -453,7 +456,9 @@ public enum ConfigSchema {
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
     // v1 → v2: Breakpoint gained `hitCondition` (additive; absent ⇒ every hit).
-    BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
+    // v2 → v3: Breakpoint gained `temporary` (additive; absent ⇒ stays after a hit).
+    BREAKPOINTS(
+            BreakpointStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity, 2, ConfigMigrations::identity)),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::seedOpenProjectIds)),
     /** Legacy {@code recent-files.json} was a bare JSON array (v0); v1 wraps it in an object. */

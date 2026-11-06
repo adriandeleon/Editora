@@ -157,6 +157,9 @@ public final class BreakpointManager implements LineMarks.Carrier {
         }
         String kind =
                 !bp.enabled() ? "disabled" : bp.isLogpoint() ? "logpoint" : bp.isConditional() ? "conditional" : null;
+        if (bp.temporary() && !bp.isLogpoint()) {
+            kind = kind == null ? "temporary" : kind + " temporary"; // a logpoint never stops, so is never removed
+        }
         Live state = live(line);
         String classes = kind;
         if (state != null && state.state() != LiveState.VERIFIED) {
@@ -278,6 +281,15 @@ public final class BreakpointManager implements LineMarks.Carrier {
         String value = hitCondition == null ? "" : hitCondition;
         if (bp != null && !bp.hitCondition().equals(value)) {
             byLine.put(line, bp.withHitCondition(value));
+            fireChanged();
+        }
+    }
+
+    /** Makes the breakpoint on {@code line} one that is removed once the program stops on it, or not. */
+    public void setTemporary(int line, boolean temporary) {
+        Breakpoint bp = byLine.get(line);
+        if (bp != null && bp.temporary() != temporary) {
+            byLine.put(line, bp.withTemporary(temporary));
             fireChanged();
         }
     }

@@ -947,6 +947,29 @@ public final class FakeDebugAdapter implements AutoCloseable {
             return gate == null ? answer : gate.thenCompose(v -> answer);
         }
 
+        /** The thread id of a java-debug {@code pauseAll} / {@code continueAll} request's arguments. */
+        private static int threadIdOf(Object args) {
+            com.google.gson.JsonElement json =
+                    args instanceof com.google.gson.JsonElement el ? el : new com.google.gson.Gson().toJsonTree(args);
+            return json.getAsJsonObject().get("threadId").getAsInt();
+        }
+
+        /** java-debug's own request: suspend every thread (its thread id joins {@link #pausedThreads}). */
+        @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("pauseAll")
+        public CompletableFuture<Object> pauseAll(Object args) {
+            pausedThreads.add(threadIdOf(args));
+            record("pauseAll");
+            return CompletableFuture.completedFuture(null);
+        }
+
+        /** java-debug's own request: resume every thread (its thread id joins {@link #continuedThreads}). */
+        @org.eclipse.lsp4j.jsonrpc.services.JsonRequest("continueAll")
+        public CompletableFuture<Object> continueAll(Object args) {
+            continuedThreads.add(threadIdOf(args));
+            record("continueAll");
+            return CompletableFuture.completedFuture(null);
+        }
+
         /** java-debug's non-standard {@code hotcodereplace} event. */
         public void hotCodeReplace(String changeType, String message) {
             Map<String, Object> body = new LinkedHashMap<>();

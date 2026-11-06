@@ -727,7 +727,7 @@ class DapManagerSessionFxTest {
         FakeDebugAdapter.Session session = launch();
 
         onFx(dap::pause);
-        session.awaitRequest("pause");
+        session.awaitRequest("pauseAll"); // a Java session suspends the whole program
         assertEquals(List.of(7), session.pausedThreads, "no thread has stopped yet: the first one listed");
 
         // Thread 9 stops; the adapter cannot produce its stack, which must not lose the stop.
@@ -741,8 +741,34 @@ class DapManagerSessionFxTest {
             dap.resume();
             dap.pause();
         });
-        session.awaitRequests("pause", 2);
+        session.awaitRequests("pauseAll", 2);
         assertEquals(List.of(7, 9), session.pausedThreads, "the thread the user was last looking at");
+    }
+
+    @Test
+    void continueAfterAWholeProgramStopResumesEveryThreadEvenAfterASteps() throws Exception {
+        project();
+        FakeDebugAdapter.Session session = launch();
+
+        // Pause: java-debug suspends every thread and says so on the stop.
+        onFx(dap::pause);
+        session.awaitRequest("pauseAll");
+        int before = count("stopped:7:pause");
+        session.stop(7, "pause", true);
+        awaitEvents("stopped:7:pause", before + 1);
+        onFx(dap::stepOver); // a step resumes only the stepped thread: the others stay suspended
+        session.awaitRequest("next");
+        stop(session, 7);
+
+        onFx(dap::resume);
+        session.awaitRequest("continueAll");
+        assertEquals(List.of(7), session.continuedThreads, "one continueAll, no plain continue");
+
+        // An ordinary stop of one thread is resumed with an ordinary continue again.
+        stop(session, 7);
+        onFx(dap::resume);
+        session.awaitRequest("continue");
+        assertEquals(List.of(7, 7), session.continuedThreads);
     }
 
     @Test
@@ -755,7 +781,7 @@ class DapManagerSessionFxTest {
         session.awaitRequest("threads");
         session.threadsFailure = null;
         onFx(dap::pause);
-        session.awaitRequest("pause");
+        session.awaitRequest("pauseAll");
 
         assertEquals(1, session.pausedThreads.size(), "only the second Pause reached the adapter");
         assertEquals(List.of(), errors);

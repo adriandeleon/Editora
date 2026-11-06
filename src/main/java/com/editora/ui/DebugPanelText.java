@@ -149,6 +149,31 @@ final class DebugPanelText {
         return m.matches() ? "<lambda>." + m.group(1) : name;
     }
 
+    /**
+     * Pure: a call stack as text to paste into a bug report or a chat, top frame first — the thread's name, then one
+     * {@code at name(File.java:12)} line per frame, as a Java stack trace reads. A frame without a file shows only
+     * its name; {@code threadName} may be blank.
+     */
+    static String callStackText(@Nullable String threadName, List<com.editora.dap.DapModels.StackFrameInfo> frames) {
+        StringBuilder out = new StringBuilder();
+        if (threadName != null && !threadName.isBlank()) {
+            out.append(com.editora.i18n.Messages.tr("debugpanel.copiedStackThread", threadName.strip()))
+                    .append('\n');
+        }
+        for (com.editora.dap.DapModels.StackFrameInfo f : frames) {
+            out.append("    at ").append(frameName(f.name()));
+            if (f.file() != null) {
+                out.append('(').append(DebugValues.sourceName(f.file()));
+                if (f.line() >= 0) {
+                    out.append(':').append(f.line() + 1);
+                }
+                out.append(')');
+            }
+            out.append('\n');
+        }
+        return out.toString();
+    }
+
     /** JVM housekeeping threads: every Java program has them, none is the user's (review C15). */
     private static final Set<String> JVM_THREADS = Set.of(
             "Reference Handler",

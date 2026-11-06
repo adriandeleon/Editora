@@ -205,6 +205,12 @@ public final class DapManager {
      * one on screen leaves the other suspended with no further event to say so.
      */
     private final java.util.LinkedHashMap<Integer, String> stoppedThreads = new java.util.LinkedHashMap<>();
+    /**
+     * java-debug suspended the whole program (Pause, or a stop with {@code allThreadsStopped} under "Suspend all
+     * threads"), and steps since have not resumed it: Continue must resume every thread, not just the one shown
+     * (FX thread).
+     */
+    private boolean allSuspended;
     /** Counts stops shown, so a late step acknowledgement can tell the step has already ended. */
     private int stopCount;
     /** A step was acknowledged and its stop has not arrived yet (FX thread). */
@@ -3092,7 +3098,9 @@ public final class DapManager {
         int threadId = currentThreadId;
         stepInFlight = false;
         stoppedThreads.remove(threadId);
-        c.resume(threadId)
+        boolean wholeProgram = allSuspended && javaDebugSession();
+        allSuspended = false;
+        (wholeProgram ? c.resumeAll(threadId) : c.resume(threadId))
                 .whenComplete((all, e) -> Platform.runLater(() -> {
                     if (e == null && isCurrent(epoch, c)) {
                         afterThreadResumed(epoch, c, all == null || all);
@@ -3118,8 +3126,9 @@ public final class DapManager {
         presentStop(epoch, c, next.getKey(), next.getValue(), false, false);
     }
 
-    /** Pauses a running session: targets the current thread if the adapter reports it, else the first.
-     *  The adapter answers with a {@code stopped(reason=pause)} event, which flows through onStopped. */
+    /** Pauses a running session: targets the current thread if the adapter reports it, else the first. A Java
+     *  session suspends every thread (java-debug's {@code pauseAll}); debugpy pauses all threads by itself. The
+     *  adapter answers with a {@code stopped(reason=pause)} event, which flows through onStopped. */
     public void pause() {
         DapClient c = client;
         if (c == null || state != State.RUNNING) {
@@ -3136,7 +3145,11 @@ public final class DapManager {
                     break;
                 }
             }
-            c.pause(id);
+            if (javaDebugSession()) {
+                c.pauseAll(id);
+            } else {
+                c.pause(id);
+            }
         });
     }
 
@@ -3509,7 +3522,10 @@ public final class DapManager {
 
     // --- strings java-debug garbles (follow-up 4: emoji arrive as two wrong characters) -------------------
 
-    /** Whether the session is java-debug's, whose string values may need {@link JdwpStringRepair}. */
+    /**
+     * Whether the session is java-debug's: its string values may need {@link JdwpStringRepair}, and it pauses and
+     * resumes threads one at a time unless asked for all of them.
+     */
     private boolean javaDebugSession() {
         return "java".equals(sessionLanguage);
     }
@@ -3720,6 +3736,7 @@ public final class DapManager {
                     if (event) {
                         if (allThreadsStopped) {
                             stoppedThreads.clear(); // one stop stands for all of them, and so will one continue
+                            allSuspended = true;
                         }
                         stoppedThreads.put(threadId, reason == null ? "" : reason);
                         clearTempBreakpoint(); // a run-to-cursor temp breakpoint is one-shot
@@ -3781,6 +3798,7 @@ public final class DapManager {
             }
             if (allThreads) {
                 stoppedThreads.clear();
+                allSuspended = false;
             } else {
                 stoppedThreads.remove(threadId);
                 if (state == State.SUSPENDED && threadId != currentThreadId) {
@@ -4199,6 +4217,7 @@ public final class DapManager {
             lazyValues.reset(); // nor can a toString() the last session never finished
             consoleEvaluations = 0; // an answer that never comes cannot hold the next session's controls
             stoppedThreads.clear();
+            allSuspended = false;
         }
         this.state = s;
         listener.onState(s);

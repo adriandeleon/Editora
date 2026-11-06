@@ -1239,7 +1239,7 @@ class DebugCoordinatorCommandsFxTest {
         FakeDebugAdapter.Session session = launch();
 
         press("pause");
-        session.awaitRequest("pause");
+        session.awaitRequest("pauseAll"); // a Java session: the whole program
         stopAt(session, file, 3);
 
         press("stepOver");
@@ -1551,6 +1551,48 @@ class DebugCoordinatorCommandsFxTest {
         assertEquals(List.of(tr("statusbar.tip.debugDisabled"), tr("statusbar.tip.debugDisabled")), statuses());
         assertEquals(
                 List.of(), FxTestSupport.callOnFx(() -> b.getBreakpointManager().snapshot()));
+    }
+
+    @Test
+    void aTemporaryBreakpointIsRemovedOnceTheProgramStopsOnIt() throws Exception {
+        Path file = open("src/main/java/demo/Args.java");
+        EditorBuffer b = active;
+        mainClasses("demo.Args");
+        FxTestSupport.runOnFx(() -> {
+            debug.wireBuffer(b);
+            b.getFocusedArea().moveTo(2, 0);
+            debug.toggleBreakpointAtCaret(); // an ordinary one on line 3
+            b.getFocusedArea().moveTo(3, 0);
+            debug.toggleTemporaryBreakpointAtCaret();
+        });
+        assertEquals(List.of(tr("status.debug.temporaryAdded", 4)), statuses());
+        assertTrue(FxTestSupport.callOnFx(() -> b.getBreakpointManager().get(3).temporary()));
+        assertTrue(store.get(file.toString()).stream().anyMatch(Breakpoint::temporary), "saved as temporary");
+
+        FakeDebugAdapter.Session session = launch();
+        stopAt(session, file, 3); // the ordinary breakpoint stays
+        int sent = session.breakpoints.size();
+        stopAt(session, file, 4);
+        awaitStatus(tr("status.debug.temporaryRemoved", 4));
+        assertEquals(
+                List.of(2),
+                FxTestSupport.callOnFx(() -> b.getBreakpointManager().snapshot().stream()
+                        .map(Breakpoint::line)
+                        .toList()),
+                "the temporary breakpoint is gone, the ordinary one is not");
+        await("the breakpoints re-sent", () -> session.breakpoints.size() > sent);
+        org.eclipse.lsp4j.debug.SetBreakpointsArguments last = session.breakpoints.get(session.breakpoints.size() - 1);
+        assertEquals(1, last.getBreakpoints().length, "the live session no longer has it");
+        assertEquals(3, last.getBreakpoints()[0].getLine());
+
+        // Toggled on an ordinary breakpoint it makes that one temporary; on a temporary one it removes it.
+        FxTestSupport.runOnFx(() -> {
+            b.getFocusedArea().moveTo(2, 0);
+            debug.toggleTemporaryBreakpointAtCaret();
+        });
+        assertTrue(FxTestSupport.callOnFx(() -> b.getBreakpointManager().get(2).temporary()));
+        FxTestSupport.runOnFx(() -> debug.toggleTemporaryBreakpointAtCaret());
+        assertFalse(FxTestSupport.callOnFx(() -> b.getBreakpointManager().isBreakpoint(2)));
     }
 
     @Test

@@ -34,6 +34,9 @@ public final class BreakpointDescription {
         if (!bp.hitCondition().isEmpty()) {
             out.add(tr("debug.breakpoint.hitCondition", bp.hitCondition()));
         }
+        if (bp.temporary() && !bp.isLogpoint()) {
+            out.add(tr("debug.breakpoint.temporary"));
+        }
         return out;
     }
 

@@ -1363,6 +1363,42 @@ public final class DapClient implements IDebugProtocolClient {
         ignore(timed(server().pause(a)));
     }
 
+    /**
+     * Suspends every thread of the program (java-debug's own {@code pauseAll}, what VS Code's Pause sends for Java);
+     * the adapter reports the stop on {@code threadId} with {@code allThreadsStopped}. A plain {@code pause} names
+     * one thread, and java-debug suspends only that one: the program's other threads ran on.
+     */
+    public void pauseAll(int threadId) {
+        DapClient session = target(threadId);
+        if (session != this) {
+            session.pauseAll(threadId);
+            return;
+        }
+        org.eclipse.lsp4j.jsonrpc.RemoteEndpoint ep = endpoint;
+        if (ep == null || disposed) {
+            pause(threadId);
+            return;
+        }
+        ignore(timed(ep.request("pauseAll", java.util.Map.of("threadId", threadId))));
+    }
+
+    /**
+     * Resumes every thread of the program (java-debug's {@code continueAll}). After {@link #pauseAll} a {@code
+     * continue} naming one thread resumes only that one, and the others would stay suspended for good.
+     */
+    public CompletableFuture<Boolean> resumeAll(int threadId) {
+        DapClient session = target(threadId);
+        if (session != this) {
+            return session.resumeAll(threadId);
+        }
+        org.eclipse.lsp4j.jsonrpc.RemoteEndpoint ep = endpoint;
+        if (ep == null || disposed) {
+            return resume(threadId);
+        }
+        return timed(ep.request("continueAll", java.util.Map.of("threadId", threadId)))
+                .thenApply(r -> true);
+    }
+
     /** Asks the adapter for the goto targets at {@code line} (0-based) of {@code file}; the first
      *  target's id feeds {@link #gotoTarget}. Empty when the line isn't a valid jump target. */
     public CompletableFuture<List<Integer>> gotoTargets(Path file, int line) {

@@ -35,6 +35,7 @@ com.editora.ui.ScalaBuildRunProbeFxTest
 com.editora.ui.ScalaMetalsProbeFxTest
 com.editora.ui.JavaCodeChangesProbeFxTest
 com.editora.ui.JavaDebugRealAdapterProbeFxTest
+com.editora.ui.DebugQuickWinsProbeFxTest
 com.editora.ui.JavaEditingCostProbeTest
 com.editora.ui.JavaTypingSoakProbeTest
 com.editora.ui.JsDebugProbeFxTest
