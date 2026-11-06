@@ -28,13 +28,14 @@ class SettingsOutdatedPinTest {
         Path config = dir.resolve("config");
         var pin = PinnedVersions.forServer("java").orElseThrow();
         Path own = jdtls(config.resolve(pin.destSubpath()), "1.61.0.202607301809");
-        assertEquals(pin.label(), SettingsWindow.outdatedPin("java", List.of(own.toString()), config));
+        assertEquals(pin.label(), SettingsLspPage.outdatedPin("java", List.of(own.toString()), config));
 
         Path elsewhere = jdtls(dir.resolve("opt/jdtls"), "1.61.0.202607301809");
         assertNull(
-                SettingsWindow.outdatedPin("java", List.of(elsewhere.toString()), config), "not Install…'s to replace");
-        assertNull(SettingsWindow.outdatedPin("java", List.of(own.toString()), null));
-        assertNull(SettingsWindow.outdatedPin("json", List.of("vscode-json-language-server"), config), "no pin");
+                SettingsLspPage.outdatedPin("java", List.of(elsewhere.toString()), config),
+                "not Install…'s to replace");
+        assertNull(SettingsLspPage.outdatedPin("java", List.of(own.toString()), null));
+        assertNull(SettingsLspPage.outdatedPin("json", List.of("vscode-json-language-server"), config), "no pin");
     }
 
     /** An install from before Editora recorded versions is said in Settings too, as Doctor says it (review 2, A7). */
@@ -45,8 +46,8 @@ class SettingsOutdatedPinTest {
         Path lemminx =
                 Files.createDirectories(config.resolve(pin.destSubpath())).resolve("lemminx-linux-x86_64");
         Files.writeString(lemminx, "");
-        assertEquals(pin.label(), SettingsWindow.unknownPin("xml", List.of(lemminx.toString()), config));
-        assertNull(SettingsWindow.outdatedPin("xml", List.of(lemminx.toString()), config), "not known to be older");
-        assertNull(SettingsWindow.unknownPin("xml", List.of("/usr/bin/lemminx"), config), "not Editora's copy");
+        assertEquals(pin.label(), SettingsLspPage.unknownPin("xml", List.of(lemminx.toString()), config));
+        assertNull(SettingsLspPage.outdatedPin("xml", List.of(lemminx.toString()), config), "not known to be older");
+        assertNull(SettingsLspPage.unknownPin("xml", List.of("/usr/bin/lemminx"), config), "not Editora's copy");
     }
 }
