@@ -21,7 +21,10 @@ command, reachable from an Emacs-style keymap or a fuzzy command palette.
 [roadmap](https://editora-project.dev/roadmap/) and the [blog](https://editora-project.dev/blog/).
 The site's source is [adriandeleon/editora-website](https://github.com/adriandeleon/editora-website).
 
-[![Editora editing a Java file](https://editora-project.dev/screenshots/editor.jpg)](https://editora-project.dev/screenshots/)
+<a href="https://editora-project.dev/screenshots/"><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://editora-project.dev/screenshots/hero/editor.dark.jpg">
+  <img alt="Editora editing a Java file" src="https://editora-project.dev/screenshots/hero/editor.jpg">
+</picture></a>
 
 Editora is built with the help of AI coding tools.
 
