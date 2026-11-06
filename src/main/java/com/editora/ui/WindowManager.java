@@ -1344,8 +1344,7 @@ public class WindowManager {
         if (issues == null) {
             return Messages.tr("status.settings.reloadFailed");
         }
-        javafx.application.Application.setUserAgentStylesheet(
-                Themes.stylesheetFor(shared.getSettings().getTheme()));
+        Themes.applyAppTheme(shared.getSettings().getTheme());
         reloadSharedKeymap(); // rebuilds the keymap the file may name, and re-applies everything everywhere
         for (Holder h : new ArrayList<>(windows)) {
             h.controller().settingsWindow().syncAll();

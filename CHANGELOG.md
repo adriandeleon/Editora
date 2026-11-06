@@ -59,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The window buttons show with a dark theme.** On Linux, minimise, maximise and close were drawn dark grey on
+  the dark title bar, all but invisible, whenever the theme was dark and the desktop's was not: JavaFX styles the
+  window frame and its buttons from the desktop's light or dark setting. Every window, dialogs included, now takes
+  it from Editora's theme, as it opens and when the theme changes.
 - **The Emacs keymap no longer lists `M-g s` twice.** The key was bound to both Search Notes and Go to Symbol in
   Workspace; only Go to Symbol ever ran, while the command catalogs showed `M-g s` for Search Notes too. Search Notes
   is a palette command, and a test now rejects any keymap file that lists a chord twice.

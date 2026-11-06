@@ -201,6 +201,20 @@ public final class Themes {
                 || s.startsWith("jrt:");
     }
 
+    /** Whether a theme is dark, judged by its base background ({@link #backgroundFor}). */
+    public static boolean isDark(String name) {
+        return backgroundFor(name).getBrightness() < 0.5;
+    }
+
+    /**
+     * Makes {@code name} the app theme: its user-agent stylesheet, and the light or dark scheme every window
+     * is told so the window frame and buttons JavaFX draws match it (see {@link WindowColorScheme}).
+     */
+    public static void applyAppTheme(String name) {
+        javafx.application.Application.setUserAgentStylesheet(stylesheetFor(name));
+        WindowColorScheme.apply(isDark(name));
+    }
+
     /**
      * The theme's base window background ({@code -color-bg-default}). Used to pre-fill the scene so
      * the first frame paints in the theme color instead of JavaFX's default light gray (avoids a

@@ -980,7 +980,7 @@ public class SettingsWindow {
                 return;
             }
             config.getSettings().setTheme(now);
-            javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(now));
+            Themes.applyAppTheme(now);
             if (!config.getSettings().isEditorThemeUserSet()) {
                 config.getSettings().setEditorTheme(EditorThemes.defaultFor(now));
                 applyPreviewTheme(config.getSettings().getEditorTheme());
@@ -4097,7 +4097,7 @@ public class SettingsWindow {
     private void commitReset() {
         Settings s = config.getSettings();
         config.save();
-        javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(s.getTheme()));
+        Themes.applyAppTheme(s.getTheme());
         onApply.accept(s);
         load();
         // load() sets the keymap combo under `loading`, so its listener never fires: without this the

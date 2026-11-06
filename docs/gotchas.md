@@ -267,6 +267,19 @@ gesture on the next press anywhere in the app, without consuming the press. Don'
 RichTextFX, the ScrollPane or the platform grab and were removed. A menu opened from a plain click
 (a drop-down) is left to the stock behaviour.
 
+## Window frames and buttons follow the desktop's colour scheme, not the app theme
+
+**Symptom:** with a dark theme on Linux, the minimise/maximise/close buttons of the extended window are dark
+grey on the dark header, nearly invisible, and decorated windows can get a light frame around a dark app.
+
+**Why/fix:** JavaFX draws that chrome from `Scene.Preferences.colorScheme`, which falls back to
+`Platform.getPreferences().getColorScheme()`: the desktop's setting, which knows nothing of Editora's theme.
+The extended window's button overlay takes its `dark` style from `HeaderBar.systemColorScheme(stage)`, which
+falls back to the scene's scheme, and a decorated window's frame comes from the same preference
+(`TKStage.setDarkFrame`). `ui.WindowColorScheme`, installed by `App.start`, sets every non-popup window's scene
+scheme from the app theme as the window opens and again on each theme change (`Themes.applyAppTheme`). Change
+the app theme through `Themes.applyAppTheme`, not `Application.setUserAgentStylesheet` alone.
+
 ## A selection change re-runs a cell's `updateItem` after the CSS pass
 
 **Symptom:** in a tree or list whose cells build their own graphic (`Text` runs, an icon), the row you click
