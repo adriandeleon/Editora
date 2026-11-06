@@ -12,29 +12,21 @@ import javafx.application.Platform;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.geometry.Bounds;
-import javafx.geometry.Insets;
-import javafx.geometry.Orientation;
-import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
-import javafx.scene.control.ProgressIndicator;
-import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SeparatorMenuItem;
-import javafx.scene.control.SplitPane;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
-import javafx.scene.layout.HBox;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
-import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
 import com.editora.completion.Completion;
@@ -98,21 +90,15 @@ import com.editora.editor.markdown.MarkdownLintHover;
 import com.editora.editor.markdown.MarkdownLintOverlay;
 import com.editora.editor.markdown.MarkdownLintStripe;
 import com.editora.editor.markdown.MarkdownMenus;
-import com.editora.editor.markdown.MarkdownPreview;
-import com.editora.editor.markdown.MarkdownRenderer;
 import com.editora.editor.markdown.MermaidImages;
 import com.editora.editor.markdown.MermaidLintHover;
 import com.editora.editor.markdown.MermaidLintOverlay;
-import com.editora.editor.markdown.PreviewButtons;
 import com.editora.editor.markdown.PreviewFind;
-import com.editora.editor.markdown.PreviewImageLoader;
 import com.editora.editor.markdown.PreviewLayout;
 import com.editora.editor.markdown.PreviewMenu;
-import com.editora.editor.markdown.PreviewPrefs;
 import com.editora.editor.markdown.PreviewScrollSync;
 import com.editora.editor.markdown.PreviewSurfaces;
 import com.editora.editor.markdown.ScrollAnchor;
-import com.editora.editor.markdown.SvgImages;
 import com.editora.editor.markdown.TypstImages;
 import com.editora.editor.minimap.Minimap;
 import com.editora.editor.notes.NoteDraft;
@@ -122,19 +108,7 @@ import com.editora.editor.notes.NoteManager;
 import com.editora.editor.search.SearchHighlightOverlay;
 import com.editora.editor.spell.BufferSpell;
 import com.editora.editor.spell.SpellCheckOverlay;
-import com.editora.editor.structured.CrontabPreview;
-import com.editora.editor.structured.DockerfilePreview;
-import com.editora.editor.structured.FstabPreview;
-import com.editora.editor.structured.GithubActionsPreview;
-import com.editora.editor.structured.MarkwhenCalendar;
-import com.editora.editor.structured.MarkwhenTimeline;
-import com.editora.editor.structured.OpenApiDoc;
-import com.editora.editor.structured.PomPreview;
 import com.editora.editor.structured.PreviewSnapshots;
-import com.editora.editor.structured.SshConfigPreview;
-import com.editora.editor.structured.StructuredTree;
-import com.editora.editor.structured.SystemdPreview;
-import com.editora.editor.structured.XmlTree;
 import com.editora.editor.todo.TodoHighlightOverlay;
 import com.editora.editor.todo.TodoMark;
 import com.editora.editor.todo.TodoMatcher;
@@ -152,7 +126,6 @@ import com.editora.snippet.ParsedSnippet;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.SnippetSessions;
 import com.editora.structured.StructuredParser;
-import com.editora.structured.XmlParser;
 import com.editora.text.FoldRegions;
 import com.editora.text.LanguageRegistry;
 import com.editora.text.LspDiagnostic;
@@ -340,10 +313,15 @@ public class EditorBuffer implements TabContent {
     private final TagRenameMirror tagRename = new TagRenameMirror(
             this::getLanguage, () -> !this.largeFile && !this.hugeFile && isEditable() && !hasMultipleCarets());
 
-    private final CodeArea area = tagRename.newArea(null);
-    private final IndentKeys indentKeys = new IndentKeys(area, () -> this.language);
+    final CodeArea area = tagRename.newArea(null);
+    final IndentKeys indentKeys = new IndentKeys(area, () -> this.language);
     private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
-    private final BooleanProperty dirty = new SimpleBooleanProperty(false);
+    /** The preview pane, its hosts and the rendering of every preview format ({@link BufferPreview}). */
+    final BufferPreview previewPanes = new BufferPreview(this);
+    /** The tab's view composition and its floating corner controls ({@link BufferLayout}). */
+    final BufferLayout viewLayout = new BufferLayout(this);
+
+    final BooleanProperty dirty = new SimpleBooleanProperty(false);
     /**
      * The last saved/loaded content — its length and fingerprint, and the text itself only while it is still the
      * snapshot ({@link SavedBaseline}); the buffer is dirty only when the text differs from this. Null for a
@@ -373,9 +351,9 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Wraps the scroll pane so we can overlay the column-80 ruler line and dock the minimap. */
-    private final AnchorPane root = new AnchorPane();
+    final AnchorPane root = new AnchorPane();
     /** Tab content: shows either {@link #root} alone or a SplitPane of [root, secondary view]. */
-    private final StackPane viewHost = new StackPane(root);
+    final StackPane viewHost = new StackPane(root);
     /** Outermost tab content: a "View Mode" banner (top, read-only only) above {@link #viewHost}. */
     private final javafx.scene.layout.BorderPane outer = new javafx.scene.layout.BorderPane(viewHost);
     /** The MS-Word-style read-only banner (lazy); its "Enable Editing" runs {@link #onEnableEditing}. */
@@ -384,15 +362,6 @@ public class EditorBuffer implements TabContent {
     private boolean viewModeBarVisible;
     /** Why this buffer is in View mode when it is not the general reason; cleared when editing is enabled. */
     private @Nullable String viewModeReason;
-    /** Expert-mode exit control hosted over this buffer's primary code viewport, when it is active. */
-    private @Nullable Node expertExitControl;
-
-    /**
-     * The one row holding every floating control at the top-right of the code pane (view-mode toggle,
-     * open-in-browser, log controls, Expert exit). Sharing a row is what keeps them from overlapping.
-     */
-    private final HBox cornerControls = cornerControlRow();
-
     /** When true, a non-writable-on-disk file offers "Edit as Administrator" instead of a dead-end note. */
     private boolean adminEditAvailable;
 
@@ -409,21 +378,23 @@ public class EditorBuffer implements TabContent {
 
     private boolean fileNoticeShown;
     /** The file's encryption and the views that stand in for its text ({@link BufferEncryption}). */
-    private final BufferEncryption encryption =
+    final BufferEncryption encryption =
             new BufferEncryption(outer, viewHost, this::applyEditable, this::refreshTopBars);
     /** Invoked by the banner's "Enable Editing" button; the controller persists + refreshes indicators. */
     private Runnable onEnableEditing = () -> setViewMode(false);
     /** A second editable view sharing this document (created lazily on first split). */
-    private @Nullable CodeArea area2;
+    @Nullable
+    CodeArea area2;
 
     private @Nullable VirtualizedScrollPane<CodeArea> scrollPane2;
     /** The secondary view's container (scroll pane + its own minimap), mounted in the SplitPane. */
-    private @Nullable AnchorPane root2;
+    @Nullable
+    AnchorPane root2;
 
     private @Nullable SecondaryPane pane2;
 
     private @Nullable Minimap minimap2;
-    private Split split = Split.NONE;
+    Split split = Split.NONE;
 
     /** Multiple cursors + Alt+drag column/box selection (RichTextFX fork add-on). Installed on {@link #area}
      *  (and {@link #area2} when split) while {@link #multiCaretEnabled}; transparent with one caret. */
@@ -439,7 +410,7 @@ public class EditorBuffer implements TabContent {
         PREVIEW
     }
 
-    private MarkdownViewMode markdownViewMode = MarkdownViewMode.EDITOR;
+    MarkdownViewMode markdownViewMode = MarkdownViewMode.EDITOR;
 
     /** Which renderer a Markwhen preview uses (toggled per file, persisted like the view mode). */
     public enum MarkwhenView {
@@ -447,64 +418,23 @@ public class EditorBuffer implements TabContent {
         CALENDAR
     }
 
-    private MarkwhenView markwhenView = MarkwhenView.TIMELINE;
+    MarkwhenView markwhenView = MarkwhenView.TIMELINE;
     /** Fired (FX thread) when the Markwhen view flips, so the controller persists it. */
     private Runnable onMarkwhenViewChanged = () -> {};
     /** Split scroll sync and position keeping between the editor and the preview ({@link PreviewScrollSync}). */
-    private PreviewScrollSync scrollSync;
-    /** The rendered Markdown document shown in {@link #previewPane} (lazy; see {@link MarkdownPreview}). */
-    @Nullable
-    MarkdownPreview markdownPreview;
-    /** Rendered-preview pane (lazy); its content is rebuilt by {@link MarkdownRenderer}. */
-    private @Nullable ScrollPane previewPane;
-    /** Wraps the preview so the floating control can overlay it in PREVIEW mode (no code pane then). */
-    private @Nullable StackPane previewHost;
-    /** Centered spinner + message shown over the preview while content is expected but not yet rendered
-     *  (e.g. an AI explanation streaming in) — otherwise the pane just looks blank. Toggled by
-     *  {@link #setPreviewLoading}; always present in {@link #previewHost()}, hidden by default. */
-    private @Nullable Node previewLoadingOverlay;
-
-    private @Nullable Label previewLoadingLabel;
-    /** The preview's −/+ zoom + light/dark control (overlaid top-left of the preview when previewing). */
-    private @Nullable HBox zoomControl;
-    /** The preview light/dark toggle button (a sun/moon glyph); reflects the current effective theme. */
-    private @Nullable Button previewThemeButton;
-    /** Markdown preview color theme: "" (follow app), "light", or "dark" — set by the controller. */
-    private String previewThemeMode = "";
-    /** Whether the app/editor theme is dark (used to resolve "follow app" + the toggle glyph). */
-    private boolean previewAppDark;
-    /** Runs the controller's global preview-theme toggle (injected, like the snippet/completion providers). */
-    private Runnable previewThemeToggle = () -> {};
-    /** Preview text zoom factor (1.0 = 100%); scales the rendered preview's base font size. */
-    private double previewFontScale = 1.0;
-    /** Where the Split view's divider sits (the editor's share), kept across mode switches and per file. */
-    private double previewDivider = 0.5;
-    /** Told when the zoom or the divider changed by the user's hand (the controller persists them). */
-    private Runnable onPreviewLayoutChanged = () -> {};
-    /** The floating Editor/Split/Preview control overlaid top-right (injected for Markdown buffers). */
-    private @Nullable Node viewModeControl;
-    /** The floating "open in browser" control overlaid top-right (injected for HTML buffers). */
-    private @Nullable Node htmlPreviewControl;
-    /** The {@code .http} environment pill, kept beside the Editor/Split/Preview toggle in every mode. */
-    private @Nullable Node httpEnvControl;
-    /** Holds the environment pill and the view toggle side by side over a preview (Split and Preview modes). */
-    private final HBox previewCornerRow = previewCornerRow();
+    PreviewScrollSync scrollSync;
     /** The floating log-viewer control overlaid top-right (Follow / level / regex; injected for log buffers). */
     private @Nullable Node logControl;
     /** The CSV/TSV grid preview node (a ui-layer TableView panel), injected for CSV buffers when the feature
-     *  is on; non-null doubles as the CSV-preview enablement gate (mirrors {@link #htmlPreviewControl}). */
-    private @Nullable Node csvPreviewNode;
-    /** Repopulates the injected CSV grid from the buffer text; run on the debounced preview pulse. */
-    private Runnable csvPreviewRefresh = () -> {};
-    /** Wraps the CSV grid so the floating Editor/Split/Preview toggle can overlay it in PREVIEW mode. */
-    private @Nullable StackPane csvPreviewHost;
+     *  is on; non-null doubles as the CSV-preview enablement gate (mirrors {@link BufferLayout#htmlPreviewControl}). */
+    @Nullable
+    Node csvPreviewNode;
     /** The HTTP response panel (a ui-layer {@code HttpClientPanel}), injected for {@code .http} buffers when
      *  the feature is on; non-null doubles as the HTTP-preview enablement gate (mirrors {@link
      *  #csvPreviewNode}). Unlike every other preview it is <b>not</b> derived from the buffer text — it shows
      *  the result of running a request — so the debounced pulse deliberately never re-renders it. */
-    private @Nullable Node httpPreviewNode;
-    /** Wraps the HTTP panel so the floating Editor/Split/Preview toggle can overlay it in PREVIEW mode. */
-    private @Nullable StackPane httpPreviewHost;
+    @Nullable
+    Node httpPreviewNode;
     /** Structured-data (JSON/YAML/TOML) preview: on when the feature is enabled (pushed from settings). */
     private boolean structuredPreviewEnabled;
     /** SVG image preview for .svg files: on when the feature is enabled (pushed from settings). */
@@ -513,7 +443,7 @@ public class EditorBuffer implements TabContent {
     private boolean typstPreviewEnabled;
     /** Resolves the typst {@code --root} for a saved .typ file (project root for a multi-file doc); injected
      *  from MainController since the editor package can't reach project state. Null ⇒ use the file's folder. */
-    private java.util.function.@Nullable UnaryOperator<java.nio.file.Path> typstRootResolver;
+    java.util.function.@Nullable UnaryOperator<java.nio.file.Path> typstRootResolver;
     /** Crontab schedule preview for crontab files: on when the feature is enabled (pushed from settings). */
     private boolean crontabPreviewEnabled;
     /** fstab mount preview for /etc/fstab files: on when the feature is enabled (pushed from settings). */
@@ -529,15 +459,7 @@ public class EditorBuffer implements TabContent {
     /** Maven pom.xml summary preview: on when the feature is enabled (pushed from settings). */
     private boolean pomPreviewEnabled;
     /** Per-buffer, session-only: this pom is showing the generic XML tree instead of its summary. */
-    private boolean pomShowXml;
-    /** Holds the self-scrolling structured preview node (tree or OpenAPI docs); the Split/Preview side. */
-    private @Nullable StackPane structuredContentHolder;
-    /** PREVIEW-mode wrapper for {@link #structuredContentHolder} so the mode toggle can overlay it. */
-    private @Nullable StackPane structuredPreviewHost;
-    /** Tri-state view for a structured doc: {@code null}=auto (API docs for a spec, else tree), else forced. */
-    private @Nullable Boolean structuredShowApiDocs;
-    /** Whether the last structured render detected an OpenAPI/Swagger spec (drives the view-toggle status). */
-    private boolean lastStructuredOpenApi;
+    boolean pomShowXml;
     /** Forces log-viewer mode on a buffer whose extension isn't {@code .log} ("View as Log"). */
     private boolean logViewForced;
     /** Filter, follow and trim state of the log viewer; a filtered view is read-only (see {@link LogView}). */
@@ -548,27 +470,12 @@ public class EditorBuffer implements TabContent {
     private final SettledEditDispatcher settledEdits = new SettledEditDispatcher();
 
     private @Nullable Subscription settledEditSub;
-    /** Bumped per preview render request; background results discard if stale. */
-    private long previewGen;
-    /**
-     * Off-thread Markdown parsing + syntax tokenizing, shared across <b>all</b> open buffers so the
-     * threads don't accumulate one pair per file (each pool thread is a ~1-2 MB daemon stack — a session
-     * with dozens of tabs previously meant dozens of mostly-idle threads). Sharing is safe because every
-     * background result is re-validated against the per-buffer {@link #previewGen}/{@link #highlightGen}
-     * counters (bumped on the FX thread at submit) before it touches buffer state — overlapping work for
-     * one buffer just means only the latest generation's result is applied. Different buffers already
-     * tokenize concurrently against the shared {@link GrammarRegistry} grammar, so a shared pool adds no
-     * new grammar-concurrency. Daemon, app-lifetime (mirrors {@link PreviewImageLoader}/{@code MermaidImages}).
-     */
-    private static final ExecutorService PREVIEW_POOL =
-            Executors.newFixedThreadPool(2, daemonFactory("markdown-preview"));
-
     private static final ExecutorService HIGHLIGHT_POOL = Executors.newFixedThreadPool(
             Math.min(4, Math.max(2, Runtime.getRuntime().availableProcessors() / 2)),
             daemonFactory("editor-highlighter"));
 
     /** A daemon {@link java.util.concurrent.ThreadFactory} naming threads {@code <name>-N}. */
-    private static java.util.concurrent.ThreadFactory daemonFactory(String name) {
+    static java.util.concurrent.ThreadFactory daemonFactory(String name) {
         java.util.concurrent.atomic.AtomicInteger n = new java.util.concurrent.atomic.AtomicInteger();
         return r -> {
             Thread t = new Thread(r, name + "-" + n.incrementAndGet());
@@ -577,13 +484,13 @@ public class EditorBuffer implements TabContent {
         };
     }
 
-    private Runnable onViewModeChanged = () -> {};
+    Runnable onViewModeChanged = () -> {};
     /** Files at/above this size skip syntax highlighting and the minimap to stay responsive. */
     public static final long LARGE_FILE_BYTES = 5L * 1024 * 1024;
     /** Files at/above this size are opened read-only (and truncated by the loader). */
     public static final long HUGE_FILE_BYTES = 50L * 1024 * 1024;
     /** Whether the minimap is shown; applied to every split pane's minimap. */
-    private boolean minimapVisible = true;
+    boolean minimapVisible = true;
     /** Whether this buffer is the visible tab (see {@link #setRenderingActive}); starts true because a
      *  freshly built buffer measures itself before the controller marks background tabs inactive. */
     private boolean renderingActive = true;
@@ -596,12 +503,12 @@ public class EditorBuffer implements TabContent {
     /** A highlight pass was requested while {@link #highlightDeferred}; run it when the deferral ends. */
     private boolean highlightOwed;
     /** Large-file mode: syntax highlighting and the minimap are disabled regardless of settings. */
-    private boolean largeFile;
+    boolean largeFile;
     /** Intermediate "large source file" tier (below the 5 MB hard mode): the minimap and LSP are
      *  disabled — but syntax highlighting and editing stay — so a very long single file (e.g. a
      *  13k-line source) stays responsive. Triggered by line count at load (see {@code setHeavyFile});
      *  toggleable per-buffer. {@code largeFile} implies the same minimap/LSP suppression. */
-    private boolean heavyFile;
+    boolean heavyFile;
     /** Huge-file mode: implies large-file mode plus read-only (no undo, not editable). */
     private boolean hugeFile;
     /** The loader could only read part of this file (huge-file cap / log tail) — saving would truncate it. */
@@ -611,9 +518,9 @@ public class EditorBuffer implements TabContent {
     /** Temporary non-editable shell while file content is loaded; never presented as user View mode. */
     private boolean loading;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
-    private CodeArea focusedArea = area;
+    CodeArea focusedArea = area;
     /** {@link #focusedArea} as a value to observe, for what shows the caret of the view the user is in. */
-    private final javafx.beans.property.ReadOnlyObjectWrapper<CodeArea> focusedView =
+    final javafx.beans.property.ReadOnlyObjectWrapper<CodeArea> focusedView =
             new javafx.beans.property.ReadOnlyObjectWrapper<>(area);
     /** Floating Markdown format bar (lazily created), shown on a non-empty selection in a Markdown buffer. */
     private @Nullable MarkdownFormatBar formatBar;
@@ -632,17 +539,12 @@ public class EditorBuffer implements TabContent {
     /** Opens a URL externally (injected from the controller's HostServices); Ctrl/Cmd-click a link. */
     java.util.function.Consumer<String> openUrlHandler = u -> {};
     /** Injected by the controller: opens the table-size picker, then inserts a table. */
-    private @Nullable Runnable insertTypstTableHandler;
+    @Nullable
+    Runnable insertTypstTableHandler;
 
     private @Nullable Runnable typstImagePasteHandler;
     /** The preview's right-click menu: its export/print actions and what the pointer was on ({@link PreviewMenu}). */
-    private final PreviewMenu previewMenu = new PreviewMenu(this, () -> this.markdownPreview);
-    /** Runs the {@code pom.toggleView} command (summary ⇄ XML tree) from the preview's right-click menu. */
-    private Runnable pomViewToggleHandler = () -> {};
-    /** The menu item for that switch — relabelled per show, and hidden for a non-pom tree preview. */
-    private @Nullable MenuItem pomViewItem;
-
-    private javafx.scene.control.@Nullable ContextMenu treePreviewContextMenu;
+    final PreviewMenu previewMenu = new PreviewMenu(this, () -> previewPanes.markdownPreview);
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
     private final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
@@ -840,7 +742,7 @@ public class EditorBuffer implements TabContent {
     private final NarrowPresentation narrowView = new NarrowPresentation(this, area, logView, folds);
 
     /** Pinned enclosing-scope headers over the top of the code pane; see {@link StickyScroll}. */
-    private final StickyScrollBar stickyScroll = new StickyScrollBar();
+    final StickyScrollBar stickyScroll = new StickyScrollBar();
 
     private boolean stickyScrollEnabled;
     private boolean stickyScrollPending;
@@ -911,8 +813,8 @@ public class EditorBuffer implements TabContent {
             this::refreshGutterLine);
 
     /** The file's problem counts at the top right of the editor. */
-    private final ProblemCounterSlot problemCounter =
-            new ProblemCounterSlot(() -> lspActive && !largeFile, this::placeCornerControl, this::removeCornerControl);
+    private final ProblemCounterSlot problemCounter = new ProblemCounterSlot(
+            () -> lspActive && !largeFile, viewLayout::placeCornerControl, viewLayout::removeCornerControl);
     /** Whether this buffer's server advertises rename — gates the menu item (#676). */
     private boolean lspRenameAvailable;
     /** Whether this buffer's server advertises {@code textDocument/implementation} — gates the item (#735). */
@@ -934,7 +836,8 @@ public class EditorBuffer implements TabContent {
     /** Chars of context captured before/after a note's selection (for re-anchoring). */
     private static final int CONTEXT_CHARS = 40;
 
-    private @Nullable Path path;
+    @Nullable
+    Path path;
     /** Suggested name for a still-unsaved buffer (e.g. from {@code --new-file=foo.txt}); drives the tab
      *  title and extension-based highlighting while {@link #path} stays null (so Save prompts Save-As). */
     private @Nullable String displayName;
@@ -1296,7 +1199,8 @@ public class EditorBuffer implements TabContent {
         });
         installContextMenu(area);
         installFormatBarListeners(area);
-        scrollSync = new PreviewScrollSync(area, () -> markdownViewMode, () -> previewPane, () -> markdownPreview);
+        scrollSync = new PreviewScrollSync(
+                area, () -> markdownViewMode, () -> previewPanes.previewPane, () -> previewPanes.markdownPreview);
         installOverlays();
     }
 
@@ -1321,7 +1225,7 @@ public class EditorBuffer implements TabContent {
                         htmlPreviewDirtyListener.run();
                     }
                     if (previewLive() && markdownViewMode != MarkdownViewMode.EDITOR) {
-                        scheduleRenderPreview();
+                        previewPanes.scheduleRenderPreview();
                     }
                 });
         settledEdits.at(
@@ -1379,7 +1283,7 @@ public class EditorBuffer implements TabContent {
      * is "large" only for one very long line (a pasted {@code data:} image passes the 64K-character line
      * limit at once): its preview used to render once and then silently stay as it was.
      */
-    private boolean previewLive() {
+    boolean previewLive() {
         return !largeFile || (isMarkdown() && area.getLength() <= PREVIEW_LIVE_MAX_CHARS);
     }
 
@@ -1484,7 +1388,7 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    private void scheduleFormatBar() {
+    void scheduleFormatBar() {
         if (formatBarUpdatePending || !MarkdownFormatBar.updateNeeded(formatBar, formatBarEnabled, focusedArea)) {
             return;
         }
@@ -1574,7 +1478,7 @@ public class EditorBuffer implements TabContent {
         // initializer, so a plain buffer that never changes mode (i.e. every ordinary code file) never
         // called it and the bar was never in the scene graph at all. This is the one place that is
         // guaranteed to run right before the bar is needed, and placeStickyScroll is idempotent.
-        placeStickyScroll();
+        viewLayout.placeStickyScroll();
         stickyLines = stickyScroll.pinnedLines(folds.regions(), firstVisible);
         stickyScroll.update(focusedArea, stickyLines, getTabSize(), this::jumpToLine);
     }
@@ -1632,7 +1536,7 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    private void scheduleAiActionsBar() {
+    void scheduleAiActionsBar() {
         if (aiActionsBarUpdatePending || !AiActionsBar.updateNeeded(aiActionsBar, aiActionsEnabled, focusedArea)) {
             return;
         }
@@ -3026,7 +2930,7 @@ public class EditorBuffer implements TabContent {
             this.markdownViewMode = MarkdownViewMode.EDITOR; // a code split supersedes the Markdown preview
             ensureSecondaryView();
         }
-        rebuildViewHost();
+        viewLayout.rebuildViewHost();
     }
 
     // --- Markdown preview (IntelliJ-style 3-mode view) -----------------------------------------
@@ -3068,7 +2972,7 @@ public class EditorBuffer implements TabContent {
         if (view != null && view != markwhenView) {
             markwhenView = view;
             if (markdownViewMode != MarkdownViewMode.EDITOR) {
-                scheduleRenderPreview();
+                previewPanes.scheduleRenderPreview();
             }
         }
     }
@@ -3077,7 +2981,7 @@ public class EditorBuffer implements TabContent {
     public void toggleMarkwhenView() {
         markwhenView = markwhenView == MarkwhenView.TIMELINE ? MarkwhenView.CALENDAR : MarkwhenView.TIMELINE;
         if (markdownViewMode != MarkdownViewMode.EDITOR) {
-            scheduleRenderPreview();
+            previewPanes.scheduleRenderPreview();
         }
         onMarkwhenViewChanged.run();
     }
@@ -3104,7 +3008,7 @@ public class EditorBuffer implements TabContent {
      * <p>Each setter used to ask "is this file my format?" instead, which is wrong both ways. One setting can
      * back several formats (an XML file's DOM tree rides {@code structuredPreview}, but {@code isStructured()}
      * is false for XML) — so the buffer was left stranded in a preview whose feature is off: every branch of
-     * {@link #scheduleRenderPreview} then misses and falls through to the Markdown tail, rendering the source
+     * {@link BufferPreview#scheduleRenderPreview} then misses and falls through to the Markdown tail, rendering the source
      * as Markdown, while {@code hasPreview()} being false takes away the toggle needed to escape. And one file
      * can have two previews (a workflow is also YAML) — so turning off the unrelated one clobbered a
      * per-file view mode that is persisted in {@code WorkspaceState.markdownViewModes}.
@@ -3139,7 +3043,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** A CSV buffer whose grid preview node has been injected (i.e. the CSV preview feature is on). The
-     *  injected node doubles as the enablement gate, mirroring {@link #htmlPreviewControl}. */
+     *  injected node doubles as the enablement gate, mirroring {@link BufferLayout#htmlPreviewControl}. */
     public boolean hasCsvPreview() {
         return isCsv() && csvPreviewNode != null;
     }
@@ -3156,11 +3060,8 @@ public class EditorBuffer implements TabContent {
         return hasPreview() && !hasHttpPreview();
     }
 
-    /** Whether the tree preview on screen is an error message (as last rendered: nothing is parsed here). */
     public boolean previewShowsError() {
-        return markdownViewMode != MarkdownViewMode.EDITOR
-                && structuredContentHolder != null
-                && structuredContentHolder.lookup(".structured-error") != null;
+        return previewPanes.previewShowsError();
     }
 
     /** A standalone SVG file (by {@code .svg} extension — the buffer stays XML text, so it also gets XML
@@ -3409,13 +3310,13 @@ public class EditorBuffer implements TabContent {
         }
         pomShowXml = !pomShowXml;
         if (markdownViewMode != MarkdownViewMode.EDITOR) {
-            scheduleRenderPreview();
+            previewPanes.scheduleRenderPreview();
         }
         return true;
     }
 
     /** Whether this buffer uses the self-scrolling tree host (structured, XML, crontab, or fstab) — shared surface. */
-    private boolean hasTreePreview() {
+    boolean hasTreePreview() {
         return hasStructuredPreview()
                 || hasPomPreview()
                 || hasXmlPreview()
@@ -3436,21 +3337,13 @@ public class EditorBuffer implements TabContent {
         reconcilePreviewMode();
     }
 
-    /** Whether the last render of this structured buffer detected an OpenAPI/Swagger spec. */
     public boolean isStructuredOpenApi() {
-        return lastStructuredOpenApi;
+        return previewPanes.isStructuredOpenApi();
     }
 
-    /** Flips a structured doc between the tree and the OpenAPI-docs view, then re-renders the preview. */
     public void toggleStructuredView() {
-        boolean currentDocs = structuredShowApiDocs == null || structuredShowApiDocs;
-        structuredShowApiDocs = !currentDocs;
-        if (markdownViewMode != MarkdownViewMode.EDITOR) {
-            scheduleRenderPreview();
-        }
+        previewPanes.toggleStructuredView();
     }
-
-    // --- Live Mermaid linting (maid) ----------------------------------------------------------------
 
     /** Injects the async maid validator: {@code accept(text, diagnostics->…)}; null disables linting. */
     public void setMermaidValidator(
@@ -4640,87 +4533,40 @@ public class EditorBuffer implements TabContent {
         this.onViewModeChanged = callback == null ? () -> {} : callback;
     }
 
-    /** Overlays the Editor/Split/Preview control top-right of this buffer's view; {@code null} removes it. */
     public void setViewModeControl(@Nullable Node control) {
-        this.viewModeControl = control;
-        rebuildViewHost();
+        viewLayout.setViewModeControl(control);
     }
 
-    /** Whether the floating Editor/Split/Preview control is currently attached. */
     public boolean hasViewModeControl() {
-        return viewModeControl != null;
+        return viewLayout.hasViewModeControl();
     }
 
-    /** Overlays the HTML "open in browser" control top-right of the code pane; {@code null} removes it. */
     public void setHtmlPreviewControl(@Nullable Node control) {
-        if (htmlPreviewControl != null && htmlPreviewControl != control) {
-            removeCornerControl(htmlPreviewControl);
-        }
-        this.htmlPreviewControl = control;
-        rebuildViewHost();
+        viewLayout.setHtmlPreviewControl(control);
     }
 
-    /** Whether the floating HTML "open in browser" control is currently attached. */
     public boolean hasHtmlPreviewControl() {
-        return htmlPreviewControl != null;
+        return viewLayout.hasHtmlPreviewControl();
     }
 
-    /**
-     * Overlays a {@code .http} file's environment pill beside the Editor/Split/Preview toggle — on the code pane in
-     * Editor mode, over the response view in Split and Preview, so it is there in every mode; {@code null} removes it.
-     */
     public void setHttpEnvControl(@Nullable Node control) {
-        if (httpEnvControl == control) {
-            return;
-        }
-        if (httpEnvControl != null) {
-            removeCornerControl(httpEnvControl);
-            previewCornerRow.getChildren().remove(httpEnvControl);
-        }
-        this.httpEnvControl = control;
-        rebuildViewHost();
+        viewLayout.setHttpEnvControl(control);
     }
 
-    /** Whether the {@code .http} environment pill is attached. */
     public boolean hasHttpEnvControl() {
-        return httpEnvControl != null;
+        return viewLayout.hasHttpEnvControl();
     }
 
-    /** Injects the CSV grid preview node (a ui-layer {@code CsvGridPanel}); {@code null} removes it. Non-null
-     *  makes the buffer previewable ({@link #hasPreview()}), so the Editor/Split/Preview toggle attaches. */
     public void setCsvPreviewNode(@Nullable Node node) {
-        if (this.csvPreviewNode == node) {
-            return;
-        }
-        this.csvPreviewNode = node;
-        if (node == null) {
-            csvPreviewHost = null;
-            if (markdownViewMode != MarkdownViewMode.EDITOR) {
-                markdownViewMode = MarkdownViewMode.EDITOR; // the grid is gone — fall back to source
-            }
-        }
-        rebuildViewHost();
+        previewPanes.setCsvPreviewNode(node);
     }
 
-    /** Injects the callback that repopulates the CSV grid from the buffer text (run on the debounced pulse). */
     public void setCsvPreviewRefresh(Runnable refresh) {
-        this.csvPreviewRefresh = refresh == null ? () -> {} : refresh;
+        previewPanes.setCsvPreviewRefresh(refresh);
     }
 
-    /** Injects the HTTP response panel (a ui-layer {@code HttpClientPanel}); {@code null} removes it. Non-null
-     *  makes the buffer previewable ({@link #hasPreview()}), so the Editor/Split/Preview toggle attaches. */
     public void setHttpPreviewNode(@Nullable Node node) {
-        if (this.httpPreviewNode == node) {
-            return;
-        }
-        this.httpPreviewNode = node;
-        if (node == null) {
-            httpPreviewHost = null;
-            if (markdownViewMode != MarkdownViewMode.EDITOR) {
-                markdownViewMode = MarkdownViewMode.EDITOR; // the panel is gone — fall back to source
-            }
-        }
-        rebuildViewHost();
+        previewPanes.setHttpPreviewNode(node);
     }
 
     /**
@@ -4752,7 +4598,7 @@ public class EditorBuffer implements TabContent {
             return;
         }
         this.logViewForced = forced;
-        rebuildViewHost();
+        viewLayout.rebuildViewHost();
     }
 
     /**
@@ -5132,77 +4978,8 @@ public class EditorBuffer implements TabContent {
         this.htmlPreviewDirtyListener = listener;
     }
 
-    /** Switches the Markdown view mode and rebuilds the view host. */
     public void setMarkdownViewMode(MarkdownViewMode mode) {
-        MarkdownViewMode target = mode == null ? MarkdownViewMode.EDITOR : mode;
-        boolean changed = this.markdownViewMode != target;
-        MarkdownViewMode from = this.markdownViewMode;
-        if (changed) {
-            scrollSync.leaving(from); // the view that comes on screen takes over this one's place
-        }
-        this.markdownViewMode = target;
-        scheduleFormatBar(); // hide the format bar when entering pure PREVIEW, re-evaluate otherwise
-        scheduleAiActionsBar(); // same, for the AI selection-actions bar
-        if (target != MarkdownViewMode.EDITOR) {
-            this.split = Split.NONE; // preview supersedes any code split
-            scheduleRenderPreview();
-        } else if (markdownPreview != null) {
-            markdownPreview.clear(); // nothing shows it: give its nodes back
-        }
-        rebuildViewHost();
-        setMinimapVisible(minimapVisible); // re-apply: the minimap is hidden while the preview is shown
-        // The paging-focus + scroll-sync tail is Markdown-preview-specific (the CSV grid, the HTTP response
-        // panel and the structured tree/docs scroll themselves and have no ScrollPane host), so skip those.
-        if (!hasCsvPreview() && !hasHttpPreview() && !hasTreePreview()) {
-            if (target == MarkdownViewMode.PREVIEW) {
-                // Focus the preview so the paging keys (Space/PageDown/Backspace/PageUp) work without a click.
-                Platform.runLater(previewPane()::requestFocus);
-            }
-            scrollSync.entered(from, target); // same source line in the view that is now showing
-        }
-        if (changed) {
-            onViewModeChanged.run();
-        }
-    }
-
-    private ScrollPane previewPane() {
-        if (previewPane == null) {
-            previewPane = new ScrollPane();
-            previewPane.setFitToWidth(true);
-            previewPane.getStyleClass().add("markdown-preview-pane");
-            // Apply the independent preview theme picked before the pane existed.
-            if ("light".equals(previewThemeMode)) {
-                previewPane.getStyleClass().add("md-light");
-            } else if ("dark".equals(previewThemeMode)) {
-                previewPane.getStyleClass().add("md-dark");
-            }
-            // Keyboard scrolling in the preview: Space / PageDown page down, Backspace / PageUp page up
-            // (C-v / M-v go through nav.pageDown/Up → pagePreview). Focus it on click so the keys land.
-            previewPane.setFocusTraversable(true);
-            previewPane.addEventFilter(
-                    javafx.scene.input.MouseEvent.MOUSE_PRESSED,
-                    e -> previewPane().requestFocus());
-            // Right-click menu: Copy (rendered text), the link or code block under the pointer, exports, Print.
-            previewPane.setOnContextMenuRequested(e -> {
-                Node hit = e.getPickResult() == null ? null : e.getPickResult().getIntersectedNode();
-                previewMenu.show(previewPane(), hit, e.getSceneY(), e.getScreenX(), e.getScreenY());
-                e.consume();
-            });
-            previewPane.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-                if (e.isControlDown() || e.isAltDown() || e.isMetaDown() || e.isShortcutDown()) {
-                    return; // leave modifier combos to the global keymap (e.g. C-v / M-v / zoom)
-                }
-                if (e.getCode() == KeyCode.SPACE || e.getCode() == KeyCode.PAGE_DOWN) {
-                    scrollPreviewPage(0.9);
-                    e.consume();
-                } else if (e.getCode() == KeyCode.BACK_SPACE || e.getCode() == KeyCode.PAGE_UP) {
-                    scrollPreviewPage(-0.9);
-                    e.consume();
-                }
-            });
-            scrollSync.install(previewPane); // SPLIT-mode scroll sync, preview → editor half
-        }
-        return previewPane;
+        previewPanes.setMarkdownViewMode(mode);
     }
 
     /** The preview's right-click menu, where the window injects its export and print actions. */
@@ -5210,10 +4987,8 @@ public class EditorBuffer implements TabContent {
         return previewMenu;
     }
 
-    /** Injects the pom preview's "Show as XML" / "Show POM Summary" action (the controller command, so the
-     *  menu route and the palette route report the same status and share the refusal guard). */
     public void setPomViewToggleHandler(Runnable handler) {
-        this.pomViewToggleHandler = handler == null ? () -> {} : handler;
+        previewPanes.setPomViewToggleHandler(handler);
     }
 
     /** Copies the preview's selection when it has one, else all of it ({@link PreviewMenu#copy}). */
@@ -5226,29 +5001,8 @@ public class EditorBuffer implements TabContent {
         return previewMenu.copyHtmlSource();
     }
 
-    /** Copy / Select All aimed at the rendered preview when that is where the user is
-     *  ({@link PreviewMenu#editCommand}); false: the editor's own command applies. */
     public boolean previewEditCommand(boolean selectAll) {
-        return previewMenu.editCommand(previewPane, selectAll);
-    }
-
-    /** Scrolls the preview by {@code pages} viewport heights (negative: up; infinite: to that end); no-op if
-     *  there's nothing to scroll. A "page" of 0.9 leaves a little overlap. */
-    private void scrollPreviewPage(double pages) {
-        if (previewPane == null || previewPane.getContent() == null) {
-            return;
-        }
-        double viewport = previewPane.getViewportBounds().getHeight();
-        double contentH = previewPane.getContent().getLayoutBounds().getHeight();
-        double scrollable = contentH - viewport;
-        if (scrollable <= 0) {
-            return; // content fits — nothing to page
-        }
-        double range = previewPane.getVmax() - previewPane.getVmin();
-        double next = Double.isInfinite(pages)
-                ? (pages > 0 ? previewPane.getVmax() : previewPane.getVmin())
-                : previewPane.getVvalue() + (viewport * pages) / scrollable * range;
-        previewPane.setVvalue(Math.max(previewPane.getVmin(), Math.min(previewPane.getVmax(), next)));
+        return previewPanes.previewEditCommand(selectAll);
     }
 
     /**
@@ -5260,24 +5014,15 @@ public class EditorBuffer implements TabContent {
         return scrollPreview(down ? 0.9 : -0.9);
     }
 
-    /** As {@link #pagePreview}, by {@code pages} viewport heights: a small fraction for a line, an infinite
-     *  one for the start or end of the document. */
     public boolean scrollPreview(double pages) {
-        // (Split only: a pane taken off the scene on the way back to Editor can still report focus.)
-        boolean previewActive = markdownViewMode == MarkdownViewMode.PREVIEW
-                || (markdownViewMode == MarkdownViewMode.SPLIT && previewPane != null && previewPane.isFocusWithin());
-        if (!previewActive || previewPane == null) {
-            return false;
-        }
-        scrollPreviewPage(pages);
-        return true;
+        return previewPanes.scrollPreview(pages);
     }
 
     /**
      * Releases this buffer's resources. Must be called by the controller when the tab is
      * <em>actually closed</em> (not on a plain tab switch). The preview/highlight executors are now
-     * shared, app-lifetime pools ({@link #PREVIEW_POOL}/{@link #HIGHLIGHT_POOL}), so disposal does not
-     * shut them down — it instead bumps {@link #previewGen}/{@link #highlightGen} so any in-flight task
+     * shared, app-lifetime pools ({@link BufferPreview#PREVIEW_POOL}/{@link #HIGHLIGHT_POOL}), so disposal does not
+     * shut them down — it instead bumps {@link BufferPreview#previewGen}/{@link #highlightGen} so any in-flight task
      * submitted by this buffer discards its result (the gen guard) instead of touching the now-dead
      * buffer. The reactfx subscriptions are on the buffer's own {@code area}/{@code area2} and die with
      * it on GC; the shared settled-edit subscription is dropped eagerly too. Idempotent. Once disposed the
@@ -5308,7 +5053,7 @@ public class EditorBuffer implements TabContent {
         }
         settledEdits.dispose();
         disposeMultiCaret();
-        previewGen++; // discard any in-flight preview result for this (now closed) buffer
+        previewPanes.previewGen++; // discard any in-flight preview result for this (now closed) buffer
         highlightGen++; // discard any in-flight highlight result
         todoGen++; // discard any in-flight TODO scan result
         runScanGen++; // discard any in-flight run scan result
@@ -5702,12 +5447,8 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /**
-     * Forces a preview re-render (e.g. after the Mermaid feature/theme toggles so {@code ```mermaid}
-     * blocks switch between diagram and code). No-op in Editor mode.
-     */
     public void refreshPreview() {
-        scheduleRenderPreview();
+        previewPanes.refreshPreview();
     }
 
     /**
@@ -5718,599 +5459,13 @@ public class EditorBuffer implements TabContent {
         return markdownViewMode == MarkdownViewMode.PREVIEW && !hasCsvPreview();
     }
 
-    /** The search over the rendered Markdown preview (the Find bar uses it while {@link #isPreviewOnly()}),
-     *  or null when this buffer has rendered none. */
     public @Nullable PreviewFind previewFind() {
-        return markdownPreview == null ? null : markdownPreview.find();
+        return previewPanes.previewFind();
     }
 
     public boolean scrollPreviewToAnchor(String slug) {
-        return markdownViewMode != MarkdownViewMode.EDITOR
-                && markdownPreview != null
-                && markdownPreview.scrollToAnchor(slug);
+        return previewPanes.scrollPreviewToAnchor(slug);
     }
-
-    private void scheduleRenderPreview() {
-        if (markdownViewMode == MarkdownViewMode.EDITOR) {
-            return;
-        }
-        if (hasCsvPreview()) {
-            csvPreviewRefresh.run(); // the coordinator re-parses the buffer text into its per-buffer grid
-            return;
-        }
-        if (hasHttpPreview()) {
-            // The HTTP panel shows the result of *running* a request, not a rendering of the buffer text —
-            // re-rendering on the debounced edit pulse would be meaningless (and firing requests would be
-            // catastrophic). It is repopulated only by HttpClientCoordinator when a run completes. This
-            // branch exists so the buffer never falls through to the Markdown tail below.
-            return;
-        }
-        if (hasGithubActionsPreview()) {
-            // A workflow is also YAML, so this must precede the structured (YAML tree) branch to win. Parse
-            // off-thread, build the specialized workflow digest on the FX thread into the shared host.
-            String src = documentTextSnapshot();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    com.editora.ghactions.Workflow parsed = com.editora.ghactions.Workflow.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder().getChildren().setAll(GithubActionsPreview.build(parsed));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasStructuredPreview()) {
-            // Whole file is one JSON/YAML/TOML doc: parse off-thread (pure, cheap), build the tree / OpenAPI
-            // docs on the FX thread into the self-scrolling structured host. The previewGen guard drops a
-            // superseded render (mirrors the Markwhen branch).
-            StructuredParser.Format sfmt = structuredFormat();
-            String src = documentTextSnapshot();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    StructuredParser.Parsed parsed = StructuredParser.parse(src, sfmt);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            renderStructured(parsed);
-                        }
-                    });
-                } catch (Throwable t) {
-                    // submit() would swallow a Throwable (e.g. a NoClassDefFoundError while loading a Jackson
-                    // format factory on this pool thread) into its Future — a silent blank preview. Surface it.
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasPomPreview()) {
-            // Whole file is a Maven pom: parse off-thread into the display summary (coordinates, properties,
-            // dependencies, plugins, profiles), build the section list on the FX thread into the shared
-            // self-scrolling host. Must precede the XML branch — a pom is XML, and its summary wins unless
-            // the user switched this buffer to the generic tree.
-            String src = documentTextSnapshot();
-            Path pomPath = path; // a local pom's parent chain and BOMs are read beside it (Maven review C6)
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    com.editora.maven.PomSummary parsed = com.editora.maven.PomSummary.parse(src, pomPath);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder()
-                                    .getChildren()
-                                    .setAll(PomPreview.build(parsed, line -> jumpToLine(line - 1)));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasXmlPreview()) {
-            // Whole file is one XML doc: parse off-thread (JDK DOM), build the DOM tree on the FX thread into
-            // the same self-scrolling host as the JSON/YAML/TOML tree. The previewGen guard drops a stale render.
-            String src = documentTextSnapshot();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    XmlParser.Parsed parsed = XmlParser.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            renderXml(parsed);
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasCrontabPreview()) {
-            // Whole file is a crontab: parse off-thread (pure, cheap), decode each schedule + compute the next
-            // fire times, build the preview node on the FX thread into the shared self-scrolling host. The
-            // "now" is captured here on the FX thread so the render is deterministic (mirrors the tree branch).
-            String src = documentTextSnapshot();
-            java.time.LocalDateTime now = java.time.LocalDateTime.now();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    com.editora.cron.Crontab parsed = com.editora.cron.Crontab.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder().getChildren().setAll(CrontabPreview.build(parsed, now));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasFstabPreview()) {
-            // Whole file is an /etc/fstab: parse off-thread (pure, cheap), decode each mount line into English,
-            // build the preview node on the FX thread into the shared self-scrolling host. previewGen-guarded.
-            String src = documentTextSnapshot();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    java.util.List<com.editora.fstab.FstabEntry> parsed = com.editora.fstab.Fstab.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder().getChildren().setAll(FstabPreview.build(parsed));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasSystemdPreview()) {
-            // Whole file is a systemd unit: parse off-thread, decode directives (+ OnCalendar next runs) into
-            // English, build the preview node on the FX thread into the shared self-scrolling host.
-            String src = documentTextSnapshot();
-            java.time.LocalDateTime now = java.time.LocalDateTime.now();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    com.editora.systemd.SystemdUnit parsed = com.editora.systemd.SystemdUnit.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder().getChildren().setAll(SystemdPreview.build(parsed, now));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasSshConfigPreview()) {
-            // Whole file is an SSH client config: parse off-thread into Host/Match blocks, decode into English.
-            String src = documentTextSnapshot();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    java.util.List<com.editora.sshconfig.SshConfig.Block> parsed =
-                            com.editora.sshconfig.SshConfig.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder().getChildren().setAll(SshConfigPreview.build(parsed));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (hasDockerfilePreview()) {
-            // Whole file is a Dockerfile: parse off-thread into build stages, distill each into a digest.
-            String src = documentTextSnapshot();
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                try {
-                    com.editora.dockerfile.Dockerfile parsed = com.editora.dockerfile.Dockerfile.parse(src);
-                    Platform.runLater(() -> {
-                        if (gen == previewGen) {
-                            structuredContentHolder().getChildren().setAll(DockerfilePreview.build(parsed));
-                        }
-                    });
-                } catch (Throwable t) {
-                    surfaceTreePreviewError(gen, t);
-                }
-            });
-            return;
-        }
-        if (isDiagram()) {
-            // Whole file is one diagram: build the (async-filling) node on the FX thread directly. The
-            // preview zoom scales the fit width (not font size, which doesn't affect an ImageView); the
-            // content-hash cache makes a zoom re-render a cheap re-fit of the same image. Don't call
-            // applyPreviewScale() here — it re-enters this branch for diagrams (would recurse).
-            double v = previewPane().getVvalue();
-            double scale = previewFontScale;
-            // A stable per-buffer surface key so live-editing pulses coalesce (only the latest render spawns
-            // mmdc) instead of piling up ~4 s Chromium renders on every 250 ms pause (#458).
-            String surfaceKey = PreviewSurfaces.mermaid(path, this);
-            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
-                    MermaidImages.node(documentTextSnapshot(), lw -> lw * scale, surfaceKey));
-            box.getStyleClass().add("markdown-preview");
-            StackPane wrap = new StackPane(box);
-            wrap.getStyleClass().add("markdown-preview-wrap");
-            previewPane().setContent(wrap);
-            Platform.runLater(() -> previewPane().setVvalue(v));
-            return;
-        }
-        if (hasSvgPreview()) {
-            // Whole file is one SVG: rasterize off-thread via JSVG (in-process, no CLI), same async-image
-            // model as Mermaid/diagrams. Zoom scales the fit width; the content-hash cache makes a zoom
-            // re-render a cheap re-fit.
-            double v = previewPane().getVvalue();
-            double scale = previewFontScale;
-            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
-                    SvgImages.node(documentTextSnapshot(), lw -> lw * scale, this::jumpToSource));
-            box.getStyleClass().add("markdown-preview");
-            StackPane wrap = new StackPane(box);
-            wrap.getStyleClass().add("markdown-preview-wrap");
-            previewPane().setContent(wrap);
-            Platform.runLater(() -> previewPane().setVvalue(v));
-            return;
-        }
-        DiagramKind dk = diagramKind();
-        if (dk != null) {
-            // Whole file is one DOT/PlantUML diagram — same async-image model as Mermaid (see above), via
-            // the generic DiagramImages façade. Zoom scales the fit width; the content-hash cache makes a
-            // zoom re-render a cheap re-fit. Don't call applyPreviewScale() here (it re-enters this branch).
-            double v = previewPane().getVvalue();
-            double scale = previewFontScale;
-            String surfaceKey = "diagram@" + System.identityHashCode(this);
-            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
-                    DiagramImages.node(dk, documentTextSnapshot(), lw -> lw * scale, surfaceKey));
-            box.getStyleClass().add("markdown-preview");
-            StackPane wrap = new StackPane(box);
-            wrap.getStyleClass().add("markdown-preview-wrap");
-            previewPane().setContent(wrap);
-            Platform.runLater(() -> previewPane().setVvalue(v));
-            return;
-        }
-        if (hasTypstPreview()) {
-            // Whole file is one Typst document rendered to stacked page images via the typst CLI — the same
-            // async-image model as Mermaid/diagrams, but multi-page. Zoom scales the fit width; the
-            // content-hash cache + retain-last-image (in TypstImages) make live editing update in place
-            // without flicker.
-            double v = previewPane().getVvalue();
-            double scale = previewFontScale;
-            // The throwaway input is written in the file's own folder so relative #image/#import resolve as
-            // on disk; --root is that folder or a higher project root (via the injected resolver) so a
-            // multi-file project's up-references resolve too. Local saved files only — a remote (SFTP) path
-            // can't be a working dir for the local typst process, so both fall back to an isolated temp root.
-            java.nio.file.Path localPath =
-                    path != null && path.getFileSystem() == java.nio.file.FileSystems.getDefault() ? path : null;
-            java.nio.file.Path fileDir = localPath != null ? localPath.getParent() : null;
-            java.nio.file.Path root =
-                    localPath != null && typstRootResolver != null ? typstRootResolver.apply(localPath) : fileDir;
-            String retainKey = PreviewSurfaces.typstRetain(path, this);
-            String surfaceKey = PreviewSurfaces.typst(this);
-            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(TypstImages.node(
-                    documentTextSnapshot(), lw -> lw * scale, retainKey, surfaceKey, fileDir, root, getDisplayName()));
-            box.getStyleClass().add("markdown-preview");
-            StackPane wrap = new StackPane(box);
-            wrap.getStyleClass().add("markdown-preview-wrap");
-            previewPane().setContent(wrap);
-            Platform.runLater(() -> previewPane().setVvalue(v));
-            return;
-        }
-        if (isMarkwhen()) {
-            // Whole file is one timeline. Parse off-thread (pure, cheap), build the node on the FX thread.
-            // Horizontal zoom scales the axis width; preserve both scroll positions (the axis scrolls
-            // horizontally). The previewGen guard drops a superseded render.
-            String src = documentTextSnapshot();
-            double vw = previewPane().getViewportBounds().getWidth();
-            double scale = previewFontScale;
-            long gen = ++previewGen;
-            PREVIEW_POOL.submit(() -> {
-                com.editora.markwhen.Timeline model = com.editora.markwhen.MarkwhenParser.parse(src);
-                Platform.runLater(() -> {
-                    if (gen != previewGen) {
-                        return;
-                    }
-                    double v = previewPane().getVvalue();
-                    double h = previewPane().getHvalue();
-                    Node timeline = markwhenView == MarkwhenView.CALENDAR
-                            ? MarkwhenCalendar.build(model, scale, vw)
-                            : MarkwhenTimeline.build(model, scale, vw);
-                    javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(timeline);
-                    box.getStyleClass().add("markdown-preview");
-                    StackPane wrap = new StackPane(box);
-                    wrap.getStyleClass().add("markdown-preview-wrap");
-                    previewPane().setContent(wrap);
-                    previewPane().setVvalue(v);
-                    previewPane().setHvalue(h);
-                });
-            });
-            return;
-        }
-        String md = documentTextSnapshot();
-        Path baseDir = path == null ? null : path.getParent();
-        long gen = ++previewGen;
-        PREVIEW_POOL.submit(() -> {
-            // Guarded like every other preview branch. commonmark 0.30.0 added input limits that *throw*
-            // rather than degrade — a table over a million cells is the reachable one (the nesting limits
-            // fall back to plain text instead). Unguarded, submit() parks that in a Future nobody reads, so
-            // the preview would sit blank with nothing logged and no way to tell it apart from a slow render.
-            try {
-                MarkdownPreview.Plan plan = MarkdownPreview.plan(md, baseDir); // parse + per-block keys
-                Platform.runLater(() -> {
-                    if (gen != previewGen) {
-                        return; // a newer render superseded this one
-                    }
-                    if (markdownPreview == null) {
-                        markdownPreview = new MarkdownPreview();
-                        markdownPreview.attach(previewPane());
-                        markdownPreview.onRerender(this::scheduleRenderPreview);
-                        markdownPreview.onTaskToggle(l -> isEditable() && MarkdownPreview.toggleTask(area, l));
-                        markdownPreview.onJumpToSource(
-                                l -> scrollSync.jumpToSource(l, () -> setMarkdownViewMode(MarkdownViewMode.SPLIT)));
-                    }
-                    // Only the blocks that changed are rebuilt; the reader's source line stays at the top.
-                    Boolean dark = previewThemeMode.isEmpty() ? null : Boolean.valueOf("dark".equals(previewThemeMode));
-                    markdownPreview.setDiagrams(!encryption.isEncrypted()); // mmdc reads its source from a file
-                    markdownPreview.show(plan, openUrlHandler, dark, scrollSync.anchorLine());
-                    applyPreviewScale(); // keep the current zoom on the freshly rendered content
-                });
-            } catch (Throwable t) {
-                surfaceMarkdownPreviewError(gen, t);
-            }
-        });
-    }
-
-    /**
-     * Rebuilds {@link #viewHost} for the current modes. The floating control is parented to the editor
-     * pane ({@link #root}) in Editor mode, at the right edge of the code area; in Split and Preview it
-     * overlays the preview — on a split's half-width code pane it sat over the first line of text, and
-     * this way it also stays in the tab's top-right corner in all three modes.
-     */
-    private void rebuildViewHost() {
-        detachViewModeControl();
-        Node content;
-        if (markdownViewMode != MarkdownViewMode.EDITOR) {
-            StackPane host = previewModeHost();
-            Node corner = previewCorner();
-            if (corner != null) {
-                StackPane.setAlignment(corner, Pos.TOP_RIGHT);
-                StackPane.setMargin(corner, new Insets(6, 10, 0, 0));
-                host.getChildren().add(corner);
-            }
-            content = host;
-            if (markdownViewMode == MarkdownViewMode.SPLIT) {
-                SplitPane pane = new SplitPane(root, host);
-                pane.setOrientation(Orientation.HORIZONTAL);
-                pane.setDividerPositions(previewDivider); // where it was left, not back to the middle
-                pane.getDividers().get(0).positionProperty().addListener((o, was, now) -> {
-                    if (pane.isPressed() && Math.abs(now.doubleValue() - previewDivider) > 0.002) { // a drag
-                        previewDivider = now.doubleValue();
-                        onPreviewLayoutChanged.run();
-                    }
-                });
-                attachControlToCodePane();
-                content = pane;
-            }
-        } else if (split != Split.NONE) {
-            ensureSecondaryView();
-            SplitPane pane = new SplitPane(root, root2);
-            pane.setOrientation(split == Split.SIDE_BY_SIDE ? Orientation.HORIZONTAL : Orientation.VERTICAL);
-            pane.setDividerPositions(0.5);
-            attachControlToCodePane();
-            content = pane;
-        } else {
-            attachControlToCodePane();
-            content = root;
-        }
-        boolean hadFocus = area2 != null && area2.isFocused(); // leaving a split takes that view off the scene
-        int top2 = hadFocus ? ScrollAnchor.firstVisibleLine(area2) : -1;
-        viewHost.getChildren().setAll(content);
-        if (area2 != null && (split == Split.NONE || markdownViewMode != MarkdownViewMode.EDITOR)) {
-            focusedArea = area;
-            focusedView.set(area);
-            if (hadFocus) {
-                // The user was looking at the second view: the one that stays takes over its caret, its
-                // selection and its place in the file, and the keyboard (or JavaFX hands that to the first
-                // control in the window).
-                ScrollAnchor.adopt(area, area2, top2);
-                area.requestFocus();
-            }
-        }
-    }
-
-    /**
-     * The PREVIEW-mode wrapper for whichever preview this buffer has. Each self-scrolling preview (CSV grid,
-     * HTTP responses, the structured/tree family) brings its own {@code StackPane} so the floating mode toggle
-     * can be overlaid on it; everything else falls through to the Markdown-style {@link #previewHost()}.
-     */
-    private StackPane previewModeHost() {
-        if (hasCsvPreview()) {
-            return csvPreviewHost();
-        }
-        if (hasHttpPreview()) {
-            return httpPreviewHost();
-        }
-        if (hasTreePreview()) {
-            return structuredPreviewHost();
-        }
-        return previewHost(); // preview (+ zoom for markdown)
-    }
-
-    private StackPane previewHost() {
-        if (previewHost == null) {
-            previewHost = new StackPane();
-        }
-        // preview content + the −/+ zoom control (top-left, clear of the mode toggle at top-right) + the
-        // (normally hidden) centered loading overlay.
-        previewHost.getChildren().setAll(previewPane(), zoomControl(), previewLoadingOverlay());
-        StackPane.setAlignment(zoomControl(), Pos.TOP_LEFT);
-        StackPane.setMargin(zoomControl(), new Insets(6, 0, 0, 6));
-        StackPane.setAlignment(previewLoadingOverlay(), Pos.CENTER);
-        if (isMarkdown() && !previewLive()) {
-            // Too large to follow every edit: say so, and offer the render the pulse no longer does.
-            previewHost.getChildren().add(PreviewButtons.pausedStrip(this::refreshPreview));
-        }
-        return previewHost;
-    }
-
-    /** Wraps the injected CSV grid in a StackPane so the floating Editor/Split/Preview toggle can overlay it
-     *  in PREVIEW mode (the grid has no scroll-pane host like Markdown; it manages its own scrolling). */
-    private StackPane csvPreviewHost() {
-        if (csvPreviewHost == null) {
-            csvPreviewHost = new StackPane();
-        }
-        csvPreviewHost.getChildren().setAll(csvPreviewNode); // the toggle is added by rebuildViewHost()
-        belowModeToggle(csvPreviewNode);
-        return csvPreviewHost;
-    }
-
-    /** Wraps the injected HTTP response panel so the mode toggle can overlay it in PREVIEW mode (the panel
-     *  scrolls its own response body, so it needs no ScrollPane host — mirrors {@link #csvPreviewHost()}). */
-    private StackPane httpPreviewHost() {
-        if (httpPreviewHost == null) {
-            httpPreviewHost = new StackPane();
-        }
-        httpPreviewHost.getChildren().setAll(httpPreviewNode); // the toggle is added by rebuildViewHost()
-        belowModeToggle(httpPreviewNode);
-        return httpPreviewHost;
-    }
-
-    /**
-     * Height of the band the floating Editor/Split/Preview toggle takes at the top of a preview — the same
-     * 34px the Markdown preview leaves above its document ({@code .markdown-preview-pane} in app.css).
-     */
-    private static final double MODE_TOGGLE_BAND = 34;
-
-    /**
-     * Starts a self-scrolling preview (CSV grid, HTTP responses, structured tree) below the mode toggle.
-     * Each opens with a toolbar or a first row reaching the right edge, and the toggle — on top — hid its
-     * rightmost buttons and swallowed their clicks.
-     */
-    private static void belowModeToggle(@Nullable Node content) {
-        StackPane.setMargin(content, new Insets(MODE_TOGGLE_BAND, 0, 0, 0));
-    }
-
-    /** Sets the freshly parsed structured node (tree / OpenAPI docs / error) into the self-scrolling holder. */
-    private void renderStructured(StructuredParser.Parsed parsed) {
-        lastStructuredOpenApi = parsed.isOpenApi();
-        Node node;
-        if (!parsed.ok()) {
-            Label err = new Label(parsed.error());
-            err.getStyleClass().add("structured-error");
-            err.setWrapText(true);
-            node = err;
-        } else {
-            boolean showDocs = parsed.isOpenApi() && showsApiDocs();
-            node = showDocs ? OpenApiDoc.build(parsed.openApi()) : StructuredTree.build(parsed.root());
-        }
-        structuredContentHolder().getChildren().setAll(node);
-    }
-
-    /** Sets the freshly parsed XML DOM tree (or an error label) into the shared self-scrolling holder. */
-    private void renderXml(XmlParser.Parsed parsed) {
-        Node node = parsed.ok()
-                ? XmlTree.build(parsed.root())
-                : com.editora.editor.structured.ParseErrorView.of(
-                        String.valueOf(parsed.error()),
-                        parsed.line(),
-                        parsed.column(),
-                        this::jumpToSource,
-                        "structured-error");
-        structuredContentHolder().getChildren().setAll(node);
-    }
-
-    /** A preview's parse-error link: the caret to that 1-based line and column (XML review C15). */
-    private void jumpToSource(int line, int column) {
-        com.editora.editor.structured.ParseErrorView.jump(this, line, column);
-    }
-
-    /** The {@link #surfaceTreePreviewError} counterpart for the Markdown preview, which has its own pane. */
-    private void surfaceMarkdownPreviewError(long gen, Throwable t) {
-        java.util.logging.Logger.getLogger(EditorBuffer.class.getName())
-                .log(java.util.logging.Level.WARNING, "markdown preview render failed", t);
-        String msg = t.getMessage() != null ? t.getMessage() : t.toString();
-        Platform.runLater(() -> {
-            if (gen != previewGen) {
-                return;
-            }
-            Label err = new Label(msg);
-            err.getStyleClass().add("structured-error");
-            err.setWrapText(true);
-            previewPane().setContent(err);
-        });
-    }
-
-    /**
-     * Surfaces a Throwable from a {@code PREVIEW_POOL.submit(...)} tree-preview task (structured/XML) that the
-     * task's {@code Future} would otherwise swallow into a silent blank — the {@code exec.submit}
-     * Error-swallowing trap the project conventions warn about — as a logged warning + a visible error label
-     * in the shared holder, so a failed render is diagnosable rather than a blank pane.
-     */
-    private void surfaceTreePreviewError(long gen, Throwable t) {
-        java.util.logging.Logger.getLogger(EditorBuffer.class.getName())
-                .log(java.util.logging.Level.WARNING, "tree preview render failed", t);
-        String msg = t.getMessage() != null ? t.getMessage() : t.toString();
-        Platform.runLater(() -> {
-            if (gen != previewGen) {
-                return;
-            }
-            Label err = new Label(msg);
-            err.getStyleClass().add("structured-error");
-            err.setWrapText(true);
-            structuredContentHolder().getChildren().setAll(err);
-        });
-    }
-
-    /** The self-scrolling structured preview node holder — used directly as the Split preview side. */
-    private StackPane structuredContentHolder() {
-        if (structuredContentHolder == null) {
-            structuredContentHolder = new StackPane();
-            // The JSON/YAML/TOML + XML trees host their own TreeView (not previewPane), so they need their
-            // own right-click menu — an Export to PDF (a full snapshot of the tree), like every other preview.
-            structuredContentHolder.setOnContextMenuRequested(
-                    e -> showTreePreviewContextMenu(e.getScreenX(), e.getScreenY()));
-        }
-        return structuredContentHolder;
-    }
-
-    private void showTreePreviewContextMenu(double screenX, double screenY) {
-        if (treePreviewContextMenu == null) {
-            MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
-            pdf.setGraphic(MenuIcons.download());
-            pdf.setOnAction(ev -> previewMenu.exportPdf());
-            MenuItem print = new MenuItem(tr("command.preview.print"));
-            print.setGraphic(MenuIcons.print());
-            print.setOnAction(ev -> previewMenu.print());
-            pomViewItem = new MenuItem();
-            pomViewItem.setGraphic(MenuIcons.code());
-            pomViewItem.setOnAction(ev -> pomViewToggleHandler.run());
-            treePreviewContextMenu = new javafx.scene.control.ContextMenu(pomViewItem, pdf, print);
-            treePreviewContextMenu.getStyleClass().add("editor-context-menu");
-        }
-        // The pom summary is the only tree-hosted preview with a second rendering of the same file, so its
-        // switch is the only item here that isn't shown for every one of them. Relabelled per show (it names
-        // the view it switches *to*), since the buffer can be flipped from the palette between two shows.
-        boolean pom = isPom();
-        MenuItem pomItem = pomViewItem; // built with the menu above
-        if (pomItem != null) {
-            pomItem.setVisible(pom);
-            if (pom) {
-                pomItem.setText(tr(pomShowXml ? "pom.menu.showSummary" : "pom.menu.showXml"));
-            }
-        }
-        treePreviewContextMenu.show(structuredContentHolder(), screenX, screenY);
-    }
-
-    // ---- Preview → PDF snapshot (Markwhen / JSON-YAML-TOML / XML / summaries) — see PreviewSnapshots ----
 
     /**
      * Renders the current image/tree preview to PNG images for print and PDF export (a full snapshot of the
@@ -6326,312 +5481,48 @@ public class EditorBuffer implements TabContent {
         PreviewSnapshots.capture(this, lightUaStylesheet, progress, done);
     }
 
-    /** Whether an OpenAPI document shows its docs view (the default) rather than the tree behind it. */
     public boolean showsApiDocs() {
-        return structuredShowApiDocs == null || structuredShowApiDocs;
+        return previewPanes.showsApiDocs();
     }
 
-    /** Wraps the structured holder so the floating Editor/Split/Preview toggle can overlay it in PREVIEW mode. */
-    private StackPane structuredPreviewHost() {
-        if (structuredPreviewHost == null) {
-            structuredPreviewHost = new StackPane();
-        }
-        structuredPreviewHost
-                .getChildren()
-                .setAll(structuredContentHolder()); // the toggle is added by rebuildViewHost()
-        belowModeToggle(structuredContentHolder());
-        return structuredPreviewHost;
-    }
-
-    /**
-     * Centered spinner + message overlaid on the preview while it's expected to render soon but hasn't
-     * yet — e.g. an AI-generated explanation streams into the buffer, but the debounced preview re-render
-     * only fires ~250ms after the text stops changing, so a fast continuous stream can leave the preview
-     * blank for its whole duration with no feedback otherwise. Toggled by {@link #setPreviewLoading}.
-     */
-    private Node previewLoadingOverlay() {
-        if (previewLoadingOverlay == null) {
-            ProgressIndicator spinner = new ProgressIndicator();
-            spinner.setMaxSize(32, 32);
-            previewLoadingLabel = new Label();
-            previewLoadingLabel.getStyleClass().add("markdown-preview-loading-label");
-            VBox box = new VBox(10, spinner, previewLoadingLabel);
-            box.setAlignment(Pos.CENTER);
-            box.getStyleClass().add("markdown-preview-loading");
-            box.setVisible(false);
-            box.setManaged(false);
-            box.setMouseTransparent(true); // never intercepts clicks meant for the preview underneath
-            previewLoadingOverlay = box;
-        }
-        return previewLoadingOverlay;
-    }
-
-    /**
-     * Shows or hides the preview's centered loading spinner (see {@link #previewLoadingOverlay()}).
-     * {@code message} replaces the label text when non-null; pass {@code false} once real content is
-     * ready (or generation fails) to hide it again.
-     */
     public void setPreviewLoading(boolean loading, @Nullable String message) {
-        Node overlay = previewLoadingOverlay();
-        Label label = previewLoadingLabel; // built with the overlay
-        if (message != null && label != null) {
-            label.setText(message);
-        }
-        overlay.setVisible(loading);
-        overlay.setManaged(loading);
+        previewPanes.setPreviewLoading(loading, message);
     }
 
-    private HBox zoomControl() {
-        if (zoomControl == null) {
-            Button out = PreviewButtons.named("−", tr("project.map.preview.zoomOut"), this::zoomPreviewOut);
-            Button in = PreviewButtons.named("+", tr("project.map.preview.zoomIn"), this::zoomPreviewIn);
-            // Light/dark preview-theme toggle (independent of the app theme). Glyph shows what a click
-            // switches TO: a moon while the preview is light, a sun while it's dark.
-            previewThemeButton = PreviewButtons.named("", "", () -> previewThemeToggle.run());
-            updateThemeButtonGlyph();
-            zoomControl = new HBox(out, in, previewThemeButton);
-            zoomControl.getStyleClass().add("md-zoom");
-            zoomControl.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE);
-            zoomControl.setPickOnBounds(false);
-        }
-        return zoomControl;
-    }
-
-    /** Injects the controller's global preview light/dark toggle (run by the floating sun/moon button). */
     public void setPreviewThemeToggle(Runnable toggle) {
-        if (toggle != null) {
-            this.previewThemeToggle = toggle;
-        }
+        previewPanes.setPreviewThemeToggle(toggle);
     }
 
-    /**
-     * Applies the Markdown preview color theme, independent of the app theme. {@code mode} is "" (follow
-     * the app theme), "light", or "dark"; {@code appDark} is the app theme's brightness (for "follow" +
-     * the toggle glyph). Adds {@code md-light}/{@code md-dark} to the preview pane (which redefine the
-     * looked-up colors for the preview subtree) and refreshes the toggle glyph.
-     */
     public void applyPreviewTheme(String mode, boolean appDark) {
-        boolean changed = !previewThemeMode.equals(mode == null ? "" : mode);
-        this.previewThemeMode = mode == null ? "" : mode;
-        this.previewAppDark = appDark;
-        if (changed && isMarkdown()) {
-            scheduleRenderPreview(); // formulas and diagrams are bitmaps: draw them for the new theme
-        }
-        if (previewPane != null) {
-            previewPane.getStyleClass().removeAll("md-light", "md-dark");
-            if ("light".equals(previewThemeMode)) {
-                previewPane.getStyleClass().add("md-light");
-            } else if ("dark".equals(previewThemeMode)) {
-                previewPane.getStyleClass().add("md-dark");
-            }
-        }
-        updateThemeButtonGlyph();
+        previewPanes.applyPreviewTheme(mode, appDark);
     }
 
-    private void updateThemeButtonGlyph() {
-        if (previewThemeButton == null) {
-            return;
-        }
-        // The glyph and name say what a click switches TO: ☀ light, ☾ dark, ◐ back to following the app.
-        String next = PreviewButtons.nextTheme(previewThemeMode, previewAppDark);
-        previewThemeButton.setText(next.isEmpty() ? "◐" : next.equals("light") ? "☀" : "☾");
-        PreviewButtons.name(previewThemeButton, tr(PreviewButtons.themeActionKey(next)));
-    }
-
-    /** Zooms the preview text in/out (multiplicative steps, clamped) or resets to 100%. */
     public void zoomPreviewIn() {
-        setPreviewFontScale(previewFontScale * 1.1);
+        previewPanes.zoomPreviewIn();
     }
 
     public void zoomPreviewOut() {
-        setPreviewFontScale(previewFontScale / 1.1);
+        previewPanes.zoomPreviewOut();
     }
 
     public void resetPreviewZoom() {
-        setPreviewFontScale(1.0);
+        previewPanes.resetPreviewZoom();
     }
 
-    private void setPreviewFontScale(double scale) {
-        previewFontScale = Math.max(PreviewLayout.MIN_ZOOM, Math.min(PreviewLayout.MAX_ZOOM, scale));
-        applyPreviewScale();
-        onPreviewLayoutChanged.run();
-    }
-
-    /** The preview's zoom and Split divider as they are now. */
     public PreviewLayout getPreviewLayout() {
-        return new PreviewLayout(previewFontScale, previewDivider);
+        return previewPanes.getPreviewLayout();
     }
 
-    /** Restores a remembered zoom and divider (no change notification); {@code onChange} hears later ones. */
     public void restorePreviewLayout(@Nullable PreviewLayout layout, Runnable onChange) {
-        this.onPreviewLayoutChanged = onChange == null ? () -> {} : onChange;
-        if (layout != null) {
-            previewFontScale = layout.zoom();
-            previewDivider = layout.divider();
-            applyPreviewScale();
-        }
+        previewPanes.restorePreviewLayout(layout, onChange);
     }
 
-    /** Applies the current zoom: re-fits a diagram to the scaled width, else overrides the preview's base
-     *  font size (headings use em). */
-    private void applyPreviewScale() {
-        if (previewPane == null || previewPane.getContent() == null) {
-            return;
-        }
-        if (isDiagram() || isRenderedDiagram() || hasSvgPreview() || hasTypstPreview()) {
-            scheduleRenderPreview(); // re-fit the diagram/SVG/Typst image to the new zoom (cache hit — cheap)
-            return;
-        }
-        if (isMarkwhen()) {
-            scheduleRenderPreview(); // re-render the timeline at the new axis scale (parse is cheap + off-thread)
-            return;
-        }
-        previewPane.getContent().setStyle(PreviewPrefs.fontStyle(previewFontScale));
-        if (markdownPreview != null) {
-            markdownPreview.setZoom(previewFontScale); // formulas, images and diagrams are not text: sized too
-        }
-    }
-
-    /** Removes the floating corner control(s) from whichever pane currently hosts them. */
-    private void detachViewModeControl() {
-        removeCornerControl(viewModeControl);
-        removeCornerControl(htmlPreviewControl);
-        removeCornerControl(httpEnvControl);
-        removeCornerControl(previewCornerRow);
-        previewCornerRow.getChildren().clear();
-    }
-
-    /**
-     * What sits at the top-right of a preview: the view toggle, with the {@code .http} environment pill to its left
-     * when the buffer has one (both in one row, so they never overlap).
-     */
-    private @Nullable Node previewCorner() {
-        if (httpEnvControl == null) {
-            return viewModeControl;
-        }
-        previewCornerRow.getChildren().setAll(httpEnvControl);
-        if (viewModeControl != null) {
-            previewCornerRow.getChildren().add(viewModeControl);
-        }
-        return previewCornerRow;
-    }
-
-    private static HBox previewCornerRow() {
-        HBox row = cornerControlRow();
-        row.setMaxSize(Region.USE_PREF_SIZE, Region.USE_PREF_SIZE); // a StackPane overlay keeps its own size
-        return row;
-    }
-
-    private void removeCornerControl(@Nullable Node control) {
-        if (control == null) {
-            return;
-        }
-        cornerControls.getChildren().remove(control);
-        if (cornerControls.getChildren().isEmpty()) {
-            root.getChildren().remove(cornerControls);
-        }
-        if (previewHost != null) {
-            previewHost.getChildren().remove(control);
-        }
-        if (csvPreviewHost != null) {
-            csvPreviewHost.getChildren().remove(control);
-        }
-        if (httpPreviewHost != null) {
-            httpPreviewHost.getChildren().remove(control);
-        }
-    }
-
-    /** Overlays the corner control(s) at the top-right of the code pane ({@link #root}), clear of its minimap.
-     *  They share one row ({@link #cornerControls}), so however many are present they sit side by side. */
-    private void attachControlToCodePane() {
-        placeCornerControl(markdownViewMode == MarkdownViewMode.EDITOR ? httpEnvControl : null);
-        placeCornerControl(markdownViewMode == MarkdownViewMode.EDITOR ? viewModeControl : null);
-        placeCornerControl(htmlPreviewControl);
-        placeStickyScroll();
-    }
-
-    /**
-     * Anchors the sticky-scroll bar across the top of the code pane. Unlike the corner controls it spans
-     * the width, so it clears the scrollbar gutter on the right and the minimap beyond it — a pinned line
-     * running under either would be clipped mid-token.
-     */
-    private void placeStickyScroll() {
-        Node bar = stickyScroll.node();
-        StickyScrollBar.anchor(bar, codePaneControlInset()); // writes only a changed constraint
-        if (bar.getParent() != root) {
-            root.getChildren().add(bar);
-            // The bar is attached lazily when scrolling first produces pinned lines, while file-specific
-            // controls may already be present. AnchorPane paints later children on top, so without an
-            // explicit order that timing lets the full-width bar cover Markdown's view-mode toggle or
-            // HTML's browser button. A control row attached after the bar is added last and so is above it.
-            if (cornerControls.getParent() == root) {
-                cornerControls.toFront();
-            }
-        }
-    }
-
-    /**
-     * Adds {@code control} to the shared top-right row, mounting the row on first use. The Expert exit
-     * control stays outermost so it does not move when a file-specific control comes and goes.
-     */
-    private void placeCornerControl(@Nullable Node control) {
-        if (control == null) {
-            return;
-        }
-        List<Node> row = cornerControls.getChildren();
-        if (!row.contains(control)) {
-            int expert = control == expertExitControl ? -1 : row.indexOf(expertExitControl);
-            row.add(expert < 0 ? row.size() : expert, control);
-        }
-        if (cornerControls.getParent() != root) {
-            root.getChildren().add(cornerControls);
-            AnchorPane.setTopAnchor(cornerControls, 6d);
-        }
-        AnchorPane.setRightAnchor(cornerControls, codePaneControlInset());
-    }
-
-    /**
-     * Width the editor's own vertical scrollbar takes on the right edge of the code pane. The floating
-     * controls clear it: sitting on the thumb both looks wrong and swallows the drag, since the control is
-     * on top.
-     */
-    private static final double SCROLLBAR_GUTTER = 14;
-
-    private double codePaneControlInset() {
-        return SCROLLBAR_GUTTER + ((minimapVisible && !largeFile && !heavyFile) ? Minimap.WIDTH + 6 : 10);
-    }
-
-    /** Keeps every floating editor control clear of the minimap when it toggles (no full view rebuild). */
-    private void positionCornerControls() {
-        if (cornerControls.getParent() == root) {
-            AnchorPane.setRightAnchor(cornerControls, codePaneControlInset());
-        }
-    }
-
-    /**
-     * Mounts the Expert-mode exit control inside the primary code pane, clear of its scrollbar and minimap,
-     * beside any file-specific corner control. Passing {@code null} detaches the current control. A
-     * controller moves the one shared button as the active tab changes, so inactive buffers retain no
-     * overlay node.
-     */
     public void setExpertExitControl(@Nullable Node control) {
-        if (expertExitControl != control) {
-            removeCornerControl(expertExitControl);
-        }
-        expertExitControl = control;
-        placeCornerControl(control);
-    }
-
-    private static HBox cornerControlRow() {
-        HBox row = new HBox(6);
-        row.setAlignment(Pos.CENTER_RIGHT);
-        row.setFillHeight(false); // each control keeps its own height
-        row.setPickOnBounds(false); // clicks between controls fall through to the editor
-        return row;
+        viewLayout.setExpertExitControl(control);
     }
 
     /** Lazily builds the secondary view (scroll pane + its own minimap) sharing this document. */
-    private void ensureSecondaryView() {
+    void ensureSecondaryView() {
         if (area2 != null) {
             refreshGutter(); // marks and folds changed while it was off screen
             return;
@@ -7453,7 +6344,7 @@ public class EditorBuffer implements TabContent {
             applyMinimap(scrollPane2, minimap2, effective);
         }
         updateDiagnosticStripe(); // show the scrollbar stripe when the minimap no longer carries marks
-        positionCornerControls(); // keep floating editor controls clear of the minimap
+        viewLayout.positionCornerControls(); // keep floating editor controls clear of the minimap
     }
 
     /** Show/hide the "hidden characters" markers (spaces, tabs, line ends). */
@@ -9188,7 +8079,7 @@ public class EditorBuffer implements TabContent {
      * Immutable whole-document text for the current version. Must be called on the FX thread, like
      * RichTextFX's {@code getText()}; repeated consumers of the same version receive the same String.
      */
-    private String documentTextSnapshot() {
+    String documentTextSnapshot() {
         return documentSnapshots.get(docVersion, area::getText).text();
     }
 

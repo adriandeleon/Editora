@@ -637,7 +637,7 @@ class ExternalRenderFxTest {
     // ---- The buffer's own image previews ----------------------------------------------------------------
 
     private static StackPane imageHost(EditorBuffer buffer, String styleClass) {
-        ScrollPane pane = EditorFx.call(buffer, "previewPane");
+        ScrollPane pane = EditorFx.call(EditorFx.field(buffer, "previewPanes"), "previewPane");
         Node host = pane.getContent().lookup("." + styleClass);
         assertNotNull(host, "the preview holds a ." + styleClass + " host");
         return (StackPane) host;
@@ -729,7 +729,7 @@ class ExternalRenderFxTest {
             assertEquals(2, ((VBox) host[0].getChildren().get(0)).getChildren().size(), "two pages");
             buffer.getNode().applyCss();
             buffer.getNode().layout();
-            ScrollPane pane = EditorFx.call(buffer, "previewPane");
+            ScrollPane pane = EditorFx.call(EditorFx.field(buffer, "previewPanes"), "previewPane");
             pane.fireEvent(new ContextMenuEvent(ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 220, 220, false, null));
             ContextMenu menu = EditorFx.field(EditorFx.field(buffer, "previewMenu"), "menu");
             EditorFx.menuItem(menu.getItems(), Messages.tr("command.typst.exportPng"))
