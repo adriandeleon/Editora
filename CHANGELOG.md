@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Map caller and reference cards no longer pile up.** With Focus new column on, Show Callers or References as
+  Cards opened every result card on one spot, at full width, instead of beside the card asked from. Each now opens
+  beside that card at the narrower result width, in a place of its own, stacking above or below the ones there.
 - **Map Print and Export PDF include the open cards.** Preview, note and Overview cards, what is stuck on them
   (sticky notes, Structure columns, link chips) and their connectors are drawn on the pages where they stand on the
   map, as on screen; the pages grow to take in a card standing beyond the columns. Export ▸ SVG still leaves the
