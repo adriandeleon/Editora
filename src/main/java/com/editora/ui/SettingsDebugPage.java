@@ -106,7 +106,7 @@ final class SettingsDebugPage {
             config.getSettings().setNodePath(now.strip());
             w.apply();
             refreshDebugStatus();
-            w.refreshHttpNodeStatus(); // the Web page's Node.js row follows this field
+            w.webPage.refreshHttpNodeStatus(); // the Web page's Node.js row follows this field
         });
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             if (dbg.setEnabled() instanceof java.util.function.Consumer<Boolean> setEnabled
