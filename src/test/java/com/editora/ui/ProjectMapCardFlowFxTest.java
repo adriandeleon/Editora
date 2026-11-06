@@ -28,7 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Map card flow: a new card opens past its row's column the way the map flows — right of it, left of it, below or above
- * — as the row's next column would; with no room there it takes the side of the column, and the map never pans; a
+ * — as the row's next column would. With "Focus new column" on the map then pans to centre it, as it does a new
+ * column; off, with no room there it takes the side of the column, and the map never pans; a
  * declaration card opened from a file
  * card's Structure column opens right of the file card, past the column, level with its row.
  */
@@ -83,6 +84,102 @@ class ProjectMapCardFlowFxTest {
         assertEquals(0, MapCards.cardFlowCost(300, 0, 300, 95, column, up), "flowing up, above it");
         assertEquals(MapCards.FLOW_BESIDE, MapCards.cardFlowCost(620, 150, 300, 200, column, up), "beside it");
         assertEquals(0, MapCards.cardFlowCost(0, 0, 10, 10, column, null), "a linked card has no way");
+    }
+
+    @Test
+    void aCardOpensWhereTheRowsNextColumnWouldPastWhatAlreadyStandsThere() {
+        double[] row = {100, 300, 200, 32}; // in its column x 90–310, y 50–650
+        double[] column = {90, 50, 220, 600};
+        double[] right = MapCards.cardColumnSpot(row, column, 500, 400, true, false, 1, List.of());
+        assertArrayEquals(new double[] {310 + MapCards.CARD_COLUMN_GAP, 316 - 150, 500, 400}, right, 0.001);
+        double[] left = MapCards.cardColumnSpot(row, column, 500, 400, true, true, 1, List.of());
+        assertEquals(90 - MapCards.CARD_COLUMN_GAP - 500, left[0], 0.001, "flowing left: left of the column");
+        double[] down = MapCards.cardColumnSpot(row, column, 500, 400, false, false, 1, List.of());
+        assertEquals(650 + MapCards.CARD_COLUMN_GAP, down[1], 0.001, "flowing down: below it");
+        assertEquals(200 - 150, down[0], 0.001, "hanging from the row across the flow");
+        double[] up = MapCards.cardColumnSpot(row, column, 500, 400, false, true, 1, List.of());
+        assertEquals(50 - MapCards.CARD_COLUMN_GAP - 400, up[1], 0.001, "flowing up: above it");
+        double[] small = MapCards.cardColumnSpot(row, column, 500, 100, true, false, 1, List.of());
+        assertEquals(316 - 50, small[1], 0.001, "a short card is centred on its row");
+        // An open column and a card in the way: the card goes on past both, as a column goes past its level's.
+        List<double[]> taken = List.of(new double[] {360, 0, 200, 900}, new double[] {600, 200, 300, 300});
+        double[] past = MapCards.cardColumnSpot(row, column, 500, 400, true, false, 1, taken);
+        assertEquals(900 + MapCards.CARD_COLUMN_GAP, past[0], 0.001);
+        double[] zoomed = MapCards.cardColumnSpot(row, column, 500, 400, true, false, 0.5, List.of());
+        assertEquals(310 + MapCards.CARD_COLUMN_GAP / 2, zoomed[0], 0.001, "the gap is drawn at the map's zoom");
+    }
+
+    @Test
+    void theMapPansToCentreTheNewCardKeepingItsRowInSightWhenBothFit() {
+        double[] card = {2000, 1500, 400, 300};
+        double[] far = {1900, 1600, 60, 30}; // the row just left of the card
+        assertArrayEquals(new double[] {500 - 2200, 400 - 1650}, MapCards.cardCentringPan(card, far, 1000, 800, 12));
+        double[] row = {1500, 1600, 100, 30}; // farther left: the card moves right off-centre just enough
+        double[] pan = MapCards.cardCentringPan(card, row, 1000, 800, 12);
+        assertEquals(12, row[0] + pan[0], 0.001, "the row at the margin");
+        assertEquals(400 - 1650, pan[1], 0.001);
+        double[] huge = {2000, 1500, 1200, 300};
+        assertEquals(12 - 2000, MapCards.cardCentringPan(huge, far, 1000, 800, 12)[0], 0.001, "larger: its corner");
+    }
+
+    @ParameterizedTest
+    @EnumSource(ProjectMapView.FlowDirection.class)
+    void withFocusNewColumnAFileCardOpensAsAColumnWouldAndTheMapCentresIt(ProjectMapView.FlowDirection flow)
+            throws Exception {
+        Path root = Files.createDirectories(temp.resolve("project"));
+        Path app = Files.writeString(root.resolve("App.java"), APP);
+        Fixture map = openMap(root, flow, true);
+        try {
+            waitFor(() -> nodeBox(map, app) != null, "App.java's row");
+            FxTestSupport.runOnFx(() -> {
+                // Push the row to the panel's far corner the way the map flows: there is no room past it in view.
+                MapCards.Site site =
+                        (MapCards.Site) FxTestSupport.call(map.surface(), "cardSite", new Class<?>[] {Path.class}, app);
+                double[] column = site.column();
+                double width = map.surface().getWidth();
+                double height = map.surface().getHeight();
+                double dx = switch (flow) {
+                    case LEFT_TO_RIGHT -> width - 40 - column[0] - column[2];
+                    case RIGHT_TO_LEFT -> 40 - column[0];
+                    default -> 0;
+                };
+                double dy = switch (flow) {
+                    case TOP_TO_BOTTOM -> height - 40 - column[1] - column[3];
+                    case BOTTOM_TO_TOP -> 40 - column[1];
+                    default -> 0;
+                };
+                FxTestSupport.call(map.surface(), "panBy", new Class<?>[] {double.class, double.class}, dx, dy);
+            });
+            double[] pushed = FxTestSupport.callOnFx(() -> offset(map));
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    map.view(), "togglePreview", new Class<?>[] {ProjectMapModel.Entry.class}, entry(map, app)));
+            ProjectMapPreview card = waitForCard(map, app);
+            FxTestSupport.runOnFx(() -> {
+                double[] after = offset(map);
+                assertTrue(
+                        Math.abs(after[0] - pushed[0]) + Math.abs(after[1] - pushed[1]) > 1,
+                        "the map panned to the card in " + flow);
+                MapCards.Site site =
+                        (MapCards.Site) FxTestSupport.call(map.surface(), "cardSite", new Class<?>[] {Path.class}, app);
+                double[] drawn = MapCards.drawnBounds(card);
+                assertPast(flow, drawn, site.column(), site.row());
+                double width = map.surface().getWidth();
+                double height = map.surface().getHeight();
+                assertTrue(
+                        drawn[0] >= 0 && drawn[1] >= 0 && drawn[0] + drawn[2] <= width && drawn[1] + drawn[3] <= height,
+                        "the card in view: " + List.of(drawn[0], drawn[1], drawn[2], drawn[3]));
+                double[] row = site.row();
+                assertTrue(
+                        row[0] >= 0 && row[1] >= 0 && row[0] + row[2] <= width && row[1] + row[3] <= height,
+                        "and its row");
+                boolean across = flow == ProjectMapView.FlowDirection.LEFT_TO_RIGHT
+                        || flow == ProjectMapView.FlowDirection.RIGHT_TO_LEFT;
+                double centre = across ? drawn[1] + drawn[3] / 2 : drawn[0] + drawn[2] / 2;
+                assertEquals(across ? height / 2 : width / 2, centre, 1, "centred across the flow");
+            });
+        } finally {
+            FxTestSupport.runOnFx(map.view()::dispose);
+        }
     }
 
     @ParameterizedTest
@@ -401,6 +498,11 @@ class ProjectMapCardFlowFxTest {
     private record Fixture(ProjectMapView view, Scene scene, Region surface) {}
 
     private static Fixture openMap(Path root, ProjectMapView.FlowDirection flow) throws Exception {
+        return openMap(root, flow, false);
+    }
+
+    /** {@code focusNew}: "Focus new column" on, so a new card opens as a column does and the map pans to it. */
+    private static Fixture openMap(Path root, ProjectMapView.FlowDirection flow, boolean focusNew) throws Exception {
         return FxTestSupport.callOnFx(() -> {
             ProjectMapView view = new ProjectMapView(path -> {}, path -> false, path -> false, path -> null);
             Scene scene = new Scene(view, 1400, 900);
@@ -412,7 +514,7 @@ class ProjectMapCardFlowFxTest {
             view.applyCss();
             view.layout();
             view.setRememberedFlow(flow.name(), ignored -> {});
-            view.setRememberedNavigation(true, false, (keep, focus) -> {});
+            view.setRememberedNavigation(true, focusNew, (keep, focus) -> {});
             view.setRoot(root);
             return new Fixture(view, scene, FxTestSupport.field(view, "surface"));
         });

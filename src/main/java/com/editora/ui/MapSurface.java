@@ -5801,6 +5801,15 @@ final class MapSurface extends Region {
         return root == null ? null : new double[] {root.x(), root.y(), root.width(), root.height()};
     }
 
+    /** Every column as drawn, on screen or off, {@code {x, y, w, h}}: what a new card steps past (MapCards). */
+    List<double[]> cardAllColumns() {
+        List<double[]> columns = new ArrayList<>(columnBoxes.size());
+        for (ColumnBox column : columnBoxes) {
+            columns.add(new double[] {column.x(), column.y(), column.width(), column.height()});
+        }
+        return columns;
+    }
+
     /** Every column on screen as {@code {x, y, w, h, 1}}, for a card's Structure column choosing its side. */
     List<double[]> cardColumns() {
         List<double[]> columns = new ArrayList<>();

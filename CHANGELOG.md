@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the card, as Shift+Enter does; its hint says so.
 - **A file card's Structure column is narrower.** It fits only the rows it shows (refitting as a row opens or
   closes), between 200 and 360 px, instead of every member of closed rows up to 560 px.
+- **Map cards open the way columns do.** With Focus new column on (the default), a new code or note card opens
+  where its row's next column would — past the row's column the way the map flows, hanging from the row, past any
+  column or card already there — and the map pans to centre it, keeping its row in sight. With the option off, cards
+  keep taking free room in view without panning.
 
 ## [0.27.0] - 2026-11-05
 

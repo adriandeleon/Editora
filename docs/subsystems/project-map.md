@@ -180,8 +180,15 @@ open there). A declaration card opened from a file card's Structure column opens
 Structure right): past the column, which always stands on the card's right, level with its row; with no room there the
 file card, with its column, first steps left until the card's minimum fits (`MapCards.cardStructureRoom`), as far as
 the panel's left edge allows, and of the spots left the best one right of the file card wins over any other. Linked result cards go around the card they were found from and
-weigh no flow. **Placement never pans the map**: with no room past the row's column the way the map flows, the
-card takes the side of the column — beside it across the flow (above or below it left to right or right to left, left
+weigh no flow. **With "Focus new column" on (the default) a new card opens as a new column does**
+(`MapCards.openingPlacement`, `cardColumnSpot`, `cardCentringPan`): a code or note card whose row is on the map goes
+past the row's column the way the map flows, `CARD_COLUMN_GAP` (40) from it, centred on the row across the flow or,
+when long, hanging from it (at most `CARD_COLUMN_LEAD`, 150, before it), and on past any column or card already
+standing there; the map then pans so the card stands in the middle of the map area (its top-left corner, when it is
+larger), shifted only as far as it takes to keep its row in sight when both fit. Result cards, declaration cards from
+a file card's Structure column, rows off the map, Move to Free Space and cards placed again keep the free-room
+placement above. **With the option off, placement never pans the map**: with no room past the row's column the way
+the map flows, the card takes the side of the column — beside it across the flow (above or below it left to right or right to left, left
 or right of it down or up the panel), cut to the room there down to its minimum, and slid along the row as far as it
 stays level with it to clear the zoom bar, the overview and other cards. A card left of its column widens leftwards
 when its text arrives, in every flow, rather than back over the column. A card is never smaller

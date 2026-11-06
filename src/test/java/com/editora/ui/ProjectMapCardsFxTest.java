@@ -273,7 +273,7 @@ class ProjectMapCardsFxTest {
     // --- Placement ---------------------------------------------------------------------------------------
 
     @Test
-    void cardsKeepAUsableSizeInAToolWindowWidePanelAndNeverPanTheMap() throws Exception {
+    void cardsKeepAUsableSizeInAToolWindowWidePanel() throws Exception {
         root = projectRoot();
         Path file = Files.writeString(root.resolve("Narrow.java"), "class Narrow {}\n");
         for (double panelWidth : new double[] {320, 208}) {
@@ -284,8 +284,6 @@ class ProjectMapCardsFxTest {
                 waitForRow(map, file);
                 FxTestSupport.runOnFx(() -> {
                     map.view.setNotePreviewActions(notes);
-                    double offsetX = FxTestSupport.field(map.surface, "offsetX");
-                    double offsetY = FxTestSupport.field(map.surface, "offsetY");
                     double hostWidth = map.host.getWidth();
                     double room = hostWidth - ProjectMapPreview.EDGE_MARGIN * 2;
 
@@ -313,9 +311,6 @@ class ProjectMapCardsFxTest {
                             () -> "at " + panelWidth + " px the code card keeps its minimum: " + drawnWidth(code));
                     assertTrue(code.getHeight() >= ProjectMapPreview.MIN_HEIGHT);
                     assertInside(code, map.host);
-
-                    assertEquals(offsetX, (double) FxTestSupport.field(map.surface, "offsetX"), 0.001, "no pan");
-                    assertEquals(offsetY, (double) FxTestSupport.field(map.surface, "offsetY"), 0.001, "no pan");
                 });
             } finally {
                 map.close();
