@@ -1408,6 +1408,11 @@ final class ProjectMapView extends VBox {
         return surface.cardColumns();
     }
 
+    /** Pans the map, and the cards on it, {@code dx} pixels across (a stop's note making room beside its card). */
+    void viewsPanAcross(double dx) {
+        surface.panBy(dx, 0);
+    }
+
     /** Where working sets and trails ask for a name or a note (the panel gives the Map window's own prompt). */
     void setViewsPrompt(OverlayInput.@Nullable Prompt prompt) {
         viewsPrompt = prompt;
