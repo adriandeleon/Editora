@@ -1685,7 +1685,6 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         return sb.toString();
     }
 
-    /** Puts {@code text} on the system clipboard. */
     /** Copies the whole call stack shown — folded runtime frames included — to the clipboard. */
     public void copyCallStack() {
         if (allFrames.isEmpty()) {
@@ -1695,6 +1694,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         copyToClipboard(DebugPanelText.callStackText(thread == null ? null : thread.name(), allFrames));
     }
 
+    /** Puts {@code text} on the system clipboard. */
     static void copyToClipboard(String text) {
         javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
         content.putString(text == null ? "" : text);
