@@ -67,6 +67,8 @@ class JdtlsCrossFileRenameProbeFxTest {
                 projectReady.countDown(); // JDT's own language/status, sent once the project is imported
             }
         });
+        manager.setFolderTrust(folder ->
+                true); // a probe's project is one its user trusts: jdtls loads the build (lsp.UntrustedBuilds)
         manager.setOnEditBlocked(blocked::add);
         manager.setJdtlsWorkspaceBase(root.resolve("workspaces"));
         manager.configure(true, Map.of("java", jdtls()));

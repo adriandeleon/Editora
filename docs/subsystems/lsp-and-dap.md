@@ -788,6 +788,28 @@ settings apply, and a save of the project file) re-runs `applySupport` when the 
 window learns its project after `init` has already run. The `lsp.setServerCommand` prompt is prefilled from
 the global value, never the project's, since it writes the global setting.
 
+**Loading a project's build is under the same gate** (`lsp/UntrustedBuilds`, since 0.27.1, when language
+servers became on by default). Some servers run the folder's own code just to load it: jdtls imports Gradle by
+running its build scripts and Maven by loading its build extensions, Kotlin's server imports Gradle, Metals runs
+sbt/Mill or compiles Scala macros, rust-analyzer builds `build.rs` and proc macros, Ruby LSP runs Bundler on the
+`Gemfile`, csharp-ls evaluates MSBuild, and clojure-lsp asks Leiningen, Boot or shadow-cljs for a classpath.
+`LspManager` reads the root's trust on the caller's thread and, on the start thread:
+
+- **jdtls** always starts, but on an untrusted root with `java.import.{maven,gradle}.enabled=false`, the Gradle
+  wrapper off and `configuration.updateBuildConfiguration=disabled` — in its `initializationOptions` and in every
+  later `didChangeConfiguration` push (`LanguageServerSession.buildImportsOff`), so a push cannot turn an import
+  on. When the root holds a Maven or Gradle build, `onBuildNotLoaded` fires and the file says so.
+- **The others** are withheld (`onStartWithheld`, no crash notice, no retry) on an untrusted root holding their
+  build files — searched one folder down for Rust and two for C# (`UntrustedBuilds.hasBuild`). A loose file with
+  no build starts as before. `deps.edn` and `bb.edn` are read as data and do not gate clojure-lsp.
+
+`ui/XmlFolderTrust` shows the file notice (`lsp.trust.javaNotice` / `lsp.trust.withheldNotice`) with **Trust
+Folder**, and on every trust broadcast calls `LspManager.restartForTrust`: a gated session whose root's trust no
+longer matches the one it started with stops (a jdtls started without its build on a root now trusted, any gated
+server on a root no longer trusted), and its files sync again, which starts it as the trust now says. Remote and
+container roots go through the same check (the file search runs on the start thread). Not gated yet: Pyright runs the
+interpreter it is given, which may be a project’s own `.venv`.
+
 **The Astro TypeScript SDK is under the same gate.** astro-ls refuses to initialize without
 `initializationOptions.typescript.tsdk` and loads — runs — the JavaScript in that directory, so the path
 Editora computes is a choice of code to execute, with or without a project settings file.

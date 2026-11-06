@@ -66,7 +66,11 @@ class JdtlsSharedServerProbeTest {
                 <properties><maven.compiler.release>21</maven.compiler.release></properties></project>
                 """);
         LspManager first = new LspManager((f, d) -> {}, (t, m) -> {});
+        first.setFolderTrust(folder ->
+                true); // a probe's project is one its user trusts: jdtls loads the build (lsp.UntrustedBuilds)
         LspManager second = new LspManager((f, d) -> {}, (t, m) -> {});
+        second.setFolderTrust(folder ->
+                true); // a probe's project is one its user trusts: jdtls loads the build (lsp.UntrustedBuilds)
         for (LspManager m : List.of(first, second)) {
             m.setJdtlsWorkspaceBase(base);
             m.configure(true, Map.of("java", jdtls));

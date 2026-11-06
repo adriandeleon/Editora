@@ -157,8 +157,10 @@ public class Settings {
     private boolean markdownFormatBar = true;
     /** When the Markdown preview loads remote ({@code http}/{@code https}) images: "always", "ask" (a bar in
      *  the preview offers to load them for this document) or "never" (alt text, nothing fetched). It replaced
-     *  the boolean {@code markdownRemoteImages} at schema 121; {@link #isMarkdownRemoteImages()} is a view of it. */
-    private String markdownRemoteImagePolicy = "always";
+     *  the boolean {@code markdownRemoteImages} at schema 121; {@link #isMarkdownRemoteImages()} is a view of it.
+     *  "ask" by default since 0.27.1: a README from a cloned repository could otherwise fetch a tracking image the
+     *  moment it was previewed. */
+    private String markdownRemoteImagePolicy = DEFAULT_REMOTE_IMAGE_POLICY;
     /** Recognise wiki links ({@code [[note]]}, {@code [[note|label]]}, {@code [[note#heading]]}) in Markdown. */
     private boolean markdownWikiLinks = true;
     /** On save, move to the trash an image pasted in this session that the document no longer references. */
@@ -397,8 +399,12 @@ public class Settings {
      * settings — is anchored to a project, and a user who never found the checkbox never met any of it.
      */
     private boolean projectSupport = true;
-    /** Show hidden (dot) files and folders in the Project tool window's tree + filter search. Off by default. */
-    private boolean projectShowHidden = false;
+    /**
+     * Show hidden (dot) files and folders in the Project tool window's tree, the Map and the filter search. On by
+     * default since 0.27.1: off hid {@code .github/}, {@code .editorconfig}, {@code .gitignore} and {@code .env},
+     * which are project files. The repository's own {@code .git} is never listed either way.
+     */
+    private boolean projectShowHidden = true;
     /** Git integration: on by default — the status-bar VCS segment, Commit tool window, gutter change bars,
      *  and Git commands/keybindings. Self-gates on detection: when {@code git} isn't on PATH it stays inert
      *  (so this is effectively "on when Git is installed"). */
@@ -419,9 +425,9 @@ public class Settings {
     private String gitPullMode = "ff-only";
     /**
      * "Fetch automatically": a background {@code git fetch --prune} of the active repository every
-     * {@link #gitAutoFetchMinutes} minutes. Off by default — it is the only network traffic Editora would
-     * start on its own, and it only ever runs in a trusted folder or a repository the user has fetched,
-     * pulled or pushed in during the session (see ADR 0002).
+     * {@link #gitAutoFetchMinutes} minutes. Off by default — it would contact a Git remote the user never asked
+     * Editora to reach, and it only ever runs in a trusted folder or a repository the user has fetched, pulled or
+     * pushed in during the session (see ADR 0002).
      */
     private boolean gitAutoFetch = false;
     /** Minutes between automatic fetches; at least 1. */
@@ -774,10 +780,12 @@ public class Settings {
     /** Where the AI keys live this session; null (no keychain asked) means the fields above. Not persisted. */
     @JsonIgnore
     private transient @Nullable ApiKeyVault apiKeyVault;
-    /** Java debugging (DAP) support: off by default. Layered on the Java LSP server (jdtls) + the
-     *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
-     *  and the plugin jar is found. */
-    private boolean debugSupport = false;
+    /**
+     * Debugging (DAP) master switch, for every debugger: Java, Python ({@link #pythonDebugEnabled}) and JavaScript
+     * ({@link #jsDebugEnabled}). On by default since 0.27.1 — each debugger self-gates on its adapter being found.
+     * Java debugging also needs LSP on, the java server enabled/detected and the java-debug plugin jar.
+     */
+    private boolean debugSupport = true;
     /**
      * Java debugging: Editora starts the debugged program itself (as the Run console does) instead of
      * leaving that to the debug adapter inside jdtls, so the program has a standard input — lines typed in
@@ -880,9 +888,13 @@ public class Settings {
     /** Path to vscode-js-debug's {@code dapDebugServer.js} (or a dir to scan); blank = auto-detect
      *  (Editora's plugins dir, mason, VS Code js-debug extension). */
     private String jsDebugPath = "";
-    /** Language Server Protocol support: off by default — needs an external language server. Phase 1
-     *  covers Java (Eclipse JDT LS): diagnostics, hover/go-to-definition/references, completion. */
-    private boolean lspSupport = false;
+    /**
+     * Language Server Protocol support (code intelligence through each language's server): on by default since
+     * 0.27.1. Each server self-gates on being installed, and the install banner offers the missing ones. Off, a new
+     * user opening a Java or TypeScript file was never told it existed. A server that runs a folder's build to load
+     * it waits for that folder's trust ({@code lsp.UntrustedBuilds}).
+     */
+    private boolean lspSupport = true;
     /** Show the in-editor "install language support?" banner when an enabled language's server is missing
      *  (Java/Python/JS LSP, or the Mermaid CLI). Default on; the user can silence the nudge. */
     private boolean lspInstallPrompts = true;
@@ -2347,6 +2359,9 @@ public class Settings {
     /** The values of {@link #getMarkdownRemoteImagePolicy()}; the first is the default. */
     public static final java.util.List<String> REMOTE_IMAGE_POLICIES = java.util.List.of("always", "ask", "never");
 
+    /** What {@link #markdownRemoteImagePolicy} starts as, and what an unknown value reads as. */
+    public static final String DEFAULT_REMOTE_IMAGE_POLICY = "ask";
+
     /**
      * Whether remote images may be fetched at all — everything but "never". A view of the policy, not a
      * stored key (it was one until schema 121).
@@ -2369,7 +2384,7 @@ public class Settings {
         String p = markdownRemoteImagePolicy == null
                 ? ""
                 : markdownRemoteImagePolicy.strip().toLowerCase(java.util.Locale.ROOT);
-        return REMOTE_IMAGE_POLICIES.contains(p) ? p : REMOTE_IMAGE_POLICIES.get(0);
+        return REMOTE_IMAGE_POLICIES.contains(p) ? p : DEFAULT_REMOTE_IMAGE_POLICY;
     }
 
     public void setMarkdownRemoteImagePolicy(String markdownRemoteImagePolicy) {

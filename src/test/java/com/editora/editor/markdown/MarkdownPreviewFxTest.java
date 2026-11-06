@@ -1069,6 +1069,7 @@ class MarkdownPreviewFxTest {
         EditorBuffer[] ref = new EditorBuffer[1];
         Stage[] stage = new Stage[1];
         EditorFx.onFx(() -> {
+            PreviewImageLoader.setRemoteImages(true); // "ask" is the setting's default since 0.27.1
             ref[0] = markdown(md);
             stage[0] = EditorFx.show(ref[0], 600, 300);
         });
@@ -1078,7 +1079,7 @@ class MarkdownPreviewFxTest {
             Node[] image = new Node[1];
             EditorFx.onFx(() -> {
                 image[0] = column(buffer).getChildren().get(1);
-                assertNotNull(EditorFx.styled(image[0], "md-image-slot"), "on by default: an image to load");
+                assertNotNull(EditorFx.styled(image[0], "md-image-slot"), "switched on: an image to load");
             });
             rerender(buffer, () -> PreviewImageLoader.setRemoteImages(false));
             EditorFx.onFx(() -> {

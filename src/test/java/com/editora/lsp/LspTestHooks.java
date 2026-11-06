@@ -69,6 +69,16 @@ public final class LspTestHooks {
         return DocumentUris.of(file);
     }
 
+    /**
+     * Plays the server serving {@code file} having started on a folder that was not trusted (see {@link
+     * UntrustedBuilds}): jdtls with its imports off and a build it did not load, any other gated server untrusted.
+     */
+    public static void startedUntrusted(LspManager manager, java.nio.file.Path file, boolean buildPresent) {
+        LanguageServerSession s = manager.sessionForTest(file);
+        boolean importsOff = UntrustedBuilds.importsOff(s.serverId(), false);
+        s.setStartTrust(false, importsOff, buildPresent);
+    }
+
     /** The project root of the server serving {@code file}. */
     public static java.nio.file.Path sessionRoot(LspManager manager, java.nio.file.Path file) {
         return manager.sessionForTest(file).root();

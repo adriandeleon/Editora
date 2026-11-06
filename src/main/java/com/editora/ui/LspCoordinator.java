@@ -517,6 +517,7 @@ final class LspCoordinator {
         pythonInterpreters.setServerRoots(b -> lspRootFor(b, "python")); // the item shows what Pyright is told
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
+        lspManager.setOnBuildNotLoaded(xmlTrust::buildNotLoaded);
         lspManager.setOnSecondServer((serverId, root) -> host.setStatus(tr(
                 "status.lsp.secondServer",
                 serverLabel(serverId),
@@ -1012,6 +1013,7 @@ final class LspCoordinator {
      * inactive and the status line says why and names the command that trusts the folder.
      */
     private void onStartWithheld(String serverId, Path root) {
+        xmlTrust.buildWithheld(serverId, root); // a server that would run the folder's build: Trust Folder
         host.forEachBuffer(b -> {
             Path p = lspPath(b);
             if (p != null
@@ -1019,9 +1021,10 @@ final class LspCoordinator {
                     && sameLspRoot(lspRootFor(b, serverId), root)
                     && !lspManager.isManaged(p)) {
                 b.setLspActive(false);
+                xmlTrust.afterSync(b);
             }
         });
-        host.setStatus(XmlFolderTrust.withheldStatus(serverId)); // astro-ls's SDK, or an untrusted pom (E1)
+        host.setStatus(xmlTrust.withheldStatus(serverId)); // astro-ls's SDK, an untrusted pom (E1), or a build
         updateStatusBar();
     }
 
@@ -3373,7 +3376,7 @@ final class LspCoordinator {
      * JavaScript"), not its command ("typescript-language-server language server keeps crashing", Node review
      * E8); the program's name when no such label exists.
      */
-    private String serverLabel(String serverId) {
+    String serverLabel(String serverId) {
         String key = "install.lang." + serverId;
         String label = tr(key);
         return label.equals(key) ? serverProgram(serverId) : label;

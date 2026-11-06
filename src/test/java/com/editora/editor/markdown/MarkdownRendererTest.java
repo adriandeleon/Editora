@@ -293,11 +293,18 @@ class MarkdownRendererTest {
     @Test
     void theDocumentPolicyAllowsWhatThePreviewAlwaysLoaded() {
         MarkdownRenderer.ImagePolicy doc = MarkdownRenderer.ImagePolicy.DOCUMENT;
-        assertTrue(doc.allows("https://img.shields.io/badge/a-b-green"));
-        assertTrue(doc.allows("file:///home/u/notes/pic.png"));
-        assertTrue(doc.allows("data:image/png;base64,AAAA"));
-        assertFalse(doc.allows(null));
-        assertFalse(doc.allows(" "));
+        // Remote images loading, whatever an earlier window in this JVM applied ("ask" is the default since 0.27.1).
+        PreviewImageLoader.RemotePolicy before = PreviewImageLoader.remotePolicy();
+        PreviewImageLoader.setRemoteImages(true);
+        try {
+            assertTrue(doc.allows("https://img.shields.io/badge/a-b-green"));
+            assertTrue(doc.allows("file:///home/u/notes/pic.png"));
+            assertTrue(doc.allows("data:image/png;base64,AAAA"));
+            assertFalse(doc.allows(null));
+            assertFalse(doc.allows(" "));
+        } finally {
+            PreviewImageLoader.setRemotePolicy(before);
+        }
     }
 
     @Test

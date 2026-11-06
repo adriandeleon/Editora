@@ -240,11 +240,11 @@ class MarkdownSettingsTest {
     @Test
     void theRemoteImagePolicyIsNormalisedAndTheOldSwitchIsAViewOfIt() {
         Settings s = new Settings();
-        assertEquals("always", s.getMarkdownRemoteImagePolicy());
-        assertTrue(s.isMarkdownRemoteImages());
+        assertEquals("ask", s.getMarkdownRemoteImagePolicy(), "asked by default since 0.27.1");
+        assertTrue(s.isMarkdownRemoteImages(), "asking is not refusing");
         for (String bad : new String[] {null, "", "sometimes", "  "}) {
             s.setMarkdownRemoteImagePolicy(bad);
-            assertEquals("always", s.getMarkdownRemoteImagePolicy(), "a hand-edited value reads as the default");
+            assertEquals("ask", s.getMarkdownRemoteImagePolicy(), "a hand-edited value reads as the default");
         }
         s.setMarkdownRemoteImagePolicy(" ASK ");
         assertEquals("ask", s.getMarkdownRemoteImagePolicy());

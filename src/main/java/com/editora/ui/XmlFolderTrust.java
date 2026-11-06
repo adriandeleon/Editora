@@ -17,6 +17,7 @@ import com.editora.config.ConfigManager;
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.LspManager;
 import com.editora.lsp.LspServerRegistry;
+import com.editora.lsp.UntrustedBuilds;
 import com.editora.text.LspDiagnostic;
 import org.jspecify.annotations.Nullable;
 
@@ -35,6 +36,11 @@ import static com.editora.i18n.Messages.tr;
  * trusted folders"). A folder without a Maven or Gradle build had no way to be trusted, so its files kept two
  * errors (C6): a blocked download now offers Trust Folder on the file, and {@code workspace.trustFolder} trusts
  * the folder from the palette. One per window, owned by {@link LspCoordinator}.
+ *
+ * <p>It also carries the servers that run a folder's build to load it ({@link UntrustedBuilds}): a Java file in an
+ * untrusted folder with a Maven or Gradle build says jdtls runs without that build, a Kotlin, Scala, Rust, Ruby, C#
+ * or Clojure file there says its server is not started, and both offer Trust Folder; trusting (or revoking) restarts
+ * those servers as the trust now says.
  */
 final class XmlFolderTrust {
 
@@ -53,6 +59,9 @@ final class XmlFolderTrust {
     private final Map<Path, Answer> answers = new HashMap<>();
 
     private record Answer(int trustList, @Nullable Path project, boolean trusted) {}
+
+    /** The (server, folder) pairs whose start was withheld for trust this session, until trust next changes. */
+    private final Set<String> withheldBuilds = new java.util.HashSet<>();
 
     /**
      * Tells every window that trust changed (the window manager's broadcast, which reaches this one too); until the
@@ -126,9 +135,62 @@ final class XmlFolderTrust {
             if (offered.add(b)) {
                 show(b, tr("xml.trust.pomNotice"));
             }
+        } else if (buildUntrusted(b)) {
+            if (offered.add(b)) {
+                show(b, buildNotice(lsp.serverIdForBuffer(b)));
+            }
         } else {
             hideOwn(b);
         }
+    }
+
+    // --- servers that load a folder's build ----------------------------------------------------------
+
+    /** {@code serverId}'s start on {@code root} was withheld because the folder is not trusted (see LspManager). */
+    void buildWithheld(String serverId, Path root) {
+        if (UntrustedBuilds.gated(serverId)) {
+            withheldBuilds.add(buildKey(serverId, root));
+        }
+    }
+
+    /**
+     * jdtls started on a folder that is not trusted, without the Maven or Gradle build there ({@link
+     * LspManager#setOnBuildNotLoaded}): its files say so and offer Trust Folder, which restarts it with the build.
+     */
+    void buildNotLoaded(String serverId, Path root) {
+        host.forEachBuffer(b -> {
+            if (serverId.equals(lsp.serverIdForBuffer(b))
+                    && LspCoordinator.sameLspRoot(lsp.lspRootFor(b, serverId), root)) {
+                afterSync(b);
+            }
+        });
+    }
+
+    private static String buildKey(String serverId, @Nullable Path root) {
+        return serverId + '\u0000' + (root == null ? "" : root.toAbsolutePath().normalize());
+    }
+
+    /**
+     * Whether {@code b}'s server runs without its folder's build ({@code jdtls} with its imports off), or was not
+     * started at all, because the folder is not trusted.
+     */
+    boolean buildUntrusted(EditorBuffer b) {
+        String serverId = b == null ? null : lsp.serverIdForBuffer(b);
+        Path file = serverId == null ? null : lsp.lspPath(b);
+        if (serverId == null || file == null || !UntrustedBuilds.gated(serverId) || !ops.lspFeatureEnabled()) {
+            return false;
+        }
+        if (lspManager.buildNotLoaded(file)) {
+            return true;
+        }
+        return !lspManager.isManaged(file) && withheldBuilds.contains(buildKey(serverId, lsp.lspRootFor(b, serverId)));
+    }
+
+    /** What a file of {@code serverId}'s says while its folder's build waits for trust (and the status line). */
+    String buildNotice(@Nullable String serverId) {
+        return UntrustedBuilds.startsWithoutBuild(serverId)
+                ? tr("lsp.trust.javaNotice")
+                : tr("lsp.trust.withheldNotice", lsp.serverLabel(serverId == null ? "" : serverId));
     }
 
     /**
@@ -191,16 +253,24 @@ final class XmlFolderTrust {
     }
 
     /** Hides a notice this class showed on {@code b}; another feature's notice stays. */
-    private static void hideOwn(EditorBuffer b) {
+    private void hideOwn(EditorBuffer b) {
         String shown = b.fileNoticeText();
         if (shown != null
-                && (shown.equals(tr("xml.trust.pomNotice")) || shown.equals(tr("xml.trust.downloadNotice")))) {
+                && (shown.equals(tr("xml.trust.pomNotice"))
+                        || shown.equals(tr("xml.trust.downloadNotice"))
+                        || shown.equals(buildNotice(lsp.serverIdForBuffer(b))))) {
             b.hideFileNotice();
         }
     }
 
-    /** The status line when a server's start was withheld for trust: an untrusted pom's, else astro-ls's SDK. */
-    static String withheldStatus(String serverId) {
+    /**
+     * The status line when a server's start was withheld for trust: one that would run the folder's build, an
+     * untrusted pom's, else astro-ls's SDK.
+     */
+    String withheldStatus(String serverId) {
+        if (UntrustedBuilds.gated(serverId)) {
+            return buildNotice(serverId);
+        }
         return LspServerRegistry.MAVEN_POM_SERVER_ID.equals(serverId)
                 ? tr("xml.trust.pomNotice")
                 : tr("status.lsp.astroSdkUntrusted", tr("command.lsp.trustProjectSettings"));
@@ -218,10 +288,14 @@ final class XmlFolderTrust {
     void trustChanged() {
         answers.clear();
         Set<EditorBuffer> served = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        Set<EditorBuffer> buildServed = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         host.forEachBuffer(b -> {
             Path file = lsp.lspPath(b);
             if (file != null && isPom(file) && lspManager.managedServerId(file) != null) {
                 served.add(b);
+            }
+            if (file != null && UntrustedBuilds.gated(lspManager.managedServerId(file))) {
+                buildServed.add(b);
             }
         });
         lspManager.shutdownUntrusted(LspServerRegistry.MAVEN_POM_SERVER_ID);
@@ -240,6 +314,40 @@ final class XmlFolderTrust {
             if (pom && served.contains(b)) {
                 lsp.syncBuffer(b);
             } else if (pom) {
+                lsp.syncBufferWhenShown(b);
+            }
+        });
+        buildTrustChanged(buildServed);
+    }
+
+    /**
+     * The servers that load a folder's build, after a trust decision: those whose folder's trust changed stop
+     * ({@link LspManager#restartForTrust}), and their files open again — a served one at once, shown or not, a
+     * withheld one when shown on a folder now trusted. A notice that no longer applies goes.
+     */
+    private void buildTrustChanged(Set<EditorBuffer> servedBefore) {
+        lspManager.restartForTrust();
+        withheldBuilds.clear(); // asked again at the next start
+        ConfigManager config = ops.config();
+        host.forEachBuffer(b -> {
+            String serverId = lsp.serverIdForBuffer(b);
+            Path file = lsp.lspPath(b);
+            if (serverId == null || file == null || !UntrustedBuilds.gated(serverId)) {
+                return;
+            }
+            Path root = lsp.lspRootFor(b, serverId);
+            boolean trusted =
+                    root != null && config != null && config.getTrustStore().isTrusted(root);
+            if (trusted) {
+                hideOwn(b);
+                offered.remove(b); // a later revoke may offer again
+            }
+            if (lspManager.isManaged(file)) {
+                return;
+            }
+            if (servedBefore.contains(b)) {
+                lsp.syncBuffer(b);
+            } else if (trusted) {
                 lsp.syncBufferWhenShown(b);
             }
         });
@@ -275,6 +383,11 @@ final class XmlFolderTrust {
         config.saveTrust(); // durable: a security decision must survive a crash
         broadcast.run(); // every window, this one included, re-reads its trust (reloadProjectSettings)
         host.syncSettingsWindow(); // the Workspace page's trusted-folders list
+        String buildServer = b == null ? null : lsp.serverIdForBuffer(b);
+        if (buildServer != null && UntrustedBuilds.gated(buildServer)) {
+            host.setStatus(tr("lsp.trust.trustedBuild", shown, lsp.serverLabel(buildServer)));
+            return;
+        }
         // Maven-aware editing is claimed only where the Maven server runs (A28)
         String pomServer = LspServerRegistry.MAVEN_POM_SERVER_ID;
         boolean mavenOn = lsp.serverEnabled(pomServer) && lsp.isServerAvailable(pomServer);
@@ -294,7 +407,9 @@ final class XmlFolderTrust {
         String serverId = name != null && LspServerRegistry.isPomFile(name.toString())
                 ? LspServerRegistry.MAVEN_POM_SERVER_ID
                 : LspServerRegistry.serverIdFor(b.getLanguage());
-        return file != null && serverId != null && com.editora.lsp.XmlServerSettings.isLemminx(serverId)
+        return file != null
+                        && serverId != null
+                        && (com.editora.lsp.XmlServerSettings.isLemminx(serverId) || UntrustedBuilds.gated(serverId))
                 ? lsp.lspRootFor(b, serverId)
                 : null;
     }

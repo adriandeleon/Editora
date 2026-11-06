@@ -3756,16 +3756,18 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private record PathEntry(Path path, boolean directory) {}
+    record PathEntry(Path path, boolean directory) {}
 
     /** Directory children: directories first then files, case-insensitive; dotfiles hidden unless
-     *  {@code includeHidden}; empty on error. */
-    private static List<PathEntry> listDir(Path dir, boolean includeHidden) {
+     *  {@code includeHidden}, and the repository's own {@code .git} never listed; empty on error. Package-visible
+     *  for tests. */
+    static List<PathEntry> listDir(Path dir, boolean includeHidden) {
         List<PathEntry> dirs = new ArrayList<>();
         List<PathEntry> files = new ArrayList<>();
         try (Stream<Path> entries = Files.list(dir)) {
             entries.forEach(p -> {
-                if (!includeHidden && p.getFileName().toString().startsWith(".")) {
+                String name = p.getFileName().toString();
+                if (includeHidden ? name.equals(".git") : name.startsWith(".")) {
                     return;
                 }
                 boolean directory = Files.isDirectory(p);
